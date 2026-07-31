@@ -5,6 +5,7 @@ import SwiftUI
 /// inline text edit, split at cursor, merge-down, speaker assign/rename/add, play/seek.
 struct SessionSegmentEditor: View {
     let sessionID: UUID
+    let contentKey: String
     let scope: WorkbenchStore.SessionCueScope
     let cues: [SubtitleCue]
     let speakerLabels: [String]
@@ -120,7 +121,17 @@ struct SessionSegmentEditor: View {
             } message: {
                 Text("Assign a new speaker label to this segment.")
             }
+            .onChange(of: contentKey) { _, _ in
+                resetEditingState()
+            }
         }
+    }
+
+    private func resetEditingState() {
+        autosaveTask?.cancel()
+        editingCueID = nil
+        editingText = ""
+        cursorOffset = nil
     }
 
     private var canSplit: Bool {
@@ -210,6 +221,19 @@ struct SessionSegmentEditor: View {
             rightText: right
         )
         cancelEdit()
+    }
+}
+
+extension WorkbenchStore.SessionCueScope {
+    var contentKey: String {
+        switch self {
+        case .source:
+            return "source"
+        case .translation(let languageCode):
+            return "translation-\(languageCode.lowercased())"
+        case .dub:
+            return "dub"
+        }
     }
 }
 
@@ -434,12 +458,20 @@ private struct SessionCueTextEditor: NSViewRepresentable {
 
         let textView = scrollView.documentView as! NSTextView
         textView.delegate = context.coordinator
+        textView.isEditable = true
+        textView.isSelectable = true
         textView.isRichText = false
+        textView.importsGraphics = false
         textView.allowsUndo = true
         textView.font = .systemFont(ofSize: AppTheme.FontSize.mdLg)
         textView.textColor = NSColor(AppTheme.Text.primaryColor)
+        textView.insertionPointColor = NSColor(AppTheme.Text.primaryColor)
         textView.backgroundColor = .clear
         textView.drawsBackground = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.textContainer?.widthTracksTextView = true
@@ -455,6 +487,8 @@ private struct SessionCueTextEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = scrollView.documentView as? NSTextView else { return }
+        // Preserve the native input composition while SwiftUI re-renders.
+        guard textView.window?.firstResponder !== textView else { return }
         if textView.string != text {
             let selected = textView.selectedRange()
             textView.string = text

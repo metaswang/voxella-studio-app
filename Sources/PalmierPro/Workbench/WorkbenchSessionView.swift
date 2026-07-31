@@ -135,6 +135,8 @@ struct WorkbenchSessionDetailView: View {
     @State private var showDubOptionsSheet = false
     @State private var showTemplateLoginAlert = false
     @State private var seekSeconds: Double?
+    @State private var probedMediaURL: URL?
+    @State private var probedMediaHasVideo = false
 
     var body: some View {
         Group {
@@ -208,7 +210,9 @@ struct WorkbenchSessionDetailView: View {
     @ViewBuilder
     private func sessionView(_ session: WorkbenchSession) -> some View {
         let mediaURL = selectedTrack == .dub ? session.outputURL : session.sourceURL
-        let hasVideo = mediaURL?.isMovie == true
+        let hasVideo = probedMediaURL == mediaURL
+            ? probedMediaHasVideo
+            : mediaURL?.isMovie == true
 
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
             sessionHeader(session)
@@ -280,6 +284,29 @@ struct WorkbenchSessionDetailView: View {
         }
         .onChange(of: session.id) { _, _ in
             syncLanguageSelections(session)
+        }
+        .task(id: mediaURL) {
+            await probeMediaTrack(for: mediaURL)
+        }
+    }
+
+    private func probeMediaTrack(for mediaURL: URL?) async {
+        guard let mediaURL else {
+            probedMediaURL = nil
+            probedMediaHasVideo = false
+            return
+        }
+
+        let asset = AVURLAsset(url: mediaURL)
+        do {
+            let tracks = try await asset.load(.tracks)
+            guard !Task.isCancelled else { return }
+            probedMediaURL = mediaURL
+            probedMediaHasVideo = tracks.contains { $0.mediaType == .video }
+        } catch {
+            guard !Task.isCancelled else { return }
+            probedMediaURL = mediaURL
+            probedMediaHasVideo = false
         }
     }
 
@@ -450,6 +477,7 @@ struct WorkbenchSessionDetailView: View {
                         }
                     }
                     .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
                 }
             }
             .foregroundStyle(isActive ? AppTheme.Text.primaryColor : AppTheme.Text.tertiaryColor)
@@ -466,6 +494,7 @@ struct WorkbenchSessionDetailView: View {
         let cues = editableCues(for: session, scope: scope)
         SessionSegmentEditor(
             sessionID: session.id,
+            contentKey: "\(session.id.uuidString)-\(selectedTab.rawValue)-\(scope.contentKey)",
             scope: scope,
             cues: cues,
             speakerLabels: speakerLabels(for: session, cues: cues),
@@ -1217,7 +1246,7 @@ private struct SessionSummaryPanel: View {
                 Text("Summary")
                     .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
                 Spacer()
-                if session.summaryMarkdown != nil {
+                if session.transcriptionID != nil, session.summaryState != .running {
                     Button(action: onRegenerate) {
                         Image(systemName: "arrow.clockwise")
                     }

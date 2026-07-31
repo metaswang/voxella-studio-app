@@ -39,6 +39,7 @@ struct ProcessingOptionsSheet: View {
         }
         .frame(width: 560, height: 620)
         .background(AppTheme.Background.surfaceColor)
+        .colorScheme(.dark)
     }
 
     private var header: some View {
@@ -90,13 +91,51 @@ struct ProcessingOptionsSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Input language")
                 .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
-            Picker("Input language", selection: $languageCode) {
+            Menu {
                 ForEach(WorkbenchTranscriptionLanguage.allCases) { option in
-                    Text(option.label).tag(option.languageCode)
+                    Button {
+                        languageCode = option.languageCode
+                    } label: {
+                        menuItemLabel(option.label, selected: languageCode == option.languageCode)
+                    }
                 }
+            } label: {
+                processingMenuLabel(selectedLanguageLabel)
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+        }
+    }
+
+    private var selectedLanguageLabel: String {
+        WorkbenchTranscriptionLanguage.allCases
+            .first(where: { $0.languageCode == languageCode })?
+            .label ?? WorkbenchTranscriptionLanguage.automatic.label
+    }
+
+    private func processingMenuLabel(_ title: String) -> some View {
+        HStack(spacing: AppTheme.Spacing.smMd) {
+            Text(title)
+                .lineLimit(1)
+            Spacer(minLength: AppTheme.Spacing.sm)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+        }
+        .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.medium))
+        .foregroundStyle(AppTheme.Text.primaryColor)
+        .padding(.horizontal, AppTheme.Spacing.md)
+        .frame(width: AppTheme.Workbench.pickerWidth, height: AppTheme.IconSize.lg, alignment: .leading)
+        .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+        .contentShape(Rectangle())
+    }
+
+    private func menuItemLabel(_ title: String, selected: Bool) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            if selected {
+                Image(systemName: "checkmark")
+            }
         }
     }
 
@@ -121,13 +160,19 @@ struct ProcessingOptionsSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Speaker count")
                     .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
-                Picker("Speaker count", selection: $speakerCount) {
+                Menu {
                     ForEach(SpeakerCountOption.allCases) { option in
-                        Text(option.label).tag(option)
+                        Button {
+                            speakerCount = option
+                        } label: {
+                            menuItemLabel(option.label, selected: speakerCount == option)
+                        }
                     }
+                } label: {
+                    processingMenuLabel(speakerCount.label)
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
             }
 
             if isSingleFile {
@@ -181,16 +226,29 @@ struct ProcessingOptionsSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Target language")
                         .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
-                    Picker("Target language", selection: $targetLanguageCode) {
-                        Text("Select language").tag("")
+                    Menu {
+                        Button {
+                            targetLanguageCode = ""
+                        } label: {
+                            menuItemLabel("Select language", selected: targetLanguageCode.isEmpty)
+                        }
                         ForEach(WorkbenchTranscriptionLanguage.allCases.filter {
                             $0.languageCode != nil && $0.languageCode != languageCode
                         }) { option in
-                            Text(option.label).tag(option.languageCode ?? "")
+                            Button {
+                                targetLanguageCode = option.languageCode ?? ""
+                            } label: {
+                                menuItemLabel(
+                                    option.label,
+                                    selected: targetLanguageCode == option.languageCode
+                                )
+                            }
                         }
+                    } label: {
+                        processingMenuLabel(targetLanguageLabel)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
                 }
             }
         }
@@ -204,6 +262,13 @@ struct ProcessingOptionsSheet: View {
             if !enabled { targetLanguageCode = "" }
             else if showAdvanced == false { showAdvanced = true }
         }
+    }
+
+    private var targetLanguageLabel: String {
+        guard !targetLanguageCode.isEmpty else { return "Select language" }
+        return WorkbenchTranscriptionLanguage.allCases
+            .first(where: { $0.languageCode == targetLanguageCode })?
+            .label ?? "Select language"
     }
 
     private var modelHint: some View {

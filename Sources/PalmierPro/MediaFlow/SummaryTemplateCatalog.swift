@@ -1,7 +1,7 @@
 import Foundation
 
-/// Summary template definitions aligned with voxella-api `summary_templates` seed catalog.
-/// Local Studio currently supports only the public fallback template (Interview Notes).
+/// Summary template definitions for local Studio postprocess.
+/// Auto-summary uses a general adaptive template (not domain-specific Interview Notes).
 
 struct SummaryTemplateDefinition: Identifiable, Codable, Equatable, Sendable {
     var id: String
@@ -11,30 +11,49 @@ struct SummaryTemplateDefinition: Identifiable, Codable, Equatable, Sendable {
     var isFallback: Bool
     var categoryCode: String?
 
-    /// Global `is_fallback` template from `20260223_seed_summary_templates_catalog_v1.sql`.
+    /// Catalog `is_fallback` Interview Notes id — kept for remote template identity only.
     static let interviewNotesFallbackID = "66666666-6666-6666-6666-666666666666"
 
-    static let interviewNotes = SummaryTemplateDefinition(
-        id: interviewNotesFallbackID,
-        name: "Interview Notes",
-        description: "For user/research interviews. Focus on insights with evidence.",
+    /// Local default: content-agnostic adaptive summary.
+    static let generalSummaryID = "local-general-summary-v1"
+
+    static let generalSummary = SummaryTemplateDefinition(
+        id: generalSummaryID,
+        name: "General Summary",
+        description: "Adaptive summary for any session. Surfaces the points users care about most.",
         userEdition: """
         ## Role Description
-        You are an interview-insights assistant. Stay faithful to the source and do not fabricate facts. Output strict markdown only.
+        You are a general-purpose session summarizer. Stay faithful to the transcript. Do not fabricate facts, names, numbers, or decisions. Output strict markdown only.
 
-        ## Output Items (required/optional, type)
-        - **Respondent Profile** (optional, paragraph): Brief context about the respondent.
-        - **Key Insights** (required, bullet list): Main insights from the interview.
-        - **Evidence Quotes** (required, bullet list): Direct quotes from the transcript that support the insights.
-        - **Opportunities** (required, bullet list): Opportunity areas or follow-up actions.
+        ## Adaptive goal
+        Infer the content type (meeting, interview, lecture, promo/ad, support call, technical discussion, media commentary, casual notes, or mixed) from the transcript itself. Then produce the most useful summary for that type — maximize signal, minimize boilerplate.
+
+        ## Output rules
+        1) Write in the source language of the transcript (or the user's preferred language if clearly implied).
+        2) Use markdown headings (`##`) only for user-facing sections you include.
+        3) Do NOT output role/persona/meta instructions.
+        4) Prefer concrete facts, claims, offers, numbers, names, dates, and commitments over vague adjectives.
+        5) Include short evidence quotes only when they materially support a key point.
+        6) Omit any section that would be empty or speculative.
+        7) Keep the summary compact but information-dense.
+
+        ## Suggested sections (include only what fits the content)
+        - **Overview** (required, short paragraph): What this session is about and why it matters.
+        - **Key Points** (required, bullets): The highest-value takeaways a busy reader would want first.
+        - **Details & Facts** (optional, bullets): Specifics — products, offers, prices, dates, places, technical constraints, evidence.
+        - **Decisions & Actions** (optional, bullets): Explicit decisions, commitments, next steps, owners/due dates if stated.
+        - **Notable Quotes** (optional, bullets): A few high-signal lines with brief context.
+        - **Open Questions / Risks** (optional, bullets): Unresolved questions, risks, or follow-ups implied by the source.
+
+        Choose section set and ordering dynamically so a meeting, a class lecture, and a short promo each feel correctly summarized — not forced into an interview template.
         """,
         isFallback: true,
-        categoryCode: "research.interview"
+        categoryCode: "general"
     )
 
-    /// Local Studio temporarily supports only the catalog fallback template.
+    /// Local Studio temporarily supports only the general adaptive template.
     static var locallySupported: [SummaryTemplateDefinition] {
-        [interviewNotes]
+        [generalSummary]
     }
 }
 
@@ -47,7 +66,7 @@ enum SummaryTemplateCatalogError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .signInRequired:
-            return "Sign in and connect to the network to load summary templates."
+            return "Sign in at voxstudio.me to use custom summary templates."
         case .networkUnavailable:
             return "Network is unavailable. Connect to load summary templates."
         case .emptyCatalog:
@@ -68,10 +87,10 @@ actor SummaryTemplateCatalog {
     private var cachedAt: Date?
 
     func locallySupportedTemplate() -> SummaryTemplateDefinition {
-        .interviewNotes
+        .generalSummary
     }
 
-    /// Requires network. When authenticated, prefer the remote fallback template; otherwise fail with sign-in guidance.
+    /// Requires network + sign-in. Local Studio currently does not apply remote custom templates.
     func fetchSupportedTemplates(
         isSignedIn: Bool,
         authToken: String?
@@ -90,10 +109,8 @@ actor SummaryTemplateCatalog {
         } catch SummaryTemplateCatalogError.signInRequired {
             throw SummaryTemplateCatalogError.signInRequired
         } catch {
-            // Remote catalog is preferred when online, but the seeded fallback
-            // remains usable so every completed local session can still summarize.
             Log.project.warning(
-                "summary template fetch failed: \(error.localizedDescription); using bundled fallback"
+                "summary template fetch failed: \(error.localizedDescription); using bundled general template"
             )
             return SummaryTemplateDefinition.locallySupported
         }
@@ -102,12 +119,8 @@ actor SummaryTemplateCatalog {
     private func filterLocallySupported(
         _ templates: [SummaryTemplateDefinition]
     ) -> [SummaryTemplateDefinition] {
-        let allowed = Set(SummaryTemplateDefinition.locallySupported.map(\.id))
-        let matched = templates.filter { allowed.contains($0.id) || $0.isFallback }
-        if let fallback = matched.first(where: { $0.id == SummaryTemplateDefinition.interviewNotesFallbackID })
-            ?? matched.first(where: \.isFallback) {
-            return [fallback]
-        }
+        // Prefer local general template; remote catalog is informational until custom templates ship.
+        _ = templates
         return SummaryTemplateDefinition.locallySupported
     }
 
@@ -191,7 +204,7 @@ actor SummaryTemplateCatalog {
                             name: template.name ?? "Template",
                             description: template.description ?? "",
                             userEdition: template.userEdition
-                                ?? SummaryTemplateDefinition.interviewNotes.userEdition,
+                                ?? SummaryTemplateDefinition.generalSummary.userEdition,
                             isFallback: template.isFallback ?? false,
                             categoryCode: template.categoryCode
                         )
@@ -208,7 +221,7 @@ actor SummaryTemplateCatalog {
                     name: template.name ?? "Template",
                     description: template.description ?? "",
                     userEdition: template.userEdition
-                        ?? SummaryTemplateDefinition.interviewNotes.userEdition,
+                        ?? SummaryTemplateDefinition.generalSummary.userEdition,
                     isFallback: template.isFallback ?? false,
                     categoryCode: template.categoryCode
                 )

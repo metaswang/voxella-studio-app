@@ -24,41 +24,49 @@ struct ClipRangeControl: View {
                 .buttonStyle(.plain)
                 .disabled(duration <= 0)
 
-                GeometryReader { geo in
-                    let width = max(geo.size.width, 1)
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(AppTheme.Background.raisedColor)
-                        Capsule()
-                            .fill(Color.indigo.opacity(0.35))
-                            .frame(width: max(2, width * CGFloat((range.upperBound - range.lowerBound) / max(duration, 0.001))))
-                            .offset(x: width * CGFloat(range.lowerBound / max(duration, 0.001)))
-                        handle(at: range.lowerBound, width: width) { value in
-                            let clamped = min(max(0, value), range.upperBound - 0.25)
-                            range = clamped...range.upperBound
-                        }
-                        handle(at: range.upperBound, width: width) { value in
-                            let clamped = max(min(duration, value), range.lowerBound + 0.25)
-                            range = range.lowerBound...clamped
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                let seconds = Double(value.location.x / width) * duration
-                                let mid = (range.lowerBound + range.upperBound) / 2
-                                let half = (range.upperBound - range.lowerBound) / 2
-                                if abs(seconds - range.lowerBound) < abs(seconds - range.upperBound) {
-                                    range = min(max(0, seconds), range.upperBound - 0.25)...range.upperBound
-                                } else if abs(seconds - range.upperBound) <= abs(seconds - mid) {
-                                    range = range.lowerBound...max(min(duration, seconds), range.lowerBound + 0.25)
-                                } else {
-                                    let start = min(max(0, seconds - half), duration - 2 * half)
-                                    range = start...(start + 2 * half)
-                                }
+                SwiftUI.TimelineView(.periodic(from: .now, by: AppTheme.Workbench.playerRefreshInterval)) { _ in
+                    GeometryReader { geo in
+                        let width = max(geo.size.width, 1)
+                        let timelineDuration = max(duration, 0.001)
+                        let rawPlayhead = player?.currentTime().seconds ?? range.lowerBound
+                        let playhead = rawPlayhead.isFinite
+                            ? min(max(0, rawPlayhead), duration)
+                            : range.lowerBound
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(AppTheme.Background.raisedColor)
+                            Capsule()
+                                .fill(Color.indigo.opacity(0.35))
+                                .frame(width: max(2, width * CGFloat((range.upperBound - range.lowerBound) / timelineDuration)))
+                                .offset(x: width * CGFloat(range.lowerBound / timelineDuration))
+                            playbackMarker(at: playhead, width: width)
+                            handle(at: range.lowerBound, width: width) { value in
+                                let clamped = min(max(0, value), range.upperBound - 0.25)
+                                range = clamped...range.upperBound
                             }
-                    )
+                            handle(at: range.upperBound, width: width) { value in
+                                let clamped = max(min(duration, value), range.lowerBound + 0.25)
+                                range = range.lowerBound...clamped
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in
+                                    let seconds = Double(value.location.x / width) * duration
+                                    let mid = (range.lowerBound + range.upperBound) / 2
+                                    let half = (range.upperBound - range.lowerBound) / 2
+                                    if abs(seconds - range.lowerBound) < abs(seconds - range.upperBound) {
+                                        range = min(max(0, seconds), range.upperBound - 0.25)...range.upperBound
+                                    } else if abs(seconds - range.upperBound) <= abs(seconds - mid) {
+                                        range = range.lowerBound...max(min(duration, seconds), range.lowerBound + 0.25)
+                                    } else {
+                                        let start = min(max(0, seconds - half), duration - 2 * half)
+                                        range = start...(start + 2 * half)
+                                    }
+                                }
+                        )
+                    }
                 }
                 .frame(height: 28)
             }
@@ -89,6 +97,21 @@ struct ClipRangeControl: View {
                         onDrag(Double(value.location.x / max(width, 1)) * duration)
                     }
             )
+    }
+
+    private func playbackMarker(at seconds: Double, width: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Circle()
+                .fill(AppTheme.Accent.primary)
+                .frame(width: AppTheme.Spacing.smMd, height: AppTheme.Spacing.smMd)
+            Rectangle()
+                .fill(AppTheme.Accent.primary)
+                .frame(width: AppTheme.BorderWidth.medium, height: AppTheme.Spacing.lgXl)
+        }
+        .frame(width: AppTheme.Spacing.md, height: AppTheme.Spacing.xxl)
+        .offset(x: width * CGFloat(seconds / max(duration, 0.001)) - AppTheme.Spacing.md / 2)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private func loadDuration() async {

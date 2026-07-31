@@ -707,6 +707,7 @@ final class WorkbenchStore {
     var transcriptionAdmissionError: String?
     private var audioPlayer: AVAudioPlayer?
     private var flowTasks: [UUID: Task<Void, Never>] = [:]
+    private var summaryTaskIDs: Set<UUID> = []
     /// FIFO of transcription job IDs waiting for the single local ASR slot.
     private var pendingTranscriptionQueue: [UUID] = []
     private var activeQueuedTranscriptionID: UUID?
@@ -807,6 +808,11 @@ final class WorkbenchStore {
         guard sessions.contains(where: { $0.id == id }) else { return }
         selectedSessionID = id
         route = .session
+        guard let job = transcriptions.first(where: { $0.id == id }),
+              job.state == .completed,
+              job.summaryMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
+              job.summaryState == nil else { return }
+        Task { await enrichCompletedTranscription(id) }
     }
 
     func showRecentSessions() {
@@ -1761,7 +1767,18 @@ final class WorkbenchStore {
 
     /// Auto title + template summary after transcription, aligned with postprocess finalize → digest → template summary.
     private func enrichCompletedTranscription(_ id: UUID) async {
-        guard LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing) else { return }
+        guard summaryTaskIDs.insert(id).inserted else { return }
+        defer { summaryTaskIDs.remove(id) }
+
+        guard LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing) else {
+            updateTranscription(id) {
+                $0.summaryState = .failed
+                $0.summaryErrorMessage = LLMConfigurationError.noConfiguredModel(
+                    .subtitleProcessing
+                ).localizedDescription
+            }
+            return
+        }
         guard let job = transcriptions.first(where: { $0.id == id }),
               let transcript = job.result ?? job.sourceTimedResult else { return }
         let transcriptText = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
