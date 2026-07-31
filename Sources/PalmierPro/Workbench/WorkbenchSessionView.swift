@@ -127,9 +127,14 @@ struct WorkbenchSessionDetailView: View {
     @Bindable private var store = WorkbenchStore.shared
     @State private var selectedTrack = SessionPlaybackTrack.original
     @State private var selectedTab = SessionDetailTab.transcript
+    /// `nil` means Original; otherwise a translation language code.
+    @State private var transcriptLanguageCode: String?
+    @State private var subtitleLanguageCode: String?
     @State private var isRenamingTitle = false
     @State private var showTranslateSheet = false
     @State private var showDubOptionsSheet = false
+    @State private var showTemplateSheet = false
+    @State private var templatePromptMessage: String?
 
     var body: some View {
         Group {
@@ -188,20 +193,62 @@ struct WorkbenchSessionDetailView: View {
                 )
             }
         }
+        .sheet(isPresented: $showTemplateSheet) {
+            if let session = store.selectedSession {
+                SessionTemplateSheet(
+                    session: session,
+                    promptMessage: templatePromptMessage,
+                    onCancel: {
+                        showTemplateSheet = false
+                        templatePromptMessage = nil
+                    },
+                    onApply: { template in
+                        showTemplateSheet = false
+                        templatePromptMessage = nil
+                        guard let transcriptionID = session.transcriptionID else { return }
+                        store.updateTranscription(transcriptionID) {
+                            $0.summaryTemplateID = template.id
+                            $0.summaryTemplateName = template.name
+                        }
+                        store.regenerateSummary(forTranscription: transcriptionID)
+                    }
+                )
+            }
+        }
     }
 
     private func sessionView(_ session: WorkbenchSession) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
                 sessionHeader(session)
-                SessionMediaPlayer(
-                    URL: selectedTrack == .dub ? session.outputURL : session.sourceURL,
-                    track: selectedTrack,
-                    allowsTrackSelection: session.sourceURL != nil && session.outputURL != nil,
-                    onSelectTrack: { selectedTrack = $0 }
-                )
-                tabBar(session)
-                sessionContent(session)
+                HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                        SessionMediaPlayer(
+                            URL: selectedTrack == .dub ? session.outputURL : session.sourceURL,
+                            track: selectedTrack,
+                            allowsTrackSelection: session.sourceURL != nil && session.outputURL != nil,
+                            showsFilename: false,
+                            onSelectTrack: { selectedTrack = $0 }
+                        )
+                        SessionSummaryPanel(
+                            session: session,
+                            onOpenTemplate: {
+                                presentTemplateSheet(for: session)
+                            },
+                            onRegenerate: {
+                                guard let transcriptionID = session.transcriptionID else { return }
+                                store.regenerateSummary(forTranscription: transcriptionID)
+                            }
+                        )
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                        tabBar(session)
+                        sessionContent(session)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .padding(AppTheme.Spacing.xxl)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -217,6 +264,10 @@ struct WorkbenchSessionDetailView: View {
         .onAppear {
             selectedTrack = session.sourceURL == nil && session.outputURL != nil ? .dub : .original
             selectedTab = availableTabs(session).first ?? .transcript
+            syncLanguageSelections(session)
+        }
+        .onChange(of: session.id) { _, _ in
+            syncLanguageSelections(session)
         }
     }
 
@@ -256,9 +307,13 @@ struct WorkbenchSessionDetailView: View {
                     }
                 }
                 HStack(spacing: AppTheme.Spacing.md) {
-                    Label(session.modifiedAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
                     if let duration = session.duration {
-                        Label(formatTime(duration), systemImage: "clock.arrow.circlepath")
+                        Label(formatTime(duration), systemImage: "clock")
+                    }
+                    Label(session.createdAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                    if let filename = session.originalFilename {
+                        Label(filename, systemImage: "doc")
+                            .lineLimit(1)
                     }
                     Label("Stored on this Mac", systemImage: "lock.shield")
                 }
@@ -309,19 +364,7 @@ struct WorkbenchSessionDetailView: View {
     private func tabBar(_ session: WorkbenchSession) -> some View {
         HStack(spacing: AppTheme.Spacing.xlXxl) {
             ForEach(availableTabs(session)) { tab in
-                Button {
-                    selectedTab = tab
-                } label: {
-                    VStack(spacing: AppTheme.Spacing.sm) {
-                        Text(tab.title)
-                            .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
-                        Rectangle()
-                            .fill(selectedTab == tab ? AppTheme.Accent.primary : Color.clear)
-                            .frame(height: AppTheme.BorderWidth.thick)
-                    }
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(selectedTab == tab ? AppTheme.Text.primaryColor : AppTheme.Text.tertiaryColor)
+                compositeTabButton(tab, session: session)
             }
             Spacer()
             if session.transcriptionID != nil {
@@ -343,23 +386,80 @@ struct WorkbenchSessionDetailView: View {
     }
 
     @ViewBuilder
+    private func compositeTabButton(_ tab: SessionDetailTab, session: WorkbenchSession) -> some View {
+        let isActive = selectedTab == tab
+        let languageCode = tab == .transcript ? transcriptLanguageCode : subtitleLanguageCode
+        let hasTranslations = !session.translationTracks.isEmpty
+
+        VStack(spacing: AppTheme.Spacing.sm) {
+            HStack(spacing: AppTheme.Spacing.xs) {
+                Button {
+                    selectedTab = tab
+                } label: {
+                    Text(tab.title)
+                        .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
+                }
+                .buttonStyle(.plain)
+
+                if hasTranslations {
+                    Menu {
+                        Button("Original") {
+                            selectedTab = tab
+                            setLanguage(nil, for: tab, session: session)
+                        }
+                        Divider()
+                        ForEach(session.translationTracks) { track in
+                            Button {
+                                selectedTab = tab
+                                setLanguage(track.languageCode, for: tab, session: session)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text(track.displayLanguageLabel)
+                                        Text("\(track.track.cues.count) cues")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    if languageCode?.caseInsensitiveCompare(track.languageCode) == .orderedSame {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: AppTheme.Spacing.xxs) {
+                            if let languageCode {
+                                Text(WorkbenchLanguageLabel.compact(languageCode))
+                                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                                    .foregroundStyle(AppTheme.Accent.primary)
+                            }
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.semibold))
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                }
+            }
+            .foregroundStyle(isActive ? AppTheme.Text.primaryColor : AppTheme.Text.tertiaryColor)
+
+            Rectangle()
+                .fill(isActive ? AppTheme.Accent.primary : Color.clear)
+                .frame(height: AppTheme.BorderWidth.thick)
+        }
+    }
+
+    @ViewBuilder
     private func sessionContent(_ session: WorkbenchSession) -> some View {
         switch selectedTab {
         case .transcript:
-            let segments = (transcriptResult(for: session)?.aggregatingSegments().segments ?? []).map(SessionTextSegment.init)
+            let segments = (transcriptResult(for: session)?.aggregatingSegments().segments ?? [])
+                .map(SessionTextSegment.init)
             SessionSegmentList(segments: segments, emptyText: "No timed transcript is available for this track.")
         case .subtitles:
-            let track = selectedTrack == .dub
-                ? session.dubSubtitleTrack
-                : session.subtitleTrack
+            let track = subtitleTrack(for: session)
             SessionSegmentList(
                 segments: (track?.cues ?? []).map(SessionTextSegment.init),
                 emptyText: "No subtitle track is available."
-            )
-        case .translation:
-            SessionSegmentList(
-                segments: (session.translationTrack?.cues ?? []).map(SessionTextSegment.init),
-                emptyText: "No translated subtitle track is available."
             )
         }
     }
@@ -383,21 +483,79 @@ struct WorkbenchSessionDetailView: View {
             )
         }
 
-        // The transcript tab is the aggregated, corrected view. The subtitle
-        // tab intentionally keeps each cue boundary.
+        if let languageCode = transcriptLanguageCode,
+           let translation = session.translationTracks.first(where: {
+               $0.languageCode.caseInsensitiveCompare(languageCode) == .orderedSame
+           }) {
+            return translation.track.asTranscriptionResult().aggregatingSegments()
+        }
+
         return session.subtitleTrack?
             .asTranscriptionResult(preservingWords: session.transcript?.words ?? [])
             ?? session.transcript
     }
 
+    private func subtitleTrack(for session: WorkbenchSession) -> SubtitleTrack? {
+        if selectedTrack == .dub {
+            return session.dubSubtitleTrack
+        }
+        if let languageCode = subtitleLanguageCode,
+           let translation = session.translationTracks.first(where: {
+               $0.languageCode.caseInsensitiveCompare(languageCode) == .orderedSame
+           }) {
+            return translation.track
+        }
+        return session.subtitleTrack
+    }
+
     private func availableTabs(_ session: WorkbenchSession) -> [SessionDetailTab] {
         var tabs: [SessionDetailTab] = []
-        if session.transcript != nil || session.dubTranscript != nil || !session.dubSegments.isEmpty {
+        if session.transcript != nil || session.dubTranscript != nil || !session.dubSegments.isEmpty
+            || session.subtitleTrack != nil {
             tabs.append(.transcript)
         }
-        if session.subtitleTrack != nil || session.dubSubtitleTrack != nil { tabs.append(.subtitles) }
-        if session.translationTrack != nil { tabs.append(.translation) }
+        if session.subtitleTrack != nil || session.dubSubtitleTrack != nil
+            || !session.translationTracks.isEmpty {
+            tabs.append(.subtitles)
+        }
         return tabs.isEmpty ? [.transcript] : tabs
+    }
+
+    private func setLanguage(_ code: String?, for tab: SessionDetailTab, session: WorkbenchSession) {
+        switch tab {
+        case .transcript:
+            transcriptLanguageCode = code
+        case .subtitles:
+            subtitleLanguageCode = code
+        }
+        if let code, let transcriptionID = session.transcriptionID {
+            store.selectTranslationLanguage(code, forTranscription: transcriptionID)
+        }
+    }
+
+    private func syncLanguageSelections(_ session: WorkbenchSession) {
+        let selected = session.selectedTranslationLanguageCode
+        if let selected,
+           session.translationTracks.contains(where: {
+               $0.languageCode.caseInsensitiveCompare(selected) == .orderedSame
+           }) {
+            transcriptLanguageCode = selected
+            subtitleLanguageCode = selected
+        } else {
+            transcriptLanguageCode = nil
+            subtitleLanguageCode = nil
+        }
+    }
+
+    private func presentTemplateSheet(for session: WorkbenchSession) {
+        let account = AccountService.shared
+        guard account.isSignedIn else {
+            templatePromptMessage = "Sign in and connect to the network to load summary templates. Local Studio does not support custom templates."
+            showTemplateSheet = true
+            return
+        }
+        templatePromptMessage = nil
+        showTemplateSheet = true
     }
 
     private func openWorkflow(_ session: WorkbenchSession) {
@@ -431,7 +589,6 @@ private enum SessionPlaybackTrack: String, CaseIterable, Identifiable {
 private enum SessionDetailTab: String, Identifiable {
     case transcript
     case subtitles
-    case translation
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
@@ -641,6 +798,7 @@ private struct SessionMediaPlayer: View {
     let URL: URL?
     let track: SessionPlaybackTrack
     let allowsTrackSelection: Bool
+    var showsFilename = true
     let onSelectTrack: (SessionPlaybackTrack) -> Void
 
     @State private var player: AVPlayer?
@@ -664,10 +822,12 @@ private struct SessionMediaPlayer: View {
                         .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
                 }
                 Spacer()
-                Text(URL?.lastPathComponent ?? "Media unavailable")
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Text.mutedColor)
-                    .lineLimit(1)
+                if showsFilename {
+                    Text(URL?.lastPathComponent ?? "Media unavailable")
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                        .lineLimit(1)
+                }
             }
 
             SwiftUI.TimelineView(
@@ -871,6 +1031,199 @@ private struct SessionStatusBadge: View {
         case .running, .cancelling: "arrow.trianglehead.2.clockwise.rotate.90"
         case .ready: "circle"
         case .cancelled: "xmark.circle"
+        }
+    }
+}
+
+private struct SessionSummaryPanel: View {
+    let session: WorkbenchSession
+    let onOpenTemplate: () -> Void
+    let onRegenerate: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            HStack(spacing: AppTheme.Spacing.md) {
+                Text("Summary")
+                    .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
+                Spacer()
+                if session.summaryMarkdown != nil {
+                    Button(action: onRegenerate) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Regenerate summary")
+                }
+                Button("My Template", systemImage: "doc.text", action: onOpenTemplate)
+                    .buttonStyle(.bordered)
+            }
+
+            if session.summaryState == .running {
+                ProgressView("Generating summary…")
+                    .controlSize(.small)
+            } else if let markdown = session.summaryMarkdown, !markdown.isEmpty {
+                ScrollView {
+                    Text(markdown)
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(minHeight: AppTheme.Workbench.emptyStateMinHeight / 2, maxHeight: 280)
+            } else if let error = session.summaryErrorMessage {
+                Text(error)
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Status.errorColor)
+            } else {
+                Text("Summary will generate automatically after transcription when an LLM is configured.")
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+            }
+        }
+        .padding(AppTheme.Spacing.lgXl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+        }
+    }
+}
+
+private struct SessionTemplateSheet: View {
+    let session: WorkbenchSession
+    let promptMessage: String?
+    let onCancel: () -> Void
+    let onApply: (SummaryTemplateDefinition) -> Void
+
+    @State private var templates: [SummaryTemplateDefinition] = SummaryTemplateDefinition.locallySupported
+    @State private var selectedID = SummaryTemplateDefinition.interviewNotesFallbackID
+    @State private var loadError: String?
+    @State private var isLoading = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            Text("My Template")
+                .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.semibold))
+            Text("Choose a template and edit requirement before applying")
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+
+            if let promptMessage {
+                Text(promptMessage)
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Status.warningColor)
+            }
+
+            if isLoading {
+                ProgressView("Loading templates…")
+            } else if let loadError {
+                Text(loadError)
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Status.errorColor)
+            }
+
+            HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    Text("Templates")
+                        .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                    ForEach(templates) { template in
+                        Button {
+                            selectedID = template.id
+                        } label: {
+                            HStack {
+                                Image(systemName: "doc.text")
+                                Text(template.name)
+                                Spacer()
+                                if selectedID == template.id {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            .padding(AppTheme.Spacing.smMd)
+                            .background(
+                                selectedID == template.id
+                                    ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.soft)
+                                    : Color.clear,
+                                in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Text("Local Studio currently supports only the general fallback template.")
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                }
+                .frame(width: 220, alignment: .leading)
+
+                if let selected = templates.first(where: { $0.id == selectedID }) ?? templates.first {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
+                        Text("Name")
+                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                        Text(selected.name)
+                            .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
+                        Text("Summary requirement")
+                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                        ScrollView {
+                            Text(selected.userEdition)
+                                .font(.system(size: AppTheme.FontSize.sm))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                        .frame(minHeight: 220)
+                        .padding(AppTheme.Spacing.md)
+                        .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("Apply") {
+                    if let selected = templates.first(where: { $0.id == selectedID }) ?? templates.first {
+                        onApply(selected)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(templates.isEmpty)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(AppTheme.Spacing.xxl)
+        .frame(width: 720, height: 480)
+        .task { await loadTemplates() }
+    }
+
+    @MainActor
+    private func loadTemplates() async {
+        guard AccountService.shared.isSignedIn else {
+            templates = SummaryTemplateDefinition.locallySupported
+            selectedID = SummaryTemplateDefinition.interviewNotesFallbackID
+            return
+        }
+        isLoading = true
+        loadError = nil
+        defer { isLoading = false }
+        do {
+            let token: String? = {
+                if case .authenticated(let value) = AccountService.shared.authState {
+                    return value
+                }
+                return nil
+            }()
+            let remote = try await SummaryTemplateCatalog.shared.fetchSupportedTemplates(
+                isSignedIn: true,
+                authToken: token
+            )
+            templates = remote
+            selectedID = remote.first?.id ?? SummaryTemplateDefinition.interviewNotesFallbackID
+        } catch {
+            loadError = error.localizedDescription
+            templates = SummaryTemplateDefinition.locallySupported
+            selectedID = SummaryTemplateDefinition.interviewNotesFallbackID
         }
     }
 }

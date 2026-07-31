@@ -73,8 +73,8 @@ struct MediaFlowTests {
         #expect(requestCount == 2)
         let requests = await client.requests
         let firstRequest = try #require(requests.first)
-        #expect(firstRequest.system.contains("ASR correction, punctuation restoration, and subtitle segmentation"))
-        #expect(firstRequest.system.contains("Prefer phonetic plausibility, then the smallest necessary edit"))
+        #expect(firstRequest.system.contains("correction, punctuation restoration, and subtitle segmentation"))
+        #expect(firstRequest.system.contains("Phonetic plausibility first"))
         #expect(firstRequest.system.contains("Punctuation restoration and segmentation happen together"))
         #expect(firstRequest.system.contains("Never cross a known speaker boundary"))
         #expect(firstRequest.user.contains(#""minimumCharactersPerCue":24"#))

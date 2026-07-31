@@ -154,9 +154,19 @@ struct DubWorkbenchView: View {
                             Button("Source track") {
                                 store.useTranscript(transcript.id, forDub: job.id, track: .source)
                             }
-                            if transcript.translationTrack != nil {
-                                Button("Translation · \(transcript.translationTrack?.language ?? "target")") {
-                                    store.useTranscript(transcript.id, forDub: job.id, track: .translation)
+                            if !transcript.translationTracks.isEmpty {
+                                ForEach(transcript.translationTracks) { track in
+                                    Button("Translation · \(track.displayLanguageLabel)") {
+                                        store.selectTranslationLanguage(
+                                            track.languageCode,
+                                            forTranscription: transcript.id
+                                        )
+                                        store.useTranscript(
+                                            transcript.id,
+                                            forDub: job.id,
+                                            track: .translation
+                                        )
+                                    }
                                 }
                             }
                         }

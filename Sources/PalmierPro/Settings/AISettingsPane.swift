@@ -7,6 +7,7 @@ struct AISettingsPane: View {
     @State private var routeDrafts: [LLMUseCase: LLMModelRoute] = [:]
     @State private var APIKeyDraft = ""
     @State private var isSavingCredential = false
+    @State private var credentialAutosaveTask: Task<Void, Never>?
     @State private var providerPendingRemoval: LLMProviderProfile?
     @State private var statusMessage: String?
     @State private var statusIsError = false
@@ -177,17 +178,11 @@ struct AISettingsPane: View {
                     .focused($focusedField, equals: .defaultModel)
             }
 
-            HStack(spacing: AppTheme.Spacing.sm) {
-                Button("Save Provider", action: saveProvider)
-                    .buttonStyle(.capsule(.secondary, size: .regular))
-                    .disabled(providerValidationMessage != nil || !providerHasChanges)
-
-                if settings.providers.count > 1 {
-                    Button("Remove", role: .destructive) {
-                        providerPendingRemoval = selectedProvider
-                    }
-                    .buttonStyle(.capsule(.secondary, size: .regular))
+            if settings.providers.count > 1 {
+                Button("Remove", role: .destructive) {
+                    providerPendingRemoval = selectedProvider
                 }
+                .buttonStyle(.capsule(.secondary, size: .regular))
             }
 
             if let providerValidationMessage {
@@ -198,6 +193,9 @@ struct AISettingsPane: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .onChange(of: providerDraft) { _, _ in
+            persistProviderIfValid()
+        }
     }
 
     private var credentialEditor: some View {
@@ -223,16 +221,11 @@ struct AISettingsPane: View {
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: AppTheme.FontSize.sm, design: .monospaced))
                     .focused($focusedField, equals: .APIKey)
-                    .onSubmit(saveCredential)
-
-                Button("Save", action: saveCredential)
-                    .buttonStyle(.capsule(.prominent, size: .regular))
-                    .disabled(
-                        selectedProviderID == nil
-                            || APIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || providerValidationMessage != nil
-                            || isSavingCredential
-                    )
+                    .onSubmit { persistCredentialIfReady() }
+                    .onChange(of: APIKeyDraft) { _, _ in
+                        scheduleCredentialAutosave()
+                    }
+                    .disabled(isSavingCredential || selectedProviderID == nil)
 
                 if let provider = selectedProvider,
                    settings.hasAPIKey(for: provider.id) {
@@ -244,9 +237,14 @@ struct AISettingsPane: View {
                             )
                     }
                     .buttonStyle(.capsule(.secondary, size: .regular))
-                    .disabled(isSavingCredential || providerHasChanges)
+                    .disabled(isSavingCredential)
                     .help("Remove API key")
                 }
+            }
+        }
+        .onChange(of: focusedField) { _, field in
+            if field != .APIKey {
+                persistCredentialIfReady()
             }
         }
     }
@@ -317,17 +315,11 @@ struct AISettingsPane: View {
             }
             .font(.system(size: AppTheme.FontSize.sm))
 
-            HStack(spacing: AppTheme.Spacing.sm) {
-                Button("Save \(useCase.title)", action: { saveRoute(useCase) })
-                    .buttonStyle(.capsule(.secondary, size: .regular))
-                    .disabled(routeValidationMessage(for: useCase) != nil)
-
-                if let message = routeValidationMessage(for: useCase) {
-                    Label(message, systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Status.errorColor)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            if let message = routeValidationMessage(for: useCase) {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Status.errorColor)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -379,6 +371,7 @@ struct AISettingsPane: View {
     }
 
     private func selectProvider(_ id: UUID) {
+        credentialAutosaveTask?.cancel()
         guard let provider = settings.provider(id: id) else { return }
         selectedProviderID = id
         providerDraft = provider
@@ -386,35 +379,41 @@ struct AISettingsPane: View {
         statusMessage = nil
     }
 
-    private func saveProvider() {
+    private func persistProviderIfValid() {
+        guard providerHasChanges else { return }
+        guard providerValidationMessage == nil else { return }
         do {
             try settings.updateProvider(providerDraft)
             if let updated = settings.provider(id: providerDraft.id) {
                 providerDraft = updated
             }
-            focusedField = nil
-            statusIsError = false
-            statusMessage = "Provider saved."
+            if statusIsError {
+                statusIsError = false
+                statusMessage = nil
+            }
         } catch {
             statusIsError = true
             statusMessage = error.localizedDescription
         }
     }
 
-    private func saveCredential() {
-        guard let providerID = selectedProviderID else { return }
-        if providerHasChanges {
-            do {
-                try settings.updateProvider(providerDraft)
-                if let updated = settings.provider(id: providerDraft.id) {
-                    providerDraft = updated
-                }
-            } catch {
-                statusIsError = true
-                statusMessage = error.localizedDescription
-                return
-            }
+    private func scheduleCredentialAutosave() {
+        credentialAutosaveTask?.cancel()
+        let snapshot = APIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !snapshot.isEmpty else { return }
+        credentialAutosaveTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            guard APIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines) == snapshot else { return }
+            persistCredentialIfReady()
         }
+    }
+
+    private func persistCredentialIfReady() {
+        guard let providerID = selectedProviderID else { return }
+        guard !isSavingCredential else { return }
+        persistProviderIfValid()
+        if providerValidationMessage != nil { return }
         let key = APIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return }
         APIKeyDraft = ""
@@ -434,6 +433,8 @@ struct AISettingsPane: View {
 
     private func deleteCredential() {
         guard let providerID = selectedProviderID else { return }
+        credentialAutosaveTask?.cancel()
+        APIKeyDraft = ""
         isSavingCredential = true
         Task {
             defer { isSavingCredential = false }
@@ -473,7 +474,10 @@ struct AISettingsPane: View {
     private func routeBinding(for useCase: LLMUseCase) -> Binding<LLMModelRoute> {
         Binding(
             get: { routeDrafts[useCase] ?? settings.route(for: useCase) },
-            set: { routeDrafts[useCase] = $0 }
+            set: { next in
+                routeDrafts[useCase] = next
+                persistRouteIfValid(useCase)
+            }
         )
     }
 
@@ -489,6 +493,7 @@ struct AISettingsPane: View {
                     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                     .filter { !$0.isEmpty }
                 routeDrafts[useCase] = route
+                persistRouteIfValid(useCase)
             }
         )
     }
@@ -514,14 +519,16 @@ struct AISettingsPane: View {
         }
     }
 
-    private func saveRoute(_ useCase: LLMUseCase) {
+    private func persistRouteIfValid(_ useCase: LLMUseCase) {
+        guard routeValidationMessage(for: useCase) == nil else { return }
         do {
             let route = routeDrafts[useCase] ?? settings.route(for: useCase)
             try settings.updateRoute(route, for: useCase)
             routeDrafts[useCase] = settings.route(for: useCase)
-            focusedField = nil
-            statusIsError = false
-            statusMessage = "\(useCase.title) route saved."
+            if statusIsError {
+                statusIsError = false
+                statusMessage = nil
+            }
         } catch {
             statusIsError = true
             statusMessage = error.localizedDescription

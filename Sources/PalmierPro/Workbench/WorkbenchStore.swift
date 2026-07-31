@@ -110,6 +110,44 @@ enum WorkbenchTranscriptTrack: String, Codable, CaseIterable, Identifiable, Send
     var label: String { self == .source ? "Source" : "Translation" }
 }
 
+struct WorkbenchTranslationTrack: Codable, Identifiable, Equatable, Sendable {
+    var languageCode: String
+    var track: SubtitleTrack
+    var createdAt = Date()
+
+    var id: String { languageCode }
+
+    var compactLanguageLabel: String {
+        WorkbenchLanguageLabel.compact(languageCode)
+    }
+
+    var displayLanguageLabel: String {
+        WorkbenchLanguageLabel.display(languageCode)
+    }
+}
+
+enum WorkbenchLanguageLabel {
+    static func compact(_ code: String) -> String {
+        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return "—" }
+        let primary = normalized.split(separator: "-").first.map(String.init) ?? normalized
+        return primary.lowercased()
+    }
+
+    static func display(_ code: String) -> String {
+        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return "Unknown" }
+        if let name = Locale.current.localizedString(forIdentifier: normalized) {
+            return name
+        }
+        if let primary = normalized.split(separator: "-").first,
+           let name = Locale.current.localizedString(forLanguageCode: String(primary)) {
+            return name
+        }
+        return normalized
+    }
+}
+
 struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var id = UUID()
     var sourcePath: String
@@ -127,8 +165,17 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var useLLMSubtitleProcessing: Bool?
     var targetLanguageCode: String?
     var subtitleTrack: SubtitleTrack?
-    var translationTrack: SubtitleTrack?
+    /// Multi-target translation tracks for one source (aligned with postprocess translation tracks).
+    var translationTracks: [WorkbenchTranslationTrack] = []
+    var selectedTranslationLanguageCode: String?
     var selectedTrack: WorkbenchTranscriptTrack?
+    var summaryMarkdown: String?
+    var summaryTemplateID: String?
+    var summaryTemplateName: String?
+    var sessionTag: String?
+    var internalSummary: String?
+    var summaryState: WorkbenchJobState?
+    var summaryErrorMessage: String?
     var progress: Double = 0
     var progressMessage = "Ready to transcribe"
     var progressStage: LocalSpeechStage?
@@ -140,6 +187,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var errorMessage: String?
 
     var sourceURL: URL { URL(fileURLWithPath: sourcePath) }
+    var originalFilename: String { sourceURL.lastPathComponent }
     var displayName: String { sourceURL.deletingPathExtension().lastPathComponent }
     var sessionTitle: String {
         let trimmed = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -159,6 +207,42 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         let trimmed = targetLanguageCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
     }
+
+    var translationTrack: SubtitleTrack? {
+        get {
+            if let selectedTranslationLanguageCode,
+               let match = translationTracks.first(where: {
+                   $0.languageCode.caseInsensitiveCompare(selectedTranslationLanguageCode) == .orderedSame
+               }) {
+                return match.track
+            }
+            return translationTracks.first?.track
+        }
+        set {
+            guard let newValue else { return }
+            let code = (newValue.language ?? targetLanguageCode ?? "und")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            upsertTranslation(newValue, languageCode: code.isEmpty ? "und" : code)
+        }
+    }
+
+    mutating func upsertTranslation(_ track: SubtitleTrack, languageCode: String) {
+        let code = languageCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else { return }
+        var next = track
+        next.language = code
+        if let index = translationTracks.firstIndex(where: {
+            $0.languageCode.caseInsensitiveCompare(code) == .orderedSame
+        }) {
+            translationTracks[index].track = next
+            translationTracks[index].createdAt = Date()
+        } else {
+            translationTracks.append(WorkbenchTranslationTrack(languageCode: code, track: next))
+        }
+        selectedTranslationLanguageCode = code
+        targetLanguageCode = code
+    }
+
     var currentTrack: WorkbenchTranscriptTrack {
         if selectedTrack == .translation, translationTrack != nil { return .translation }
         return .source
@@ -179,7 +263,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         let values = (result?.words.compactMap(\.speaker) ?? [])
             + (result?.segments.compactMap(\.speaker) ?? [])
             + (subtitleTrack?.cues.compactMap(\.speaker) ?? [])
-            + (translationTrack?.cues.compactMap(\.speaker) ?? [])
+            + (translationTracks.flatMap { $0.track.cues.compactMap(\.speaker) })
         var seen: Set<String> = []
         return values.compactMap { value in
             let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -193,6 +277,193 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
 
     var isActivelyProcessing: Bool {
         state == .running || state == .cancelling
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, sourcePath, customTitle, createdAt, modifiedAt, state
+        case languageCode, speakerCount, clipStartMs, clipEndMs, batchID
+        case result, editedText, useLLMSubtitleProcessing, targetLanguageCode
+        case subtitleTrack, translationTrack, translationTracks
+        case selectedTranslationLanguageCode, selectedTrack
+        case summaryMarkdown, summaryTemplateID, summaryTemplateName
+        case sessionTag, internalSummary, summaryState, summaryErrorMessage
+        case progress, progressMessage, progressStage, flowProgressStage
+        case progressStep, progressCompleted, progressTotal
+        case diarizationDiagnostics, errorMessage
+    }
+
+    init(
+        id: UUID = UUID(),
+        sourcePath: String,
+        customTitle: String? = nil,
+        createdAt: Date = Date(),
+        modifiedAt: Date = Date(),
+        state: WorkbenchJobState = .ready,
+        languageCode: String? = nil,
+        speakerCount: SpeakerCountOption = .auto,
+        clipStartMs: Int? = nil,
+        clipEndMs: Int? = nil,
+        batchID: UUID? = nil,
+        result: TranscriptionResult? = nil,
+        editedText: String = "",
+        useLLMSubtitleProcessing: Bool? = nil,
+        targetLanguageCode: String? = nil,
+        subtitleTrack: SubtitleTrack? = nil,
+        translationTracks: [WorkbenchTranslationTrack] = [],
+        selectedTranslationLanguageCode: String? = nil,
+        selectedTrack: WorkbenchTranscriptTrack? = nil,
+        summaryMarkdown: String? = nil,
+        summaryTemplateID: String? = nil,
+        summaryTemplateName: String? = nil,
+        sessionTag: String? = nil,
+        internalSummary: String? = nil,
+        summaryState: WorkbenchJobState? = nil,
+        summaryErrorMessage: String? = nil,
+        progress: Double = 0,
+        progressMessage: String = "Ready to transcribe",
+        progressStage: LocalSpeechStage? = nil,
+        flowProgressStage: MediaFlowStage? = nil,
+        progressStep: String? = nil,
+        progressCompleted: Int? = nil,
+        progressTotal: Int? = nil,
+        diarizationDiagnostics: DiarizationDiagnostics? = nil,
+        errorMessage: String? = nil
+    ) {
+        self.id = id
+        self.sourcePath = sourcePath
+        self.customTitle = customTitle
+        self.createdAt = createdAt
+        self.modifiedAt = modifiedAt
+        self.state = state
+        self.languageCode = languageCode
+        self.speakerCount = speakerCount
+        self.clipStartMs = clipStartMs
+        self.clipEndMs = clipEndMs
+        self.batchID = batchID
+        self.result = result
+        self.editedText = editedText
+        self.useLLMSubtitleProcessing = useLLMSubtitleProcessing
+        self.targetLanguageCode = targetLanguageCode
+        self.subtitleTrack = subtitleTrack
+        self.translationTracks = translationTracks
+        self.selectedTranslationLanguageCode = selectedTranslationLanguageCode
+        self.selectedTrack = selectedTrack
+        self.summaryMarkdown = summaryMarkdown
+        self.summaryTemplateID = summaryTemplateID
+        self.summaryTemplateName = summaryTemplateName
+        self.sessionTag = sessionTag
+        self.internalSummary = internalSummary
+        self.summaryState = summaryState
+        self.summaryErrorMessage = summaryErrorMessage
+        self.progress = progress
+        self.progressMessage = progressMessage
+        self.progressStage = progressStage
+        self.flowProgressStage = flowProgressStage
+        self.progressStep = progressStep
+        self.progressCompleted = progressCompleted
+        self.progressTotal = progressTotal
+        self.diarizationDiagnostics = diarizationDiagnostics
+        self.errorMessage = errorMessage
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        sourcePath = try container.decode(String.self, forKey: .sourcePath)
+        customTitle = try container.decodeIfPresent(String.self, forKey: .customTitle)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? Date()
+        state = try container.decodeIfPresent(WorkbenchJobState.self, forKey: .state) ?? .ready
+        languageCode = try container.decodeIfPresent(String.self, forKey: .languageCode)
+        speakerCount = try container.decodeIfPresent(SpeakerCountOption.self, forKey: .speakerCount) ?? .auto
+        clipStartMs = try container.decodeIfPresent(Int.self, forKey: .clipStartMs)
+        clipEndMs = try container.decodeIfPresent(Int.self, forKey: .clipEndMs)
+        batchID = try container.decodeIfPresent(UUID.self, forKey: .batchID)
+        result = try container.decodeIfPresent(TranscriptionResult.self, forKey: .result)
+        editedText = try container.decodeIfPresent(String.self, forKey: .editedText) ?? ""
+        useLLMSubtitleProcessing = try container.decodeIfPresent(Bool.self, forKey: .useLLMSubtitleProcessing)
+        targetLanguageCode = try container.decodeIfPresent(String.self, forKey: .targetLanguageCode)
+        subtitleTrack = try container.decodeIfPresent(SubtitleTrack.self, forKey: .subtitleTrack)
+        translationTracks = try container.decodeIfPresent(
+            [WorkbenchTranslationTrack].self,
+            forKey: .translationTracks
+        ) ?? []
+        if translationTracks.isEmpty,
+           let legacy = try container.decodeIfPresent(SubtitleTrack.self, forKey: .translationTrack) {
+            let code = (legacy.language ?? targetLanguageCode ?? "und")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            translationTracks = [
+                WorkbenchTranslationTrack(
+                    languageCode: code.isEmpty ? "und" : code,
+                    track: legacy
+                ),
+            ]
+        }
+        selectedTranslationLanguageCode = try container.decodeIfPresent(
+            String.self,
+            forKey: .selectedTranslationLanguageCode
+        ) ?? translationTracks.first?.languageCode
+        selectedTrack = try container.decodeIfPresent(WorkbenchTranscriptTrack.self, forKey: .selectedTrack)
+        summaryMarkdown = try container.decodeIfPresent(String.self, forKey: .summaryMarkdown)
+        summaryTemplateID = try container.decodeIfPresent(String.self, forKey: .summaryTemplateID)
+        summaryTemplateName = try container.decodeIfPresent(String.self, forKey: .summaryTemplateName)
+        sessionTag = try container.decodeIfPresent(String.self, forKey: .sessionTag)
+        internalSummary = try container.decodeIfPresent(String.self, forKey: .internalSummary)
+        summaryState = try container.decodeIfPresent(WorkbenchJobState.self, forKey: .summaryState)
+        summaryErrorMessage = try container.decodeIfPresent(String.self, forKey: .summaryErrorMessage)
+        progress = try container.decodeIfPresent(Double.self, forKey: .progress) ?? 0
+        progressMessage = try container.decodeIfPresent(String.self, forKey: .progressMessage)
+            ?? "Ready to transcribe"
+        progressStage = try container.decodeIfPresent(LocalSpeechStage.self, forKey: .progressStage)
+        flowProgressStage = try container.decodeIfPresent(MediaFlowStage.self, forKey: .flowProgressStage)
+        progressStep = try container.decodeIfPresent(String.self, forKey: .progressStep)
+        progressCompleted = try container.decodeIfPresent(Int.self, forKey: .progressCompleted)
+        progressTotal = try container.decodeIfPresent(Int.self, forKey: .progressTotal)
+        diarizationDiagnostics = try container.decodeIfPresent(
+            DiarizationDiagnostics.self,
+            forKey: .diarizationDiagnostics
+        )
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(sourcePath, forKey: .sourcePath)
+        try container.encodeIfPresent(customTitle, forKey: .customTitle)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(modifiedAt, forKey: .modifiedAt)
+        try container.encode(state, forKey: .state)
+        try container.encodeIfPresent(languageCode, forKey: .languageCode)
+        try container.encode(speakerCount, forKey: .speakerCount)
+        try container.encodeIfPresent(clipStartMs, forKey: .clipStartMs)
+        try container.encodeIfPresent(clipEndMs, forKey: .clipEndMs)
+        try container.encodeIfPresent(batchID, forKey: .batchID)
+        try container.encodeIfPresent(result, forKey: .result)
+        try container.encode(editedText, forKey: .editedText)
+        try container.encodeIfPresent(useLLMSubtitleProcessing, forKey: .useLLMSubtitleProcessing)
+        try container.encodeIfPresent(targetLanguageCode, forKey: .targetLanguageCode)
+        try container.encodeIfPresent(subtitleTrack, forKey: .subtitleTrack)
+        try container.encode(translationTracks, forKey: .translationTracks)
+        try container.encodeIfPresent(translationTrack, forKey: .translationTrack)
+        try container.encodeIfPresent(selectedTranslationLanguageCode, forKey: .selectedTranslationLanguageCode)
+        try container.encodeIfPresent(selectedTrack, forKey: .selectedTrack)
+        try container.encodeIfPresent(summaryMarkdown, forKey: .summaryMarkdown)
+        try container.encodeIfPresent(summaryTemplateID, forKey: .summaryTemplateID)
+        try container.encodeIfPresent(summaryTemplateName, forKey: .summaryTemplateName)
+        try container.encodeIfPresent(sessionTag, forKey: .sessionTag)
+        try container.encodeIfPresent(internalSummary, forKey: .internalSummary)
+        try container.encodeIfPresent(summaryState, forKey: .summaryState)
+        try container.encodeIfPresent(summaryErrorMessage, forKey: .summaryErrorMessage)
+        try container.encode(progress, forKey: .progress)
+        try container.encode(progressMessage, forKey: .progressMessage)
+        try container.encodeIfPresent(progressStage, forKey: .progressStage)
+        try container.encodeIfPresent(flowProgressStage, forKey: .flowProgressStage)
+        try container.encodeIfPresent(progressStep, forKey: .progressStep)
+        try container.encodeIfPresent(progressCompleted, forKey: .progressCompleted)
+        try container.encodeIfPresent(progressTotal, forKey: .progressTotal)
+        try container.encodeIfPresent(diarizationDiagnostics, forKey: .diarizationDiagnostics)
+        try container.encodeIfPresent(errorMessage, forKey: .errorMessage)
     }
 }
 
@@ -286,10 +557,30 @@ struct WorkbenchSession: Identifiable, Sendable {
     var outputURL: URL?
     var transcript: TranscriptionResult?
     var subtitleTrack: SubtitleTrack?
-    var translationTrack: SubtitleTrack?
+    var translationTracks: [WorkbenchTranslationTrack]
+    var selectedTranslationLanguageCode: String?
+    var summaryMarkdown: String?
+    var summaryTemplateName: String?
+    var summaryState: WorkbenchJobState?
+    var summaryErrorMessage: String?
+    var sessionTag: String?
     var dubTranscript: TranscriptionResult?
     var dubSubtitleTrack: SubtitleTrack?
     var dubSegments: [DubRenderedSegment]
+
+    var originalFilename: String? {
+        sourceURL?.lastPathComponent
+    }
+
+    var translationTrack: SubtitleTrack? {
+        if let selectedTranslationLanguageCode,
+           let match = translationTracks.first(where: {
+               $0.languageCode.caseInsensitiveCompare(selectedTranslationLanguageCode) == .orderedSame
+           }) {
+            return match.track
+        }
+        return translationTracks.first?.track
+    }
 
     var duration: Double? {
         let transcriptEnd = transcript?.segments.map(\.end).max()
@@ -301,7 +592,7 @@ struct WorkbenchSession: Identifiable, Sendable {
 }
 
 private struct WorkbenchSnapshot: Codable, Sendable {
-    var schemaVersion: Int? = 4
+    var schemaVersion: Int? = 5
     var transcriptions: [WorkbenchTranscriptionJob]
     var dubs: [WorkbenchDubJob]
 }
@@ -461,7 +752,13 @@ final class WorkbenchStore {
                 outputURL: dub?.outputURL,
                 transcript: job.displayedResult ?? job.result,
                 subtitleTrack: job.subtitleTrack,
-                translationTrack: job.translationTrack,
+                translationTracks: job.translationTracks,
+                selectedTranslationLanguageCode: job.selectedTranslationLanguageCode,
+                summaryMarkdown: job.summaryMarkdown,
+                summaryTemplateName: job.summaryTemplateName,
+                summaryState: job.summaryState,
+                summaryErrorMessage: job.summaryErrorMessage,
+                sessionTag: job.sessionTag,
                 dubTranscript: dub?.alignedTranscript,
                 dubSubtitleTrack: dub?.renderedSubtitleTrack,
                 dubSegments: dub?.renderedSegments ?? []
@@ -484,7 +781,13 @@ final class WorkbenchStore {
                 outputURL: job.outputURL,
                 transcript: nil,
                 subtitleTrack: nil,
-                translationTrack: nil,
+                translationTracks: [],
+                selectedTranslationLanguageCode: nil,
+                summaryMarkdown: nil,
+                summaryTemplateName: nil,
+                summaryState: nil,
+                summaryErrorMessage: nil,
+                sessionTag: nil,
                 dubTranscript: job.alignedTranscript,
                 dubSubtitleTrack: job.renderedSubtitleTrack,
                 dubSegments: job.renderedSegments ?? Self.fallbackDubSegments(for: job)
@@ -833,7 +1136,10 @@ final class WorkbenchStore {
         updateTranscription(id) { job in
             job.result = job.result?.assigningSpeaker(speaker, from: start, to: end)
             job.subtitleTrack = job.subtitleTrack?.assigningSpeaker(speaker, from: start, to: end)
-            job.translationTrack = job.translationTrack?.assigningSpeaker(speaker, from: start, to: end)
+            for index in job.translationTracks.indices {
+                job.translationTracks[index].track = job.translationTracks[index].track
+                    .assigningSpeaker(speaker, from: start, to: end)
+            }
         }
     }
 
@@ -841,7 +1147,10 @@ final class WorkbenchStore {
         updateTranscription(id) { job in
             job.result = job.result?.renamingSpeaker(current, to: replacement)
             job.subtitleTrack = job.subtitleTrack?.renamingSpeaker(current, to: replacement)
-            job.translationTrack = job.translationTrack?.renamingSpeaker(current, to: replacement)
+            for index in job.translationTracks.indices {
+                job.translationTracks[index].track = job.translationTracks[index].track
+                    .renamingSpeaker(current, to: replacement)
+            }
         }
     }
 
@@ -872,16 +1181,27 @@ final class WorkbenchStore {
         transcriptions[index].progressCompleted = nil
         transcriptions[index].progressTotal = nil
         transcriptions[index].subtitleTrack = nil
-        transcriptions[index].translationTrack = nil
+        transcriptions[index].translationTracks = []
+        transcriptions[index].selectedTranslationLanguageCode = nil
         transcriptions[index].selectedTrack = .source
+        transcriptions[index].summaryMarkdown = nil
+        transcriptions[index].summaryTemplateID = nil
+        transcriptions[index].summaryTemplateName = nil
+        transcriptions[index].sessionTag = nil
+        transcriptions[index].internalSummary = nil
+        transcriptions[index].summaryState = nil
+        transcriptions[index].summaryErrorMessage = nil
         transcriptions[index].errorMessage = nil
         save()
 
         let task = Task { [weak self] in
             guard let self else { return }
+            var releasedSlot = false
             defer {
                 flowTasks[id] = nil
-                finishTranscriptionSlot(id)
+                if !releasedSlot {
+                    finishTranscriptionSlot(id)
+                }
             }
             _ = await LLMSettingsStore.shared.credentialAvailable()
             let hasSubtitleModel = LLMSettingsStore.shared.hasConfiguredModel(
@@ -921,7 +1241,16 @@ final class WorkbenchStore {
                     $0.errorMessage = nil
                     $0.progressMessage = "Cancelled — ready to retry"
                 }
+                return
             }
+            guard let job = transcriptions.first(where: { $0.id == id }),
+                  job.state == .completed else { return }
+
+            // Free the local ASR slot before title/summary LLM enrichment.
+            flowTasks[id] = nil
+            finishTranscriptionSlot(id)
+            releasedSlot = true
+            await enrichCompletedTranscription(id)
         }
         flowTasks[id] = task
     }
@@ -1245,14 +1574,97 @@ final class WorkbenchStore {
             }
 
         case .artifact(.translation(let track)):
-            updateTranscription(jobID) {
-                $0.translationTrack = track
-                $0.selectedTrack = .translation
+            updateTranscription(jobID) { job in
+                let code = (track.language ?? job.targetLanguageCode ?? "und")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                job.upsertTranslation(track, languageCode: code.isEmpty ? "und" : code)
+                job.selectedTrack = .translation
             }
 
         case .artifact(.alignment), .artifact(.dub):
             break
         }
+    }
+
+    /// Auto title + template summary after transcription, aligned with postprocess finalize → digest → template summary.
+    private func enrichCompletedTranscription(_ id: UUID) async {
+        guard LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing) else { return }
+        guard let job = transcriptions.first(where: { $0.id == id }),
+              let transcript = job.result ?? job.sourceTimedResult else { return }
+        let transcriptText = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcriptText.isEmpty else { return }
+
+        updateTranscription(id) {
+            $0.summaryState = .running
+            $0.summaryErrorMessage = nil
+            $0.progressMessage = "Generating title and summary…"
+        }
+
+        do {
+            let route = try await LLMSettingsStore.shared.runtimeRoute(for: .subtitleProcessing)
+            let client = ResilientLLMTextClient(route: route)
+            let metadata = try await SessionTitleLLMProcessor(client: client).generate(
+                transcriptText: transcriptText,
+                sourceLanguage: transcript.language ?? job.languageCode,
+                existingTitle: job.customTitle
+            )
+
+            let shouldApplyTitle = (job.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+            updateTranscription(id) {
+                if shouldApplyTitle {
+                    $0.customTitle = metadata.title
+                }
+                $0.sessionTag = metadata.tagText
+                $0.internalSummary = metadata.internalSummary
+            }
+
+            let template = await SummaryTemplateCatalog.shared.locallySupportedTemplate()
+            let lines = TemplateSummaryLLMProcessor.transcriptLines(
+                from: job.subtitleTrack?
+                    .asTranscriptionResult(preservingWords: transcript.words)
+                    .aggregatingSegments()
+                    ?? transcript.aggregatingSegments()
+            )
+            let markdown = try await TemplateSummaryLLMProcessor(client: client).synthesize(
+                template: template,
+                transcriptLines: lines,
+                title: shouldApplyTitle ? metadata.title : job.sessionTitle,
+                tagText: metadata.tagText,
+                sourceLanguage: transcript.language ?? job.languageCode,
+                internalSummary: metadata.internalSummary
+            )
+            updateTranscription(id) {
+                $0.summaryMarkdown = markdown
+                $0.summaryTemplateID = template.id
+                $0.summaryTemplateName = template.name
+                $0.summaryState = .completed
+                $0.summaryErrorMessage = nil
+                $0.progressMessage = $0.translationTracks.isEmpty
+                    ? "Transcript and summary ready"
+                    : "Transcript, translation, and summary ready"
+            }
+        } catch {
+            updateTranscription(id) {
+                $0.summaryState = .failed
+                $0.summaryErrorMessage = error.localizedDescription
+                $0.progressMessage = "Transcript ready — summary unavailable"
+            }
+            Log.project.warning("session enrichment failed: \(error.localizedDescription)")
+        }
+    }
+
+    func selectTranslationLanguage(_ languageCode: String, forTranscription id: UUID) {
+        updateTranscription(id) { job in
+            guard job.translationTracks.contains(where: {
+                $0.languageCode.caseInsensitiveCompare(languageCode) == .orderedSame
+            }) else { return }
+            job.selectedTranslationLanguageCode = languageCode
+            job.selectedTrack = .translation
+        }
+    }
+
+    func regenerateSummary(forTranscription id: UUID) {
+        Task { await enrichCompletedTranscription(id) }
     }
 
     private func consumeDubEvent(
