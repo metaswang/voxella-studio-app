@@ -48,7 +48,13 @@ struct HomeView: View {
         case .videoEditor:
             VideoEditorLauncherView()
         case .session:
-            WorkbenchSessionDetailView()
+            if store.selectedSession != nil {
+                WorkbenchSessionDetailView()
+            } else {
+                // Orphaned session route (e.g. after relaunch) — show Recent list.
+                RecentSessionsView()
+                    .onAppear { store.showRecentSessions() }
+            }
         }
     }
 }
@@ -221,6 +227,8 @@ private struct WorkbenchSidebar: View {
 
     private func select(_ route: WorkbenchRoute) {
         switch route {
+        case .recent:
+            store.showRecentSessions()
         case .transcribe:
             // Match web: Transcription nav opens the entry workspace, not a job list.
             store.selectedTranscriptionID = nil

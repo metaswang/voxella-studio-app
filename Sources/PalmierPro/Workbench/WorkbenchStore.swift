@@ -716,8 +716,10 @@ final class WorkbenchStore {
     private var saveRevision = 0
 
     private init() {
-        route = UserDefaults.standard.string(forKey: Self.routeDefaultsKey)
-            .flatMap(WorkbenchRoute.init(rawValue:)) ?? .dashboard
+        let storedRoute = UserDefaults.standard.string(forKey: Self.routeDefaultsKey)
+            .flatMap(WorkbenchRoute.init(rawValue:))
+        // Session detail requires an in-memory selection. Restore Recent when none exists.
+        route = (storedRoute == .session ? .recent : storedRoute) ?? .recent
         persistence = WorkbenchPersistence(URL: Self.snapshotURL)
         Task { await hydrate() }
     }
@@ -805,6 +807,11 @@ final class WorkbenchStore {
         guard sessions.contains(where: { $0.id == id }) else { return }
         selectedSessionID = id
         route = .session
+    }
+
+    func showRecentSessions() {
+        selectedSessionID = nil
+        route = .recent
     }
 
     func renameSession(_ id: UUID, to title: String) {
