@@ -1,0 +1,230 @@
+import Foundation
+import Testing
+@testable import PalmierPro
+
+private enum RoutedStubOutcome: Sendable {
+    case success(String)
+    case failure(LLMClientError)
+    case cancelled
+}
+
+private actor RoutedStubState {
+    private var outcomes: [String: [RoutedStubOutcome]]
+    private var attempts: [String: Int] = [:]
+
+    init(outcomes: [String: [RoutedStubOutcome]]) {
+        self.outcomes = outcomes
+    }
+
+    func complete(model: String) throws -> String {
+        attempts[model, default: 0] += 1
+        guard var queue = outcomes[model], !queue.isEmpty else {
+            throw LLMClientError.emptyResponse
+        }
+        let outcome = queue.removeFirst()
+        outcomes[model] = queue
+        switch outcome {
+        case .success(let value):
+            return value
+        case .failure(let error):
+            throw error
+        case .cancelled:
+            throw CancellationError()
+        }
+    }
+
+    func attemptCount(for model: String) -> Int {
+        attempts[model, default: 0]
+    }
+}
+
+private struct RoutedStubClient: LLMTextClient {
+    let model: String
+    let state: RoutedStubState
+
+    func complete(system: String, user: String) async throws -> String {
+        try await state.complete(model: model)
+    }
+}
+
+@Suite("LLM routing and resilience")
+struct LLMResilienceTests {
+    @Test @MainActor
+    func defaultRoutesUseSceneSpecificProviderPrefixedModels() throws {
+        let suiteName = "LLMResilienceTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = LLMSettingsStore(defaults: defaults)
+
+        #expect(settings.route(for: .translation).primaryModel == "openai/gpt-5.4-nano")
+        #expect(settings.route(for: .subtitleProcessing).primaryModel == "openai/gpt-5.4-nano")
+        #expect(settings.route(for: .chat).primaryModel == "minimax/MiniMax-M3")
+        #expect(Set(settings.providers.map(\.normalizedPrefix)) == ["openai", "minimax"])
+    }
+
+    @Test
+    func miniMaxM3DisablesThinkingAndSeparatesLegacyReasoning() {
+        let configuration = LLMRuntimeConfiguration(
+            profile: .defaultMiniMax,
+            modelIdentifier: "minimax/MiniMax-M3",
+            modelName: "MiniMax-M3",
+            endpoint: URL(string: "https://api.minimax.io/v1/chat/completions")!,
+            apiKey: "test-minimax"
+        )
+
+        #expect(configuration.openAICompatibleRequestOptions == .init(
+            reasoningSplit: true,
+            thinkingType: "disabled"
+        ))
+    }
+
+    @Test
+    func miniMaxM2KeepsThinkingSeparatedBecauseItCannotBeDisabled() {
+        var profile = LLMProviderProfile.defaultMiniMax
+        profile.model = "MiniMax-M2.7"
+        let configuration = LLMRuntimeConfiguration(
+            profile: profile,
+            modelIdentifier: "minimax/MiniMax-M2.7",
+            modelName: "MiniMax-M2.7",
+            endpoint: URL(string: "https://api.minimax.io/v1/chat/completions")!,
+            apiKey: "test-minimax"
+        )
+
+        #expect(configuration.openAICompatibleRequestOptions == .init(
+            reasoningSplit: true,
+            thinkingType: nil
+        ))
+    }
+
+    @Test @MainActor
+    func legacySingleProviderMigratesIntoMultiProviderRoutes() throws {
+        let suiteName = "LLMLegacyMigrationTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let legacyJSON = """
+        {
+          "provider": "openAICompatible",
+          "baseURL": "https://api.minimax.io/v1",
+          "model": "MiniMax-M3"
+        }
+        """
+        defaults.set(
+            try #require(legacyJSON.data(using: .utf8)),
+            forKey: "voxella.llm.provider-profile.v1"
+        )
+
+        let settings = LLMSettingsStore(defaults: defaults)
+
+        #expect(settings.providers.contains { $0.normalizedPrefix == "minimax" })
+        #expect(settings.providers.contains { $0.normalizedPrefix == "openai" })
+        #expect(
+            settings.route(for: .subtitleProcessing).modelChain.contains("minimax/MiniMax-M3")
+        )
+    }
+
+    @Test
+    func timeoutRetriesPrimaryThenFallsBackToNextProvider() async throws {
+        let state = RoutedStubState(outcomes: [
+            "openai/gpt-5.4-nano": [
+                .failure(.timeout),
+                .failure(.timeout),
+            ],
+            "minimax/MiniMax-M3": [
+                .success("fallback result"),
+            ],
+        ])
+        let client = ResilientLLMTextClient(
+            route: route(maximumAttempts: 2),
+            clientFactory: { configuration, _ in
+                RoutedStubClient(model: configuration.modelIdentifier, state: state)
+            },
+            sleeper: { _ in }
+        )
+
+        let result = try await client.complete(system: "system", user: "user")
+
+        #expect(result == "fallback result")
+        #expect(await state.attemptCount(for: "openai/gpt-5.4-nano") == 2)
+        #expect(await state.attemptCount(for: "minimax/MiniMax-M3") == 1)
+    }
+
+    @Test
+    func authenticationFailureSkipsSameModelRetryAndUsesFallback() async throws {
+        let state = RoutedStubState(outcomes: [
+            "openai/gpt-5.4-nano": [
+                .failure(.provider(
+                    status: 401,
+                    message: "invalid key",
+                    retryAfterSeconds: nil
+                )),
+            ],
+            "minimax/MiniMax-M3": [
+                .success("fallback result"),
+            ],
+        ])
+        let client = ResilientLLMTextClient(
+            route: route(maximumAttempts: 3),
+            clientFactory: { configuration, _ in
+                RoutedStubClient(model: configuration.modelIdentifier, state: state)
+            },
+            sleeper: { _ in }
+        )
+
+        let result = try await client.complete(system: "system", user: "user")
+
+        #expect(result == "fallback result")
+        #expect(await state.attemptCount(for: "openai/gpt-5.4-nano") == 1)
+        #expect(await state.attemptCount(for: "minimax/MiniMax-M3") == 1)
+    }
+
+    @Test
+    func cancellationNeverRetriesOrFallsBack() async {
+        let state = RoutedStubState(outcomes: [
+            "openai/gpt-5.4-nano": [.cancelled],
+            "minimax/MiniMax-M3": [.success("must not run")],
+        ])
+        let client = ResilientLLMTextClient(
+            route: route(maximumAttempts: 3),
+            clientFactory: { configuration, _ in
+                RoutedStubClient(model: configuration.modelIdentifier, state: state)
+            },
+            sleeper: { _ in }
+        )
+
+        await #expect(throws: CancellationError.self) {
+            try await client.complete(system: "system", user: "user")
+        }
+        #expect(await state.attemptCount(for: "openai/gpt-5.4-nano") == 1)
+        #expect(await state.attemptCount(for: "minimax/MiniMax-M3") == 0)
+    }
+
+    private func route(maximumAttempts: Int) -> LLMRuntimeRoute {
+        let openAI = LLMProviderProfile.defaultOpenAI
+        let miniMax = LLMProviderProfile.defaultMiniMax
+        return LLMRuntimeRoute(
+            useCase: .subtitleProcessing,
+            configurations: [
+                LLMRuntimeConfiguration(
+                    profile: openAI,
+                    modelIdentifier: "openai/gpt-5.4-nano",
+                    modelName: "gpt-5.4-nano",
+                    endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
+                    apiKey: "test-openai"
+                ),
+                LLMRuntimeConfiguration(
+                    profile: miniMax,
+                    modelIdentifier: "minimax/MiniMax-M3",
+                    modelName: "MiniMax-M3",
+                    endpoint: URL(string: "https://api.minimax.io/v1/chat/completions")!,
+                    apiKey: "test-minimax"
+                ),
+            ],
+            policy: LLMRequestPolicy(
+                timeoutSeconds: 600,
+                maximumAttemptsPerModel: maximumAttempts,
+                initialBackoffSeconds: 0
+            )
+        )
+    }
+}

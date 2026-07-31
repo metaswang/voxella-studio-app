@@ -4,74 +4,23 @@ import Observation
 @Observable
 @MainActor
 final class AgentService {
-
-    private var apiKey: String = ""
-    private var apiKeyObserver: NSObjectProtocol?
+    private let llmSettings = LLMSettingsStore.shared
 
     init() {
-        reloadAPIKey()
-        apiKeyObserver = NotificationCenter.default.addObserver(
-            forName: .anthropicAPIKeyChanged,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.reloadAPIKey()
-            }
-        }
+        llmSettings.refreshCredentialStatus()
     }
 
-    private func reloadAPIKey() {
-        Task { [weak self] in
-            let key = await Task.detached(priority: .utility) {
-                AnthropicKeychain.load() ?? ""
-            }.value
-            self?.apiKey = key
-        }
+    var hasApiKey: Bool { llmSettings.hasConfiguredModel(for: .chat) }
+
+    var canStream: Bool { hasApiKey }
+
+    var configuredModel: String {
+        llmSettings.route(for: .chat).primaryModel
     }
 
-    isolated deinit {
-        if let token = apiKeyObserver {
-            NotificationCenter.default.removeObserver(token)
-        }
-    }
-
-    var hasApiKey: Bool { !apiKey.isEmpty }
-
-    var canStream: Bool {
-        if hasApiKey { return true }
-        let account = AccountService.shared
-        return account.isSignedIn && account.hasCredits
-    }
-
-    var availableModels: [AnthropicModel] {
-        if hasApiKey { return AnthropicModel.allCases }
-        return [.sonnet5]
-    }
-
-    private func selectClient() -> (any AgentClient)? {
-        let chosen = effectiveModel
-        if hasApiKey { return AnthropicClient(apiKey: apiKey, model: chosen) }
-        if AccountService.shared.isSignedIn {
-            return PalmierClient(model: chosen)
-        }
-        return nil
-    }
-
-    var effectiveModel: AnthropicModel {
-        let available = availableModels
-        if available.contains(model) { return model }
-        return available.first ?? .sonnet5
-    }
-
-    var model: AnthropicModel = {
-        if let raw = UserDefaults.standard.string(forKey: "agentModel"),
-           let m = AnthropicModel(rawValue: raw) {
-            return m
-        }
-        return .sonnet5
-    }() {
-        didSet { UserDefaults.standard.set(model.rawValue, forKey: "agentModel") }
+    private func selectClient() async throws -> any AgentClient {
+        let route = try await llmSettings.runtimeRoute(for: .chat)
+        return OpenAICompatibleAgentClient(route: route)
     }
 
     var sessions: [ChatSession] = []
@@ -298,7 +247,9 @@ final class AgentService {
 
     func send(text: String, mentions: [AgentMention]) {
         guard canStream else {
-            streamError = .upstream("Sign in to a paid plan or add an Anthropic API key to start.")
+            streamError = .upstream(
+                "Configure the Chat model and its provider API key in Settings > AI."
+            )
             return
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -312,7 +263,7 @@ final class AgentService {
         )
         let analyticsPayload: [String: Any] = [
             "project_id": editor?.projectId ?? "unknown",
-            "model": effectiveModel.rawValue,
+            "model": configuredModel,
         ]
         if sessionActivation.activate() {
             Analytics.capture(.agentSessionStarted, properties: analyticsPayload)
@@ -353,8 +304,13 @@ final class AgentService {
     }
 
     private func runLoop() async {
-        guard let client = selectClient() else {
-            streamError = .upstream("No backend available.")
+        let client: any AgentClient
+        do {
+            client = try await selectClient()
+        } catch is CancellationError {
+            return
+        } catch {
+            streamError = .upstream(error.localizedDescription)
             return
         }
         await SkillStore.shared.reloadInBackground()

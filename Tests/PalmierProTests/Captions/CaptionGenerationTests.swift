@@ -112,6 +112,61 @@ private func mediaAsset(_ id: String, hasAudio: Bool = true) -> MediaAsset {
         #expect(spec.transform != nil)
         #expect(spec.words?.map(\.text) == ["hello", "world"])
     }
+
+    @Test func fittedTranscriptRetainsDenseWordsAtMediaTail() async throws {
+        let clip = Fixtures.clip(
+            id: "source",
+            mediaRef: "media",
+            mediaType: .audio,
+            start: 0,
+            duration: 1_797
+        )
+        let words = [
+            TranscriptionWord(text: "We", start: 58.08, end: 58.24),
+            TranscriptionWord(text: "have", start: 58.32, end: 58.40),
+            TranscriptionWord(text: "to", start: 58.40, end: 58.64),
+            TranscriptionWord(text: "fight", start: 58.80, end: 59.04),
+            TranscriptionWord(text: "for", start: 59.04, end: 59.28),
+            TranscriptionWord(text: "our", start: 59.28, end: 59.44),
+            TranscriptionWord(text: "people.", start: 59.44, end: 59.52),
+            TranscriptionWord(text: "We", start: 59.60, end: 59.76),
+            TranscriptionWord(text: "need", start: 59.84, end: 60.00),
+            TranscriptionWord(text: "to", start: 59.98, end: 60.00),
+            TranscriptionWord(text: "fight", start: 59.98, end: 60.00),
+            TranscriptionWord(text: "for", start: 59.98, end: 60.00),
+            TranscriptionWord(text: "our", start: 59.98, end: 60.00),
+            TranscriptionWord(text: "people.", start: 59.98, end: 60.00),
+        ]
+        let result = TranscriptionResult(
+            text: words.map(\.text).joined(separator: " "),
+            language: "en",
+            words: words,
+            segments: [
+                TranscriptionSegment(text: "We have to fight for our people.", start: 58.08, end: 59.52),
+                TranscriptionSegment(text: "We need to fight for our people.", start: 59.60, end: 60.00),
+            ]
+        ).fittingTimestamps(to: 59.9)
+        let input = CaptionSpecBuilder.Input(
+            targets: [.init(clip: clip, result: result)],
+            fps: 30,
+            canvasWidth: 1920,
+            canvasHeight: 1080,
+            style: TextStyle(),
+            center: CGPoint(x: 0.5, y: 0.8),
+            textCase: .auto,
+            maxWords: 7,
+            animation: nil
+        )
+
+        let specs = try await CaptionSpecBuilder.build(input)
+        let captionWords = specs.flatMap { $0.content.split(separator: " ").map(String.init) }
+        let timedWords = specs.flatMap { $0.words ?? [] }
+
+        #expect(captionWords == words.map(\.text))
+        #expect(timedWords.map(\.text) == words.map(\.text))
+        #expect(timedWords.allSatisfy { $0.endFrame > $0.startFrame })
+        #expect(specs.map { $0.startFrame + $0.durationFrames }.max() == 1_797)
+    }
 }
 
 @MainActor

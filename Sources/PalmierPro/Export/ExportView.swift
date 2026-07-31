@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 enum ExportDestination: String, CaseIterable, Identifiable {
     case video = "Video"
     case timeline = "Timeline"
-    case palmierProject = "Palmier Project"
+    case palmierProject = "Voxella Project"
 
     var id: String { rawValue }
 }
@@ -603,12 +603,12 @@ struct ExportView: View {
     private var exportFormat: ExportFormat {
         switch destination {
         case .timeline: timelineFormat.exportFormat
-        case .palmierProject: .xml   // Palmier Project has its own path; never rendered.
+        case .palmierProject: .xml   // Voxella Project has its own path; never rendered.
         case .video: codec.exportFormat
         }
     }
 
-    /// Quick estimate for exporting a Palmier Project
+    /// Quick estimate for exporting a Voxella Project
     private nonisolated static func computePalmierSummary(
         entries: [MediaManifestEntry],
         projectURL: URL?

@@ -44,9 +44,7 @@ enum CloudTranscription {
     }
 
     static func languageIdentifier(_ preferredLocale: Locale?) -> String? {
-        preferredLocale.flatMap { locale in
-            locale.language.languageCode?.identifier ?? locale.identifier(.bcp47)
-        }
+        TranscriptionLanguage.identifier(for: preferredLocale)
     }
 
     private static func transcriptionDuration(

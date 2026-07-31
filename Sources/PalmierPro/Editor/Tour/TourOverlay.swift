@@ -9,8 +9,6 @@ struct TourOverlay: View {
     private let bookendWidth: CGFloat = 600
     private let margin: CGFloat = AppTheme.Spacing.xlXxl
 
-    private static let docsURL = URL(string: "https://palmier.io/docs")!
-
     var body: some View {
         if let step = tour.currentStep {
             GeometryReader { geo in
@@ -155,11 +153,8 @@ struct TourOverlay: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             VStack(spacing: 0) {
-                linkRow("Skills", "book.closed.fill") { SettingsWindowController.shared.show(tab: .skills) }
-                linkRow("MCP Setup", "puzzlepiece.extension.fill") { HelpWindowController.shared.show(tab: .mcp) }
+                linkRow("Local Models", "shippingbox.fill") { LocalModelManager.shared.presentManager() }
                 linkRow("Keyboard Shortcuts", "keyboard") { HelpWindowController.shared.show(tab: .shortcuts) }
-                linkRow("Documentation", "book.fill") { NSWorkspace.shared.open(Self.docsURL, configuration: .init(), completionHandler: nil) }
-                linkRow("Settings", "gearshape.fill") { SettingsWindowController.shared.show() }
             }
             HStack {
                 Spacer()
@@ -183,7 +178,7 @@ struct TourOverlay: View {
                     .font(.system(size: AppTheme.FontSize.smMd))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                 Spacer()
-                Image(systemName: "arrow.up.right")
+                Image(systemName: "chevron.right")
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
             }

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Usage:
 #   scripts/bundle.sh [release|debug]           # ad-hoc signed dev build
-#   scripts/bundle.sh debug --fast              # fastest: skip dSYM + deep sign, just env+build
+#   scripts/bundle.sh debug --fast              # fastest: skip dSYM + deep sign
 #   scripts/bundle.sh release --sign            # build + Developer ID codesign
 #   scripts/bundle.sh release --dist            # build + sign + notarize + staple + DMG
 
@@ -21,81 +21,25 @@ done
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-ENV_FILE=".env"
-if [ "$CONFIG" = "release" ] && [ -f "$ROOT/.env.prod" ]; then
-  ENV_FILE=".env.prod"
-fi
-if [ -f "$ROOT/$ENV_FILE" ]; then
-  echo "==> Loading $ENV_FILE"
-  set -a
-  # shellcheck disable=SC1091
-  . "$ROOT/$ENV_FILE"
-  set +a
-fi
-
-SIGNING_IDENTITY="${SIGNING_IDENTITY:-Developer ID Application: Palmier, Inc. (MMFLRC7562)}"
-NOTARY_PROFILE="${NOTARY_PROFILE:-palmier-notary}"
-SENTRY_DSN="${SENTRY_DSN:-}"
-POSTHOG_PROJECT_TOKEN="${POSTHOG_PROJECT_TOKEN:-}"
-POSTHOG_HOST="${POSTHOG_HOST:-https://us.i.posthog.com}"
-PROVISION_PROFILE="${PROVISION_PROFILE:-$ROOT/scripts/Palmier_Pro_Developer_ID.provisionprofile}"
-ENTITLEMENTS="$ROOT/scripts/PalmierPro.entitlements"
-KEYCHAIN_ACCESS_GROUP="${KEYCHAIN_ACCESS_GROUP:-MMFLRC7562.io.palmier.pro}"
+SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 RESOURCES="$ROOT/Sources/PalmierPro/Resources"
-APP="$ROOT/.build/PalmierPro.app"
-ZIP="$ROOT/.build/PalmierPro.zip"
-DMG="$ROOT/.build/PalmierPro.dmg"
+APP="$ROOT/.build/Voxella Studio.app"
+ZIP="$ROOT/.build/Voxella-Studio.zip"
+DMG="$ROOT/.build/Voxella-Studio.dmg"
 
 echo "==> Building ($CONFIG)"
 TRAITS="BundledSpeech"
-if [ "$CONFIG" = "release" ]; then
-  TRAITS="$TRAITS,ProductionTelemetry"
-fi
 BUILD_ARGS=(-c "$CONFIG" --traits "$TRAITS")
 swift build "${BUILD_ARGS[@]}"
 BIN="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)/PalmierPro"
-SPARKLE_FW="$ROOT/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
-
 echo "==> Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
-cp "$BIN" "$APP/Contents/MacOS/PalmierPro"
+cp "$BIN" "$APP/Contents/MacOS/VoxellaStudio"
 cp "$RESOURCES/Info.plist" "$APP/Contents/Info.plist"
 
-if [ -n "$SENTRY_DSN" ]; then
-  echo "==> Injecting SentryDSN into Info.plist"
-  /usr/libexec/PlistBuddy -c "Delete :SentryDSN" "$APP/Contents/Info.plist" 2>/dev/null || true
-  /usr/libexec/PlistBuddy -c "Add :SentryDSN string $SENTRY_DSN" "$APP/Contents/Info.plist"
-else
-  echo "==> SENTRY_DSN not set — telemetry will be a no-op in this build"
-fi
-
-if [ -n "$POSTHOG_PROJECT_TOKEN" ]; then
-  echo "==> Injecting PostHog analytics config into Info.plist"
-  /usr/libexec/PlistBuddy -c "Delete :PostHogProjectToken" "$APP/Contents/Info.plist" 2>/dev/null || true
-  /usr/libexec/PlistBuddy -c "Add :PostHogProjectToken string $POSTHOG_PROJECT_TOKEN" "$APP/Contents/Info.plist"
-  /usr/libexec/PlistBuddy -c "Delete :PostHogHost" "$APP/Contents/Info.plist" 2>/dev/null || true
-  /usr/libexec/PlistBuddy -c "Add :PostHogHost string $POSTHOG_HOST" "$APP/Contents/Info.plist"
-else
-  echo "==> POSTHOG_PROJECT_TOKEN not set — product analytics will be a no-op in this build"
-fi
-
-inject_plist() {
-  local key="$1" value="$2"
-  if [ -z "$value" ]; then
-    echo "!! $key not set in $ENV_FILE — app will fatalError on launch" >&2
-    return
-  fi
-  /usr/libexec/PlistBuddy -c "Delete :$key" "$APP/Contents/Info.plist" 2>/dev/null || true
-  /usr/libexec/PlistBuddy -c "Add :$key string $value" "$APP/Contents/Info.plist"
-}
-
-echo "==> Injecting backend config into Info.plist"
-inject_plist PalmierClerkPublishableKey "${CLERK_PUBLISHABLE_KEY:-}"
-inject_plist PalmierConvexDeploymentURL "${CONVEX_DEPLOYMENT_URL:-}"
-inject_plist PalmierConvexHttpURL "${CONVEX_HTTP_URL:-}"
 cp "$RESOURCES/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
-cp -R "$SPARKLE_FW" "$APP/Contents/Frameworks/Sparkle.framework"
 
 # Flatten SwiftPM's resource bundle into the app's Resources tree.
 RES_BUNDLE="$(dirname "$BIN")/PalmierPro_PalmierPro.bundle"
@@ -106,18 +50,6 @@ else
   exit 1
 fi
 
-# Ensure the shipped Claude Desktop connector is always up to date with mcpb/ sources.
-MCPB_SRC="$ROOT/mcpb"
-MCPB_CHECKED_IN="$ROOT/Sources/PalmierPro/Resources/MCPB/palmier-pro.mcpb"
-MCPB_FRESH="$(mktemp -d)/palmier-pro.mcpb"
-(cd "$MCPB_SRC" && zip -q -X -r "$MCPB_FRESH" manifest.json icon.png server/index.js server/package.json)
-if ! unzip -p "$MCPB_CHECKED_IN" server/index.js 2>/dev/null | diff -q - <(unzip -p "$MCPB_FRESH" server/index.js) >/dev/null 2>&1 \
-  || ! unzip -p "$MCPB_CHECKED_IN" manifest.json 2>/dev/null | diff -q - <(unzip -p "$MCPB_FRESH" manifest.json) >/dev/null 2>&1; then
-  echo "==> refreshing checked-in palmier-pro.mcpb from mcpb/ sources"
-  cp "$MCPB_FRESH" "$MCPB_CHECKED_IN"
-fi
-cp "$MCPB_FRESH" "$APP/Contents/Resources/palmier-pro.mcpb"
-rm -rf "$(dirname "$MCPB_FRESH")"
 if [ -d "$RES_BUNDLE/Images" ]; then
   cp -R "$RES_BUNDLE/Images" "$APP/Contents/Resources/"
 fi
@@ -129,12 +61,6 @@ if [ -d "$RES_BUNDLE/Localization" ]; then
   done
 else
   echo "!! missing Localization/ in SwiftPM resource bundle at $RES_BUNDLE" >&2
-  exit 1
-fi
-if [ -d "$RES_BUNDLE/Changelog" ]; then
-  cp -R "$RES_BUNDLE/Changelog" "$APP/Contents/Resources/"
-else
-  echo "!! missing Changelog/ in SwiftPM resource bundle at $RES_BUNDLE" >&2
   exit 1
 fi
 if [ -d "$RES_BUNDLE/Models" ]; then
@@ -162,73 +88,37 @@ fi
 mkdir -p "$APP/Contents/Resources/mlx-swift_Cmlx.bundle"
 cp "$MLX_METALLIB" "$APP/Contents/Resources/mlx-swift_Cmlx.bundle/default.metallib"
 
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/PalmierPro"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/VoxellaStudio"
 touch "$APP"
 
 if [ "$MODE" = "fast" ]; then
-  echo "==> Codesigning main app with $SIGNING_IDENTITY (no timestamp, no helpers)"
-  codesign --force --sign "$SIGNING_IDENTITY" "$APP"
+  echo "==> Ad-hoc signing main app (no timestamp, no helpers)"
+  codesign --force --sign - "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
   echo "==> Done: $APP (fast mode — stable identity, no dSYM)"
   exit 0
 fi
 
-DSYM="$ROOT/.build/PalmierPro.dSYM"
+DSYM="$ROOT/.build/Voxella-Studio.dSYM"
 echo "==> Generating dSYM"
 rm -rf "$DSYM"
-dsymutil "$APP/Contents/MacOS/PalmierPro" -o "$DSYM"
-
-upload_dsyms() {
-  if [ -z "${SENTRY_AUTH_TOKEN:-}" ] || [ -z "${SENTRY_ORG:-}" ] || [ -z "${SENTRY_PROJECT:-}" ]; then
-    echo "==> Sentry creds not set — skipping dSYM upload"
-    return
-  fi
-  if ! command -v sentry-cli >/dev/null 2>&1; then
-    echo "!! sentry-cli not found in PATH — skipping dSYM upload"
-    return
-  fi
-  echo "==> Uploading dSYM to Sentry"
-  sentry-cli debug-files upload --include-sources "$DSYM" || echo "!! sentry-cli upload failed (continuing)"
-}
+dsymutil "$APP/Contents/MacOS/VoxellaStudio" -o "$DSYM"
 
 if [ "$MODE" = "dev" ]; then
   echo "==> Ad-hoc signing dev app"
   codesign --force --deep --sign - "$APP"
   codesign --verify --strict --verbose=2 "$APP"
-  upload_dsyms
   echo "==> Done: $APP (ad-hoc signed)"
   exit 0
 fi
 
-echo "==> Codesigning nested Sparkle helpers"
-SPARKLE_CURRENT="$APP/Contents/Frameworks/Sparkle.framework/Versions/Current"
-for helper in \
-    "$SPARKLE_CURRENT/Autoupdate" \
-    "$SPARKLE_CURRENT/Updater.app/Contents/MacOS/Updater" \
-    "$SPARKLE_CURRENT/Updater.app" \
-    "$SPARKLE_CURRENT/XPCServices/Downloader.xpc/Contents/MacOS/Downloader" \
-    "$SPARKLE_CURRENT/XPCServices/Downloader.xpc" \
-    "$SPARKLE_CURRENT/XPCServices/Installer.xpc/Contents/MacOS/Installer" \
-    "$SPARKLE_CURRENT/XPCServices/Installer.xpc"; do
-  [ -e "$helper" ] && codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$helper"
-done
-
-echo "==> Codesigning Sparkle framework"
-codesign --force --options runtime --timestamp \
-  --sign "$SIGNING_IDENTITY" \
-  "$APP/Contents/Frameworks/Sparkle.framework"
-
-echo "==> Embedding provisioning profile + keychain access group"
-if [ ! -f "$PROVISION_PROFILE" ]; then
-  echo "!! provisioning profile not found at $PROVISION_PROFILE" >&2
+if [ -z "$SIGNING_IDENTITY" ]; then
+  echo "!! SIGNING_IDENTITY is required for --sign or --dist" >&2
   exit 1
 fi
-cp "$PROVISION_PROFILE" "$APP/Contents/embedded.provisionprofile"
-inject_plist PalmierClerkKeychainAccessGroup "$KEYCHAIN_ACCESS_GROUP"
 
 echo "==> Codesigning main app"
 codesign --force --options runtime --timestamp \
-  --entitlements "$ENTITLEMENTS" \
   --sign "$SIGNING_IDENTITY" \
   "$APP"
 codesign --verify --strict --verbose=2 "$APP"
@@ -254,11 +144,11 @@ rm -f "$ZIP"
 echo "==> Building DMG"
 rm -f "$DMG"
 STAGING="$(mktemp -d)"
-cp -R "$APP" "$STAGING/PalmierPro.app"
+cp -R "$APP" "$STAGING/Voxella Studio.app"
 ln -s /Applications "$STAGING/Applications"
 cp "$RESOURCES/AppIcon.icns" "$STAGING/.VolumeIcon.icns"
 hdiutil create \
-  -volname "PalmierPro" \
+  -volname "Voxella Studio" \
   -srcfolder "$STAGING" \
   -ov -format UDZO \
   "$DMG"
@@ -275,21 +165,8 @@ xcrun notarytool submit "$DMG" \
 echo "==> Stapling DMG"
 xcrun stapler staple "$DMG"
 
-upload_dsyms
-
-echo "==> Signing DMG with Sparkle EdDSA key"
-SPARKLE_SIG="$("$ROOT/.build/artifacts/sparkle/Sparkle/bin/sign_update" "$DMG")"
-
 echo ""
 echo "==> Done"
 echo "   App: $APP"
 echo "   DMG: $DMG"
 echo ""
-echo "Sparkle signature for appcast entry:"
-echo "  $SPARKLE_SIG"
-echo ""
-echo "Add an <item> to appcast.xml with:"
-echo "  - version, shortVersionString from Info.plist"
-echo "  - url pointing at the GitHub Release download"
-echo "  - length=$(stat -f%z "$DMG")"
-echo "  - the sparkle:edSignature from above"

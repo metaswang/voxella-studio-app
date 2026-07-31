@@ -130,12 +130,6 @@ struct MediaTab: View {
             .layoutPriority(1)
             .onChange(of: searchQuery) { _, _ in scheduleMomentSearch() }
 
-            if editor.showGenerationPanel && !mediaAreaCollapsed {
-                GenerationView(maxPanelHeight: generationPanelMaxHeight)
-                    .frame(maxHeight: CGFloat(generationPanelMaxHeight), alignment: .bottom)
-                    .tourAnchor(.generation)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
         }
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.height
@@ -293,14 +287,9 @@ struct MediaTab: View {
     }
 
     private var actionsRow: some View {
-        let showGenerate = !AccountService.shared.isMisconfigured
         return HStack(spacing: AppTheme.Spacing.xs) {
             toolbarButton(title: "Import", systemImage: "plus", action: importMedia)
                 .tourAnchor(.importButton)
-            if showGenerate {
-                toolbarButton(title: "Generate", systemImage: "sparkles", filled: true, accentStyle: AnyShapeStyle(AppTheme.aiGradient), action: toggleGenerationPanel)
-                    .tourAnchor(.generateButton)
-            }
 
             overflowMenu
 
@@ -460,7 +449,7 @@ struct MediaTab: View {
     }
 
     private var showsEmptyState: Bool {
-        editor.mediaAssets.isEmpty && editor.folders.isEmpty && !editor.showGenerationPanel
+        editor.mediaAssets.isEmpty && editor.folders.isEmpty
     }
 
     // MARK: - Sort & Filter
@@ -621,18 +610,12 @@ struct MediaTab: View {
     }
 
     private var overflowMenu: some View {
-        let canOrganize = !AccountService.shared.isMisconfigured && !editor.mediaAssets.isEmpty
-        return toolbarMenuIcon(systemName: "ellipsis") {
+        toolbarMenuIcon(systemName: "ellipsis") {
             Button(action: createNewFolderInCurrent) {
                 Label("New Folder", systemImage: "folder.badge.plus")
             }
             Button { showMatteSheet = true } label: {
                 Label("Create Matte", systemImage: "square.fill")
-            }
-            if canOrganize {
-                Button(action: organizeWithAgent) {
-                    Label("Organize with Agent", systemImage: "wand.and.stars")
-                }
             }
         }
     }
@@ -645,14 +628,6 @@ struct MediaTab: View {
         Button(action: importMedia) {
             Label("Import Media…", systemImage: "square.and.arrow.down")
         }
-    }
-
-    private func organizeWithAgent() {
-        let folderHint = currentFolderId.map { _ in " Work within the current folder." } ?? ""
-        let service = editor.agentService
-        service.newChat()
-        service.draft = "Organize my media library. Review the assets, group related ones into clearly named folders, and give generically-named assets short descriptive names — inspect an asset when its name is unclear. Don't delete anything or change the timeline.\(folderHint)"
-        editor.agentPanelVisible = true
     }
 
     private func toolbarMenuIcon<Content: View>(

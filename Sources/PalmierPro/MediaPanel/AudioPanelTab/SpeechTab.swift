@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SpeechTab: View {
     @Environment(EditorViewModel.self) private var editor
+    @Bindable private var models = LocalModelManager.shared
 
     var body: some View {
         ZStack {
@@ -24,7 +25,7 @@ struct SpeechTab: View {
         EditorPanelGroup("Speakers") {
             InspectorRow(
                 label: "Mark Speakers",
-                labelHelp: "Tints waveforms by speaker. Voices are matched across clips using cloud transcripts.",
+                labelHelp: "Tints waveforms by speaker using local transcripts and on-device voice embeddings.",
                 onReset: { editor.markSpeakers = false }
             ) {
                 Toggle("", isOn: Binding(
@@ -37,10 +38,20 @@ struct SpeechTab: View {
                 .accessibilityLabel("Mark Speakers")
             }
             HStack(spacing: AppTheme.Spacing.sm) {
-                Button(editor.projectSpeakers.isEmpty ? "Identify Speakers" : "Refresh") { editor.identifySpeakers(transcribeMissing: true) }
+                if models.hasRequiredModels(for: .transcribe) {
+                    Button(editor.projectSpeakers.isEmpty ? "Identify Speakers" : "Refresh") {
+                        editor.identifySpeakers(transcribeMissing: true)
+                    }
                     .controlSize(.small)
                     .disabled(editor.speakerIdentifyInFlight)
-                    .help("Matches voices across clips, transcribing untranscribed timeline clips first (uses credits). Transcripts and voice fingerprints are cached, so re-runs are fast.")
+                    .help("Matches voices across clips on this Mac. Local transcripts and voice fingerprints are cached, so re-runs are fast.")
+                } else {
+                    Button("Download Local Models…") { models.presentManager() }
+                        .controlSize(.small)
+                    Text("Required for speaker detection")
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                }
             }
             if let error = editor.speakerIdentifyError {
                 Text(error)

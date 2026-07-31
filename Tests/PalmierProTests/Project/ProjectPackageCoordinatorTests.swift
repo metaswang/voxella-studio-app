@@ -81,7 +81,10 @@ struct ProjectPackageCoordinatorTests {
 
     @Test func nativeCloseWaitsForAcceptedMutationAndRejectsLateWork() async throws {
         let package = FileManager.default.temporaryDirectory
-            .appendingPathComponent("native-close-\(UUID().uuidString).palmier", isDirectory: true)
+            .appendingPathComponent(
+                "native-close-\(UUID().uuidString).\(Project.fileExtension)",
+                isDirectory: true
+            )
         defer { try? FileManager.default.removeItem(at: package) }
         let document = VideoProject()
         document.fileURL = package
@@ -106,7 +109,10 @@ struct ProjectPackageCoordinatorTests {
 
     @Test func admittedMediaWorkCommitsBeforeCloseSave() async throws {
         let package = FileManager.default.temporaryDirectory
-            .appendingPathComponent("admitted-work-\(UUID().uuidString).palmier", isDirectory: true)
+            .appendingPathComponent(
+                "admitted-work-\(UUID().uuidString).\(Project.fileExtension)",
+                isDirectory: true
+            )
         defer { try? FileManager.default.removeItem(at: package) }
         let document = VideoProject()
         document.fileURL = package

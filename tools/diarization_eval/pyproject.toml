@@ -1,0 +1,21 @@
+[project]
+name = "voxella-diarization-eval"
+version = "0.1.0"
+description = "Reproducible RTTM scoring for Voxella Studio diarization backends"
+requires-python = ">=3.11"
+dependencies = [
+  "pyannote.metrics==4.1.0",
+]
+
+[project.scripts]
+voxella-diarization-score = "voxella_diarization_eval.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/voxella_diarization_eval"]
+
+[tool.uv]
+package = true

@@ -293,10 +293,6 @@ struct InspectorView: View {
         }
         if !audios.isEmpty { tabs.append(.audio) }
         if selectedMulticamGroupId != nil { tabs.append(.multicam) }
-        if aiEditEligible(selection: selection, resolvedClipAsset: resolvedClipAsset)
-            && !AccountService.shared.isMisconfigured {
-            tabs.append(.ai)
-        }
         return tabs
     }
 
@@ -1007,18 +1003,7 @@ struct InspectorView: View {
 
     @ViewBuilder
     private func mediaAssetInspectorContent(_ asset: MediaAsset) -> some View {
-        if asset.type.isVisual && !AccountService.shared.isMisconfigured {
-            VStack(spacing: 0) {
-                assetTabBar([.details, .ai])
-                if preferredAssetTab == .ai {
-                    AIEditTab(asset: asset)
-                } else {
-                    assetDetailsContent(asset)
-                }
-            }
-        } else {
-            assetDetailsContent(asset)
-        }
+        assetDetailsContent(asset)
     }
 
     @ViewBuilder

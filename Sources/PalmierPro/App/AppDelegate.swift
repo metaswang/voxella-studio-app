@@ -1,5 +1,4 @@
 import AppKit
-import ClerkKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isTerminating = false
@@ -9,16 +8,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        // Start Sparkle updater
-        _ = Updater.shared
-
         HomeWindowController.shared.showWindow(nil)
         Task.detached(priority: .utility) {
             Project.ensureStorageDirectory()
         }
-
-        AppNotifications.configure()
-
         AppState.shared.startMCPService()
 
         // Pre-warm NSOpenPanel to avoid main thread blocking during cold start.
@@ -53,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if !MLXRuntime.beginTermination() {
                     await MLXRuntime.waitUntilIdle()
                 }
+                AppState.shared.stopMCPService()
                 sender.reply(toApplicationShouldTerminate: true)
             } catch {
                 projects.forEach { $0.editorViewModel.projectPackageCoordinator.cancelClosing() }
@@ -62,35 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         return .terminateLater
-    }
-
-    func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            Task { @MainActor in
-                do {
-                    let handled = try await Clerk.shared.handle(url)
-                    Log.account.notice(
-                        "auth callback \(handled ? "handled" : "ignored") url=\(Self.safeURLDescription(url))",
-                        telemetry: "Auth callback received",
-                        data: ["handled": handled, "url": Self.safeURLDescription(url)]
-                    )
-                } catch {
-                    Log.account.warning(
-                        "auth callback failed url=\(Self.safeURLDescription(url)) error=\(Log.detail(error))",
-                        telemetry: "Auth callback failed",
-                        data: ["error": error.localizedDescription, "url": Self.safeURLDescription(url)]
-                    )
-                }
-            }
-        }
-    }
-
-    private static func safeURLDescription(_ url: URL) -> String {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.path = url.path
-        return components.string ?? url.scheme ?? "unknown"
     }
 
     @MainActor
@@ -111,6 +76,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc func showKeyboardShortcuts(_ sender: Any?) {
         HelpWindowController.shared.show(tab: .shortcuts)
+    }
+
+    @MainActor
+    @objc func showLocalModels(_ sender: Any?) {
+        LocalModelManager.shared.presentManager()
     }
 
     @MainActor

@@ -138,34 +138,34 @@ struct AgentPanelView: View {
 
     @ViewBuilder
     private var modelPicker: some View {
-        if service.hasApiKey {
-            Menu {
-                ForEach(service.availableModels, id: \.self) { m in
-                    Button(m.displayName) { service.model = m }
-                }
-            } label: {
-                HStack(spacing: AppTheme.Spacing.xs) {
-                    Text(service.effectiveModel.displayName)
-                        .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
-                        .foregroundStyle(AppTheme.Text.secondaryColor)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: AppTheme.FontSize.micro, weight: .semibold))
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
-                }
+        Button {
+            SettingsWindowController.shared.show(tab: .ai)
+        } label: {
+            HStack(spacing: AppTheme.Spacing.xs) {
+                Text(service.configuredModel)
+                    .font(.system(
+                        size: AppTheme.FontSize.xs,
+                        weight: AppTheme.FontWeight.medium,
+                        design: .monospaced
+                    ))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                    .lineLimit(1)
+                Image(systemName: "gearshape")
+                    .font(.system(size: AppTheme.FontSize.micro))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
         }
+        .buttonStyle(.plain)
+        .help("Open AI model settings")
     }
 
     @ViewBuilder
     private var byokIndicator: some View {
         if service.hasApiKey {
-            Text("using API key")
+            Text("fallback enabled")
                 .font(.system(size: AppTheme.FontSize.xs).italic())
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
-                .help("Streaming through your Anthropic API key (BYOK)")
+                .help("Retries the selected model, then tries configured fallback models")
         }
     }
 
@@ -317,52 +317,20 @@ struct AgentPanelView: View {
 
     @ViewBuilder
     private var missingKeyState: some View {
-        let account = AccountService.shared
         VStack(spacing: AppTheme.Spacing.mdLg) {
             Button {
-                missingKeyPrimaryAction(account: account)
+                SettingsWindowController.shared.show(tab: .ai)
             } label: {
-                Label(missingKeyPrimaryLabel(account: account), systemImage: missingKeyPrimaryIcon(account: account))
+                Label("Configure Chat Model", systemImage: "sparkles")
                     .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
             }
             .buttonStyle(.capsule(.prominent, size: .regular))
 
-            if !account.isSignedIn {
-                Text("First-time sign-ups only")
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Text.mutedColor)
-            }
-
-            Button(action: { SettingsWindowController.shared.show(tab: .agent) }) {
-                Text("or use your own Anthropic key")
-                    .underline()
-                    .foregroundStyle(AppTheme.Text.secondaryColor)
-                    .padding(.horizontal, AppTheme.Spacing.sm)
-                    .padding(.vertical, AppTheme.Spacing.xxs)
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
-            .hoverHighlight(cornerRadius: AppTheme.Radius.sm)
-        }
-    }
-
-    private func missingKeyPrimaryLabel(account: AccountService) -> LocalizedStringKey {
-        if !account.isSignedIn { return "Log in for 250 free credits" }
-        if !account.isPaid { return "Subscribe" }
-        return "Open Settings"
-    }
-
-    private func missingKeyPrimaryIcon(account: AccountService) -> String {
-        if !account.isSignedIn { return "gift.fill" }
-        if !account.isPaid { return "sparkles" }
-        return "gearshape"
-    }
-
-    private func missingKeyPrimaryAction(account: AccountService) {
-        if !account.isSignedIn {
-            Task { await account.signInWithGoogle() }
-        } else {
-            SettingsWindowController.shared.show(tab: .account)
+            Text("Add a provider API key and select a provider/model route for AI editing chat.")
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

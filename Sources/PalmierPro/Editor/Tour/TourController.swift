@@ -132,33 +132,25 @@ final class TourController {
                      instruction: "This is where all your footage and assets live."),
             TourStep(kind: .spotlight(.element(.importButton)), title: "Import footage",
                      instruction: "Import your footage here, or drag and drop, or copy-paste, into the media panel."),
-            TourStep(kind: .spotlight(.element(.generateButton)), title: "Generate",
-                     instruction: "Click Generate to open the generation panel."),
-            TourStep(kind: .spotlight(.element(.generation)), title: "Generation panel",
-                     instruction: "Generate video, image, or audio with different models and settings. Drag assets from the media panel above into the reference frame."),
         ]
         // Only shown when the "Smart search" button is present (model not yet installed).
         if smartSearchAvailable(editor: editor) {
             steps.append(TourStep(kind: .spotlight(.element(.smartSearch)), title: "Smart search",
-                                  instruction: "Download a local model to index your media, so you or your agent can search any clips by describing them. The model runs on-device and nothing leaves your Mac."))
+                                  instruction: "Download a local model to index your media, then search clips by describing them. The model runs on-device and nothing leaves your Mac."))
         }
         steps += [
             TourStep(kind: .spotlight(.panel(.preview)), title: "Preview",
                      instruction: "This is your preview panel to play a selected media or the whole timeline."),
             TourStep(kind: .spotlight(.element(.screenshotButton)), title: "Screenshot a frame",
-                     instruction: "Take a screenshot of the preview and use it as a reference for generation. Particularly useful for creating AI transitions."),
+                     instruction: "Take a still image from the preview and add it to your local media library."),
             TourStep(kind: .spotlight(.panel(.inspector)), title: "Inspector",
                      instruction: "This is your inspector panel. Select a clip from the timeline to edit it."),
             TourStep(kind: .spotlight(.panel(.timeline)), title: "Timeline",
-                     instruction: "Your timeline: the top half is video, the bottom half is audio. This is where you edit. Right-click a clip for some cool AI features such as upscale, edit, or generate music."),
+                     instruction: "Your timeline: the top half is video, the bottom half is audio. This is where you trim, arrange, caption, and edit clips."),
             TourStep(kind: .spotlight(.element(.timelineRuler)), title: "Select a range",
-                     instruction: "This is the timeline ruler. Shift+drag on the ruler to select a range to render. You can pick any slot to AI edit or generate music that fits that range."),
-            TourStep(kind: .spotlight(.panel(.agent)), title: "AI agent",
-                     instruction: "Chat with your agent! It can generate content, edit clips, organize your assets, and much more. Start by signing in, or bring your own Anthropic API key."),
-            TourStep(kind: .spotlight(.element(.skillsButton)), title: "Skills",
-                     instruction: "Open Skills to browse community playbooks, create your own, or add them to other agents."),
+                     instruction: "This is the timeline ruler. Shift-drag on it to select a range for playback or export."),
             TourStep(kind: .outro, title: "You're all set",
-                     instruction: "Start creating, or explore these to get the most out of Palmier Pro."),
+                     instruction: "Start creating with Voxella Studio. Editing, transcription, captions, and dubbing stay on this Mac."),
         ]
         return steps
     }

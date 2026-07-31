@@ -349,7 +349,7 @@ final class AppState {
 
     func openProjectFromPanel() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [Self.projectContentType]
+        panel.allowedContentTypes = [Self.projectContentType, Self.legacyProjectContentType]
         panel.canChooseDirectories = false
         panel.treatsFilePackagesAsDirectories = false
         panel.allowsMultipleSelection = false
@@ -363,6 +363,12 @@ final class AppState {
     private static let projectContentType: UTType = {
         UTType(Project.typeIdentifier)
             ?? UTType(filenameExtension: Project.fileExtension, conformingTo: .package)
+            ?? .package
+    }()
+
+    private static let legacyProjectContentType: UTType = {
+        UTType(Project.legacyTypeIdentifier)
+            ?? UTType(filenameExtension: Project.legacyFileExtension, conformingTo: .package)
             ?? .package
     }()
 

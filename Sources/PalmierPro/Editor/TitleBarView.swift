@@ -14,7 +14,7 @@ struct TitleBarLeadingView: View {
                     .hoverHighlight()
             }
             .buttonStyle(.plain)
-            .help("Toggle Agent Panel")
+            .help("Toggle AI Editing Chat")
         }
     }
 }
@@ -30,8 +30,6 @@ struct TitleBarTrailingView: View {
 
         HStack(spacing: AppTheme.Spacing.sm) {
             Spacer(minLength: AppTheme.Spacing.zero)
-
-            UpdateProjectBadge()
 
             Button(action: { editor.showExportDialog = true }) {
                 HStack(spacing: AppTheme.Spacing.xs) {
@@ -60,7 +58,6 @@ struct TitleBarTrailingView: View {
                     : "Export, \(activeCount) active, \(waitingCount) waiting"
             )
 
-            UserAvatarButton()
         }
     }
 

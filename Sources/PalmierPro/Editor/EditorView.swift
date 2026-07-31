@@ -206,7 +206,7 @@ final class EditorSplitViewController: PaddedDividerSplitViewController {
         currentPreset = preset
         splitView.isVertical = true
 
-        // Preset layout lives in an inner VC so the agent can be a sibling column.
+        // The agent is a stable left column around the selected editor layout.
         let presetRoot = makeChildSplit(isVertical: false, autosave: SplitAutosave.preset(preset))
         switch preset {
         case .default:  buildDefaultLayout(into: presetRoot)

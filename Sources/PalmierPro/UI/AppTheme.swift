@@ -289,6 +289,7 @@ enum AppTheme {
         static let timelineBadgeMinWidth: CGFloat = 16
         static let timelineDotSize: CGFloat = 5
         static let updateOverlayWidth: CGFloat = 640
+        static let speakerEditorWidth: CGFloat = 320
     }
 
     enum Settings {
@@ -304,6 +305,10 @@ enum AppTheme {
         static let skillToastWidth: CGFloat = 380
         static let skillMenuWidth: CGFloat = 168
         static let skillToastDuration: Duration = .seconds(5)
+        static let fieldLabelWidth: CGFloat = 84
+        static let providerControlWidth: CGFloat = 220
+        static let endpointControlWidth: CGFloat = 360
+        static let providerListWidth: CGFloat = 152
     }
 
     enum EditorPanel {
@@ -330,6 +335,45 @@ enum AppTheme {
         static let projectTitlebarTrailingWidth: CGFloat = 280
         static let settingsDefault = NSSize(width: 1200, height: 800)
         static let settingsMin = NSSize(width: 860, height: 640)
+    }
+
+    enum Workbench {
+        static let sidebarCollapsedWidth: CGFloat = 64
+        static let sidebarExpandedWidth: CGFloat = 216
+        static let sidebarRowHeight: CGFloat = 38
+        static let toolbarHeight: CGFloat = 46
+        static let contentMaxWidth: CGFloat = 1180
+        /// Workbench forms and session workspaces use the available canvas
+        /// more fully than the dashboard's intentionally compact grid.
+        static let wideContentMaxWidth: CGFloat = 1640
+        static let composerMaxWidth: CGFloat = 1040
+        static let voiceRowMinHeight: CGFloat = 92
+        static let sessionHeaderMinHeight: CGFloat = 92
+        static let floatingPlayerWidth: CGFloat = 320
+        static let floatingPlayerHeight: CGFloat = 200
+        static let transcriptCardMinHeight: CGFloat = 76
+        static let filterWidth: CGFloat = 170
+        static let pickerWidth: CGFloat = 190
+        static let compactPanelWidth: CGFloat = 420
+        static let searchWidth: CGFloat = 260
+        static let revisionPickerWidth: CGFloat = 190
+        static let sessionIconSize: CGFloat = 44
+        static let emptyStateMinHeight: CGFloat = 260
+        static let waveformHeight: CGFloat = 54
+        static let waveformBarStep: CGFloat = 5
+        static let waveformBarSpacing: CGFloat = 2
+        static let waveformBarWidth: CGFloat = 3
+        static let waveformMinimumBarHeight: CGFloat = 3
+        static let waveformMinimumLoudness: CGFloat = 0.08
+        static let floatingPlayerHeaderHeight: CGFloat = 34
+        static let playerRefreshInterval: Double = 0.2
+        static let playerEndTolerance: Double = 0.05
+        static let playerTimescale: Int32 = 600
+        static let dubScriptMinHeight: CGFloat = 190
+        static let dubSegmentLabelWidth: CGFloat = 76
+        static let dubSegmentLineLimit = 4
+        static let segmentVoicePickerWidth: CGFloat = 210
+        static let voiceAssignmentWidth: CGFloat = 230
     }
 
     enum Caption {

@@ -68,18 +68,12 @@ extension EditorViewModel {
         syncSpeakerColors()
     }
 
-    /// `transcribeMissing` is the explicit button only — it costs credits; the auto-run stays cached-only.
+    /// `transcribeMissing` is the explicit button only; the automatic refresh stays cache-only.
     func identifySpeakers(transcribeMissing: Bool = false) {
         guard !speakerIdentifyInFlight else { return }
-        if transcribeMissing, !AccountService.shared.isSignedIn {
-            speakerIdentifyError = "Sign in to use Cloud transcription."
-            return
-        }
-        speakerIdentifyPhase = transcribeMissing ? "Transcribing…" : "Identifying…"
+        speakerIdentifyPhase = transcribeMissing ? "Transcribing locally…" : "Identifying…"
         speakerIdentifyError = nil
-        let projectId = self.projectId
         let assets = mediaAssets.filter { $0.type == .audio || ($0.type == .video && $0.hasAudio) }
-        // Cloud transcripts cache under the transcribed source range; mirror the transcript tool's math.
         let rate = Double(max(1, timeline.fps))
         var rangesByRef: [String: ClosedRange<Double>] = [:]
         for clip in captionTargets(ids: []) {
@@ -95,16 +89,20 @@ extension EditorViewModel {
         Task { [weak self] in
             var files: [(mediaRef: String, url: URL, turns: [SpeakerIdentity.Turn])] = []
             for asset in assets {
-                var found = await TranscriptCache.shared.cachedCloudTranscript(for: asset.url, range: rangesByRef[asset.id], language: nil)
-                if found == nil {
-                    found = await TranscriptCache.shared.cachedCloudTranscript(for: asset.url, range: nil, language: nil)
-                }
+                var found = await TranscriptCache.shared.cachedLocalTranscript(
+                    for: asset.url,
+                    range: rangesByRef[asset.id]
+                )
                 if found == nil, transcribeMissing, rangesByRef[asset.id] != nil {
                     do {
-                        found = try await CloudTranscription.transcribe(
-                            fileURL: asset.url, range: rangesByRef[asset.id],
-                            preferredLocale: nil, projectId: projectId
+                        let full = try await LocalSpeechPipeline.shared.transcribe(
+                            sourceURL: asset.url,
+                            languageCode: nil,
+                            speakerCount: nil,
+                            progress: { _, _ in }
                         )
+                        await TranscriptCache.shared.storeLocalTranscript(full, for: asset.url)
+                        found = rangesByRef[asset.id].map { TranscriptCache.filter(full, to: $0) } ?? full
                     } catch {
                         Log.preview.error("identify speakers: transcription failed for \(asset.id): \(Log.detail(error))")
                         if self?.speakerIdentifyError == nil {
@@ -113,7 +111,7 @@ extension EditorViewModel {
                     }
                 }
                 guard let transcript = found else {
-                    Log.preview.notice("identify speakers: no cached cloud transcript for \(asset.id)")
+                    Log.preview.notice("identify speakers: no cached local transcript for \(asset.id)")
                     continue
                 }
                 let turns = await SpeakerIdentity.speechConfirmed(

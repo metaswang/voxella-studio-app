@@ -1,9 +1,23 @@
 import CryptoKit
 import Foundation
 
+struct LocalTranscriptCacheConfiguration: Codable, Equatable, Sendable {
+    var languageCode: String?
+    var speakerCount: Int?
+
+    static let automatic = LocalTranscriptCacheConfiguration(languageCode: nil, speakerCount: nil)
+
+    var identity: String {
+        let language = languageCode?.lowercased() ?? "auto"
+        let speakers = speakerCount.map(String.init) ?? "auto-1-4"
+        return "language=\(language)|speakers=\(speakers)"
+    }
+}
+
 /// Disk + memory cache for local and cloud transcripts, keyed by file identity so edits invalidate naturally.
 actor TranscriptCache {
     static let shared = TranscriptCache()
+    static let localPipelineSchemaVersion = 4
     static let directory = FileManager.default
         .urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("\(Log.subsystem)/Transcripts", isDirectory: true)
@@ -19,7 +33,7 @@ actor TranscriptCache {
                 : try await Transcription.transcribe(fileURL: url, preferredLocale: preferredLocale, sourceRange: range)
         }
         // Cache full transcripts only; windowed calls filter the cached result for consistency.
-        let key = Self.key(for: url)
+        let key = Self.key(for: url, variant: .localLatest)
         let full: TranscriptionResult
         if let key, let cached = cached(key) {
             full = cached
@@ -32,14 +46,41 @@ actor TranscriptCache {
         return range.map { Self.filter(full, to: $0) } ?? full
     }
 
+    /// Stores a complete local transcript produced by the Workbench so the
+    /// editor caption flow reuses the same words, speakers, and timestamps.
+    func storeLocalTranscript(
+        _ result: TranscriptionResult,
+        for url: URL,
+        configuration: LocalTranscriptCacheConfiguration = .automatic,
+        publishAsLatest: Bool = true
+    ) {
+        guard let exactKey = Self.key(for: url, variant: .local(configuration)) else { return }
+        store(result, key: exactKey)
+        if publishAsLatest,
+           let latestKey = Self.key(for: url, variant: .localLatest),
+           latestKey != exactKey {
+            store(result, key: latestKey)
+        }
+    }
+
+    func cachedLocalTranscript(
+        for url: URL,
+        range: ClosedRange<Double>? = nil,
+        configuration: LocalTranscriptCacheConfiguration? = nil
+    ) -> TranscriptionResult? {
+        let variant: CacheVariant = configuration.map(CacheVariant.local) ?? .localLatest
+        guard let key = Self.key(for: url, variant: variant), let result = cached(key) else { return nil }
+        return range.map { Self.filter(result, to: $0) } ?? result
+    }
+
     nonisolated static func hasCachedOnDisk(for url: URL) -> Bool {
-        guard let key = key(for: url) else { return false }
+        guard let key = key(for: url, variant: .localLatest) else { return false }
         return FileManager.default.fileExists(atPath: diskURL(key).path)
     }
 
     /// Disk-only read
     nonisolated static func cachedOnDisk(for url: URL) -> TranscriptionResult? {
-        guard let key = key(for: url),
+        guard let key = key(for: url, variant: .localLatest),
               let data = try? Data(contentsOf: diskURL(key)) else { return nil }
         return try? JSONDecoder().decode(TranscriptionResult.self, from: data)
     }
@@ -114,7 +155,28 @@ actor TranscriptCache {
         directory.appendingPathComponent("\(key).json")
     }
 
-    private static func key(for url: URL, variant: CacheVariant = .local) -> String? {
+    nonisolated static func localPipelineFingerprint(
+        configuration: LocalTranscriptCacheConfiguration
+    ) -> String {
+        let activeASRModelID = LocalModelManager.preferredASRModelID()
+        let relevant: [LocalModelID] = [
+            activeASRModelID,
+            .spokenLanguageID,
+            .forcedAligner,
+            .sileroVAD,
+            .sortformerDiarization,
+            .pyannoteSegmentation,
+            .weSpeaker,
+        ]
+        let revisions = relevant.compactMap { id in
+            LocalModelManager.catalog.first(where: { $0.id == id }).map {
+                "\(id.rawValue)@\($0.revision)"
+            }
+        }.joined(separator: "|")
+        return "schema=\(localPipelineSchemaVersion)|asr=\(activeASRModelID.rawValue)|\(configuration.identity)|\(revisions)"
+    }
+
+    private static func key(for url: URL, variant: CacheVariant) -> String? {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = (attrs[.size] as? NSNumber)?.int64Value,
               let mtime = attrs[.modificationDate] as? Date else { return nil }
@@ -124,13 +186,16 @@ actor TranscriptCache {
     }
 
     private enum CacheVariant {
-        case local
+        case local(LocalTranscriptCacheConfiguration)
+        case localLatest
         case cloud(range: ClosedRange<Double>?, language: String?)
 
         var prefix: String? {
             switch self {
-            case .local:
-                return nil
+            case .local(let configuration):
+                return "local|\(TranscriptCache.localPipelineFingerprint(configuration: configuration))"
+            case .localLatest:
+                return "local-latest|\(TranscriptCache.localPipelineFingerprint(configuration: .automatic))"
             case .cloud(let range, let language):
                 let lang = language ?? "auto"
                 guard let range else { return "cloud|\(lang)|full" }
@@ -138,4 +203,5 @@ actor TranscriptCache {
             }
         }
     }
+
 }

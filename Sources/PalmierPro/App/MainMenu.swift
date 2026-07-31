@@ -19,16 +19,13 @@ enum MainMenuBuilder {
 
     private static func appMenu() -> NSMenuItem {
         let item = NSMenuItem()
-        let menu = NSMenu(title: "Palmier Pro")
-        menu.addItem(withTitle: "About Palmier Pro", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
-        menu.addItem(.separator())
-        let updatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(Updater.checkForUpdates(_:)), keyEquivalent: "")
-        updatesItem.target = Updater.shared
-        menu.addItem(updatesItem)
+        let menu = NSMenu(title: "Voxella Studio")
+        menu.addItem(withTitle: "About Voxella Studio", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
+        menu.addItem(withTitle: "Local Models…", action: #selector(AppDelegate.showLocalModels(_:)), keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Palmier Pro", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Voxella Studio", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.submenu = menu
         return item
     }
@@ -128,7 +125,11 @@ enum MainMenuBuilder {
         inspectorItem.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(inspectorItem)
 
-        let agentItem = NSMenuItem(title: "Agent Panel", action: #selector(EditorActions.toggleAgentPanel(_:)), keyEquivalent: "a")
+        let agentItem = NSMenuItem(
+            title: "AI Editing Chat",
+            action: #selector(EditorActions.toggleAgentPanel(_:)),
+            keyEquivalent: "a"
+        )
         agentItem.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(agentItem)
 
@@ -171,12 +172,9 @@ enum MainMenuBuilder {
     private static func helpMenu() -> NSMenuItem {
         let item = NSMenuItem()
         let menu = NSMenu(title: "Help")
-        menu.addItem(withTitle: "Tutorial", action: #selector(AppDelegate.showTutorial(_:)), keyEquivalent: "")
-        menu.addItem(.separator())
         menu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(AppDelegate.showKeyboardShortcuts(_:)), keyEquivalent: "?")
         menu.addItem(withTitle: "MCP Instructions", action: #selector(AppDelegate.showMCPInstructions(_:)), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Send Feedback…", action: #selector(AppDelegate.showFeedback(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Local Models", action: #selector(AppDelegate.showLocalModels(_:)), keyEquivalent: "")
         item.submenu = menu
         return item
     }

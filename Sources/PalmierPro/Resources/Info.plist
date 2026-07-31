@@ -5,16 +5,17 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Palmier Pro</string>
+	<string>Voxella Studio</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>Palmier Project</string>
+			<string>Voxella Studio Project</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSItemContentTypes</key>
 			<array>
+				<string>com.voxella.studio.project</string>
 				<string>io.palmier.project</string>
 			</array>
 			<key>LSTypeIsPackage</key>
@@ -24,11 +25,11 @@
 		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
-	<string>PalmierPro</string>
+	<string>VoxellaStudio</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>io.palmier.pro</string>
+	<string>com.voxella.studio</string>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>en</string>
@@ -40,34 +41,19 @@
 		<string>zh-Hans</string>
 	</array>
 	<key>CFBundleName</key>
-	<string>Palmier Pro</string>
+	<string>Voxella Studio</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.6.15</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>io.palmier.pro</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>palmier</string>
-			</array>
-		</dict>
-	</array>
 	<key>CFBundleVersion</key>
 	<string>76</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
-	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/palmier-io/palmier-pro/main/appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string>Jh56mT+7YZSRsLylQIPyP+4/ahRtTPzfQQaKDZoBsio=</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Voxella Studio uses the microphone only when you record a local reference voice.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -76,7 +62,24 @@
 				<string>com.apple.package</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>Palmier Project</string>
+			<string>Voxella Studio Project</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.voxella.studio.project</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>voxella</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Legacy Video Editor Project</string>
 			<key>UTTypeIdentifier</key>
 			<string>io.palmier.project</string>
 			<key>UTTypeTagSpecification</key>

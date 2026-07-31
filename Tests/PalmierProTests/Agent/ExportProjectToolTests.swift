@@ -136,7 +136,7 @@ struct ExportProjectToolTests {
             source: .external(absolutePath: "/tmp/missing-\(UUID().uuidString).mov"), duration: 1
         )]
         let palmierURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("export-tool-\(UUID().uuidString).palmier")
+            .appendingPathComponent("export-tool-\(UUID().uuidString).\(Project.fileExtension)")
         defer { try? FileManager.default.removeItem(at: palmierURL) }
         let palmier = try await h.runOK("export_project", args: [
             "mode": "palmier", "outputPath": palmierURL.path,

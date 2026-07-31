@@ -3,7 +3,11 @@ import os
 
 // Skip MLX model loads in unbundled builds to avoid a fatal mlx.metallib error.
 enum MLXRuntime {
+    /// Ordinary SwiftPM unit tests must never touch MLX because their test bundle does
+    /// not carry the Metal runtime. Release qualification explicitly opts in after the
+    /// built `mlx.metallib` has been colocated with the test executable.
     static let isAvailable = Bundle.main.bundleURL.pathExtension == "app"
+        || ProcessInfo.processInfo.environment["VOXELLA_RUN_LOCAL_FIXTURES"] == "1"
     private static let gate = MLXOperationGate()
 
     struct Unavailable: Error, LocalizedError {

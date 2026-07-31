@@ -5,9 +5,9 @@ import os
 /// Categorized logger + crash handler.
 ///
 /// Uncaught exceptions and fatal signals are written to
-/// `~/Library/Logs/PalmierPro/crash.log` with a backtrace.
+/// `~/Library/Logs/Voxella Studio/crash.log` with a backtrace.
 enum Log {
-    static let subsystem  = "io.palmier.pro"
+    static let subsystem  = "com.voxella.studio"
     static let app        = CategoryLog("app")
     static let editor     = CategoryLog("editor")
     static let export     = CategoryLog("export")
@@ -18,10 +18,11 @@ enum Log {
     static let generation = CategoryLog("generation")
     static let project    = CategoryLog("project")
     static let transcription = CategoryLog("transcription")
+    static let llm        = CategoryLog("llm")
     static let search     = CategoryLog("search")
 
     static let crashLogURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/PalmierPro/crash.log")
+        .appendingPathComponent("Library/Logs/Voxella Studio/crash.log")
 
     /// Full NSError chain
     static func detail(_ error: Error) -> String {

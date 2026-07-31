@@ -7,7 +7,10 @@ import Testing
 struct ProjectClosePersistenceTests {
     @Test func finalSavePersistsSnapshotWhenDocumentIsNotMarkedEdited() async throws {
         let package = FileManager.default.temporaryDirectory
-            .appendingPathComponent("project-close-\(UUID().uuidString).palmier", isDirectory: true)
+            .appendingPathComponent(
+                "project-close-\(UUID().uuidString).\(Project.fileExtension)",
+                isDirectory: true
+            )
         defer { try? FileManager.default.removeItem(at: package) }
 
         let document = VideoProject()

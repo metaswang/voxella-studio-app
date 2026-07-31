@@ -204,8 +204,16 @@ enum CaptionBuilder {
                 guard wordEndSource > visibleStartSource, wordStartSource < visibleEndSource else { return nil }
                 let ws = clampedTimelineFrame(sourceSeconds: w.start)
                 let we = clampedTimelineFrame(sourceSeconds: w.end)
-                let rs = min(max(0, ws - s), duration)
-                let re = min(max(rs, we - s), duration)
+                var rs = min(max(0, ws - s), duration)
+                var re = min(max(rs, we - s), duration)
+                // Several aligned words can legitimately share the final decoded
+                // frame (for example when a container is a few frames shorter than
+                // the PCM transcript). Keep each word addressable for karaoke-style
+                // captions instead of dropping it after integer frame rounding.
+                if re <= rs, duration > 0 {
+                    rs = min(rs, duration - 1)
+                    re = rs + 1
+                }
                 guard re > rs else { return nil }
                 return WordTiming(text: w.text, startFrame: rs, endFrame: re)
             }

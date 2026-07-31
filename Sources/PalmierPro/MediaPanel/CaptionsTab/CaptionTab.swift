@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CaptionTab: View {
     @Environment(EditorViewModel.self) var editor
-    @Bindable private var account = AccountService.shared
+    @Bindable private var models = LocalModelManager.shared
 
     @State private var style: TextStyle = CaptionTab.defaultStyle
     @State private var center = AppTheme.Caption.defaultCenter
@@ -14,15 +14,13 @@ struct CaptionTab: View {
     }
     @State private var selectedTrackId: String?
     @State private var selectedClipTargets: [String] = []
-    @State private var provider: TranscriptionProvider = .cloud
+    private let provider: TranscriptionProvider = .local
     @State private var animationPreset: TextAnimation.Preset = .none
     @State private var animationHighlight: TextStyle.RGBA = TextAnimation.defaultHighlight
-    @State private var censorProfanity = false
     @State private var maxWords: Int?
     @State private var locale: Locale?
     @State private var supportedLocales: [Locale] = []
     @State private var isGenerating = false
-    @State private var estimatedCloudCost: Int?
     @State private var note: String?
     @State private var sourceExpanded = true
     @State private var settingsExpanded = true
@@ -54,32 +52,9 @@ struct CaptionTab: View {
     private var captionTrackIndices: [Int] {
         editor.timeline.tracks.indices.filter { !editor.captionTargets(trackIds: [editor.timeline.tracks[$0].id]).isEmpty }
     }
-    private var remainingCloudCredits: Int? {
-        account.budgetCredits == nil ? nil : account.remainingCredits
-    }
-    private var cloudModeUnavailableMessage: String? {
-        guard provider == .cloud else { return nil }
-        guard account.isSignedIn else { return "Sign in to use Cloud." }
-        return nil
-    }
     private var canGenerateCaptions: Bool {
-        effectiveCount > 0 && !isGenerating && cloudModeUnavailableMessage == nil
+        effectiveCount > 0 && !isGenerating
     }
-    private var costEstimateKey: String {
-        "\(provider.rawValue)|\(sourceClipIds.joined(separator: ","))|\(isAutoSource)|\(locale?.identifier ?? "")"
-    }
-    private var costHelpText: String {
-        guard let cost = estimatedCloudCost else { return "Estimated cost. Actual billing may differ slightly." }
-        guard cost > 0 else { return "Cached — no credits used." }
-        guard let remaining = remainingCloudCredits else { return "\(CostEstimator.format(cost)) estimated. Actual billing may differ." }
-        if cost > remaining { return "\(CostEstimator.format(cost)) needed. Only \(remaining.formatted()) remaining." }
-        return "\(CostEstimator.format(cost)). \((remaining - cost).formatted()) remaining after this generation."
-    }
-
-    private static let translateLanguages = [
-        "Spanish", "French", "German", "Italian", "Portuguese",
-        "Japanese", "Korean", "Chinese", "Hindi", "Arabic"
-    ]
 
     private var sourceSummary: String {
         guard let selectedTrackId else { return automaticSourceSummary }
@@ -124,16 +99,6 @@ struct CaptionTab: View {
             guard wasSelecting, !isSelecting else { return }
             rememberSelectedClipTargets()
         }
-        .task(id: costEstimateKey) {
-            estimatedCloudCost = nil
-            guard provider == .cloud, effectiveCount > 0 else { return }
-            try? await Task.sleep(for: .milliseconds(150))
-            guard !Task.isCancelled else { return }
-            let request = EditorViewModel.CaptionRequest(sourceClipIds: sourceClipIds, autoDetect: isAutoSource, locale: locale, provider: .cloud)
-            let cost = await editor.captionCloudCreditCost(for: request)
-            guard !Task.isCancelled else { return }
-            estimatedCloudCost = cost
-        }
     }
 
     private var sourceSection: some View {
@@ -146,11 +111,15 @@ struct CaptionTab: View {
                     selectedClipTargets = []
                 }
             ) { sourceMenu }
-            InspectorRow(
-                label: "Mode",
-                labelHelp: "Local runs with Apple's SpeechAnalyzer. Cloud uses credits and a more accurate model with more capabilities.",
-                onReset: { provider = .cloud }
-            ) { providerPicker }
+            InspectorRow(label: "Mode") {
+                HStack(spacing: AppTheme.Spacing.xs) {
+                    Image(systemName: "lock.shield.fill")
+                        .foregroundStyle(AppTheme.Status.successColor)
+                    Text("Local MLX")
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                    Spacer()
+                }
+            }
         }
     }
 
@@ -182,16 +151,6 @@ struct CaptionTab: View {
                 } label: { EditorMenuValue(text: maxWords.map(String.init) ?? "None", expanded: true) }
                 .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).focusable(false)
                 .frame(maxWidth: .infinity)
-            }
-            InspectorRow(label: "Censor profanity", onReset: { censorProfanity = false }) {
-                Toggle("", isOn: $censorProfanity)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .accessibilityLabel("Censor profanity")
-                    .tint(AppTheme.Text.primaryColor.opacity(AppTheme.Opacity.strong))
-                    .disabled(provider == .cloud)
-                    .opacity(provider == .cloud ? AppTheme.Opacity.muted : AppTheme.Opacity.opaque)
             }
         }
     }
@@ -229,37 +188,6 @@ struct CaptionTab: View {
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).focusable(false)
         .frame(maxWidth: .infinity)
-    }
-
-    private var providerPicker: some View {
-        HStack(spacing: AppTheme.Spacing.md) {
-            providerOption(.local, title: TranscriptionProvider.local.label)
-            providerOption(.cloud, title: TranscriptionProvider.cloud.label)
-        }
-        .fixedSize()
-    }
-
-    private var cloudCreditHelp: String {
-        "Cloud auto-detects languages, produces more accurate transcripts, can identify speakers, and uses 25 credits/hr when a transcript is not cached."
-    }
-
-    private func providerOption(_ option: TranscriptionProvider, title: String) -> some View {
-        let selected = provider == option
-        return Button {
-            provider = option
-        } label: {
-            HStack(spacing: AppTheme.Spacing.xs) {
-                RadioIndicator(selected: selected, size: AppTheme.IconSize.xxs, innerPadding: AppTheme.Spacing.xxs)
-                Text(title)
-                    .font(.system(size: AppTheme.FontSize.sm, weight: selected ? AppTheme.FontWeight.semibold : AppTheme.FontWeight.medium))
-                    .foregroundStyle(selected ? AppTheme.Text.primaryColor : AppTheme.Text.secondaryColor)
-                    .lineLimit(1)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusable(false)
-        .help(option == .cloud ? cloudCreditHelp : "Local runs with Apple's SpeechAnalyzer.")
     }
 
     private func rememberSelectedClipTargets() {
@@ -324,40 +252,6 @@ struct CaptionTab: View {
         }
     }
 
-    private var agentMenu: some View {
-        EditorAgentMenu(
-            help: "Let Agent create captions for you. Choose a predefined task, or ask Agent in the chat."
-        ) {
-            Button {
-                captionTask("remove filler words (um, uh, er, like, you know) from the captions, keeping each caption's timing unchanged.")
-            } label: { Label("Remove filler words", systemImage: "text.badge.minus") }
-            Button {
-                captionTask("fix any misspelled names, brand names, or technical jargon in the captions using the surrounding context, keeping timing unchanged.")
-            } label: { Label("Fix names & jargon", systemImage: "checkmark.bubble") }
-            Button {
-                captionTask("add relevant emoji to the captions, keeping the text and timing otherwise unchanged.")
-            } label: { Label("Add emoji", systemImage: "face.smiling") }
-            Menu {
-                ForEach(Self.translateLanguages, id: \.self) { language in
-                    Button(language) {
-                        captionTask("translate the captions to \(language), keeping each caption's timing unchanged.")
-                    }
-                }
-            } label: { Label("Translate", systemImage: "globe") }
-        }
-    }
-
-    private func captionTask(_ task: String) {
-        handoff("If the timeline has no captions yet, transcribe the spoken audio and add captions on word boundaries first. Then \(task)")
-    }
-
-    private func handoff(_ prompt: String) {
-        let service = editor.agentService
-        service.newChat()
-        service.draft = prompt
-        editor.agentPanelVisible = true
-    }
-
     private var previewBox: some View {
         ZStack {
             AppTheme.Background.previewCanvasColor
@@ -420,23 +314,22 @@ struct CaptionTab: View {
     private var generateBar: some View {
         EditorActionFooter(message: note) {
             HStack(spacing: AppTheme.Spacing.sm) {
-                Button(action: generate) {
-                    HStack(spacing: AppTheme.Spacing.xs) {
-                        Text(cloudModeUnavailableMessage ?? "Generate Captions")
-                        if cloudModeUnavailableMessage == nil, provider == .cloud, let cost = estimatedCloudCost {
-                            Image(systemName: "dollarsign.circle.fill").font(.system(size: AppTheme.FontSize.xs))
-                            Text("\(cost)").monospacedDigit()
+                if models.hasRequiredModels(for: .transcribe) {
+                    Button(action: generate) {
+                        HStack(spacing: AppTheme.Spacing.xs) {
+                            Text("Generate Local Captions")
                         }
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
                     }
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.editorPrimary)
+                    .focusable(false)
+                    .disabled(!canGenerateCaptions)
+                } else {
+                    Button("Download Local Models…") { models.presentManager() }
+                        .buttonStyle(.editorPrimary)
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.editorPrimary)
-                .focusable(false)
-                .disabled(!canGenerateCaptions)
-                .help(provider == .cloud ? costHelpText : "")
-
-                agentMenu
             }
         }
     }
@@ -453,7 +346,7 @@ struct CaptionTab: View {
             autoDetect: isAutoSource,
             style: style,
             center: center,
-            censorProfanity: provider == .local && censorProfanity,
+            censorProfanity: false,
             locale: locale,
             maxWords: maxWords,
             provider: provider,
@@ -463,17 +356,6 @@ struct CaptionTab: View {
             isGenerating = true
             defer { isGenerating = false }
             do {
-                if request.provider == .cloud {
-                    if let message = cloudUnavailableMessage(cost: nil, provider: request.provider) {
-                        note = message
-                        return
-                    }
-                    let cost = await editor.captionCloudCreditCost(for: request)
-                    if let message = cloudUnavailableMessage(cost: cost, provider: request.provider) {
-                        note = message
-                        return
-                    }
-                }
                 if try await editor.generateCaptions(for: request).isEmpty { note = "No speech detected." }
             } catch {
                 note = error.localizedDescription
@@ -481,16 +363,4 @@ struct CaptionTab: View {
         }
     }
 
-    private func cloudUnavailableMessage(cost: Int?, provider mode: TranscriptionProvider? = nil) -> String? {
-        guard (mode ?? provider) == .cloud else { return nil }
-        guard account.isSignedIn else { return "Sign in to use Cloud." }
-        guard let cost else { return nil }
-        guard cost > 0 else { return nil }
-        guard let remaining = remainingCloudCredits else { return nil }
-        guard remaining > 0 else { return "Add credits to use Cloud." }
-        if cost > remaining {
-            return "\(CostEstimator.format(cost)) needed. Only \(remaining.formatted()) remaining."
-        }
-        return nil
-    }
 }

@@ -39,23 +39,10 @@ enum Analytics {
     #endif
     private static let enabledKey = "io.palmier.pro.analytics.enabled"
 
+    // The local-first edition never initializes or opts into telemetry.
     static var isEnabled: Bool {
-        get {
-            let defaults = UserDefaults.standard
-            if defaults.object(forKey: enabledKey) == nil { return true }
-            return defaults.bool(forKey: enabledKey)
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: enabledKey)
-            #if PRODUCTION_TELEMETRY
-            guard didStart else { return }
-            if newValue {
-                PostHogSDK.shared.optIn()
-            } else {
-                PostHogSDK.shared.optOut()
-            }
-            #endif
-        }
+        get { false }
+        set { _ = newValue }
     }
 
     static let enabledForCurrentLaunch: Bool = isEnabled

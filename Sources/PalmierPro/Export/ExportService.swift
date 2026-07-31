@@ -52,7 +52,7 @@ private struct ExportAnalyticsRun {
             "source": context.source,
             "project_id": context.projectId ?? "unknown",
             "mode": "palmier",
-            "format": "Palmier",
+            "format": "Voxella",
         ]
         self.started = ContinuousClock.now
     }
@@ -335,7 +335,7 @@ final class ExportService {
         ])
     }
 
-    /// Writes a self-contained `.palmier` bundle (all media collected internally).
+    /// Writes a self-contained `.voxella` bundle (all media collected internally).
     @discardableResult
     func exportPalmierProject(
         projectFile: ProjectFile,
@@ -354,8 +354,8 @@ final class ExportService {
             analytics.begin()
             setPhase(.exporting)
             Log.export.notice(
-                "palmier export start url=\(outputURL.lastPathComponent)",
-                telemetry: "Palmier project export started",
+                "voxella export start url=\(outputURL.lastPathComponent)",
+                telemetry: "Voxella project export started",
                 data: [
                     "timelines": projectFile.timelines.count,
                     "clips": projectFile.timelines.reduce(0) { $0 + $1.tracks.reduce(0) { $0 + $1.clips.count } },
@@ -380,8 +380,8 @@ final class ExportService {
             didCommitOutput = true
             setProgress(1)
             Log.export.notice(
-                "palmier export ok collected=\(report.collected.count) missing=\(report.missing.count)",
-                telemetry: "Palmier project export finished",
+                "voxella export ok collected=\(report.collected.count) missing=\(report.missing.count)",
+                telemetry: "Voxella project export finished",
                 data: ["collected": report.collected.count, "missing": report.missing.count]
             )
             analytics.finish()
@@ -389,12 +389,12 @@ final class ExportService {
         } catch {
             if Self.isCancellation(error) {
                 wasCancelled = true
-                Log.export.notice("palmier export cancelled", telemetry: "Export cancelled")
+                Log.export.notice("voxella export cancelled", telemetry: "Export cancelled")
             } else {
                 self.error = Log.detail(error)
                 Log.export.error(
-                    "palmier export failed: \(Log.detail(error))",
-                    telemetry: "Palmier project export failed",
+                    "voxella export failed: \(Log.detail(error))",
+                    telemetry: "Voxella project export failed",
                     data: ["error": Log.detail(error)]
                 )
                 analytics.fail()

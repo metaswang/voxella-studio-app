@@ -12,7 +12,7 @@ struct PrivacyPane: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             SettingsToggleRow(
                 title: "Share usage data",
-                subtitle: "Send product usage data to help improve Palmier Pro. Media and project content are never included.",
+                subtitle: "Send product usage data to help improve Voxella Studio. Media and project content are never included.",
                 isOn: $analyticsEnabled
             )
             .onChange(of: analyticsEnabled) { _, newValue in
@@ -35,7 +35,7 @@ struct PrivacyPane: View {
                 HStack(spacing: AppTheme.Spacing.xs) {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
-                    Text("Restart Palmier Pro to apply this change.")
+                    Text("Restart Voxella Studio to apply this change.")
                 }
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
