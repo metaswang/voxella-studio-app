@@ -572,6 +572,11 @@ struct TranscribeWorkbenchView: View {
                         systemImage: "arrow.up.circle"
                     )
                 }
+
+                WorkbenchRecentTranscriptSessionsSection(
+                    modeTitle: "Upload Files",
+                    onChooseMedia: { importMedia() }
+                )
             }
             .padding(AppTheme.Spacing.xxl)
             .frame(maxWidth: .infinity, alignment: .leading)
