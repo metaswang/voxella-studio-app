@@ -97,7 +97,6 @@ let package = Package(
                 "Resources/Info.plist",
                 "Resources/AppIcon.icon",
                 "Resources/AppIcon.icns",
-                "Resources/AppIcon.png",
                 "Resources/Changelog",
                 "App/Updater.swift",
                 "App/UpdateBadgeView.swift",
@@ -106,6 +105,7 @@ let package = Package(
                 "Home/WelcomeOverlay.swift",
             ],
             resources: [
+                .copy("Resources/AppIcon.png"),
                 .copy("Resources/Fonts"),
                 .copy("Resources/MCPB/palmier-pro.mcpb"),
                 .copy("Resources/Images"),

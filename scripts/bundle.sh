@@ -51,6 +51,13 @@ else
   exit 1
 fi
 
+if [ -f "$RES_BUNDLE/AppIcon.png" ]; then
+  cp "$RES_BUNDLE/AppIcon.png" "$APP/Contents/Resources/AppIcon.png"
+else
+  echo "!! missing AppIcon.png in SwiftPM resource bundle at $RES_BUNDLE" >&2
+  exit 1
+fi
+
 if [ -d "$RES_BUNDLE/Images" ]; then
   cp -R "$RES_BUNDLE/Images" "$APP/Contents/Resources/"
 fi
