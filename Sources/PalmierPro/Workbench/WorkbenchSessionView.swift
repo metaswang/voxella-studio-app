@@ -1,5 +1,5 @@
+import AppKit
 import AVFoundation
-import AVKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -781,7 +781,7 @@ private struct SessionMediaPlayer: View {
     @State private var duration = 0.0
     @State private var playbackRate = 1.0
     @State private var subtitleMode: SessionSubtitleDisplayMode = .original
-    @State private var playerViewRef: AVPlayerView?
+    @State private var playerViewRef: SessionPlayerView?
 
     private var showsVideoCanvas: Bool {
         prefersVideoCanvas || URL?.isMovie == true
@@ -1070,7 +1070,6 @@ private struct SessionMediaPlayer: View {
             player = nil
             return
         }
-        _ = AVPlayerView.self
         let nextPlayer = AVPlayer(url: URL)
         nextPlayer.defaultRate = Float(playbackRate)
         player = nextPlayer
@@ -1102,7 +1101,7 @@ private struct SessionMediaPlayer: View {
     }
 
     private func seek(to progress: Double) {
-        guard let player, duration > 0 else { return }
+        guard duration > 0 else { return }
         seekAbsolute(to: progress * duration)
     }
 
@@ -1173,33 +1172,62 @@ private struct SessionWaveform: View {
     }
 }
 
-/// AppKit-backed preview avoids SwiftUI `VideoPlayer` metadata crashes on macOS.
+/// AppKit-backed preview keeps the video layer sized to the hosting view.
 private struct SessionAVPlayerRepresentable: NSViewRepresentable {
     let player: AVPlayer
-    var onViewReady: ((AVPlayerView) -> Void)?
+    var onViewReady: ((SessionPlayerView) -> Void)?
 
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
-        view.controlsStyle = .none
-        view.videoGravity = .resizeAspect
+    func makeNSView(context: Context) -> SessionPlayerView {
+        let view = SessionPlayerView()
         view.player = player
         DispatchQueue.main.async { onViewReady?(view) }
         return view
     }
 
-    func updateNSView(_ nsView: AVPlayerView, context: Context) {
-        if nsView.player !== player {
-            nsView.player = player
-        }
+    func updateNSView(_ nsView: SessionPlayerView, context: Context) {
+        nsView.player = player
         DispatchQueue.main.async { onViewReady?(nsView) }
     }
 
-    static func dismantleNSView(_ nsView: AVPlayerView, coordinator: ()) {
+    static func dismantleNSView(_ nsView: SessionPlayerView, coordinator: ()) {
         if nsView.isInFullScreenMode {
             nsView.exitFullScreenMode(options: nil)
         }
-        nsView.player?.pause()
-        nsView.player = nil
+        nsView.stopPlayback()
+    }
+}
+
+private final class SessionPlayerView: NSView {
+    let playerLayer = AVPlayerLayer()
+
+    var player: AVPlayer? {
+        get { playerLayer.player }
+        set { playerLayer.player = newValue }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = AppTheme.Background.base.cgColor
+        playerLayer.videoGravity = .resizeAspect
+        layer?.addSublayer(playerLayer)
+        autoresizingMask = [.width, .height]
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        playerLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    func stopPlayback() {
+        player?.pause()
+        player = nil
     }
 }
 
