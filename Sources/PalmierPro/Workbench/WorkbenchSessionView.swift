@@ -133,8 +133,8 @@ struct WorkbenchSessionDetailView: View {
     @State private var isRenamingTitle = false
     @State private var showTranslateSheet = false
     @State private var showDubOptionsSheet = false
-    @State private var showTemplateSheet = false
-    @State private var templatePromptMessage: String?
+    @State private var showTemplateLoginAlert = false
+    @State private var seekSeconds: Double?
 
     var body: some View {
         Group {
@@ -193,74 +193,86 @@ struct WorkbenchSessionDetailView: View {
                 )
             }
         }
-        .sheet(isPresented: $showTemplateSheet) {
-            if let session = store.selectedSession {
-                SessionTemplateSheet(
-                    session: session,
-                    promptMessage: templatePromptMessage,
-                    onCancel: {
-                        showTemplateSheet = false
-                        templatePromptMessage = nil
-                    },
-                    onApply: { template in
-                        showTemplateSheet = false
-                        templatePromptMessage = nil
-                        guard let transcriptionID = session.transcriptionID else { return }
-                        store.updateTranscription(transcriptionID) {
-                            $0.summaryTemplateID = template.id
-                            $0.summaryTemplateName = template.name
-                        }
-                        store.regenerateSummary(forTranscription: transcriptionID)
-                    }
-                )
+        .alert("My Template", isPresented: $showTemplateLoginAlert) {
+            Button("Open voxstudio.me") {
+                if let url = URL(string: "https://voxstudio.me") {
+                    NSWorkspace.shared.open(url)
+                }
             }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Sign in at voxstudio.me to use custom summary templates. Local Studio does not support custom templates yet.")
         }
     }
 
+    @ViewBuilder
     private func sessionView(_ session: WorkbenchSession) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                sessionHeader(session)
-                HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                        SessionMediaPlayer(
-                            URL: selectedTrack == .dub ? session.outputURL : session.sourceURL,
-                            track: selectedTrack,
-                            allowsTrackSelection: session.sourceURL != nil && session.outputURL != nil,
-                            showsFilename: false,
-                            onSelectTrack: { selectedTrack = $0 }
-                        )
-                        SessionSummaryPanel(
-                            session: session,
-                            onOpenTemplate: {
-                                presentTemplateSheet(for: session)
-                            },
-                            onRegenerate: {
-                                guard let transcriptionID = session.transcriptionID else { return }
-                                store.regenerateSummary(forTranscription: transcriptionID)
-                            }
-                        )
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        let mediaURL = selectedTrack == .dub ? session.outputURL : session.sourceURL
+        let hasVideo = mediaURL?.isMovie == true
 
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-                        tabBar(session)
-                        sessionContent(session)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+            sessionHeader(session)
+            HStack(alignment: .top, spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    SessionMediaPlayer(
+                        URL: mediaURL,
+                        track: selectedTrack,
+                        allowsTrackSelection: session.sourceURL != nil && session.outputURL != nil,
+                        showsFilename: false,
+                        prefersVideoCanvas: hasVideo,
+                        subtitleTrack: hasVideo
+                            ? (selectedTrack == .dub
+                                ? session.dubSubtitleTrack
+                                : session.subtitleTrack)
+                            : nil,
+                        translationTracks: hasVideo ? session.translationTracks : [],
+                        seekSeconds: $seekSeconds,
+                        onSelectTrack: { selectedTrack = $0 }
+                    )
+                    .layoutPriority(1)
+                    SessionSummaryPanel(
+                        session: session,
+                        onOpenTemplate: {
+                            presentTemplateLoginPrompt()
+                        },
+                        onRegenerate: {
+                            guard let transcriptionID = session.transcriptionID else { return }
+                            store.regenerateSummary(forTranscription: transcriptionID)
+                        }
+                    )
+                    .frame(maxHeight: hasVideo ? AppTheme.Workbench.emptyStateMinHeight : .infinity, alignment: .top)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(AppTheme.Background.baseColor)
+
+                Rectangle()
+                    .fill(AppTheme.Border.subtleColor)
+                    .frame(width: AppTheme.BorderWidth.thin)
+                    .frame(maxHeight: .infinity)
+
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                    tabBar(session)
+                        .padding(.horizontal, AppTheme.Spacing.xl)
+                        .padding(.top, AppTheme.Spacing.lg)
+                    ScrollView {
+                        sessionContent(session)
+                            .padding(.horizontal, AppTheme.Spacing.xl)
+                            .padding(.bottom, AppTheme.Spacing.xl)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(AppTheme.Background.baseColor)
             }
-            .padding(AppTheme.Spacing.xxl)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            if selectedTrack == .original,
-               let sourceURL = session.sourceURL,
-               sourceURL.isMovie {
-                SessionFloatingVideo(URL: sourceURL)
-                    .padding(AppTheme.Spacing.xl)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
+                    .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
             }
         }
+        .padding(AppTheme.Spacing.xxl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(AppTheme.Background.baseColor)
         .onAppear {
             selectedTrack = session.sourceURL == nil && session.outputURL != nil ? .dub : .original
             selectedTab = availableTabs(session).first ?? .transcript
@@ -450,62 +462,75 @@ struct WorkbenchSessionDetailView: View {
 
     @ViewBuilder
     private func sessionContent(_ session: WorkbenchSession) -> some View {
-        switch selectedTab {
-        case .transcript:
-            let segments = (transcriptResult(for: session)?.aggregatingSegments().segments ?? [])
-                .map(SessionTextSegment.init)
-            SessionSegmentList(segments: segments, emptyText: "No timed transcript is available for this track.")
-        case .subtitles:
-            let track = subtitleTrack(for: session)
-            SessionSegmentList(
-                segments: (track?.cues ?? []).map(SessionTextSegment.init),
-                emptyText: "No subtitle track is available."
-            )
+        let scope = cueScope(for: session)
+        let cues = editableCues(for: session, scope: scope)
+        SessionSegmentEditor(
+            sessionID: session.id,
+            scope: scope,
+            cues: cues,
+            speakerLabels: speakerLabels(for: session, cues: cues),
+            emptyText: selectedTab == .transcript
+                ? "No timed transcript is available for this track."
+                : "No subtitle track is available.",
+            onSeek: { seconds in
+                seekSeconds = seconds
+            }
+        )
+    }
+
+    private func cueScope(for session: WorkbenchSession) -> WorkbenchStore.SessionCueScope {
+        if selectedTrack == .dub { return .dub }
+        let languageCode = selectedTab == .transcript ? transcriptLanguageCode : subtitleLanguageCode
+        if let languageCode { return .translation(languageCode) }
+        return .source
+    }
+
+    private func editableCues(
+        for session: WorkbenchSession,
+        scope: WorkbenchStore.SessionCueScope
+    ) -> [SubtitleCue] {
+        switch scope {
+        case .dub:
+            if let cues = session.dubSubtitleTrack?.cues, !cues.isEmpty {
+                return cues
+            }
+            return session.dubSegments.enumerated().map { index, segment in
+                SubtitleCue(
+                    id: index,
+                    sourceIDs: [segment.sourceSubtitleID ?? segment.index],
+                    text: segment.text,
+                    start: segment.start,
+                    end: segment.end,
+                    speaker: segment.speaker
+                )
+            }
+        case .translation(let languageCode):
+            return session.translationTracks.first(where: {
+                $0.languageCode.caseInsensitiveCompare(languageCode) == .orderedSame
+            })?.track.cues ?? []
+        case .source:
+            if let cues = session.subtitleTrack?.cues, !cues.isEmpty {
+                return cues
+            }
+            if let transcript = session.transcript {
+                return SubtitleTrack.fromTranscript(transcript).cues
+            }
+            return []
         }
     }
 
-    private func transcriptResult(for session: WorkbenchSession) -> TranscriptionResult? {
-        if selectedTrack == .dub {
-            if let transcript = session.dubTranscript { return transcript }
-            guard !session.dubSegments.isEmpty else { return nil }
-            return TranscriptionResult(
-                text: TranscriptSegmenter.joinedText(session.dubSegments.map(\.text)),
-                language: nil,
-                words: [],
-                segments: session.dubSegments.map {
-                    TranscriptionSegment(
-                        text: $0.text,
-                        start: $0.start,
-                        end: $0.end,
-                        speaker: $0.speaker
-                    )
-                }
-            )
+    private func speakerLabels(for session: WorkbenchSession, cues: [SubtitleCue]) -> [String] {
+        if let transcriptionID = session.transcriptionID,
+           let job = store.transcriptions.first(where: { $0.id == transcriptionID }) {
+            let labels = job.speakerLabels
+            if !labels.isEmpty { return labels }
         }
-
-        if let languageCode = transcriptLanguageCode,
-           let translation = session.translationTracks.first(where: {
-               $0.languageCode.caseInsensitiveCompare(languageCode) == .orderedSame
-           }) {
-            return translation.track.asTranscriptionResult().aggregatingSegments()
+        var seen = Set<String>()
+        return cues.compactMap { cue in
+            let normalized = cue.speaker?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !normalized.isEmpty, seen.insert(normalized).inserted else { return nil }
+            return normalized
         }
-
-        return session.subtitleTrack?
-            .asTranscriptionResult(preservingWords: session.transcript?.words ?? [])
-            ?? session.transcript
-    }
-
-    private func subtitleTrack(for session: WorkbenchSession) -> SubtitleTrack? {
-        if selectedTrack == .dub {
-            return session.dubSubtitleTrack
-        }
-        if let languageCode = subtitleLanguageCode,
-           let translation = session.translationTracks.first(where: {
-               $0.languageCode.caseInsensitiveCompare(languageCode) == .orderedSame
-           }) {
-            return translation.track
-        }
-        return session.subtitleTrack
     }
 
     private func availableTabs(_ session: WorkbenchSession) -> [SessionDetailTab] {
@@ -547,15 +572,9 @@ struct WorkbenchSessionDetailView: View {
         }
     }
 
-    private func presentTemplateSheet(for session: WorkbenchSession) {
-        let account = AccountService.shared
-        guard account.isSignedIn else {
-            templatePromptMessage = "Sign in and connect to the network to load summary templates. Local Studio does not support custom templates."
-            showTemplateSheet = true
-            return
-        }
-        templatePromptMessage = nil
-        showTemplateSheet = true
+    private func presentTemplateLoginPrompt() {
+        // Temporarily shield the template picker sheet; require voxstudio.me login messaging only.
+        showTemplateLoginAlert = true
     }
 
     private func openWorkflow(_ session: WorkbenchSession) {
@@ -592,84 +611,6 @@ private enum SessionDetailTab: String, Identifiable {
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
-}
-
-private struct SessionTextSegment: Identifiable {
-    let id: String
-    let text: String
-    let start: Double
-    let end: Double
-    let speaker: String?
-
-    init(_ segment: TranscriptionSegment) {
-        id = "transcript-\(segment.start)-\(segment.end)-\(segment.text.hashValue)"
-        text = segment.text
-        start = segment.start
-        end = segment.end
-        speaker = segment.speaker
-    }
-
-    init(_ cue: SubtitleCue) {
-        id = "subtitle-\(cue.id)"
-        text = cue.text
-        start = cue.start
-        end = cue.end
-        speaker = cue.speaker
-    }
-
-    init(_ segment: DubRenderedSegment) {
-        id = "dub-\(segment.index)"
-        text = segment.text
-        start = segment.start
-        end = segment.end
-        speaker = segment.speaker
-    }
-}
-
-private struct SessionSegmentList: View {
-    let segments: [SessionTextSegment]
-    let emptyText: String
-
-    var body: some View {
-        if segments.isEmpty {
-            ContentUnavailableView("No segments", systemImage: "text.alignleft", description: Text(emptyText))
-                .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.emptyStateMinHeight)
-        } else {
-            LazyVStack(spacing: AppTheme.Spacing.mdLg) {
-                ForEach(segments) { segment in
-                    HStack(alignment: .top, spacing: AppTheme.Spacing.mdLg) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: AppTheme.FontSize.xs))
-                            .foregroundStyle(AppTheme.Accent.link)
-                            .frame(width: AppTheme.IconSize.lg, height: AppTheme.IconSize.lg)
-                            .background(AppTheme.Accent.link.opacity(AppTheme.Opacity.soft), in: Circle())
-                        VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
-                            HStack(spacing: AppTheme.Spacing.sm) {
-                                Text("\(formatTime(segment.start)) — \(formatTime(segment.end))")
-                                if let speaker = segment.speaker, !speaker.isEmpty {
-                                    Text(speaker)
-                                }
-                            }
-                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
-                            .foregroundStyle(AppTheme.Text.tertiaryColor)
-                            Text(segment.text)
-                                .font(.system(size: AppTheme.FontSize.mdLg))
-                                .foregroundStyle(AppTheme.Text.primaryColor)
-                                .textSelection(.enabled)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(AppTheme.Spacing.lgXl)
-                    .frame(minHeight: AppTheme.Workbench.transcriptCardMinHeight, alignment: .topLeading)
-                    .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
-                            .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-                    }
-                }
-            }
-        }
-    }
 }
 
 private struct SessionDubOptionsSheet: View {
@@ -799,17 +740,41 @@ private struct SessionMediaPlayer: View {
     let track: SessionPlaybackTrack
     let allowsTrackSelection: Bool
     var showsFilename = true
+    var prefersVideoCanvas = false
+    var subtitleTrack: SubtitleTrack? = nil
+    var translationTracks: [WorkbenchTranslationTrack] = []
+    @Binding var seekSeconds: Double?
     let onSelectTrack: (SessionPlaybackTrack) -> Void
 
     @State private var player: AVPlayer?
     @State private var peaks: [Float] = []
     @State private var isPlaying = false
     @State private var duration = 0.0
+    @State private var playbackRate = 1.0
+    @State private var subtitleMode: SessionSubtitleDisplayMode = .original
+    @State private var playerViewRef: AVPlayerView?
+
+    private var showsVideoCanvas: Bool {
+        prefersVideoCanvas || URL?.isMovie == true
+    }
+
+    private var activeSubtitleCues: [SubtitleCue] {
+        switch subtitleMode {
+        case .off:
+            return []
+        case .original:
+            return subtitleTrack?.cues ?? []
+        case .translation(let code):
+            return translationTracks.first(where: {
+                $0.languageCode.caseInsensitiveCompare(code) == .orderedSame
+            })?.track.cues ?? []
+        }
+    }
 
     var body: some View {
-        VStack(spacing: AppTheme.Spacing.md) {
-            HStack {
-                if allowsTrackSelection {
+        VStack(spacing: 0) {
+            if allowsTrackSelection {
+                HStack {
                     Picker("Track", selection: Binding(get: { track }, set: { value in onSelectTrack(value) })) {
                         ForEach(SessionPlaybackTrack.allCases) { item in
                             Text(item.title).tag(item)
@@ -817,60 +782,252 @@ private struct SessionMediaPlayer: View {
                     }
                     .pickerStyle(.segmented)
                     .fixedSize()
-                } else {
-                    Text(track.title)
-                        .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                    Spacer()
+                    if showsFilename {
+                        Text(URL?.lastPathComponent ?? "Media unavailable")
+                            .font(.system(size: AppTheme.FontSize.xs))
+                            .foregroundStyle(AppTheme.Text.mutedColor)
+                            .lineLimit(1)
+                    }
                 }
-                Spacer()
-                if showsFilename {
-                    Text(URL?.lastPathComponent ?? "Media unavailable")
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Text.mutedColor)
-                        .lineLimit(1)
-                }
+                .padding(.horizontal, AppTheme.Spacing.md)
+                .padding(.top, AppTheme.Spacing.md)
+                .padding(.bottom, AppTheme.Spacing.sm)
             }
 
-            SwiftUI.TimelineView(
-                .periodic(from: .now, by: AppTheme.Workbench.playerRefreshInterval)
-            ) { _ in
-                let currentTime = player?.currentTime().seconds.finiteOrZero ?? 0
-                VStack(spacing: AppTheme.Spacing.smMd) {
-                    SessionWaveform(peaks: peaks, progress: duration > 0 ? currentTime / duration : 0)
-                        .frame(height: AppTheme.Workbench.waveformHeight)
-                    HStack(spacing: AppTheme.Spacing.md) {
-                        Button {
-                            togglePlayback()
-                        } label: {
-                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.circle)
-                        .disabled(player == nil)
+            if showsVideoCanvas {
+                videoCanvas
+            } else {
+                audioCanvas
+            }
+        }
+        .background(AppTheme.Background.surfaceColor)
+        .task(id: URL) { await load() }
+        .onChange(of: playbackRate) { _, rate in
+            player?.rate = isPlaying ? Float(rate) : 0
+            player?.defaultRate = Float(rate)
+        }
+        .onChange(of: seekSeconds) { _, seconds in
+            guard let seconds else { return }
+            seekAbsolute(to: seconds)
+            seekSeconds = nil
+        }
+        .onDisappear { player?.pause() }
+    }
 
-                        Slider(
-                            value: Binding(
-                                get: { duration > 0 ? min(1, max(0, currentTime / duration)) : 0 },
-                                set: { seek(to: $0) }
-                            ),
-                            in: 0...1
+    private var videoCanvas: some View {
+        SwiftUI.TimelineView(
+            .periodic(from: .now, by: AppTheme.Workbench.playerRefreshInterval)
+        ) { _ in
+            let currentTime = player?.currentTime().seconds.finiteOrZero ?? 0
+            let cueText = activeSubtitleText(at: currentTime)
+            VStack(spacing: 0) {
+                ZStack(alignment: .bottom) {
+                    Color.black
+                    if let player {
+                        SessionAVPlayerRepresentable(
+                            player: player,
+                            onViewReady: { playerViewRef = $0 }
                         )
-                        .disabled(player == nil || duration <= 0)
-                        Text("\(formatTime(currentTime)) / \(formatTime(duration))")
-                            .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
-                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    } else if URL != nil {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    } else {
+                        Text("Media unavailable")
+                            .font(.system(size: AppTheme.FontSize.sm))
+                            .foregroundStyle(AppTheme.Text.mutedColor)
+                    }
+
+                    if let cueText {
+                        Text(cueText)
+                            .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, AppTheme.Spacing.lg)
+                            .padding(.vertical, AppTheme.Spacing.smMd)
+                            .background(Color.black.opacity(AppTheme.Opacity.medium), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+                            .padding(.horizontal, AppTheme.Spacing.xl)
+                            .padding(.bottom, AppTheme.Spacing.xl)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(
+                    minHeight: AppTheme.Workbench.sessionVideoMinHeight,
+                    idealHeight: AppTheme.Workbench.sessionVideoIdealHeight
+                )
+                .frame(maxHeight: .infinity)
+                .layoutPriority(1)
+
+                videoControls(currentTime: currentTime)
+            }
+        }
+    }
+
+    private var audioCanvas: some View {
+        SwiftUI.TimelineView(
+            .periodic(from: .now, by: AppTheme.Workbench.playerRefreshInterval)
+        ) { _ in
+            let currentTime = player?.currentTime().seconds.finiteOrZero ?? 0
+            VStack(spacing: AppTheme.Spacing.smMd) {
+                SessionWaveform(peaks: peaks, progress: duration > 0 ? currentTime / duration : 0)
+                    .frame(height: AppTheme.Workbench.waveformHeight)
+                transportRow(currentTime: currentTime, includeAdvancedControls: false)
+            }
+            .padding(AppTheme.Spacing.lgXl)
+        }
+    }
+
+    private func videoControls(currentTime: Double) -> some View {
+        VStack(spacing: AppTheme.Spacing.sm) {
+            Slider(
+                value: Binding(
+                    get: { duration > 0 ? min(1, max(0, currentTime / duration)) : 0 },
+                    set: { seek(to: $0) }
+                ),
+                in: 0...1
+            )
+            .disabled(player == nil || duration <= 0)
+            transportRow(currentTime: currentTime, includeAdvancedControls: true)
+        }
+        .padding(.horizontal, AppTheme.Spacing.md)
+        .padding(.vertical, AppTheme.Spacing.smMd)
+        .background(AppTheme.Background.surfaceColor)
+    }
+
+    private func transportRow(currentTime: Double, includeAdvancedControls: Bool) -> some View {
+        HStack(spacing: AppTheme.Spacing.md) {
+            Button {
+                togglePlayback()
+            } label: {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.circle)
+            .disabled(player == nil)
+
+            if !includeAdvancedControls {
+                Slider(
+                    value: Binding(
+                        get: { duration > 0 ? min(1, max(0, currentTime / duration)) : 0 },
+                        set: { seek(to: $0) }
+                    ),
+                    in: 0...1
+                )
+                .disabled(player == nil || duration <= 0)
+            }
+
+            Text("\(formatTime(currentTime)) / \(formatTime(duration))")
+                .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+
+            Spacer(minLength: AppTheme.Spacing.sm)
+
+            if includeAdvancedControls {
+                subtitleMenu
+                speedMenu
+                Button {
+                    toggleFullscreen()
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
+                }
+                .buttonStyle(.bordered)
+                .disabled(playerViewRef == nil)
+                .help("Fullscreen")
+            }
+        }
+    }
+
+    private var subtitleMenu: some View {
+        Menu {
+            Button {
+                subtitleMode = .off
+            } label: {
+                labelWithCheck("Off", selected: subtitleMode == .off)
+            }
+            Button {
+                subtitleMode = .original
+            } label: {
+                labelWithCheck("Original", selected: subtitleMode == .original)
+            }
+            if !translationTracks.isEmpty {
+                Divider()
+                ForEach(translationTracks) { track in
+                    Button {
+                        subtitleMode = .translation(track.languageCode)
+                    } label: {
+                        labelWithCheck(
+                            track.displayLanguageLabel,
+                            selected: {
+                                if case .translation(let code) = subtitleMode {
+                                    return code.caseInsensitiveCompare(track.languageCode) == .orderedSame
+                                }
+                                return false
+                            }()
+                        )
                     }
                 }
             }
+        } label: {
+            Text("CC")
+                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                .padding(.horizontal, AppTheme.Spacing.smMd)
+                .padding(.vertical, AppTheme.Spacing.xs)
+                .background(
+                    subtitleMode == .off
+                        ? AppTheme.Background.raisedColor
+                        : AppTheme.Text.primaryColor,
+                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                )
+                .foregroundStyle(subtitleMode == .off ? AppTheme.Text.primaryColor : AppTheme.Background.baseColor)
         }
-        .padding(AppTheme.Spacing.lgXl)
-        .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+        .menuStyle(.borderlessButton)
+        .disabled(subtitleTrack == nil && translationTracks.isEmpty)
+        .help("Subtitles")
+    }
+
+    private var speedMenu: some View {
+        Menu {
+            ForEach(AppTheme.Workbench.playbackRates, id: \.self) { rate in
+                Button {
+                    playbackRate = rate
+                    if isPlaying { player?.rate = Float(rate) }
+                } label: {
+                    labelWithCheck(speedLabel(rate), selected: abs(playbackRate - rate) < 0.001)
+                }
+            }
+        } label: {
+            Text("Speed \(speedLabel(playbackRate))")
+                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
         }
-        .task(id: URL) { await load() }
-        .onDisappear { player?.pause() }
+        .menuStyle(.borderlessButton)
+        .help("Playback speed")
+    }
+
+    @ViewBuilder
+    private func labelWithCheck(_ title: String, selected: Bool) -> some View {
+        HStack {
+            Text(title)
+            if selected {
+                Image(systemName: "checkmark")
+            }
+        }
+    }
+
+    private func speedLabel(_ rate: Double) -> String {
+        if abs(rate - 1) < 0.001 { return "1x" }
+        if rate == Double(Int(rate)) { return "\(Int(rate))x" }
+        return String(format: "%gx", rate)
+    }
+
+    private func activeSubtitleText(at time: Double) -> String? {
+        guard !activeSubtitleCues.isEmpty else { return nil }
+        return activeSubtitleCues.first(where: { time >= $0.start && time < $0.end })?
+            .text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
     }
 
     @MainActor
@@ -879,14 +1036,26 @@ private struct SessionMediaPlayer: View {
         isPlaying = false
         peaks = []
         duration = 0
+        playerViewRef = nil
         guard let URL else {
             player = nil
             return
         }
+        _ = AVPlayerView.self
         let nextPlayer = AVPlayer(url: URL)
+        nextPlayer.defaultRate = Float(playbackRate)
         player = nextPlayer
         duration = (try? await nextPlayer.currentItem?.asset.load(.duration).seconds)?.finiteOrZero ?? 0
-        peaks = (try? await WaveformExtractor.peakEnvelope(from: URL)) ?? []
+        if !showsVideoCanvas {
+            peaks = (try? await WaveformExtractor.peakEnvelope(from: URL)) ?? []
+        }
+        if subtitleTrack != nil {
+            subtitleMode = .original
+        } else if let first = translationTracks.first {
+            subtitleMode = .translation(first.languageCode)
+        } else {
+            subtitleMode = .off
+        }
     }
 
     private func togglePlayback() {
@@ -898,13 +1067,55 @@ private struct SessionMediaPlayer: View {
                 player.seek(to: .zero)
             }
             player.play()
+            player.rate = Float(playbackRate)
         }
         isPlaying.toggle()
     }
 
     private func seek(to progress: Double) {
         guard let player, duration > 0 else { return }
-        player.seek(to: CMTime(seconds: progress * duration, preferredTimescale: AppTheme.Workbench.playerTimescale))
+        seekAbsolute(to: progress * duration)
+    }
+
+    private func seekAbsolute(to seconds: Double) {
+        guard let player else { return }
+        let clamped = max(0, duration > 0 ? min(seconds, duration) : seconds)
+        player.seek(
+            to: CMTime(seconds: clamped, preferredTimescale: AppTheme.Workbench.playerTimescale),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        )
+        player.play()
+        player.rate = Float(playbackRate)
+        isPlaying = true
+    }
+
+    private func toggleFullscreen() {
+        guard let view = playerViewRef else { return }
+        if view.isInFullScreenMode {
+            view.exitFullScreenMode(options: nil)
+            return
+        }
+        guard let screen = view.window?.screen ?? NSScreen.main else { return }
+        view.enterFullScreenMode(screen, withOptions: [
+            .fullScreenModeApplicationPresentationOptions: NSApplication.PresentationOptions([
+                .autoHideDock,
+                .autoHideMenuBar,
+            ]).rawValue,
+        ])
+    }
+}
+
+private enum SessionSubtitleDisplayMode: Equatable {
+    case off
+    case original
+    case translation(String)
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
@@ -933,61 +1144,17 @@ private struct SessionWaveform: View {
     }
 }
 
-private struct SessionFloatingVideo: View {
-    let URL: URL
-    @State private var player: AVPlayer?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Label("Source preview", systemImage: "play.rectangle")
-                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
-                Spacer()
-            }
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .frame(height: AppTheme.Workbench.floatingPlayerHeaderHeight)
-
-            ZStack {
-                AppTheme.Background.raisedColor
-                if let player {
-                    SessionAVPlayerRepresentable(player: player)
-                } else {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-            }
-        }
-        .frame(width: AppTheme.Workbench.floatingPlayerWidth, height: AppTheme.Workbench.floatingPlayerHeight)
-        .background(AppTheme.Background.surfaceColor)
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-        }
-        .shadow(AppTheme.Shadow.lg)
-        .task(id: URL) {
-            // Keep AVPlayerView linked; SwiftUI.VideoPlayer demangles AVPlayerView and aborts
-            // when AVKit is not explicitly loaded in non-debugger launches.
-            _ = AVPlayerView.self
-            player?.pause()
-            player = AVPlayer(url: URL)
-        }
-        .onDisappear {
-            player?.pause()
-            player = nil
-        }
-    }
-}
-
 /// AppKit-backed preview avoids SwiftUI `VideoPlayer` metadata crashes on macOS.
 private struct SessionAVPlayerRepresentable: NSViewRepresentable {
     let player: AVPlayer
+    var onViewReady: ((AVPlayerView) -> Void)?
 
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
-        view.controlsStyle = .inline
+        view.controlsStyle = .none
         view.videoGravity = .resizeAspect
         view.player = player
+        DispatchQueue.main.async { onViewReady?(view) }
         return view
     }
 
@@ -995,9 +1162,13 @@ private struct SessionAVPlayerRepresentable: NSViewRepresentable {
         if nsView.player !== player {
             nsView.player = player
         }
+        DispatchQueue.main.async { onViewReady?(nsView) }
     }
 
     static func dismantleNSView(_ nsView: AVPlayerView, coordinator: ()) {
+        if nsView.isInFullScreenMode {
+            nsView.exitFullScreenMode(options: nil)
+        }
         nsView.player?.pause()
         nsView.player = nil
     }
@@ -1080,11 +1251,12 @@ private struct SessionSummaryPanel: View {
             }
         }
         .padding(AppTheme.Spacing.lgXl)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(AppTheme.Background.surfaceColor)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(AppTheme.Border.subtleColor)
+                .frame(height: AppTheme.BorderWidth.thin)
         }
     }
 }
@@ -1096,7 +1268,7 @@ private struct SessionTemplateSheet: View {
     let onApply: (SummaryTemplateDefinition) -> Void
 
     @State private var templates: [SummaryTemplateDefinition] = SummaryTemplateDefinition.locallySupported
-    @State private var selectedID = SummaryTemplateDefinition.interviewNotesFallbackID
+    @State private var selectedID = SummaryTemplateDefinition.generalSummaryID
     @State private var loadError: String?
     @State private var isLoading = false
 
@@ -1201,7 +1373,7 @@ private struct SessionTemplateSheet: View {
     private func loadTemplates() async {
         guard AccountService.shared.isSignedIn else {
             templates = SummaryTemplateDefinition.locallySupported
-            selectedID = SummaryTemplateDefinition.interviewNotesFallbackID
+            selectedID = SummaryTemplateDefinition.generalSummaryID
             return
         }
         isLoading = true
@@ -1219,11 +1391,11 @@ private struct SessionTemplateSheet: View {
                 authToken: token
             )
             templates = remote
-            selectedID = remote.first?.id ?? SummaryTemplateDefinition.interviewNotesFallbackID
+            selectedID = remote.first?.id ?? SummaryTemplateDefinition.generalSummaryID
         } catch {
             loadError = error.localizedDescription
             templates = SummaryTemplateDefinition.locallySupported
-            selectedID = SummaryTemplateDefinition.interviewNotesFallbackID
+            selectedID = SummaryTemplateDefinition.generalSummaryID
         }
     }
 }

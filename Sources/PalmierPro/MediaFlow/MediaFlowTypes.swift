@@ -231,6 +231,100 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
         }
         return updated
     }
+
+    func updatingCueText(id: Int, text: String) -> SubtitleTrack? {
+        guard let index = cues.firstIndex(where: { $0.id == id }) else { return nil }
+        let language = language ?? sourceLanguage
+        let normalized = TranscriptSegmenter.normalizeDisplayText(text, language: language)
+        guard !normalized.isEmpty else { return nil }
+        var updated = self
+        updated.cues[index].text = normalized
+        return updated
+    }
+
+    func assigningSpeaker(toCue id: Int, speaker: String) -> SubtitleTrack? {
+        let normalized = speaker.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty,
+              let index = cues.firstIndex(where: { $0.id == id }) else { return nil }
+        var updated = self
+        updated.cues[index].speaker = normalized
+        return updated
+    }
+
+    /// Merge cue `id` with the next cue, matching web merge-down.
+    func mergingDown(fromCueID id: Int) -> SubtitleTrack? {
+        guard let index = cues.firstIndex(where: { $0.id == id }),
+              cues.indices.contains(index + 1) else { return nil }
+        let upper = cues[index]
+        let lower = cues[index + 1]
+        let language = language ?? sourceLanguage
+        let mergedText = TranscriptSegmenter.joinedText([upper.text, lower.text], language: language)
+        guard !mergedText.isEmpty else { return nil }
+        var updated = self
+        updated.cues[index] = SubtitleCue(
+            id: upper.id,
+            sourceIDs: upper.sourceIDs + lower.sourceIDs,
+            text: mergedText,
+            start: upper.start,
+            end: lower.end,
+            speaker: upper.speaker ?? lower.speaker,
+            characterBudget: upper.characterBudget ?? lower.characterBudget,
+            overBudget: upper.overBudget || lower.overBudget
+        )
+        updated.cues.remove(at: index + 1)
+        return updated.renumberingCueIDs()
+    }
+
+    /// Split cue `id` at left/right text, matching web split (ratio pivot when no word timings).
+    func splittingCue(id: Int, leftText: String, rightText: String) -> SubtitleTrack? {
+        guard let index = cues.firstIndex(where: { $0.id == id }) else { return nil }
+        let language = language ?? sourceLanguage
+        let left = TranscriptSegmenter.normalizeDisplayText(leftText, language: language)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let right = TranscriptSegmenter.normalizeDisplayText(rightText, language: language)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !left.isEmpty, !right.isEmpty else { return nil }
+
+        let cue = cues[index]
+        guard cue.end > cue.start else { return nil }
+        let totalLength = Double(left.count + right.count)
+        let ratio = totalLength > 0 ? Double(left.count) / totalLength : 0.5
+        let pivot = cue.start + (cue.end - cue.start) * min(1, max(0, ratio))
+        let minimumSpan = min(0.02, (cue.end - cue.start) / 2)
+        guard pivot > cue.start + minimumSpan, pivot < cue.end - minimumSpan else { return nil }
+
+        var updated = self
+        let leftCue = SubtitleCue(
+            id: cue.id,
+            sourceIDs: cue.sourceIDs,
+            text: left,
+            start: cue.start,
+            end: pivot,
+            speaker: cue.speaker,
+            characterBudget: cue.characterBudget,
+            overBudget: cue.overBudget
+        )
+        let rightCue = SubtitleCue(
+            id: cue.id + 1,
+            sourceIDs: cue.sourceIDs,
+            text: right,
+            start: pivot,
+            end: cue.end,
+            speaker: cue.speaker,
+            characterBudget: cue.characterBudget,
+            overBudget: cue.overBudget
+        )
+        updated.cues.replaceSubrange(index...index, with: [leftCue, rightCue])
+        return updated.renumberingCueIDs()
+    }
+
+    func renumberingCueIDs() -> SubtitleTrack {
+        var updated = self
+        for index in updated.cues.indices {
+            updated.cues[index].id = index
+        }
+        return updated
+    }
 }
 
 struct TranscriptionFlowPayload: Sendable {

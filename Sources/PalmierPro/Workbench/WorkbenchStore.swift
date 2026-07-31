@@ -1161,6 +1161,172 @@ final class WorkbenchStore {
         }
     }
 
+    enum SessionCueScope: Equatable, Sendable {
+        case source
+        case translation(String)
+        case dub
+    }
+
+    func updateSessionCueText(
+        sessionID: UUID,
+        scope: SessionCueScope,
+        cueID: Int,
+        text: String
+    ) {
+        mutateSessionCueTrack(sessionID: sessionID, scope: scope) { track in
+            track.updatingCueText(id: cueID, text: text)
+        }
+    }
+
+    func mergeSessionCueDown(
+        sessionID: UUID,
+        scope: SessionCueScope,
+        cueID: Int
+    ) {
+        mutateSessionCueTrack(sessionID: sessionID, scope: scope) { track in
+            track.mergingDown(fromCueID: cueID)
+        }
+    }
+
+    func splitSessionCue(
+        sessionID: UUID,
+        scope: SessionCueScope,
+        cueID: Int,
+        leftText: String,
+        rightText: String
+    ) {
+        mutateSessionCueTrack(sessionID: sessionID, scope: scope) { track in
+            track.splittingCue(id: cueID, leftText: leftText, rightText: rightText)
+        }
+    }
+
+    func assignSessionCueSpeaker(
+        sessionID: UUID,
+        scope: SessionCueScope,
+        cueID: Int,
+        speaker: String
+    ) {
+        mutateSessionCueTrack(sessionID: sessionID, scope: scope) { track in
+            track.assigningSpeaker(toCue: cueID, speaker: speaker)
+        }
+    }
+
+    func renameSessionSpeaker(
+        sessionID: UUID,
+        scope: SessionCueScope,
+        current: String,
+        to replacement: String
+    ) {
+        let source = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        let destination = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty, !destination.isEmpty, source != destination else { return }
+
+        switch scope {
+        case .source, .translation:
+            guard let transcriptionID = sessions.first(where: { $0.id == sessionID })?.transcriptionID
+                    ?? (transcriptions.contains(where: { $0.id == sessionID }) ? sessionID : nil)
+            else { return }
+            renameSpeaker(source, to: destination, inTranscription: transcriptionID)
+        case .dub:
+            guard let dubID = resolveDubID(forSession: sessionID) else { return }
+            updateDub(dubID) { job in
+                job.subtitleTrack = job.subtitleTrack?.renamingSpeaker(source, to: destination)
+                job.alignedTranscript = job.alignedTranscript?.renamingSpeaker(source, to: destination)
+                if var segments = job.renderedSegments {
+                    for index in segments.indices
+                    where segments[index].speaker?.trimmingCharacters(in: .whitespacesAndNewlines) == source {
+                        segments[index].speaker = destination
+                    }
+                    job.renderedSegments = segments
+                }
+            }
+        }
+    }
+
+    func addSessionCueSpeaker(
+        sessionID: UUID,
+        scope: SessionCueScope,
+        cueID: Int,
+        speaker: String
+    ) {
+        assignSessionCueSpeaker(sessionID: sessionID, scope: scope, cueID: cueID, speaker: speaker)
+    }
+
+    private func mutateSessionCueTrack(
+        sessionID: UUID,
+        scope: SessionCueScope,
+        _ transform: (SubtitleTrack) -> SubtitleTrack?
+    ) {
+        switch scope {
+        case .source:
+            guard let transcriptionID = resolveTranscriptionID(forSession: sessionID) else { return }
+            updateTranscription(transcriptionID) { job in
+                let base = job.subtitleTrack
+                    ?? job.result.map(SubtitleTrack.fromTranscript)
+                guard let base, let updated = transform(base) else { return }
+                job.subtitleTrack = updated
+                job.result = updated.asTranscriptionResult(preservingWords: job.result?.words ?? [])
+                job.editedText = updated.text
+            }
+        case .translation(let languageCode):
+            guard let transcriptionID = resolveTranscriptionID(forSession: sessionID) else { return }
+            updateTranscription(transcriptionID) { job in
+                guard let index = job.translationTracks.firstIndex(where: {
+                    $0.languageCode.caseInsensitiveCompare(languageCode) == .orderedSame
+                }) else { return }
+                guard let updated = transform(job.translationTracks[index].track) else { return }
+                job.translationTracks[index].track = updated
+                job.translationTracks[index].createdAt = Date()
+            }
+        case .dub:
+            guard let dubID = resolveDubID(forSession: sessionID) else { return }
+            updateDub(dubID) { job in
+                let base = job.subtitleTrack
+                    ?? SubtitleTrack.fromDubSegments(
+                        job.renderedSegments ?? Self.fallbackDubSegments(for: job),
+                        language: job.alignedTranscript?.language
+                    )
+                guard let base, let updated = transform(base) else { return }
+                let segments = updated.cues.enumerated().map { index, cue in
+                    DubRenderedSegment(
+                        index: index,
+                        text: cue.text,
+                        start: cue.start,
+                        end: cue.end,
+                        speaker: cue.speaker,
+                        sourceSubtitleID: cue.sourceIDs.first
+                    )
+                }
+                let transcript = updated.asTranscriptionResult(
+                    preservingWords: job.alignedTranscript?.words ?? []
+                )
+                job.subtitleTrack = updated
+                job.alignedTranscript = transcript
+                job.renderedSegments = segments
+                if let activeID = job.activeRevisionID,
+                   let revisionIndex = job.revisions?.firstIndex(where: { $0.id == activeID }) {
+                    job.revisions?[revisionIndex].subtitleTrack = updated
+                    job.revisions?[revisionIndex].renderedSegments = segments
+                    job.revisions?[revisionIndex].alignedTranscript = transcript
+                }
+            }
+        }
+    }
+
+    private func resolveTranscriptionID(forSession sessionID: UUID) -> UUID? {
+        if let session = sessions.first(where: { $0.id == sessionID }) {
+            return session.transcriptionID
+        }
+        return transcriptions.contains(where: { $0.id == sessionID }) ? sessionID : nil
+    }
+
+    private func resolveDubID(forSession sessionID: UUID) -> UUID? {
+        if let session = sessions.first(where: { $0.id == sessionID }) {
+            return session.dubID
+        }
+        return dubs.contains(where: { $0.id == sessionID }) ? sessionID : nil
+    }
+
     func updateDub(_ id: UUID, _ mutate: (inout WorkbenchDubJob) -> Void) {
         guard let index = dubs.firstIndex(where: { $0.id == id }) else { return }
         mutate(&dubs[index])
