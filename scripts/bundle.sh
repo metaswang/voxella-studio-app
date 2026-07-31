@@ -24,6 +24,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 RESOURCES="$ROOT/Sources/PalmierPro/Resources"
+ENTITLEMENTS="$ROOT/scripts/PalmierPro.entitlements"
 APP="$ROOT/.build/Voxella Studio.app"
 ZIP="$ROOT/.build/Voxella-Studio.zip"
 DMG="$ROOT/.build/Voxella-Studio.dmg"
@@ -93,6 +94,7 @@ touch "$APP"
 
 if [ "$MODE" = "fast" ]; then
   echo "==> Ad-hoc signing main app (no timestamp, no helpers)"
+  echo "!! Ad-hoc builds use the login keychain and may request access after a rebuild." >&2
   codesign --force --sign - "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
   echo "==> Done: $APP (fast mode — stable identity, no dSYM)"
@@ -106,6 +108,7 @@ dsymutil "$APP/Contents/MacOS/VoxellaStudio" -o "$DSYM"
 
 if [ "$MODE" = "dev" ]; then
   echo "==> Ad-hoc signing dev app"
+  echo "!! Ad-hoc builds use the login keychain and may request access after a rebuild." >&2
   codesign --force --deep --sign - "$APP"
   codesign --verify --strict --verbose=2 "$APP"
   echo "==> Done: $APP (ad-hoc signed)"
@@ -119,6 +122,7 @@ fi
 
 echo "==> Codesigning main app"
 codesign --force --options runtime --timestamp \
+  --entitlements "$ENTITLEMENTS" \
   --sign "$SIGNING_IDENTITY" \
   "$APP"
 codesign --verify --strict --verbose=2 "$APP"

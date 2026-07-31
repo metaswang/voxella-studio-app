@@ -269,6 +269,71 @@ struct LocalFirstWorkbenchTests {
         #expect(recoveredDub.progressMessage == "Interrupted — ready to retry")
     }
 
+    @Test func localTranscriptionAdmissionRejectsEmptyAndOversizedBatches() throws {
+        #expect(throws: LocalTranscriptionResourcePolicy.AdmissionError.self) {
+            try LocalTranscriptionResourcePolicy.admit([])
+        }
+
+        let urls = (0..<LocalTranscriptionResourcePolicy.maxFilesPerBatch + 1).map {
+            URL(fileURLWithPath: "/tmp/voxella-batch-\($0).wav")
+        }
+        #expect(throws: LocalTranscriptionResourcePolicy.AdmissionError.self) {
+            try LocalTranscriptionResourcePolicy.admit(urls)
+        }
+    }
+
+    @Test func processingOptionsClipAndTranslationMapIntoMediaFlow() {
+        var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/clip.wav")
+        job.languageCode = "en"
+        job.speakerCount = .two
+        job.clipStartMs = 1_500
+        job.clipEndMs = 8_000
+        job.targetLanguageCode = "zh-CN"
+
+        #expect(job.clipRangeSeconds == 1.5...8.0)
+
+        let steps = WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasAPIKey: true)
+        guard case .transcribe(let payload) = steps.first else {
+            Issue.record("expected transcribe step")
+            return
+        }
+        #expect(payload.languageCode == "en")
+        #expect(payload.speakerCount == 2)
+        #expect(payload.clipRangeSeconds == 1.5...8.0)
+        #expect(steps.contains {
+            if case .prepareSubtitles = $0 { return true }
+            return false
+        })
+        #expect(steps.contains {
+            if case .translate(let translation) = $0 {
+                return translation.targetLanguage == "zh-CN"
+            }
+            return false
+        })
+    }
+
+    @Test @MainActor
+    func stagingMediaImportOpensTranscribeOptionsFlow() throws {
+        let store = WorkbenchStore.shared
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voxella-import-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let first = directory.appendingPathComponent("a.wav")
+        let second = directory.appendingPathComponent("b.wav")
+        try Data().write(to: first)
+        try Data().write(to: second)
+
+        store.stageMediaImport([first, second])
+        #expect(store.pendingMediaImportURLs.count == 2)
+        #expect(store.route == .transcribe)
+        #expect(store.selectedTranscriptionID == nil)
+
+        store.clearPendingMediaImport()
+        #expect(store.pendingMediaImportURLs.isEmpty)
+    }
+
     @Test func appendingPipelineWarningPreservesDiarizationMetrics() {
         var diagnostics = DiarizationDiagnostics(
             backend: .mlxStreamingSortformer,

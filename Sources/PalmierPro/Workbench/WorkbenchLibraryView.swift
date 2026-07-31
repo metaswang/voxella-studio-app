@@ -25,8 +25,9 @@ struct WorkbenchLibraryView: View {
                         tint: .blue
                     ) {
                         Task {
-                            if let url = await WorkbenchFilePicker.pickMedia() {
-                                store.addTranscription(sourceURL: url)
+                            let urls = await WorkbenchFilePicker.pickMediaFiles()
+                            if !urls.isEmpty {
+                                store.stageMediaImport(urls)
                             }
                         }
                     }
@@ -169,13 +170,21 @@ private struct RecentWorkbenchItem: Identifiable {
 enum WorkbenchFilePicker {
     @MainActor
     static func pickMedia() async -> URL? {
+        await pickMediaFiles().first
+    }
+
+    @MainActor
+    static func pickMediaFiles() async -> [URL] {
         let panel = NSOpenPanel()
         panel.title = "Choose audio or video"
-        panel.allowsMultipleSelection = false
+        panel.message = "Select one or more files. Local transcription processes them one at a time."
+        panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.audio, .movie, .mpeg4Movie, .quickTimeMovie]
         return await withCheckedContinuation { continuation in
-            panel.begin { response in continuation.resume(returning: response == .OK ? panel.url : nil) }
+            panel.begin { response in
+                continuation.resume(returning: response == .OK ? panel.urls : [])
+            }
         }
     }
 

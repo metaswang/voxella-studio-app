@@ -108,7 +108,6 @@ enum KeychainStore {
     static func containsProtected(account: String) throws -> Bool {
         do {
             return try containsItem(account: account, backend: .dataProtection)
-                || containsItem(account: account, backend: .login)
         } catch let error as KeychainStoreError where error.isMissingEntitlement {
             return try containsItem(account: account, backend: .login)
         }

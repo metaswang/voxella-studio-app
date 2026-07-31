@@ -786,7 +786,16 @@ private struct SessionFloatingVideo: View {
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .frame(height: AppTheme.Workbench.floatingPlayerHeaderHeight)
-            VideoPlayer(player: player)
+
+            ZStack {
+                AppTheme.Background.raisedColor
+                if let player {
+                    SessionAVPlayerRepresentable(player: player)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
         }
         .frame(width: AppTheme.Workbench.floatingPlayerWidth, height: AppTheme.Workbench.floatingPlayerHeight)
         .background(AppTheme.Background.surfaceColor)
@@ -796,8 +805,41 @@ private struct SessionFloatingVideo: View {
                 .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
         }
         .shadow(AppTheme.Shadow.lg)
-        .onAppear { player = AVPlayer(url: URL) }
-        .onDisappear { player?.pause() }
+        .task(id: URL) {
+            // Keep AVPlayerView linked; SwiftUI.VideoPlayer demangles AVPlayerView and aborts
+            // when AVKit is not explicitly loaded in non-debugger launches.
+            _ = AVPlayerView.self
+            player?.pause()
+            player = AVPlayer(url: URL)
+        }
+        .onDisappear {
+            player?.pause()
+            player = nil
+        }
+    }
+}
+
+/// AppKit-backed preview avoids SwiftUI `VideoPlayer` metadata crashes on macOS.
+private struct SessionAVPlayerRepresentable: NSViewRepresentable {
+    let player: AVPlayer
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.controlsStyle = .inline
+        view.videoGravity = .resizeAspect
+        view.player = player
+        return view
+    }
+
+    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+        if nsView.player !== player {
+            nsView.player = player
+        }
+    }
+
+    static func dismantleNSView(_ nsView: AVPlayerView, coordinator: ()) {
+        nsView.player?.pause()
+        nsView.player = nil
     }
 }
 

@@ -93,11 +93,11 @@ enum SpeakerCountOption: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
-        case .auto: "Auto (1–4 speakers)"
-        case .one: "1 speaker (skip diarization)"
-        case .two: "Expected: 2 speakers"
-        case .three: "Expected: 3 speakers"
-        case .four: "Expected: 4 speakers"
+        case .auto: "Auto-detect"
+        case .one: "1 speaker"
+        case .two: "2 speakers"
+        case .three: "3 speakers"
+        case .four: "4 speakers"
         }
     }
 }
@@ -119,6 +119,9 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var state: WorkbenchJobState = .ready
     var languageCode: String?
     var speakerCount: SpeakerCountOption = .auto
+    var clipStartMs: Int?
+    var clipEndMs: Int?
+    var batchID: UUID?
     var result: TranscriptionResult?
     var editedText = ""
     var useLLMSubtitleProcessing: Bool?
@@ -141,6 +144,11 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var sessionTitle: String {
         let trimmed = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? displayName : trimmed
+    }
+
+    var clipRangeSeconds: ClosedRange<Double>? {
+        guard let startMs = clipStartMs, let endMs = clipEndMs, endMs > startMs else { return nil }
+        return Double(startMs) / 1000 ... Double(endMs) / 1000
     }
 
     func shouldProcessSubtitles(hasAPIKey: Bool) -> Bool {
@@ -181,6 +189,10 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     }
     var displayedText: String {
         currentTrack == .translation ? (translationTrack?.text ?? "") : editedText
+    }
+
+    var isActivelyProcessing: Bool {
+        state == .running || state == .cancelling
     }
 }
 
@@ -302,7 +314,8 @@ enum WorkbenchMediaFlowPlanner {
         var steps: [MediaFlowStep] = [
             .transcribe(TranscriptionFlowPayload(
                 languageCode: job.languageCode,
-                speakerCount: job.speakerCount.count
+                speakerCount: job.speakerCount.count,
+                clipRangeSeconds: job.clipRangeSeconds
             )),
         ]
         let targetLanguage = job.normalizedTargetLanguageCode
@@ -398,8 +411,14 @@ final class WorkbenchStore {
     var selectedTranscriptionID: UUID?
     var selectedDubID: UUID?
     var selectedSessionID: UUID?
+    /// Active multi-file / upload-style batch. While set, the Transcribe route shows the waiting UI.
+    var activeTranscriptionBatch: TranscriptionBatchState?
+    var transcriptionAdmissionError: String?
     private var audioPlayer: AVAudioPlayer?
     private var flowTasks: [UUID: Task<Void, Never>] = [:]
+    /// FIFO of transcription job IDs waiting for the single local ASR slot.
+    private var pendingTranscriptionQueue: [UUID] = []
+    private var activeQueuedTranscriptionID: UUID?
     private let persistence: WorkbenchPersistence
     private var hasHydrated = false
     private var saveRequestedBeforeHydration = false
@@ -517,14 +536,187 @@ final class WorkbenchStore {
         return id
     }
 
+    /// Media URLs waiting for the Processing options sheet (web upload flow).
+    var pendingMediaImportURLs: [URL] = []
+
+    func stageMediaImport(_ urls: [URL]) {
+        transcriptionAdmissionError = nil
+        do {
+            try LocalTranscriptionResourcePolicy.admit(urls)
+        } catch {
+            transcriptionAdmissionError = error.localizedDescription
+            pendingMediaImportURLs = []
+            return
+        }
+        pendingMediaImportURLs = urls
+        selectedTranscriptionID = nil
+        route = .transcribe
+    }
+
+    func clearPendingMediaImport() {
+        pendingMediaImportURLs = []
+    }
+
     @discardableResult
     func addTranscription(sourceURL: URL) -> UUID {
-        let job = WorkbenchTranscriptionJob(sourcePath: sourceURL.path)
-        transcriptions.insert(job, at: 0)
-        selectedTranscriptionID = job.id
+        stageMediaImport([sourceURL])
+        return UUID()
+    }
+
+    /// Creates jobs from local media, applies web-aligned options, and processes them serially.
+    @discardableResult
+    func beginTranscriptions(
+        sourceURLs: [URL],
+        options: LocalProcessingOptions,
+        openSessionWhenDone: Bool = true
+    ) -> UUID? {
+        transcriptionAdmissionError = nil
+        do {
+            try LocalTranscriptionResourcePolicy.admit(sourceURLs)
+        } catch {
+            transcriptionAdmissionError = error.localizedDescription
+            return nil
+        }
+
+        let batchID = UUID()
+        var created: [WorkbenchTranscriptionJob] = []
+        created.reserveCapacity(sourceURLs.count)
+        for url in sourceURLs {
+            var job = WorkbenchTranscriptionJob(sourcePath: url.path)
+            job.languageCode = options.languageCode
+            job.speakerCount = options.speakerCount
+            job.clipStartMs = sourceURLs.count == 1 ? options.clipStartMs : nil
+            job.clipEndMs = sourceURLs.count == 1 ? options.clipEndMs : nil
+            job.targetLanguageCode = options.normalizedTargetLanguageCode
+            job.batchID = batchID
+            job.progressMessage = "Queued for local processing"
+            job.state = .ready
+            created.append(job)
+        }
+        let jobIDs = created.map(\.id)
+        transcriptions.insert(contentsOf: created.reversed(), at: 0)
+
+        activeTranscriptionBatch = TranscriptionBatchState(id: batchID, jobIDs: jobIDs)
+        selectedTranscriptionID = jobIDs.first
         route = .transcribe
         save()
-        return job.id
+
+        for id in jobIDs {
+            enqueueTranscription(id, openSessionWhenBatchCompletes: openSessionWhenDone)
+        }
+        return batchID
+    }
+
+    func clearTranscriptionAdmissionError() {
+        transcriptionAdmissionError = nil
+    }
+
+    func isTranscriptionQueued(_ id: UUID) -> Bool {
+        pendingTranscriptionQueue.contains(id) || activeQueuedTranscriptionID == id
+    }
+
+    func shouldPresentTranscriptionProcessing(for id: UUID) -> Bool {
+        guard let job = transcriptions.first(where: { $0.id == id }) else { return false }
+        if job.isActivelyProcessing { return true }
+        if isTranscriptionQueued(id) { return true }
+        if let batch = activeTranscriptionBatch, batch.jobIDs.contains(id) {
+            return job.state != .completed
+        }
+        return false
+    }
+
+    private var openSessionWhenBatchCompletes = true
+
+    private func enqueueTranscription(_ id: UUID, openSessionWhenBatchCompletes: Bool) {
+        self.openSessionWhenBatchCompletes = openSessionWhenBatchCompletes
+        guard !pendingTranscriptionQueue.contains(id),
+              activeQueuedTranscriptionID != id,
+              flowTasks[id] == nil else { return }
+        pendingTranscriptionQueue.append(id)
+        updateTranscription(id) {
+            if $0.state == .ready {
+                $0.progressMessage = "Queued — waiting for the local ASR slot"
+            }
+        }
+        drainTranscriptionQueue()
+    }
+
+    private func drainTranscriptionQueue() {
+        guard activeQueuedTranscriptionID == nil else { return }
+
+        while let next = pendingTranscriptionQueue.first {
+            pendingTranscriptionQueue.removeFirst()
+            guard transcriptions.contains(where: { $0.id == next }) else { continue }
+            guard flowTasks[next] == nil else { continue }
+            let job = transcriptions.first { $0.id == next }
+            if job?.state == .cancelled || job?.state == .completed { continue }
+
+            activeQueuedTranscriptionID = next
+            selectedTranscriptionID = next
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if LocalTranscriptionResourcePolicy.shouldDelayBeforeNextJob
+                    || self.activeTranscriptionBatch?.jobIDs.count ?? 0 > 1 {
+                    try? await Task.sleep(for: LocalTranscriptionResourcePolicy.interJobDelay)
+                }
+                guard self.activeQueuedTranscriptionID == next else { return }
+                if ProcessInfo.processInfo.thermalState == .critical {
+                    self.updateTranscription(next) {
+                        $0.state = .failed
+                        $0.errorMessage = LocalTranscriptionResourcePolicy.AdmissionError.thermalPressure.localizedDescription
+                        $0.progressMessage = "Paused for thermal safety"
+                    }
+                    self.finishTranscriptionSlot(next)
+                    return
+                }
+                self.startTranscriptionPipeline(next)
+            }
+            return
+        }
+    }
+
+    private func finishTranscriptionSlot(_ id: UUID) {
+        if activeQueuedTranscriptionID == id {
+            activeQueuedTranscriptionID = nil
+        }
+        reconcileTranscriptionBatch(finishedID: id)
+        drainTranscriptionQueue()
+    }
+
+    private func reconcileTranscriptionBatch(finishedID: UUID) {
+        guard let batch = activeTranscriptionBatch else {
+            if openSessionWhenBatchCompletes,
+               let job = transcriptions.first(where: { $0.id == finishedID }),
+               job.state == .completed {
+                openSession(finishedID)
+            }
+            return
+        }
+        let jobs = batch.jobIDs.compactMap { id in transcriptions.first { $0.id == id } }
+        let pending = jobs.contains {
+            $0.isActivelyProcessing
+                || pendingTranscriptionQueue.contains($0.id)
+                || activeQueuedTranscriptionID == $0.id
+        }
+        guard !pending else {
+            if let nextRunning = jobs.first(where: {
+                $0.isActivelyProcessing || isTranscriptionQueued($0.id)
+            }) {
+                selectedTranscriptionID = nextRunning.id
+            }
+            return
+        }
+
+        activeTranscriptionBatch = nil
+        let firstCompleted = jobs.first(where: { $0.state == .completed })?.id
+        if openSessionWhenBatchCompletes, let firstCompleted {
+            openSession(firstCompleted)
+        } else if let failed = jobs.first(where: { $0.state == .failed }) {
+            selectedTranscriptionID = failed.id
+            route = .transcribe
+        } else {
+            selectedTranscriptionID = nil
+        }
     }
 
     @discardableResult
@@ -603,11 +795,18 @@ final class WorkbenchStore {
     }
 
     func deleteTranscription(_ id: UUID) {
+        pendingTranscriptionQueue.removeAll { $0 == id }
+        if activeQueuedTranscriptionID == id { activeQueuedTranscriptionID = nil }
         flowTasks[id]?.cancel()
         flowTasks[id] = nil
         transcriptions.removeAll { $0.id == id }
         if selectedTranscriptionID == id { selectedTranscriptionID = transcriptions.first?.id }
+        if var batch = activeTranscriptionBatch {
+            batch.jobIDs.removeAll { $0 == id }
+            activeTranscriptionBatch = batch.jobIDs.isEmpty ? nil : batch
+        }
         save()
+        drainTranscriptionQueue()
     }
 
     func deleteDub(_ id: UUID) {
@@ -654,8 +853,15 @@ final class WorkbenchStore {
     }
 
     func runTranscription(_ id: UUID) {
+        enqueueTranscription(id, openSessionWhenBatchCompletes: true)
+    }
+
+    private func startTranscriptionPipeline(_ id: UUID) {
         guard flowTasks[id] == nil,
-              let index = transcriptions.firstIndex(where: { $0.id == id }) else { return }
+              let index = transcriptions.firstIndex(where: { $0.id == id }) else {
+            finishTranscriptionSlot(id)
+            return
+        }
         let snapshot = transcriptions[index]
         transcriptions[index].state = .running
         transcriptions[index].progress = 0.02
@@ -673,7 +879,10 @@ final class WorkbenchStore {
 
         let task = Task { [weak self] in
             guard let self else { return }
-            defer { flowTasks[id] = nil }
+            defer {
+                flowTasks[id] = nil
+                finishTranscriptionSlot(id)
+            }
             _ = await LLMSettingsStore.shared.credentialAvailable()
             let hasSubtitleModel = LLMSettingsStore.shared.hasConfiguredModel(
                 for: .subtitleProcessing
@@ -718,13 +927,50 @@ final class WorkbenchStore {
     }
 
     func cancelTranscription(_ id: UUID) {
-        guard flowTasks[id] != nil else { return }
+        pendingTranscriptionQueue.removeAll { $0 == id }
+        if let batch = activeTranscriptionBatch, batch.jobIDs.contains(id) {
+            for queued in batch.jobIDs where queued != id && pendingTranscriptionQueue.contains(queued) {
+                pendingTranscriptionQueue.removeAll { $0 == queued }
+                updateTranscription(queued) {
+                    $0.state = .cancelled
+                    $0.progressMessage = "Cancelled — ready to retry"
+                    $0.errorMessage = nil
+                }
+            }
+        }
+        guard flowTasks[id] != nil else {
+            updateTranscription(id) {
+                if $0.state == .ready {
+                    $0.state = .cancelled
+                    $0.progressMessage = "Cancelled — ready to retry"
+                }
+            }
+            finishTranscriptionSlot(id)
+            return
+        }
         flowTasks[id]?.cancel()
         updateTranscription(id) {
             $0.state = .cancelling
             $0.errorMessage = nil
             $0.progressMessage = "Cancelling media flow…"
         }
+    }
+
+    func cancelActiveTranscriptionBatch() {
+        guard let batch = activeTranscriptionBatch else {
+            if let id = selectedTranscriptionID {
+                cancelTranscription(id)
+            }
+            return
+        }
+        for id in batch.jobIDs {
+            cancelTranscription(id)
+        }
+    }
+
+    func dismissTranscriptionProcessing() {
+        activeTranscriptionBatch = nil
+        selectedTranscriptionID = nil
     }
 
     func runTranslation(_ id: UUID) {

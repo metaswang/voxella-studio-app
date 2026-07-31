@@ -80,12 +80,14 @@ actor LocalSpeechPipeline {
         sourceURL: URL,
         languageCode: String?,
         speakerCount: Int?,
+        clipRangeSeconds: ClosedRange<Double>? = nil,
         progress: @escaping @Sendable (Double, String) -> Void
     ) async throws -> TranscriptionResult {
         try await transcribeDetailed(
             sourceURL: sourceURL,
             languageCode: languageCode,
             speakerCount: speakerCount,
+            clipRangeSeconds: clipRangeSeconds,
             progressUpdate: { update in progress(update.fraction, update.message) }
         ).result
     }
@@ -94,12 +96,14 @@ actor LocalSpeechPipeline {
         sourceURL: URL,
         languageCode: String?,
         speakerCount: Int?,
+        clipRangeSeconds: ClosedRange<Double>? = nil,
         progressUpdate: @escaping @Sendable (LocalSpeechProgress) -> Void
     ) async throws -> TranscriptionResult {
         try await transcribeDetailed(
             sourceURL: sourceURL,
             languageCode: languageCode,
             speakerCount: speakerCount,
+            clipRangeSeconds: clipRangeSeconds,
             progressUpdate: progressUpdate
         ).result
     }
@@ -108,6 +112,7 @@ actor LocalSpeechPipeline {
         sourceURL: URL,
         languageCode: String?,
         speakerCount: Int?,
+        clipRangeSeconds: ClosedRange<Double>? = nil,
         progressUpdate: @escaping @Sendable (LocalSpeechProgress) -> Void
     ) async throws -> LocalTranscriptionOutput {
         #if BUNDLED_SPEECH
@@ -132,8 +137,13 @@ actor LocalSpeechPipeline {
         progressUpdate(.init(stage: .decoding, fraction: 0.03, message: "Decoding audio locally…"))
         let preparedURL: URL
         let shouldRemovePrepared: Bool
-        if ClipType(fileExtension: sourceURL.pathExtension.lowercased()) == .video {
-            preparedURL = try await Transcription.extractAudioTrack(from: sourceURL)
+        let needsExtraction = clipRangeSeconds != nil
+            || ClipType(fileExtension: sourceURL.pathExtension.lowercased()) == .video
+        if needsExtraction {
+            preparedURL = try await Transcription.extractAudioTrack(
+                from: sourceURL,
+                range: clipRangeSeconds
+            )
             shouldRemovePrepared = true
         } else {
             preparedURL = sourceURL

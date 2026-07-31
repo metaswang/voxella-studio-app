@@ -236,6 +236,8 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
 struct TranscriptionFlowPayload: Sendable {
     var languageCode: String?
     var speakerCount: Int?
+    /// Optional media window in seconds, matching web clip_start_ms / clip_end_ms.
+    var clipRangeSeconds: ClosedRange<Double>?
 }
 
 enum ScriptAlignmentSpeakerMode: Sendable {

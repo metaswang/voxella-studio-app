@@ -115,6 +115,11 @@ let package = Package(
             swiftSettings: [
                 .define("BUNDLED_SPEECH", .when(traits: ["BundledSpeech"])),
             ],
+            linkerSettings: [
+                // SwiftUI VideoPlayer crashes without an explicit AVKit link in non-debugger launches.
+                .linkedFramework("AVKit"),
+                .linkedFramework("AVFoundation"),
+            ],
             plugins: ["MetalCIKernelPlugin"]
         ),
         .plugin(name: "MetalCIKernelPlugin", capability: .buildTool()),

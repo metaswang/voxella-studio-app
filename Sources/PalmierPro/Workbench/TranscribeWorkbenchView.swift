@@ -6,11 +6,17 @@ struct TranscribeWorkbenchView: View {
     @Bindable private var llmSettings = LLMSettingsStore.shared
     @State private var openingInEditorID: UUID?
     @State private var speakerEditRequest: SpeakerEditRequest?
+    @State private var showProcessingOptions = false
 
     var body: some View {
         Group {
             if let index = store.selectedTranscriptionIndex {
-                detail(index: index)
+                let job = store.transcriptions[index]
+                if store.shouldPresentTranscriptionProcessing(for: job.id) {
+                    TranscriptionProcessingView(jobID: job.id)
+                } else {
+                    detail(index: index)
+                }
             } else {
                 emptyState
             }
@@ -18,12 +24,54 @@ struct TranscribeWorkbenchView: View {
         .background(AppTheme.Background.baseColor)
         .onAppear {
             llmSettings.refreshCredentialStatus()
+            presentOptionsIfNeeded()
+        }
+        .onChange(of: store.pendingMediaImportURLs) { _, urls in
+            showProcessingOptions = !urls.isEmpty
+        }
+        .onChange(of: store.transcriptionAdmissionError) { _, message in
+            // Keep empty state visible; error banner is rendered there.
+            _ = message
+        }
+        .sheet(isPresented: $showProcessingOptions, onDismiss: {
+            if !store.pendingMediaImportURLs.isEmpty {
+                store.clearPendingMediaImport()
+            }
+        }) {
+            ProcessingOptionsSheet(
+                mediaURLs: store.pendingMediaImportURLs,
+                onCancel: {
+                    store.clearPendingMediaImport()
+                    showProcessingOptions = false
+                },
+                onContinue: { options in
+                    let urls = store.pendingMediaImportURLs
+                    guard !urls.isEmpty else {
+                        showProcessingOptions = false
+                        return
+                    }
+                    guard models.hasRequiredTranscriptionModels(
+                        languageCode: options.languageCode,
+                        speakerCount: options.speakerCount.count
+                    ) else {
+                        models.presentManager()
+                        return
+                    }
+                    store.clearPendingMediaImport()
+                    showProcessingOptions = false
+                    _ = store.beginTranscriptions(sourceURLs: urls, options: options)
+                }
+            )
         }
         .sheet(item: $speakerEditRequest) { request in
             SpeakerNameEditor(request: request) { name in
                 commitSpeakerEdit(request, name: name)
             }
         }
+    }
+
+    private func presentOptionsIfNeeded() {
+        showProcessingOptions = !store.pendingMediaImportURLs.isEmpty
     }
 
     private func detail(index: Int) -> some View {
@@ -515,6 +563,20 @@ struct TranscribeWorkbenchView: View {
     private var emptyState: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                if let message = store.transcriptionAdmissionError {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(AppTheme.Status.warningColor)
+                        Text(message)
+                            .font(.system(size: AppTheme.FontSize.sm))
+                            .foregroundStyle(AppTheme.Text.primaryColor)
+                        Spacer()
+                        Button("Dismiss") { store.clearTranscriptionAdmissionError() }
+                            .buttonStyle(.borderless)
+                    }
+                    .padding(12)
+                    .background(AppTheme.Status.warningColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                }
                 transcriptionEntryBar
                 HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
@@ -527,14 +589,14 @@ struct TranscribeWorkbenchView: View {
                         Text("Upload audio or video and turn it into a searchable transcript workspace.")
                             .font(.system(size: AppTheme.FontSize.title2, weight: AppTheme.FontWeight.semibold))
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("Processing starts locally after upload, with word timestamps, speaker labels, subtitle cleanup, and editor captions available from the same workspace.")
+                        Text("Choose files, confirm processing options, then watch local progress before the session workspace opens.")
                             .font(.system(size: AppTheme.FontSize.md))
                             .foregroundStyle(AppTheme.Text.tertiaryColor)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack(alignment: .center, spacing: AppTheme.Spacing.mdLg) {
                             Button("Choose media") { importMedia() }
                                 .buttonStyle(.borderedProminent)
-                            Text("Supports common audio and video files")
+                            Text("Supports multiple audio and video files · processed one at a time")
                                 .font(.system(size: AppTheme.FontSize.xs))
                                 .foregroundStyle(AppTheme.Text.mutedColor)
                         }
@@ -698,8 +760,9 @@ struct TranscribeWorkbenchView: View {
 
     private func importMedia() {
         Task {
-            if let url = await WorkbenchFilePicker.pickMedia() {
-                store.addTranscription(sourceURL: url)
+            let urls = await WorkbenchFilePicker.pickMediaFiles()
+            if !urls.isEmpty {
+                store.stageMediaImport(urls)
             }
         }
     }

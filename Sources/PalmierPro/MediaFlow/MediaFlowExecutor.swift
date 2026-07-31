@@ -119,6 +119,7 @@ actor MediaFlowExecutor: MediaJobEventSource {
                         sourceURL: mediaURL,
                         languageCode: payload.languageCode,
                         speakerCount: payload.speakerCount,
+                        clipRangeSeconds: payload.clipRangeSeconds,
                         progressUpdate: { update in
                             progressEvent(
                                 .transcription,
@@ -130,10 +131,13 @@ actor MediaFlowExecutor: MediaJobEventSource {
                             )
                         }
                     )
-                    context.transcript = output.result
+                    let transcript = payload.clipRangeSeconds.map {
+                        output.result.offsetting(by: $0.lowerBound)
+                    } ?? output.result
+                    context.transcript = transcript
                     context.diagnostics = output.diarizationDiagnostics
                     continuation.yield(.artifact(.transcription(
-                        output.result,
+                        transcript,
                         output.diarizationDiagnostics
                     )))
 
