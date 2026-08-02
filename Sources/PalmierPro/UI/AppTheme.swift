@@ -361,6 +361,7 @@ enum AppTheme {
         static let searchWidth: CGFloat = 260
         static let revisionPickerWidth: CGFloat = 190
         static let sessionIconSize: CGFloat = 44
+        static let fullscreenControlSize: CGFloat = 48
         static let emptyStateMinHeight: CGFloat = 260
         static let waveformHeight: CGFloat = 54
         static let waveformBarStep: CGFloat = 5

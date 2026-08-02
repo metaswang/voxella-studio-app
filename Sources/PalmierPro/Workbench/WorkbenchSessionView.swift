@@ -782,6 +782,7 @@ private struct SessionMediaPlayer: View {
     @State private var playbackRate = 1.0
     @State private var subtitleMode: SessionSubtitleDisplayMode = .original
     @State private var playerViewRef: SessionPlayerView?
+    @State private var fullscreenController: SessionFullscreenWindowController?
 
     private var showsVideoCanvas: Bool {
         prefersVideoCanvas || URL?.isMovie == true
@@ -841,7 +842,11 @@ private struct SessionMediaPlayer: View {
             seekAbsolute(to: seconds)
             seekSeconds = nil
         }
-        .onDisappear { player?.pause() }
+        .onDisappear {
+            fullscreenController?.dismiss()
+            fullscreenController = nil
+            player?.pause()
+        }
     }
 
     private var videoCanvas: some View {
@@ -1061,6 +1066,8 @@ private struct SessionMediaPlayer: View {
 
     @MainActor
     private func load() async {
+        fullscreenController?.dismiss()
+        fullscreenController = nil
         player?.pause()
         isPlaying = false
         peaks = []
@@ -1119,18 +1126,25 @@ private struct SessionMediaPlayer: View {
     }
 
     private func toggleFullscreen() {
-        guard let view = playerViewRef else { return }
-        if view.isInFullScreenMode {
-            view.exitFullScreenMode(options: nil)
-            return
+        guard let view = playerViewRef, let player else { return }
+        if let fullscreenController {
+            if fullscreenController.isPresented {
+                fullscreenController.dismiss()
+                self.fullscreenController = nil
+                return
+            }
+            self.fullscreenController = nil
         }
         guard let screen = view.window?.screen ?? NSScreen.main else { return }
-        view.enterFullScreenMode(screen, withOptions: [
-            .fullScreenModeApplicationPresentationOptions: NSApplication.PresentationOptions([
-                .autoHideDock,
-                .autoHideMenuBar,
-            ]).rawValue,
-        ])
+
+        view.isHidden = true
+        let controller = SessionFullscreenWindowController(
+            player: player,
+            sourceView: view,
+            screen: screen
+        )
+        fullscreenController = controller
+        controller.present()
     }
 }
 
@@ -1190,15 +1204,149 @@ private struct SessionAVPlayerRepresentable: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: SessionPlayerView, coordinator: ()) {
-        if nsView.isInFullScreenMode {
-            nsView.exitFullScreenMode(options: nil)
-        }
         nsView.stopPlayback()
     }
 }
 
+@MainActor
+private final class SessionFullscreenWindowController: NSWindowController, NSWindowDelegate {
+    private let screen: NSScreen
+    private weak var sourceView: SessionPlayerView?
+    private let fullscreenView: SessionPlayerView
+    private let previousPresentationOptions: NSApplication.PresentationOptions
+    private var didRestorePresentationOptions = false
+    private var escapeMonitor: Any?
+    private(set) var isPresented = false
+
+    init(player: AVPlayer, sourceView: SessionPlayerView, screen: NSScreen) {
+        self.screen = screen
+        self.sourceView = sourceView
+        self.fullscreenView = SessionPlayerView(frame: .zero)
+        self.previousPresentationOptions = NSApp.presentationOptions
+
+        let window = SessionFullscreenWindow(
+            contentRect: screen.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = true
+        window.backgroundColor = AppTheme.Background.base
+        window.hasShadow = false
+        window.collectionBehavior = [.canJoinAllSpaces]
+        window.isReleasedWhenClosed = false
+        window.contentView = fullscreenView
+
+        super.init(window: window)
+
+        window.delegate = self
+        fullscreenView.player = player
+        fullscreenView.onExitFullscreen = { [weak self] in
+            self?.dismiss()
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    func present() {
+        guard !isPresented, let window else { return }
+        isPresented = true
+        sourceView?.isHidden = true
+        NSApp.presentationOptions = previousPresentationOptions.union([
+            .autoHideDock,
+            .autoHideMenuBar,
+        ])
+        window.setFrame(screen.frame, display: true)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeFirstResponder(fullscreenView)
+        fullscreenView.setFullscreenControlsVisible(true)
+        installEscapeMonitor()
+    }
+
+    func dismiss() {
+        guard isPresented else { return }
+        isPresented = false
+        removeEscapeMonitor()
+        fullscreenView.setFullscreenControlsVisible(false)
+        fullscreenView.onExitFullscreen = nil
+        fullscreenView.player = nil
+        window?.orderOut(nil)
+        sourceView?.isHidden = false
+        restorePresentationOptions()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        dismiss()
+    }
+
+    private func restorePresentationOptions() {
+        guard !didRestorePresentationOptions else { return }
+        didRestorePresentationOptions = true
+        NSApp.presentationOptions = previousPresentationOptions
+    }
+
+    private func installEscapeMonitor() {
+        guard escapeMonitor == nil else { return }
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self,
+                  self.isPresented,
+                  self.window?.isKeyWindow == true,
+                  event.keyCode == 53 else {
+                return event
+            }
+            self.dismiss()
+            return nil
+        }
+    }
+
+    private func removeEscapeMonitor() {
+        guard let escapeMonitor else { return }
+        NSEvent.removeMonitor(escapeMonitor)
+        self.escapeMonitor = nil
+    }
+}
+
+private final class SessionFullscreenWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 private final class SessionPlayerView: NSView {
     let playerLayer = AVPlayerLayer()
+    private lazy var exitFullscreenBackground: NSVisualEffectView = {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .withinWindow
+        view.state = .active
+        view.wantsLayer = true
+        view.layer?.cornerRadius = AppTheme.Radius.lg
+        view.layer?.borderWidth = AppTheme.BorderWidth.thin
+        view.layer?.borderColor = AppTheme.Border.primary.cgColor
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        return view
+    }()
+    private lazy var exitFullscreenButton: NSButton = {
+        let button = NSButton()
+        button.image = NSImage(
+            systemSymbolName: "arrow.down.right.and.arrow.up.left",
+            accessibilityDescription: "Exit Full Screen"
+        )
+        button.imageScaling = .scaleProportionallyDown
+        button.isBordered = false
+        button.contentTintColor = AppTheme.Text.primary
+        button.toolTip = "Exit Full Screen"
+        button.setAccessibilityLabel("Exit Full Screen")
+        button.target = self
+        button.action = #selector(exitFullscreen)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
+    var onExitFullscreen: (() -> Void)?
+    private var fullscreenControlsVisible = false
 
     var player: AVPlayer? {
         get { playerLayer.player }
@@ -1212,10 +1360,47 @@ private final class SessionPlayerView: NSView {
         playerLayer.videoGravity = .resizeAspect
         layer?.addSublayer(playerLayer)
         autoresizingMask = [.width, .height]
+
+        addSubview(exitFullscreenBackground)
+        exitFullscreenBackground.addSubview(exitFullscreenButton)
+        NSLayoutConstraint.activate([
+            exitFullscreenBackground.topAnchor.constraint(
+                equalTo: topAnchor,
+                constant: AppTheme.Spacing.xl
+            ),
+            exitFullscreenBackground.trailingAnchor.constraint(
+                equalTo: trailingAnchor,
+                constant: -AppTheme.Spacing.xl
+            ),
+            exitFullscreenBackground.widthAnchor.constraint(
+                equalToConstant: AppTheme.Workbench.fullscreenControlSize
+            ),
+            exitFullscreenBackground.heightAnchor.constraint(
+                equalToConstant: AppTheme.Workbench.fullscreenControlSize
+            ),
+            exitFullscreenButton.leadingAnchor.constraint(
+                equalTo: exitFullscreenBackground.leadingAnchor,
+                constant: AppTheme.Spacing.sm
+            ),
+            exitFullscreenButton.trailingAnchor.constraint(
+                equalTo: exitFullscreenBackground.trailingAnchor,
+                constant: -AppTheme.Spacing.sm
+            ),
+            exitFullscreenButton.topAnchor.constraint(
+                equalTo: exitFullscreenBackground.topAnchor,
+                constant: AppTheme.Spacing.sm
+            ),
+            exitFullscreenButton.bottomAnchor.constraint(
+                equalTo: exitFullscreenBackground.bottomAnchor,
+                constant: -AppTheme.Spacing.sm
+            ),
+        ])
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    override var acceptsFirstResponder: Bool { true }
 
     override func layout() {
         super.layout()
@@ -1223,6 +1408,38 @@ private final class SessionPlayerView: NSView {
         CATransaction.setDisableActions(true)
         playerLayer.frame = bounds
         CATransaction.commit()
+    }
+
+    func setFullscreenControlsVisible(_ visible: Bool) {
+        guard visible != fullscreenControlsVisible else { return }
+        fullscreenControlsVisible = visible
+        if visible {
+            exitFullscreenBackground.isHidden = false
+            exitFullscreenBackground.alphaValue = 0
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = AppTheme.Anim.transition
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                exitFullscreenBackground.animator().alphaValue = 1
+            }
+        } else {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = AppTheme.Anim.transition
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                exitFullscreenBackground.animator().alphaValue = 0
+            }
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, fullscreenControlsVisible {
+            exitFullscreen()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    @objc private func exitFullscreen() {
+        onExitFullscreen?()
     }
 
     func stopPlayback() {
