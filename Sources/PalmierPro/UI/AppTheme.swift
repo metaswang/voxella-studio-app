@@ -170,6 +170,7 @@ enum AppTheme {
     // MARK: - Opacity
 
     enum Opacity {
+        static let zero: Double = 0
         static let opaque: Double = 1
         static let subtle: Double = 0.04
         static let hint: Double = 0.06
@@ -182,6 +183,7 @@ enum AppTheme {
         static let high: Double = 0.70
         static let prominent: Double = 0.80
     }
+
 
     // MARK: - Track type colors
 

@@ -374,14 +374,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
     }
 
     private func delete(_ session: WorkbenchSession) {
-        if let transcriptionID = session.transcriptionID {
-            store.deleteTranscription(transcriptionID)
-            if let dubID = session.dubID {
-                store.deleteDub(dubID)
-            }
-        } else if let dubID = session.dubID {
-            store.deleteDub(dubID)
-        }
+        store.deleteSession(session.id)
     }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {

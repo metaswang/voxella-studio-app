@@ -1,0 +1,51 @@
+{
+  "language" : "chinese",
+  "modelRepository" : "aufklarer\/Qwen3-TTS-12Hz-1.7B-Base-MLX-8bit",
+  "modelRevision" : "87d008f1e1a20d265bee01c7ccb0a78f5b8d1132",
+  "referenceAudioPath" : "\/Users\/adamwang\/Library\/Application Support\/Voxella Studio\/VoiceLibrary\/D0AA2E85-0D7C-4157-8424-47FE656D7750\/reference.wav",
+  "referenceTranscript" : "这时一个测试， 这个音色会被用作参考",
+  "results" : [
+    {
+      "description" : "Current app: x-vector only + greedy decoding",
+      "metrics" : {
+        "durationSeconds" : 8.021333333333333,
+        "peak" : 1,
+        "rms" : 0.36467254591504344
+      },
+      "name" : "A-current-xvector-greedy",
+      "outputFilename" : "A-current-xvector-greedy.wav"
+    },
+    {
+      "description" : "x-vector only + Qwen default sampling",
+      "metrics" : {
+        "durationSeconds" : 7.338666666666667,
+        "peak" : 1,
+        "rms" : 0.3758397618273596
+      },
+      "name" : "B-xvector-default-sampling",
+      "outputFilename" : "B-xvector-default-sampling.wav"
+    },
+    {
+      "description" : "ICL conditioning + greedy decoding",
+      "metrics" : {
+        "durationSeconds" : 8.618666666666666,
+        "peak" : 1,
+        "rms" : 0.45790336462821335
+      },
+      "name" : "C-icl-greedy",
+      "outputFilename" : "C-icl-greedy.wav"
+    },
+    {
+      "description" : "Pre-regression app path: ICL conditioning + Qwen default sampling",
+      "metrics" : {
+        "durationSeconds" : 8.618666666666666,
+        "peak" : 1,
+        "rms" : 0.3408138928745268
+      },
+      "name" : "D-icl-default-sampling",
+      "outputFilename" : "D-icl-default-sampling.wav"
+    }
+  ],
+  "seed" : 1448040517,
+  "targetText" : "这是 Voxella Studio 的中文克隆对照实验。现在开始测试不同的生成策略。"
+}

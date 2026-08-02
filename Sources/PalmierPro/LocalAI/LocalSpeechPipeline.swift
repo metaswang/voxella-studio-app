@@ -7,9 +7,9 @@ import AudioCommon
 import MLX
 import MLXAudioLID
 import MLXAudioSTT
+import MLXAudioTTS
 import MLXAudioVAD
 import Qwen3ASR
-import Qwen3TTS
 import SpeechVAD
 #endif
 
@@ -852,8 +852,7 @@ actor LocalDubPipeline {
     static let shared = LocalDubPipeline()
 
     #if BUNDLED_SPEECH
-    private var loadedModels: [LocalModelID: Qwen3TTSModel] = [:]
-    private var loadedCodecEncoders: [LocalModelID: SpeechTokenizerEncoder] = [:]
+    private var loadedModels: [LocalModelID: MLXAudioTTS.Qwen3TTSModel] = [:]
     #endif
 
     func synthesize(
@@ -863,10 +862,11 @@ actor LocalDubPipeline {
         referenceAudioURL: URL?,
         referenceText: String,
         seed: UInt64 = 0,
-        xvecOnly: Bool = true,
+        xvecOnly: Bool = false,
         progress: @escaping @Sendable (Double, String) -> Void
     ) async throws -> URL {
         #if BUNDLED_SPEECH
+        _ = xvecOnly
         let text = script.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw LocalAIError.emptyTranscript }
         guard let descriptor = LocalModelManager.catalog.first(where: { $0.id == choice.modelID }),
@@ -878,70 +878,40 @@ actor LocalDubPipeline {
 
         progress(0.08, "Loading \(choice.label)…")
         let referenceTranscript = referenceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let needsICLEncoder = !xvecOnly && referenceAudioURL != nil && !referenceTranscript.isEmpty
-        let model: Qwen3TTSModel
-        if let cached = loadedModels[choice.modelID],
-           !needsICLEncoder || loadedCodecEncoders[choice.modelID] != nil {
-            model = cached
-        } else if needsICLEncoder {
-            let (loaded, encoder) = try await Qwen3TTSModel.fromPretrainedWithEncoder(
-                modelId: descriptor.repository,
-                cacheDir: LocalModelManager.directory(for: choice.modelID),
-                offlineMode: true,
-                progressHandler: { fraction, message in
-                    progress(0.08 + fraction * 0.18, message)
-                }
-            )
-            loadedModels[choice.modelID] = loaded
-            loadedCodecEncoders[choice.modelID] = encoder
-            model = loaded
-        } else {
-            let loaded = try await Qwen3TTSModel.fromPretrained(
-                modelId: descriptor.repository,
-                cacheDir: LocalModelManager.directory(for: choice.modelID),
-                offlineMode: true,
-                progressHandler: { fraction, message in
-                    progress(0.08 + fraction * 0.18, message)
-                }
-            )
-            loadedModels[choice.modelID] = loaded
-            model = loaded
-        }
+        let model = try await loadModel(
+            choice.modelID,
+            descriptor: descriptor,
+            progress: progress
+        )
 
         progress(0.30, referenceAudioURL == nil ? "Synthesizing speech…" : "Cloning reference voice…")
         let normalizedLanguage = Self.ttsLanguage(language, script: text)
-        let samples: [Float]
+        let audio: MLXArray
         if let referenceAudioURL {
-            let reference = try AudioFileLoader.load(url: referenceAudioURL, targetSampleRate: 24_000)
+            let referenceSamples = try AudioFileLoader.load(
+                url: referenceAudioURL,
+                targetSampleRate: model.sampleRate
+            )
+            let reference = MLXArray(referenceSamples)
             MLXRandom.seed(seed)
-            if !xvecOnly, !referenceTranscript.isEmpty, let encoder = loadedCodecEncoders[choice.modelID] {
-                samples = model.synthesizeWithVoiceCloneICL(
-                    text: text,
-                    referenceAudio: reference,
-                    referenceSampleRate: 24_000,
-                    referenceText: referenceTranscript,
-                    language: normalizedLanguage,
-                    sampling: .greedy,
-                    codecEncoder: encoder,
-                    trimReference: true
-                )
-            } else {
-                samples = model.synthesizeWithVoiceClone(
-                    text: text,
-                    referenceAudio: reference,
-                    referenceSampleRate: 24_000,
-                    language: normalizedLanguage,
-                    sampling: .greedy
-                )
-            }
+            audio = try await model.generate(
+                text: text,
+                voice: nil,
+                refAudio: reference,
+                refText: referenceTranscript.isEmpty ? nil : referenceTranscript,
+                language: normalizedLanguage
+            )
         } else {
             MLXRandom.seed(seed)
-            samples = model.synthesize(
+            audio = try await model.generate(
                 text: text,
-                language: normalizedLanguage,
-                sampling: .greedy
+                voice: nil,
+                refAudio: nil,
+                refText: nil,
+                language: normalizedLanguage
             )
         }
+        let samples = audio.asArray(Float.self)
         guard !samples.isEmpty else { throw LocalAIError.noAudioOutput }
         progress(0.92, "Writing local WAV…")
         let output = try Self.writeWAV(samples)
@@ -953,6 +923,158 @@ actor LocalDubPipeline {
     }
 
     #if BUNDLED_SPEECH
+    private func loadModel(
+        _ id: LocalModelID,
+        descriptor: LocalModelDescriptor,
+        progress: @escaping @Sendable (Double, String) -> Void
+    ) async throws -> MLXAudioTTS.Qwen3TTSModel {
+        if let cached = loadedModels[id] {
+            return cached
+        }
+
+        let modelDirectory = try await Self.prepareMLXAudioModelDirectory(
+            for: id,
+            descriptor: descriptor
+        )
+        guard let model = try await TTS.loadModel(modelRepo: modelDirectory.path)
+            as? MLXAudioTTS.Qwen3TTSModel else {
+            throw LocalAIError.incompleteModel(descriptor.title)
+        }
+        loadedModels[id] = model
+        progress(0.26, "Loaded \(descriptor.title)")
+        return model
+    }
+
+    private nonisolated static func prepareMLXAudioModelDirectory(
+        for id: LocalModelID,
+        descriptor: LocalModelDescriptor
+    ) async throws -> URL {
+        try await Task.detached(priority: .utility) {
+            let source = try LocalModelManager.directory(for: id)
+            let tokenizer = try HuggingFaceDownloader.getCacheDirectory(
+                for: LocalModelManager.ttsTokenizerRepository
+            )
+            let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Voxella Studio/MLXAudioTTS", isDirectory: true)
+            let directory = base.appendingPathComponent(
+                "\(id.rawValue)-\(descriptor.revision)",
+                isDirectory: true
+            )
+            let fileManager = FileManager.default
+
+            if Self.isReadyMLXAudioModelDirectory(directory, tokenizer: tokenizer) {
+                return directory
+            }
+
+            let staging = base.appendingPathComponent(
+                ".\(id.rawValue)-\(UUID().uuidString)",
+                isDirectory: true
+            )
+            try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+            do {
+                let sourceFiles = try fileManager.contentsOfDirectory(
+                    at: source,
+                    includingPropertiesForKeys: nil,
+                    options: []
+                )
+                for sourceFile in sourceFiles where sourceFile.lastPathComponent != "config.json" {
+                    var isDirectory: ObjCBool = false
+                    guard fileManager.fileExists(
+                        atPath: sourceFile.path,
+                        isDirectory: &isDirectory
+                    ), !isDirectory.boolValue else { continue }
+                    try fileManager.createSymbolicLink(
+                        at: staging.appendingPathComponent(sourceFile.lastPathComponent),
+                        withDestinationURL: sourceFile
+                    )
+                }
+
+                let configURL = source.appendingPathComponent("config.json")
+                var config = try JSONSerialization.jsonObject(
+                    with: Data(contentsOf: configURL),
+                    options: []
+                ) as? [String: Any] ?? [:]
+                var speakerEncoderConfig = config["speaker_encoder_config"] as? [String: Any] ?? [:]
+                speakerEncoderConfig["enc_dim"] = 2048
+                speakerEncoderConfig["sample_rate"] = 24_000
+                config["speaker_encoder_config"] = speakerEncoderConfig
+                config["tts_model_type"] = config["tts_model_type"] ?? "base"
+                config["sample_rate"] = config["sample_rate"] ?? 24_000
+                let normalizedConfig = try JSONSerialization.data(
+                    withJSONObject: config,
+                    options: [.sortedKeys]
+                )
+                try normalizedConfig.write(
+                    to: staging.appendingPathComponent("config.json"),
+                    options: .atomic
+                )
+
+                let speechTokenizer = staging.appendingPathComponent(
+                    "speech_tokenizer",
+                    isDirectory: true
+                )
+                try fileManager.createDirectory(
+                    at: speechTokenizer,
+                    withIntermediateDirectories: true
+                )
+                let tokenizerFiles = try fileManager.contentsOfDirectory(
+                    at: tokenizer,
+                    includingPropertiesForKeys: nil,
+                    options: []
+                )
+                for tokenizerFile in tokenizerFiles {
+                    var isDirectory: ObjCBool = false
+                    guard fileManager.fileExists(
+                        atPath: tokenizerFile.path,
+                        isDirectory: &isDirectory
+                    ), !isDirectory.boolValue else { continue }
+                    try fileManager.createSymbolicLink(
+                        at: speechTokenizer.appendingPathComponent(tokenizerFile.lastPathComponent),
+                        withDestinationURL: tokenizerFile
+                    )
+                }
+
+                if fileManager.fileExists(atPath: directory.path) {
+                    try fileManager.removeItem(at: directory)
+                }
+                try fileManager.createDirectory(at: base, withIntermediateDirectories: true)
+                try fileManager.moveItem(at: staging, to: directory)
+            } catch {
+                try? fileManager.removeItem(at: staging)
+                throw error
+            }
+            return directory
+        }.value
+    }
+
+    private nonisolated static func isReadyMLXAudioModelDirectory(
+        _ directory: URL,
+        tokenizer: URL
+    ) -> Bool {
+        let fileManager = FileManager.default
+        let speechTokenizerPath = directory.appendingPathComponent(
+            "speech_tokenizer",
+            isDirectory: true
+        )
+        var isSpeechTokenizerDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: directory.appendingPathComponent("model.safetensors").path),
+              fileManager.fileExists(
+                  atPath: speechTokenizerPath.path,
+                  isDirectory: &isSpeechTokenizerDirectory
+              ),
+              isSpeechTokenizerDirectory.boolValue,
+              (try? fileManager.destinationOfSymbolicLink(atPath: speechTokenizerPath.path)) == nil,
+              fileManager.fileExists(atPath: speechTokenizerPath.appendingPathComponent("config.json").path),
+              fileManager.fileExists(atPath: tokenizer.appendingPathComponent("model.safetensors").path),
+              let configData = try? Data(contentsOf: directory.appendingPathComponent("config.json")),
+              let config = try? JSONSerialization.jsonObject(with: configData) as? [String: Any],
+              let speakerEncoderConfig = config["speaker_encoder_config"] as? [String: Any],
+              speakerEncoderConfig["enc_dim"] as? Int == 2048 else {
+            return false
+        }
+        return true
+    }
+
     nonisolated static func ttsLanguage(_ value: String, script: String) -> String {
         var normalized = value.lowercased()
         if normalized == "auto" || normalized.isEmpty {

@@ -418,7 +418,7 @@ struct DubFlowPayload: Sendable {
     var segmentGapSeconds = 0.2
     var timelineMode: DubTimelineMode = .automatic
     var seed: UInt64?
-    var xvecOnly = true
+    var xvecOnly = false
     var repairSilence = true
 
     var fixedSeed: UInt64 {

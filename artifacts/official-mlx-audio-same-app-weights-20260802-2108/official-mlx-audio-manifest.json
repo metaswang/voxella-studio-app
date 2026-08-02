@@ -1,0 +1,60 @@
+{
+  "implementation": "Blaizzy/mlx-audio (installed from GitHub main)",
+  "model": "/private/tmp/voxella-official-mlx-audio-app-weights",
+  "reference_audio": "/Users/adamwang/Library/Application Support/Voxella Studio/VoiceLibrary/D0AA2E85-0D7C-4157-8424-47FE656D7750/reference.wav",
+  "target_text": "我从2000年开始出现咳嗽的现象，到2017年12月咳嗽加重，感觉好像整天都在咳嗽。",
+  "seed": 1448040517,
+  "requested_sampling": {
+    "top_k": 50,
+    "top_p": 1.0,
+    "repetition_penalty": 1.05,
+    "note": "mlx-audio raises Qwen3-TTS ICL repetition_penalty to at least 1.5."
+  },
+  "results": [
+    {
+      "case": {
+        "name": "E-official-mlx-audio-icl-cli-temperature",
+        "description": "Official mlx-audio ICL with its generic CLI temperature (0.7)",
+        "temperature": 0.7,
+        "reference_text": "这时一个测试， 这个音色会被用作参考"
+      },
+      "measurement": {
+        "filename": "E-official-mlx-audio-icl-cli-temperature.wav",
+        "duration_seconds": 9.04,
+        "sample_rate": 24000,
+        "rms": 0.017355640074180306,
+        "peak": 0.11332637816667557
+      }
+    },
+    {
+      "case": {
+        "name": "F-official-mlx-audio-icl-qwen-default-temperature",
+        "description": "Official mlx-audio ICL with Qwen3-TTS native temperature (0.9)",
+        "temperature": 0.9,
+        "reference_text": "这时一个测试， 这个音色会被用作参考"
+      },
+      "measurement": {
+        "filename": "F-official-mlx-audio-icl-qwen-default-temperature.wav",
+        "duration_seconds": 8.72,
+        "sample_rate": 24000,
+        "rms": 0.017634594138229834,
+        "peak": 0.12906955182552338
+      }
+    },
+    {
+      "case": {
+        "name": "G-official-mlx-audio-icl-alternative-reference-text",
+        "description": "Official mlx-audio ICL with plausible spoken transcript variant",
+        "temperature": 0.9,
+        "reference_text": "这是一个测试，这个音色会被用作参考"
+      },
+      "measurement": {
+        "filename": "G-official-mlx-audio-icl-alternative-reference-text.wav",
+        "duration_seconds": 8.96,
+        "sample_rate": 24000,
+        "rms": 0.019504041644685916,
+        "peak": 0.1175965666770935
+      }
+    }
+  ]
+}

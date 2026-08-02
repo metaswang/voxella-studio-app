@@ -19,6 +19,7 @@ let package = Package(
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.3"),
         .package(url: "https://github.com/ml-explore/mlx-swift", exact: "0.31.5"),
         .package(url: "https://github.com/airbnb/lottie-ios", from: "4.6.1"),
+        .package(url: "https://github.com/gonzalezreal/textual", from: "0.1.0"),
         .package(url: "https://github.com/soniqo/speech-swift", exact: "0.0.21"),
         .package(url: "https://github.com/huggingface/swift-huggingface.git", exact: "0.9.0"),
         .package(
@@ -36,6 +37,7 @@ let package = Package(
                 .product(name: "ConvexMobile", package: "convex-swift"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
                 .product(name: "Lottie", package: "lottie-ios"),
+                .product(name: "Textual", package: "textual"),
                 .product(
                     name: "MLX",
                     package: "mlx-swift",
@@ -68,6 +70,11 @@ let package = Package(
                 ),
                 .product(
                     name: "MLXAudioCore",
+                    package: "mlx-audio-swift",
+                    condition: .when(traits: ["BundledSpeech"])
+                ),
+                .product(
+                    name: "MLXAudioTTS",
                     package: "mlx-audio-swift",
                     condition: .when(traits: ["BundledSpeech"])
                 ),

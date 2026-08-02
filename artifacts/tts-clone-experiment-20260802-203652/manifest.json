@@ -1,0 +1,51 @@
+{
+  "language" : "chinese",
+  "modelRepository" : "aufklarer\/Qwen3-TTS-12Hz-1.7B-Base-MLX-8bit",
+  "modelRevision" : "87d008f1e1a20d265bee01c7ccb0a78f5b8d1132",
+  "referenceAudioPath" : "\/Users\/adamwang\/Library\/Application Support\/Voxella Studio\/VoiceLibrary\/D0AA2E85-0D7C-4157-8424-47FE656D7750\/reference.wav",
+  "referenceTranscript" : "这时一个测试， 这个音色会被用作参考",
+  "results" : [
+    {
+      "description" : "Current app: x-vector only + greedy decoding",
+      "metrics" : {
+        "durationSeconds" : 13.056,
+        "peak" : 0.1397225260734558,
+        "rms" : 0.03823198364061414
+      },
+      "name" : "A-current-xvector-greedy",
+      "outputFilename" : "A-current-xvector-greedy.wav"
+    },
+    {
+      "description" : "x-vector only + Qwen default sampling",
+      "metrics" : {
+        "durationSeconds" : 8.96,
+        "peak" : 1,
+        "rms" : 0.41238222504024163
+      },
+      "name" : "B-xvector-default-sampling",
+      "outputFilename" : "B-xvector-default-sampling.wav"
+    },
+    {
+      "description" : "ICL conditioning + greedy decoding",
+      "metrics" : {
+        "durationSeconds" : 13.909333333333333,
+        "peak" : 1,
+        "rms" : 0.2729029444149205
+      },
+      "name" : "C-icl-greedy",
+      "outputFilename" : "C-icl-greedy.wav"
+    },
+    {
+      "description" : "Pre-regression app path: ICL conditioning + Qwen default sampling",
+      "metrics" : {
+        "durationSeconds" : 12.757333333333333,
+        "peak" : 1,
+        "rms" : 0.3424829883829571
+      },
+      "name" : "D-icl-default-sampling",
+      "outputFilename" : "D-icl-default-sampling.wav"
+    }
+  ],
+  "seed" : 1448040517,
+  "targetText" : "我从2000年开始出现咳嗽的现象，到2017年12月咳嗽加重，感觉好像整天都在咳嗽。"
+}

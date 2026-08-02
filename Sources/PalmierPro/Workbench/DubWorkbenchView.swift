@@ -234,18 +234,8 @@ struct DubWorkbenchView: View {
             .background(AppTheme.Background.raisedColor.opacity(0.55))
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                TextField(
-                    "Enter dub script here...",
-                    text: segmentTextBinding(job.id, segmentIndex: segment.index),
-                    axis: .vertical
-                )
-                .textFieldStyle(.plain)
-                .font(.system(size: AppTheme.FontSize.md))
-                .lineLimit(4...12)
-                .padding(AppTheme.Spacing.md)
-                .background(
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.md)
-                        .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+                DubScriptEditor(
+                    text: segmentTextBinding(job.id, segmentIndex: segment.index)
                 )
 
                 HStack {
@@ -550,9 +540,7 @@ private struct DubRewriteSheet: View {
             Text("Segment script")
                 .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
-            TextField("Enter dub script here...", text: $draft, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(6...14)
+            DubScriptEditor(text: $draft)
 
             HStack {
                 Spacer()
@@ -575,6 +563,38 @@ private struct DubRewriteSheet: View {
         .onAppear {
             draft = store.dubs.first { $0.id == jobID }?
                 .segments?.first { $0.index == segmentIndex }?.text ?? ""
+        }
+    }
+}
+
+private struct DubScriptEditor: View {
+    @Binding var text: String
+    var placeholder: String = "Enter dub script here..."
+    var minHeight: CGFloat = AppTheme.Workbench.dubScriptMinHeight
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            TextEditor(text: $text)
+                .font(.system(size: AppTheme.FontSize.md))
+                .foregroundStyle(AppTheme.Text.primaryColor)
+                .scrollContentBackground(.hidden)
+                .scrollIndicators(.automatic)
+                .padding(AppTheme.Spacing.md)
+
+            if text.isEmpty {
+                Text(placeholder)
+                    .font(.system(size: AppTheme.FontSize.md))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
+                    .padding(.horizontal, AppTheme.Spacing.lgXl)
+                    .padding(.vertical, AppTheme.Spacing.lgXl)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(minHeight: minHeight)
+        .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.md)
+                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
         }
     }
 }
