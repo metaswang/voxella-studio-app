@@ -808,6 +808,16 @@ final class WorkbenchStore {
         guard sessions.contains(where: { $0.id == id }) else { return }
         selectedSessionID = id
         route = .session
+        let missingLLMMessage = LLMConfigurationError.noConfiguredModel(.subtitleProcessing)
+            .localizedDescription
+        if let job = transcriptions.first(where: { $0.id == id }),
+           job.summaryState == .failed,
+           job.summaryErrorMessage == missingLLMMessage {
+            updateTranscription(id) {
+                $0.summaryState = nil
+                $0.summaryErrorMessage = nil
+            }
+        }
         guard let job = transcriptions.first(where: { $0.id == id }),
               job.state == .completed,
               job.summaryMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
@@ -1772,11 +1782,16 @@ final class WorkbenchStore {
 
         guard LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing) else {
             updateTranscription(id) {
-                $0.summaryState = .failed
-                $0.summaryErrorMessage = LLMConfigurationError.noConfiguredModel(
-                    .subtitleProcessing
-                ).localizedDescription
+                $0.summaryState = nil
+                $0.summaryErrorMessage = nil
             }
+            WorkbenchTipCenter.shared.show(
+                LLMConfigurationError.noConfiguredModel(.subtitleProcessing).localizedDescription,
+                kind: .error,
+                id: "summary.missing-llm",
+                actionLabel: "Open AI Settings",
+                action: .openAISettings
+            )
             return
         }
         guard let job = transcriptions.first(where: { $0.id == id }),
@@ -1839,6 +1854,11 @@ final class WorkbenchStore {
                 $0.summaryErrorMessage = error.localizedDescription
                 $0.progressMessage = "Transcript ready — summary unavailable"
             }
+            WorkbenchTipCenter.shared.show(
+                error.localizedDescription,
+                kind: .error,
+                id: "summary.failed.\(id.uuidString)"
+            )
             Log.project.warning("session enrichment failed: \(error.localizedDescription)")
         }
     }

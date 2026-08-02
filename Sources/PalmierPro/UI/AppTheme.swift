@@ -147,6 +147,10 @@ enum AppTheme {
         static let warning = NSColor.systemOrange
 
         static var warningColor: Color { Color(warning) }
+
+        static let info = NSColor(red: 0x4F/255.0, green: 0x8F/255.0, blue: 0xE5/255.0, alpha: 1)
+
+        static var infoColor: Color { Color(info) }
     }
 
     // MARK: - Text
@@ -362,6 +366,12 @@ enum AppTheme {
         static let revisionPickerWidth: CGFloat = 190
         static let sessionIconSize: CGFloat = 44
         static let fullscreenControlSize: CGFloat = 48
+        static let fullscreenChromeIdle: Duration = .seconds(3)
+        static let fullscreenSeekStepSeconds: Double = 5
+        static let tipAutoDismiss: Duration = .seconds(15)
+        static let tipDedupeWindow: Duration = .seconds(10)
+        static let tipHorizontalInset: CGFloat = 16
+        static let tipVerticalInset: CGFloat = 12
         static let emptyStateMinHeight: CGFloat = 260
         static let waveformHeight: CGFloat = 54
         static let waveformBarStep: CGFloat = 5

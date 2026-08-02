@@ -775,30 +775,10 @@ private struct SessionMediaPlayer: View {
     @Binding var seekSeconds: Double?
     let onSelectTrack: (SessionPlaybackTrack) -> Void
 
-    @State private var player: AVPlayer?
-    @State private var peaks: [Float] = []
-    @State private var isPlaying = false
-    @State private var duration = 0.0
-    @State private var playbackRate = 1.0
-    @State private var subtitleMode: SessionSubtitleDisplayMode = .original
-    @State private var playerViewRef: SessionPlayerView?
-    @State private var fullscreenController: SessionFullscreenWindowController?
+    @State private var playback = SessionPlaybackController()
 
     private var showsVideoCanvas: Bool {
         prefersVideoCanvas || URL?.isMovie == true
-    }
-
-    private var activeSubtitleCues: [SubtitleCue] {
-        switch subtitleMode {
-        case .off:
-            return []
-        case .original:
-            return subtitleTrack?.cues ?? []
-        case .translation(let code):
-            return translationTracks.first(where: {
-                $0.languageCode.caseInsensitiveCompare(code) == .orderedSame
-            })?.track.cues ?? []
-        }
     }
 
     var body: some View {
@@ -832,20 +812,35 @@ private struct SessionMediaPlayer: View {
             }
         }
         .background(AppTheme.Background.surfaceColor)
-        .task(id: URL) { await load() }
-        .onChange(of: playbackRate) { _, rate in
-            player?.rate = isPlaying ? Float(rate) : 0
-            player?.defaultRate = Float(rate)
+        .task(id: URL) {
+            playback.configureSubtitles(
+                subtitleTrack: subtitleTrack,
+                translationTracks: translationTracks
+            )
+            await playback.load(url: URL, showsVideoCanvas: showsVideoCanvas)
+        }
+        .onChange(of: translationTracks.map(\.id)) { _, _ in
+            playback.configureSubtitles(
+                subtitleTrack: subtitleTrack,
+                translationTracks: translationTracks
+            )
+        }
+        .onChange(of: subtitleTrack?.cues.count) { _, _ in
+            playback.configureSubtitles(
+                subtitleTrack: subtitleTrack,
+                translationTracks: translationTracks
+            )
+        }
+        .onChange(of: playback.playbackRate) { _, _ in
+            playback.applyPlaybackRate()
         }
         .onChange(of: seekSeconds) { _, seconds in
             guard let seconds else { return }
-            seekAbsolute(to: seconds)
+            playback.seekAbsolute(to: seconds)
             seekSeconds = nil
         }
         .onDisappear {
-            fullscreenController?.dismiss()
-            fullscreenController = nil
-            player?.pause()
+            playback.tearDown()
         }
     }
 
@@ -853,15 +848,15 @@ private struct SessionMediaPlayer: View {
         SwiftUI.TimelineView(
             .periodic(from: .now, by: AppTheme.Workbench.playerRefreshInterval)
         ) { _ in
-            let currentTime = player?.currentTime().seconds.finiteOrZero ?? 0
-            let cueText = activeSubtitleText(at: currentTime)
+            let currentTime = playback.player?.currentTime().seconds.finiteOrZero ?? 0
+            let cueText = playback.activeSubtitleText(at: currentTime)
             VStack(spacing: 0) {
                 ZStack(alignment: .bottom) {
                     Color.black
-                    if let player {
+                    if let player = playback.player {
                         SessionAVPlayerRepresentable(
                             player: player,
-                            onViewReady: { playerViewRef = $0 }
+                            onViewReady: { playback.playerViewRef = $0 }
                         )
                     } else if URL != nil {
                         ProgressView()
@@ -873,7 +868,7 @@ private struct SessionMediaPlayer: View {
                             .foregroundStyle(AppTheme.Text.mutedColor)
                     }
 
-                    if let cueText {
+                    if playback.fullscreenController == nil, let cueText {
                         Text(cueText)
                             .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
                             .multilineTextAlignment(.center)
@@ -902,10 +897,13 @@ private struct SessionMediaPlayer: View {
         SwiftUI.TimelineView(
             .periodic(from: .now, by: AppTheme.Workbench.playerRefreshInterval)
         ) { _ in
-            let currentTime = player?.currentTime().seconds.finiteOrZero ?? 0
+            let currentTime = playback.player?.currentTime().seconds.finiteOrZero ?? 0
             VStack(spacing: AppTheme.Spacing.smMd) {
-                SessionWaveform(peaks: peaks, progress: duration > 0 ? currentTime / duration : 0)
-                    .frame(height: AppTheme.Workbench.waveformHeight)
+                SessionWaveform(
+                    peaks: playback.peaks,
+                    progress: playback.duration > 0 ? currentTime / playback.duration : 0
+                )
+                .frame(height: AppTheme.Workbench.waveformHeight)
                 transportRow(currentTime: currentTime, includeAdvancedControls: false)
             }
             .padding(AppTheme.Spacing.lgXl)
@@ -916,12 +914,16 @@ private struct SessionMediaPlayer: View {
         VStack(spacing: AppTheme.Spacing.sm) {
             Slider(
                 value: Binding(
-                    get: { duration > 0 ? min(1, max(0, currentTime / duration)) : 0 },
-                    set: { seek(to: $0) }
+                    get: {
+                        playback.duration > 0
+                            ? min(1, max(0, currentTime / playback.duration))
+                            : 0
+                    },
+                    set: { playback.seek(to: $0) }
                 ),
                 in: 0...1
             )
-            .disabled(player == nil || duration <= 0)
+            .disabled(playback.player == nil || playback.duration <= 0)
             transportRow(currentTime: currentTime, includeAdvancedControls: true)
         }
         .padding(.horizontal, AppTheme.Spacing.md)
@@ -932,27 +934,31 @@ private struct SessionMediaPlayer: View {
     private func transportRow(currentTime: Double, includeAdvancedControls: Bool) -> some View {
         HStack(spacing: AppTheme.Spacing.md) {
             Button {
-                togglePlayback()
+                playback.togglePlayback()
             } label: {
-                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                     .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
             }
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.circle)
-            .disabled(player == nil)
+            .disabled(playback.player == nil)
 
             if !includeAdvancedControls {
                 Slider(
                     value: Binding(
-                        get: { duration > 0 ? min(1, max(0, currentTime / duration)) : 0 },
-                        set: { seek(to: $0) }
+                        get: {
+                            playback.duration > 0
+                                ? min(1, max(0, currentTime / playback.duration))
+                                : 0
+                        },
+                        set: { playback.seek(to: $0) }
                     ),
                     in: 0...1
                 )
-                .disabled(player == nil || duration <= 0)
+                .disabled(playback.player == nil || playback.duration <= 0)
             }
 
-            Text("\(formatTime(currentTime)) / \(formatTime(duration))")
+            Text("\(formatTime(currentTime)) / \(formatTime(playback.duration))")
                 .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
 
@@ -962,13 +968,13 @@ private struct SessionMediaPlayer: View {
                 subtitleMenu
                 speedMenu
                 Button {
-                    toggleFullscreen()
+                    playback.toggleFullscreen()
                 } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
                 }
                 .buttonStyle(.bordered)
-                .disabled(playerViewRef == nil)
+                .disabled(playback.playerViewRef == nil)
                 .help("Fullscreen")
             }
         }
@@ -977,25 +983,25 @@ private struct SessionMediaPlayer: View {
     private var subtitleMenu: some View {
         Menu {
             Button {
-                subtitleMode = .off
+                playback.subtitleMode = .off
             } label: {
-                labelWithCheck("Off", selected: subtitleMode == .off)
+                labelWithCheck("Off", selected: playback.subtitleMode == .off)
             }
             Button {
-                subtitleMode = .original
+                playback.subtitleMode = .original
             } label: {
-                labelWithCheck("Original", selected: subtitleMode == .original)
+                labelWithCheck("Original", selected: playback.subtitleMode == .original)
             }
-            if !translationTracks.isEmpty {
+            if !playback.translationTracks.isEmpty {
                 Divider()
-                ForEach(translationTracks) { track in
+                ForEach(playback.translationTracks) { track in
                     Button {
-                        subtitleMode = .translation(track.languageCode)
+                        playback.subtitleMode = .translation(track.languageCode)
                     } label: {
                         labelWithCheck(
                             track.displayLanguageLabel,
                             selected: {
-                                if case .translation(let code) = subtitleMode {
+                                if case .translation(let code) = playback.subtitleMode {
                                     return code.caseInsensitiveCompare(track.languageCode) == .orderedSame
                                 }
                                 return false
@@ -1010,15 +1016,19 @@ private struct SessionMediaPlayer: View {
                 .padding(.horizontal, AppTheme.Spacing.smMd)
                 .padding(.vertical, AppTheme.Spacing.xs)
                 .background(
-                    subtitleMode == .off
+                    playback.subtitleMode == .off
                         ? AppTheme.Background.raisedColor
                         : AppTheme.Text.primaryColor,
                     in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
                 )
-                .foregroundStyle(subtitleMode == .off ? AppTheme.Text.primaryColor : AppTheme.Background.baseColor)
+                .foregroundStyle(
+                    playback.subtitleMode == .off
+                        ? AppTheme.Text.primaryColor
+                        : AppTheme.Background.baseColor
+                )
         }
         .menuStyle(.borderlessButton)
-        .disabled(subtitleTrack == nil && translationTracks.isEmpty)
+        .disabled(playback.subtitleTrack == nil && playback.translationTracks.isEmpty)
         .help("Subtitles")
     }
 
@@ -1026,14 +1036,13 @@ private struct SessionMediaPlayer: View {
         Menu {
             ForEach(AppTheme.Workbench.playbackRates, id: \.self) { rate in
                 Button {
-                    playbackRate = rate
-                    if isPlaying { player?.rate = Float(rate) }
+                    playback.setPlaybackRate(rate)
                 } label: {
-                    labelWithCheck(speedLabel(rate), selected: abs(playbackRate - rate) < 0.001)
+                    labelWithCheck(speedLabel(rate), selected: abs(playback.playbackRate - rate) < 0.001)
                 }
             }
         } label: {
-            Text("Speed \(speedLabel(playbackRate))")
+            Text("Speed \(speedLabel(playback.playbackRate))")
                 .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
         }
         .menuStyle(.borderlessButton)
@@ -1054,110 +1063,6 @@ private struct SessionMediaPlayer: View {
         if abs(rate - 1) < 0.001 { return "1x" }
         if rate == Double(Int(rate)) { return "\(Int(rate))x" }
         return String(format: "%gx", rate)
-    }
-
-    private func activeSubtitleText(at time: Double) -> String? {
-        guard !activeSubtitleCues.isEmpty else { return nil }
-        return activeSubtitleCues.first(where: { time >= $0.start && time < $0.end })?
-            .text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfEmpty
-    }
-
-    @MainActor
-    private func load() async {
-        fullscreenController?.dismiss()
-        fullscreenController = nil
-        player?.pause()
-        isPlaying = false
-        peaks = []
-        duration = 0
-        playerViewRef = nil
-        guard let URL else {
-            player = nil
-            return
-        }
-        let nextPlayer = AVPlayer(url: URL)
-        nextPlayer.defaultRate = Float(playbackRate)
-        player = nextPlayer
-        duration = (try? await nextPlayer.currentItem?.asset.load(.duration).seconds)?.finiteOrZero ?? 0
-        if !showsVideoCanvas {
-            peaks = (try? await WaveformExtractor.peakEnvelope(from: URL)) ?? []
-        }
-        if subtitleTrack != nil {
-            subtitleMode = .original
-        } else if let first = translationTracks.first {
-            subtitleMode = .translation(first.languageCode)
-        } else {
-            subtitleMode = .off
-        }
-    }
-
-    private func togglePlayback() {
-        guard let player else { return }
-        if isPlaying {
-            player.pause()
-        } else {
-            if duration > 0, player.currentTime().seconds >= duration - AppTheme.Workbench.playerEndTolerance {
-                player.seek(to: .zero)
-            }
-            player.play()
-            player.rate = Float(playbackRate)
-        }
-        isPlaying.toggle()
-    }
-
-    private func seek(to progress: Double) {
-        guard duration > 0 else { return }
-        seekAbsolute(to: progress * duration)
-    }
-
-    private func seekAbsolute(to seconds: Double) {
-        guard let player else { return }
-        let clamped = max(0, duration > 0 ? min(seconds, duration) : seconds)
-        player.seek(
-            to: CMTime(seconds: clamped, preferredTimescale: AppTheme.Workbench.playerTimescale),
-            toleranceBefore: .zero,
-            toleranceAfter: .zero
-        )
-        player.play()
-        player.rate = Float(playbackRate)
-        isPlaying = true
-    }
-
-    private func toggleFullscreen() {
-        guard let view = playerViewRef, let player else { return }
-        if let fullscreenController {
-            if fullscreenController.isPresented {
-                fullscreenController.dismiss()
-                self.fullscreenController = nil
-                return
-            }
-            self.fullscreenController = nil
-        }
-        guard let screen = view.window?.screen ?? NSScreen.main else { return }
-
-        view.isHidden = true
-        let controller = SessionFullscreenWindowController(
-            player: player,
-            sourceView: view,
-            screen: screen
-        )
-        fullscreenController = controller
-        controller.present()
-    }
-}
-
-private enum SessionSubtitleDisplayMode: Equatable {
-    case off
-    case original
-    case translation(String)
-}
-
-private extension String {
-    var nilIfEmpty: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
@@ -1183,268 +1088,6 @@ private struct SessionWaveform: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .accessibilityLabel("Audio waveform")
-    }
-}
-
-/// AppKit-backed preview keeps the video layer sized to the hosting view.
-private struct SessionAVPlayerRepresentable: NSViewRepresentable {
-    let player: AVPlayer
-    var onViewReady: ((SessionPlayerView) -> Void)?
-
-    func makeNSView(context: Context) -> SessionPlayerView {
-        let view = SessionPlayerView()
-        view.player = player
-        DispatchQueue.main.async { onViewReady?(view) }
-        return view
-    }
-
-    func updateNSView(_ nsView: SessionPlayerView, context: Context) {
-        nsView.player = player
-        DispatchQueue.main.async { onViewReady?(nsView) }
-    }
-
-    static func dismantleNSView(_ nsView: SessionPlayerView, coordinator: ()) {
-        nsView.stopPlayback()
-    }
-}
-
-@MainActor
-private final class SessionFullscreenWindowController: NSWindowController, NSWindowDelegate {
-    private let screen: NSScreen
-    private weak var sourceView: SessionPlayerView?
-    private let fullscreenView: SessionPlayerView
-    private let previousPresentationOptions: NSApplication.PresentationOptions
-    private var didRestorePresentationOptions = false
-    private var escapeMonitor: Any?
-    private(set) var isPresented = false
-
-    init(player: AVPlayer, sourceView: SessionPlayerView, screen: NSScreen) {
-        self.screen = screen
-        self.sourceView = sourceView
-        self.fullscreenView = SessionPlayerView(frame: .zero)
-        self.previousPresentationOptions = NSApp.presentationOptions
-
-        let window = SessionFullscreenWindow(
-            contentRect: screen.frame,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.isOpaque = true
-        window.backgroundColor = AppTheme.Background.base
-        window.hasShadow = false
-        window.collectionBehavior = [.canJoinAllSpaces]
-        window.isReleasedWhenClosed = false
-        window.contentView = fullscreenView
-
-        super.init(window: window)
-
-        window.delegate = self
-        fullscreenView.player = player
-        fullscreenView.onExitFullscreen = { [weak self] in
-            self?.dismiss()
-        }
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    func present() {
-        guard !isPresented, let window else { return }
-        isPresented = true
-        sourceView?.isHidden = true
-        NSApp.presentationOptions = previousPresentationOptions.union([
-            .autoHideDock,
-            .autoHideMenuBar,
-        ])
-        window.setFrame(screen.frame, display: true)
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeFirstResponder(fullscreenView)
-        fullscreenView.setFullscreenControlsVisible(true)
-        installEscapeMonitor()
-    }
-
-    func dismiss() {
-        guard isPresented else { return }
-        isPresented = false
-        removeEscapeMonitor()
-        fullscreenView.setFullscreenControlsVisible(false)
-        fullscreenView.onExitFullscreen = nil
-        fullscreenView.player = nil
-        window?.orderOut(nil)
-        sourceView?.isHidden = false
-        restorePresentationOptions()
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        dismiss()
-    }
-
-    private func restorePresentationOptions() {
-        guard !didRestorePresentationOptions else { return }
-        didRestorePresentationOptions = true
-        NSApp.presentationOptions = previousPresentationOptions
-    }
-
-    private func installEscapeMonitor() {
-        guard escapeMonitor == nil else { return }
-        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self,
-                  self.isPresented,
-                  self.window?.isKeyWindow == true,
-                  event.keyCode == 53 else {
-                return event
-            }
-            self.dismiss()
-            return nil
-        }
-    }
-
-    private func removeEscapeMonitor() {
-        guard let escapeMonitor else { return }
-        NSEvent.removeMonitor(escapeMonitor)
-        self.escapeMonitor = nil
-    }
-}
-
-private final class SessionFullscreenWindow: NSWindow {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
-}
-
-private final class SessionPlayerView: NSView {
-    let playerLayer = AVPlayerLayer()
-    private lazy var exitFullscreenBackground: NSVisualEffectView = {
-        let view = NSVisualEffectView()
-        view.material = .hudWindow
-        view.blendingMode = .withinWindow
-        view.state = .active
-        view.wantsLayer = true
-        view.layer?.cornerRadius = AppTheme.Radius.lg
-        view.layer?.borderWidth = AppTheme.BorderWidth.thin
-        view.layer?.borderColor = AppTheme.Border.primary.cgColor
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.isHidden = true
-        return view
-    }()
-    private lazy var exitFullscreenButton: NSButton = {
-        let button = NSButton()
-        button.image = NSImage(
-            systemSymbolName: "arrow.down.right.and.arrow.up.left",
-            accessibilityDescription: "Exit Full Screen"
-        )
-        button.imageScaling = .scaleProportionallyDown
-        button.isBordered = false
-        button.contentTintColor = AppTheme.Text.primary
-        button.toolTip = "Exit Full Screen"
-        button.setAccessibilityLabel("Exit Full Screen")
-        button.target = self
-        button.action = #selector(exitFullscreen)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
-    }()
-
-    var onExitFullscreen: (() -> Void)?
-    private var fullscreenControlsVisible = false
-
-    var player: AVPlayer? {
-        get { playerLayer.player }
-        set { playerLayer.player = newValue }
-    }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.backgroundColor = AppTheme.Background.base.cgColor
-        playerLayer.videoGravity = .resizeAspect
-        layer?.addSublayer(playerLayer)
-        autoresizingMask = [.width, .height]
-
-        addSubview(exitFullscreenBackground)
-        exitFullscreenBackground.addSubview(exitFullscreenButton)
-        NSLayoutConstraint.activate([
-            exitFullscreenBackground.topAnchor.constraint(
-                equalTo: topAnchor,
-                constant: AppTheme.Spacing.xl
-            ),
-            exitFullscreenBackground.trailingAnchor.constraint(
-                equalTo: trailingAnchor,
-                constant: -AppTheme.Spacing.xl
-            ),
-            exitFullscreenBackground.widthAnchor.constraint(
-                equalToConstant: AppTheme.Workbench.fullscreenControlSize
-            ),
-            exitFullscreenBackground.heightAnchor.constraint(
-                equalToConstant: AppTheme.Workbench.fullscreenControlSize
-            ),
-            exitFullscreenButton.leadingAnchor.constraint(
-                equalTo: exitFullscreenBackground.leadingAnchor,
-                constant: AppTheme.Spacing.sm
-            ),
-            exitFullscreenButton.trailingAnchor.constraint(
-                equalTo: exitFullscreenBackground.trailingAnchor,
-                constant: -AppTheme.Spacing.sm
-            ),
-            exitFullscreenButton.topAnchor.constraint(
-                equalTo: exitFullscreenBackground.topAnchor,
-                constant: AppTheme.Spacing.sm
-            ),
-            exitFullscreenButton.bottomAnchor.constraint(
-                equalTo: exitFullscreenBackground.bottomAnchor,
-                constant: -AppTheme.Spacing.sm
-            ),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override var acceptsFirstResponder: Bool { true }
-
-    override func layout() {
-        super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        playerLayer.frame = bounds
-        CATransaction.commit()
-    }
-
-    func setFullscreenControlsVisible(_ visible: Bool) {
-        guard visible != fullscreenControlsVisible else { return }
-        fullscreenControlsVisible = visible
-        if visible {
-            exitFullscreenBackground.isHidden = false
-            exitFullscreenBackground.alphaValue = 0
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = AppTheme.Anim.transition
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                exitFullscreenBackground.animator().alphaValue = 1
-            }
-        } else {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = AppTheme.Anim.transition
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                exitFullscreenBackground.animator().alphaValue = 0
-            }
-        }
-    }
-
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53, fullscreenControlsVisible {
-            exitFullscreen()
-            return
-        }
-        super.keyDown(with: event)
-    }
-
-    @objc private func exitFullscreen() {
-        onExitFullscreen?()
-    }
-
-    func stopPlayback() {
-        player?.pause()
-        player = nil
     }
 }
 
@@ -1514,10 +1157,14 @@ private struct SessionSummaryPanel: View {
                         .textSelection(.enabled)
                 }
                 .frame(minHeight: AppTheme.Workbench.emptyStateMinHeight / 2, maxHeight: 280)
-            } else if let error = session.summaryErrorMessage {
+            } else if session.summaryState == .failed,
+                      let error = session.summaryErrorMessage,
+                      !error.isEmpty,
+                      error != LLMConfigurationError.noConfiguredModel(.subtitleProcessing)
+                        .localizedDescription {
                 Text(error)
                     .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Status.errorColor)
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
             } else {
                 Text("Summary will generate automatically after transcription when an LLM is configured.")
                     .font(.system(size: AppTheme.FontSize.sm))
@@ -1674,7 +1321,7 @@ private struct SessionTemplateSheet: View {
     }
 }
 
-private func formatTime(_ seconds: Double) -> String {
+func formatTime(_ seconds: Double) -> String {
     guard seconds.isFinite, seconds >= 0 else { return "00:00" }
     let total = Int(seconds.rounded(.down))
     let hours = total / 3_600
@@ -1685,7 +1332,7 @@ private func formatTime(_ seconds: Double) -> String {
         : String(format: "%02d:%02d", minutes, remaining)
 }
 
-private extension Double {
+extension Double {
     var finiteOrZero: Double { isFinite ? self : 0 }
 }
 

@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeView: View {
     @AppStorage("voxella.workbench.sidebarExpanded") private var sidebarExpanded = false
     @Bindable private var store = WorkbenchStore.shared
+    @Bindable private var tips = WorkbenchTipCenter.shared
 
     var body: some View {
         HStack(spacing: 0) {
@@ -18,6 +19,8 @@ struct HomeView: View {
             VStack(spacing: 0) {
                 WorkbenchTopBar(isSidebarExpanded: $sidebarExpanded)
                 Divider()
+                WorkbenchTopTipBanner()
+                    .animation(.easeInOut(duration: AppTheme.Anim.transition), value: tips.tip?.id)
                 content
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
