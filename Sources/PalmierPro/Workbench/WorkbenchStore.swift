@@ -501,6 +501,13 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     var alignmentDiagnostics: KnownTextAlignmentDiagnostics?
     var revisions: [WorkbenchDubRevision]?
     var activeRevisionID: UUID?
+    var summaryMarkdown: String?
+    var summaryTemplateID: String?
+    var summaryTemplateName: String?
+    var sessionTag: String?
+    var internalSummary: String?
+    var summaryState: WorkbenchJobState?
+    var summaryErrorMessage: String?
     var progress: Double = 0
     var progressMessage = "Ready to synthesize"
     var flowProgressStage: MediaFlowStage?
@@ -787,11 +794,11 @@ final class WorkbenchStore {
                 subtitleTrack: nil,
                 translationTracks: [],
                 selectedTranslationLanguageCode: nil,
-                summaryMarkdown: nil,
-                summaryTemplateName: nil,
-                summaryState: nil,
-                summaryErrorMessage: nil,
-                sessionTag: nil,
+                summaryMarkdown: job.summaryMarkdown,
+                summaryTemplateName: job.summaryTemplateName,
+                summaryState: job.summaryState,
+                summaryErrorMessage: job.summaryErrorMessage,
+                sessionTag: job.sessionTag,
                 dubTranscript: job.alignedTranscript,
                 dubSubtitleTrack: job.renderedSubtitleTrack,
                 dubSegments: job.renderedSegments ?? Self.fallbackDubSegments(for: job)
@@ -819,11 +826,41 @@ final class WorkbenchStore {
                 $0.summaryErrorMessage = nil
             }
         }
-        guard let job = transcriptions.first(where: { $0.id == id }),
-              job.state == .completed,
-              job.summaryMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
-              job.summaryState == nil else { return }
-        Task { await enrichCompletedTranscription(id) }
+        if let job = dubs.first(where: { $0.id == id }),
+           job.summaryState == .failed,
+           job.summaryErrorMessage == missingLLMMessage {
+            updateDub(id) {
+                $0.summaryState = nil
+                $0.summaryErrorMessage = nil
+            }
+        }
+        Task { await ensureSessionSummary(for: id) }
+    }
+
+    private func needsSummary(
+        markdown: String?,
+        state: WorkbenchJobState?
+    ) -> Bool {
+        guard state != .running, state != .completed else { return false }
+        let trimmed = markdown?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty
+    }
+
+    /// Fills a missing session summary after open / dub completion.
+    private func ensureSessionSummary(for sessionID: UUID) async {
+        if let transcription = transcriptions.first(where: { $0.id == sessionID }),
+           transcription.state == .completed,
+           needsSummary(markdown: transcription.summaryMarkdown, state: transcription.summaryState) {
+            await enrichCompletedTranscription(sessionID)
+            return
+        }
+        if let dub = dubs.first(where: { $0.id == sessionID }),
+           dub.state == .completed,
+           dub.sourceTranscriptionID == nil
+            || !transcriptions.contains(where: { $0.id == dub.sourceTranscriptionID }),
+           needsSummary(markdown: dub.summaryMarkdown, state: dub.summaryState) {
+            await enrichCompletedDub(sessionID)
+        }
     }
 
     func showRecentSessions() {
@@ -1144,6 +1181,32 @@ final class WorkbenchStore {
         save()
     }
 
+    func deleteSession(_ id: UUID) {
+        guard let session = sessions.first(where: { $0.id == id }) else { return }
+        let relatedDubIDs: [UUID]
+        if let transcriptionID = session.transcriptionID {
+            relatedDubIDs = dubs.filter { dub in
+                dub.id == session.dubID || dub.sourceTranscriptionID == transcriptionID
+            }.map(\.id)
+        } else if let dubID = session.dubID {
+            relatedDubIDs = [dubID]
+        } else {
+            relatedDubIDs = []
+        }
+
+        if selectedSessionID == id {
+            selectedSessionID = nil
+            if route == .session { route = .recent }
+        }
+
+        if let transcriptionID = session.transcriptionID {
+            deleteTranscription(transcriptionID)
+        }
+        for dubID in relatedDubIDs {
+            deleteDub(dubID)
+        }
+    }
+
     func updateTranscription(_ id: UUID, _ mutate: (inout WorkbenchTranscriptionJob) -> Void) {
         guard let index = transcriptions.firstIndex(where: { $0.id == id }) else { return }
         mutate(&transcriptions[index])
@@ -1283,6 +1346,7 @@ final class WorkbenchStore {
                 guard let base, let updated = transform(base) else { return }
                 job.subtitleTrack = updated
                 job.result = updated.asTranscriptionResult(preservingWords: job.result?.words ?? [])
+                    .aggregatingSegments()
                 job.editedText = updated.text
             }
         case .translation(let languageCode):
@@ -1316,7 +1380,7 @@ final class WorkbenchStore {
                 }
                 let transcript = updated.asTranscriptionResult(
                     preservingWords: job.alignedTranscript?.words ?? []
-                )
+                ).aggregatingSegments()
                 job.subtitleTrack = updated
                 job.alignedTranscript = transcript
                 job.renderedSegments = segments
@@ -1584,6 +1648,13 @@ final class WorkbenchStore {
         dubs[index].alignedTranscript = nil
         dubs[index].subtitleTrack = nil
         dubs[index].alignmentDiagnostics = nil
+        dubs[index].summaryMarkdown = nil
+        dubs[index].summaryTemplateID = nil
+        dubs[index].summaryTemplateName = nil
+        dubs[index].sessionTag = nil
+        dubs[index].internalSummary = nil
+        dubs[index].summaryState = nil
+        dubs[index].summaryErrorMessage = nil
         save()
 
         let payload = DubFlowPayload(
@@ -1598,7 +1669,7 @@ final class WorkbenchStore {
                 language: snapshot.language,
                 text: "\(id.uuidString)\n\(snapshot.script)"
             ),
-            xvecOnly: true
+            xvecOnly: false
         )
         let task = Task { [weak self] in
             guard let self else { return }
@@ -1637,9 +1708,30 @@ final class WorkbenchStore {
                     $0.errorMessage = nil
                     $0.progressMessage = "Cancelled — ready to retry"
                 }
+                return
             }
+            guard let job = dubs.first(where: { $0.id == id }),
+                  job.state == .completed else { return }
+            await enrichAfterDubCompletion(job)
         }
         flowTasks[id] = task
+    }
+
+    private func enrichAfterDubCompletion(_ job: WorkbenchDubJob) async {
+        if let transcriptionID = job.sourceTranscriptionID,
+           let transcription = transcriptions.first(where: { $0.id == transcriptionID }),
+           transcription.state == .completed {
+            if needsSummary(
+                markdown: transcription.summaryMarkdown,
+                state: transcription.summaryState
+            ) {
+                await enrichCompletedTranscription(transcriptionID)
+            }
+            return
+        }
+        if needsSummary(markdown: job.summaryMarkdown, state: job.summaryState) {
+            await enrichCompletedDub(job.id)
+        }
     }
 
     func cancelDub(_ id: UUID) {
@@ -1885,6 +1977,105 @@ final class WorkbenchStore {
         Task { await enrichCompletedTranscription(id) }
     }
 
+    func regenerateSummary(forDub id: UUID) {
+        Task { await enrichCompletedDub(id) }
+    }
+
+    /// Auto title + template summary after standalone dub, mirrored from transcription enrichment.
+    private func enrichCompletedDub(_ id: UUID) async {
+        guard summaryTaskIDs.insert(id).inserted else { return }
+        defer { summaryTaskIDs.remove(id) }
+
+        guard LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing) else {
+            updateDub(id) {
+                $0.summaryState = nil
+                $0.summaryErrorMessage = nil
+            }
+            WorkbenchTipCenter.shared.show(
+                LLMConfigurationError.noConfiguredModel(.subtitleProcessing).localizedDescription,
+                kind: .error,
+                id: "summary.missing-llm",
+                actionLabel: "Open AI Settings",
+                action: .openAISettings
+            )
+            return
+        }
+        guard let job = dubs.first(where: { $0.id == id }),
+              let transcript = dubTranscriptForEnrichment(job) else { return }
+        let transcriptText = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcriptText.isEmpty else { return }
+
+        updateDub(id) {
+            $0.summaryState = .running
+            $0.summaryErrorMessage = nil
+            $0.progressMessage = "Generating title and summary…"
+        }
+
+        do {
+            let route = try await LLMSettingsStore.shared.runtimeRoute(for: .subtitleProcessing)
+            let client = ResilientLLMTextClient(route: route)
+            let existingTitle = job.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let shouldApplyTitle = existingTitle.isEmpty || existingTitle == "Untitled project"
+            let metadata = try await SessionTitleLLMProcessor(client: client).generate(
+                transcriptText: transcriptText,
+                sourceLanguage: transcript.language ?? job.language,
+                existingTitle: shouldApplyTitle ? nil : job.title
+            )
+
+            updateDub(id) {
+                if shouldApplyTitle {
+                    $0.title = metadata.title
+                }
+                $0.sessionTag = metadata.tagText
+                $0.internalSummary = metadata.internalSummary
+            }
+
+            let template = await SummaryTemplateCatalog.shared.locallySupportedTemplate()
+            let lines = TemplateSummaryLLMProcessor.transcriptLines(from: transcript)
+            let markdown = try await TemplateSummaryLLMProcessor(client: client).synthesize(
+                template: template,
+                transcriptLines: lines,
+                title: shouldApplyTitle ? metadata.title : job.title,
+                tagText: metadata.tagText,
+                sourceLanguage: transcript.language ?? job.language,
+                internalSummary: metadata.internalSummary
+            )
+            updateDub(id) {
+                $0.summaryMarkdown = markdown
+                $0.summaryTemplateID = template.id
+                $0.summaryTemplateName = template.name
+                $0.summaryState = .completed
+                $0.summaryErrorMessage = nil
+                $0.progressMessage = $0.subtitleTrack == nil
+                    ? "Dub and summary ready"
+                    : "Dub, subtitles, and summary ready"
+            }
+        } catch {
+            updateDub(id) {
+                $0.summaryState = .failed
+                $0.summaryErrorMessage = error.localizedDescription
+                $0.progressMessage = "Dub ready — summary unavailable"
+            }
+            WorkbenchTipCenter.shared.show(
+                error.localizedDescription,
+                kind: .error,
+                id: "summary.failed.\(id.uuidString)"
+            )
+            Log.project.warning("dub session enrichment failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func dubTranscriptForEnrichment(_ job: WorkbenchDubJob) -> TranscriptionResult? {
+        if let track = job.subtitleTrack ?? job.renderedSubtitleTrack {
+            return track.asTranscriptionResult(preservingWords: job.alignedTranscript?.words ?? [])
+                .aggregatingSegments()
+        }
+        if let aligned = job.alignedTranscript {
+            return aligned.aggregatingSegments()
+        }
+        return nil
+    }
+
     private func consumeDubEvent(
         _ event: MediaJobEvent,
         jobID: UUID,
@@ -1945,11 +2136,12 @@ final class WorkbenchStore {
 
         case .artifact(.alignment(let output)):
             updateDub(jobID) { job in
-                job.alignedTranscript = output.result
+                let transcript = output.result.aggregatingSegments()
+                job.alignedTranscript = transcript
                 job.alignmentDiagnostics = output.diagnostics
                 if let activeRevisionID = job.activeRevisionID,
                    let index = job.revisions?.firstIndex(where: { $0.id == activeRevisionID }) {
-                    job.revisions?[index].alignedTranscript = output.result
+                    job.revisions?[index].alignedTranscript = transcript
                     job.revisions?[index].alignmentDiagnostics = output.diagnostics
                 }
             }
@@ -1957,9 +2149,14 @@ final class WorkbenchStore {
         case .artifact(.subtitles(let track)):
             updateDub(jobID) { job in
                 job.subtitleTrack = track
+                let transcript = track.asTranscriptionResult(
+                    preservingWords: job.alignedTranscript?.words ?? []
+                ).aggregatingSegments()
+                job.alignedTranscript = transcript
                 if let activeRevisionID = job.activeRevisionID,
                    let index = job.revisions?.firstIndex(where: { $0.id == activeRevisionID }) {
                     job.revisions?[index].subtitleTrack = track
+                    job.revisions?[index].alignedTranscript = transcript
                 }
             }
 

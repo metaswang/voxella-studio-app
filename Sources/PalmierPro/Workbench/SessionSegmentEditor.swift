@@ -9,6 +9,7 @@ struct SessionSegmentEditor: View {
     let scope: WorkbenchStore.SessionCueScope
     let cues: [SubtitleCue]
     let speakerLabels: [String]
+    var allowsEditing = true
     let emptyText: String
     let onSeek: (Double) -> Void
 
@@ -35,10 +36,13 @@ struct SessionSegmentEditor: View {
                     SessionCueRow(
                         cue: cue,
                         speakerLabels: speakerLabels,
-                        isEditing: editingCueID == cue.id,
+                        isEditing: allowsEditing && editingCueID == cue.id,
                         editingText: editingBinding(for: cue),
-                        cursorOffset: editingCueID == cue.id ? $cursorOffset : .constant(nil),
-                        canSplit: canSplit,
+                        cursorOffset: allowsEditing && editingCueID == cue.id
+                            ? $cursorOffset
+                            : .constant(nil),
+                        canSplit: allowsEditing && canSplit,
+                        allowsEditing: allowsEditing,
                         onPlay: { onSeek(cue.start) },
                         onBeginEdit: { beginEdit(cue) },
                         onCommitEdit: { commitEditAndClose() },
@@ -61,7 +65,7 @@ struct SessionSegmentEditor: View {
                         }
                     )
 
-                    if index < cues.count - 1 {
+                    if allowsEditing, index < cues.count - 1 {
                         SessionMergeDivider {
                             store.mergeSessionCueDown(
                                 sessionID: sessionID,
@@ -161,6 +165,7 @@ struct SessionSegmentEditor: View {
     }
 
     private func beginEdit(_ cue: SubtitleCue) {
+        guard allowsEditing else { return }
         autosaveTask?.cancel()
         editingCueID = cue.id
         editingText = cue.text
@@ -293,6 +298,7 @@ private struct SessionCueRow: View {
     @Binding var editingText: String
     @Binding var cursorOffset: Int?
     let canSplit: Bool
+    var allowsEditing = true
     let onPlay: () -> Void
     let onBeginEdit: () -> Void
     let onCommitEdit: () -> Void
@@ -322,11 +328,18 @@ private struct SessionCueRow: View {
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
 
-                    speakerMenu
+                    if allowsEditing {
+                        speakerMenu
+                    } else if let speaker = cue.speaker?.trimmingCharacters(in: .whitespacesAndNewlines),
+                              !speaker.isEmpty {
+                        Text(speaker)
+                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    }
 
                     Spacer(minLength: 0)
 
-                    if isHovered || isEditing {
+                    if allowsEditing, isHovered || isEditing {
                         Button(action: onBeginEdit) {
                             Image(systemName: "pencil")
                                 .font(.system(size: AppTheme.FontSize.xs))
@@ -372,7 +385,10 @@ private struct SessionCueRow: View {
                             .foregroundStyle(AppTheme.Text.primaryColor)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
-                            .onTapGesture(perform: onBeginEdit)
+                            .onTapGesture {
+                                guard allowsEditing else { return }
+                                onBeginEdit()
+                            }
                     }
                 }
             }

@@ -1,11 +1,13 @@
 import AppKit
 import AVFoundation
 import SwiftUI
+import Textual
 import UniformTypeIdentifiers
 
 struct RecentSessionsView: View {
     @Bindable private var store = WorkbenchStore.shared
     @State private var searchText = ""
+    @State private var sessionPendingDeletion: WorkbenchSession?
 
     private var filteredSessions: [WorkbenchSession] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -45,10 +47,11 @@ struct RecentSessionsView: View {
                 } else {
                     LazyVStack(spacing: AppTheme.Spacing.mdLg) {
                         ForEach(filteredSessions) { session in
-                            Button { store.openSession(session.id) } label: {
-                                SessionListRow(session: session)
-                            }
-                            .buttonStyle(.plain)
+                            SessionListRow(
+                                session: session,
+                                onOpen: { store.openSession(session.id) },
+                                onDelete: { sessionPendingDeletion = session }
+                            )
                             .contextMenu {
                                 if let sourceURL = session.sourceURL {
                                     Button("Reveal source in Finder") {
@@ -60,6 +63,10 @@ struct RecentSessionsView: View {
                                         NSWorkspace.shared.activateFileViewerSelecting([outputURL])
                                     }
                                 }
+                                Divider()
+                                Button("Delete", role: .destructive) {
+                                    sessionPendingDeletion = session
+                                }
                             }
                         }
                     }
@@ -70,51 +77,108 @@ struct RecentSessionsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.Background.baseColor)
+        .alert(item: $sessionPendingDeletion) { session in
+            Alert(
+                title: Text("Delete session?"),
+                message: Text("\"\(session.title)\" and its saved workflow data will be removed."),
+                primaryButton: .destructive(Text("Delete")) {
+                    store.deleteSession(session.id)
+                },
+                secondaryButton: .cancel()
+            )
+        }
     }
 }
 
 private struct SessionListRow: View {
     let session: WorkbenchSession
+    let onOpen: () -> Void
+    let onDelete: () -> Void
+
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.lgXl) {
-            Image(systemName: session.hasDub ? "waveform.and.mic" : "text.bubble")
-                .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.medium))
-                .foregroundStyle(session.hasDub ? Color.purple : Color.blue)
-                .frame(width: AppTheme.Workbench.sessionIconSize, height: AppTheme.Workbench.sessionIconSize)
-                .background(
-                    (session.hasDub ? Color.purple : Color.blue).opacity(AppTheme.Opacity.soft),
-                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)
-                )
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text(session.title)
-                    .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
-                    .foregroundStyle(AppTheme.Text.primaryColor)
-                    .lineLimit(1)
-                HStack(spacing: AppTheme.Spacing.smMd) {
-                    Text(sessionKind(session))
-                    if let duration = session.duration {
-                        Text(formatTime(duration))
+            Button(action: onOpen) {
+                HStack(spacing: AppTheme.Spacing.lgXl) {
+                    Image(systemName: session.hasDub ? "waveform.and.mic" : "text.bubble")
+                        .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.medium))
+                        .foregroundStyle(session.hasDub ? Color.purple : Color.blue)
+                        .frame(width: AppTheme.Workbench.sessionIconSize, height: AppTheme.Workbench.sessionIconSize)
+                        .background(
+                            (session.hasDub ? Color.purple : Color.blue).opacity(AppTheme.Opacity.soft),
+                            in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)
+                        )
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                        Text(session.title)
+                            .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
+                            .foregroundStyle(AppTheme.Text.primaryColor)
+                            .lineLimit(1)
+                        HStack(spacing: AppTheme.Spacing.smMd) {
+                            Text(sessionKind(session))
+                            if let duration = session.duration {
+                                Text(formatTime(duration))
+                            }
+                            Text(session.modifiedAt.formatted(date: .abbreviated, time: .shortened))
+                        }
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
                     }
-                    Text(session.modifiedAt.formatted(date: .abbreviated, time: .shortened))
+                    Spacer(minLength: AppTheme.Spacing.zero)
+                    SessionStatusBadge(state: session.state)
                 }
-                .font(.system(size: AppTheme.FontSize.xs))
-                .foregroundStyle(AppTheme.Text.mutedColor)
             }
-            Spacer()
-            SessionStatusBadge(state: session.state)
-            Image(systemName: "chevron.right")
-                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
-                .foregroundStyle(AppTheme.Text.mutedColor)
+            .buttonStyle(.plain)
+
+            ZStack {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
+                    .opacity(isHovered ? AppTheme.Opacity.zero : AppTheme.Opacity.opaque)
+                    .scaleEffect(isHovered ? 0.75 : 1)
+
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                        .foregroundStyle(AppTheme.Status.errorColor)
+                        .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
+                        .background(
+                            AppTheme.Status.errorColor.opacity(AppTheme.Opacity.soft),
+                            in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                                .strokeBorder(
+                                    AppTheme.Status.errorColor.opacity(AppTheme.Opacity.moderate),
+                                    lineWidth: AppTheme.BorderWidth.thin
+                                )
+                        }
+                }
+                .buttonStyle(.plain)
+                .help("Delete session")
+                .opacity(isHovered ? AppTheme.Opacity.opaque : AppTheme.Opacity.zero)
+                .scaleEffect(isHovered ? 1 : 0.75)
+                .allowsHitTesting(isHovered)
+            }
+            .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
         }
         .padding(AppTheme.Spacing.lgXl)
         .frame(minHeight: AppTheme.Workbench.sessionHeaderMinHeight)
-        .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
+        .background(
+            isHovered ? AppTheme.Background.raisedColor : AppTheme.Background.surfaceColor,
+            in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+        )
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+                .strokeBorder(
+                    isHovered ? AppTheme.Border.primaryColor : AppTheme.Border.subtleColor,
+                    lineWidth: AppTheme.BorderWidth.thin
+                )
         }
+        .shadow(isHovered ? AppTheme.Shadow.md : AppTheme.Shadow.sm)
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .animation(.easeInOut(duration: AppTheme.Anim.hover), value: isHovered)
     }
 
     private func sessionKind(_ session: WorkbenchSession) -> String {
@@ -240,8 +304,11 @@ struct WorkbenchSessionDetailView: View {
                             presentTemplateLoginPrompt()
                         },
                         onRegenerate: {
-                            guard let transcriptionID = session.transcriptionID else { return }
-                            store.regenerateSummary(forTranscription: transcriptionID)
+                            if let transcriptionID = session.transcriptionID {
+                                store.regenerateSummary(forTranscription: transcriptionID)
+                            } else if let dubID = session.dubID {
+                                store.regenerateSummary(forDub: dubID)
+                            }
                         }
                     )
                     .frame(maxHeight: hasVideo ? AppTheme.Workbench.emptyStateMinHeight : .infinity, alignment: .top)
@@ -492,12 +559,14 @@ struct WorkbenchSessionDetailView: View {
     private func sessionContent(_ session: WorkbenchSession) -> some View {
         let scope = cueScope(for: session)
         let cues = editableCues(for: session, scope: scope)
+        let allowsEditing = selectedTab == .subtitles || !hasFineGrainedSubtitleTrack(session, scope: scope)
         SessionSegmentEditor(
             sessionID: session.id,
-            contentKey: "\(session.id.uuidString)-\(selectedTab.rawValue)-\(scope.contentKey)",
+            contentKey: "\(session.id.uuidString)-\(selectedTab.rawValue)-\(scope.contentKey)-\(allowsEditing)",
             scope: scope,
             cues: cues,
             speakerLabels: speakerLabels(for: session, cues: cues),
+            allowsEditing: allowsEditing,
             emptyText: selectedTab == .transcript
                 ? "No timed transcript is available for this track."
                 : "No subtitle track is available.",
@@ -514,7 +583,33 @@ struct WorkbenchSessionDetailView: View {
         return .source
     }
 
+    private func hasFineGrainedSubtitleTrack(
+        _ session: WorkbenchSession,
+        scope: WorkbenchStore.SessionCueScope
+    ) -> Bool {
+        switch scope {
+        case .source:
+            return session.subtitleTrack?.cues.isEmpty == false
+        case .translation(let languageCode):
+            return session.translationTracks.contains {
+                $0.languageCode.caseInsensitiveCompare(languageCode) == .orderedSame
+                    && !$0.track.cues.isEmpty
+            }
+        case .dub:
+            return session.dubSubtitleTrack?.cues.isEmpty == false
+        }
+    }
+
     private func editableCues(
+        for session: WorkbenchSession,
+        scope: WorkbenchStore.SessionCueScope
+    ) -> [SubtitleCue] {
+        let rawCues = rawCues(for: session, scope: scope)
+        guard selectedTab == .transcript else { return rawCues }
+        return aggregatedTranscriptCues(for: session, scope: scope, rawCues: rawCues)
+    }
+
+    private func rawCues(
         for session: WorkbenchSession,
         scope: WorkbenchStore.SessionCueScope
     ) -> [SubtitleCue] {
@@ -546,6 +641,55 @@ struct WorkbenchSessionDetailView: View {
             }
             return []
         }
+    }
+
+    private func aggregatedTranscriptCues(
+        for session: WorkbenchSession,
+        scope: WorkbenchStore.SessionCueScope,
+        rawCues: [SubtitleCue]
+    ) -> [SubtitleCue] {
+        switch scope {
+        case .source:
+            if let track = session.subtitleTrack, !track.cues.isEmpty {
+                let timed = track.asTranscriptionResult(preservingWords: session.transcript?.words ?? [])
+                    .aggregatingSegments()
+                return SubtitleTrack.fromTranscript(timed).cues
+            }
+            if let transcript = session.transcript {
+                return SubtitleTrack.fromTranscript(transcript.aggregatingSegments()).cues
+            }
+        case .dub:
+            if let transcript = session.dubTranscript {
+                return SubtitleTrack.fromTranscript(transcript.aggregatingSegments()).cues
+            }
+        case .translation:
+            break
+        }
+        guard !rawCues.isEmpty else { return [] }
+        let language: String?
+        switch scope {
+        case .source:
+            language = session.transcript?.language ?? session.subtitleTrack?.language
+        case .dub:
+            language = session.dubTranscript?.language ?? session.dubSubtitleTrack?.language
+        case .translation(let languageCode):
+            language = languageCode
+        }
+        let words: [TranscriptionWord]
+        switch scope {
+        case .source:
+            words = session.transcript?.words ?? []
+        case .dub:
+            words = session.dubTranscript?.words ?? []
+        case .translation:
+            words = []
+        }
+        let timed = SubtitleTrack(
+            sourceLanguage: language,
+            language: language,
+            cues: rawCues
+        ).asTranscriptionResult(preservingWords: words).aggregatingSegments()
+        return SubtitleTrack.fromTranscript(timed).cues
     }
 
     private func speakerLabels(for session: WorkbenchSession, cues: [SubtitleCue]) -> [String] {
@@ -1134,7 +1278,8 @@ private struct SessionSummaryPanel: View {
                 Text("Summary")
                     .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
                 Spacer()
-                if session.transcriptionID != nil, session.summaryState != .running {
+                if (session.transcriptionID != nil || session.dubID != nil),
+                   session.summaryState != .running {
                     Button(action: onRegenerate) {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -1150,7 +1295,9 @@ private struct SessionSummaryPanel: View {
                     .controlSize(.small)
             } else if let markdown = session.summaryMarkdown, !markdown.isEmpty {
                 ScrollView {
-                    Text(markdown)
+                    StructuredText(markdown: markdown)
+                        .textual.structuredTextStyle(.default)
+                        .textual.textSelection(.enabled)
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.primaryColor)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1166,7 +1313,7 @@ private struct SessionSummaryPanel: View {
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             } else {
-                Text("Summary will generate automatically after transcription when an LLM is configured.")
+                Text("Summary will generate automatically when an LLM is configured.")
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
