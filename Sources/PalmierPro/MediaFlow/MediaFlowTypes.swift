@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct SubtitleCue: Codable, Equatable, Identifiable, Sendable {
@@ -372,6 +373,12 @@ struct DubVoiceReference: Codable, Equatable, Sendable {
     var overrideSourceVoice = true
 }
 
+enum DubTimelineMode: Equatable, Sendable {
+    case automatic
+    case videoTimeline
+    case audioFlow
+}
+
 struct DubSegmentPayload: Codable, Equatable, Sendable {
     var index: Int
     var text: String
@@ -407,8 +414,38 @@ struct DubFlowPayload: Sendable {
     var reference: DubVoiceReference?
     var speakerReferences: [String: DubVoiceReference]
     var segmentReferences: [Int: DubVoiceReference] = [:]
-    var maximumChunkCharacters = 160
+    var maximumChunkCharacters = 150
     var segmentGapSeconds = 0.2
+    var timelineMode: DubTimelineMode = .automatic
+    var seed: UInt64?
+    var xvecOnly = true
+    var repairSilence = true
+
+    var fixedSeed: UInt64 {
+        seed ?? DubSeed.deterministic(
+            language: language,
+            text: segments.sorted { $0.index < $1.index }.map(\.text).joined(separator: "\n")
+        )
+    }
+
+    var resolvedTimelineMode: DubTimelineMode {
+        switch timelineMode {
+        case .automatic:
+            return segments.contains {
+                guard let start = $0.start, let end = $0.end else { return false }
+                return start.isFinite && end.isFinite && end > start
+            } ? .videoTimeline : .audioFlow
+        case .videoTimeline, .audioFlow:
+            return timelineMode
+        }
+    }
+}
+
+enum DubSeed {
+    static func deterministic(language: String, text: String) -> UInt64 {
+        let digest = SHA256.hash(data: Data("\(language)\n\(text)".utf8))
+        return digest.prefix(8).reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+    }
 }
 
 struct DubRenderedSegment: Codable, Equatable, Sendable {

@@ -23,6 +23,7 @@ final class SessionPlaybackController {
 
     private(set) var subtitleTrack: SubtitleTrack?
     private(set) var translationTracks: [WorkbenchTranslationTrack] = []
+    private var endObserver: NSObjectProtocol?
 
     func configureSubtitles(
         subtitleTrack: SubtitleTrack?,
@@ -77,12 +78,12 @@ final class SessionPlaybackController {
         isPlaying.toggle()
     }
 
-    func seek(to progress: Double) {
+    func seek(to progress: Double, resumesPlayback: Bool = true) {
         guard duration > 0 else { return }
-        seekAbsolute(to: progress * duration)
+        seekAbsolute(to: progress * duration, resumesPlayback: resumesPlayback)
     }
 
-    func seekAbsolute(to seconds: Double) {
+    func seekAbsolute(to seconds: Double, resumesPlayback: Bool = true) {
         guard let player else { return }
         let clamped = max(0, duration > 0 ? min(seconds, duration) : seconds)
         player.seek(
@@ -90,14 +91,24 @@ final class SessionPlaybackController {
             toleranceBefore: .zero,
             toleranceAfter: .zero
         )
-        player.play()
-        player.rate = Float(playbackRate)
-        isPlaying = true
+        if resumesPlayback {
+            player.play()
+            player.rate = Float(playbackRate)
+            isPlaying = true
+        } else {
+            player.pause()
+            isPlaying = false
+        }
     }
 
-    func seekBy(_ delta: Double) {
+    func seekBy(_ delta: Double, resumesPlayback: Bool = true) {
         let current = player?.currentTime().seconds.finiteOrZero ?? 0
-        seekAbsolute(to: current + delta)
+        seekAbsolute(to: current + delta, resumesPlayback: resumesPlayback)
+    }
+
+    func stop() {
+        player?.pause()
+        isPlaying = false
     }
 
     func dismissFullscreen() {
@@ -130,6 +141,7 @@ final class SessionPlaybackController {
     @MainActor
     func load(url: URL?, showsVideoCanvas: Bool) async {
         dismissFullscreen()
+        removeEndObserver()
         player?.pause()
         isPlaying = false
         peaks = []
@@ -142,6 +154,15 @@ final class SessionPlaybackController {
         let nextPlayer = AVPlayer(url: url)
         nextPlayer.defaultRate = Float(playbackRate)
         player = nextPlayer
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: nextPlayer.currentItem,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.isPlaying = false
+            }
+        }
         duration = (try? await nextPlayer.currentItem?.asset.load(.duration).seconds)?.finiteOrZero ?? 0
         if !showsVideoCanvas {
             peaks = (try? await WaveformExtractor.peakEnvelope(from: url)) ?? []
@@ -157,7 +178,15 @@ final class SessionPlaybackController {
 
     func tearDown() {
         dismissFullscreen()
-        player?.pause()
+        removeEndObserver()
+        stop()
+    }
+
+    private func removeEndObserver() {
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+            self.endObserver = nil
+        }
     }
 }
 

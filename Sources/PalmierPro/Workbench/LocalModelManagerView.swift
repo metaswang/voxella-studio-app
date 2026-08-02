@@ -2,61 +2,49 @@ import AppKit
 import SwiftUI
 
 struct LocalModelManagerView: View {
+    enum Presentation {
+        case window
+        case settings
+    }
+
+    var presentation: Presentation = .window
+
     @Bindable private var manager = LocalModelManager.shared
     @State private var removalCandidate: LocalModelDescriptor?
     @State private var licenseCandidate: LocalModelDescriptor?
     @State private var continueRecommendedDownload = false
 
+    private var isEmbedded: Bool { presentation == .settings }
+
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Local Model Manager")
-                        .font(.system(size: AppTheme.FontSize.xl, weight: .semibold))
-                    Text("Downloads are the only network activity in the local edition, and start only when you click Download.")
-                        .font(.system(size: AppTheme.FontSize.sm))
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
-                }
-                Spacer()
-                Button(recommendedComplete ? "Recommended Installed" : "Download Recommended") {
-                    beginRecommendedDownload()
-                }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(recommendedBusy || recommendedComplete)
-                Button("Done") { LocalModelManagerWindowController.shared.close() }
-                    .keyboardShortcut(.defaultAction)
-            }
-            .padding(20)
-
-            Divider()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    modelSection("Transcription & Captions", feature: .transcribe)
-                    modelSection("Dubbing", feature: .dub)
-                    if !manager.installedLegacyModels.isEmpty {
-                        modelSection("Legacy Models", models: manager.installedLegacyModels)
+        Group {
+            if isEmbedded {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                        embeddedHeader
+                        modelSections
                     }
-
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "externaldrive.badge.checkmark")
-                            .foregroundStyle(AppTheme.Status.successColor)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Offline after installation")
-                                .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
-                            Text("Inference loads cached files with offline mode enabled. Model licenses and repository identities are shown above.")
-                                .font(.system(size: AppTheme.FontSize.xs))
-                                .foregroundStyle(AppTheme.Text.tertiaryColor)
-                        }
-                    }
-                    .padding(14)
-                    .background(AppTheme.Status.successColor.opacity(0.08), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                    .frame(maxWidth: AppTheme.Settings.contentMaxWidth, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.horizontal, AppTheme.Spacing.xxl)
+                    .padding(.top, AppTheme.Spacing.xxl)
+                    .padding(.bottom, AppTheme.Spacing.xxl)
                 }
-                .padding(20)
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 0) {
+                    windowHeader
+                    Divider()
+                    ScrollView {
+                        modelSections
+                            .padding(AppTheme.Spacing.xl)
+                    }
+                }
+                .frame(width: 820, height: 680)
+                .background(AppTheme.Background.baseColor)
             }
         }
-        .frame(width: 820, height: 680)
-        .background(AppTheme.Background.baseColor)
         .alert("Remove local model?", isPresented: Binding(
             get: { removalCandidate != nil },
             set: { if !$0 { removalCandidate = nil } }
@@ -95,6 +83,74 @@ struct LocalModelManagerView: View {
             Text("This model is distributed under the \(licenseCandidate?.license ?? "model") license. Confirm that you have reviewed and accept it before its files are downloaded.")
         }
         .onAppear { manager.refreshInstallationStates() }
+    }
+
+    private var embeddedHeader: some View {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                Text("Models")
+                    .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.regular))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+                Text("Downloads are the only network activity in the local edition, and start only when you click Download.")
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+            }
+            Spacer(minLength: AppTheme.Spacing.lg)
+            Button(recommendedComplete ? "Recommended Installed" : "Download Recommended") {
+                beginRecommendedDownload()
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(recommendedBusy || recommendedComplete)
+        }
+    }
+
+    private var windowHeader: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                Text("Local Model Manager")
+                    .font(.system(size: AppTheme.FontSize.xl, weight: .semibold))
+                Text("Downloads are the only network activity in the local edition, and start only when you click Download.")
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+            }
+            Spacer()
+            Button(recommendedComplete ? "Recommended Installed" : "Download Recommended") {
+                beginRecommendedDownload()
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(recommendedBusy || recommendedComplete)
+            Button("Done") { LocalModelManagerWindowController.shared.close() }
+                .keyboardShortcut(.defaultAction)
+        }
+        .padding(AppTheme.Spacing.xl)
+    }
+
+    @ViewBuilder
+    private var modelSections: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+            modelSection("Transcription & Captions", feature: .transcribe)
+            modelSection("Dubbing", feature: .dub)
+            if !manager.installedLegacyModels.isEmpty {
+                modelSection("Legacy Models", models: manager.installedLegacyModels)
+            }
+
+            HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                Image(systemName: "externaldrive.badge.checkmark")
+                    .foregroundStyle(AppTheme.Status.successColor)
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                    Text("Offline after installation")
+                        .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
+                    Text("Inference loads cached files with offline mode enabled. Model licenses and repository identities are shown above.")
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                }
+            }
+            .padding(AppTheme.Spacing.md)
+            .background(
+                AppTheme.Status.successColor.opacity(AppTheme.Opacity.subtle),
+                in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)
+            )
+        }
     }
 
     private func modelSection(

@@ -417,7 +417,7 @@ struct MediaFlowTests {
         let payload = DubFlowPayload(
             segments: [],
             language: "en",
-            model: .small,
+            model: .medium,
             reference: session,
             speakerReferences: ["SPEAKER_01": speaker],
             segmentReferences: [7: segment]
@@ -441,7 +441,7 @@ struct MediaFlowTests {
         let payload = DubFlowPayload(
             segments: [DubSegmentPayload(index: 0, text: "A timed dub.")],
             language: "en",
-            model: .small,
+            model: .medium,
             reference: nil,
             speakerReferences: [:]
         )

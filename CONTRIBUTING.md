@@ -22,10 +22,13 @@ swift build
 swift run
 ```
 
+`swift run` is suitable for UI and non-credential work. It has no stable code
+signature, so it must not be used to validate Keychain-backed API keys.
+
 For a bundled debug build that launches the `.app` and streams OSLog:
 
 ```bash
-./scripts/dev.sh
+SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' ./scripts/dev.sh
 ```
 
 ## Test

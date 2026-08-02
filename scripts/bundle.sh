@@ -21,10 +21,22 @@ done
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+ENV_FILE=".env"
+if [ "$CONFIG" = "release" ] && [ -f "$ROOT/.env.prod" ]; then
+  ENV_FILE=".env.prod"
+fi
+if [ -f "$ROOT/$ENV_FILE" ]; then
+  echo "==> Loading $ENV_FILE"
+  set -a
+  # shellcheck disable=SC1091
+  . "$ROOT/$ENV_FILE"
+  set +a
+fi
+
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 RESOURCES="$ROOT/Sources/PalmierPro/Resources"
-ENTITLEMENTS="$ROOT/scripts/PalmierPro.entitlements"
+ENTITLEMENTS_TEMPLATE="$ROOT/scripts/PalmierPro.entitlements"
 APP="$ROOT/.build/Voxella Studio.app"
 ZIP="$ROOT/.build/Voxella-Studio.zip"
 DMG="$ROOT/.build/Voxella-Studio.dmg"
@@ -33,12 +45,27 @@ echo "==> Building ($CONFIG)"
 TRAITS="BundledSpeech"
 BUILD_ARGS=(-c "$CONFIG" --traits "$TRAITS")
 swift build "${BUILD_ARGS[@]}"
-BIN="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)/PalmierPro"
+BIN="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)/VoxellaStudio"
 echo "==> Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN" "$APP/Contents/MacOS/VoxellaStudio"
 cp "$RESOURCES/Info.plist" "$APP/Contents/Info.plist"
+
+inject_plist() {
+  local key="$1" value="$2"
+  if [ -z "$value" ]; then
+    echo "!! $key not set in $ENV_FILE — Settings → Models will be unavailable" >&2
+    return
+  fi
+  /usr/libexec/PlistBuddy -c "Delete :$key" "$APP/Contents/Info.plist" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add :$key string $value" "$APP/Contents/Info.plist"
+}
+
+echo "==> Injecting backend config into Info.plist"
+inject_plist PalmierClerkPublishableKey "${CLERK_PUBLISHABLE_KEY:-}"
+inject_plist PalmierConvexDeploymentURL "${CONVEX_DEPLOYMENT_URL:-}"
+inject_plist PalmierConvexHttpURL "${CONVEX_HTTP_URL:-}"
 
 cp "$RESOURCES/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
@@ -127,9 +154,27 @@ if [ -z "$SIGNING_IDENTITY" ]; then
   exit 1
 fi
 
+TEAM_IDENTIFIER="${TEAM_IDENTIFIER:-}"
+if [ -z "$TEAM_IDENTIFIER" ]; then
+  TEAM_IDENTIFIER="$(
+    security find-certificate -p -c "$SIGNING_IDENTITY" |
+      openssl x509 -noout -subject |
+      awk -F 'OU=' 'NF > 1 { split($2, parts, ","); print parts[1]; exit }'
+  )"
+fi
+if [[ ! "$TEAM_IDENTIFIER" =~ ^[A-Za-z0-9]{10}$ ]]; then
+  echo "!! Could not resolve a valid Team ID from SIGNING_IDENTITY" >&2
+  exit 1
+fi
+
+SIGNING_ENTITLEMENTS="$(mktemp -t palmierpro-entitlements)"
+trap 'rm -f "$SIGNING_ENTITLEMENTS"' EXIT
+sed "s/__TEAM_IDENTIFIER__/$TEAM_IDENTIFIER/g" \
+  "$ENTITLEMENTS_TEMPLATE" > "$SIGNING_ENTITLEMENTS"
+
 echo "==> Codesigning main app"
 codesign --force --options runtime --timestamp \
-  --entitlements "$ENTITLEMENTS" \
+  --entitlements "$SIGNING_ENTITLEMENTS" \
   --sign "$SIGNING_IDENTITY" \
   "$APP"
 codesign --verify --strict --verbose=2 "$APP"

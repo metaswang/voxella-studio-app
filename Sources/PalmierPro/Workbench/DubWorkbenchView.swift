@@ -46,7 +46,7 @@ struct DubWorkbenchView: View {
                             .foregroundStyle(AppTheme.Status.errorColor)
                     }
                     if let output = job.outputURL {
-                        outputCard(job: job, output: output)
+                        outputCard(output: output)
                     }
                     Color.clear.frame(height: 88)
                 }
@@ -351,22 +351,27 @@ struct DubWorkbenchView: View {
         .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
     }
 
-    private func outputCard(job: WorkbenchDubJob, output: URL) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "waveform")
-                .font(.system(size: 24))
-                .foregroundStyle(AppTheme.Accent.primary)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(output.lastPathComponent)
-                Text(output.path)
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Text.mutedColor)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+    private func outputCard(output: URL) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            HStack(spacing: AppTheme.Spacing.md) {
+                Image(systemName: "waveform")
+                    .font(.system(size: AppTheme.IconSize.lg))
+                    .foregroundStyle(AppTheme.Accent.primary)
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                    Text(output.lastPathComponent)
+                    Text(output.path)
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer()
+                Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([output]) }
             }
-            Spacer()
-            Button("Play") { try? store.playDub(job.id) }
-            Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([output]) }
+            DubOutputPlayer(
+                url: output,
+                onPlaybackStart: { VoiceLibraryStore.shared.stopPlayback() }
+            )
         }
         .padding(AppTheme.Spacing.lg)
         .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))

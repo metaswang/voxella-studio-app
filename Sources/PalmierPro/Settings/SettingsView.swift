@@ -112,21 +112,26 @@ private struct SettingsDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(tab.label)
-                .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.regular))
-                .foregroundStyle(AppTheme.Text.primaryColor)
-                .frame(
-                    maxWidth: AppTheme.Settings.contentMaxWidth,
-                    alignment: .leading
-                )
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, AppTheme.Spacing.xxl)
-                .padding(.top, AppTheme.Spacing.xxl)
-                .padding(.bottom, AppTheme.Spacing.xxl)
+            if tab != .models {
+                Text(tab.label)
+                    .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.regular))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+                    .frame(
+                        maxWidth: AppTheme.Settings.contentMaxWidth,
+                        alignment: .leading
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, AppTheme.Spacing.xxl)
+                    .padding(.top, AppTheme.Spacing.xxl)
+                    .padding(.bottom, AppTheme.Spacing.xxl)
+            }
 
             Group {
                 if tab == .skills {
                     SkillsPane()
+                } else if tab == .models {
+                    // Owns title + scroll so the heading shares one left edge with content.
+                    ModelsPane()
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
@@ -141,7 +146,7 @@ private struct SettingsDetail: View {
                                     PrivacyPane()
                                 }
                             case .models:
-                                ModelsPane()
+                                EmptyView()
                             case .ai:
                                 AISettingsPane()
                             case .agent:
@@ -160,9 +165,9 @@ private struct SettingsDetail: View {
                     .scrollEdgeEffectStyle(.soft, for: .top)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 

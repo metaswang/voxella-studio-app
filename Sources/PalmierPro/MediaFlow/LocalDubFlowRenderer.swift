@@ -38,9 +38,22 @@ actor LocalDubFlowRenderer {
 
         var generated: [GeneratedSegment] = []
         var completedChunks = 0
+        var fixedSpeakerReferences: [String: DubVoiceReference] = [:]
         for preparedSegment in prepared {
             try Task.checkCancellation()
-            let reference = Self.reference(for: preparedSegment.source, payload: payload)
+            let reference: DubVoiceReference?
+            if payload.segmentReferences[preparedSegment.source.index] != nil {
+                reference = Self.reference(for: preparedSegment.source, payload: payload)
+            } else if let speaker = preparedSegment.source.speaker,
+                      let fixed = fixedSpeakerReferences[Self.speakerKey(speaker)] {
+                reference = fixed
+            } else {
+                reference = Self.reference(for: preparedSegment.source, payload: payload)
+                if let speaker = preparedSegment.source.speaker,
+                   let reference {
+                    fixedSpeakerReferences[Self.speakerKey(speaker)] = reference
+                }
+            }
             if reference != nil {
                 progress(.init(
                     stage: .dubReference,
@@ -61,6 +74,8 @@ actor LocalDubFlowRenderer {
                     model: payload.model,
                     referenceAudioURL: reference?.audioURL,
                     referenceText: reference?.transcript ?? "",
+                    seed: payload.fixedSeed,
+                    xvecOnly: payload.xvecOnly,
                     progress: { fraction, message in
                         let local = (Double(completedBeforeChunk) + fraction)
                             / Double(max(1, chunkCount))
@@ -84,7 +99,40 @@ actor LocalDubFlowRenderer {
                     message: "Synthesized chunk \(completedChunks) of \(chunkCount)"
                 ))
             }
+            if payload.repairSilence {
+                do {
+                    segmentSamples = try await VoiceActivity.repairLongSilence(
+                        in: segmentSamples,
+                        sampleRate: 24_000
+                    )
+                } catch {
+                    progress(.init(
+                        stage: .dubSynthesis,
+                        fraction: 0.10 + 0.78 * Double(completedChunks) / Double(max(1, chunkCount)),
+                        current: completedChunks,
+                        total: chunkCount,
+                        message: "Silence repair unavailable; continuing with generated audio"
+                    ))
+                }
+            }
             generated.append(GeneratedSegment(source: preparedSegment.source, samples: segmentSamples))
+            if payload.resolvedTimelineMode == .videoTimeline,
+               let start = preparedSegment.source.start,
+               let end = preparedSegment.source.end,
+               start.isFinite,
+               end.isFinite,
+               end > start {
+                let targetDuration = end - start
+                let fitted = try await Self.fitToTimeline(
+                    segmentSamples,
+                    targetDuration: targetDuration,
+                    sampleRate: 24_000
+                )
+                generated[generated.count - 1] = GeneratedSegment(
+                    source: preparedSegment.source,
+                    samples: fitted
+                )
+            }
         }
 
         try Task.checkCancellation()
@@ -112,12 +160,8 @@ actor LocalDubFlowRenderer {
     }
 
     private static func prepare(_ payload: DubFlowPayload) throws -> [PreparedSegment] {
-        let ordered = payload.segments.sorted { $0.index < $1.index }
-        var seen = Set<Int>()
-        let prepared = try ordered.compactMap { segment -> PreparedSegment? in
-            guard seen.insert(segment.index).inserted else {
-                throw MediaFlowError.emptyDubScript
-            }
+        let semanticSegments = try SemanticDubPreprocessor.preprocess(payload)
+        let prepared = semanticSegments.compactMap { segment -> PreparedSegment? in
             let normalized = normalizeTTSText(segment.text)
             guard !normalized.isEmpty else { return nil }
             let chunks = DubTextChunker.chunks(
@@ -135,6 +179,10 @@ actor LocalDubFlowRenderer {
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func speakerKey(_ speaker: String) -> String {
+        speaker.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     static func reference(
@@ -176,6 +224,89 @@ actor LocalDubFlowRenderer {
         }
     }
 
+    private static func fitToTimeline(
+        _ samples: [Float],
+        targetDuration: Double,
+        sampleRate: Int
+    ) async throws -> [Float] {
+        guard !samples.isEmpty,
+              targetDuration.isFinite,
+              targetDuration > 0 else {
+            return samples
+        }
+        let sourceDuration = Double(samples.count) / Double(sampleRate)
+        let rate = sourceDuration / targetDuration
+        guard rate > 1.02 else { return samples }
+
+        let cappedRate = min(rate, 1.25)
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: Double(sampleRate),
+            channels: 1,
+            interleaved: false
+        ), let input = AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: AVAudioFrameCount(samples.count)
+        ) else {
+            return samples
+        }
+
+        input.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { source in
+            guard let baseAddress = source.baseAddress,
+                  let destination = input.floatChannelData?[0] else { return }
+            destination.update(from: baseAddress, count: samples.count)
+        }
+
+        let engine = AVAudioEngine()
+        let player = AVAudioPlayerNode()
+        let timePitch = AVAudioUnitTimePitch()
+        engine.attach(player)
+        engine.attach(timePitch)
+        engine.connect(player, to: timePitch, format: format)
+        engine.connect(timePitch, to: engine.mainMixerNode, format: format)
+        timePitch.rate = Float(cappedRate)
+
+        let maximumFrameCount = AVAudioFrameCount(4096)
+        try engine.enableManualRenderingMode(
+            .offline,
+            format: format,
+            maximumFrameCount: maximumFrameCount
+        )
+        try engine.start()
+        await player.scheduleBuffer(input)
+        player.play()
+
+        let expectedFrames = max(
+            1,
+            Int((sourceDuration / cappedRate * Double(sampleRate)).rounded(.up))
+        )
+        var output: [Float] = []
+        output.reserveCapacity(expectedFrames)
+        while output.count < expectedFrames {
+            try Task.checkCancellation()
+            let frameCount = min(
+                maximumFrameCount,
+                AVAudioFrameCount(expectedFrames - output.count)
+            )
+            guard let buffer = AVAudioPCMBuffer(
+                pcmFormat: format,
+                frameCapacity: frameCount
+            ) else { break }
+            let status = try engine.renderOffline(frameCount, to: buffer)
+            guard status == .success, buffer.frameLength > 0,
+                  let channel = buffer.floatChannelData?[0] else {
+                break
+            }
+            output.append(contentsOf: UnsafeBufferPointer(
+                start: channel,
+                count: Int(buffer.frameLength)
+            ))
+        }
+        engine.stop()
+        return output.isEmpty ? samples : output
+    }
+
     private static func assemble(
         _ generated: [GeneratedSegment],
         sampleRate: Int,
@@ -187,7 +318,12 @@ actor LocalDubFlowRenderer {
 
         for item in generated {
             let requestedStart = item.source.start.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
-            let start = requestedStart ?? flowCursor
+            let start: Double
+            if requestedStart != nil {
+                start = requestedStart ?? flowCursor
+            } else {
+                start = flowCursor
+            }
             let startSample = max(0, Int((start * Double(sampleRate)).rounded()))
             let requiredCount = startSample + item.samples.count
             if output.count < requiredCount {

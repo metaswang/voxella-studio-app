@@ -54,8 +54,24 @@ final class ModelCatalog {
     }
 
     private func startSubscription() {
-        guard let client = AccountService.shared.convex else { return }
+        guard let client = AccountService.shared.convex else {
+            // Avoid an infinite "Loading models…" when account backend never comes up.
+            if AccountService.shared.isMisconfigured {
+                lastError = "Account backend is not configured."
+                isLoaded = true
+            } else {
+                lastError = "Waiting for account backend…"
+                retryTask?.cancel()
+                retryTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(1))
+                    guard !Task.isCancelled else { return }
+                    self?.startSubscription()
+                }
+            }
+            return
+        }
 
+        subscription?.cancel()
         subscription = client
             .subscribe(
                 to: "models:list",

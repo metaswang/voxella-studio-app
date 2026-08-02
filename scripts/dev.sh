@@ -11,6 +11,8 @@ for arg in "$@"; do
     esac
 done
 
+# Local debug uses an ad-hoc app because a certificate without a provisioning
+# profile is rejected by LaunchServices. KeychainStore falls back to login Keychain.
 "$ROOT/scripts/bundle.sh" debug --fast
 
 if ! $stream; then

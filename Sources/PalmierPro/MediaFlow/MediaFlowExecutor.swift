@@ -182,7 +182,10 @@ actor MediaFlowExecutor: MediaJobEventSource {
                         }
                     )
                     context.transcript = output.result
-                    let track = SubtitleTrack.fromTranscript(output.result)
+                    let track = SubtitleTrack.fromDubSegments(
+                        context.dub?.segments ?? [],
+                        language: output.result.language
+                    ) ?? SubtitleTrack.fromTranscript(output.result)
                     context.subtitles = track
                     continuation.yield(.artifact(.alignment(output)))
                     continuation.yield(.artifact(.subtitles(track)))

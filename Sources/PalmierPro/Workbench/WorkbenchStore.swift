@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 import Foundation
 import Observation
 
@@ -471,9 +470,12 @@ enum DubModelChoice: String, Codable, CaseIterable, Identifiable, Sendable {
     case small
     case medium
 
+    /// UI only exposes the current 1.7B 8-bit model; `small` remains for decoding older jobs.
+    static var allCases: [DubModelChoice] { [.medium] }
+
     var id: String { rawValue }
-    var label: String { self == .small ? "Small · 0.6B" : "Medium · 1.7B" }
-    var modelID: LocalModelID { self == .small ? .qwenTTS06B : .qwenTTS17B }
+    var label: String { "1.7B · 8-bit" }
+    var modelID: LocalModelID { .qwenTTS17B }
 }
 
 struct WorkbenchDubJob: Codable, Identifiable, Sendable {
@@ -484,7 +486,7 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     var state: WorkbenchJobState = .ready
     var script = ""
     var language = "auto"
-    var model: DubModelChoice = .small
+    var model: DubModelChoice = .medium
     var referenceAudioPath: String?
     var referenceText = ""
     var referenceVoiceID: UUID?
@@ -705,7 +707,6 @@ final class WorkbenchStore {
     /// Active multi-file / upload-style batch. While set, the Transcribe route shows the waiting UI.
     var activeTranscriptionBatch: TranscriptionBatchState?
     var transcriptionAdmissionError: String?
-    private var audioPlayer: AVAudioPlayer?
     private var flowTasks: [UUID: Task<Void, Never>] = [:]
     private var summaryTaskIDs: Set<UUID> = []
     /// FIFO of transcription job IDs waiting for the single local ASR slot.
@@ -1543,6 +1544,7 @@ final class WorkbenchStore {
               let index = dubs.firstIndex(where: { $0.id == id }) else { return }
         let snapshot = dubs[index]
         let voiceLibrary = VoiceLibraryStore.shared
+        voiceLibrary.stopPlayback()
         let defaultVoiceID = snapshot.referenceVoiceID
             ?? voiceLibrary.defaultReference(languageCode: snapshot.language)?.id
         let missingVoiceIDs = Set(
@@ -1590,7 +1592,13 @@ final class WorkbenchStore {
             model: snapshot.model,
             reference: reference,
             speakerReferences: speakerReferences,
-            segmentReferences: segmentReferences
+            segmentReferences: segmentReferences,
+            timelineMode: .automatic,
+            seed: DubSeed.deterministic(
+                language: snapshot.language,
+                text: "\(id.uuidString)\n\(snapshot.script)"
+            ),
+            xvecOnly: true
         )
         let task = Task { [weak self] in
             guard let self else { return }
@@ -1958,18 +1966,6 @@ final class WorkbenchStore {
         case .artifact:
             break
         }
-    }
-
-    func playDub(_ id: UUID) throws {
-        guard let job = dubs.first(where: { $0.id == id }), let url = job.outputURL else { return }
-        audioPlayer = try AVAudioPlayer(contentsOf: url)
-        audioPlayer?.prepareToPlay()
-        audioPlayer?.play()
-    }
-
-    func stopAudio() {
-        audioPlayer?.stop()
-        audioPlayer = nil
     }
 
     func revealTranscriptionDiagnostics(_ id: UUID) async throws {

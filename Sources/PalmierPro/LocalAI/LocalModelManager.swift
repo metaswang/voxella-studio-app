@@ -346,7 +346,7 @@ final class LocalModelManager {
         .init(
             id: .qwenTTS06B,
             title: "Qwen3-TTS Small 0.6B 4-bit",
-            purpose: "Fast local dubbing and voice cloning",
+            purpose: "Legacy local dubbing model",
             repository: "aufklarer/Qwen3-TTS-12Hz-0.6B-Base-MLX-4bit",
             revision: "e382c6ec904317f408fdaaad7e0d6fc9741f0e2f",
             weightByteSize: 1_024_490_700,
@@ -355,21 +355,22 @@ final class LocalModelManager {
             sizeLabel: "~ 1.03 GB",
             license: "Apache-2.0",
             requiredFor: [.dub],
-            isRecommended: true
+            isRecommended: false,
+            isLegacy: true
         ),
         .init(
             id: .qwenTTS17B,
-            title: "Qwen3-TTS Medium 1.7B 4-bit",
-            purpose: "Higher-quality local dubbing",
-            repository: "aufklarer/Qwen3-TTS-12Hz-1.7B-Base-MLX-4bit",
-            revision: "0febba721f29824f27ea8ac6c2827200cd3a234b",
-            weightByteSize: 1_649_238_423,
-            weightSHA256: "ac973aa38ec79d4b4b52bf858948f0d47dd909aa4bcd383f5b900e277410fdb5",
-            byteSize: 1_653_776_285,
-            sizeLabel: "~ 1.65 GB",
+            title: "Qwen3-TTS 1.7B 8-bit",
+            purpose: "Local dubbing and voice cloning",
+            repository: "aufklarer/Qwen3-TTS-12Hz-1.7B-Base-MLX-8bit",
+            revision: "87d008f1e1a20d265bee01c7ccb0a78f5b8d1132",
+            weightByteSize: 2_417_320_525,
+            weightSHA256: "b965c581ccf6aa852a4124feeb7a8a111542ee7b213139368b4cc7ba7fd4728b",
+            byteSize: 2_421_856_575,
+            sizeLabel: "~ 2.42 GB",
             license: "Apache-2.0",
             requiredFor: [.dub],
-            isRecommended: false
+            isRecommended: true
         ),
     ]
 

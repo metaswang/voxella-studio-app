@@ -185,7 +185,7 @@ struct LocalModelInferenceTests {
         }
     }
 
-    @Test(.enabled(if: enabled), arguments: [DubModelChoice.small, .medium])
+    @Test(.enabled(if: enabled), arguments: [DubModelChoice.medium])
     func qwenDubProducesAudible24kMono(choice: DubModelChoice) async throws {
         let output = try await LocalDubPipeline.shared.synthesize(
             script: "Voxella Studio keeps this dubbing test on this Mac.",
@@ -204,7 +204,7 @@ struct LocalModelInferenceTests {
         let payload = DubFlowPayload(
             segments: [DubSegmentPayload(index: 0, text: script, speaker: "Narrator")],
             language: "en",
-            model: .small,
+            model: .medium,
             reference: nil,
             speakerReferences: [:]
         )
@@ -258,7 +258,7 @@ struct LocalModelInferenceTests {
         let output = try await LocalDubPipeline.shared.synthesize(
             script: "欢迎使用完全本地运行的配音功能。",
             language: "auto",
-            model: .small,
+            model: .medium,
             referenceAudioURL: nil,
             referenceText: "",
             progress: { _, _ in }
@@ -272,7 +272,7 @@ struct LocalModelInferenceTests {
         let output = try await LocalDubPipeline.shared.synthesize(
             script: "This sentence verifies local voice cloning.",
             language: "en",
-            model: .small,
+            model: .medium,
             referenceAudioURL: reference,
             referenceText: "",
             progress: { _, _ in }
@@ -285,7 +285,7 @@ struct LocalModelInferenceTests {
         let output = try await LocalDubPipeline.shared.synthesize(
             script: "This sentence verifies local in-context voice cloning.",
             language: "en",
-            model: .small,
+            model: .medium,
             referenceAudioURL: Self.fixture("en-single.wav"),
             referenceText: "Welcome to Voxella Studio. This recording tests local word timestamps.",
             progress: { _, _ in }

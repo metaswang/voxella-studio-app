@@ -862,6 +862,8 @@ actor LocalDubPipeline {
         model choice: DubModelChoice,
         referenceAudioURL: URL?,
         referenceText: String,
+        seed: UInt64 = 0,
+        xvecOnly: Bool = true,
         progress: @escaping @Sendable (Double, String) -> Void
     ) async throws -> URL {
         #if BUNDLED_SPEECH
@@ -876,7 +878,7 @@ actor LocalDubPipeline {
 
         progress(0.08, "Loading \(choice.label)…")
         let referenceTranscript = referenceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let needsICLEncoder = referenceAudioURL != nil && !referenceTranscript.isEmpty
+        let needsICLEncoder = !xvecOnly && referenceAudioURL != nil && !referenceTranscript.isEmpty
         let model: Qwen3TTSModel
         if let cached = loadedModels[choice.modelID],
            !needsICLEncoder || loadedCodecEncoders[choice.modelID] != nil {
@@ -911,25 +913,34 @@ actor LocalDubPipeline {
         let samples: [Float]
         if let referenceAudioURL {
             let reference = try AudioFileLoader.load(url: referenceAudioURL, targetSampleRate: 24_000)
-            if !referenceTranscript.isEmpty, let encoder = loadedCodecEncoders[choice.modelID] {
+            MLXRandom.seed(seed)
+            if !xvecOnly, !referenceTranscript.isEmpty, let encoder = loadedCodecEncoders[choice.modelID] {
                 samples = model.synthesizeWithVoiceCloneICL(
                     text: text,
                     referenceAudio: reference,
                     referenceSampleRate: 24_000,
                     referenceText: referenceTranscript,
                     language: normalizedLanguage,
-                    codecEncoder: encoder
+                    sampling: .greedy,
+                    codecEncoder: encoder,
+                    trimReference: true
                 )
             } else {
                 samples = model.synthesizeWithVoiceClone(
                     text: text,
                     referenceAudio: reference,
                     referenceSampleRate: 24_000,
-                    language: normalizedLanguage
+                    language: normalizedLanguage,
+                    sampling: .greedy
                 )
             }
         } else {
-            samples = model.synthesize(text: text, language: normalizedLanguage)
+            MLXRandom.seed(seed)
+            samples = model.synthesize(
+                text: text,
+                language: normalizedLanguage,
+                sampling: .greedy
+            )
         }
         guard !samples.isEmpty else { throw LocalAIError.noAudioOutput }
         progress(0.92, "Writing local WAV…")

@@ -54,6 +54,17 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Voxella Studio uses the microphone only when you record a local reference voice.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.voxella.studio</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>palmier</string>
+			</array>
+		</dict>
+	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

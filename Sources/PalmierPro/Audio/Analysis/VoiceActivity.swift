@@ -1,5 +1,6 @@
 import AVFoundation
 #if BUNDLED_SPEECH
+import AudioCommon
 import SpeechVAD
 #endif
 
@@ -48,6 +49,75 @@ enum VoiceActivity {
         let analysis = try await modelBox.analyze(samples: samples)
         cache(analysis, for: sourceURL, mediaRef: mediaRef)
         return analysis
+        #else
+        throw MLXRuntime.Unavailable()
+        #endif
+    }
+
+    static func repairLongSilence(
+        in samples: [Float],
+        sampleRate: Int,
+        maximumSilenceSeconds: Double = 0.35
+    ) async throws -> [Float] {
+        guard !samples.isEmpty,
+              sampleRate > 0,
+              maximumSilenceSeconds.isFinite,
+              maximumSilenceSeconds >= 0 else {
+            return samples
+        }
+        #if BUNDLED_SPEECH
+        let analysisSamples = sampleRate == Self.sampleRate
+            ? samples
+            : AudioFileLoader.resample(samples, from: sampleRate, to: Self.sampleRate)
+        let analysis = try await modelBox.analyze(samples: analysisSamples)
+        guard !analysis.segments.isEmpty else { return samples }
+
+        let scale = Double(sampleRate) / Double(Self.sampleRate)
+        let maximumSilenceFrames = Int((maximumSilenceSeconds * Double(sampleRate)).rounded(.down))
+        let maximumLeadingFrames = Int((0.08 * Double(sampleRate)).rounded(.down))
+        let paddingFrames = Int((0.04 * Double(sampleRate)).rounded(.down))
+        var output: [Float] = []
+        output.reserveCapacity(samples.count)
+        var previousEnd = 0
+
+        for (index, span) in analysis.segments.enumerated() {
+            let rawStart: Int = max(0, Int((span.start * scale).rounded(.down)))
+            let rawEnd: Int = min(samples.count, Int((span.end * scale).rounded(.up)))
+            guard rawEnd > rawStart else { continue }
+
+            let startFrame: Int = max(0, rawStart - paddingFrames)
+            let endFrame: Int = min(samples.count, rawEnd + paddingFrames)
+            if index == 0 {
+                let leadingEnd: Int = min(startFrame, maximumLeadingFrames)
+                output.append(contentsOf: samples[0..<leadingEnd])
+                output.append(contentsOf: samples[startFrame..<endFrame])
+            } else {
+                let gapFrames: Int = max(0, startFrame - previousEnd)
+                let keptGapFrames: Int = min(gapFrames, maximumSilenceFrames)
+                let leadingGapFrames: Int = keptGapFrames / 2
+                let trailingGapFrames: Int = keptGapFrames - leadingGapFrames
+                if leadingGapFrames > 0 {
+                    output.append(contentsOf: samples[
+                        previousEnd..<(previousEnd + leadingGapFrames)
+                    ])
+                }
+                if trailingGapFrames > 0 {
+                    output.append(contentsOf: samples[
+                        (startFrame - trailingGapFrames)..<startFrame
+                    ])
+                }
+                output.append(contentsOf: samples[startFrame..<endFrame])
+            }
+            previousEnd = endFrame
+        }
+
+        let trailingEnd = min(samples.count, previousEnd + maximumLeadingFrames)
+        if trailingEnd > previousEnd {
+            output.append(contentsOf: samples[previousEnd..<trailingEnd])
+        }
+        let minimumPreservedFrames = Int(Double(samples.count) * 0.6)
+        guard output.count >= minimumPreservedFrames else { return samples }
+        return output.isEmpty ? samples : output
         #else
         throw MLXRuntime.Unavailable()
         #endif

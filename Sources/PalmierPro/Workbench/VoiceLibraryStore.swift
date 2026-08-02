@@ -573,6 +573,9 @@ final class VoiceLibraryStore {
             player.play()
             audioPlayer = player
             playingID = reference.id
+            AudioPlaybackCoordinator.shared.begin(id: Self.playbackID(reference.id)) { [weak self] in
+                self?.stopPlayback()
+            }
             playbackCompletionTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .seconds(player.duration + 0.1))
                 guard !Task.isCancelled, self?.audioPlayer === player else { return }
@@ -586,9 +589,16 @@ final class VoiceLibraryStore {
     func stopPlayback() {
         playbackCompletionTask?.cancel()
         playbackCompletionTask = nil
+        if let playingID {
+            AudioPlaybackCoordinator.shared.end(id: Self.playbackID(playingID))
+        }
         audioPlayer?.stop()
         audioPlayer = nil
         playingID = nil
+    }
+
+    private static func playbackID(_ id: UUID) -> String {
+        "voice-reference:\(id.uuidString)"
     }
 
     private func load() async {

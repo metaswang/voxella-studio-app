@@ -374,6 +374,7 @@ enum AppTheme {
         static let fullscreenControlSize: CGFloat = 48
         static let fullscreenChromeIdle: Duration = .seconds(3)
         static let fullscreenSeekStepSeconds: Double = 5
+        static let dubSeekStepSeconds: Double = 10
         static let tipAutoDismiss: Duration = .seconds(15)
         static let tipDedupeWindow: Duration = .seconds(10)
         static let tipHorizontalInset: CGFloat = 16

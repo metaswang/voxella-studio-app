@@ -4,11 +4,11 @@
 <dict>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>MMFLRC7562.com.voxella.studio</string>
+		<string>__TEAM_IDENTIFIER__.com.voxella.studio</string>
 	</array>
 	<key>com.apple.application-identifier</key>
-	<string>MMFLRC7562.com.voxella.studio</string>
+	<string>__TEAM_IDENTIFIER__.com.voxella.studio</string>
 	<key>com.apple.developer.team-identifier</key>
-	<string>MMFLRC7562</string>
+	<string>__TEAM_IDENTIFIER__</string>
 </dict>
 </plist>

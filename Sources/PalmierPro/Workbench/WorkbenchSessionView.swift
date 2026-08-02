@@ -899,7 +899,7 @@ private struct SessionMediaPlayer: View {
         ) { _ in
             let currentTime = playback.player?.currentTime().seconds.finiteOrZero ?? 0
             VStack(spacing: AppTheme.Spacing.smMd) {
-                SessionWaveform(
+                AudioWaveformView(
                     peaks: playback.peaks,
                     progress: playback.duration > 0 ? currentTime / playback.duration : 0
                 )
@@ -1066,7 +1066,7 @@ private struct SessionMediaPlayer: View {
     }
 }
 
-private struct SessionWaveform: View {
+struct AudioWaveformView: View {
     let peaks: [Float]
     let progress: Double
 
