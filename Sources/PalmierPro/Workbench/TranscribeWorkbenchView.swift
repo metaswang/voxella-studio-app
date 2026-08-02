@@ -586,7 +586,7 @@ struct TranscribeWorkbenchView: View {
                             .padding(.horizontal, AppTheme.Spacing.md)
                             .padding(.vertical, AppTheme.Spacing.sm)
                             .background(AppTheme.Accent.link.opacity(AppTheme.Opacity.soft), in: Capsule())
-                        Text("Upload audio or video and turn it into a searchable transcript workspace.")
+                        Text("Import audio or video and turn it into a searchable transcript workspace.")
                             .font(.system(size: AppTheme.FontSize.title2, weight: AppTheme.FontWeight.semibold))
                             .fixedSize(horizontal: false, vertical: true)
                         Text("Choose files, confirm processing options, then watch local progress before the session workspace opens.")
@@ -623,7 +623,7 @@ struct TranscribeWorkbenchView: View {
                 HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
                     guidanceCard(
                         eyebrow: "BEST FIT",
-                        title: "When upload is the best choice",
+                        title: "When import is the best choice",
                         detail: "You already have a local source file and want the shortest path to transcript, translation, or export.",
                         systemImage: "wand.and.stars"
                     )
@@ -636,7 +636,7 @@ struct TranscribeWorkbenchView: View {
                 }
 
                 WorkbenchRecentTranscriptSessionsSection(
-                    modeTitle: "Upload Files",
+                    modeTitle: "Import Files",
                     onChooseMedia: { importMedia() }
                 )
             }
@@ -651,7 +651,7 @@ struct TranscribeWorkbenchView: View {
             Text("TRANSCRIPTION ENTRY")
                 .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                 .foregroundStyle(AppTheme.Text.mutedColor)
-            entryModeButton("Upload files", systemImage: "arrow.up.circle", active: true) { importMedia() }
+            entryModeButton("Import files", systemImage: "square.and.arrow.down", active: true) { importMedia() }
             entryModeButton("Net video", systemImage: "video", active: false, action: {})
             entryModeButton("Record", systemImage: "video.circle", active: false, action: {})
             entryModeButton("Live", systemImage: "dot.radiowaves.left.and.right", active: false, action: {})
@@ -700,10 +700,10 @@ struct TranscribeWorkbenchView: View {
 
     private var quickStartCard: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
-            Label("QUICK START", systemImage: "rectangle.and.arrow.up")
+            Label("QUICK START", systemImage: "square.and.arrow.down")
                 .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                 .foregroundStyle(AppTheme.Accent.link)
-            Text("Upload files")
+            Text("Import files")
                 .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
             ForEach(Array(["Choose one or more local files", "Confirm processing options", "Continue editing in the workspace"].enumerated()), id: \.offset) { index, title in
                 HStack(alignment: .top, spacing: AppTheme.Spacing.md) {

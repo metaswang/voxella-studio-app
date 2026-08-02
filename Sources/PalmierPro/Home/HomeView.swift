@@ -327,7 +327,7 @@ private struct WorkbenchSidebar: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 4) {
                     Label("Runs on this Mac", systemImage: "apple.logo")
-                    Text("No cloud account · No uploads")
+                    Text("No cloud account · Files stay local")
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
                 .font(.system(size: AppTheme.FontSize.xs))

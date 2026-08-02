@@ -6,7 +6,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var models = LocalModelManager.shared
 
-    var modeTitle: String = "Upload Files"
+    var modeTitle: String = "Import Files"
     var onChooseMedia: (() -> Void)?
 
     @State private var searchText = ""
@@ -239,7 +239,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
                                 .foregroundStyle(AppTheme.Text.primaryColor)
                                 .lineLimit(1)
                             HStack(spacing: 6) {
-                                Text("Upload")
+                                Text("Import")
                                     .foregroundStyle(AppTheme.Accent.link)
                                 metaDot
                                 if let filename = session.sourceURL?.lastPathComponent {
@@ -325,7 +325,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
     }
 
     private var sourceBadge: some View {
-        Image(systemName: "arrow.up.circle")
+        Image(systemName: "square.and.arrow.down")
             .font(.system(size: AppTheme.FontSize.lg, weight: .semibold))
             .foregroundStyle(AppTheme.Accent.link)
             .frame(width: AppTheme.Workbench.sessionIconSize, height: AppTheme.Workbench.sessionIconSize)
