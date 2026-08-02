@@ -280,7 +280,29 @@ struct WorkbenchSessionDetailView: View {
 
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
             sessionHeader(session)
-            HStack(alignment: .top, spacing: 0) {
+            GeometryReader { proxy in
+                let contentWidth = max(
+                    proxy.size.width - AppTheme.Workbench.sessionSplitDividerHitWidth,
+                    0
+                )
+                let minimumLeftWidth = contentWidth * AppTheme.Workbench.sessionSplitMinimumRatio
+                let minimumRightWidth = min(
+                    AppTheme.Workbench.sessionSplitMinimumRightWidth,
+                    max(contentWidth - minimumLeftWidth, 0)
+                )
+                let maximumLeftWidth = max(
+                    minimumLeftWidth,
+                    min(
+                        contentWidth * AppTheme.Workbench.sessionSplitMaximumRatio,
+                        max(contentWidth - minimumRightWidth, 0)
+                    )
+                )
+                let maximumRightWidth = max(
+                    minimumRightWidth,
+                    contentWidth - minimumLeftWidth
+                )
+
+                HSplitView {
                 VStack(alignment: .leading, spacing: 0) {
                     SessionMediaPlayer(
                         URL: mediaURL,
@@ -313,13 +335,14 @@ struct WorkbenchSessionDetailView: View {
                     )
                     .frame(maxHeight: hasVideo ? AppTheme.Workbench.emptyStateMinHeight : .infinity, alignment: .top)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(
+                    minWidth: minimumLeftWidth,
+                    idealWidth: contentWidth * AppTheme.Workbench.sessionSplitDefaultRatio,
+                    maxWidth: maximumLeftWidth,
+                    maxHeight: .infinity,
+                    alignment: .top
+                )
                 .background(AppTheme.Background.baseColor)
-
-                Rectangle()
-                    .fill(AppTheme.Border.subtleColor)
-                    .frame(width: AppTheme.BorderWidth.thin)
-                    .frame(maxHeight: .infinity)
 
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
                     tabBar(session)
@@ -331,17 +354,26 @@ struct WorkbenchSessionDetailView: View {
                             .padding(.bottom, AppTheme.Spacing.xl)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(
+                    minWidth: minimumRightWidth,
+                    idealWidth: contentWidth * (1 - AppTheme.Workbench.sessionSplitDefaultRatio),
+                    maxWidth: maximumRightWidth,
+                    maxHeight: .infinity,
+                    alignment: .top
+                )
                 .background(AppTheme.Background.baseColor)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
             .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
             .overlay {
                 RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
                     .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
             }
         }
-        .padding(AppTheme.Spacing.xxl)
+        .padding(.horizontal, AppTheme.Spacing.xxl)
+        .padding(.top, AppTheme.Spacing.xl)
+        .padding(.bottom, AppTheme.Spacing.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.Background.baseColor)
         .onAppear {
@@ -468,27 +500,62 @@ struct WorkbenchSessionDetailView: View {
     }
 
     private func tabBar(_ session: WorkbenchSession) -> some View {
-        HStack(spacing: AppTheme.Spacing.xlXxl) {
-            ForEach(availableTabs(session)) { tab in
-                compositeTabButton(tab, session: session)
-            }
-            Spacer()
-            if session.transcriptionID != nil {
-                Button {
-                    showTranslateSheet = true
-                } label: {
-                    Label("Translate", systemImage: "character.book.closed")
+        HStack(alignment: .center, spacing: AppTheme.Spacing.smMd) {
+            HStack(spacing: AppTheme.Spacing.xlXxl) {
+                ForEach(availableTabs(session)) { tab in
+                    compositeTabButton(tab, session: session)
                 }
-                .buttonStyle(.bordered)
             }
-            if let URL = selectedTrack == .dub ? session.outputURL : session.sourceURL {
-                Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([URL]) }
-                    .buttonStyle(.bordered)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: AppTheme.Workbench.sessionTabBarMinHeight,
+                alignment: .leading
+            )
+            .layoutPriority(1)
+
+            HStack(spacing: AppTheme.Spacing.smMd) {
+                if session.transcriptionID != nil {
+                    sessionActionButton(
+                        systemImage: "character.book.closed",
+                        accessibilityLabel: "Translate",
+                        help: "Translate"
+                    ) {
+                        showTranslateSheet = true
+                    }
+                }
+                if let URL = selectedTrack == .dub ? session.outputURL : session.sourceURL {
+                    sessionActionButton(
+                        systemImage: "folder",
+                        accessibilityLabel: "Reveal in Finder",
+                        help: "Reveal in Finder"
+                    ) {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL])
+                    }
+                }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) {
             Rectangle().fill(AppTheme.Border.subtleColor).frame(height: AppTheme.BorderWidth.thin)
         }
+    }
+
+    private func sessionActionButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.medium))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+        .help(help)
     }
 
     @ViewBuilder
@@ -994,6 +1061,7 @@ private struct SessionMediaPlayer: View {
         ) { _ in
             let currentTime = playback.player?.currentTime().seconds.finiteOrZero ?? 0
             let cueText = playback.activeSubtitleText(at: currentTime)
+            let isVideoReady = playback.playerViewRef?.playerLayer.isReadyForDisplay == true
             VStack(spacing: 0) {
                 ZStack(alignment: .bottom) {
                     Color.black
@@ -1002,6 +1070,19 @@ private struct SessionMediaPlayer: View {
                             player: player,
                             onViewReady: { playback.playerViewRef = $0 }
                         )
+                        if !isVideoReady {
+                            if let posterImage = playback.posterImage {
+                                Image(nsImage: posterImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .allowsHitTesting(false)
+                            } else {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(.white)
+                            }
+                        }
                     } else if URL != nil {
                         ProgressView()
                             .controlSize(.small)

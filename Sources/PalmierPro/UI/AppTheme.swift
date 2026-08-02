@@ -361,6 +361,12 @@ enum AppTheme {
         static let composerMaxWidth: CGFloat = 1040
         static let voiceRowMinHeight: CGFloat = 92
         static let sessionHeaderMinHeight: CGFloat = 92
+        static let sessionTabBarMinHeight: CGFloat = 34
+        static let sessionSplitDefaultRatio: CGFloat = 0.5
+        static let sessionSplitMinimumRatio: CGFloat = 0.3
+        static let sessionSplitMaximumRatio: CGFloat = 0.7
+        static let sessionSplitMinimumRightWidth: CGFloat = 400
+        static let sessionSplitDividerHitWidth: CGFloat = 12
         static let floatingPlayerWidth: CGFloat = 320
         static let floatingPlayerHeight: CGFloat = 200
         static let sessionVideoMinHeight: CGFloat = 360

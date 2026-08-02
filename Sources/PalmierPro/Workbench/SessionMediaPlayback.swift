@@ -1,7 +1,9 @@
 import AppKit
 import AVFoundation
+import ImageIO
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum SessionSubtitleDisplayMode: Equatable, Sendable {
     case off
@@ -13,6 +15,7 @@ enum SessionSubtitleDisplayMode: Equatable, Sendable {
 @MainActor
 final class SessionPlaybackController {
     var player: AVPlayer?
+    var posterImage: NSImage?
     var peaks: [Float] = []
     var isPlaying = false
     var duration = 0.0
@@ -24,6 +27,7 @@ final class SessionPlaybackController {
     private(set) var subtitleTrack: SubtitleTrack?
     private(set) var translationTracks: [WorkbenchTranslationTrack] = []
     private var endObserver: NSObjectProtocol?
+    private var loadGeneration = UUID()
 
     func configureSubtitles(
         subtitleTrack: SubtitleTrack?,
@@ -140,10 +144,13 @@ final class SessionPlaybackController {
 
     @MainActor
     func load(url: URL?, showsVideoCanvas: Bool) async {
+        let generation = UUID()
+        loadGeneration = generation
         dismissFullscreen()
         removeEndObserver()
         player?.pause()
         isPlaying = false
+        posterImage = nil
         peaks = []
         duration = 0
         playerViewRef = nil
@@ -163,9 +170,21 @@ final class SessionPlaybackController {
                 self?.isPlaying = false
             }
         }
-        duration = (try? await nextPlayer.currentItem?.asset.load(.duration).seconds)?.finiteOrZero ?? 0
+        async let posterData = SessionPosterFrameLoader.load(
+            url: url,
+            enabled: showsVideoCanvas
+        )
+        let loadedDuration = (try? await nextPlayer.currentItem?.asset.load(.duration).seconds)?.finiteOrZero ?? 0
+        guard !Task.isCancelled, generation == loadGeneration else { return }
+        duration = loadedDuration
         if !showsVideoCanvas {
             peaks = (try? await WaveformExtractor.peakEnvelope(from: url)) ?? []
+            guard !Task.isCancelled, generation == loadGeneration else { return }
+        }
+        if let data = await posterData,
+           !Task.isCancelled,
+           generation == loadGeneration {
+            posterImage = NSImage(data: data)
         }
         if subtitleTrack != nil {
             subtitleMode = .original
@@ -177,9 +196,11 @@ final class SessionPlaybackController {
     }
 
     func tearDown() {
+        loadGeneration = UUID()
         dismissFullscreen()
         removeEndObserver()
         stop()
+        posterImage = nil
     }
 
     private func removeEndObserver() {
@@ -683,6 +704,42 @@ final class SessionPlayerView: NSView {
     func stopPlayback() {
         player?.pause()
         player = nil
+    }
+}
+
+private enum SessionPosterFrameLoader {
+    static func load(url: URL, enabled: Bool) async -> Data? {
+        guard enabled else { return nil }
+
+        return await Task.detached(priority: .userInitiated) {
+            guard !Task.isCancelled else { return nil }
+
+            let asset = AVURLAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.requestedTimeToleranceBefore = .zero
+            generator.requestedTimeToleranceAfter = .zero
+
+            do {
+                let image = try generator.copyCGImage(at: .zero, actualTime: nil)
+                guard !Task.isCancelled else { return nil }
+
+                let output = NSMutableData()
+                guard let destination = CGImageDestinationCreateWithData(
+                    output,
+                    UTType.png.identifier as CFString,
+                    1,
+                    nil
+                ) else {
+                    return nil
+                }
+                CGImageDestinationAddImage(destination, image, nil)
+                guard CGImageDestinationFinalize(destination) else { return nil }
+                return output as Data
+            } catch {
+                return nil
+            }
+        }.value
     }
 }
 
