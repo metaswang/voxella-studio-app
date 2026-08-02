@@ -1,25 +1,23 @@
 import AppKit
 
-/// Window controller that handles keyboard shortcuts via the responder chain.
-/// Forwards actions to the EditorViewModel owned by VideoProject.
-final class EditorWindowController: NSWindowController, NSWindowDelegate {
+/// Hosts editor keyboard shortcuts, panel focus, and menu actions for the embedded editor.
+/// Attached to the main workbench window responder chain while a project is open.
+final class EditorSessionController: NSResponder {
     let editorViewModel: EditorViewModel
-    var onBecameKey: (() -> Void)?
+    private weak var hostWindow: NSWindow?
+    private weak var insertedAfter: NSResponder?
+    private var inputEnabled = false
     private nonisolated(unsafe) var keyMonitor: Any?
     private nonisolated(unsafe) var mouseMonitor: Any?
     private nonisolated(unsafe) var endEditingObserver: Any?
 
-    init(editorViewModel: EditorViewModel, window: NSWindow) {
+    init(editorViewModel: EditorViewModel) {
         self.editorViewModel = editorViewModel
-        super.init(window: window)
+        super.init()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
-
-    func windowDidBecomeKey(_ notification: Notification) {
-        onBecameKey?()
-    }
 
     deinit {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
@@ -27,15 +25,59 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         if let endEditingObserver { NotificationCenter.default.removeObserver(endEditingObserver) }
     }
 
-    func installKeyMonitor() {
+    @MainActor
+    func attach(to home: HomeWindowController) {
+        guard let window = home.window else { return }
+        hostWindow = window
+        if let content = window.contentViewController {
+            nextResponder = content.nextResponder
+            content.nextResponder = self
+            insertedAfter = content
+        }
+        installMonitors()
+        setInputEnabled(true)
+    }
+
+    @MainActor
+    func detach() {
+        setInputEnabled(false)
+        if let content = insertedAfter as? NSViewController, content.nextResponder === self {
+            content.nextResponder = nextResponder
+        }
+        insertedAfter = nil
+        nextResponder = nil
+        hostWindow = nil
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
+        if let mouseMonitor {
+            NSEvent.removeMonitor(mouseMonitor)
+            self.mouseMonitor = nil
+        }
+        if let endEditingObserver {
+            NotificationCenter.default.removeObserver(endEditingObserver)
+            self.endEditingObserver = nil
+        }
+    }
+
+    func setInputEnabled(_ enabled: Bool) {
+        inputEnabled = enabled
+    }
+
+    private var shouldHandleInput: Bool {
+        inputEnabled && hostWindow?.isKeyWindow == true
+    }
+
+    private func installMonitors() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.window?.isKeyWindow == true else { return event }
+            guard let self, self.shouldHandleInput else { return event }
             return self.handleKeyDown(event) ? nil : event
         }
 
         mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            guard let self, self.window?.isKeyWindow == true else { return event }
-            let hitView = self.window?.contentView?.hitTest(event.locationInWindow)
+            guard let self, self.shouldHandleInput else { return event }
+            let hitView = self.hostWindow?.contentView?.hitTest(event.locationInWindow)
             self.resignStaleFocus(hitView: hitView)
             self.handlePanelClick(hitView: hitView)
             return event
@@ -47,7 +89,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             nonisolated(unsafe) let object = note.object
             MainActor.assumeIsolated {
                 guard let self, let editor = object as? NSTextView,
-                      editor.window === self.window, let storage = editor.textStorage else { return }
+                      editor.window === self.hostWindow, let storage = editor.textStorage else { return }
                 self.editorViewModel.undo.removeAllActions(withTarget: storage)
             }
         }
@@ -58,7 +100,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func handleKeyDown(_ event: NSEvent) -> Bool {
-        // Don't intercept keys when a text field has focus
         if isTextInputFocused {
             return false
         }
@@ -224,7 +265,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private var isTextInputFocused: Bool {
-        guard let responder = window?.firstResponder else { return false }
+        guard let responder = hostWindow?.firstResponder else { return false }
         if let textView = responder as? NSTextView { return textView.isEditable }
         if let textField = responder as? NSTextField { return textField.isEditable }
         return false
@@ -243,19 +284,27 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    /// Clear stale first-responder focus before the click is dispatched.
     private func resignStaleFocus(hitView: NSView?) {
-        // Don't disturb a deliberate click into a text input.
         if hitView is NSTextView || hitView is NSTextField { return }
-        guard let responder = window?.firstResponder,
-              let view = responder as? NSView, view !== window?.contentView else { return }
-        window?.makeFirstResponder(nil)
+        guard let responder = hostWindow?.firstResponder,
+              let view = responder as? NSView, view !== hostWindow?.contentView else { return }
+        hostWindow?.makeFirstResponder(nil)
+    }
+
+    // MARK: - Document save (responder chain)
+
+    @objc func save(_ sender: Any?) {
+        AppState.shared.activeProject?.save(sender)
+    }
+
+    @objc func saveAs(_ sender: Any?) {
+        AppState.shared.activeProject?.saveAs(sender)
     }
 }
 
 // MARK: - EditorActions (responder chain)
 
-extension EditorWindowController: EditorActions {
+extension EditorSessionController: EditorActions {
     @objc func splitAtPlayhead(_ sender: Any?) { editorViewModel.splitAtPlayhead() }
     @objc func trimStartToPlayhead(_ sender: Any?) { editorViewModel.trimStartToPlayhead() }
     @objc func trimEndToPlayhead(_ sender: Any?) { editorViewModel.trimEndToPlayhead() }
@@ -326,6 +375,7 @@ extension EditorWindowController: EditorActions {
     }
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard inputEnabled else { return false }
         switch menuItem.action {
         case #selector(toggleMediaPanel(_:)):
             menuItem.state = editorViewModel.mediaPanelVisible ? .on : .off

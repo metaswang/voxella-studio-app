@@ -7,9 +7,9 @@ struct ToolError: Error { let message: String; init(_ m: String) { self.message 
 /// Tool implementations live in the `ToolExecutor+*.swift` extension files.
 @MainActor
 final class ToolExecutor {
-    // In-app chat stays with the editor owned by its project window.
+    // In-app chat stays with the editor owned by its project.
     private weak var inAppEditor: EditorViewModel?
-    // External MCP observes the frontmost project only to guard writes.
+    // External MCP observes the open project only to guard writes.
     private let frontmostProjectProvider: (() -> VideoProject?)?
     // External MCP stays on this project until manage_project rebinds it.
     private weak var boundProject: VideoProject?
@@ -87,8 +87,16 @@ final class ToolExecutor {
             break
         }
 
-        if !Self.canReadInactiveProject(tool), let error = projectFocusError() {
-            return .error(error)
+        if !Self.canReadInactiveProject(tool) {
+            if let error = projectFocusError() {
+                return .error(error)
+            }
+            if frontmostProjectProvider != nil,
+               AppState.shared.editorPresentation == .suspended {
+                return .error(
+                    "The video editor is suspended. Select Video Editor in the sidebar to resume before making changes."
+                )
+            }
         }
 
         guard let editor else {

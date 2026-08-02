@@ -36,7 +36,7 @@ extension ToolExecutor {
         let openURLs = Set(openDocs.compactMap { $0.fileURL?.standardizedFileURL })
         let active = sessionProject
         let activeURL = active?.fileURL?.standardizedFileURL
-        let visible = frontmostProject
+        let visible = AppState.shared.isEditorActive ? frontmostProject : nil
         let visibleURL = visible?.fileURL?.standardizedFileURL
 
         // Only registered projects, sorted by most recently opened.
@@ -53,7 +53,11 @@ extension ToolExecutor {
             ]
         }
 
-        var payload: [String: Any] = ["openCount": openDocs.count, "projects": projects]
+        var payload: [String: Any] = [
+            "openCount": openDocs.count,
+            "editorPresentation": AppState.shared.editorPresentation.rawValue,
+            "projects": projects,
+        ]
         if let active {
             payload["active"] = ["name": active.displayName ?? Project.defaultProjectName, "path": active.fileURL?.path ?? ""]
         }

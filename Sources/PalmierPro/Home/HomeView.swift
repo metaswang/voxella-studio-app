@@ -2,37 +2,158 @@ import SwiftUI
 
 struct HomeView: View {
     @AppStorage("voxella.workbench.sidebarExpanded") private var sidebarExpanded = false
+    @State private var editorSidebarRevealed = false
+    @State private var editorSidebarHideTask: Task<Void, Never>?
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var tips = WorkbenchTipCenter.shared
+    @Bindable private var appState = AppState.shared
+
+    private var isEditorActive: Bool { appState.editorPresentation == .active }
 
     var body: some View {
-        HStack(spacing: 0) {
-            WorkbenchSidebar(isExpanded: $sidebarExpanded)
-                .frame(
-                    width: sidebarExpanded
-                        ? AppTheme.Workbench.sidebarExpandedWidth
-                        : AppTheme.Workbench.sidebarCollapsedWidth
-                )
+        ZStack(alignment: .leading) {
+            HStack(spacing: 0) {
+                if !isEditorActive {
+                    WorkbenchSidebar(isExpanded: $sidebarExpanded)
+                        .frame(
+                            width: sidebarExpanded
+                                ? AppTheme.Workbench.sidebarExpandedWidth
+                                : AppTheme.Workbench.sidebarCollapsedWidth
+                        )
+                    Divider()
+                }
 
-            Divider()
+                VStack(spacing: 0) {
+                    if isEditorActive, let editor = appState.activeProject?.editorViewModel {
+                        EditorChrome()
+                            .environment(editor)
+                    } else {
+                        WorkbenchTopBar(isSidebarExpanded: $sidebarExpanded)
+                    }
+                    Divider()
+                    if !isEditorActive {
+                        WorkbenchTopTipBanner()
+                            .animation(.easeInOut(duration: AppTheme.Anim.transition), value: tips.tip?.id)
+                    }
 
-            VStack(spacing: 0) {
-                WorkbenchTopBar(isSidebarExpanded: $sidebarExpanded)
-                Divider()
-                WorkbenchTopTipBanner()
-                    .animation(.easeInOut(duration: AppTheme.Anim.transition), value: tips.tip?.id)
-                content
+                    ZStack {
+                        if let project = appState.activeProject {
+                            embeddedEditor(project)
+                                .opacity(isEditorActive ? 1 : 0)
+                                .allowsHitTesting(isEditorActive)
+                                .accessibilityHidden(!isEditorActive)
+                        }
+                        if !isEditorActive {
+                            content
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if isEditorActive {
+                editorSidebarOverlay
+            }
         }
         .frame(
-            minWidth: AppTheme.Window.homeMin.width,
+            minWidth: isEditorActive ? AppTheme.Window.projectMin.width : AppTheme.Window.homeMin.width,
             maxWidth: .infinity,
-            minHeight: AppTheme.Window.homeMin.height,
+            minHeight: isEditorActive ? AppTheme.Window.projectMin.height : AppTheme.Window.homeMin.height,
             maxHeight: .infinity
         )
         .background(AppTheme.Background.baseColor)
+        .ignoresSafeArea(.container, edges: .top)
         .focusEffectDisabled()
+        .onChange(of: appState.editorPresentation) { _, presentation in
+            if presentation != .active {
+                editorSidebarRevealed = false
+                editorSidebarHideTask?.cancel()
+                editorSidebarHideTask = nil
+            }
+            HomeWindowController.shared.applyEditorMode(presentation == .active)
+        }
+    }
+
+    @ViewBuilder
+    private func embeddedEditor(_ project: VideoProject) -> some View {
+        let editor = project.editorViewModel
+        EditorView()
+            .environment(editor)
+            .focusEffectDisabled()
+            .sheet(isPresented: Bindable(editor).showExportDialog) {
+                ExportView()
+                    .environment(editor)
+            }
+            .sheet(item: Bindable(editor).pendingSettingsMismatch) { mismatch in
+                ProjectSettingsMismatchView(mismatch: mismatch)
+                    .environment(editor)
+            }
+            .overlay {
+                TourOverlay()
+                    .environment(editor)
+            }
+            .tint(AppTheme.Accent.primary)
+    }
+
+    private var editorSidebarOverlay: some View {
+        HStack(spacing: 0) {
+            ZStack(alignment: .leading) {
+                Color.clear
+                    .frame(width: AppTheme.Workbench.editorSidebarHotZoneWidth)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        if hovering { revealEditorSidebar() }
+                        else { scheduleHideEditorSidebar() }
+                    }
+
+                if editorSidebarRevealed {
+                    HStack(spacing: 0) {
+                        WorkbenchSidebar(isExpanded: .constant(true))
+                            .frame(width: AppTheme.Workbench.sidebarExpandedWidth)
+                            .background(AppTheme.Background.surfaceColor)
+                            .shadow(AppTheme.Shadow.md)
+                        Divider()
+                    }
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .onHover { hovering in
+                        if hovering {
+                            editorSidebarHideTask?.cancel()
+                            editorSidebarHideTask = nil
+                            editorSidebarRevealed = true
+                        } else {
+                            scheduleHideEditorSidebar()
+                        }
+                    }
+                }
+            }
+            .frame(
+                width: editorSidebarRevealed
+                    ? AppTheme.Workbench.sidebarExpandedWidth
+                    : AppTheme.Workbench.editorSidebarHotZoneWidth
+            )
+            .animation(.easeInOut(duration: AppTheme.Anim.transition), value: editorSidebarRevealed)
+
+            Spacer(minLength: 0)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private func revealEditorSidebar() {
+        editorSidebarHideTask?.cancel()
+        editorSidebarHideTask = nil
+        editorSidebarRevealed = true
+    }
+
+    private func scheduleHideEditorSidebar() {
+        editorSidebarHideTask?.cancel()
+        editorSidebarHideTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(AppTheme.Anim.editorSidebarHideDelay))
+            guard !Task.isCancelled else { return }
+            editorSidebarRevealed = false
+            editorSidebarHideTask = nil
+        }
     }
 
     @ViewBuilder
@@ -54,7 +175,6 @@ struct HomeView: View {
             if store.selectedSession != nil {
                 WorkbenchSessionDetailView()
             } else {
-                // Orphaned session route (e.g. after relaunch) — show Recent list.
                 RecentSessionsView()
                     .onAppear { store.showRecentSessions() }
             }
@@ -68,49 +188,51 @@ private struct WorkbenchTopBar: View {
     @Bindable private var models = LocalModelManager.shared
 
     var body: some View {
-        HStack(spacing: AppTheme.Spacing.md) {
+        HStack(spacing: AppTheme.Spacing.smMd) {
             Button {
                 withAnimation(.easeInOut(duration: AppTheme.Anim.transition)) {
                     isSidebarExpanded.toggle()
                 }
             } label: {
                 Image(systemName: "sidebar.left")
-                    .frame(width: 24, height: 24)
+                    .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.medium))
+                    .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
             }
             .buttonStyle(.plain)
             .help(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar")
             .accessibilityLabel(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar")
 
             Text(store.route == .session ? (store.selectedSession?.title ?? store.route.title) : store.route.title)
-                .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
+                .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.semibold))
                 .lineLimit(1)
 
             Text("LOCAL")
-                .font(.system(size: AppTheme.FontSize.xxs, weight: .bold))
-                .tracking(1.2)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
+                .font(.system(size: AppTheme.FontSize.micro, weight: AppTheme.FontWeight.bold))
+                .tracking(1.0)
+                .padding(.horizontal, AppTheme.Spacing.sm)
+                .padding(.vertical, AppTheme.Spacing.xxs)
                 .background(AppTheme.Status.successColor.opacity(0.16), in: Capsule())
                 .foregroundStyle(AppTheme.Status.successColor)
 
-            Spacer()
+            Spacer(minLength: 0)
 
             Button {
                 models.presentManager()
             } label: {
                 Label(modelSummary, systemImage: "shippingbox")
-                    .font(.system(size: AppTheme.FontSize.sm))
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .labelStyle(.titleAndIcon)
             }
             .buttonStyle(.plain)
             .help("Manage local models")
 
             Circle()
                 .fill(offlineReady ? AppTheme.Status.successColor : AppTheme.Status.warningColor)
-                .frame(width: 7, height: 7)
+                .frame(width: AppTheme.Spacing.sm, height: AppTheme.Spacing.sm)
                 .accessibilityLabel(offlineReady ? "Offline ready" : "Local models required")
         }
         .foregroundStyle(AppTheme.Text.secondaryColor)
-        .padding(.horizontal, AppTheme.Spacing.lgXl)
+        .padding(.horizontal, AppTheme.Spacing.lg)
         .frame(height: AppTheme.Workbench.toolbarHeight)
         .background(AppTheme.Background.surfaceColor)
     }
@@ -130,21 +252,23 @@ private struct WorkbenchTopBar: View {
 private struct WorkbenchSidebar: View {
     @Binding var isExpanded: Bool
     @Bindable private var store = WorkbenchStore.shared
+    @Bindable private var appState = AppState.shared
 
     var body: some View {
         VStack(spacing: AppTheme.Spacing.sm) {
             HStack(spacing: AppTheme.Spacing.sm) {
-                WorkbenchBrandIcon.image(size: 32)
+                WorkbenchBrandIcon.image(size: AppTheme.IconSize.smMd)
 
                 if isExpanded {
                     Text("Voxella Studio")
-                        .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
+                        .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
                         .lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: isExpanded ? .leading : .center)
+            .frame(height: AppTheme.Workbench.toolbarHeight)
             .padding(.horizontal, isExpanded ? AppTheme.Spacing.md : 0)
-            .padding(.vertical, AppTheme.Spacing.md)
+            .padding(.top, AppTheme.Workbench.windowControlsInset)
 
             ForEach(WorkbenchRoute.sidebarRoutes) { route in
                 Button {
@@ -225,15 +349,33 @@ private struct WorkbenchSidebar: View {
     }
 
     private func isActive(_ route: WorkbenchRoute) -> Bool {
-        store.route == route || (store.route == .session && route == .recent)
+        if appState.editorPresentation == .active {
+            return route == .videoEditor
+        }
+        return store.route == route || (store.route == .session && route == .recent)
     }
 
     private func select(_ route: WorkbenchRoute) {
+        if route == .videoEditor {
+            if appState.activeProject != nil {
+                appState.resumeEditor()
+                return
+            }
+            if appState.editorPresentation == .active {
+                appState.suspendEditor()
+            }
+            store.route = .videoEditor
+            return
+        }
+
+        if appState.editorPresentation == .active {
+            appState.suspendEditor()
+        }
+
         switch route {
         case .recent:
             store.showRecentSessions()
         case .transcribe:
-            // Match web: Transcription nav opens the entry workspace, not a job list.
             store.selectedTranscriptionID = nil
             store.route = .transcribe
         case .dub:
@@ -246,8 +388,10 @@ private struct WorkbenchSidebar: View {
 }
 
 @MainActor
-final class HomeWindowController: NSWindowController {
+final class HomeWindowController: NSWindowController, NSWindowDelegate {
     static let shared = HomeWindowController()
+
+    private var isEditorMode = false
 
     private init() {
         let hostingController = NSHostingController(rootView: HomeView().tint(AppTheme.Accent.primary))
@@ -264,8 +408,28 @@ final class HomeWindowController: NSWindowController {
         window.collectionBehavior = [.fullScreenNone]
         window.center()
         super.init(window: window)
+        window.delegate = self
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    func applyEditorMode(_ enabled: Bool) {
+        guard let window else { return }
+        isEditorMode = enabled
+        if enabled {
+            window.minSize = AppTheme.Window.projectMin
+            window.collectionBehavior = [.fullScreenPrimary, .managed]
+        } else {
+            if window.styleMask.contains(.fullScreen) {
+                window.toggleFullScreen(nil)
+            }
+            window.minSize = NSSize(width: 960, height: 640)
+            window.collectionBehavior = [.fullScreenNone]
+        }
+    }
+
+    func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
+        AppState.shared.activeProject?.undoManager
+    }
 }

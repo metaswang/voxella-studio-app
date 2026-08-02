@@ -5,6 +5,12 @@ struct ProjectOpenOptions {
     var startTutorial = false
 }
 
+enum EditorPresentation: String, Equatable {
+    case none
+    case active
+    case suspended
+}
+
 enum ProjectError: LocalizedError {
     case nameTaken(URL)
     case invalidName(String)
@@ -33,13 +39,19 @@ enum ProjectError: LocalizedError {
 final class AppState {
     static let shared = AppState()
 
+    /// The single open video project, if any (active or suspended).
     private(set) var activeProject: VideoProject?
+    private(set) var editorPresentation: EditorPresentation = .none
+    private(set) var editorSession: EditorSessionController?
+
     private var projectPathsBeingDeleted: Set<String> = []
     private var projectOpenCounts: [String: Int] = [:]
 
     var openProjects: [VideoProject] {
         NSDocumentController.shared.documents.compactMap { $0 as? VideoProject }
     }
+
+    var isEditorActive: Bool { editorPresentation == .active }
 
     private(set) var mcpService: MCPService?
 
@@ -70,59 +82,80 @@ final class AppState {
         }
     }
 
-    func showHome() {
-        guard let project = activeProject else {
-            HomeWindowController.shared.showWindow(nil)
+    // MARK: - Editor presentation
+
+    /// Embed and show the project editor in the main window.
+    func presentEditor(for project: VideoProject) {
+        if let current = activeProject, current !== project {
+            assertionFailure("Only one video project may be open")
             return
         }
-        let presentHome = {
-            if let url = project.fileURL {
-                ProjectRegistry.shared.register(url)
-            }
-            project.windowControllers.forEach { $0.window?.orderOut(nil) }
-            if self.activeProject === project {
-                self.activeProject = nil
-            }
-            HomeWindowController.shared.showWindow(nil)
-        }
-        if project.isDocumentEdited {
-            project.autosave(withImplicitCancellability: false) { _ in
-                DispatchQueue.main.async {
-                    presentHome()
-                }
-            }
-        } else {
-            presentHome()
-        }
-    }
-
-    func showEditor(for project: VideoProject) {
-        activateProject(project)
-        project.showWindows()
-    }
-
-    func activateProject(_ project: VideoProject) {
         if activeProject !== project {
             activeProject = project
             project.editorViewModel.refreshProjectId()
             recordProjectActive(project)
+            installSession(for: project)
         }
-        HomeWindowController.shared.window?.orderOut(nil)
+        editorPresentation = .active
+        editorSession?.setInputEnabled(true)
+        WorkbenchStore.shared.route = .videoEditor
+        HomeWindowController.shared.applyEditorMode(true)
+        HomeWindowController.shared.showWindow(nil)
     }
 
-    // Save and close project; switch to next open or show Home. Throws (without closing) if the save fails.
+    func suspendEditor() {
+        guard editorPresentation == .active, let project = activeProject else { return }
+        project.editorViewModel.pause()
+        editorPresentation = .suspended
+        editorSession?.setInputEnabled(false)
+        HomeWindowController.shared.applyEditorMode(false)
+    }
+
+    func resumeEditor() {
+        guard let project = activeProject else { return }
+        presentEditor(for: project)
+    }
+
+    /// Show the workbench without closing a suspended project. Suspends if the editor is active.
+    func showHome() {
+        if editorPresentation == .active {
+            suspendEditor()
+        }
+        HomeWindowController.shared.showWindow(nil)
+    }
+
+    /// Compatibility alias for call sites that previously opened a separate editor window.
+    func showEditor(for project: VideoProject) {
+        presentEditor(for: project)
+    }
+
+    func activateProject(_ project: VideoProject) {
+        presentEditor(for: project)
+    }
+
+    func handleProjectClosed(_ project: VideoProject) {
+        guard activeProject === project else { return }
+        teardownSession()
+        activeProject = nil
+        editorPresentation = .none
+        HomeWindowController.shared.applyEditorMode(false)
+        HomeWindowController.shared.showWindow(nil)
+    }
+
+    // Save and close project. Throws (without closing) if the save fails.
     func closeProject(_ project: VideoProject) async throws {
         if let url = project.fileURL { ProjectRegistry.shared.register(url) }
         try await project.saveBeforeClosing()
-        let wasActive = activeProject === project
-        project.close()
-        if wasActive {
+        let wasOpen = activeProject === project
+        if wasOpen {
+            teardownSession()
             activeProject = nil
-            if let next = openProjects.first {
-                showEditor(for: next)
-            } else {
-                HomeWindowController.shared.showWindow(nil)
-            }
+            editorPresentation = .none
+            HomeWindowController.shared.applyEditorMode(false)
+        }
+        project.close()
+        if wasOpen {
+            HomeWindowController.shared.showWindow(nil)
         }
     }
 
@@ -135,10 +168,7 @@ final class AppState {
             return
         }
 
-        activeProject = project
-        HomeWindowController.shared.window?.orderOut(nil)
-        project.showWindows()
-        project.windowControllers.first?.window?.makeKeyAndOrderFront(nil)
+        presentEditor(for: project)
 
         guard let assetId,
               let asset = project.editorViewModel.mediaAssets.first(where: { $0.id == assetId }) else {
@@ -170,16 +200,36 @@ final class AppState {
         return lhs.standardizedFileURL.path == rhs.standardizedFileURL.path
     }
 
+    private func installSession(for project: VideoProject) {
+        if let existing = editorSession, existing.editorViewModel === project.editorViewModel {
+            return
+        }
+        teardownSession()
+        let session = EditorSessionController(editorViewModel: project.editorViewModel)
+        session.attach(to: HomeWindowController.shared)
+        editorSession = session
+    }
+
+    private func teardownSession() {
+        editorSession?.detach()
+        editorSession = nil
+    }
+
+    /// Closes the current open project when opening or creating a different one.
+    private func closeCurrentProjectIfNeeded(exceptURL: URL? = nil) async throws {
+        guard let current = activeProject else { return }
+        if let exceptURL, Self.sameFile(current.fileURL, exceptURL) { return }
+        try await closeProject(current)
+    }
+
     // MARK: - Project lifecycle
 
-    // Creates and displays a project at `url`; doesn't save or register.
     private func instantiateProject(at url: URL) -> VideoProject {
         let doc = VideoProject()
         doc.fileURL = url
         doc.fileType = VideoProject.typeIdentifier
-        doc.makeWindowControllers()
-        doc.showWindows()
         NSDocumentController.shared.addDocument(doc)
+        doc.makeWindowControllers()
         return doc
     }
 
@@ -197,7 +247,7 @@ final class AppState {
         guard !FileManager.default.fileExists(atPath: url.path) else {
             throw ProjectError.nameTaken(url)
         }
-        let previous = activeProject
+        try await closeCurrentProjectIfNeeded()
         let doc = instantiateProject(at: url)
         do {
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
@@ -208,7 +258,6 @@ final class AppState {
         } catch {
             doc.close()
             try? FileManager.default.removeItem(at: url)
-            if let previous { showEditor(for: previous) }
             throw error
         }
         ProjectRegistry.shared.register(url)
@@ -226,13 +275,22 @@ final class AppState {
         panel.title = "New Project"
         panel.begin { [self] response in
             guard response == .OK, let url = panel.url else { return }
-            let doc = instantiateProject(at: url)
-            doc.save(to: url, ofType: VideoProject.typeIdentifier, for: .saveOperation) { error in
-                guard error == nil else { return }
-                ProjectRegistry.shared.register(url)
-                doc.editorViewModel.refreshProjectId()
-                self.recordProjectCreated(doc)
-                self.recordProjectOpened(doc)
+            Task { @MainActor in
+                do {
+                    try await closeCurrentProjectIfNeeded()
+                    let doc = instantiateProject(at: url)
+                    try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                        doc.save(to: url, ofType: VideoProject.typeIdentifier, for: .saveOperation) { error in
+                            if let error { cont.resume(throwing: error) } else { cont.resume() }
+                        }
+                    }
+                    ProjectRegistry.shared.register(url)
+                    doc.editorViewModel.refreshProjectId()
+                    recordProjectCreated(doc)
+                    recordProjectOpened(doc)
+                } catch {
+                    NSAlert(error: error).runModal()
+                }
             }
         }
     }
@@ -264,6 +322,10 @@ final class AppState {
                 projectOpenCounts[resolved.path, default: 1] -= 1
             }
         }
+        try await closeCurrentProjectIfNeeded(exceptURL: resolved)
+        if let existing = showExistingProject(at: resolved, register: register, options: options) {
+            return existing
+        }
         let doc = try await VideoProject.load(from: resolved)
         guard !projectPathsBeingDeleted.contains(resolved.path) else {
             throw ProjectError.deletionInProgress(resolved)
@@ -272,9 +334,8 @@ final class AppState {
             return existing
         }
 
-        doc.makeWindowControllers()
-        doc.showWindows()
         NSDocumentController.shared.addDocument(doc)
+        doc.makeWindowControllers()
         if register { ProjectRegistry.shared.register(resolved) }
         doc.editorViewModel.refreshProjectId()
         recordProjectOpened(doc)
@@ -306,7 +367,7 @@ final class AppState {
     private func showExistingProject(at url: URL, register: Bool, options: ProjectOpenOptions) -> VideoProject? {
         if let existing = openProjects.first(where: { Self.sameFile($0.fileURL, url) }) {
             if register { ProjectRegistry.shared.register(url) }
-            showEditor(for: existing)
+            presentEditor(for: existing)
             apply(options, to: existing.editorViewModel)
             return existing
         }

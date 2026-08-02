@@ -95,6 +95,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     @objc func showTutorial(_ sender: Any?) {
+        guard AppState.shared.activeProject?.editorViewModel != nil else { return }
+        AppState.shared.resumeEditor()
         guard let editor = AppState.shared.activeProject?.editorViewModel else { return }
         editor.tour.start(in: editor)
     }

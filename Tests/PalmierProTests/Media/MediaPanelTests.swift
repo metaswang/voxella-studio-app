@@ -416,7 +416,7 @@ struct ResolveTextDropTests {
 
 /// Arrow-key navigation in the media panel. The model logic in
 /// `moveMediaSelection(direction:)` is driven by an `NSEvent` handler in
-/// `EditorWindowController`, so the wiring isn't unit-testable — but the
+/// `EditorSessionController`, so the wiring isn't unit-testable — but the
 /// step / clamp / selection-routing logic is.
 @Suite("EditorViewModel — moveMediaSelection")
 @MainActor

@@ -336,7 +336,6 @@ enum AppTheme {
             width: 960 + GenerationPanel.minimumWidthAdjustment,
             height: 600
         )
-        static let projectTitlebarTrailingWidth: CGFloat = 280
         static let settingsDefault = NSSize(width: 1200, height: 800)
         static let settingsMin = NSSize(width: 860, height: 640)
     }
@@ -345,7 +344,14 @@ enum AppTheme {
         static let sidebarCollapsedWidth: CGFloat = 64
         static let sidebarExpandedWidth: CGFloat = 216
         static let sidebarRowHeight: CGFloat = 38
-        static let toolbarHeight: CGFloat = 46
+        /// Edge strip that reveals the workbench sidebar while the editor is active.
+        static let editorSidebarHotZoneWidth: CGFloat = 10
+        /// Compact top chrome for the main canvas (titlebar strip, not stacked under it).
+        static let toolbarHeight: CGFloat = 32
+        /// Vertical clearance for traffic lights in the sidebar under fullSizeContentView.
+        static let windowControlsInset: CGFloat = 28
+        /// Horizontal clearance past traffic lights when chrome spans the full titlebar width.
+        static let windowControlsLeadingInset: CGFloat = 78
         static let contentMaxWidth: CGFloat = 1180
         /// Workbench forms and session workspaces use the available canvas
         /// more fully than the dashboard's intentionally compact grid.
@@ -453,6 +459,8 @@ enum AppTheme {
         static let hover: Double = 0.15
         static let transition: Double = 0.2
         static let pulse: Double = 0.8
+        /// Delay before auto-hiding the editor-mode workbench sidebar after pointer exit.
+        static let editorSidebarHideDelay: Double = 0.35
         static let slipPreviewRefresh: Duration = .milliseconds(67)
     }
 }

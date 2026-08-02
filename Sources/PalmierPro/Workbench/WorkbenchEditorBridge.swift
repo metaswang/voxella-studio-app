@@ -60,7 +60,7 @@ enum WorkbenchEditorBridge {
             provider: .local
         ))
         project.updateChangeCount(.changeDone)
-        AppState.shared.showEditor(for: project)
+        AppState.shared.presentEditor(for: project)
     }
 
     private static func availableProjectName(for job: WorkbenchTranscriptionJob) -> String {

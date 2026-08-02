@@ -434,13 +434,11 @@ class VideoProject: NSDocument {
     override func close() {
         super.close()
         DispatchQueue.main.async {
-            if AppState.shared.activeProject === self {
-                AppState.shared.showHome()
-            }
+            AppState.shared.handleProjectClosed(self)
         }
     }
 
-    // MARK: - Window setup
+    // MARK: - Editor setup
 
     override func makeWindowControllers() {
         if let loaded = loadedProjectFile {
@@ -465,48 +463,6 @@ class VideoProject: NSDocument {
         editorViewModel.enhancePendingDenoises()
         if editorViewModel.markSpeakers { editorViewModel.identifySpeakers() }
 
-        let editorView = EditorView()
-            .environment(editorViewModel)
-            .focusEffectDisabled()
-            .sheet(isPresented: Bindable(editorViewModel).showExportDialog) { [editorViewModel] in
-                ExportView()
-                    .environment(editorViewModel)
-            }
-            .sheet(item: Bindable(editorViewModel).pendingSettingsMismatch) { [editorViewModel] mismatch in
-                ProjectSettingsMismatchView(mismatch: mismatch)
-                    .environment(editorViewModel)
-            }
-            .overlay {
-                TourOverlay()
-                    .environment(editorViewModel)
-            }
-        let hostingController = NSHostingController(rootView: editorView.tint(AppTheme.Accent.primary))
-        hostingController.sizingOptions = .minSize
-
-        let window = NSWindow(contentViewController: hostingController)
-        window.minSize = AppTheme.Window.projectMin
-        window.appearance = NSAppearance(named: .darkAqua)
-        window.titleVisibility = .visible
-        window.titlebarAppearsTransparent = true
-        window.backgroundColor = NSColor(AppTheme.Background.surfaceColor)
-        window.fillVisibleScreen()
-
-        window.addTitlebarSwiftUI(TitleBarLeadingView().environment(editorViewModel), side: .leading, width: AppTheme.IconSize.lg + AppTheme.Spacing.sm)
-        window.addTitlebarSwiftUI(TitleBarTrailingView().environment(editorViewModel), side: .trailing, width: AppTheme.Window.projectTitlebarTrailingWidth)
-
-        let controller = EditorWindowController(editorViewModel: editorViewModel, window: window)
-        controller.onBecameKey = { [weak self] in
-            guard let self else { return }
-            AppState.shared.activateProject(self)
-        }
-        window.delegate = controller
-        controller.installKeyMonitor()
-        addWindowController(controller)
-
-        window.standardWindowButton(.documentIconButton)?.isHidden = true
-
-        AppState.shared.showEditor(for: self)
-
         if let log = loadedGenerationLog {
             editorViewModel.generationLog = log
             loadedGenerationLog = nil
@@ -520,6 +476,8 @@ class VideoProject: NSDocument {
             category: "project",
             data: editorViewModel.telemetrySnapshot()
         )
+
+        AppState.shared.presentEditor(for: self)
     }
 
     // MARK: - Thumbnail
@@ -710,48 +668,3 @@ class VideoProject: NSDocument {
     }
 }
 
-// MARK: - NSWindow helper
-
-extension NSWindow {
-    func fillVisibleScreen(using screen: NSScreen? = nil) {
-        let target = screen ?? self.screen ?? NSScreen.main
-        guard let frame = target?.visibleFrame else { return }
-        setFrame(frame, display: true)
-    }
-
-    func addTitlebarSwiftUI<V: View>(_ view: V, side: NSLayoutConstraint.Attribute, width: CGFloat) {
-        let host = NSHostingController(rootView: view.tint(AppTheme.Accent.primary))
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-
-        let wrapper = CornerAdaptiveView()
-        wrapper.frame = NSRect(x: 0, y: 0, width: width, height: 28)
-        wrapper.addSubview(host.view)
-
-        let safeArea = wrapper.layoutGuide(for: .safeArea(cornerAdaptation: .horizontal))
-        var constraints = [
-            host.view.topAnchor.constraint(equalTo: wrapper.topAnchor),
-            host.view.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor),
-        ]
-        if side == .leading {
-            constraints.append(contentsOf: [
-                host.view.leadingAnchor.constraint(equalTo: safeArea.leadingAnchor),
-                host.view.trailingAnchor.constraint(lessThanOrEqualTo: wrapper.trailingAnchor),
-            ])
-        } else {
-            constraints.append(contentsOf: [
-                host.view.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
-                host.view.trailingAnchor.constraint(equalTo: safeArea.trailingAnchor),
-            ])
-        }
-        NSLayoutConstraint.activate(constraints)
-
-        let accessory = NSTitlebarAccessoryViewController()
-        accessory.view = wrapper
-        accessory.layoutAttribute = side
-        addTitlebarAccessoryViewController(accessory)
-    }
-}
-
-private class CornerAdaptiveView: NSView {
-    override class var requiresConstraintBasedLayout: Bool { true }
-}

@@ -85,6 +85,7 @@ struct AgentPanelView: View {
                 newTabButton
                 historyButton
                 ViewSkillsButton()
+                hideChatButton
             }
             .padding(.horizontal, AppTheme.Spacing.sm)
             .frame(maxWidth: .infinity)
@@ -96,6 +97,19 @@ struct AgentPanelView: View {
                     .frame(height: AppTheme.BorderWidth.hairline)
             }
         }
+    }
+
+    private var hideChatButton: some View {
+        Button { editor.agentPanelVisible = false } label: {
+            Image(systemName: "sidebar.leading")
+                .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .frame(width: AppTheme.IconSize.smMd, height: AppTheme.IconSize.smMd)
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .help("Hide AI Chat (⌥⌘A)")
+        .accessibilityLabel("Hide AI Chat")
     }
 
     private var newTabButton: some View {
