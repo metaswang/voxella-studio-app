@@ -376,6 +376,8 @@ enum AppTheme {
         static let filterWidth: CGFloat = 170
         static let pickerWidth: CGFloat = 190
         static let compactPanelWidth: CGFloat = 420
+        static let summaryRefinementSheetWidth: CGFloat = 520
+        static let summaryRefinementEditorHeight: CGFloat = 140
         static let searchWidth: CGFloat = 260
         static let revisionPickerWidth: CGFloat = 190
         static let sessionIconSize: CGFloat = 44
@@ -403,6 +405,11 @@ enum AppTheme {
         static let dubSegmentLineLimit = 4
         static let segmentVoicePickerWidth: CGFloat = 210
         static let voiceAssignmentWidth: CGFloat = 230
+        static let recentSessionControlHeight: CGFloat = 44
+        static let recentSessionUpdatedColumnWidth: CGFloat = 132
+        static let recentSessionTagColumnWidth: CGFloat = 160
+        static let recentSessionMenuWidth: CGFloat = 36
+        static let recentSessionEmptyTextMaxWidth: CGFloat = 520
     }
 
     enum Caption {

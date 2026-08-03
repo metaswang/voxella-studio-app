@@ -71,6 +71,20 @@ struct SessionTitleLLMProcessor: Sendable {
 enum SessionTitlePolicy {
     static let maxWords = 7
     static let maxCharsNoSpaces = 28
+    static let untitledPlaceholder = "Untitled project"
+    static let autoGeneratePlaceholder = "Leave blank to auto-generate"
+
+    /// True when the user typed a title in the input; empty / default placeholders stay auto-fillable.
+    static func isUserProvided(_ title: String?) -> Bool {
+        let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return false }
+        return trimmed.caseInsensitiveCompare(untitledPlaceholder) != .orderedSame
+    }
+
+    static func normalizedUserTitle(_ title: String?) -> String? {
+        guard isUserProvided(title) else { return nil }
+        return title?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     static func compact(_ text: String?, fallback: String? = nil) -> String {
         var candidate = normalized(text)
@@ -143,11 +157,15 @@ struct TemplateSummaryLLMProcessor: Sendable {
         tagText: String,
         sourceLanguage: String?,
         internalSummary: String,
-        preferredLanguage: String? = nil
+        preferredLanguage: String? = nil,
+        userInstruction: String? = nil
     ) async throws -> String {
         let languageRule = preferredLanguage.map {
             "- You MUST write the entire summary in the user's preferred language: \($0)."
         } ?? "- Write the summary in the source language of the content."
+        let refinement = userInstruction?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let refinementText = refinement.isEmpty ? "(none)" : refinement
 
         let system = """
         You are a faithful summarization assistant. Return strict markdown plain text only.
@@ -170,7 +188,10 @@ struct TemplateSummaryLLMProcessor: Sendable {
         <template_requirements>
         \(template.userEdition)
         </template_requirements>
-        User refinement instruction (optional): (none)
+        User refinement instruction (optional):
+        <user_refinement>
+        \(refinementText)
+        </user_refinement>
 
         Full transcript:
         \(transcriptLines)

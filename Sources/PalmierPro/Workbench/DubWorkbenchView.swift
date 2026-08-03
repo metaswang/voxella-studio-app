@@ -48,6 +48,7 @@ struct DubWorkbenchView: View {
                     if let output = job.outputURL {
                         outputCard(output: output)
                     }
+                    WorkbenchRecentDubSessionsSection()
                     Color.clear.frame(height: 88)
                 }
                 .padding(AppTheme.Spacing.xxl)
@@ -83,8 +84,11 @@ struct DubWorkbenchView: View {
                 }
 
                 fieldColumn(title: "Project title") {
-                    TextField("Untitled project", text: titleBinding(job.id))
-                        .textFieldStyle(.roundedBorder)
+                    TextField(
+                        SessionTitlePolicy.autoGeneratePlaceholder,
+                        text: titleBinding(job.id)
+                    )
+                    .textFieldStyle(.roundedBorder)
                 }
 
                 fieldColumn(title: "Default reference voice") {
@@ -422,8 +426,15 @@ struct DubWorkbenchView: View {
 
     private func titleBinding(_ id: UUID) -> Binding<String> {
         Binding(
-            get: { store.dubs.first { $0.id == id }?.title ?? "" },
-            set: { value in store.updateDub(id) { $0.title = value } }
+            get: {
+                let raw = store.dubs.first { $0.id == id }?.title ?? ""
+                return SessionTitlePolicy.isUserProvided(raw) ? raw : ""
+            },
+            set: { value in
+                store.updateDub(id) {
+                    $0.title = SessionTitlePolicy.normalizedUserTitle(value) ?? ""
+                }
+            }
         )
     }
 

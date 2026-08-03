@@ -98,44 +98,61 @@ private struct SessionListRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: AppTheme.Spacing.lgXl) {
-            Button(action: onOpen) {
-                HStack(spacing: AppTheme.Spacing.lgXl) {
-                    Image(systemName: session.hasDub ? "waveform.and.mic" : "text.bubble")
-                        .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.medium))
-                        .foregroundStyle(session.hasDub ? Color.purple : Color.blue)
-                        .frame(width: AppTheme.Workbench.sessionIconSize, height: AppTheme.Workbench.sessionIconSize)
-                        .background(
-                            (session.hasDub ? Color.purple : Color.blue).opacity(AppTheme.Opacity.soft),
-                            in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)
-                        )
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                        Text(session.title)
-                            .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
-                            .foregroundStyle(AppTheme.Text.primaryColor)
-                            .lineLimit(1)
-                        HStack(spacing: AppTheme.Spacing.smMd) {
-                            Text(sessionKind(session))
-                            if let duration = session.duration {
-                                Text(formatTime(duration))
-                            }
-                            Text(session.modifiedAt.formatted(date: .abbreviated, time: .shortened))
+        Button(action: onOpen) {
+            HStack(spacing: AppTheme.Spacing.lgXl) {
+                Image(systemName: session.hasDub ? "waveform.and.mic" : "text.bubble")
+                    .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.medium))
+                    .foregroundStyle(session.hasDub ? Color.purple : Color.blue)
+                    .frame(width: AppTheme.Workbench.sessionIconSize, height: AppTheme.Workbench.sessionIconSize)
+                    .background(
+                        (session.hasDub ? Color.purple : Color.blue).opacity(AppTheme.Opacity.soft),
+                        in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)
+                    )
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                    Text(session.title)
+                        .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+                        .lineLimit(1)
+                    HStack(spacing: AppTheme.Spacing.smMd) {
+                        Text(sessionKind(session))
+                        if let duration = session.duration {
+                            Text(formatTime(duration))
                         }
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Text.mutedColor)
+                        Text(session.modifiedAt.formatted(date: .abbreviated, time: .shortened))
                     }
-                    Spacer(minLength: AppTheme.Spacing.zero)
-                    SessionStatusBadge(state: session.state)
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
                 }
+                Spacer(minLength: AppTheme.Spacing.zero)
+                SessionStatusBadge(state: session.state)
+                Color.clear
+                    .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
             }
-            .buttonStyle(.plain)
-
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(AppTheme.Spacing.lgXl)
+        .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.sessionHeaderMinHeight, alignment: .leading)
+        .background(
+            isHovered ? AppTheme.Background.raisedColor : AppTheme.Background.surfaceColor,
+            in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+                .strokeBorder(
+                    isHovered ? AppTheme.Border.primaryColor : AppTheme.Border.subtleColor,
+                    lineWidth: AppTheme.BorderWidth.thin
+                )
+        }
+        .overlay(alignment: .trailing) {
             ZStack {
                 Image(systemName: "chevron.right")
                     .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
                     .foregroundStyle(AppTheme.Text.mutedColor)
                     .opacity(isHovered ? AppTheme.Opacity.zero : AppTheme.Opacity.opaque)
                     .scaleEffect(isHovered ? 0.75 : 1)
+                    .allowsHitTesting(false)
 
                 Button(action: onDelete) {
                     Image(systemName: "trash")
@@ -161,19 +178,7 @@ private struct SessionListRow: View {
                 .allowsHitTesting(isHovered)
             }
             .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
-        }
-        .padding(AppTheme.Spacing.lgXl)
-        .frame(minHeight: AppTheme.Workbench.sessionHeaderMinHeight)
-        .background(
-            isHovered ? AppTheme.Background.raisedColor : AppTheme.Background.surfaceColor,
-            in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
-                .strokeBorder(
-                    isHovered ? AppTheme.Border.primaryColor : AppTheme.Border.subtleColor,
-                    lineWidth: AppTheme.BorderWidth.thin
-                )
+            .padding(.trailing, AppTheme.Spacing.lgXl)
         }
         .shadow(isHovered ? AppTheme.Shadow.md : AppTheme.Shadow.sm)
         .contentShape(Rectangle())
@@ -198,6 +203,7 @@ struct WorkbenchSessionDetailView: View {
     @State private var showTranslateSheet = false
     @State private var showDubOptionsSheet = false
     @State private var showTemplateLoginAlert = false
+    @State private var showSummaryRefinementSheet = false
     @State private var seekSeconds: Double?
     @State private var probedMediaURL: URL?
     @State private var probedMediaHasVideo = false
@@ -259,6 +265,25 @@ struct WorkbenchSessionDetailView: View {
                 )
             }
         }
+        .sheet(isPresented: $showSummaryRefinementSheet) {
+            if let session = store.selectedSession {
+                SessionSummaryRefinementSheet(
+                    session: session,
+                    onCancel: { showSummaryRefinementSheet = false },
+                    onSubmit: { prompt in
+                        showSummaryRefinementSheet = false
+                        if let transcriptionID = session.transcriptionID {
+                            store.regenerateSummary(
+                                forTranscription: transcriptionID,
+                                userPrompt: prompt
+                            )
+                        } else if let dubID = session.dubID {
+                            store.regenerateSummary(forDub: dubID, userPrompt: prompt)
+                        }
+                    }
+                )
+            }
+        }
         .alert("My Template", isPresented: $showTemplateLoginAlert) {
             Button("Open voxstudio.me") {
                 if let url = URL(string: "https://voxstudio.me") {
@@ -303,68 +328,62 @@ struct WorkbenchSessionDetailView: View {
                 )
 
                 HSplitView {
-                VStack(alignment: .leading, spacing: 0) {
-                    SessionMediaPlayer(
-                        URL: mediaURL,
-                        track: selectedTrack,
-                        allowsTrackSelection: session.sourceURL != nil && session.outputURL != nil,
-                        showsFilename: false,
-                        prefersVideoCanvas: hasVideo,
-                        subtitleTrack: hasVideo
-                            ? (selectedTrack == .dub
-                                ? session.dubSubtitleTrack
-                                : session.subtitleTrack)
-                            : nil,
-                        translationTracks: hasVideo ? session.translationTracks : [],
-                        seekSeconds: $seekSeconds,
-                        onSelectTrack: { selectedTrack = $0 }
-                    )
-                    .layoutPriority(1)
-                    SessionSummaryPanel(
-                        session: session,
-                        onOpenTemplate: {
-                            presentTemplateLoginPrompt()
-                        },
-                        onRegenerate: {
-                            if let transcriptionID = session.transcriptionID {
-                                store.regenerateSummary(forTranscription: transcriptionID)
-                            } else if let dubID = session.dubID {
-                                store.regenerateSummary(forDub: dubID)
-                            }
-                        }
-                    )
-                    .frame(maxHeight: hasVideo ? AppTheme.Workbench.emptyStateMinHeight : .infinity, alignment: .top)
-                }
-                .frame(
-                    minWidth: minimumLeftWidth,
-                    idealWidth: contentWidth * AppTheme.Workbench.sessionSplitDefaultRatio,
-                    maxWidth: maximumLeftWidth,
-                    maxHeight: .infinity,
-                    alignment: .top
-                )
-                .background(AppTheme.Background.baseColor)
-
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-                    tabBar(session)
-                        .padding(.horizontal, AppTheme.Spacing.xl)
-                        .padding(.top, AppTheme.Spacing.lg)
-                    ScrollView {
-                        sessionContent(session)
-                            .padding(.horizontal, AppTheme.Spacing.xl)
-                            .padding(.bottom, AppTheme.Spacing.xl)
+                    VStack(alignment: .leading, spacing: 0) {
+                        SessionMediaPlayer(
+                            URL: mediaURL,
+                            track: selectedTrack,
+                            allowsTrackSelection: session.sourceURL != nil && session.outputURL != nil,
+                            showsFilename: false,
+                            prefersVideoCanvas: hasVideo,
+                            subtitleTrack: hasVideo
+                                ? (selectedTrack == .dub
+                                    ? session.dubSubtitleTrack
+                                    : session.subtitleTrack)
+                                : nil,
+                            translationTracks: hasVideo ? session.translationTracks : [],
+                            seekSeconds: $seekSeconds,
+                            onSelectTrack: { selectedTrack = $0 }
+                        )
+                        .layoutPriority(1)
+                        SessionSummaryPanel(
+                            session: session,
+                            onOpenTemplate: {
+                                presentTemplateLoginPrompt()
+                            },
+                            onRequestRefinement: { showSummaryRefinementSheet = true }
+                        )
+                        .frame(maxHeight: hasVideo ? AppTheme.Workbench.emptyStateMinHeight : .infinity, alignment: .top)
                     }
+                    .frame(
+                        minWidth: minimumLeftWidth,
+                        idealWidth: contentWidth * AppTheme.Workbench.sessionSplitDefaultRatio,
+                        maxWidth: maximumLeftWidth,
+                        maxHeight: .infinity,
+                        alignment: .top
+                    )
+                    .background(AppTheme.Background.baseColor)
+
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                        tabBar(session)
+                            .padding(.horizontal, AppTheme.Spacing.xl)
+                            .padding(.top, AppTheme.Spacing.lg)
+                        ScrollView {
+                            sessionContent(session)
+                                .padding(.horizontal, AppTheme.Spacing.xl)
+                                .padding(.bottom, AppTheme.Spacing.xl)
+                        }
+                    }
+                    .frame(
+                        minWidth: minimumRightWidth,
+                        idealWidth: contentWidth * (1 - AppTheme.Workbench.sessionSplitDefaultRatio),
+                        maxWidth: maximumRightWidth,
+                        maxHeight: .infinity,
+                        alignment: .top
+                    )
+                    .background(AppTheme.Background.baseColor)
                 }
-                .frame(
-                    minWidth: minimumRightWidth,
-                    idealWidth: contentWidth * (1 - AppTheme.Workbench.sessionSplitDefaultRatio),
-                    maxWidth: maximumRightWidth,
-                    maxHeight: .infinity,
-                    alignment: .top
-                )
-                .background(AppTheme.Background.baseColor)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            }
             .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
             .overlay {
                 RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
@@ -416,7 +435,7 @@ struct WorkbenchSessionDetailView: View {
                     if isRenamingTitle {
                         InlineRenameField(
                             originalName: session.title,
-                            placeholder: "Session title",
+                            placeholder: SessionTitlePolicy.autoGeneratePlaceholder,
                             font: .system(
                                 size: AppTheme.FontSize.title2,
                                 weight: AppTheme.FontWeight.semibold
@@ -1351,7 +1370,7 @@ private struct SessionStatusBadge: View {
 private struct SessionSummaryPanel: View {
     let session: WorkbenchSession
     let onOpenTemplate: () -> Void
-    let onRegenerate: () -> Void
+    let onRequestRefinement: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
@@ -1360,12 +1379,18 @@ private struct SessionSummaryPanel: View {
                     .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
                 Spacer()
                 if (session.transcriptionID != nil || session.dubID != nil),
+                   session.state != .running,
+                   session.state != .cancelling,
                    session.summaryState != .running {
-                    Button(action: onRegenerate) {
-                        Image(systemName: "arrow.clockwise")
+                    Button(action: onRequestRefinement) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
+                            .foregroundStyle(AppTheme.aiGradient)
+                            .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
                     }
                     .buttonStyle(.borderless)
-                    .help("Regenerate summary")
+                    .accessibilityLabel("Refine summary with AI")
+                    .help("Tell AI what to change and regenerate the summary")
                 }
                 Button("My Template", systemImage: "doc.text", action: onOpenTemplate)
                     .buttonStyle(.bordered)
@@ -1406,6 +1431,78 @@ private struct SessionSummaryPanel: View {
             Rectangle()
                 .fill(AppTheme.Border.subtleColor)
                 .frame(height: AppTheme.BorderWidth.thin)
+        }
+    }
+}
+
+private struct SessionSummaryRefinementSheet: View {
+    let session: WorkbenchSession
+    let onCancel: () -> Void
+    let onSubmit: (String) -> Void
+
+    @State private var prompt = ""
+    @FocusState private var isPromptFocused: Bool
+
+    private var trimmedPrompt: String {
+        prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                Text("Refine summary")
+                    .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.semibold))
+                Text("Tell AI what to change. The selected template requirements remain active.")
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                if let templateName = session.summaryTemplateName,
+                   !templateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Template: \(templateName)")
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                }
+            }
+
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $prompt)
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+                    .scrollContentBackground(.hidden)
+                    .padding(AppTheme.Spacing.sm)
+                    .focused($isPromptFocused)
+
+                if trimmedPrompt.isEmpty {
+                    Text("For example: emphasize the findings, shorten the overview, and add a risks section.")
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                        .padding(.horizontal, AppTheme.Spacing.md)
+                        .padding(.vertical, AppTheme.Spacing.lg)
+                        .allowsHitTesting(false)
+                }
+            }
+            .frame(height: AppTheme.Workbench.summaryRefinementEditorHeight)
+            .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.md)
+                    .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("Regenerate") {
+                    onSubmit(trimmedPrompt)
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(trimmedPrompt.isEmpty)
+            }
+        }
+        .padding(AppTheme.Spacing.xxl)
+        .frame(width: AppTheme.Workbench.summaryRefinementSheetWidth)
+        .task {
+            isPromptFocused = true
         }
     }
 }

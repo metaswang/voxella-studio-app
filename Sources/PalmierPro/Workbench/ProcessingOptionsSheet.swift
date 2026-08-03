@@ -6,6 +6,7 @@ struct ProcessingOptionsSheet: View {
     let onContinue: (LocalProcessingOptions) -> Void
 
     @State private var languageCode: String? = WorkbenchTranscriptionLanguage.automatic.languageCode
+    @State private var sessionTitle = ""
     @State private var showAdvanced = false
     @State private var speakerCount: SpeakerCountOption = .auto
     @State private var enableClip = false
@@ -26,6 +27,9 @@ struct ProcessingOptionsSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
                     fileSummary
+                    if isSingleFile {
+                        titleField
+                    }
                     languageField
                     advancedToggle
                     if showAdvanced {
@@ -37,7 +41,7 @@ struct ProcessingOptionsSheet: View {
             }
             footer
         }
-        .frame(width: 560, height: 620)
+        .frame(width: 560, height: isSingleFile ? 680 : 620)
         .background(AppTheme.Background.surfaceColor)
         .colorScheme(.dark)
     }
@@ -85,6 +89,15 @@ struct ProcessingOptionsSheet: View {
         }
         .padding(AppTheme.Spacing.mdLg)
         .background(AppTheme.Background.raisedColor.opacity(0.65), in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
+    }
+
+    private var titleField: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            Text("Session title")
+                .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
+            TextField(SessionTitlePolicy.autoGeneratePlaceholder, text: $sessionTitle)
+                .textFieldStyle(.roundedBorder)
+        }
     }
 
     private var languageField: some View {
@@ -308,6 +321,7 @@ struct ProcessingOptionsSheet: View {
             Button("Continue") {
                 var options = LocalProcessingOptions(
                     languageCode: languageCode,
+                    customTitle: SessionTitlePolicy.normalizedUserTitle(sessionTitle),
                     speakerCount: speakerCount,
                     enableTranslation: enableTranslation,
                     targetLanguageCode: enableTranslation ? targetLanguageCode : nil

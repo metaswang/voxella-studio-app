@@ -90,6 +90,19 @@ actor SummaryTemplateCatalog {
         .generalSummary
     }
 
+    func template(forID id: String?) -> SummaryTemplateDefinition {
+        guard let id, !id.isEmpty else {
+            return .generalSummary
+        }
+        if let local = SummaryTemplateDefinition.locallySupported.first(where: { $0.id == id }) {
+            return local
+        }
+        if let remote = cachedRemote?.first(where: { $0.id == id }) {
+            return remote
+        }
+        return .generalSummary
+    }
+
     /// Requires network + sign-in. Local Studio currently does not apply remote custom templates.
     func fetchSupportedTemplates(
         isSignedIn: Bool,

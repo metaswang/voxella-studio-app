@@ -202,9 +202,11 @@ private struct WorkbenchTopBar: View {
             .help(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar")
             .accessibilityLabel(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar")
 
-            Text(store.route == .session ? (store.selectedSession?.title ?? store.route.title) : store.route.title)
-                .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.semibold))
-                .lineLimit(1)
+            if store.route != .session {
+                Text(store.route.title)
+                    .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.semibold))
+                    .lineLimit(1)
+            }
 
             Text("LOCAL")
                 .font(.system(size: AppTheme.FontSize.micro, weight: AppTheme.FontWeight.bold))
@@ -379,8 +381,7 @@ private struct WorkbenchSidebar: View {
             store.selectedTranscriptionID = nil
             store.route = .transcribe
         case .dub:
-            store.route = .dub
-            store.ensureActiveDubDraft()
+            store.startNewDubDraft()
         default:
             store.route = route
         }
@@ -399,20 +400,30 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
         let window = NSWindow(contentViewController: hostingController)
         window.setContentSize(AppTheme.Window.homeDefault)
         window.minSize = NSSize(width: 960, height: 640)
-        window.title = "Voxella Studio"
+        window.title = " "
         window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = AppTheme.Background.base
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
         window.collectionBehavior = [.fullScreenNone]
         window.center()
         super.init(window: window)
         window.delegate = self
+        hideNativeTitlebarTitle()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        hideNativeTitlebarTitle()
+    }
+
+    private func hideNativeTitlebarTitle() {
+        guard let window else { return }
+        window.title = " "
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+    }
 
     func applyEditorMode(_ enabled: Bool) {
         guard let window else { return }

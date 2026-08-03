@@ -269,6 +269,60 @@ struct LocalFirstWorkbenchTests {
         #expect(recoveredDub.progressMessage == "Interrupted — ready to retry")
     }
 
+    @Test func newDubDraftRetainsOnlyTheLatestSettingsAndReference() {
+        let voiceID = UUID()
+        var earlier = WorkbenchDubJob()
+        earlier.modifiedAt = Date(timeIntervalSinceReferenceDate: 1)
+        earlier.language = "en"
+        earlier.script = "Earlier script"
+
+        var latest = WorkbenchDubJob()
+        latest.modifiedAt = Date(timeIntervalSinceReferenceDate: 2)
+        latest.title = "Previous dub"
+        latest.language = "zh"
+        latest.model = .medium
+        latest.referenceAudioPath = "/tmp/reference.wav"
+        latest.referenceText = "Reference transcript"
+        latest.referenceVoiceID = voiceID
+        latest.speakerVoiceIDs = ["Speaker 1": UUID()]
+        let segmentVoiceID = UUID()
+        latest.segmentVoiceIDs = [0: segmentVoiceID]
+        latest.sourceTranscriptionID = UUID()
+        latest.outputPath = "/tmp/previous.wav"
+        latest.script = "Previous script"
+        latest.segments = [DubSegmentPayload(index: 0, text: "Previous script")]
+
+        let draft = WorkbenchStore.newDubJob(
+            from: [earlier, latest],
+            preferredLanguage: "en"
+        )
+
+        #expect(draft.title.isEmpty)
+        #expect(draft.script.isEmpty)
+        #expect(draft.segments == [DubSegmentPayload(index: 0, text: "")])
+        #expect(draft.sourceTranscriptionID == nil)
+        #expect(draft.outputPath == nil)
+        #expect(draft.speakerVoiceIDs == nil)
+        #expect(draft.segmentVoiceIDs == [0: segmentVoiceID])
+        #expect(draft.language == "zh")
+        #expect(draft.model == .medium)
+        #expect(draft.referenceAudioPath == "/tmp/reference.wav")
+        #expect(draft.referenceText == "Reference transcript")
+        #expect(draft.referenceVoiceID == voiceID)
+    }
+
+    @Test func newDubDraftResolvesAutomaticLanguageToThePreferredLanguage() {
+        var previous = WorkbenchDubJob()
+        previous.language = "auto"
+
+        let draft = WorkbenchStore.newDubJob(
+            from: [previous],
+            preferredLanguage: "en"
+        )
+
+        #expect(draft.language == "en")
+    }
+
     @Test func localTranscriptionAdmissionRejectsEmptyAndOversizedBatches() throws {
         #expect(throws: LocalTranscriptionResourcePolicy.AdmissionError.self) {
             try LocalTranscriptionResourcePolicy.admit([])

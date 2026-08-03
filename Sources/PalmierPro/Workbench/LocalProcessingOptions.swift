@@ -3,6 +3,8 @@ import Foundation
 /// Upload-transcribe options aligned with voxella-web `ProcessingOptions`.
 struct LocalProcessingOptions: Equatable, Sendable {
     var languageCode: String?
+    /// Optional user title for a single-file import; blank means auto-generate after transcription.
+    var customTitle: String?
     var speakerCount: SpeakerCountOption = .auto
     var enableTranslation = false
     var targetLanguageCode: String?
