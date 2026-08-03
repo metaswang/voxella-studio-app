@@ -32,7 +32,7 @@ struct Timeline: Codable, Sendable, Equatable, Identifiable {
     }
 
     var hasAudioClips: Bool {
-        tracks.contains { $0.type == .audio && !$0.clips.isEmpty }
+        tracks.contains { $0.type.isAudio && !$0.clips.isEmpty }
     }
 
     /// Reachable nested timelines, breadth-first, deduped, excluding self and filtered by `include`.
@@ -80,9 +80,57 @@ extension Timeline {
     }
 }
 
+enum TrackRole: Codable, Equatable, Sendable {
+    case standard
+    case sourceSubtitles
+    case translation(languageCode: String)
+    case dub
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case languageCode
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(String.self, forKey: .kind) {
+        case "standard":
+            self = .standard
+        case "sourceSubtitles":
+            self = .sourceSubtitles
+        case "translation":
+            self = .translation(languageCode: try container.decode(String.self, forKey: .languageCode))
+        case "dub":
+            self = .dub
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .kind,
+                in: container,
+                debugDescription: "Unsupported track role"
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .standard:
+            try container.encode("standard", forKey: .kind)
+        case .sourceSubtitles:
+            try container.encode("sourceSubtitles", forKey: .kind)
+        case .translation(let languageCode):
+            try container.encode("translation", forKey: .kind)
+            try container.encode(languageCode, forKey: .languageCode)
+        case .dub:
+            try container.encode("dub", forKey: .kind)
+        }
+    }
+}
+
 struct Track: Codable, Sendable, Equatable, Identifiable {
     var id: String = UUID().uuidString
     var type: ClipType
+    var role: TrackRole = .standard
     var muted: Bool = false
     var hidden: Bool = false
     var syncLocked: Bool = true
@@ -111,7 +159,7 @@ struct Track: Codable, Sendable, Equatable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, type, muted, hidden, syncLocked, clips, displayHeight
+        case id, type, role, muted, hidden, syncLocked, clips, displayHeight
     }
 }
 
@@ -121,6 +169,7 @@ extension Track {
         self.init(
             id: (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString,
             type: try c.decode(ClipType.self, forKey: .type),
+            role: (try? c.decode(TrackRole.self, forKey: .role)) ?? .standard,
             muted: (try? c.decode(Bool.self, forKey: .muted)) ?? false,
             hidden: (try? c.decode(Bool.self, forKey: .hidden)) ?? false,
             syncLocked: (try? c.decode(Bool.self, forKey: .syncLocked)) ?? true,
@@ -128,6 +177,48 @@ extension Track {
             displayHeight: (try? c.decode(CGFloat.self, forKey: .displayHeight))
                 .map { min(max($0, TrackSize.minHeight), TrackSize.maxHeight) } ?? TrackSize.defaultHeight
         )
+    }
+}
+
+enum ClipSourceScope: Codable, Equatable, Sendable {
+    case source
+    case translation(languageCode: String)
+    case dub
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case languageCode
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(String.self, forKey: .kind) {
+        case "source":
+            self = .source
+        case "translation":
+            self = .translation(languageCode: try container.decode(String.self, forKey: .languageCode))
+        case "dub":
+            self = .dub
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .kind,
+                in: container,
+                debugDescription: "Unsupported clip source scope"
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .source:
+            try container.encode("source", forKey: .kind)
+        case .translation(let languageCode):
+            try container.encode("translation", forKey: .kind)
+            try container.encode(languageCode, forKey: .languageCode)
+        case .dub:
+            try container.encode("dub", forKey: .kind)
+        }
     }
 }
 
@@ -155,6 +246,10 @@ struct Clip: Codable, Sendable, Equatable, Identifiable {
     var linkGroupId: String?
     var captionGroupId: String?
     var multicamGroupId: String?
+    /// Source session identity for text clips projected from Workbench cues.
+    var sourceSessionId: UUID?
+    var sourceCueId: Int?
+    var sourceCueScope: ClipSourceScope?
 
     // Text clips only.
     var textContent: String?
@@ -182,6 +277,7 @@ struct Clip: Codable, Sendable, Equatable, Identifiable {
         case fadeInFrames, fadeOutFrames, fadeInInterpolation, fadeOutInterpolation
         case opacity, transform, crop, edgeRounding, edgeSoftness
         case linkGroupId, captionGroupId, multicamGroupId, textContent, textStyle, textAnimation, wordTimings
+        case sourceSessionId, sourceCueId, sourceCueScope
         case textFillMode
         case opacityTrack, positionTrack, scaleTrack, rotationTrack, cropTrack, volumeTrack
         case effects, blendMode
@@ -466,6 +562,9 @@ extension Clip {
             linkGroupId: try? c.decode(String.self, forKey: .linkGroupId),
             captionGroupId: try? c.decode(String.self, forKey: .captionGroupId),
             multicamGroupId: try? c.decode(String.self, forKey: .multicamGroupId),
+            sourceSessionId: try? c.decode(UUID.self, forKey: .sourceSessionId),
+            sourceCueId: try? c.decode(Int.self, forKey: .sourceCueId),
+            sourceCueScope: try? c.decode(ClipSourceScope.self, forKey: .sourceCueScope),
             textContent: try? c.decode(String.self, forKey: .textContent),
             textStyle: try? c.decode(TextStyle.self, forKey: .textStyle),
             textAnimation: try? c.decode(TextAnimation.self, forKey: .textAnimation),

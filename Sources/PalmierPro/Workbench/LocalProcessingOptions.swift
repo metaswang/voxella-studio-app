@@ -8,6 +8,7 @@ struct LocalProcessingOptions: Equatable, Sendable {
     var speakerCount: SpeakerCountOption = .auto
     var enableTranslation = false
     var targetLanguageCode: String?
+    var useLLMSubtitleProcessing: Bool? = nil
     var clipStartMs: Int?
     var clipEndMs: Int?
 

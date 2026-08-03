@@ -2,7 +2,7 @@ extension GenerationInput {
     @discardableResult
     mutating func setAudioSourceAsset(_ asset: MediaAsset) -> Bool {
         switch asset.type {
-        case .audio:
+        case .audio, .dub:
             referenceAudioAssetIds = [asset.id]
             referenceVideoAssetIds = nil
         case .video:

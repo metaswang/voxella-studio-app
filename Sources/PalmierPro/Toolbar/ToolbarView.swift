@@ -38,6 +38,11 @@ struct ToolbarView: View {
             // Add content
             HStack(spacing: AppTheme.Spacing.md) {
                 textGlyphButton("T", help: L10n.string("Add Text"), action: { _ = editor.addTextClip() })
+                toolbarButton(
+                    "waveform.badge.mic",
+                    help: L10n.string("Create Dub"),
+                    action: editor.requestEditorDub
+                )
             }
 
             Spacer()

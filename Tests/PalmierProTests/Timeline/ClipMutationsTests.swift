@@ -426,6 +426,25 @@ struct WritePositionTests {
         #expect(abs(updated[1].topLeftAt(frame: 0).x - 0.3) < 0.000001)
         #expect(abs(updated[1].topLeftAt(frame: 0).y - 0.4) < 0.000001)
     }
+
+    @Test func batchTransformUpdatesAllClipsWithOneUndo() {
+        let a = Fixtures.clip(id: "a", mediaRef: "text", mediaType: .text, start: 0, duration: 60)
+        let b = Fixtures.clip(id: "b", mediaRef: "text", mediaType: .text, start: 60, duration: 60)
+        let e = editor([Fixtures.videoTrack(clips: [a, b])])
+        let undoManager = UndoManager()
+        e.undo.attach(undoManager)
+
+        let transforms = [
+            "a": Transform(centerX: 0.5, centerY: 0.85, width: a.transform.width, height: a.transform.height),
+            "b": Transform(centerX: 0.5, centerY: 0.85, width: b.transform.width, height: b.transform.height),
+        ]
+        e.commitTransforms(clipIds: ["a", "b"], newTransforms: transforms, actionName: "Change Position")
+
+        #expect(e.timeline.tracks[0].clips.allSatisfy { $0.transform.centerY == 0.85 })
+        undoManager.undo()
+        #expect(e.timeline.tracks[0].clips.allSatisfy { $0.transform.centerY == 0.5 })
+        #expect(undoManager.canUndo == false)
+    }
 }
 
 @Suite("EditorViewModel — clip property commits")

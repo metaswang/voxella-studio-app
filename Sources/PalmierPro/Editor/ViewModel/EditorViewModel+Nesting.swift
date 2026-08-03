@@ -87,8 +87,8 @@ extension EditorViewModel {
                     timeline.tracks[i].clips.removeAll { ids.contains($0.id) }
                 }
                 let span = start..<(start + duration)
-                var videoIdx = lanes.first { $0.type != .audio }?.index
-                var audioIdx = lanes.first { $0.type == .audio }?.index
+                var videoIdx = lanes.first { !$0.type.isAudio }?.index
+                var audioIdx = lanes.first { $0.type.isAudio }?.index
                 if let vi = videoIdx, trackOverlaps(vi, span: span) {
                     let inserted = insertTrack(at: vi, type: .video)
                     videoIdx = inserted

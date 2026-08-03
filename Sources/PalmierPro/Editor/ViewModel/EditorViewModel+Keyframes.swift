@@ -192,9 +192,27 @@ extension EditorViewModel {
         applyClipProperty(clipId: clipId) { self.writeTransform(into: &$0, newTransform: newTransform) }
     }
 
+    func applyTransforms(clipIds: [String], newTransforms: [String: Transform]) {
+        applyClipProperties(clipIds: clipIds) { clip in
+            guard let newTransform = newTransforms[clip.id] else { return }
+            self.writeTransform(into: &clip, newTransform: newTransform)
+        }
+    }
+
     func commitTransform(clipId: String, newTransform: Transform, actionName: String = "Change Transform") {
         commitClipProperty(clipId: clipId, actionName: actionName) {
             self.writeTransform(into: &$0, newTransform: newTransform)
+        }
+    }
+
+    func commitTransforms(
+        clipIds: [String],
+        newTransforms: [String: Transform],
+        actionName: String = "Change Transform"
+    ) {
+        commitClipProperties(clipIds: clipIds, actionName: actionName) { clip in
+            guard let newTransform = newTransforms[clip.id] else { return }
+            self.writeTransform(into: &clip, newTransform: newTransform)
         }
     }
 

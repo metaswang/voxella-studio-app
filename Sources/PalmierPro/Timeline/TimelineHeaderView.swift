@@ -14,8 +14,10 @@ final class TimelineHeaderView: NSView {
     var muteButtonRects: [Int: NSRect] = [:]
     var hideButtonRects: [Int: NSRect] = [:]
     var syncLockButtonRects: [Int: NSRect] = [:]
+    var captionButtonRects: [Int: NSRect] = [:]
+    var translationButtonRects: [Int: NSRect] = [:]
     var dragHandleRects: [Int: NSRect] = [:]
-    /// Full track-row rects used for select-all hit testing.
+    /// Full track-row rects used for subtitle parts select-all hit testing.
     var trackRowRects: [Int: NSRect] = [:]
 
     init(editor: EditorViewModel) {
@@ -54,6 +56,8 @@ final class TimelineHeaderView: NSView {
         muteButtonRects.removeAll()
         hideButtonRects.removeAll()
         syncLockButtonRects.removeAll()
+        captionButtonRects.removeAll()
+        translationButtonRects.removeAll()
         dragHandleRects.removeAll()
         trackRowRects.removeAll()
         let stripWidth: CGFloat = 3
@@ -69,7 +73,7 @@ final class TimelineHeaderView: NSView {
             let rowRect = NSRect(x: 0, y: y, width: headerWidth, height: h)
             trackRowRects[i] = rowRect
 
-            // Lift the row being dragged, or mark tracks with all clips selected.
+            // Lift the row being dragged, or mark subtitle tracks with all parts selected.
             if reorderDrag?.id == track.id {
                 ctx.setFillColor(AppTheme.Background.prominent.cgColor)
                 ctx.fill(rowRect)
@@ -100,12 +104,39 @@ final class TimelineHeaderView: NSView {
             let iconY = y + (h - iconSize) / 2
             let rightmostX = headerWidth - iconSize - 6
             let syncX = rightmostX - iconSize - 4
+            let actionSpacing = iconSize + 4
+            let captionX = syncX - actionSpacing
+            let translationX = captionX - actionSpacing
 
+            if editor.showsEditorCaptionActions(on: i) {
+                let sourceClip = track.clips.first(where: {
+                    $0.mediaType == .video || $0.mediaType.isAudio
+                })
+                let processing = sourceClip.flatMap { editor.sessionProcessingStates[$0.id] }
+                captionButtonRects[i] = drawActionIcon(
+                    x: captionX,
+                    y: iconY,
+                    size: iconSize,
+                    symbol: processing == .processing ? "ellipsis" : "captions.bubble",
+                    tint: processing == .processing ? AppTheme.Text.primary : track.type.themeColor,
+                    config: iconConfig,
+                    context: ctx
+                )
+                translationButtonRects[i] = drawActionIcon(
+                    x: translationX,
+                    y: iconY,
+                    size: iconSize,
+                    symbol: "character.book.closed",
+                    tint: track.type.themeColor,
+                    config: iconConfig,
+                    context: ctx
+                )
+            }
             syncLockButtonRects[i] = drawToggleIcon(
                 x: syncX, y: iconY, size: iconSize, config: iconConfig, context: ctx,
                 active: track.syncLocked, onSymbol: "link", offSymbol: "personalhotspot.slash"
             )
-            if track.type == .audio {
+            if track.type.isAudio {
                 muteButtonRects[i] = drawToggleIcon(
                     x: rightmostX, y: iconY, size: iconSize, config: iconConfig, context: ctx,
                     active: !track.muted, onSymbol: "speaker.wave.2.fill", offSymbol: "speaker.slash.fill"
@@ -145,6 +176,20 @@ final class TimelineHeaderView: NSView {
         let rect = NSRect(x: x, y: y, width: size, height: size)
         let tint = active ? AppTheme.Text.secondary : AppTheme.Text.secondary.withAlphaComponent(0.3)
         drawSymbol(active ? onSymbol : offSymbol, in: rect, tint: tint, config: config, context: context)
+        return rect.insetBy(dx: -4, dy: -4)
+    }
+
+    private func drawActionIcon(
+        x: CGFloat,
+        y: CGFloat,
+        size: CGFloat,
+        symbol: String,
+        tint: NSColor,
+        config: NSImage.SymbolConfiguration,
+        context: CGContext
+    ) -> NSRect {
+        let rect = NSRect(x: x, y: y, width: size, height: size)
+        drawSymbol(symbol, in: rect, tint: tint, config: config, context: context)
         return rect.insetBy(dx: -4, dy: -4)
     }
 
@@ -191,6 +236,24 @@ final class TimelineHeaderView: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
 
+        for (ti, rect) in captionButtonRects {
+            if rect.contains(point) {
+                if editor.timeline.tracks.indices.contains(ti),
+                   let clip = editor.timeline.tracks[ti].clips.first(where: {
+                       $0.mediaType == .video || $0.mediaType == .audio
+                   }) {
+                    editor.beginEditorTranscription(for: clip.id)
+                }
+                needsDisplay = true
+                return
+            }
+        }
+        for (ti, rect) in translationButtonRects {
+            if rect.contains(point) {
+                editor.requestEditorTranslation(for: ti)
+                return
+            }
+        }
         for (ti, rect) in muteButtonRects {
             if rect.contains(point) {
                 editor.toggleTrackMute(trackIndex: ti)
@@ -294,6 +357,8 @@ final class TimelineHeaderView: NSView {
         muteButtonRects.values.contains(where: { $0.contains(point) })
             || hideButtonRects.values.contains(where: { $0.contains(point) })
             || syncLockButtonRects.values.contains(where: { $0.contains(point) })
+            || captionButtonRects.values.contains(where: { $0.contains(point) })
+            || translationButtonRects.values.contains(where: { $0.contains(point) })
             || dragHandleRects.values.contains(where: { $0.contains(point) })
     }
 

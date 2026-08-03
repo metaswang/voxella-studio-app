@@ -164,6 +164,12 @@ extension EditorViewModel {
         right.durationFrames = clip.durationFrames - splitOffset
         right.trimStartFrame = clip.trimStartFrame + leftSource
         right.fadeInFrames = 0
+        if let wordTimings = clip.wordTimings {
+            (left.wordTimings, right.wordTimings) = splitWordTimings(
+                wordTimings,
+                at: splitOffset
+            )
+        }
 
         (left.opacityTrack,  right.opacityTrack)  = splitKeyframeTrack(clip.opacityTrack,  at: splitOffset, fallback: clip.opacity)
         (left.volumeTrack,   right.volumeTrack)   = splitKeyframeTrack(clip.volumeTrack,   at: splitOffset, fallback: clip.volume)
@@ -173,6 +179,47 @@ extension EditorViewModel {
         (left.cropTrack,     right.cropTrack)     = splitKeyframeTrack(clip.cropTrack,     at: splitOffset, fallback: clip.crop)
         left.clampFadesToDuration()
         right.clampFadesToDuration()
+        return (left, right)
+    }
+
+    nonisolated private static func splitWordTimings(
+        _ timings: [WordTiming],
+        at offset: Int
+    ) -> (left: [WordTiming], right: [WordTiming]) {
+        var left: [WordTiming] = []
+        var right: [WordTiming] = []
+        for timing in timings {
+            if timing.endFrame <= offset {
+                left.append(timing)
+            } else if timing.startFrame >= offset {
+                right.append(
+                    WordTiming(
+                        text: timing.text,
+                        startFrame: timing.startFrame - offset,
+                        endFrame: timing.endFrame - offset
+                    )
+                )
+            } else {
+                if timing.startFrame < offset {
+                    left.append(
+                        WordTiming(
+                            text: timing.text,
+                            startFrame: timing.startFrame,
+                            endFrame: offset
+                        )
+                    )
+                }
+                if timing.endFrame > offset {
+                    right.append(
+                        WordTiming(
+                            text: timing.text,
+                            startFrame: 0,
+                            endFrame: timing.endFrame - offset
+                        )
+                    )
+                }
+            }
+        }
         return (left, right)
     }
 
@@ -440,19 +487,58 @@ extension EditorViewModel {
     func applyTextContent(clipId: String, content: String) {
         let canvasW = Double(timeline.width)
         let canvasH = Double(timeline.height)
+        let source = sourceCueReference(for: clipId)
         applyClipProperty(clipId: clipId, rebuild: true) { clip in
             clip.textContent = content
             _ = self.fitTextClipToContentIfNeeded(&clip, canvasW: canvasW, canvasH: canvasH)
         }
+        updateSourceCue(source, text: content)
     }
 
     func commitTextContent(clipId: String, content: String) {
         let canvasW = Double(timeline.width)
         let canvasH = Double(timeline.height)
+        let source = sourceCueReference(for: clipId)
         commitClipProperty(clipId: clipId, actionName: "Change Text") { clip in
             clip.textContent = content
             _ = self.fitTextClipToContentIfNeeded(&clip, canvasW: canvasW, canvasH: canvasH)
         }
+        updateSourceCue(source, text: content)
+    }
+
+    private struct SourceCueReference {
+        let sessionID: UUID
+        let cueID: Int
+        let scope: WorkbenchStore.SessionCueScope
+    }
+
+    private func sourceCueReference(for clipID: String) -> SourceCueReference? {
+        guard let clip = clipFor(id: clipID),
+              let sessionID = clip.sourceSessionId,
+              let cueID = clip.sourceCueId,
+              let sourceScope = clip.sourceCueScope else {
+            return nil
+        }
+        let scope: WorkbenchStore.SessionCueScope
+        switch sourceScope {
+        case .source:
+            scope = .source
+        case .translation(let languageCode):
+            scope = .translation(languageCode)
+        case .dub:
+            scope = .dub
+        }
+        return SourceCueReference(sessionID: sessionID, cueID: cueID, scope: scope)
+    }
+
+    private func updateSourceCue(_ reference: SourceCueReference?, text: String) {
+        guard let reference else { return }
+        WorkbenchStore.shared.updateSessionCueText(
+            sessionID: reference.sessionID,
+            scope: reference.scope,
+            cueID: reference.cueID,
+            text: text
+        )
     }
 
     func applyTextStyle(clipId: String, fitToContent: Bool = false, _ modify: @escaping (inout TextStyle) -> Void) {

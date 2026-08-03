@@ -6,9 +6,13 @@ extension EditorViewModel {
     // MARK: - Add / remove
 
     @discardableResult
-    func insertTrack(at index: Int, type: ClipType) -> Int {
+    func insertTrack(
+        at index: Int,
+        type: ClipType,
+        role: TrackRole = .standard
+    ) -> Int {
         let clamped = partitionedInsertionIndex(for: type, requested: index)
-        let track = Track(type: type)
+        let track = Track(type: type, role: role)
         withTimelineSwap(actionName: "Add Track") {
             timeline.tracks.insert(track, at: clamped)
         }
@@ -18,10 +22,22 @@ extension EditorViewModel {
     /// "V1", "A1", "I1" label for the track at the given index.
     func timelineTrackDisplayLabel(at trackIndex: Int) -> String {
         guard timeline.tracks.indices.contains(trackIndex) else { return "" }
-        let type = timeline.tracks[trackIndex].type
+        let track = timeline.tracks[trackIndex]
+        let type = track.type
+        let rolePrefix: String?
+        switch track.role {
+        case .standard:
+            rolePrefix = nil
+        case .sourceSubtitles:
+            rolePrefix = "S"
+        case .translation:
+            rolePrefix = "T"
+        case .dub:
+            rolePrefix = "D"
+        }
         var n = 0
-        if type == .audio {
-            for i in 0...trackIndex where timeline.tracks[i].type == type {
+        if type.isAudio {
+            for i in 0...trackIndex where timeline.tracks[i].type.isAudio {
                 n += 1
             }
         } else {
@@ -29,7 +45,7 @@ extension EditorViewModel {
                 n += 1
             }
         }
-        return "\(type.trackLabelPrefix)\(n)"
+        return "\(rolePrefix ?? type.trackLabelPrefix)\(n)"
     }
 
     /// Clamp `requested` so that visual (video/image) tracks always sit above every audio track.
@@ -40,7 +56,7 @@ extension EditorViewModel {
         case .video, .image, .text, .lottie, .sequence:
             // Visual tracks must come at or before the first audio track.
             return min(bounded, z.firstAudioIndex)
-        case .audio:
+        case .audio, .dub:
             // Audio tracks must come at or after the first audio track
             return max(bounded, z.firstAudioIndex)
         }
@@ -55,7 +71,7 @@ extension EditorViewModel {
     func reorderTrackLive(id: String, to targetIndex: Int) {
         guard let from = timeline.tracks.firstIndex(where: { $0.id == id }) else { return }
         let z = zones
-        let isAudio = timeline.tracks[from].type == .audio
+        let isAudio = timeline.tracks[from].type.isAudio
         let lower = isAudio ? z.firstAudioIndex : 0
         let upper = isAudio ? z.trackCount - 1 : z.firstAudioIndex - 1
         let dest = max(lower, min(upper, targetIndex))

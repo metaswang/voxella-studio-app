@@ -36,7 +36,7 @@ enum EditAction {
         switch asset.type {
         case .image: candidates = [.upscale, .edit, .rerun, .createVideo]
         case .video: candidates = [.upscale, .edit, .rerun, .lipSync, .reframe, .generateMusic, .generateSFX]
-        case .audio, .text: candidates = [.upscale, .edit, .rerun]
+        case .audio, .dub, .text: candidates = [.upscale, .edit, .rerun]
         case .lottie, .sequence: candidates = []
         }
         return candidates.filter {
@@ -103,7 +103,7 @@ enum EditAction {
                 }
             case .image:
                 break // images have no duration constraint
-            case .audio:
+            case .audio, .dub:
                 return .disabled(reason: "Edit doesn't support audio")
             case .text:
                 return .disabled(reason: "Edit doesn't support text")

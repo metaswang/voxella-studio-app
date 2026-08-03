@@ -64,7 +64,7 @@ struct TransformOverlayView: View {
 
     // MARK: - Gestures
 
-    @State private var dragStart: Transform?
+    @State private var dragStarts: [String: Transform] = [:]
     @State private var resizeStart: Transform?
     @State private var resizeStartFontScale: Double?
     @State private var centerGuideX: Bool = false
@@ -75,21 +75,50 @@ struct TransformOverlayView: View {
     private func moveGesture(clip: Clip, videoRect: CGRect) -> some Gesture {
         DragGesture()
             .onChanged { value in
-                if dragStart == nil { dragStart = clip.transformAt(frame: editor.activeFrame) }
-                guard let start = dragStart else { return }
+                if dragStarts.isEmpty {
+                    let frame = editor.activeFrame
+                    dragStarts = Dictionary(uniqueKeysWithValues: selectedTransformClips.map {
+                        ($0.id, $0.transformAt(frame: frame))
+                    })
+                }
+                guard let start = dragStarts[clip.id] else { return }
                 let (moved, snap) = TransformOverlayMath.movedTransform(start, by: value.translation, in: videoRect)
                 if centerGuideX != snap.x { centerGuideX = snap.x }
                 if centerGuideY != snap.y { centerGuideY = snap.y }
-                editor.applyTransform(clipId: clip.id, newTransform: moved)
+                let delta = (
+                    x: moved.centerX - start.centerX,
+                    y: moved.centerY - start.centerY
+                )
+                let transforms = translatedTransforms(by: delta)
+                editor.applyTransforms(clipIds: Array(dragStarts.keys), newTransforms: transforms)
             }
             .onEnded { value in
-                guard let start = dragStart else { return }
+                guard let start = dragStarts[clip.id] else { return }
                 let (moved, _) = TransformOverlayMath.movedTransform(start, by: value.translation, in: videoRect)
-                dragStart = nil
+                let delta = (
+                    x: moved.centerX - start.centerX,
+                    y: moved.centerY - start.centerY
+                )
+                let transforms = translatedTransforms(by: delta)
+                let ids = Array(dragStarts.keys)
+                dragStarts.removeAll()
                 if centerGuideX { centerGuideX = false }
                 if centerGuideY { centerGuideY = false }
-                editor.commitTransform(clipId: clip.id, newTransform: moved, actionName: "Change Position")
+                editor.commitTransforms(
+                    clipIds: ids,
+                    newTransforms: transforms,
+                    actionName: "Change Position"
+                )
             }
+    }
+
+    private func translatedTransforms(by delta: (x: Double, y: Double)) -> [String: Transform] {
+        dragStarts.mapValues { start in
+            var moved = start
+            moved.centerX += delta.x
+            moved.centerY += delta.y
+            return moved
+        }
     }
 
     private func resizeGesture(clip: Clip, corner: Corner, videoRect: CGRect) -> some Gesture {
@@ -282,12 +311,21 @@ struct TransformOverlayView: View {
     private var selectedClip: Clip? {
         guard editor.activePreviewTab == .timeline,
               !editor.selectedClipIds.isEmpty else { return nil }
-        for track in editor.timeline.tracks where track.type != .audio {
-            for clip in track.clips where editor.selectedClipIds.contains(clip.id) {
-                return clip
-            }
+        let candidates = selectedTransformClips
+        if let visible = candidates.first(where: {
+            $0.contains(timelineFrame: editor.activeFrame) && $0.opacityAt(frame: editor.activeFrame) > 0.01
+        }) {
+            return visible
         }
-        return nil
+        return candidates.first
+    }
+
+    private var selectedTransformClips: [Clip] {
+        guard editor.activePreviewTab == .timeline else { return [] }
+        return editor.timeline.tracks
+            .filter { $0.type != .audio && !$0.hidden }
+            .flatMap(\.clips)
+            .filter { editor.selectedClipIds.contains($0.id) }
     }
 
     private enum Corner: CaseIterable {

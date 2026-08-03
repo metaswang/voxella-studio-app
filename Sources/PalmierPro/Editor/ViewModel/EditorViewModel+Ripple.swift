@@ -481,7 +481,7 @@ extension EditorViewModel {
                 $0.asset.hasAudio && ($0.asset.type == .video || $0.asset.type == .sequence)
             }
             let linkedAudioTrackIndex: Int? = needsLinkedAudio
-                ? (timeline.tracks.firstIndex { $0.type == .audio } ?? insertTrack(at: timeline.tracks.count, type: .audio))
+                ? (timeline.tracks.firstIndex { $0.type.isAudio } ?? insertTrack(at: timeline.tracks.count, type: .audio))
                 : nil
 
             // Tracks the gap opens on. Splitting below doesn't add tracks, so these stay valid.

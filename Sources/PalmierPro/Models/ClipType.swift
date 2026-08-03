@@ -1,6 +1,7 @@
 enum ClipType: String, Codable, Sendable, CaseIterable {
     case video
     case audio
+    case dub
     case image
     case text
     case lottie
@@ -10,6 +11,7 @@ enum ClipType: String, Codable, Sendable, CaseIterable {
         switch self {
         case .video: "film"
         case .audio: "waveform"
+        case .dub: "waveform.badge.mic"
         case .image: "photo"
         case .text: "textformat"
         case .lottie: "sparkles"
@@ -21,6 +23,7 @@ enum ClipType: String, Codable, Sendable, CaseIterable {
         switch self {
         case .video: "Video"
         case .audio: "Audio"
+        case .dub: "Dub"
         case .image: "Image"
         case .text: "Text"
         case .lottie: "Lottie"
@@ -31,11 +34,15 @@ enum ClipType: String, Codable, Sendable, CaseIterable {
     var trackLabelPrefix: String { String(trackLabel.prefix(1)) }
 
     var isVisual: Bool {
-        self != .audio
+        !isAudio
+    }
+
+    var isAudio: Bool {
+        self == .audio || self == .dub
     }
 
     func isCompatible(with other: ClipType) -> Bool {
-        self == other || (self.isVisual && other.isVisual)
+        self == other || (self.isAudio && other.isAudio) || (self.isVisual && other.isVisual)
     }
 
     init?(fileExtension ext: String) {

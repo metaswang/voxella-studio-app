@@ -289,6 +289,10 @@ final class TimelineView: NSView {
             ctx.strokePath()
             ctx.setLineDash(phase: 0, lengths: [])
         }
+        if let hint = inputController.razorSubtitleHint,
+           let point = inputController.razorPreviewPoint {
+            drawRazorSubtitleHint(hint, anchor: point, context: ctx)
+        }
 
         TimelineRuler.draw(
             in: NSRect(x: scrollOffset.x, y: scrollOffset.y, width: visibleWidth, height: Double(geo.rulerHeight)),
@@ -299,6 +303,96 @@ final class TimelineView: NSView {
         )
         drawTimelineRangeSelectionRulerFill(geometry: geo, scrollOffset: scrollOffset, context: ctx)
         drawTimelineRangeSelectionEdges(geometry: geo, scrollOffset: scrollOffset, context: ctx)
+    }
+
+    private func drawRazorSubtitleHint(
+        _ hint: RazorSubtitleHint,
+        anchor: NSPoint,
+        context ctx: CGContext
+    ) {
+        let font = NSFont.systemFont(ofSize: AppTheme.FontSize.xs, weight: .medium)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: AppTheme.Text.primary,
+        ]
+        let previous = NSAttributedString(string: hint.previousText, attributes: attributes)
+        let next = NSAttributedString(string: hint.nextText, attributes: attributes)
+        let textMaxWidth = AppTheme.ComponentSize.razorHintMaxTextWidth
+        let previousRect = previous.boundingRect(
+            with: NSSize(width: textMaxWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        let nextRect = next.boundingRect(
+            with: NSSize(width: textMaxWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        let textHeight = max(previousRect.height, nextRect.height)
+        let separatorWidth = AppTheme.BorderWidth.thick
+        let columnGap = AppTheme.Spacing.sm
+        let horizontalPadding = AppTheme.Spacing.smMd
+        let verticalPadding = AppTheme.Spacing.xs
+        let width = min(
+            AppTheme.ComponentSize.razorHintMaxWidth,
+            previousRect.width + nextRect.width + separatorWidth + columnGap * 2 + horizontalPadding * 2
+        )
+        let height = textHeight + verticalPadding * 2
+        let rawX = anchor.x
+        let alignmentOffset: CGFloat
+        if rawX < bounds.width * 0.24 {
+            alignmentOffset = 0
+        } else if rawX > bounds.width * 0.92 {
+            alignmentOffset = -width
+        } else {
+            alignmentOffset = -width / 2
+        }
+        let x = min(max(0, rawX + alignmentOffset), max(0, bounds.width - width))
+        let y = max(
+            AppTheme.Spacing.xs,
+            anchor.y - height - AppTheme.Spacing.sm
+        )
+        let rect = CGRect(x: x, y: y, width: width, height: height)
+        let path = CGPath(
+            roundedRect: rect,
+            cornerWidth: AppTheme.Radius.sm,
+            cornerHeight: AppTheme.Radius.sm,
+            transform: nil
+        )
+        ctx.saveGState()
+        ctx.setFillColor(AppTheme.MediaOverlay.background.cgColor)
+        ctx.addPath(path)
+        ctx.fillPath()
+        ctx.setStrokeColor(AppTheme.Border.subtle.cgColor)
+        ctx.setLineWidth(AppTheme.BorderWidth.hairline)
+        ctx.addPath(path)
+        ctx.strokePath()
+
+        let contentY = y + verticalPadding
+        let separatorX = x + previousRect.width + columnGap
+        let separatorTop = contentY
+        let separatorBottom = y + height - verticalPadding
+        ctx.setStrokeColor(AppTheme.TrackColor.dub.cgColor)
+        ctx.setLineWidth(separatorWidth)
+        ctx.move(to: CGPoint(x: separatorX, y: separatorTop))
+        ctx.addLine(to: CGPoint(x: separatorX, y: separatorBottom))
+        ctx.strokePath()
+
+        previous.draw(
+            in: NSRect(
+                x: x + horizontalPadding,
+                y: contentY,
+                width: previousRect.width,
+                height: textHeight
+            )
+        )
+        next.draw(
+            in: NSRect(
+                x: separatorX + columnGap,
+                y: contentY,
+                width: nextRect.width,
+                height: textHeight
+            )
+        )
+        ctx.restoreGState()
     }
 
     func updatePlayheadLayer() { playheadOverlay.update() }
@@ -1505,6 +1599,14 @@ final class TimelineView: NSView {
         let point = convert(sender.draggingLocation, from: nil)
         let geo = geometry
         if externalDragAssets == nil, let urlString = sender.draggingPasteboard.string(forType: .string) {
+            if editor.sessionDragPayload(from: urlString) != nil
+                || editor.sessionSubtitleDragPayload(from: urlString) != nil {
+                externalDragAssets = []
+                externalDropTarget = geo.dropTargetAt(y: point.y)
+                externalDragFrame = geo.frameAt(x: point.x)
+                needsDisplay = true
+                return .copy
+            }
             let assets = editor.assetsFromDragPayload(urlString)
             // Non-sentinel strings (e.g. alongside file URLs) fall through to the Finder path.
             if !assets.isEmpty || !editor.timelineIdsFromDragPayload(urlString).isEmpty {
@@ -1591,6 +1693,19 @@ final class TimelineView: NSView {
         let urlString = sender.draggingPasteboard.string(forType: .string)
 
         if let urlString {
+            if let sessionID = editor.sessionDragPayload(from: urlString),
+               let session = WorkbenchStore.shared.sessions.first(where: { $0.id == sessionID }) {
+                Task { @MainActor in
+                    await editor.insertSessionMedia(session, startFrame: targetFrame)
+                }
+                needsDisplay = true
+                return true
+            }
+            if editor.sessionSubtitleDragPayload(from: urlString) != nil {
+                editor.insertDraggedSessionSubtitle(payload: urlString, startFrame: targetFrame)
+                needsDisplay = true
+                return true
+            }
             let timelineIds = editor.timelineIdsFromDragPayload(urlString)
             if !timelineIds.isEmpty {
                 var frame = targetFrame

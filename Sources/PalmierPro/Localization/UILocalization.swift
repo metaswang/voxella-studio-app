@@ -4,6 +4,7 @@ extension ClipType {
         switch self {
         case .video, .sequence: L10n.string("Video")
         case .audio: L10n.string("Audio")
+        case .dub: L10n.string("Dub")
         case .image: L10n.string("Image")
         case .text: L10n.string("Text")
         case .lottie: "Lottie"

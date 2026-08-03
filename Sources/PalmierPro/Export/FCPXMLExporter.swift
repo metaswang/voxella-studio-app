@@ -200,7 +200,7 @@ enum FCPXMLExporter {
                 guard let group = item.clip.linkGroupId else { continue }
                 switch item.clip.mediaType {
                 case .video, .image, .sequence: byGroup[group, default: ([], [])].videos.append(item)
-                case .audio: byGroup[group, default: ([], [])].audios.append(item)
+                case .audio, .dub: byGroup[group, default: ([], [])].audios.append(item)
                 default: break
                 }
             }
@@ -363,7 +363,7 @@ enum FCPXMLExporter {
                     switch item.clip.mediaType {
                     case .text:
                         return titleNode(for: item)
-                    case .audio, .video, .image, .sequence:
+                    case .audio, .dub, .video, .image, .sequence:
                         return assetClipNode(for: item)
                     case .lottie:
                         return nil
@@ -389,7 +389,7 @@ enum FCPXMLExporter {
                     ("duration", time(frames: duration)),
                     ("enabled", item.enabled ? "1" : "0"),
                 ]
-                if clip.mediaType == .audio {
+                if clip.mediaType.isAudio {
                     attrs.append(("srcEnable", "audio"))
                     return FCPXMLNode(name: "ref-clip", attributes: attrs,
                                       children: [volumeNode(for: clip)].compactMap { $0 })
@@ -411,7 +411,7 @@ enum FCPXMLExporter {
 
             // Resolve honors srcEnable only on ref-clips.
             if let compoundId = resource.compoundId, linkedAudio == nil {
-                let videoOnly = clip.mediaType != .audio
+                let videoOnly = !clip.mediaType.isAudio
                 let attrs: [(String, String)] = [
                     ("ref", compoundId),
                     ("name", fileName(for: resource)),
@@ -435,7 +435,7 @@ enum FCPXMLExporter {
             }
 
             let origin = resource.startTimecode
-            let visual = clip.mediaType != .audio
+            let visual = !clip.mediaType.isAudio
             let attrs: [(String, String)] = [
                 ("ref", resource.assetId),
                 ("name", fileName(for: resource)),
@@ -665,9 +665,9 @@ enum FCPXMLExporter {
 
                 let key = sourceKey(for: url)
                 let duration = sourceDurationFrames(for: entry, clip: clip)
-                let isVisual = clip.mediaType != .audio
+                let isVisual = !clip.mediaType.isAudio
                 // Video resources include source audio when present.
-                let isAudio = clip.mediaType == .audio || (clip.mediaType == .video && entry.hasAudio == true)
+                let isAudio = clip.mediaType.isAudio || (clip.mediaType == .video && entry.hasAudio == true)
                 var entryCaps = caps[key] ?? {
                     order.append(key)
                     return Caps(mediaRefs: [], entry: entry, url: url)
@@ -782,7 +782,7 @@ enum FCPXMLExporter {
                     lane = visualTrackCount - visualOrdinal
                     enabled = !track.hidden
                     visualOrdinal += 1
-                } else if track.type == .audio {
+                } else if track.type.isAudio {
                     lane = -(audioOrdinal + 1)
                     enabled = !track.muted
                     audioOrdinal += 1
@@ -806,7 +806,7 @@ enum FCPXMLExporter {
                 return clip.textContent?.isEmpty == false
             case .lottie, .sequence:
                 return false
-            case .audio, .video, .image:
+            case .audio, .dub, .video, .image:
                 return resolver.resolveURL(for: clip.mediaRef) != nil
             }
         }

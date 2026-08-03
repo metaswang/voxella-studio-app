@@ -649,6 +649,8 @@ extension EditorViewModel {
             mediaVisualCache.generateVideoThumbnails(for: asset)
         case .audio:
             mediaVisualCache.generateWaveform(for: asset)
+        case .dub:
+            mediaVisualCache.generateWaveform(for: asset)
         case .image:
             mediaVisualCache.generateImageThumbnail(for: asset)
         case .text, .lottie, .sequence:
@@ -693,6 +695,10 @@ extension EditorViewModel {
         var words: [WordTiming]? = nil
         var animation: TextAnimation? = nil
         var fillMode: TextFillMode? = nil
+        var sourceSessionId: UUID? = nil
+        var sourceCueId: Int? = nil
+        var sourceCueScope: ClipSourceScope? = nil
+        var linkGroupId: String? = nil
     }
 
     /// Batch variant of `addTextClip` for agent flows.
@@ -751,6 +757,10 @@ extension EditorViewModel {
             clip.wordTimings = spec.words
             clip.textAnimation = spec.animation
             clip.textFillMode = spec.fillMode == .footage ? .footage : nil
+            clip.sourceSessionId = spec.sourceSessionId
+            clip.sourceCueId = spec.sourceCueId
+            clip.sourceCueScope = spec.sourceCueScope
+            clip.linkGroupId = spec.linkGroupId
             if batchTimeline != nil {
                 batchTimeline!.tracks[spec.trackIndex].clips.append(clip)
             } else {

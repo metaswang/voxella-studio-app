@@ -28,7 +28,7 @@ extension EditorViewModel {
     /// Video/audio zone partition.
     var zones: ZoneLayout {
         let count = timeline.tracks.count
-        let firstAudio = timeline.tracks.firstIndex(where: { $0.type == .audio }) ?? count
+        let firstAudio = timeline.tracks.firstIndex(where: { $0.type.isAudio }) ?? count
         return ZoneLayout(trackCount: count, firstAudioIndex: firstAudio)
     }
 
@@ -289,7 +289,7 @@ extension EditorViewModel {
         switch cursor {
         case .existingTrack(let idx):
             guard timeline.tracks.indices.contains(idx) else { return .newTrackAt(0) }
-            if timeline.tracks[idx].type != .audio {
+            if !timeline.tracks[idx].type.isAudio {
                 return .existingTrack(idx)
             }
             let distance = idx - z.firstAudioIndex
@@ -338,7 +338,7 @@ extension EditorViewModel {
               timeline.tracks.indices.contains(idx) else { return nil }
         let z = zones
         guard z.audioTrackCount > 0 else { return nil }
-        if timeline.tracks[idx].type == .audio { return idx }
+        if timeline.tracks[idx].type.isAudio { return idx }
         let distanceFromDivider = z.firstAudioIndex - 1 - idx
         let mirrored = z.firstAudioIndex + distanceFromDivider
         return (z.firstAudioIndex..<z.trackCount).contains(mirrored) ? mirrored : z.firstAudioIndex

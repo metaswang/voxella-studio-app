@@ -89,6 +89,14 @@ struct HomeView: View {
                 ProjectSettingsMismatchView(mismatch: mismatch)
                     .environment(editor)
             }
+            .sheet(item: Bindable(editor).pendingEditorTranslationRequest) { request in
+                EditorTranslationSheet(request: request)
+                    .environment(editor)
+            }
+            .sheet(item: Bindable(editor).pendingEditorDubRequest) { request in
+                EditorDubSheet(request: request)
+                    .environment(editor)
+            }
             .overlay {
                 TourOverlay()
                     .environment(editor)

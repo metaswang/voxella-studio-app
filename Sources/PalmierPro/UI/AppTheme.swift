@@ -281,6 +281,7 @@ enum AppTheme {
     enum TrackColor {
         static var video: NSColor { TimelineClipColorPalette.shared.color(for: .video) }
         static var audio: NSColor { TimelineClipColorPalette.shared.color(for: .audio) }
+        static var dub: NSColor { .systemGreen }
         static var image: NSColor { TimelineClipColorPalette.shared.color(for: .image) }
         static var text: NSColor { TimelineClipColorPalette.shared.color(for: .text) }
         static var lottie: NSColor { TimelineClipColorPalette.shared.color(for: .animation) }
@@ -395,6 +396,9 @@ enum AppTheme {
         static let captionPreviewMaxHeight: CGFloat = 150
         static let captionPreviewMaxTextWidthRatio: CGFloat = 0.9
         static let toolImagePreviewMaxHeight: CGFloat = 50
+        static let mediaPanelSessionItemWidth: CGFloat = 220
+        static let razorHintMaxTextWidth: CGFloat = 220
+        static let razorHintMaxWidth: CGFloat = 560
         static let projectCardWidth: CGFloat = 150
         static let projectCardHeight: CGFloat = 120
         static let projectSearchWidth: CGFloat = 260
@@ -478,6 +482,8 @@ enum AppTheme {
         /// more fully than the dashboard's intentionally compact grid.
         static let wideContentMaxWidth: CGFloat = 1640
         static let composerMaxWidth: CGFloat = 1040
+        static let translationSheetWidth: CGFloat = 420
+        static let dubSheetWidth: CGFloat = 520
         static let voiceRowMinHeight: CGFloat = 92
         static let sessionHeaderMinHeight: CGFloat = 92
         static let sessionTabBarMinHeight: CGFloat = 34
@@ -624,6 +630,7 @@ extension ClipType {
         switch self {
         case .video: AppTheme.TrackColor.video
         case .audio: AppTheme.TrackColor.audio
+        case .dub: AppTheme.TrackColor.dub
         case .image: AppTheme.TrackColor.image
         case .text: AppTheme.TrackColor.text
         case .lottie: AppTheme.TrackColor.lottie

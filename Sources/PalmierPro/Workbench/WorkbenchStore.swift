@@ -977,6 +977,7 @@ final class WorkbenchStore {
             job.speakerCount = options.speakerCount
             job.clipStartMs = sourceURLs.count == 1 ? options.clipStartMs : nil
             job.clipEndMs = sourceURLs.count == 1 ? options.clipEndMs : nil
+            job.useLLMSubtitleProcessing = options.useLLMSubtitleProcessing
             job.targetLanguageCode = options.normalizedTargetLanguageCode
             if sourceURLs.count == 1 {
                 job.customTitle = SessionTitlePolicy.normalizedUserTitle(options.customTitle)
@@ -991,7 +992,9 @@ final class WorkbenchStore {
 
         activeTranscriptionBatch = TranscriptionBatchState(id: batchID, jobIDs: jobIDs)
         selectedTranscriptionID = jobIDs.first
-        route = .transcribe
+        if openSessionWhenDone {
+            route = .transcribe
+        }
         save()
 
         for id in jobIDs {
@@ -1106,14 +1109,20 @@ final class WorkbenchStore {
             openSession(firstCompleted)
         } else if let failed = jobs.first(where: { $0.state == .failed }) {
             selectedTranscriptionID = failed.id
-            route = .transcribe
+            if openSessionWhenBatchCompletes {
+                route = .transcribe
+            }
         } else {
             selectedTranscriptionID = nil
         }
     }
 
     @discardableResult
-    func addDub(script: String = "", title: String = "") -> UUID {
+    func addDub(
+        script: String = "",
+        title: String = "",
+        openRoute: Bool = true
+    ) -> UUID {
         var job = Self.newDubJob(
             from: dubs,
             preferredLanguage: Self.preferredDubLanguage
@@ -1123,7 +1132,9 @@ final class WorkbenchStore {
         job.segments = [DubSegmentPayload(index: 0, text: script)]
         dubs.insert(job, at: 0)
         selectedDubID = job.id
-        route = .dub
+        if openRoute {
+            route = .dub
+        }
         save()
         return job.id
     }
@@ -1376,16 +1387,27 @@ final class WorkbenchStore {
         }
     }
 
+    @discardableResult
     func splitSessionCue(
         sessionID: UUID,
         scope: SessionCueScope,
         cueID: Int,
         leftText: String,
         rightText: String
-    ) {
+    ) -> Bool {
+        var didSplit = false
         mutateSessionCueTrack(sessionID: sessionID, scope: scope) { track in
-            track.splittingCue(id: cueID, leftText: leftText, rightText: rightText)
+            guard let updated = track.splittingCue(
+                id: cueID,
+                leftText: leftText,
+                rightText: rightText
+            ) else {
+                return nil
+            }
+            didSplit = true
+            return updated
         }
+        return didSplit
     }
 
     func assignSessionCueSpeaker(

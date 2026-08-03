@@ -114,7 +114,7 @@ struct AudioModelConfig: Identifiable, Sendable {
 
     func acceptsSource(_ type: ClipType) -> Bool {
         switch type {
-        case .audio: inputs.contains(.audio)
+        case .audio, .dub: inputs.contains(.audio)
         case .video: inputs.contains(.video)
         case .image, .text, .lottie, .sequence: false
         }

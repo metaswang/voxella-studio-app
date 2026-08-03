@@ -11,6 +11,7 @@ struct MediaTab: View {
     @State var searchQuery: String = ""
     @State var thumbnailSize: Double = 80
     @State var viewMode: ViewMode = .folder
+    @State private var contentTab: ContentTab = .library
 
     // Navigation + selection state
     @State var currentFolderId: String? = nil
@@ -34,6 +35,20 @@ struct MediaTab: View {
 
     @State private var mediaPanelHeight: CGFloat = 600
     @State private var showMatteSheet = false
+
+    enum ContentTab: String, CaseIterable, Identifiable {
+        case library
+        case sessions
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .library: L10n.key("Library")
+            case .sessions: L10n.key("Sessions")
+            }
+        }
+    }
 
     enum ViewMode: String, CaseIterable {
         case folder, flat, grouped
@@ -84,40 +99,49 @@ struct MediaTab: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            toolbar
+            contentTabBar
+            if contentTab == .library {
+                toolbar
+            }
 
             if editor.pendingSwapClipId != nil {
                 swapBanner
             }
 
             ZStack(alignment: .top) {
-                MediaPanelDropArea(
-                    isTargeted: $isDropTargeted,
-                    onDrop: { urls in handlePanelFinderDrop(urls: urls) }
-                ) {
-                    VStack(spacing: 0) {
-                        if showsEmptyState {
-                            emptyStateView
-                                .onAppear {
-                                    publishGridState(orderedIds: [], columnCount: 1)
-                                    editor.clearMediaPanelSelection()
+                Group {
+                    if contentTab == .sessions {
+                        MediaSessionsBrowser()
+                    } else {
+                        MediaPanelDropArea(
+                            isTargeted: $isDropTargeted,
+                            onDrop: { urls in handlePanelFinderDrop(urls: urls) }
+                        ) {
+                            VStack(spacing: 0) {
+                                if showsEmptyState {
+                                    emptyStateView
+                                        .onAppear {
+                                            publishGridState(orderedIds: [], columnCount: 1)
+                                            editor.clearMediaPanelSelection()
+                                        }
+                                } else if !trimmedSearchQuery.isEmpty {
+                                    searchResults
+                                } else {
+                                    switch viewMode {
+                                    case .folder: mediaGridView
+                                    case .flat: flatGridView
+                                    case .grouped: groupedGridView
+                                    }
                                 }
-                        } else if !trimmedSearchQuery.isEmpty {
-                            searchResults
-                        } else {
-                            switch viewMode {
-                            case .folder: mediaGridView
-                            case .flat: flatGridView
-                            case .grouped: groupedGridView
                             }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                            .contextMenu { mediaBrowserContextMenu }
+                        }
+                        .overlay {
+                            if isDropTargeted { dropHighlight.allowsHitTesting(false) }
                         }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .contextMenu { mediaBrowserContextMenu }
-                }
-                .overlay {
-                    if isDropTargeted { dropHighlight.allowsHitTesting(false) }
                 }
                 .overlay(alignment: .bottom) {
                     if let toast = editor.mediaPanelToast {
@@ -162,6 +186,48 @@ struct MediaTab: View {
         }
         .sheet(isPresented: $showMatteSheet) {
             MatteSheet(isPresented: $showMatteSheet)
+        }
+    }
+
+    private var contentTabBar: some View {
+        HStack(spacing: AppTheme.Spacing.xs) {
+            ForEach(ContentTab.allCases) { tab in
+                Button {
+                    contentTab = tab
+                } label: {
+                    Text(L10n.string(key: tab.title))
+                        .font(.system(
+                            size: AppTheme.FontSize.sm,
+                            weight: contentTab == tab
+                                ? AppTheme.FontWeight.semibold
+                                : AppTheme.FontWeight.medium
+                        ))
+                        .foregroundStyle(
+                            contentTab == tab
+                                ? AppTheme.Text.primaryColor
+                                : AppTheme.Text.tertiaryColor
+                        )
+                        .padding(.horizontal, AppTheme.Spacing.smMd)
+                        .padding(.vertical, AppTheme.Spacing.xs)
+                        .background(
+                            contentTab == tab
+                                ? AppTheme.Background.raisedColor
+                                : Color.clear,
+                            in: Capsule()
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, AppTheme.Spacing.sm)
+        .padding(.top, AppTheme.Spacing.sm)
+        .padding(.bottom, AppTheme.Spacing.xs)
+        .background(AppTheme.Background.surfaceColor)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(AppTheme.Border.primaryColor)
+                .frame(height: AppTheme.BorderWidth.hairline)
         }
     }
 

@@ -10,6 +10,18 @@ struct TextTab: View {
     private var clipIds: [String] { clips.map(\.id) }
     private var isBatch: Bool { clips.count > 1 }
 
+    private var styleTargetIds: [String] {
+        guard !isBatch,
+              let location = editor.findClip(id: clip.id),
+              editor.timeline.tracks.indices.contains(location.trackIndex),
+              editor.timeline.tracks[location.trackIndex].role != .standard,
+              let groupID = clip.captionGroupId
+        else {
+            return clipIds
+        }
+        return editor.captionGroupTextClipIds(groupId: groupID)
+    }
+
     private var isFootageFill: Bool {
         sharedClipValue(clips) { $0.textFillMode ?? .color } == .footage
     }
@@ -141,24 +153,24 @@ struct TextTab: View {
         TextStyleEditingActions(
             apply: { fitToContent, mutation in
                 editor.applyTextStyles(
-                    clipIds: clipIds,
+                    clipIds: styleTargetIds,
                     fitToContent: fitToContent,
                     mutation
                 )
             },
             commit: { fitToContent, mutation in
                 editor.commitTextStyles(
-                    clipIds: clipIds,
+                    clipIds: styleTargetIds,
                     fitToContent: fitToContent,
                     mutation
                 )
             },
             commitColor: { key, mutation in
-                editor.debouncedCommitTextStyles(clipIds: clipIds, key: key, mutation)
+                editor.debouncedCommitTextStyles(clipIds: styleTargetIds, key: key, mutation)
             },
             cancelPending: { editor.cancelDebouncedCommit(key: $0) },
             cancelFontPreview: { _ in
-                editor.revertClipProperties(clipIds: clipIds)
+                editor.revertClipProperties(clipIds: styleTargetIds)
             }
         )
     }

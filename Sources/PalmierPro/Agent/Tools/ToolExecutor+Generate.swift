@@ -49,6 +49,8 @@ extension ToolExecutor {
             return try generateImage(editor, args, prompt: prompt)
         case .audio:
             throw ToolError("internal: audio generation is dispatched via the async path")
+        case .dub:
+            throw ToolError("Dubbing is dispatched through the dubbing workflow.")
         case .text:
             throw ToolError("Text generation is not wired through the generate tool.")
         case .lottie:

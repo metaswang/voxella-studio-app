@@ -1,4 +1,11 @@
 import AppKit
+
+struct RazorSubtitleHint: Equatable, Sendable {
+    let previousText: String
+    let nextText: String
+    let isCut: Bool
+}
+
 @MainActor
 final class TimelineInputController {
     unowned let editor: EditorViewModel
@@ -9,6 +16,8 @@ final class TimelineInputController {
         didSet { view.snapOverlay.setLocalX(snapIndicatorX) }
     }
     private(set) var razorPreviewFrame: Int?
+    private(set) var razorPreviewPoint: NSPoint?
+    private(set) var razorSubtitleHint: RazorSubtitleHint?
     private var snapState = SnapEngine.SnapState()
     private var razorSnapState = SnapEngine.SnapState()
     private var scrubWasPlaying = false
@@ -154,7 +163,42 @@ final class TimelineInputController {
             if let hit = hitTestClip(at: point, trackIndex: trackIndex, geometry: geometry) {
                 let clickFrame = razorPreviewFrame ?? geometry.frameAt(x: point.x)
                 let clip = editor.timeline.tracks[hit.trackIndex].clips[hit.clipIndex]
-                editor.splitClip(clipId: clip.id, atFrame: clickFrame)
+                let subtitleClip = clip.mediaType == .text
+                    ? clip
+                    : subtitleClip(at: clickFrame)
+                let split = subtitleClip.flatMap { subtitleSplit(for: $0, at: clickFrame) }
+                let subtitleWasSeparate = subtitleClip?.id != clip.id
+                let rightSubtitleID: String?
+                if subtitleWasSeparate, let subtitleClip {
+                    _ = editor.splitClip(clipId: clip.id, atFrame: clickFrame)
+                    rightSubtitleID = editor.splitClip(
+                        clipId: subtitleClip.id,
+                        atFrame: clickFrame
+                    ).first
+                } else {
+                    rightSubtitleID = editor.splitClip(clipId: clip.id, atFrame: clickFrame).first
+                }
+                if let subtitleClip,
+                   let split,
+                   let sessionID = subtitleClip.sourceSessionId,
+                   let cueID = subtitleClip.sourceCueId,
+                   let scope = workbenchScope(for: subtitleClip.sourceCueScope),
+                   WorkbenchStore.shared.splitSessionCue(
+                        sessionID: sessionID,
+                        scope: scope,
+                        cueID: cueID,
+                        leftText: split.previousText,
+                        rightText: split.nextText
+                   ) {
+                    rebindSplitSubtitleClips(
+                        sessionID: sessionID,
+                        scope: subtitleClip.sourceCueScope,
+                        cueID: cueID,
+                        rightClipID: rightSubtitleID,
+                        leftText: split.previousText,
+                        rightText: split.nextText
+                    )
+                }
                 view.needsDisplay = true
             }
             return
@@ -197,8 +241,9 @@ final class TimelineInputController {
             }
 
             let isCommand = event.modifierFlags.contains(.command)
+            let multiPartSelection = isMultiPartSelection
 
-            if let edge = fadeKneeHit(at: point, clip: clip, clipRect: rect) {
+            if !multiPartSelection, let edge = fadeKneeHit(at: point, clip: clip, clipRect: rect) {
                 let originalFrames = clip.fadeFrames(edge)
                 dragState = .fadeKnee(DragState.FadeKneeDrag(
                     clipId: clip.id,
@@ -208,7 +253,7 @@ final class TimelineInputController {
                     grabFrame: geometry.frameAt(x: point.x),
                     currentFrames: originalFrames
                 ))
-            } else if clip.mediaType == .audio,
+            } else if !multiPartSelection, clip.mediaType.isAudio,
                let kfFrame = audioVolumeKfHit(at: point, clip: clip, clipRect: rect) {
                 let kfOffset = kfFrame - clip.startFrame
                 let dB = clip.volumeTrack?.keyframes.first(where: { $0.frame == kfOffset })?.value ?? 0
@@ -221,10 +266,10 @@ final class TimelineInputController {
                     currentFrame: kfFrame,
                     currentDb: dB
                 ))
-            } else if isCommand, clip.mediaType == .audio,
+            } else if !multiPartSelection, isCommand, clip.mediaType.isAudio,
                       addVolumeKeyframeOnClick(at: point, clip: clip, clipRect: rect) {
                 dragState = .idle
-            } else if let edge = trimEdge {
+            } else if !multiPartSelection, let edge = trimEdge {
                 Self.trimCursor(for: edge).set()
                 let modelEdge: EditorViewModel.TrimEdge = edge == .left ? .left : .right
                 let headroom = trimHeadroom(for: clip, edge: modelEdge, linked: linkedOn, ripple: rippleTrim)
@@ -240,7 +285,7 @@ final class TimelineInputController {
                     isRipple: rippleTrim
                 )
                 dragState = edge == .left ? .trimLeft(drag) : .trimRight(drag)
-            } else if editor.toolMode == .trim {
+            } else if !multiPartSelection, editor.toolMode == .trim {
                 if clip.multicamGroupId != nil {
                     editor.refuseWithToast("Can't slip a multicam clip — it would go out of sync with the group.")
                     dragState = .idle
@@ -705,6 +750,8 @@ final class TimelineInputController {
                 NSCursor.pointingHand.set()
             }
             razorPreviewFrame = nil
+            razorPreviewPoint = nil
+            razorSubtitleHint = nil
             razorSnapState = SnapEngine.SnapState()
             return
         }
@@ -729,11 +776,16 @@ final class TimelineInputController {
             } else {
                 razorPreviewFrame = candidate
             }
+            razorPreviewPoint = point
+            updateRazorSubtitleHint(at: razorPreviewFrame ?? candidate, geometry: geometry)
+            editor.seekToFrame(razorPreviewFrame ?? candidate, mode: .interactiveScrub)
             NSCursor.crosshair.set()
             view.needsDisplay = true
             return
         }
         razorPreviewFrame = nil
+        razorPreviewPoint = nil
+        razorSubtitleHint = nil
         razorSnapState = SnapEngine.SnapState()
 
         let trackIndex = geometry.trackAt(y: point.y)
@@ -743,31 +795,214 @@ final class TimelineInputController {
             view.setHoveredClipId(clip.id)
             let rect = geometry.clipRect(for: clip, trackIndex: hit.trackIndex)
             let localX = point.x - rect.minX
-            if let trimEdge = Self.trimEdge(localX: localX, clipWidth: rect.width) {
-                Self.trimCursor(for: trimEdge).set()
-                return
-            }
-            if fadeKneeHit(at: point, clip: clip, clipRect: rect) != nil {
-                NSCursor.resizeLeftRight.set()
-                return
-            }
-            if clip.mediaType == .audio,
-               audioVolumeKfHit(at: point, clip: clip, clipRect: rect) != nil {
-                NSCursor.openHand.set()
-                return
-            }
-            if editor.toolMode == .trim {
-                if clip.multicamGroupId == nil, clip.mediaType != .image, clip.mediaType != .text {
-                    Self.slipCursor.set()
-                } else {
-                    NSCursor.operationNotAllowed.set()
+            if !isMultiPartSelection {
+                if let trimEdge = Self.trimEdge(localX: localX, clipWidth: rect.width) {
+                    Self.trimCursor(for: trimEdge).set()
+                    return
                 }
-                return
+                if fadeKneeHit(at: point, clip: clip, clipRect: rect) != nil {
+                    NSCursor.resizeLeftRight.set()
+                    return
+                }
+                if clip.mediaType.isAudio,
+                   audioVolumeKfHit(at: point, clip: clip, clipRect: rect) != nil {
+                    NSCursor.openHand.set()
+                    return
+                }
+                if editor.toolMode == .trim {
+                    if clip.multicamGroupId == nil, clip.mediaType != .image, clip.mediaType != .text {
+                        Self.slipCursor.set()
+                    } else {
+                        NSCursor.operationNotAllowed.set()
+                    }
+                    return
+                }
             }
         } else {
             view.setHoveredClipId(nil)
         }
         NSCursor.arrow.set()
+    }
+
+    /// True when selection contains more than one independent part.
+    /// A single A/V link group counts as one part; multiple text cues count as multi-part.
+    private var isMultiPartSelection: Bool {
+        let ids = editor.selectedClipIds
+        guard ids.count > 1 else { return false }
+        let clips = ids.compactMap { editor.clipFor(id: $0) }
+        if clips.filter({ $0.mediaType == .text }).count > 1 { return true }
+        var linkGroups = Set<String>()
+        var ungrouped = 0
+        for clip in clips {
+            if let group = clip.linkGroupId {
+                linkGroups.insert(group)
+            } else {
+                ungrouped += 1
+            }
+        }
+        return linkGroups.count + ungrouped > 1
+    }
+
+    private func updateRazorSubtitleHint(at frame: Int, geometry: TimelineGeometry) {
+        guard let point = razorPreviewPoint else {
+            razorSubtitleHint = nil
+            return
+        }
+        let trackIndex = geometry.trackAt(y: point.y)
+        guard editor.timeline.tracks.indices.contains(trackIndex),
+              editor.timeline.tracks[trackIndex].type.isVisual else {
+            razorSubtitleHint = nil
+            return
+        }
+        if let clip = subtitleClip(at: frame),
+           let split = subtitleSplit(for: clip, at: frame) {
+            razorSubtitleHint = RazorSubtitleHint(
+                previousText: split.previousText,
+                nextText: split.nextText,
+                isCut: true
+            )
+            return
+        }
+
+        let subtitleClips = editor.timeline.tracks
+            .filter { track in
+                switch track.role {
+                case .sourceSubtitles, .translation:
+                    return true
+                case .standard, .dub:
+                    return false
+                }
+            }
+            .flatMap(\.clips)
+            .filter { $0.mediaType == .text }
+        let previous = subtitleClips
+            .filter { $0.endFrame <= frame }
+            .max { $0.endFrame < $1.endFrame }
+        let next = subtitleClips
+            .filter { $0.startFrame > frame }
+            .min { $0.startFrame < $1.startFrame }
+        guard let previous, let next else {
+            razorSubtitleHint = nil
+            return
+        }
+        razorSubtitleHint = RazorSubtitleHint(
+            previousText: previous.textContent ?? "",
+            nextText: next.textContent ?? "",
+            isCut: false
+        )
+    }
+
+    private func subtitleClip(at frame: Int) -> Clip? {
+        let tracks = editor.timeline.tracks
+            .filter { track in
+                switch track.role {
+                case .sourceSubtitles, .translation:
+                    return true
+                case .standard, .dub:
+                    return false
+                }
+            }
+            .sorted { lhs, rhs in
+                func priority(_ role: TrackRole) -> Int {
+                    switch role {
+                    case .sourceSubtitles: 0
+                    case .translation: 1
+                    case .standard, .dub: 2
+                    }
+                }
+                return priority(lhs.role) < priority(rhs.role)
+            }
+        return tracks
+            .flatMap(\.clips)
+            .first { $0.mediaType == .text && frame >= $0.startFrame && frame < $0.endFrame }
+    }
+
+    private func subtitleSplit(
+        for clip: Clip,
+        at frame: Int
+    ) -> (previousText: String, nextText: String)? {
+        guard clip.mediaType == .text,
+              frame > clip.startFrame,
+              frame < clip.endFrame else {
+            return nil
+        }
+        let offset = frame - clip.startFrame
+        if let words = clip.wordTimings, !words.isEmpty {
+            var previous: [String] = []
+            var next: [String] = []
+            for word in words.sorted(by: { $0.startFrame < $1.startFrame }) {
+                let text = word.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { continue }
+                if word.endFrame <= offset {
+                    previous.append(text)
+                } else {
+                    next.append(text)
+                }
+            }
+            let previousText = previous.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            let nextText = next.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !previousText.isEmpty || !nextText.isEmpty else { return nil }
+            return (previousText, nextText)
+        }
+
+        let text = (clip.textContent ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let characters = Array(text)
+        guard characters.count > 1 else { return nil }
+        let ratio = Double(offset) / Double(max(1, clip.durationFrames))
+        let pivot = min(
+            characters.count - 1,
+            max(1, Int((ratio * Double(characters.count)).rounded()))
+        )
+        let previousText = String(characters[..<pivot]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextText = String(characters[pivot...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !previousText.isEmpty, !nextText.isEmpty else { return nil }
+        return (previousText, nextText)
+    }
+
+    private func rebindSplitSubtitleClips(
+        sessionID: UUID,
+        scope: ClipSourceScope?,
+        cueID: Int,
+        rightClipID: String?,
+        leftText: String,
+        rightText: String
+    ) {
+        guard let rightClipID else { return }
+        for trackIndex in editor.timeline.tracks.indices {
+            for clipIndex in editor.timeline.tracks[trackIndex].clips.indices {
+                var clip = editor.timeline.tracks[trackIndex].clips[clipIndex]
+                guard clip.sourceSessionId == sessionID,
+                      clip.sourceCueScope == scope else {
+                    continue
+                }
+                if clip.id == rightClipID {
+                    clip.sourceCueId = cueID + 1
+                    clip.textContent = rightText
+                } else if clip.sourceCueId == cueID {
+                    clip.textContent = leftText
+                } else if let sourceCueID = clip.sourceCueId, sourceCueID > cueID {
+                    clip.sourceCueId = sourceCueID + 1
+                } else {
+                    continue
+                }
+                editor.timeline.tracks[trackIndex].clips[clipIndex] = clip
+            }
+        }
+    }
+
+    private func workbenchScope(
+        for sourceScope: ClipSourceScope?
+    ) -> WorkbenchStore.SessionCueScope? {
+        guard let sourceScope else { return nil }
+        switch sourceScope {
+        case .source:
+            return .source
+        case .translation(let languageCode):
+            return .translation(languageCode)
+        case .dub:
+            return .dub
+        }
     }
 
     private static func trimEdge(localX: CGFloat, clipWidth: CGFloat) -> TrimEdge? {

@@ -413,7 +413,7 @@ final class GenerationService {
             switch fallback {
             case .image: return "image/jpeg"
             case .video: return "video/mp4"
-            case .audio: return "audio/mpeg"
+            case .audio, .dub: return "audio/mpeg"
             case .text: return "application/octet-stream"
             case .lottie: return "application/json"
             case .sequence: return "video/mp4"

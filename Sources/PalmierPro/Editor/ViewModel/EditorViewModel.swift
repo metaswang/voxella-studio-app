@@ -25,6 +25,16 @@ struct PendingTransitionPlacement {
     let gapLengthFrames: Int
 }
 
+struct EditorTranslationRequest: Identifiable, Sendable {
+    let id = UUID()
+    let clipId: String
+}
+
+struct EditorDubRequest: Identifiable, Sendable {
+    let id = UUID()
+    let clipId: String
+}
+
 @Observable
 @MainActor
 final class EditorViewModel {
@@ -38,6 +48,8 @@ final class EditorViewModel {
     var openTimelineIds: [String]
     @ObservationIgnored var liveViewStates: [String: TimelineViewState] = [:]
     var timelineTabRenameRequest: String?
+    var pendingEditorTranslationRequest: EditorTranslationRequest?
+    var pendingEditorDubRequest: EditorDubRequest?
 
     /// Active-timeline proxy; assignment routes by id and activates so undo lands on its timeline.
     var timeline: Timeline {
@@ -131,6 +143,7 @@ final class EditorViewModel {
     var timelineScrollRestoreX: Double?
     var isScrubbing: Bool = false
     var toolMode: ToolMode = .pointer
+    var sessionProcessingStates: [String: EditorSessionProcessingState] = [:]
     var showExportDialog: Bool = false
     var showGenerationPanel: Bool = false {
         didSet {
@@ -266,6 +279,7 @@ final class EditorViewModel {
     @ObservationIgnored var mediaImportTail: Task<MediaImportSummary, Error>?
     @ObservationIgnored var mediaImportSequence: Int = 0
     @ObservationIgnored var frameCaptureTask: Task<Void, Never>?
+    @ObservationIgnored var sessionProcessingTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored var transitionSeedTask: Task<Void, Never>?
     @ObservationIgnored var pendingManifestMetadataUpdates: [String: MediaAsset] = [:]
     @ObservationIgnored var pendingManifestMetadataFlushTask: Task<Void, Never>?
@@ -422,6 +436,7 @@ final class EditorViewModel {
     func seekToFrame(_ frame: Int, mode: PreviewSeekMode = .exact) {
         let clamped = min(max(0, frame), max(0, timeline.totalFrames))
         if mode == .interactiveScrub {
+            guard playheadState.timelineFrame != clamped else { return }
             playheadState.timelineFrame = clamped
         } else {
             currentFrame = clamped
@@ -434,6 +449,7 @@ final class EditorViewModel {
     func seekSourceToFrame(_ frame: Int, mode: PreviewSeekMode = .exact) {
         let clamped = min(max(0, frame), max(0, activePreviewDurationFrames))
         if mode == .interactiveScrub {
+            guard playheadState.sourceFrame != clamped else { return }
             playheadState.sourceFrame = clamped
         } else {
             sourcePlayheadFrame = clamped

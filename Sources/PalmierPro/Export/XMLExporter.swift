@@ -169,7 +169,7 @@ enum XMLExporter {
 
             // FCP XML orders video tracks bottom→top; our model stores them top→bottom.
             let videoTracks = Array(timeline.tracks.filter { $0.type.isVisual }.reversed())
-            let audioTracks = timeline.tracks.filter { $0.type == .audio }
+            let audioTracks = timeline.tracks.filter { $0.type.isAudio }
             let sortedVideo = videoTracks.map(sortEmittable)
             let sortedAudio = audioTracks.map(sortEmittable)
 

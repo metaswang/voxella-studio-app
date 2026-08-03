@@ -48,39 +48,75 @@ final class ScrubAudioEngine {
     nonisolated private static let mixInvalidationDebounce = Duration.milliseconds(250)
     nonisolated private static let failedDecodeRetryDelay = Duration.seconds(1)
 
-    nonisolated private static let readerTeardownQueue = DispatchQueue(
-        label: "io.palmier.pro.scrub-reader-teardown",
-        qos: .userInitiated
-    )
-
-    // Blocking copyNextSampleBuffer calls run only here so a stalled decoder cannot starve the cooperative pool.
+    // All AVAssetReader operations stay serialized off the cooperative pool.
     nonisolated private static let scrubDecodeQueue = DispatchQueue(
         label: "io.palmier.pro.scrub-decode",
         qos: .userInitiated
     )
 
-    // Safety: cancelReading() is callable from any thread; buffer copying stays serialized on one decode queue.
-    private struct ReaderSession: @unchecked Sendable {
+    private final class ReaderSession: @unchecked Sendable {
         let reader: AVAssetReader
         let output: AVAssetReaderAudioMixOutput
+        private var didFinish = false
 
-        func cancel() { reader.cancelReading() }
+        init(reader: AVAssetReader, output: AVAssetReaderAudioMixOutput) {
+            self.reader = reader
+            self.output = output
+        }
+
+        func finishOnDecodeQueue() {
+            guard !didFinish else { return }
+            didFinish = true
+            reader.cancelReading()
+        }
+
+        var canReadOnDecodeQueue: Bool { !didFinish }
     }
 
-    private struct SampleBufferBox: @unchecked Sendable {
+    // Mutable reader ownership is accessed only on scrubDecodeQueue.
+    private final class ReaderQueueState: @unchecked Sendable {
+        var activeSession: ReaderSession?
+    }
+
+    nonisolated private static let readerQueueState = ReaderQueueState()
+
+    private struct ReaderResult: @unchecked Sendable {
         let buffer: CMSampleBuffer?
+        let status: AVAssetReader.Status
+    }
+
+    // Loaded tracks are immutable and consumed only on scrubDecodeQueue.
+    private struct ReaderConfiguration: @unchecked Sendable {
+        let source: Source
+        let tracks: [AVAssetTrack]
+        let startSample: Int64
+        let frameCount: Int64
     }
 
     nonisolated private static func finishReading(_ session: ReaderSession) {
-        readerTeardownQueue.async { session.cancel() }
+        scrubDecodeQueue.async {
+            session.finishOnDecodeQueue()
+            if readerQueueState.activeSession === session {
+                readerQueueState.activeSession = nil
+            }
+        }
     }
 
-    nonisolated private static func nextSampleBuffer(from session: ReaderSession) async -> CMSampleBuffer? {
-        await withCheckedContinuation { continuation in
+    nonisolated private static func nextSampleBuffer(from session: ReaderSession) async -> ReaderResult {
+        return await withCheckedContinuation { continuation in
             scrubDecodeQueue.async {
-                continuation.resume(returning: SampleBufferBox(buffer: session.output.copyNextSampleBuffer()))
+                guard readerQueueState.activeSession === session,
+                      session.canReadOnDecodeQueue else {
+                    continuation.resume(returning: ReaderResult(buffer: nil, status: .cancelled))
+                    return
+                }
+                let buffer = session.output.copyNextSampleBuffer()
+                continuation.resume(returning: ReaderResult(
+                    buffer: buffer,
+                    status: buffer == nil ? session.reader.status : .reading
+                ))
             }
-        }.buffer
+        }
     }
 
     private let meter: AudioMeterHub
@@ -117,7 +153,8 @@ final class ScrubAudioEngine {
 
     func configure(asset: AVAsset?, audioMix: AVAudioMix?, resetMeter: Bool = true) {
         let mixOnlyChange = asset != nil && asset === source?.asset
-        stopScrubbing()
+        resetScrubState(cancelDecode: true)
+        output.stop()
         sourceGeneration &+= 1
         source = asset.map { Source(asset: $0, audioMix: audioMix, generation: sourceGeneration) }
         if mixOnlyChange {
@@ -189,23 +226,20 @@ final class ScrubAudioEngine {
 
     func stopPlaybackMetering() {
         latestMeterSample = nil
-        if latestRequest == nil {
-            decodeTask?.cancel()
-            decodeTask = nil
-            pendingDecodeRange = nil
-        }
         meter.reset()
     }
 
     func stopScrubbing() {
-        resetScrubState()
+        resetScrubState(cancelDecode: false)
         output.stop()
     }
 
-    private func resetScrubState() {
-        decodeTask?.cancel()
-        decodeTask = nil
-        pendingDecodeRange = nil
+    private func resetScrubState(cancelDecode: Bool) {
+        if cancelDecode {
+            decodeTask?.cancel()
+            decodeTask = nil
+            pendingDecodeRange = nil
+        }
         latestRequest = nil
         latestMeterSample = nil
         lastRequestedSample = nil
@@ -213,7 +247,7 @@ final class ScrubAudioEngine {
     }
 
     func teardown() {
-        resetScrubState()
+        resetScrubState(cancelDecode: true)
         mixInvalidationTask?.cancel()
         mixInvalidationTask = nil
         source = nil
@@ -239,7 +273,8 @@ final class ScrubAudioEngine {
             return
         }
 
-        decodeTask?.cancel()
+        // Keep one reader in flight; completion resolves the latest scrub or meter request.
+        guard decodeTask == nil else { return }
         let startSample = windowStart(around: sample, direction: direction)
         let range = startSample..<(startSample + Int64(Self.cacheFrameCount))
         pendingDecodeRange = range
@@ -431,7 +466,7 @@ final class ScrubAudioEngine {
     }
 
     private func suspendOutput() {
-        resetScrubState()
+        resetScrubState(cancelDecode: true)
         output.invalidate()
     }
 
@@ -446,7 +481,35 @@ final class ScrubAudioEngine {
         tracks: [AVAssetTrack],
         startSample: Int64,
         frameCount: Int64
+    ) async -> ReaderSession? {
+        let configuration = ReaderConfiguration(
+            source: source,
+            tracks: tracks,
+            startSample: startSample,
+            frameCount: frameCount
+        )
+        return await withCheckedContinuation { continuation in
+            scrubDecodeQueue.async {
+                continuation.resume(returning: makeReaderOnDecodeQueue(
+                    source: configuration.source,
+                    tracks: configuration.tracks,
+                    startSample: configuration.startSample,
+                    frameCount: configuration.frameCount
+                ))
+            }
+        }
+    }
+
+    nonisolated private static func makeReaderOnDecodeQueue(
+        source: Source,
+        tracks: [AVAssetTrack],
+        startSample: Int64,
+        frameCount: Int64
     ) -> ReaderSession? {
+        if let activeSession = readerQueueState.activeSession {
+            activeSession.finishOnDecodeQueue()
+            readerQueueState.activeSession = nil
+        }
         guard let reader = try? AVAssetReader(asset: source.asset) else { return nil }
         let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: [
             AVFormatIDKey: kAudioFormatLinearPCM,
@@ -461,7 +524,7 @@ final class ScrubAudioEngine {
         output.alwaysCopiesSampleData = false
         let session = ReaderSession(reader: reader, output: output)
         guard reader.canAdd(output) else {
-            finishReading(session)
+            session.finishOnDecodeQueue()
             return nil
         }
         reader.add(output)
@@ -470,9 +533,10 @@ final class ScrubAudioEngine {
             duration: CMTime(value: frameCount, timescale: sampleTimescale)
         )
         guard reader.startReading() else {
-            finishReading(session)
+            session.finishOnDecodeQueue()
             return nil
         }
+        readerQueueState.activeSession = session
         return session
     }
 
@@ -489,13 +553,11 @@ final class ScrubAudioEngine {
             return PCMWindow(startSample: startSample, left: silence, right: silence, hasAudioTracks: false)
         }
 
-        guard let session = makeReader(
+        guard !Task.isCancelled, let session = await makeReader(
             source: source, tracks: tracks, startSample: startSample, frameCount: Int64(frameCount)
         ) else { return nil }
         defer { finishReading(session) }
 
-        // Cancelling the reader forces a blocked copyNextSampleBuffer to return, freeing the decode queue.
-        // finishReading keeps the potentially blocking cancelReading() off the cancelling thread.
         return await withTaskCancellationHandler {
             await decodeSamples(session: session, startSample: startSample, frameCount: frameCount)
         } onCancel: {
@@ -512,8 +574,14 @@ final class ScrubAudioEngine {
         var rightSamples = [Int16](repeating: 0, count: frameCount)
 
         var runningOffset = 0
-        while let sampleBuffer = await nextSampleBuffer(from: session) {
-            if Task.isCancelled { return nil }
+        var terminalStatus: AVAssetReader.Status = .unknown
+        while !Task.isCancelled {
+            let result = await nextSampleBuffer(from: session)
+            guard !Task.isCancelled else { return nil }
+            guard let sampleBuffer = result.buffer else {
+                terminalStatus = result.status
+                break
+            }
             guard let description = CMSampleBufferGetFormatDescription(sampleBuffer),
                   let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(description),
                   let sampleFormat = AVAudioFormat(streamDescription: streamDescription)
@@ -554,7 +622,7 @@ final class ScrubAudioEngine {
             runningOffset = max(runningOffset, destinationOffset + sampleCount)
         }
 
-        guard session.reader.status == .completed else { return nil }
+        guard !Task.isCancelled, terminalStatus == .completed else { return nil }
         return PCMWindow(startSample: startSample, left: leftSamples, right: rightSamples, hasAudioTracks: true)
     }
 }
