@@ -3,13 +3,14 @@ import SwiftUI
 
 struct EditorView: NSViewControllerRepresentable {
     @Environment(EditorViewModel.self) var editor
+    @Bindable private var workspaceLayout = WorkspaceLayoutStore.shared
 
     func makeNSViewController(context: Context) -> EditorSplitViewController {
         EditorSplitViewController(editor: editor)
     }
 
     func updateNSViewController(_ controller: EditorSplitViewController, context: Context) {
-        controller.applyLayoutIfNeeded(editor.layoutPreset)
+        controller.applyLayoutIfNeeded(workspaceLayout.selection)
         controller.applyAgentVisibility(editor.agentPanelVisible)
         controller.applyMediaVisibility(editor.mediaPanelVisible)
         controller.applyInspectorVisibility(editor.inspectorPanelVisible)
@@ -20,8 +21,24 @@ struct EditorView: NSViewControllerRepresentable {
 
 // MARK: - Split view controller
 
-/// Thicker divider hit area for panel resizing
+private final class HiddenDividerSplitView: NSSplitView {
+    override var dividerThickness: CGFloat { 0 }
+
+    override func drawDivider(in rect: NSRect) {}
+}
+
+/// Invisible divider with a larger hit area for panel resizing
 class PaddedDividerSplitViewController: NSSplitViewController {
+    override init(nibName nibNameOrNil: NSNib.Name?, bundle nibBundleOrNil: Bundle?) {
+        super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
+        splitView = HiddenDividerSplitView()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        splitView = HiddenDividerSplitView()
+    }
+
     override func splitView(
         _ splitView: NSSplitView,
         effectiveRect proposedEffectiveRect: NSRect,
@@ -66,7 +83,7 @@ final class EditorSplitViewController: PaddedDividerSplitViewController {
     private lazy var mediaHC: NSViewController     = makeHosting(MediaPanelView(), panel: .media)
     private lazy var previewHC: NSViewController   = makeHosting(PreviewContainerView(), panel: .preview)
     private lazy var inspectorHC: NSViewController = makeHosting(InspectorView(), panel: .inspector)
-    private lazy var agentHC: NSViewController     = makeHosting(AgentPanelView(), panel: .agent)
+    private lazy var agentHC: NSViewController     = makeAgentSidebarHosting(AgentPanelView())
     private lazy var timelineHC: NSViewController  = makeHosting(
         VStack(spacing: 0) {
             TimelineTabBar()
@@ -95,7 +112,7 @@ final class EditorSplitViewController: PaddedDividerSplitViewController {
         super.viewDidLoad()
         splitView.dividerStyle = .thin
         splitView.autosaveName = SplitAutosave.root
-        buildLayout(editor.layoutPreset)
+        buildLayout(WorkspaceLayoutStore.shared.selection)
     }
 
     // MARK: - Layout switching
@@ -208,6 +225,10 @@ final class EditorSplitViewController: PaddedDividerSplitViewController {
 
         // The agent is a stable left column around the selected editor layout.
         let presetRoot = makeChildSplit(isVertical: false, autosave: SplitAutosave.preset(preset))
+        presetRoot.view.wantsLayer = true
+        presetRoot.view.layer?.cornerRadius = AppTheme.Radius.sm
+        presetRoot.view.layer?.cornerCurve = .continuous
+        presetRoot.view.layer?.masksToBounds = true
         switch preset {
         case .default:  buildDefaultLayout(into: presetRoot)
         case .media:    buildMediaLayout(into: presetRoot)
@@ -248,7 +269,7 @@ final class EditorSplitViewController: PaddedDividerSplitViewController {
             guard let self, let target, let hSplit else { return }
             let targetH = target.view.bounds.height
             let hW = hSplit.view.bounds.width
-            self.positionIfUnsaved(target) { $0.setPosition(round(targetH * 0.7), ofDividerAt: 0) }
+            self.positionIfUnsaved(target) { $0.setPosition(round(targetH * (1 - Layout.timelineDefaultHeightFraction)), ofDividerAt: 0) }
             self.positionIfUnsaved(hSplit) {
                 $0.setPosition(Layout.mediaPanelDefault, ofDividerAt: 0)
                 $0.setPosition(hW - Layout.inspectorDefault, ofDividerAt: 1)
@@ -362,24 +383,36 @@ final class EditorSplitViewController: PaddedDividerSplitViewController {
     }
 
     private func makeHosting<V: View>(_ content: V, panel: EditorViewModel.FocusedPanel) -> NSHostingController<some View> {
-        let inset = Layout.panelGap / 2
         let panelShell = RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
         let hc = NSHostingController(
             rootView: content
                 .environment(editor)
+                .appLocalization()
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 .background(AppTheme.Background.surfaceColor)
                 .clipShape(panelShell)
-                .padding(inset)
+                .padding(AppTheme.Spacing.xxs)
                 .background(AppTheme.Background.baseColor)
                 .overlay {
                     PanelFocusRing(editor: editor, panel: panel)
-                        .padding(inset)
+                        .padding(AppTheme.Spacing.xxs)
                         .allowsHitTesting(false)
                 }
         )
         hc.sizingOptions = []
         hc.view.setAccessibilityIdentifier(panel.accessibilityID)
+        return hc
+    }
+
+    private func makeAgentSidebarHosting<V: View>(_ content: V) -> NSHostingController<some View> {
+        let hc = NSHostingController(
+            rootView: content
+                .environment(editor)
+                .appLocalization()
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        )
+        hc.sizingOptions = []
+        hc.view.setAccessibilityIdentifier(EditorViewModel.FocusedPanel.agent.accessibilityID)
         return hc
     }
 
@@ -420,7 +453,7 @@ private struct PanelFocusRing: View {
     var body: some View {
         RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
             .strokeBorder(AppTheme.Accent.primary, lineWidth: AppTheme.BorderWidth.medium)
-            .opacity(isFocused ? 0.6 : 0)
+            .opacity(isFocused ? AppTheme.Opacity.strong : 0)
             .animation(.easeOut(duration: AppTheme.Anim.transition), value: isFocused)
     }
 }

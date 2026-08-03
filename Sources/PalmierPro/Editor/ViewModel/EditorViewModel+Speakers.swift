@@ -120,7 +120,7 @@ extension EditorViewModel {
                 if !turns.isEmpty { files.append((asset.id, asset.url, turns)) }
             }
             Log.preview.notice("identify speakers: \(files.count) files with speaker turns")
-            self?.speakerIdentifyPhase = "Identifying…"
+            self?.speakerIdentifyPhase = L10n.string("Identifying…")
             let registry = await MainActor.run { self?.speakerRegistry ?? [] }
             let result = await SpeakerIdentity.assignments(
                 files: files, registry: registry.map { ($0.id, $0.centroid) }

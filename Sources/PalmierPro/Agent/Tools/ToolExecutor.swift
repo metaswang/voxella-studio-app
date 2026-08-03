@@ -15,6 +15,7 @@ final class ToolExecutor {
     private weak var boundProject: VideoProject?
     private var mcpClientInfo: MCPClientInfo?
     private(set) var mcpSessionActivation = Analytics.SessionActivation()
+    private let analyticsSessionID = UUID().uuidString
     let exportQueue: ExportQueue
 
     var editor: EditorViewModel? {
@@ -55,8 +56,15 @@ final class ToolExecutor {
 
     var feedbackState = FeedbackState()
     var lastTranscriptContext: TranscriptionToolContext?
+    var lastTranscriptSession: TranscriptSession?
 
-    func execute(name: String, args: [String: Any], source: String = "agent") async -> ToolResult {
+    func execute(
+        name: String,
+        args: [String: Any],
+        source: String = "agent",
+        sessionID: String? = nil
+    ) async -> ToolResult {
+        let args = Self.droppingAutofilledBlanks(from: args)
         let started = ContinuousClock.now
         guard let tool = ToolName(rawValue: name) else {
             captureToolAnalytics(
@@ -65,11 +73,12 @@ final class ToolExecutor {
                 projectId: editor?.projectId,
                 status: "failed",
                 started: started,
+                sessionID: sessionID,
                 failureReason: "unknown_tool"
             )
             return .error("Unknown tool: \(name)")
         }
-        activateMCPSessionIfNeeded(source: source, toolName: tool.rawValue)
+        activateMCPSessionIfNeeded(source: source, toolName: tool.rawValue, sessionID: sessionID)
 
         // project tools act on AppState before editor is available
         switch tool {
@@ -80,7 +89,8 @@ final class ToolExecutor {
                 source: source,
                 projectId: editor?.projectId,
                 status: result.isError ? "failed" : "finished",
-                started: started
+                started: started,
+                sessionID: sessionID
             )
             return result
         default:
@@ -106,6 +116,7 @@ final class ToolExecutor {
                 projectId: nil,
                 status: "failed",
                 started: started,
+                sessionID: sessionID,
                 failureReason: "editor_unavailable"
             )
             return .error("Editor not available")
@@ -153,21 +164,26 @@ final class ToolExecutor {
             projectId: editor.projectId,
             status: result.isError ? "failed" : "finished",
             started: started,
+            sessionID: sessionID,
             timelineChanged: editor.timelines != before
         )
         // Shorten on pre ∪ post ids: new ids and just-removed ids both stay short.
         return await shorteningIds(in: result, editor: editor, alsoKnown: idsBefore)
     }
 
-    private func activateMCPSessionIfNeeded(source: String, toolName: String) {
+    private func activateMCPSessionIfNeeded(source: String, toolName: String, sessionID: String?) {
         guard source == "mcp", mcpSessionActivation.activate() else { return }
-        Analytics.capture(.mcpSessionActivated, properties: mcpSessionActivationProperties(toolName: toolName))
+        Analytics.capture(
+            .mcpSessionActivated,
+            properties: mcpSessionActivationProperties(toolName: toolName, sessionID: sessionID)
+        )
     }
 
-    func mcpSessionActivationProperties(toolName: String) -> Analytics.Payload {
+    func mcpSessionActivationProperties(toolName: String, sessionID: String? = nil) -> Analytics.Payload {
         var properties: Analytics.Payload = [
             "source": "mcp",
             "tool_name": toolName,
+            "session_id": sessionID ?? analyticsSessionID,
         ]
         if let mcpClientInfo {
             properties["client_info"] = mcpClientInfo.payload
@@ -201,6 +217,7 @@ final class ToolExecutor {
         projectId: String?,
         status: String,
         started: ContinuousClock.Instant? = nil,
+        sessionID: String? = nil,
         timelineChanged: Bool? = nil,
         failureReason: String? = nil
     ) {
@@ -210,6 +227,7 @@ final class ToolExecutor {
             "project_id": projectId ?? "unknown",
             "status": status,
         ]
+        if let sessionID { payload["session_id"] = sessionID }
         if let started {
             payload["tool_duration_seconds"] = durationSeconds(since: started)
         }
@@ -245,6 +263,7 @@ final class ToolExecutor {
         case .insertClips:      return try insertClips(editor, args)
         case .removeClips:      return try removeClips(editor, args)
         case .manageTracks:     return try manageTracks(editor, args)
+        case .manageClipLinks:  return try manageClipLinks(editor, args)
         case .moveClips:        return try moveClips(editor, args)
         case .applyLayout:      return try applyLayout(editor, args)
         case .setClipProperties: return try setClipProperties(editor, args)
@@ -291,10 +310,10 @@ final class ToolExecutor {
     }
 
     func undo(_ editor: EditorViewModel) throws -> ToolResult {
-        guard let actionName = editor.undo.undoLatest() else {
+        guard editor.undo.undoLatest() != nil else {
             throw ToolError("Nothing to undo.")
         }
-        return .ok("Undid: \(actionName). The timeline is restored to its state before that edit; re-read with get_timeline or get_transcript before editing again.")
+        return .ok("Undid the latest action. The timeline is restored to its state before that edit; re-read with get_timeline or get_transcript before editing again.")
     }
 
     // Shared helpers used by tool extensions in other files.
@@ -331,6 +350,30 @@ final class ToolExecutor {
     nonisolated static func jsonString(_ obj: Any) -> String? {
         guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]) else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    static func droppingAutofilledBlanks(from args: [String: Any]) -> [String: Any] {
+        args.filter { !($0.value is NSNull) && ($0.value as? String) != "" }
+    }
+
+    static func sanitizedToolErrorMessage(_ result: ToolResult) -> String? {
+        guard result.isError else { return nil }
+        let message = result.content.compactMap { block -> String? in
+            guard case .text(let text) = block else { return nil }
+            return text
+        }.joined(separator: "\n")
+        guard !message.isEmpty else { return nil }
+        return String(message.prefix(2_048))
+            .replacingOccurrences(
+                of: #"(?:https?|file)://[^\s\"']+"#,
+                with: "[url redacted]",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: #"/(?:Users|Volumes|private|tmp)(?:/[^\r\n]*)?"#,
+                with: "[path redacted]",
+                options: .regularExpression
+            )
     }
 
 }
@@ -425,6 +468,14 @@ func parseAlignment(_ raw: String?, path: String) throws -> TextStyle.Alignment?
 func isJSONBoolean(_ value: Any) -> Bool {
     guard let number = value as? NSNumber else { return value is Bool }
     return CFGetTypeID(number) == CFBooleanGetTypeID()
+}
+
+/// Strict JSON integer parsing for identifiers and indexes.
+func exactJSONInt(_ raw: Any?) -> Int? {
+    guard let raw, !isJSONBoolean(raw) else { return nil }
+    if let value = raw as? Int { return value }
+    guard let value = (raw as? NSNumber)?.doubleValue else { return nil }
+    return Int(exactly: value)
 }
 
 // Untrusted Double→Int: nil on NaN/Inf/overflow instead of trapping.

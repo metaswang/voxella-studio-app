@@ -54,7 +54,7 @@ struct TourOverlay: View {
     }
 
     private func scrim(cutout: CGRect?) -> some View {
-        Color.black.opacity(AppTheme.Opacity.strong)
+        AppTheme.MediaOverlay.backgroundColor.opacity(AppTheme.Opacity.strong)
             .reverseMask {
                 if let cutout {
                     RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
@@ -69,7 +69,7 @@ struct TourOverlay: View {
     private func callout(_ step: TourStep) -> some View {
         let index = tour.stepIndex ?? 0
         return VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            Text("Step \(index) of \(tour.spotlightCount)")
+            Text(L10n.string("Step \(index) of \(tour.spotlightCount)"))
                 .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
             Text(step.title)
@@ -81,13 +81,13 @@ struct TourOverlay: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: AppTheme.Spacing.sm) {
-                Button("Skip") { tour.end() }
+                Button(L10n.string("Skip")) { tour.end() }
                     .buttonStyle(.capsule)
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Back") { tour.back() }
+                Button(L10n.string("Back")) { tour.back() }
                     .buttonStyle(.capsule)
-                Button("Next") { tour.advance() }
+                Button(L10n.string("Next")) { tour.advance() }
                     .buttonStyle(.capsule(.prominent))
                     .keyboardShortcut(.defaultAction)
             }
@@ -113,11 +113,11 @@ struct TourOverlay: View {
             }
             heroImage
             HStack {
-                Button("Skip") { tour.end() }
+                Button(L10n.string("Skip")) { tour.end() }
                     .buttonStyle(.capsule(.secondary, size: .regular))
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Next") { tour.advance() }
+                Button(L10n.string("Next")) { tour.advance() }
                     .buttonStyle(.capsule(.prominent, size: .regular))
                     .keyboardShortcut(.defaultAction)
             }
@@ -158,7 +158,7 @@ struct TourOverlay: View {
             }
             HStack {
                 Spacer()
-                Button("Start creating") { tour.end() }
+                Button(L10n.string("Start creating")) { tour.end() }
                     .buttonStyle(.capsule(.prominent, size: .regular))
                     .keyboardShortcut(.defaultAction)
             }

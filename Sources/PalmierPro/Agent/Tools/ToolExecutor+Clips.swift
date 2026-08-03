@@ -42,6 +42,17 @@ fileprivate struct MoveClipsInput: DecodableToolArgs {
     }
 }
 
+fileprivate struct ManageClipLinksInput: DecodableToolArgs {
+    enum Action: String, Decodable {
+        case link
+        case unlink
+    }
+
+    let action: Action
+    let clipIds: [String]
+    static let allowedKeys: Set<String> = ["action", "clipIds"]
+}
+
 fileprivate struct SplitClipsInput: DecodableToolArgs {
     let splits: [Split]?
     let trackIndex: Int?
@@ -391,6 +402,43 @@ extension ToolExecutor {
             editor.removeClips(ids: expanded)
         }
         return mutationResult(editor, since: snapshot)
+    }
+
+    // MARK: manage_clip_links
+
+    func manageClipLinks(_ editor: EditorViewModel, _ args: [String: Any]) throws -> ToolResult {
+        let input: ManageClipLinksInput = try decodeToolArgs(args, path: "manage_clip_links")
+        guard !input.clipIds.isEmpty else {
+            throw ToolError("manage_clip_links.clipIds must be a non-empty array")
+        }
+        for (index, id) in input.clipIds.enumerated() {
+            guard !id.isEmpty else {
+                throw ToolError("manage_clip_links.clipIds[\(index)] must be a non-empty clip ID")
+            }
+            guard editor.findClip(id: id) != nil else { throw ToolError("Clip not found: \(id)") }
+        }
+
+        let clipIds = Set(input.clipIds)
+        let targets: Set<String>
+        switch input.action {
+        case .link:
+            guard let resolved = editor.linkTargets(for: clipIds) else {
+                throw ToolError("Link requires at least two clips of different media types that are not already one link group")
+            }
+            targets = resolved
+        case .unlink:
+            targets = editor.unlinkTargets(for: clipIds)
+            guard !targets.isEmpty else { throw ToolError("None of the provided clips is linked") }
+        }
+
+        let snapshot = timelineSnapshot(editor)
+        switch input.action {
+        case .link:
+            editor.linkClips(ids: targets)
+        case .unlink:
+            editor.unlinkClips(ids: targets)
+        }
+        return mutationResult(editor, since: snapshot, touched: Array(targets))
     }
 
     // MARK: move_clips
@@ -1074,12 +1122,6 @@ extension ToolExecutor {
 
     // MARK: manage_tracks
 
-    private static func exactTrackIndex(_ raw: Any?) -> Int? {
-        guard let raw, !isJSONBoolean(raw),
-              let value = (raw as? NSNumber)?.doubleValue, value.rounded() == value else { return nil }
-        return Int(exactly: value)
-    }
-
     func manageTracks(_ editor: EditorViewModel, _ args: [String: Any]) throws -> ToolResult {
         try validateUnknownKeys(args, allowed: ["reorder", "set", "remove"], path: "manage_tracks")
         let tracks = editor.timeline.tracks
@@ -1098,7 +1140,7 @@ extension ToolExecutor {
                 }
                 return id
             }
-            guard entry["trackId"] == nil, let index = Self.exactTrackIndex(entry["index"]) else {
+            guard entry["trackId"] == nil, let index = exactJSONInt(entry["index"]) else {
                 throw ToolError("\(path): pass one current trackId or index")
             }
             return try trackId(index, path)
@@ -1109,7 +1151,7 @@ extension ToolExecutor {
             guard let entry = raw as? [String: Any] else { throw ToolError("reorder[\(i)] must be an object") }
             let path = "reorder[\(i)]"
             try validateUnknownKeys(entry, allowed: ["trackId", "index", "to"], path: path)
-            guard let to = Self.exactTrackIndex(entry["to"]) else {
+            guard let to = exactJSONInt(entry["to"]) else {
                 throw ToolError("\(path): 'to' is required and must be an integer")
             }
             let id = try trackId(entry, path)
@@ -1142,7 +1184,7 @@ extension ToolExecutor {
                 removeIds.append(try trackId(entry, path))
                 continue
             }
-            guard let index = Self.exactTrackIndex(raw) else {
+            guard let index = exactJSONInt(raw) else {
                 throw ToolError("\(path) must be an integer index or track selector object")
             }
             removeIds.append(try trackId(index, path))

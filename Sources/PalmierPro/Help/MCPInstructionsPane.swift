@@ -44,11 +44,11 @@ struct MCPInstructionsPane: View {
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .fixedSize(horizontal: false, vertical: true)
 
-                SettingsGroup(title: "Server URL") {
+                SettingsGroup(title: L10n.string("Server URL")) {
                     endpointRow
                 }
 
-                SettingsGroup(title: "Connect an agent") {
+                SettingsGroup(title: L10n.string("Connect an agent")) {
                     agentList
                 }
             }
@@ -59,15 +59,15 @@ struct MCPInstructionsPane: View {
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
         .alert(
-            "Unable to open Claude Desktop",
+            L10n.string("Unable to open Claude Desktop"),
             isPresented: Binding(
                 get: { claudeInstallError != nil },
                 set: { if !$0 { claudeInstallError = nil } }
             )
         ) {
-            Button("Dismiss") { claudeInstallError = nil }
+            Button(L10n.string("Dismiss")) { claudeInstallError = nil }
         } message: {
-            Text(claudeInstallError ?? "Try again.")
+            Text(verbatim: claudeInstallError ?? L10n.string("Try again."))
         }
     }
 
@@ -100,7 +100,7 @@ struct MCPInstructionsPane: View {
             action: ("Install in Cursor", openCursor)
         ) {
             ManualFallback(
-                intro: "Add this configuration to ~/.cursor/mcp.json.",
+                intro: L10n.string("Add this configuration to ~/.cursor/mcp.json."),
                 code: cursorJSONConfig
             )
         }
@@ -121,7 +121,7 @@ struct MCPInstructionsPane: View {
         agentSection(
             .claude,
             name: "Claude Code",
-            description: "Run this command once in Terminal."
+            description: L10n.string("Run this command once in Terminal.")
         ) {
             CodeBlockView(content: claudeCodeCommand)
         }
@@ -131,7 +131,7 @@ struct MCPInstructionsPane: View {
         agentSection(
             .codex,
             name: "Codex",
-            description: "Run this command once in Terminal."
+            description: L10n.string("Run this command once in Terminal.")
         ) {
             CodeBlockView(content: codexCommand)
         }
@@ -258,7 +258,7 @@ private struct ManualFallback: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.regular))
                         .rotationEffect(.degrees(expanded ? 90 : 0))
-                    Text("Manual setup")
+                    Text(L10n.string("Manual setup"))
                         .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.regular))
                 }
                 .foregroundStyle(AppTheme.Text.secondaryColor)
@@ -300,7 +300,7 @@ private struct CopyButton: View {
                 .hoverHighlight()
         }
         .buttonStyle(.plain)
-        .help(copied ? "Copied" : "Copy")
+        .help(copied ? L10n.string("Copied") : L10n.string("Copy"))
     }
 
     private func copy() {

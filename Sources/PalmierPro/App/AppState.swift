@@ -268,12 +268,14 @@ final class AppState {
     }
 
     func createProjectInteractively() {
+        Telemetry.beginOperation("save_panel", data: ["flow": "project_create"])
         let panel = NSSavePanel()
         panel.allowedContentTypes = [Self.projectContentType]
         panel.nameFieldStringValue = Project.defaultProjectName
         panel.directoryURL = Project.storageDirectory
-        panel.title = "New Project"
+        panel.title = L10n.string("New Project")
         panel.begin { [self] response in
+            Telemetry.endOperation("save_panel")
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in
                 do {
@@ -307,6 +309,7 @@ final class AppState {
 
     @discardableResult
     func openProjectAsync(at url: URL, register: Bool = true, options: ProjectOpenOptions = .init()) async throws -> VideoProject {
+        try Task.checkCancellation()
         let resolved = url.standardizedFileURL
         guard !projectPathsBeingDeleted.contains(resolved.path) else {
             throw ProjectError.deletionInProgress(resolved)
@@ -327,6 +330,7 @@ final class AppState {
             return existing
         }
         let doc = try await VideoProject.load(from: resolved)
+        try Task.checkCancellation()
         guard !projectPathsBeingDeleted.contains(resolved.path) else {
             throw ProjectError.deletionInProgress(resolved)
         }
@@ -409,13 +413,15 @@ final class AppState {
     }
 
     func openProjectFromPanel() {
+        Telemetry.beginOperation("open_panel", data: ["flow": "project_open"])
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [Self.projectContentType, Self.legacyProjectContentType]
         panel.canChooseDirectories = false
         panel.treatsFilePackagesAsDirectories = false
         panel.allowsMultipleSelection = false
-        panel.title = "Open Project"
+        panel.title = L10n.string("Open Project")
         panel.begin { response in
+            Telemetry.endOperation("open_panel")
             guard response == .OK, let url = panel.url else { return }
             AppState.shared.openProject(at: url)
         }

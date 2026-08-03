@@ -6,6 +6,13 @@ enum HelpTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var title: String {
+        switch self {
+        case .shortcuts: L10n.key("Shortcuts")
+        case .mcp: "MCP"
+        }
+    }
+
     var icon: String {
         switch self {
         case .shortcuts: "keyboard"
@@ -28,7 +35,7 @@ struct HelpView: View {
 
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black.opacity(AppTheme.Opacity.medium))
+                .background(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.medium))
         }
         .frame(minWidth: 820, idealWidth: 900, minHeight: 520, idealHeight: 560)
         .background(.ultraThinMaterial)
@@ -54,7 +61,7 @@ struct HelpView: View {
                 Image(systemName: tab.icon)
                     .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
                     .frame(width: 16)
-                Text(tab.rawValue)
+                Text(L10n.string(key: tab.title))
                     .font(.system(size: AppTheme.FontSize.md, weight: isActive ? .medium : .regular))
                 Spacer()
             }
@@ -71,7 +78,7 @@ struct HelpView: View {
     private var detail: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(selectedTab.rawValue)
+                Text(L10n.string(key: selectedTab.title))
                     .font(.system(size: AppTheme.FontSize.title2, weight: .light))
                     .tracking(AppTheme.Tracking.tight)
                     .foregroundStyle(AppTheme.Text.primaryColor)
@@ -97,7 +104,7 @@ final class HelpWindowController: NSWindowController {
 
     private init() {
         let initialView = HelpView().tint(AppTheme.Accent.primary)
-        let hosting = NSHostingController(rootView: AnyView(initialView))
+        let hosting = NSHostingController(rootView: AnyView(initialView.appLocalization()))
         let window = NSWindow(contentViewController: hosting)
         window.setContentSize(NSSize(width: 900, height: 560))
         window.minSize = NSSize(width: 820, height: 520)
@@ -122,6 +129,7 @@ final class HelpWindowController: NSWindowController {
         hosting?.rootView = AnyView(
             HelpView(initialTab: tab)
                 .id(UUID())
+                .appLocalization()
                 .tint(AppTheme.Accent.primary)
         )
         showWindow(nil)

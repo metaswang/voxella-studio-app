@@ -61,7 +61,6 @@ final class EditorViewModel {
     }
     var mediaManifest = MediaManifest()
     var generationLog = GenerationLog()
-
     // MARK: - Denoise bake state (session-scoped, keyed by mediaRef)
 
     var denoiseInFlight: Set<String> = []
@@ -69,7 +68,11 @@ final class EditorViewModel {
     var denoiseBaked: Set<String> = []
     var speechAnalyzingCount: Int = 0
     var speakerRegistry: [SpeakerRegistryEntry] = []
-    var multicamGroups: [MulticamSource] = []
+    var multicamGroups: [MulticamSource] = [] {
+        didSet {
+            if multicamGroups != oldValue { deadAirMaskCache.reset() }
+        }
+    }
     var speakerAssignments: [String: [String: Int]] = [:]
     var speakerIdentifyPhase: String?
     var speakerIdentifyInFlight: Bool { speakerIdentifyPhase != nil }
@@ -94,6 +97,7 @@ final class EditorViewModel {
     // MARK: - Tutorial tour
 
     let tour = TourController()
+    var inspectorClipTabRequest: InspectorView.ClipTab?
 
     // MARK: - Transient UI state
 
@@ -153,15 +157,6 @@ final class EditorViewModel {
     var sourcePlayheadFrame: Int = 0 {
         didSet { playheadState.sourceFrame = sourcePlayheadFrame }
     }
-    var layoutPreset: LayoutPreset = {
-        if let raw = UserDefaults.standard.string(forKey: "layoutPreset"),
-           let preset = LayoutPreset(rawValue: raw) {
-            return preset
-        }
-        return .default
-    }() {
-        didSet { UserDefaults.standard.set(layoutPreset.rawValue, forKey: "layoutPreset") }
-    }
     // MARK: - Media library (in-memory, rebuilt on project open)
 
     var mediaAssets: [MediaAsset] = [] {
@@ -176,6 +171,7 @@ final class EditorViewModel {
     var missingMediaRefs: Set<String> = []
     @ObservationIgnored var missingMediaRefreshTask: Task<Void, Never>?
     let mediaVisualCache = MediaVisualCache()
+    let deadAirMaskCache = DeadAirMaskCache()
     let searchIndex = SearchIndexCoordinator()
     var projectURL: URL? {
         didSet {
@@ -225,6 +221,12 @@ final class EditorViewModel {
     }() {
         didSet {
             UserDefaults.standard.set(markDeadAir, forKey: "markDeadAir")
+            mediaVisualCache.timelineView?.needsDisplay = true
+        }
+    }
+
+    var silenceRemovalSettings = SilenceRemovalSettings.default {
+        didSet {
             mediaVisualCache.timelineView?.needsDisplay = true
         }
     }
@@ -289,6 +291,12 @@ final class EditorViewModel {
         mediaVisualCache.speech.onAnalyzingCountChange = { [weak self] count in
             self?.speechAnalyzingCount = count
         }
+        mediaVisualCache.onDeadAirCacheInvalidated = { [weak self] in
+            self?.deadAirMaskCache.reset()
+        }
+        undo.onActionCommitted = { [weak self] in
+            self?.captureCommittedEdit()
+        }
 
         // Re-check media presence when the app regains focus: a user may have
         // deleted/moved backing files in Finder (or ejected a volume) while we
@@ -298,6 +306,12 @@ final class EditorViewModel {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshMissingMediaCache() }
         }
+    }
+
+    private func captureCommittedEdit() {
+        var payload = Analytics.originProperties()
+        payload["project_id"] = projectId ?? "unknown"
+        Analytics.capture(.editorEditCommitted, properties: payload)
     }
 
     @ObservationIgnored private nonisolated(unsafe) var didBecomeActiveObserver: NSObjectProtocol?
@@ -332,7 +346,6 @@ final class EditorViewModel {
             "mediaByType": mediaCounts,
             "offlineMedia": offlineMediaRefs.count,
             "unprocessableMedia": unprocessableMediaRefs.count,
-            "generationLogEntries": generationLog.entries.count,
             "agentSessions": agentService.sessions.count
         ]
     }
