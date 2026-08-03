@@ -15,6 +15,8 @@ final class TimelineHeaderView: NSView {
     var hideButtonRects: [Int: NSRect] = [:]
     var syncLockButtonRects: [Int: NSRect] = [:]
     var dragHandleRects: [Int: NSRect] = [:]
+    /// Full track-row rects used for select-all hit testing.
+    var trackRowRects: [Int: NSRect] = [:]
 
     init(editor: EditorViewModel) {
         self.editor = editor
@@ -53,6 +55,7 @@ final class TimelineHeaderView: NSView {
         hideButtonRects.removeAll()
         syncLockButtonRects.removeAll()
         dragHandleRects.removeAll()
+        trackRowRects.removeAll()
         let stripWidth: CGFloat = 3
         let iconSize: CGFloat = 14
         let iconConfig = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
@@ -63,15 +66,23 @@ final class TimelineHeaderView: NSView {
         for (i, track) in editor.timeline.tracks.enumerated() {
             let y = geo.trackY(at: i)
             let h = geo.trackHeight(at: i)
+            let rowRect = NSRect(x: 0, y: y, width: headerWidth, height: h)
+            trackRowRects[i] = rowRect
 
-            // Lift the row being dragged
+            // Lift the row being dragged, or mark tracks with all clips selected.
             if reorderDrag?.id == track.id {
                 ctx.setFillColor(AppTheme.Background.prominent.cgColor)
-                ctx.fill(NSRect(x: 0, y: y, width: headerWidth, height: h))
+                ctx.fill(rowRect)
+            } else if editor.isTrackPartsFullySelected(at: i) {
+                ctx.setFillColor(AppTheme.Background.raised.cgColor)
+                ctx.fill(rowRect)
             }
 
             // Color-coded left border strip
-            ctx.setFillColor(track.type.themeColor.cgColor)
+            let stripColor = editor.isTrackPartsFullySelected(at: i)
+                ? AppTheme.Accent.primaryNSColor
+                : track.type.themeColor
+            ctx.setFillColor(stripColor.cgColor)
             ctx.fill(NSRect(x: 0, y: y, width: stripWidth, height: h))
 
             // Drag handle (reorder grip)
@@ -212,6 +223,15 @@ final class TimelineHeaderView: NSView {
 
         if let ti = hitTestResizeHandle(at: point) {
             resizeDrag = (ti, editor.timeline.tracks[ti].displayHeight)
+            return
+        }
+
+        // Click track header to select or clear every clip on that track.
+        if let ti = trackRowRects.first(where: { $0.value.contains(point) })?.key,
+           editor.supportsPartsSelection(on: ti) {
+            editor.toggleSelectAllClips(onTrackIndex: ti)
+            needsDisplay = true
+            requestCanvasRedraw?()
         }
     }
 
@@ -261,9 +281,20 @@ final class TimelineHeaderView: NSView {
             NSCursor.openHand.set()
         } else if hitTestResizeHandle(at: point) != nil {
             NSCursor.resizeUpDown.set()
+        } else if let ti = trackRowRects.first(where: { $0.value.contains(point) })?.key,
+                  editor.supportsPartsSelection(on: ti),
+                  !isPointOnHeaderControl(point) {
+            NSCursor.pointingHand.set()
         } else {
             NSCursor.arrow.set()
         }
+    }
+
+    private func isPointOnHeaderControl(_ point: NSPoint) -> Bool {
+        muteButtonRects.values.contains(where: { $0.contains(point) })
+            || hideButtonRects.values.contains(where: { $0.contains(point) })
+            || syncLockButtonRects.values.contains(where: { $0.contains(point) })
+            || dragHandleRects.values.contains(where: { $0.contains(point) })
     }
 
     override func updateTrackingAreas() {

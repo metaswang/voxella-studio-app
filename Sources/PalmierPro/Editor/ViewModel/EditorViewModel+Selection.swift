@@ -10,6 +10,31 @@ extension EditorViewModel {
         selectedClipIds = expandToLinkGroup([clipId])
     }
 
+    /// Any non-empty track exposes header click to select or clear every clip on it.
+    func supportsPartsSelection(on trackIndex: Int) -> Bool {
+        guard timeline.tracks.indices.contains(trackIndex) else { return false }
+        return !timeline.tracks[trackIndex].clips.isEmpty
+    }
+
+    func isTrackPartsFullySelected(at trackIndex: Int) -> Bool {
+        guard supportsPartsSelection(on: trackIndex) else { return false }
+        let ids = timeline.tracks[trackIndex].clips.map(\.id)
+        return ids.allSatisfy { selectedClipIds.contains($0) }
+    }
+
+    /// Toggle selection of every clip on the track.
+    func toggleSelectAllClips(onTrackIndex trackIndex: Int) {
+        guard supportsPartsSelection(on: trackIndex) else { return }
+        let ids = Set(timeline.tracks[trackIndex].clips.map(\.id))
+        if ids.isSubset(of: selectedClipIds) {
+            selectedClipIds.subtract(ids)
+        } else {
+            selectedClipIds = ids
+        }
+        selectedGap = nil
+        selectedTimelineRange = nil
+    }
+
     func selectForwardFromCurrentSelection(scope: SelectForwardScope) {
         guard let anchorId = forwardSelectionAnchorId() else { return }
         selectForward(from: anchorId, scope: scope)

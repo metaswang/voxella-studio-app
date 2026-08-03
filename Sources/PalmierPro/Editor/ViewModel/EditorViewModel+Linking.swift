@@ -36,30 +36,34 @@ extension EditorViewModel {
 
     /// Returns every clip id sharing a link group with any id in `ids`,
     /// including the inputs themselves.
+    /// Text cues never expand through link groups — each part stays independently selectable.
     func expandToLinkGroup(_ ids: Set<String>) -> Set<String> {
         let idx = linkIndex
-        var clipToGroup: [String: String] = [:]
-        for (gid, members) in idx {
-            for id in members { clipToGroup[id] = gid }
-        }
-        var groups = Set<String>()
-        for id in ids {
-            if let g = clipToGroup[id] { groups.insert(g) }
-        }
-        guard !groups.isEmpty else { return ids }
         var result = ids
-        for g in groups {
-            if let members = idx[g] { result.formUnion(members) }
+        for id in ids {
+            guard let clip = clipFor(id: id), clip.mediaType != .text,
+                  let group = clip.linkGroupId,
+                  let members = idx[group] else { continue }
+            for memberId in members {
+                guard let member = clipFor(id: memberId), member.mediaType != .text else { continue }
+                result.insert(memberId)
+            }
         }
         return result
     }
 
     /// Ids of clips that share `clip`'s link group, excluding `clip` itself.
+    /// Text cues are never A/V link partners.
     func linkedPartnerIds(of clipId: String) -> [String] {
-        for (_, members) in linkIndex where members.contains(clipId) {
-            return members.filter { $0 != clipId }
+        guard let clip = clipFor(id: clipId), clip.mediaType != .text,
+              let group = clip.linkGroupId,
+              let members = linkIndex[group] else { return [] }
+        return members.compactMap { id -> String? in
+            guard id != clipId, let partner = clipFor(id: id), partner.mediaType != .text else {
+                return nil
+            }
+            return id
         }
-        return []
     }
 
     /// For a single-clip frame move, returns the linked-partner moves needed to keep
