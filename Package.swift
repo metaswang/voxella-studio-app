@@ -4,7 +4,6 @@ import PackageDescription
 
 let package = Package(
     name: "PalmierPro",
-    defaultLocalization: "en",
     platforms: [.macOS(.v26)],
     products: [
         .executable(name: "VoxellaStudio", targets: ["PalmierPro"]),
@@ -117,8 +116,7 @@ let package = Package(
                 .copy("Resources/Fonts"),
                 .copy("Resources/MCPB/palmier-pro.mcpb"),
                 .copy("Resources/Images"),
-                .copy("Resources/Changelog"),
-                .process("Resources/Localization"),
+                .copy("Resources/Localization"),
                 .copy("Resources/Models"),
             ],
             swiftSettings: [

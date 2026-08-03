@@ -1,95 +1,73 @@
-import Combine
 import SwiftUI
 
-/// Backend-owned activity for the current project.
+/// Scrollable list of AI generations for the current project.
 struct ProjectActivityView: View {
-    let projectId: String?
-
-    private static let listHeight: CGFloat = 420
-
-    @State private var entries: [BackendProjectActivityEntry] = []
-    @State private var isLoading = true
-    @State private var unavailableMessage: String?
+    let entries: [GenerationLogEntry]
 
     private var total: Int {
-        entries.reduce(0) { $0 + $1.creditImpact }
+        entries.reduce(0) { $0 + ($1.costCredits ?? 0) }
     }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.locale = AppLocalization.shared.activeLocale
-        formatter.unitsStyle = .abbreviated
-        return formatter
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
     }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             HStack {
-                Text(L10n.string("Project Activity"))
+                Text("Project Activity")
                     .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                 Spacer()
                 if !entries.isEmpty {
-                    Text(CostEstimator.localizedUsedCredits(total))
+                    Text("\(CostEstimator.format(total)) used")
                         .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                         .monospacedDigit()
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
             }
 
-            Group {
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, AppTheme.Spacing.sm)
-                } else if let unavailableMessage {
-                    Text(unavailableMessage)
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Text.mutedColor)
-                        .padding(.vertical, AppTheme.Spacing.sm)
-                } else if entries.isEmpty {
-                    Text(L10n.string("No generations yet"))
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Text.mutedColor)
-                        .padding(.vertical, AppTheme.Spacing.sm)
-                } else {
-                    ScrollView(.vertical, showsIndicators: true) {
-                        VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                            ForEach(entries) { entry in
-                                row(entry)
-                            }
+            if entries.isEmpty {
+                Text("No generations yet")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, AppTheme.Spacing.sm)
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                        ForEach(entries) { entry in
+                            row(entry)
                         }
                     }
                 }
+                .frame(maxHeight: 420)
             }
-            .frame(height: Self.listHeight, alignment: .topLeading)
         }
         .padding(AppTheme.Spacing.md)
         .frame(width: 340)
-        .task(id: projectId) {
-            await subscribe()
-        }
     }
 
-    private func row(_ entry: BackendProjectActivityEntry) -> some View {
+    private func row(_ entry: GenerationLogEntry) -> some View {
         HStack(spacing: AppTheme.Spacing.sm) {
-            Image(systemName: symbolName(for: entry))
+            Image(systemName: entry.sfSymbolName)
                 .font(.system(size: AppTheme.FontSize.xs))
-                .foregroundStyle(entryColor(entry, fallback: AppTheme.Text.tertiaryColor))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .frame(width: AppTheme.IconSize.xs)
-            Text(creditLabel(entry))
+            Text(CostEstimator.format(entry.costCredits))
                 .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                 .monospacedDigit()
-                .foregroundStyle(entryColor(entry, fallback: AppTheme.Text.secondaryColor))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
                 .frame(width: 68, alignment: .leading)
-            Text(ModelRegistry.displayName(for: entry.model))
+            Text(entry.modelDisplayName)
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: AppTheme.Spacing.xs)
-            Text(Self.relativeFormatter.localizedString(for: entry.createdDate, relativeTo: Date()))
+            Text(relativeTime(entry.createdAt))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.mutedColor)
                 .lineLimit(1)
@@ -98,75 +76,15 @@ struct ProjectActivityView: View {
         .padding(.horizontal, AppTheme.Spacing.xxs)
     }
 
-    private func symbolName(for entry: BackendProjectActivityEntry) -> String {
-        if entry.kind == .refund { return "arrow.uturn.backward.circle.fill" }
-        return switch ModelRegistry.byId[entry.model] {
-        case .video?:   "video.fill"
-        case .image?:   "photo.fill"
-        case .audio?:   "music.note"
-        case .upscale?: "arrow.up.right.square.fill"
-        case nil:       "sparkles"
-        }
-    }
-
-    private func entryColor(_ entry: BackendProjectActivityEntry, fallback: Color) -> Color {
-        switch entry.kind {
-        case .generation: fallback
-        case .failed: AppTheme.Status.errorColor
-        case .refund: AppTheme.Status.successColor
-        }
-    }
-
-    private func creditLabel(_ entry: BackendProjectActivityEntry) -> String {
-        entry.kind == .refund
-            ? L10n.string("\(entry.credits) credits refunded")
-            : CostEstimator.localizedDescription(entry.credits)
-    }
-
-    @MainActor
-    private func subscribe() async {
-        entries = []
-        unavailableMessage = nil
-        isLoading = true
-
-        guard let projectId else {
-            isLoading = false
-            unavailableMessage = L10n.string("Save this project to view activity")
-            return
-        }
-        guard let publisher = GenerationBackend.subscribeToProjectActivity(projectId: projectId) else {
-            isLoading = false
-            unavailableMessage = L10n.string("Activity unavailable")
-            return
-        }
-
-        do {
-            for try await update in publisher.values {
-                guard !Task.isCancelled else { return }
-                entries = update
-                isLoading = false
-            }
-            guard !Task.isCancelled else { return }
-            if isLoading {
-                isLoading = false
-                unavailableMessage = L10n.string("Activity unavailable")
-            }
-        } catch {
-            guard !Task.isCancelled else { return }
-            Log.generation.warning("project activity failed: \(error.localizedDescription)")
-            isLoading = false
-            unavailableMessage = L10n.string("Activity unavailable")
-        }
+    private func relativeTime(_ date: Date?) -> String {
+        guard let date else { return "—" }
+        return Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
     }
 }
 
 struct ProjectActivityButton: View {
     @Environment(EditorViewModel.self) var editor
     @State private var isPresented = false
-
-    private var projectId: String? {
-        editor.projectId ?? editor.projectURL.flatMap { ProjectRegistry.shared.id(for: $0)?.uuidString }
-    }
 
     var body: some View {
         Button(action: { isPresented.toggle() }) {
@@ -177,9 +95,9 @@ struct ProjectActivityButton: View {
                 .hoverHighlight()
         }
         .buttonStyle(.plain)
-        .help(L10n.string("Project Activity"))
+        .help("Project Activity · \(CostEstimator.format(editor.totalGenerationCost)) used")
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            ProjectActivityView(projectId: projectId)
+            ProjectActivityView(entries: editor.generationLogEntries)
         }
     }
 }

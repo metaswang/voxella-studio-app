@@ -97,22 +97,22 @@ extension GenerationView {
 
     private var costHelpText: String {
         guard let cost = estimatedCost else {
-            return L10n.string("Estimated cost. Actual billing may differ slightly.")
+            return "Estimated cost. Actual billing may differ slightly."
         }
         guard let left = remainingCredits else {
-            return CostEstimator.localizedEstimate(cost)
+            return "\(cost) credits estimated. Actual billing may differ."
         }
         if cost > left {
-            return CostEstimator.localizedInsufficientCredits(cost, remaining: left)
+            return "\(cost) credits needed. Only \(left.formatted()) remaining."
         }
-        return CostEstimator.localizedRemainingCredits(cost, remaining: left - cost)
+        return "\(cost) credits. \((left - cost).formatted()) credits remaining after this generation."
     }
 
     var costEstimateLabel: some View {
         HStack(spacing: AppTheme.Spacing.xs) {
             Image(systemName: "dollarsign.circle.fill")
                 .font(.system(size: AppTheme.FontSize.sm))
-            Text(verbatim: estimatedCost.map { $0.formatted() } ?? "—")
+            Text(estimatedCost.map { $0.formatted() } ?? "—")
                 .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                 .monospacedDigit()
                 .lineLimit(1)
@@ -134,16 +134,12 @@ extension GenerationView {
         .buttonBorderShape(.circle)
         .controlSize(.regular)
         .tint(AppTheme.Accent.primary)
-        .accessibilityLabel(aiAllowed
-            ? (selectedType == .upscale ? L10n.string("Upscale") : L10n.string("Generate"))
-            : L10n.string("Sign in"))
+        .accessibilityLabel(aiAllowed ? (selectedType == .upscale ? "Upscale" : "Generate") : "Sign in")
         .disabled(aiAllowed ? !canSubmit : account.isMisconfigured || account.isSigningIn)
         .opacity((aiAllowed ? canSubmit : !account.isMisconfigured && !account.isSigningIn) ? AppTheme.Opacity.opaque : AppTheme.Opacity.strong)
         .help(aiAllowed
-            ? (selectedType == .upscale ? L10n.string("Upscale source media") : String())
-            : (account.isMisconfigured
-                ? L10n.string("AI is unavailable")
-                : account.isSigningIn ? L10n.string("Opening Google") : L10n.string("Sign in to generate")))
+            ? (selectedType == .upscale ? "Upscale source media" : "")
+            : (account.isMisconfigured ? "AI is unavailable" : account.isSigningIn ? "Opening Google" : "Sign in to generate"))
     }
 
     // MARK: - Actions
@@ -206,24 +202,24 @@ extension GenerationView {
         case .audio:
             let inputAssets = audioInputAssets(for: audioModel)
             if audioUsesSource {
-                guard audioSource != nil else { return L10n.string("Add source media.") }
+                guard audioSource != nil else { return "Add source media." }
                 return audioModel.validate(spanSeconds: effectiveAudioSourceSpanSeconds)
                     ?? audioModel.validate(params: audioParams(audioDuration: audioDuration))
             }
             return audioModel.validate(params: audioParams(audioDuration: audioDuration))
                 ?? inputAssets.validate(for: audioModel)
         case .upscale:
-            guard let source = upscaleSource else { return L10n.string("Add source media.") }
+            guard let source = upscaleSource else { return "Add source media." }
             guard upscaleModel.supportedTypes.contains(source.type) else {
-                return L10n.string("\(upscaleModel.displayName) does not support this media type.")
+                return "\(upscaleModel.displayName) does not support this media type."
             }
             guard source.sourceWidth != nil, source.sourceHeight != nil else {
-                return L10n.string("Loading source dimensions…")
+                return "Loading source dimensions…"
             }
             if source.type == .video {
-                guard source.sourceFPS != nil else { return L10n.string("Loading source frame rate…") }
+                guard source.sourceFPS != nil else { return "Loading source frame rate…" }
                 guard upscaleModel.supports(source: source) else {
-                    return L10n.string("This model cannot cap the output at 60 FPS.")
+                    return "This model cannot cap the output at 60 FPS."
                 }
             }
             return nil

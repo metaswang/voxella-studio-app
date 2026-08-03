@@ -36,8 +36,8 @@ struct SkillDetailSheet: View {
     }
 
     private var deleteTitle: String {
-        guard let skill else { return L10n.string("Delete skill?") }
-        return L10n.string("Delete \u{201C}\(skill.name)\u{201D}?")
+        guard let skill else { return "Delete skill?" }
+        return "Delete \u{201C}\(skill.name)\u{201D}?"
     }
 
     var body: some View {
@@ -45,7 +45,7 @@ struct SkillDetailSheet: View {
             if let skill {
                 content(skill)
             } else {
-                Text(L10n.string("Skill unavailable."))
+                Text("Skill unavailable.")
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .frame(width: AppTheme.Settings.skillDetailWidth)
@@ -65,13 +65,13 @@ struct SkillDetailSheet: View {
                 close()
             }
         }
-        .alert(L10n.string("Unable to save skill"), isPresented: $showingSaveError) {
-            Button(L10n.string("Keep Editing"), role: .cancel) { failedExit = nil }
+        .alert("Unable to save skill", isPresented: $showingSaveError) {
+            Button("Keep Editing", role: .cancel) { failedExit = nil }
             if failedExit != nil {
-                Button(L10n.string("Discard Changes"), role: .destructive) { discardChanges() }
+                Button("Discard Changes", role: .destructive) { discardChanges() }
             }
         } message: {
-            Text(L10n.string("Add nonempty name and description fields to the skill frontmatter."))
+            Text("Add nonempty name and description fields to the skill frontmatter.")
         }
     }
 
@@ -111,13 +111,13 @@ struct SkillDetailSheet: View {
             titleVisibility: .visible,
             presenting: self.skill
         ) { skill in
-            Button(L10n.string("Delete \u{201C}\(skill.name)\u{201D}"), role: .destructive) {
+            Button("Delete \u{201C}\(skill.name)\u{201D}", role: .destructive) {
                 store.delete(skill)
                 dismiss()
             }
-            Button(L10n.string("Keep Skill"), role: .cancel) {}
+            Button("Keep Skill", role: .cancel) {}
         } message: { skill in
-            Text(L10n.string("This permanently removes \(displayPath(skill))."))
+            Text("This permanently removes \(displayPath(skill)).")
         }
     }
 
@@ -133,7 +133,7 @@ struct SkillDetailSheet: View {
             }
 
             HStack(spacing: AppTheme.Spacing.smMd) {
-                Text(verbatim: state.map { L10n.string(key: $0.label) } ?? L10n.string("Local"))
+                Text(state?.label ?? "Local")
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(state?.color ?? AppTheme.Text.tertiaryColor)
 
@@ -143,9 +143,9 @@ struct SkillDetailSheet: View {
                     if isUpdating {
                         ProgressView()
                             .controlSize(.small)
-                            .accessibilityLabel(L10n.string("Updating \(skill.name)"))
+                            .accessibilityLabel("Updating \(skill.name)")
                     } else {
-                        Button(L10n.string("Update")) { update(skill) }
+                        Button("Update") { update(skill) }
                             .buttonStyle(.capsule(.secondary, fill: AnyShapeStyle(AppTheme.Background.raisedColor)))
                     }
                 }
@@ -156,14 +156,14 @@ struct SkillDetailSheet: View {
                 .disabled(editing)
 
                 if dirty {
-                    Button(L10n.string("Save Changes")) {
+                    Button("Save Changes") {
                         commitDraftIfDirty()
                     }
                     .buttonStyle(.capsule(.prominent))
                     .keyboardShortcut("s", modifiers: .command)
                 }
 
-                Button(editing ? L10n.string("Preview") : L10n.string("Edit")) {
+                Button(editing ? "Preview" : "Edit") {
                     toggleEditing(skill)
                 }
                 .buttonStyle(.capsule(.secondary, fill: AnyShapeStyle(AppTheme.Background.raisedColor)))
@@ -185,18 +185,18 @@ struct SkillDetailSheet: View {
                 .hoverHighlight(cornerRadius: AppTheme.Radius.sm)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(L10n.string("Close"))
-        .help(L10n.string("Close"))
+        .accessibilityLabel("Close")
+        .help("Close")
     }
 
     @ViewBuilder
     private func titleView(_ skill: Skill) -> some View {
         if editingTitle {
-            TextField(L10n.string("Skill name"), text: $draftTitle)
+            TextField("Skill name", text: $draftTitle)
                 .textFieldStyle(.plain)
                 .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.regular))
                 .foregroundStyle(AppTheme.Text.primaryColor)
-                .accessibilityLabel(L10n.string("Skill name"))
+                .accessibilityLabel("Skill name")
                 .focused($titleFocused)
                 .padding(.horizontal, AppTheme.Spacing.sm)
                 .padding(.vertical, AppTheme.Spacing.xs)
@@ -217,17 +217,17 @@ struct SkillDetailSheet: View {
 
     private func actionsMenu(_ skill: Skill) -> some View {
         Menu {
-            Button(L10n.string("Rename Skill"), systemImage: "pencil") {
+            Button("Rename Skill", systemImage: "pencil") {
                 draftTitle = skill.name
                 editingTitle = true
                 titleFocused = true
             }
             .disabled(editing)
-            Button(L10n.string("Show in Finder"), systemImage: "folder") {
+            Button("Show in Finder", systemImage: "folder") {
                 store.reveal(skill.path)
             }
             Divider()
-            Button(L10n.string("Delete Skill"), systemImage: "trash", role: .destructive) {
+            Button("Delete Skill", systemImage: "trash", role: .destructive) {
                 confirmingDelete = true
             }
         } label: {
@@ -241,8 +241,8 @@ struct SkillDetailSheet: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .accessibilityLabel(L10n.string("More skill actions"))
-        .help(L10n.string("More skill actions"))
+        .accessibilityLabel("More skill actions")
+        .help("More skill actions")
     }
 
     private func toggleEditing(_ skill: Skill) {
@@ -325,7 +325,7 @@ struct SkillDetailSheet: View {
     private func viewContent(_ skill: Skill) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text(L10n.string("Description"))
+                Text("Description")
                     .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.regular))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                 Text(skill.description)
@@ -337,7 +337,7 @@ struct SkillDetailSheet: View {
             Divider().overlay(AppTheme.Border.subtleColor)
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                Text(L10n.string("Instructions"))
+                Text("Instructions")
                     .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.regular))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                 MarkdownText(
@@ -354,7 +354,7 @@ struct SkillDetailSheet: View {
         TextEditor(text: $draft)
             .font(.system(size: AppTheme.FontSize.sm, design: .monospaced))
             .foregroundStyle(AppTheme.Text.primaryColor)
-            .accessibilityLabel(L10n.string("Skill instructions"))
+            .accessibilityLabel("Skill instructions")
             .scrollContentBackground(.hidden)
             .padding(AppTheme.Spacing.md)
             .background(AppTheme.Background.raisedColor)
@@ -370,7 +370,7 @@ struct SkillDetailSheet: View {
                 .foregroundStyle(AppTheme.Status.successColor)
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                Text(L10n.string("Added to \(toast.agentLabel)"))
+                Text("Added to \(toast.agentLabel)")
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                 Text(toast.displayPath)
@@ -382,7 +382,7 @@ struct SkillDetailSheet: View {
 
             Spacer(minLength: AppTheme.Spacing.md)
 
-            Button(L10n.string("Open")) {
+            Button("Open") {
                 store.reveal(toast.url)
                 copyToast = nil
             }

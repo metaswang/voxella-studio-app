@@ -47,8 +47,8 @@ final class AgentService {
         AgentRouting.route(
             model: model,
             credentials: credentials,
-            hasHostedCredits: AccountService.shared.isSignedIn && AccountService.shared.hasCredits,
-            hasPaidPlan: AccountService.shared.isPaid
+            hasHostedCredits: false,
+            hasPaidPlan: false
         )
     }
 
@@ -59,9 +59,7 @@ final class AgentService {
     var availableModels: [AgentModel] { AgentModel.allCases }
 
     func canSelectModel(_ candidate: AgentModel) -> Bool {
-        !candidate.requiresPaidHostedPlan
-            || AccountService.shared.isPaid
-            || !credentials[candidate.provider].isEmpty
+        !credentials[candidate.provider].isEmpty
     }
 
     var activeBYOKProvider: AgentProvider? {
@@ -89,8 +87,8 @@ final class AgentService {
         switch AgentRouting.route(
             model: settings.model,
             credentials: credentials,
-            hasHostedCredits: AccountService.shared.isSignedIn && AccountService.shared.hasCredits,
-            hasPaidPlan: AccountService.shared.isPaid
+            hasHostedCredits: false,
+            hasPaidPlan: false
         ) {
         case .direct:
             return BYOKClient(
@@ -98,7 +96,7 @@ final class AgentService {
                 settings: settings
             )
         case .hosted:
-            return PalmierClient(settings: settings)
+            return nil
         case .unavailable:
             return nil
         }

@@ -18,18 +18,6 @@ struct AgentPanelView: View {
             prompt: "Set up my multicam. Group the matching camera angles with their audio, verify sync, and leave it ready to switch."
         ),
         AgentStarterPrompt(
-            id: "generate_broll",
-            title: L10n.string("Generate B-roll"),
-            systemImage: "film",
-            prompt: "Generate B-roll that fits this edit. Find moments that need cutaways, create matching shots, and place them where they support the story."
-        ),
-        AgentStarterPrompt(
-            id: "score_timeline",
-            title: L10n.string("Score my timeline"),
-            systemImage: "music.note",
-            prompt: "Generate music for this timeline. Match the mood and length, then place it on an audio track synced to the edit."
-        ),
-        AgentStarterPrompt(
             id: "cut_to_beat",
             title: L10n.string("Cut to the beat"),
             systemImage: "metronome",
@@ -351,19 +339,7 @@ struct AgentPanelView: View {
     private func errorCTA(for error: AgentServiceError?) -> ErrorCTA? {
         guard let error else { return nil }
         switch error {
-        case .unauthenticated:
-            return ErrorCTA(title: L10n.string("Sign in")) {
-                SettingsWindowController.shared.show(tab: .account)
-            }
-        case .insufficientCredits:
-            return ErrorCTA(title: L10n.string("View plans")) {
-                SettingsWindowController.shared.show(tab: .account)
-            }
-        case .unavailable(let model) where model.requiresPaidHostedPlan && !AccountService.shared.isPaid:
-            return ErrorCTA(title: L10n.string("View plans")) {
-                SettingsWindowController.shared.show(tab: .account)
-            }
-        case .unavailable:
+        case .unauthenticated, .insufficientCredits, .unavailable:
             return ErrorCTA(title: L10n.string("Open Settings")) {
                 SettingsWindowController.shared.show(tab: .agent)
             }
@@ -374,16 +350,12 @@ struct AgentPanelView: View {
 
     private func errorMessage(_ error: AgentServiceError) -> String {
         switch error {
-        case .unauthenticated:
-            L10n.string("Sign in to use AI chat.")
-        case .insufficientCredits(let message), .upstream(let message):
+        case .unauthenticated, .insufficientCredits:
+            L10n.string("Add an API key to use AI chat.")
+        case .upstream(let message):
             message
         case .unavailable(let model):
-            if model.requiresPaidHostedPlan && !AccountService.shared.isPaid {
-                L10n.string("Subscribe or add your own API key to use this model.")
-            } else {
-                model.provider.chatPresentation.unavailableMessage
-            }
+            model.provider.chatPresentation.unavailableMessage
         case .refusal:
             L10n.string("The selected model refused this request. Revise the prompt and try again.")
         }
@@ -415,28 +387,18 @@ struct AgentPanelView: View {
 
     @ViewBuilder
     private var missingKeyState: some View {
-        let account = AccountService.shared
         VStack(spacing: AppTheme.Spacing.mdLg) {
             Button {
-                missingKeyPrimaryAction(account: account)
+                SettingsWindowController.shared.show(tab: .agent)
             } label: {
-                HStack(spacing: AppTheme.Spacing.sm) {
-                    if let icon = missingKeyPrimaryIcon(account: account) {
-                        Image(systemName: icon)
-                    }
-                    Text(missingKeyPrimaryLabel(account: account))
-                }
+                Label(L10n.string("Open Chat Settings"), systemImage: "gearshape")
                     .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
             }
             .buttonStyle(.capsule(.prominent, size: .regular))
 
-            if !account.isSignedIn {
-                Text(L10n.string("First-time sign-ups only"))
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Text.mutedColor)
-            }
-
-            Button(action: { SettingsWindowController.shared.show(tab: .agent) }) {
+            Button {
+                SettingsWindowController.shared.show(tab: .agent)
+            } label: {
                 Text(missingKeyLinkLabel)
                     .underline()
                     .foregroundStyle(AppTheme.Text.secondaryColor)
@@ -451,26 +413,6 @@ struct AgentPanelView: View {
 
     private var missingKeyLinkLabel: String {
         service.model.provider.chatPresentation.missingKeyLinkTitle
-    }
-
-    private func missingKeyPrimaryLabel(account: AccountService) -> String {
-        if !account.isSignedIn { return L10n.string("Log in for 250 free credits") }
-        if !account.isPaid { return L10n.string("Subscribe") }
-        return L10n.string("Open Settings")
-    }
-
-    private func missingKeyPrimaryIcon(account: AccountService) -> String? {
-        if !account.isSignedIn { return "gift.fill" }
-        if !account.isPaid { return nil }
-        return "gearshape"
-    }
-
-    private func missingKeyPrimaryAction(account: AccountService) {
-        if !account.isSignedIn {
-            Task { await account.signInWithGoogle() }
-        } else {
-            SettingsWindowController.shared.show(tab: .account)
-        }
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
@@ -646,14 +588,14 @@ private extension AgentProvider {
             (
                 L10n.string("using Anthropic API key"),
                 L10n.string("Streaming through your Anthropic API key (BYOK)"),
-                L10n.string("Add an Anthropic API key or credits to use this model."),
+                L10n.string("Add an Anthropic API key to use this model."),
                 L10n.string("or add your own Anthropic key")
             )
         case .openAI:
             (
                 L10n.string("using OpenAI API key"),
                 L10n.string("Streaming through your OpenAI API key (BYOK)"),
-                L10n.string("Add an OpenAI API key or credits to use this model."),
+                L10n.string("Add an OpenAI API key to use this model."),
                 L10n.string("or add your own OpenAI key")
             )
         }

@@ -9,16 +9,9 @@ struct TourStep: Equatable {
         case spotlight(TourTarget)
         case outro
     }
-    enum Prepare: Equatable {
-        case none
-        case selectAIEditClip
-        case revealInspectorOverview
-        case revealAIEditTab
-    }
     let kind: Kind
     let title: String
     let instruction: String
-    var prepare: Prepare = .none
 }
 
 enum TourTarget: Equatable {
@@ -34,7 +27,8 @@ enum TourTarget: Equatable {
     }
 }
 
-/// Pinpointable controls. Add a case + its `hostPanel`, then tag the view with `.tourAnchor(_:)`.
+/// Pinpointable controls. Add a case + its `hostPanel`, then tag the view with
+/// `.tourAnchor(_:)`. `timelineRuler` is derived (the AppKit ruler has no SwiftUI view).
 enum TourAnchorID: Hashable {
     case importButton
     case generateButton
@@ -111,15 +105,13 @@ final class TourController {
     func end() {
         stepIndex = nil
         targetFrame = nil
-        editor?.inspectorClipTabRequest = nil
     }
 
     /// Ensure a spotlight step's host panel is visible
     private func applyStep(_ index: Int) {
         guard let editor, steps.indices.contains(index) else { return }
         editor.maximizedPanel = nil
-        let step = steps[index]
-        if case .spotlight(let target) = step.kind {
+        if case .spotlight(let target) = steps[index].kind {
             switch target.hostPanel {
             case .media: editor.mediaPanelVisible = true
             case .agent: editor.agentPanelVisible = true
@@ -130,42 +122,12 @@ final class TourController {
         } else {
             editor.showGenerationPanel = false
         }
-        applyPrepare(step.prepare, to: editor)
         stepIndex = index
-    }
-
-    private func applyPrepare(_ prepare: TourStep.Prepare, to editor: EditorViewModel) {
-        switch prepare {
-        case .none:
-            editor.inspectorClipTabRequest = nil
-        case .selectAIEditClip:
-            editor.inspectorPanelVisible = true
-            selectAIEditClip(in: editor)
-            editor.inspectorClipTabRequest = nil
-        case .revealInspectorOverview:
-            editor.inspectorPanelVisible = true
-            selectAIEditClip(in: editor)
-            editor.inspectorClipTabRequest = .video
-        case .revealAIEditTab:
-            editor.inspectorPanelVisible = true
-            selectAIEditClip(in: editor)
-            editor.inspectorClipTabRequest = .ai
-        }
-    }
-
-    private func selectAIEditClip(in editor: EditorViewModel) {
-        guard let clipId = Self.firstAIEditVisualClipId(in: editor) else { return }
-        // Replace selection so a prior multi-select cannot hide AI Edit.
-        editor.selectedGap = nil
-        editor.selectedTimelineRange = nil
-        editor.selectedClipIds = editor.expandToLinkGroup([clipId])
     }
 
     // MARK: - Step list
 
     private static func makeSteps(editor: EditorViewModel) -> [TourStep] {
-        let hasAIEditClip = firstAIEditVisualClipId(in: editor) != nil
-
         var steps: [TourStep] = [
             TourStep(kind: .intro, title: "Tutorial",
                      instruction: "Let's take a quick tour of the workspace and what you can do."),
@@ -174,6 +136,7 @@ final class TourController {
             TourStep(kind: .spotlight(.element(.importButton)), title: "Import footage",
                      instruction: "Import your footage here, or drag and drop, or copy-paste, into the media panel."),
         ]
+        // Only shown when the "Smart search" button is present (model not yet installed).
         if smartSearchAvailable(editor: editor) {
             steps.append(TourStep(kind: .spotlight(.element(.smartSearch)), title: "Smart search",
                                   instruction: "Download a local model to index your media, then search clips by describing them. The model runs on-device and nothing leaves your Mac."))
@@ -200,17 +163,5 @@ final class TourController {
         let model = VisualModelLoader.shared
         guard case .notInstalled = model.state, model.enabled else { return false }
         return editor.mediaAssets.contains { $0.type == .video || $0.type == .image }
-    }
-
-    private static func firstAIEditVisualClipId(in editor: EditorViewModel) -> String? {
-        guard !AccountService.shared.isMisconfigured else { return nil }
-        for track in editor.timeline.tracks {
-            for clip in track.clips where clip.mediaType.isVisual && clip.mediaType != .text {
-                if editor.mediaAssetsById[clip.mediaRef] != nil {
-                    return clip.id
-                }
-            }
-        }
-        return nil
     }
 }

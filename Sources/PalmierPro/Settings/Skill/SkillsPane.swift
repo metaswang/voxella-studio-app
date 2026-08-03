@@ -11,13 +11,6 @@ struct SkillsPane: View {
     private enum SkillCollection: String {
         case installed = "Installed"
         case community = "Community"
-
-        var title: String {
-            switch self {
-            case .installed: L10n.key("Installed")
-            case .community: L10n.key("Community")
-            }
-        }
     }
 
     private struct PresentedSkill: Identifiable {
@@ -60,12 +53,12 @@ struct SkillsPane: View {
 
     private var introduction: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            Text(L10n.string("Install skills to give the in-app agent specialized workflows."))
+            Text("Install skills to give the in-app agent specialized workflows.")
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
 
             if let url = URL(string: "https://github.com/palmier-io/palmier-skills") {
-                Link(L10n.string("Browse Community Skills ↗"), destination: url)
+                Link("Browse Community Skills ↗", destination: url)
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Accent.link)
                     .pointerStyle(.link)
@@ -77,13 +70,13 @@ struct SkillsPane: View {
         HStack(spacing: AppTheme.Spacing.smMd) {
             HStack(spacing: AppTheme.Spacing.xxs) {
                 SkillCollectionButton(
-                    title: L10n.string(key: SkillCollection.installed.title),
+                    title: SkillCollection.installed.rawValue,
                     count: store.skills.count,
                     isSelected: collection == .installed,
                     action: { collection = .installed }
                 )
                 SkillCollectionButton(
-                    title: L10n.string(key: SkillCollection.community.title),
+                    title: SkillCollection.community.rawValue,
                     count: catalog.entries.count,
                     isSelected: collection == .community,
                     action: { collection = .community }
@@ -104,13 +97,13 @@ struct SkillsPane: View {
                     .hoverHighlight(cornerRadius: AppTheme.Radius.sm)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L10n.string("New skill"))
-            .help(L10n.string("New skill"))
+            .accessibilityLabel("New skill")
+            .help("New skill")
 
             Menu {
-                Button(L10n.string("Open Skills Folder"), systemImage: "folder") { store.openFolder() }
+                Button("Open Skills Folder", systemImage: "folder") { store.openFolder() }
                 Divider()
-                Button(L10n.string("Refresh Community Skills"), systemImage: "arrow.clockwise") {
+                Button("Refresh Community Skills", systemImage: "arrow.clockwise") {
                     Task { await catalog.refresh() }
                 }
             } label: {
@@ -124,8 +117,8 @@ struct SkillsPane: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .accessibilityLabel(L10n.string("Skill actions"))
-            .help(L10n.string("Skill actions"))
+            .accessibilityLabel("Skill actions")
+            .help("Skill actions")
         }
     }
 
@@ -136,11 +129,11 @@ struct SkillsPane: View {
                 .foregroundStyle(AppTheme.Text.mutedColor)
                 .accessibilityHidden(true)
 
-            TextField(L10n.string("Search skills"), text: $query)
+            TextField("Search skills", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.primaryColor)
-                .accessibilityLabel(L10n.string("Search skills"))
+                .accessibilityLabel("Search skills")
 
             if !query.isEmpty {
                 Button {
@@ -151,8 +144,8 @@ struct SkillsPane: View {
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L10n.string("Clear search"))
-                .help(L10n.string("Clear search"))
+                .accessibilityLabel("Clear search")
+                .help("Clear search")
             }
         }
         .padding(.horizontal, AppTheme.Spacing.md)
@@ -177,9 +170,9 @@ struct SkillsPane: View {
             if installedSkills.isEmpty, query.isEmpty {
                 SkillEmptyState(
                     systemName: "book.closed",
-                    title: L10n.string("No Installed Skills"),
-                    message: L10n.string("Create a skill or browse the Community collection."),
-                    actionTitle: L10n.string("New Skill"),
+                    title: "No Installed Skills",
+                    message: "Create a skill or browse the Community collection.",
+                    actionTitle: "New Skill",
                     action: createSkill
                 )
             } else if installedSkills.isEmpty {
@@ -190,10 +183,9 @@ struct SkillsPane: View {
                     SkillRow(
                         name: skill.name,
                         description: skill.description,
-                        status: state.map { L10n.string(key: $0.label) } ?? L10n.string("Local"),
+                        status: state?.label ?? "Local",
                         statusColor: state?.color ?? AppTheme.Text.tertiaryColor,
-                        actionTitle: state == .update ? L10n.string("Update") : L10n.string("Open"),
-                        primaryAction: false,
+                        actionTitle: state == .update ? "Update" : "Open",
                         working: working.contains(skill.id),
                         summaryAction: { present(skill.id) },
                         action: { state == .update ? update(skill) : present(skill.id) }
@@ -208,29 +200,29 @@ struct SkillsPane: View {
             if catalog.isLoading, catalog.entries.isEmpty {
                 HStack(spacing: AppTheme.Spacing.smMd) {
                     ProgressView().controlSize(.small)
-                    Text(L10n.string("Loading community skills…"))
+                    Text("Loading community skills…")
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(AppTheme.Spacing.xlXxl)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel(L10n.string("Loading community skills"))
+                .accessibilityLabel("Loading community skills")
             } else if communityEntries.isEmpty {
                 if query.isEmpty, let error = catalog.lastError {
                     SkillEmptyState(
                         systemName: "exclamationmark.triangle",
-                        title: L10n.string("Community Skills Unavailable"),
+                        title: "Community Skills Unavailable",
                         message: error,
-                        actionTitle: L10n.string("Try Again"),
+                        actionTitle: "Try Again",
                         action: { Task { await catalog.refresh() } }
                     )
                 } else if query.isEmpty {
                     SkillEmptyState(
                         systemName: "books.vertical",
-                        title: L10n.string("No Community Skills"),
-                        message: L10n.string("Refresh to check for available skills."),
-                        actionTitle: L10n.string("Refresh"),
+                        title: "No Community Skills",
+                        message: "Refresh to check for available skills.",
+                        actionTitle: "Refresh",
                         action: { Task { await catalog.refresh() } }
                     )
                 } else {
@@ -247,9 +239,9 @@ struct SkillsPane: View {
     private var noMatchesState: some View {
         SkillEmptyState(
             systemName: "magnifyingglass",
-            title: L10n.string("No Matching Skills"),
-            message: L10n.string("Try another search."),
-            actionTitle: L10n.string("Clear Search"),
+            title: "No Matching Skills",
+            message: "Try another search.",
+            actionTitle: "Clear Search",
             action: { query = "" }
         )
     }
@@ -260,13 +252,9 @@ struct SkillsPane: View {
         return SkillRow(
             name: entry.name,
             description: entry.description,
-            status: state.map { L10n.string(key: $0.label) }
-                ?? (skill == nil ? L10n.string("Available") : L10n.string("Local")),
+            status: state?.label ?? (skill == nil ? "Available" : "Local"),
             statusColor: state?.color ?? AppTheme.Text.tertiaryColor,
-            actionTitle: skill == nil
-                ? L10n.string("Install")
-                : state == .update ? L10n.string("Update") : L10n.string("Open"),
-            primaryAction: skill == nil,
+            actionTitle: skill == nil ? "Install" : state == .update ? "Update" : "Open",
             working: working.contains(entry.id),
             summaryAction: skill.map { installedSkill in
                 { present(installedSkill.id) }

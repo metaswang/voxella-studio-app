@@ -10,7 +10,7 @@ struct ViewSkillsButton: View {
         }
         .buttonStyle(.plain)
         .focusable(false)
-        .help(L10n.string("View Skills"))
+        .help("View Skills")
         .tourAnchor(.skillsButton)
     }
 

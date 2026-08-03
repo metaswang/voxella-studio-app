@@ -30,7 +30,7 @@ struct MyProjectsSection: View {
 
     private var toolbar: some View {
         HStack(spacing: AppTheme.Spacing.md) {
-            Text(L10n.string("My Projects"))
+            Text("My Projects")
                 .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                 .foregroundStyle(AppTheme.Text.primaryColor)
 
@@ -51,20 +51,20 @@ struct MyProjectsSection: View {
                         .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L10n.string("Search projects"))
-                .help(L10n.string("Search projects"))
+                .accessibilityLabel("Search projects")
+                .help("Search projects")
             }
 
             if isSelecting {
-                Button(L10n.string("Delete \(selectedProjectIDs.count)"), role: .destructive) {
+                Button("Delete \(selectedProjectIDs.count)", role: .destructive) {
                     prepareDeletion()
                 }
                 .buttonStyle(.capsule(fill: AnyShapeStyle(AppTheme.Status.errorColor)))
                 .disabled(selectedProjectIDs.isEmpty)
-                Button(L10n.string("Done")) { endSelection() }
+                Button("Done") { endSelection() }
                     .buttonStyle(.capsule)
             } else if !ProjectRegistry.shared.entries.isEmpty {
-                Button(L10n.string("Select")) { isSelecting = true }
+                Button("Select") { isSelecting = true }
                     .buttonStyle(.capsule)
             }
         }
@@ -75,18 +75,18 @@ struct MyProjectsSection: View {
             get: { !projectsPendingDeletion.isEmpty },
             set: { if !$0 { projectsPendingDeletion = [] } }
         )) {
-            Button(L10n.string("Cancel"), role: .cancel) { projectsPendingDeletion = [] }
-            Button(L10n.string("Delete"), role: .destructive) { deletePendingProjects() }
+            Button("Cancel", role: .cancel) { projectsPendingDeletion = [] }
+            Button("Delete", role: .destructive) { deletePendingProjects() }
         } message: {
             Text(deletionPrompt)
         }
-        .alert(L10n.string("Projects Couldn’t Be Deleted"), isPresented: Binding(
+        .alert("Projects Couldn’t Be Deleted", isPresented: Binding(
             get: { deletionMessage != nil },
             set: { if !$0 { deletionMessage = nil } }
         )) {
-            Button(L10n.string("OK")) { deletionMessage = nil }
+            Button("OK") { deletionMessage = nil }
         } message: {
-            Text(verbatim: deletionMessage ?? String())
+            Text(deletionMessage ?? "")
         }
         .onChange(of: ProjectRegistry.shared.entries.map(\.id)) { _, ids in
             selectedProjectIDs.formIntersection(ids)
@@ -99,7 +99,7 @@ struct MyProjectsSection: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.mutedColor)
-            TextField(L10n.string("Search projects"), text: $searchQuery)
+            TextField("Search projects", text: $searchQuery)
                 .textFieldStyle(.plain)
                 .font(.system(size: AppTheme.FontSize.sm))
                 .focused($isSearchFocused)
@@ -112,7 +112,7 @@ struct MyProjectsSection: View {
                 }
                 .buttonStyle(.plain)
                 .focusable(false)
-                .help(L10n.string("Clear search"))
+                .help("Clear search")
             }
         }
         .padding(.leading, AppTheme.Spacing.smMd)
@@ -120,12 +120,12 @@ struct MyProjectsSection: View {
         .padding(.vertical, AppTheme.Spacing.xs)
         .background(
             Capsule(style: .continuous)
-                .fill(AppTheme.Interaction.fill(AppTheme.Opacity.subtle))
+                .fill(Color.white.opacity(AppTheme.Opacity.subtle))
         )
         .overlay(
             Capsule(style: .continuous)
                 .strokeBorder(
-                    AppTheme.Interaction.fill(AppTheme.Opacity.faint),
+                    Color.white.opacity(AppTheme.Opacity.faint),
                     lineWidth: AppTheme.BorderWidth.thin
                 )
         )
@@ -141,7 +141,7 @@ struct MyProjectsSection: View {
                 if ProjectRegistry.shared.entries.isEmpty {
                     NewProjectCard(action: { AppState.shared.createProjectInteractively() })
                 } else if entries.isEmpty {
-                    Text(L10n.string("No projects found"))
+                    Text("No projects found")
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                         .padding(.vertical, AppTheme.Spacing.xl)
@@ -173,15 +173,13 @@ struct MyProjectsSection: View {
     }
 
     private var deletionTitle: String {
-        projectsPendingDeletion.count == 1
-            ? L10n.string("Delete Project?")
-            : L10n.string("Delete Selected Projects?")
+        projectsPendingDeletion.count == 1 ? "Delete Project?" : "Delete Selected Projects?"
     }
 
     private var deletionPrompt: String {
         projectsPendingDeletion.count == 1
-            ? L10n.string("The project will be moved to the Trash.")
-            : L10n.string("The selected projects will be moved to the Trash.")
+            ? "The project will be moved to the Trash."
+            : "The selected projects will be moved to the Trash."
     }
 
     private func toggleSelection(_ id: UUID) {
@@ -211,7 +209,7 @@ struct MyProjectsSection: View {
     private func requestDeletion(_ entries: [ProjectEntry]) {
         let open = openProjects(in: entries)
         guard open.isEmpty else {
-            deletionMessage = L10n.string("Close \(open.map(\.name).formatted()) before deleting.")
+            deletionMessage = "Close \(open.map(\.name).formatted()) before deleting."
             return
         }
         projectsPendingDeletion = entries
@@ -227,7 +225,7 @@ struct MyProjectsSection: View {
                 if result.failedNames.isEmpty {
                     endSelection()
                 } else {
-                    deletionMessage = L10n.string("Couldn’t move \(result.failedNames.formatted()) to the Trash.")
+                    deletionMessage = "Couldn’t move \(result.failedNames.formatted()) to the Trash."
                 }
             } catch {
                 deletionMessage = error.localizedDescription
@@ -258,16 +256,16 @@ private struct NewProjectCard: View {
                 .clipped()
 
             LinearGradient(
-                colors: [.clear, AppTheme.MediaOverlay.backgroundColor.opacity(AppTheme.Opacity.high)],
+                colors: [.clear, .black.opacity(AppTheme.Opacity.high)],
                 startPoint: .top,
                 endPoint: .bottom
             )
             .frame(height: AppTheme.ComponentSize.projectCardHeight / 2)
             .allowsHitTesting(false)
 
-            Text(L10n.string("Untitled"))
+            Text("Untitled")
                 .font(.system(size: AppTheme.FontSize.smMd, weight: .regular))
-                .foregroundStyle(AppTheme.MediaOverlay.primaryColor)
+                .foregroundStyle(.white)
                 .lineLimit(1)
                 .padding(.horizontal, AppTheme.Spacing.md)
                 .padding(.bottom, AppTheme.Spacing.smMd)
@@ -278,11 +276,11 @@ private struct NewProjectCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg, style: .continuous)
                 .strokeBorder(
-                    AppTheme.Interaction.fill(isHovered ? AppTheme.Opacity.muted : AppTheme.Opacity.hint),
+                    Color.white.opacity(isHovered ? AppTheme.Opacity.muted : AppTheme.Opacity.hint),
                     lineWidth: AppTheme.BorderWidth.hairline
                 )
         )
-        .shadow(color: AppTheme.MediaOverlay.backgroundColor.opacity(isHovered ? 0.4 : 0.2), radius: isHovered ? 12 : 4, y: isHovered ? 4 : 2)
+        .shadow(color: .black.opacity(isHovered ? 0.4 : 0.2), radius: isHovered ? 12 : 4, y: isHovered ? 4 : 2)
         .scaleEffect(isHovered ? 1.03 : 1.0)
         .padding(AppTheme.Spacing.xs)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)

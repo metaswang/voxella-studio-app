@@ -57,10 +57,10 @@ extension GenerationView {
 
     var videoFrameStrip: some View {
         HStack(spacing: AppTheme.Spacing.xs) {
-            FrameSlot(label: L10n.string("First Frame"), asset: firstFrame, isTargeted: $firstFrameTargeted,
+            FrameSlot(label: "First Frame", asset: firstFrame, isTargeted: $firstFrameTargeted,
                       onDrop: { firstFrame = $0 }, onClear: { firstFrame = nil }, onError: flashDropError)
             if videoModel.supportsLastFrame {
-                FrameSlot(label: L10n.string("Last Frame"), asset: lastFrame, isTargeted: $lastFrameTargeted,
+                FrameSlot(label: "Last Frame", asset: lastFrame, isTargeted: $lastFrameTargeted,
                           onDrop: { lastFrame = $0 }, onClear: { lastFrame = nil }, onError: flashDropError)
             }
         }
@@ -79,15 +79,15 @@ extension GenerationView {
                     }
                 } label: {
                     if framesRefsMode == mode {
-                        Label(L10n.string(key: mode.title), systemImage: "checkmark")
+                        Label(mode.rawValue, systemImage: "checkmark")
                     } else {
-                        Text(L10n.string(key: mode.title))
+                        Text(mode.rawValue)
                     }
                 }
             }
         } label: {
             HStack(spacing: AppTheme.Spacing.xs) {
-                Text(L10n.string(key: framesRefsMode.title))
+                Text(framesRefsMode.rawValue)
                     .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .lineLimit(1)
@@ -108,10 +108,10 @@ extension GenerationView {
     var referenceSections: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             HStack(spacing: AppTheme.Spacing.xs) {
-                Text(L10n.string("References"))
+                Text("References")
                     .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
-                Text(verbatim: refCounterLabel)
+                Text(refCounterLabel)
                     .font(.system(size: AppTheme.FontSize.xs))
                     .monospacedDigit()
                     .foregroundStyle(AppTheme.Text.mutedColor)
@@ -289,7 +289,7 @@ extension GenerationView {
 
     var imageReferenceStrip: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            Text(L10n.string("References"))
+            Text("References")
                 .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
 
@@ -325,7 +325,7 @@ extension GenerationView {
     var editVideoStrip: some View {
         HStack(spacing: AppTheme.Spacing.xs) {
             FrameSlot(
-                label: L10n.string("Source Video"),
+                label: "Source Video",
                 asset: sourceVideo,
                 isTargeted: $sourceVideoTargeted,
                 accepting: [.video],
@@ -336,7 +336,7 @@ extension GenerationView {
             )
             if videoModel.maxReferenceImages > 0 {
                 FrameSlot(
-                    label: L10n.string("Reference Image"),
+                    label: "Reference Image",
                     asset: imageReferences.first,
                     isTargeted: $motionReferenceTargeted,
                     accepting: [.image],
@@ -348,7 +348,7 @@ extension GenerationView {
             }
             if videoModel.maxReferenceAudios > 0 {
                 FrameSlot(
-                    label: L10n.string("Replacement Audio"),
+                    label: "Replacement Audio",
                     asset: refAudios.first,
                     isTargeted: $refsTargeted,
                     accepting: [.audio],
@@ -376,7 +376,7 @@ extension GenerationView {
 
     var upscaleSourceStrip: some View {
         FrameSlot(
-            label: L10n.string("Source Media"),
+            label: "Source Media",
             asset: upscaleSource,
             isTargeted: $upscaleSourceTargeted,
             accepting: [.video, .image],
@@ -392,8 +392,8 @@ extension GenerationView {
     }
 
     private var audioSourceLabel: String {
-        if audioSourceTypes == [.audio] { return L10n.string("Source Audio") }
-        if audioSourceTypes == [.video] { return L10n.string("Source Video") }
-        return L10n.string("Source Media")
+        if audioSourceTypes == [.audio] { return "Source Audio" }
+        if audioSourceTypes == [.video] { return "Source Video" }
+        return "Source Media"
     }
 }

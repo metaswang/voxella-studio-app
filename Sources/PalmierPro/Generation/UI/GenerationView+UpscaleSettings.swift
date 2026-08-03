@@ -34,16 +34,14 @@ extension GenerationView {
                 let selection = upscaleSelectionBinding(setting, options: options)
                 let selected = selection.wrappedValue
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text(verbatim: setting.label)
+                    Text(setting.label)
                         .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                     Menu {
                         ForEach(upscaleOptionGroups(options)) { group in
                             if let title = group.title {
-                                Section {
+                                Section(group.description.map { "\(title): \($0)" } ?? title) {
                                     upscaleOptionButtons(group.options, selection: selection, selected: selected)
-                                } header: {
-                                    Text(verbatim: group.description.map { "\(title): \($0)" } ?? title)
                                 }
                             } else {
                                 upscaleOptionButtons(group.options, selection: selection, selected: selected)
@@ -56,7 +54,7 @@ extension GenerationView {
                     .buttonStyle(.plain)
                     .menuIndicator(.hidden)
                     if let description = selected.description {
-                        Text(verbatim: description)
+                        Text(description)
                             .font(.system(size: AppTheme.FontSize.xxs))
                             .foregroundStyle(AppTheme.Text.mutedColor)
                             .fixedSize(horizontal: false, vertical: true)
@@ -134,7 +132,7 @@ extension GenerationView {
             upscaleSettings.numbers[setting.id] = snappedUpscaleValue($0, setting: setting)
         }
         return HStack(spacing: AppTheme.Spacing.sm) {
-            Text(verbatim: setting.label)
+            Text(setting.label)
                 .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
             Spacer(minLength: AppTheme.Spacing.sm)

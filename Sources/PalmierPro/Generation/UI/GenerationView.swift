@@ -103,18 +103,11 @@ struct GenerationView: View {
     enum FramesRefsMode: String, CaseIterable {
         case firstLast = "First/Last"
         case reference = "References"
-
-        var title: String {
-            switch self {
-            case .firstLast: L10n.key("First/Last")
-            case .reference: L10n.key("References")
-            }
-        }
     }
 
     struct RefTag: Hashable, Identifiable {
         let label: String
-        let kind: ClipType
+        let kindLabel: String
         var id: String { label }
     }
 
@@ -123,14 +116,6 @@ struct GenerationView: View {
         case video = "Video"
         case audio = "Audio"
         case upscale = "Upscale"
-        var title: String {
-            switch self {
-            case .image: L10n.key("Image")
-            case .video: L10n.key("Video")
-            case .audio: L10n.key("Audio")
-            case .upscale: L10n.key("Upscale")
-            }
-        }
         var icon: String {
             switch self {
             case .image: "photo"
@@ -170,7 +155,7 @@ struct GenerationView: View {
     private var catalogLoadingView: some View {
         VStack(spacing: AppTheme.Spacing.md) {
             ProgressView()
-            Text(L10n.string("Loading models…"))
+            Text("Loading models…")
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
         }
@@ -180,7 +165,7 @@ struct GenerationView: View {
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
                 .strokeBorder(
-                    AppTheme.Interaction.fill(AppTheme.Opacity.hint),
+                    Color.white.opacity(AppTheme.Opacity.hint),
                     lineWidth: AppTheme.BorderWidth.hairline
                 )
                 .allowsHitTesting(false)
@@ -229,7 +214,7 @@ struct GenerationView: View {
                     if selectedType == .audio && audioModel.supportsLyrics {
                         inputDivider
                         secondaryField(
-                            placeholder: L10n.string("Lyrics (optional). [Verse] and [Chorus] tags supported."),
+                            placeholder: "Lyrics (optional). [Verse] and [Chorus] tags supported.",
                             text: $lyrics,
                             minHeight: 60, maxHeight: 120
                         )
@@ -237,7 +222,7 @@ struct GenerationView: View {
                     if selectedType == .audio && audioModel.supportsStyleInstructions {
                         inputDivider
                         secondaryField(
-                            placeholder: L10n.string("Style instructions (optional). e.g., warm and slow, British accent."),
+                            placeholder: "Style instructions (optional). e.g., warm and slow, British accent.",
                             text: $styleInstructions,
                             minHeight: 36, maxHeight: 72
                         )
@@ -266,7 +251,7 @@ struct GenerationView: View {
                 .strokeBorder(
                     isPromptFocused
                         ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.medium)
-                        : AppTheme.Interaction.fill(AppTheme.Opacity.hint),
+                        : Color.white.opacity(AppTheme.Opacity.hint),
                     lineWidth: isPromptFocused ? AppTheme.BorderWidth.thin : AppTheme.BorderWidth.hairline
                 )
                 .allowsHitTesting(false)
@@ -358,7 +343,7 @@ struct GenerationView: View {
 
     private var resizeHandle: some View {
         Capsule()
-            .fill(AppTheme.Interaction.fill(AppTheme.Opacity.soft))
+            .fill(Color.white.opacity(AppTheme.Opacity.soft))
             .frame(width: 24, height: 2)
             .frame(maxWidth: .infinity, minHeight: AppTheme.Spacing.md)
             .contentShape(Rectangle())
@@ -416,7 +401,7 @@ struct GenerationView: View {
     // MARK: - Secondary fields (lyrics / style instructions)
 
     private var inputDivider: some View {
-        Rectangle().fill(AppTheme.Interaction.fill(AppTheme.Opacity.hint)).frame(height: AppTheme.BorderWidth.hairline)
+        Rectangle().fill(Color.white.opacity(AppTheme.Opacity.hint)).frame(height: AppTheme.BorderWidth.hairline)
     }
 
     private func secondaryField(

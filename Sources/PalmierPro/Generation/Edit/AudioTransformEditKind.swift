@@ -15,21 +15,9 @@ enum AudioTransformEditKind: CaseIterable, Equatable {
     private var copy: Copy {
         switch self {
         case .cleanup:
-            (
-                L10n.key("Voice Cleanup"),
-                L10n.key("Remove background sound and keep speech"),
-                L10n.key("Clean Up Voice…"),
-                "waveform",
-                "Add Cleaned Voice"
-            )
+            ("Voice Cleanup", "Remove background sound and keep speech", "Clean Up Voice…", "waveform", "Add Cleaned Voice")
         case .dubbing:
-            (
-                L10n.key("Dubbing"),
-                L10n.key("Translate speech into another language"),
-                L10n.key("Dub…"),
-                "globe",
-                "Add Dubbed Voice"
-            )
+            ("Dubbing", "Translate speech into another language", "Dub…", "globe", "Add Dubbed Voice")
         }
     }
 
@@ -70,31 +58,23 @@ enum AudioTransformEditKind: CaseIterable, Equatable {
         effectiveDurationOverride: Double? = nil
     ) -> EditActionAvailability {
         guard asset.type == .audio || asset.type == .video else {
-            let reason = switch self {
-            case .cleanup: L10n.string("Voice Cleanup requires audio or video")
-            case .dubbing: L10n.string("Dubbing requires audio or video")
-            }
-            return .disabled(reason: reason)
+            return .disabled(reason: "\(title) requires audio or video")
         }
         if asset.type == .video && !asset.hasAudio {
-            return .disabled(reason: L10n.string("Video has no audio track"))
+            return .disabled(reason: "Video has no audio track")
         }
         if asset.isGenerating {
-            return .disabled(reason: L10n.string("Generation in progress"))
+            return .disabled(reason: "Generation in progress")
         }
         guard let model else {
-            let reason = switch self {
-            case .cleanup: L10n.string("Voice Cleanup model not available")
-            case .dubbing: L10n.string("Dubbing model not available")
-            }
-            return .disabled(reason: reason)
+            return .disabled(reason: "\(title) model not available")
         }
         guard model.acceptsSource(asset.type) else {
-            return .disabled(reason: L10n.string("\(model.displayName) does not accept this media"))
+            return .disabled(reason: "\(model.displayName) does not accept this media")
         }
         let duration = effectiveDurationOverride ?? asset.duration
         guard duration > 0 else {
-            return .disabled(reason: L10n.string("Loading media metadata…"))
+            return .disabled(reason: "Loading media metadata…")
         }
         if let error = model.validate(spanSeconds: duration) {
             return .disabled(reason: error)

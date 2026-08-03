@@ -5,7 +5,7 @@ private struct ReferenceAssetPreview: View {
 
     var body: some View {
         ZStack {
-            AppTheme.MediaOverlay.backgroundColor
+            Color.black
             if let thumbnail = asset.thumbnail {
                 Image(nsImage: thumbnail)
                     .resizable()
@@ -13,11 +13,11 @@ private struct ReferenceAssetPreview: View {
             } else {
                 Image(systemName: asset.type.sfSymbolName)
                     .font(.system(size: AppTheme.FontSize.xl))
-                    .foregroundStyle(AppTheme.MediaOverlay.tertiaryColor)
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "\(asset.name), \(asset.type.localizedTrackLabel)"))
+        .accessibilityLabel("\(asset.name), \(asset.type.trackLabel)")
         .task(id: "\(asset.id)|\(asset.url.path)|\(asset.generationStatus.serialized)") {
             guard case .none = asset.generationStatus else { return }
             await asset.loadLibraryThumbnail()
@@ -42,10 +42,10 @@ struct RefCard: View {
                     Text(tag)
                         .font(.system(size: AppTheme.FontSize.xxs, weight: .medium))
                         .monospacedDigit()
-                        .foregroundStyle(AppTheme.MediaOverlay.primaryColor)
+                        .foregroundStyle(.white)
                         .padding(.horizontal, AppTheme.Spacing.xs)
                         .padding(.vertical, AppTheme.Spacing.xxs)
-                        .background(AppTheme.MediaOverlay.backgroundColor.opacity(AppTheme.Opacity.strong), in: Capsule())
+                        .background(Color.black.opacity(AppTheme.Opacity.strong), in: Capsule())
                         .padding(AppTheme.Spacing.xs)
                 }
             }
@@ -53,13 +53,13 @@ struct RefCard: View {
                 Button { onRemove() } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: AppTheme.FontSize.smMd))
-                        .foregroundStyle(AppTheme.MediaOverlay.primaryColor.opacity(AppTheme.Opacity.prominent))
+                        .foregroundStyle(.white.opacity(AppTheme.Opacity.prominent))
                         .shadow(radius: 2)
                         .frame(width: AppTheme.IconSize.smMd, height: AppTheme.IconSize.smMd)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L10n.string("Remove \(asset.name)"))
+                .accessibilityLabel("Remove \(asset.name)")
             }
     }
 }
@@ -79,9 +79,7 @@ struct RefDropZone: View {
             .frame(width: AppTheme.GenerationPanel.referenceTileWidth, height: AppTheme.GenerationPanel.referenceTileHeight)
             .background(
                 RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
-                    .fill(isTargeted
-                        ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.faint)
-                        : AppTheme.Interaction.fill(AppTheme.Opacity.subtle))
+                    .fill(isTargeted ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.faint) : Color.white.opacity(AppTheme.Opacity.subtle))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
@@ -115,7 +113,7 @@ struct FrameSlot: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            Text(L10n.string(key: label))
+            Text(label)
                 .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
 
@@ -129,13 +127,13 @@ struct FrameSlot: View {
                         Button { onClear() } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: AppTheme.FontSize.smMd))
-                                .foregroundStyle(AppTheme.MediaOverlay.primaryColor.opacity(AppTheme.Opacity.prominent))
+                                .foregroundStyle(.white.opacity(AppTheme.Opacity.prominent))
                                 .shadow(radius: 2)
                                 .frame(width: AppTheme.IconSize.smMd, height: AppTheme.IconSize.smMd)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(L10n.string("Remove \(asset.name)"))
+                        .accessibilityLabel("Remove \(asset.name)")
                     }
             } else {
                 RefDropZone(

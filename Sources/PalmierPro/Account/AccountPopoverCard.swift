@@ -61,13 +61,13 @@ struct AccountPopoverCard: View {
     private var planBlock: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             HStack {
-                Text(L10n.string(key: account.tier.planLabel))
+                Text(account.tier.planLabel)
                     .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                 Spacer(minLength: 0)
                 if account.account?.user.cancelAtPeriodEnd == true,
                    let date = formattedPeriodEnd {
-                    Text(L10n.string("Cancels \(date)"))
+                    Text("Cancels \(date)")
                         .font(.system(size: AppTheme.FontSize.xxs))
                         .foregroundStyle(.orange)
                 }
@@ -96,17 +96,17 @@ struct AccountPopoverCard: View {
     @ViewBuilder
     private func planRow(plan: AvailablePlan, isPrimary: Bool) -> some View {
         HStack(spacing: AppTheme.Spacing.sm) {
-            Text(verbatim: plan.tier.upgradeLabel)
+            Text(plan.tier.upgradeLabel)
                 .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
                 .foregroundStyle(AppTheme.Text.primaryColor)
 
-            Text(L10n.string("$\(plan.effectiveMonthlyPriceUsd)/mo"))
+            Text("$\(plan.effectiveMonthlyPriceUsd)/mo")
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
                 .monospacedDigit()
 
             if plan.hasDiscount {
-                Text(verbatim: "$\(plan.monthlyPriceUsd)")
+                Text("$\(plan.monthlyPriceUsd)")
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .strikethrough()
@@ -131,14 +131,14 @@ struct AccountPopoverCard: View {
     @ViewBuilder
     private func upgradeActionButton(tier: AccountTier, isPrimary: Bool) -> some View {
         if isPrimary {
-            Button(L10n.string("Upgrade")) {
+            Button("Upgrade") {
                 Task { await account.subscribe(tier: tier) }
                 dismiss()
             }
             .buttonStyle(.capsule(.prominent))
             .controlSize(.small)
         } else {
-            Button(L10n.string("Upgrade")) {
+            Button("Upgrade") {
                 Task { await account.subscribe(tier: tier) }
                 dismiss()
             }
@@ -149,9 +149,9 @@ struct AccountPopoverCard: View {
 
     private func creditsShortLabel(_ credits: Int) -> String {
         if credits >= 1000, credits % 1000 == 0 {
-            return L10n.string("\(credits / 1000)k credits")
+            return "\(credits / 1000)k credits"
         }
-        return CostEstimator.localizedDescription(credits)
+        return "\(credits.formatted()) credits"
     }
 
     @ViewBuilder
@@ -164,13 +164,13 @@ struct AccountPopoverCard: View {
                     .progressViewStyle(.linear)
                     .tint(barColor(remaining))
                 HStack(spacing: AppTheme.Spacing.xs) {
-                    Text(L10n.string("\(left) / \(budget) credits"))
+                    Text("\(left.formatted()) / \(budget.formatted()) credits")
                         .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
                         .monospacedDigit()
                         .foregroundStyle(AppTheme.Text.secondaryColor)
                     Spacer(minLength: 0)
                     if let date = formattedPeriodEnd {
-                        Text(L10n.string("Resets \(date)"))
+                        Text("Resets \(date)")
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.tertiaryColor)
                     }
@@ -191,24 +191,21 @@ struct AccountPopoverCard: View {
 
     private var footerRow: some View {
         VStack(spacing: AppTheme.Spacing.xxs) {
-            footerButton(label: L10n.string("Settings"), systemImage: "gearshape") {
+            footerButton(label: "Settings", systemImage: "gearshape") {
                 SettingsWindowController.shared.show()
                 dismiss()
             }
-            footerButton(label: L10n.string("Feedback"), systemImage: "bubble.left.and.bubble.right") {
+            footerButton(label: "Feedback", systemImage: "bubble.left.and.bubble.right") {
                 FeedbackWindowController.shared.show()
                 dismiss()
             }
             if account.isSignedIn {
-                footerButton(label: L10n.string("Sign out"), systemImage: "rectangle.portrait.and.arrow.right") {
+                footerButton(label: "Sign out", systemImage: "rectangle.portrait.and.arrow.right") {
                     Task { await account.signOut() }
                     dismiss()
                 }
             } else {
-                footerButton(
-                    label: account.isSigningIn ? L10n.string("Opening Google…") : L10n.string("Sign in"),
-                    systemImage: "person.crop.circle"
-                ) {
+                footerButton(label: account.isSigningIn ? "Opening Google…" : "Sign in", systemImage: "person.crop.circle") {
                     Task { await account.signInWithGoogle() }
                     dismiss()
                 }
@@ -238,12 +235,6 @@ struct AccountPopoverCard: View {
     private var formattedPeriodEnd: String? {
         guard let endMs = account.account?.user.currentPeriodEnd else { return nil }
         let end = Date(timeIntervalSince1970: endMs / 1000)
-        return end.formatted(
-            .dateTime
-                .year()
-                .month(.abbreviated)
-                .day()
-                .locale(AppLocalization.shared.activeLocale)
-        )
+        return end.formatted(date: .abbreviated, time: .omitted)
     }
 }

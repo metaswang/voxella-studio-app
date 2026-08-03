@@ -3,7 +3,6 @@ import SwiftUI
 enum SettingsTab: String, CaseIterable, Identifiable {
     case account
     case general
-    case appearance
     case models
     case ai
     case agent
@@ -14,14 +13,13 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .account: return L10n.key("Account")
-        case .general: return L10n.key("General")
-        case .appearance: return L10n.key("Appearance")
-        case .models: return L10n.key("Models")
+        case .account: return "Account"
+        case .general: return "General"
+        case .models: return "Models"
         case .ai: return "AI"
-        case .agent: return "Agent"
-        case .skills: return L10n.key("Skills")
-        case .storage: return L10n.key("Storage")
+        case .agent: return "MCP"
+        case .skills: return "Skills"
+        case .storage: return "Storage"
         }
     }
 
@@ -29,10 +27,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .account: return "person.circle"
         case .general: return "gearshape"
-        case .appearance: return "sun.max"
         case .models: return "square.stack.3d.up"
         case .ai: return "sparkles"
-        case .agent: return "paperplane"
+        case .agent: return "network"
         case .skills: return "book.closed"
         case .storage: return "internaldrive"
         }
@@ -60,7 +57,7 @@ struct SettingsView: View {
 
             SettingsDetail(tab: selectedTab)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.medium))
+                .background(Color.black.opacity(AppTheme.Opacity.medium))
         }
         .frame(
             minWidth: AppTheme.Window.settingsMin.width,
@@ -98,7 +95,7 @@ private struct SettingsSidebar: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
             ForEach(visibleTabs) { tab in
                 SidebarRowButton(
-                    label: L10n.string(key: tab.label),
+                    label: tab.label,
                     systemImage: tab.systemImage,
                     isSelected: selectedTab == tab,
                     action: { selectedTab = tab }
@@ -115,21 +112,26 @@ private struct SettingsDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(L10n.string(key: tab.label))
-                .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.regular))
-                .foregroundStyle(AppTheme.Text.primaryColor)
-                .frame(
-                    maxWidth: AppTheme.Settings.contentMaxWidth,
-                    alignment: .leading
-                )
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, AppTheme.Spacing.xxl)
-                .padding(.top, AppTheme.Spacing.xxl)
-                .padding(.bottom, AppTheme.Spacing.xxl)
+            if tab != .models {
+                Text(tab.label)
+                    .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.regular))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+                    .frame(
+                        maxWidth: AppTheme.Settings.contentMaxWidth,
+                        alignment: .leading
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, AppTheme.Spacing.xxl)
+                    .padding(.top, AppTheme.Spacing.xxl)
+                    .padding(.bottom, AppTheme.Spacing.xxl)
+            }
 
             Group {
                 if tab == .skills {
                     SkillsPane()
+                } else if tab == .models {
+                    // Owns title + scroll so the heading shares one left edge with content.
+                    ModelsPane()
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
@@ -137,11 +139,14 @@ private struct SettingsDetail: View {
                             case .account:
                                 AccountPane()
                             case .general:
-                                GeneralPane()
-                            case .appearance:
-                                AppearancePane()
+                                SettingsSection(title: "Notifications") {
+                                    NotificationsPane()
+                                }
+                                SettingsSection(title: "Privacy & Diagnostics") {
+                                    PrivacyPane()
+                                }
                             case .models:
-                                ModelsPane()
+                                EmptyView()
                             case .ai:
                                 AISettingsPane()
                             case .agent:
@@ -160,9 +165,9 @@ private struct SettingsDetail: View {
                     .scrollEdgeEffectStyle(.soft, for: .top)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
@@ -172,7 +177,7 @@ struct SettingsSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
-            Text(verbatim: title)
+            Text(title)
                 .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.regular))
                 .foregroundStyle(AppTheme.Text.primaryColor)
 
@@ -193,7 +198,7 @@ struct SettingsGroup<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
-            Text(verbatim: title)
+            Text(title)
                 .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.regular))
                 .foregroundStyle(AppTheme.Text.primaryColor)
             content()
@@ -209,10 +214,10 @@ struct SettingsToggleRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text(verbatim: title)
+                Text(title)
                     .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                     .foregroundStyle(AppTheme.Text.primaryColor)
-                Text(verbatim: subtitle)
+                Text(subtitle)
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .fixedSize(horizontal: false, vertical: true)
@@ -220,7 +225,7 @@ struct SettingsToggleRow: View {
 
             Spacer(minLength: AppTheme.Spacing.lg)
 
-            Toggle(String(), isOn: $isOn)
+            Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.mini)
@@ -239,12 +244,13 @@ final class SettingsWindowController: NSWindowController {
 
     private init() {
         let initialView = SettingsView().tint(AppTheme.Accent.primary)
-        let hosting = NSHostingController(rootView: AnyView(initialView.appLocalization()))
+        let hosting = NSHostingController(rootView: AnyView(initialView))
         hosting.sizingOptions = .minSize
         let window = NSWindow(contentViewController: hosting)
         window.setContentSize(AppTheme.Window.settingsDefault)
         window.minSize = AppTheme.Window.settingsMin
-        window.title = L10n.string("Settings")
+        window.title = "Settings"
+        window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = AppTheme.Background.base.withAlphaComponent(0.4)
         window.isOpaque = false
         window.titleVisibility = .hidden
@@ -264,7 +270,6 @@ final class SettingsWindowController: NSWindowController {
             hosting?.rootView = AnyView(
                 SettingsView(initialTab: tab)
                     .id(UUID())
-                    .appLocalization()
                     .tint(AppTheme.Accent.primary)
             )
         }
