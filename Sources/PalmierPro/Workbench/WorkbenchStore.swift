@@ -534,6 +534,10 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     var renderedSubtitleTrack: SubtitleTrack? {
         subtitleTrack ?? SubtitleTrack.fromDubSegments(renderedSegments ?? [], language: language)
     }
+
+    var isActivelyProcessing: Bool {
+        state == .running || state == .cancelling
+    }
 }
 
 struct WorkbenchDubRevision: Codable, Identifiable, Sendable {
@@ -819,8 +823,25 @@ final class WorkbenchStore {
     }
 
     func openSession(_ id: UUID) {
-        guard sessions.contains(where: { $0.id == id }) else { return }
+        guard let session = sessions.first(where: { $0.id == id }) else { return }
         selectedSessionID = id
+
+        if let transcriptionID = session.transcriptionID,
+           shouldPresentTranscriptionProcessing(for: transcriptionID) {
+            selectedTranscriptionID = transcriptionID
+            selectedDubID = nil
+            route = .transcribe
+            return
+        }
+
+        if let dubID = session.dubID,
+           dubs.first(where: { $0.id == dubID })?.isActivelyProcessing == true {
+            selectedDubID = dubID
+            selectedTranscriptionID = nil
+            route = .dub
+            return
+        }
+
         route = .session
         let missingLLMMessage = LLMConfigurationError.noConfiguredModel(.subtitleProcessing)
             .localizedDescription
