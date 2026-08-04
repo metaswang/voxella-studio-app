@@ -205,6 +205,7 @@ struct WorkbenchSessionDetailView: View {
     @State private var showDubOptionsSheet = false
     @State private var showTemplateLoginAlert = false
     @State private var showSummaryRefinementSheet = false
+    @State private var isOpeningClip = false
     @State private var seekSeconds: Double?
     @State private var probedMediaURL: URL?
     @State private var probedMediaHasVideo = false
@@ -492,16 +493,35 @@ struct WorkbenchSessionDetailView: View {
             if let dubID = session.dubID {
                 revisionPicker(dubID: dubID)
             }
-            Button {
-                if session.transcriptionID != nil {
-                    showDubOptionsSheet = true
-                } else {
-                    openWorkflow(session)
+            HStack(spacing: AppTheme.Spacing.smMd) {
+                if session.sourceURL != nil || session.outputURL != nil {
+                    Button {
+                        createClip(from: session)
+                    } label: {
+                        if isOpeningClip {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Opening…")
+                        } else {
+                            Label("Create clip", systemImage: "timeline.selection")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isOpeningClip)
+                    .help("Open the video editor and place this session on the timeline")
                 }
-            } label: {
-                Label(session.hasDub ? "Re-dub" : "Create dub", systemImage: "waveform.and.mic")
+                Button {
+                    if session.transcriptionID != nil {
+                        showDubOptionsSheet = true
+                    } else {
+                        openWorkflow(session)
+                    }
+                } label: {
+                    Label(session.hasDub ? "Re-dub" : "Create dub", systemImage: "waveform.and.mic")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isOpeningClip)
             }
-            .buttonStyle(.borderedProminent)
         }
         .padding(AppTheme.Spacing.xlXxl)
         .frame(minHeight: AppTheme.Workbench.sessionHeaderMinHeight)
@@ -878,6 +898,23 @@ struct WorkbenchSessionDetailView: View {
     private func presentTemplateLoginPrompt() {
         // Temporarily shield the template picker sheet; require voxstudio.me login messaging only.
         showTemplateLoginAlert = true
+    }
+
+    private func createClip(from session: WorkbenchSession) {
+        guard !isOpeningClip else { return }
+        isOpeningClip = true
+        Task {
+            defer { isOpeningClip = false }
+            do {
+                try await WorkbenchEditorBridge.openSession(session)
+            } catch {
+                WorkbenchTipCenter.shared.show(
+                    "Could not open the clip project: \(error.localizedDescription)",
+                    kind: .error,
+                    id: "session.create-clip.failed.\(session.id.uuidString)"
+                )
+            }
+        }
     }
 
     private func openWorkflow(_ session: WorkbenchSession) {

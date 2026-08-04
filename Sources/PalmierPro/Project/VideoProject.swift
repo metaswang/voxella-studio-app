@@ -41,6 +41,10 @@ class VideoProject: NSDocument {
 
     let editorViewModel = EditorViewModel()
 
+    /// When false, `makeWindowControllers` prepares the editor but does not activate it.
+    /// Used by Create clip / caption flows that mutate the timeline before presenting.
+    var autoPresentEditor = true
+
     /// Decoded off-main in read(), applied on main in makeWindowControllers.
     private nonisolated(unsafe) var loadedProjectFile: ProjectFile?
     private nonisolated(unsafe) var loadedManifest: MediaManifest?
@@ -477,7 +481,9 @@ class VideoProject: NSDocument {
             data: editorViewModel.telemetrySnapshot()
         )
 
-        AppState.shared.presentEditor(for: self)
+        if autoPresentEditor {
+            AppState.shared.presentEditor(for: self)
+        }
     }
 
     // MARK: - Thumbnail

@@ -87,8 +87,15 @@ final class AppState {
     /// Embed and show the project editor in the main window.
     func presentEditor(for project: VideoProject) {
         if let current = activeProject, current !== project {
-            assertionFailure("Only one video project may be open")
-            return
+            // Recover from stale bindings instead of silently keeping the old editor visible.
+            Log.project.warning(
+                "presentEditor replacing active project \(current.displayName) with \(project.displayName)"
+            )
+            current.editorViewModel.pause()
+            teardownSession()
+            activeProject = nil
+            editorPresentation = .none
+            HomeWindowController.shared.applyEditorMode(false)
         }
         if activeProject !== project {
             activeProject = project
@@ -224,8 +231,9 @@ final class AppState {
 
     // MARK: - Project lifecycle
 
-    private func instantiateProject(at url: URL) -> VideoProject {
+    private func instantiateProject(at url: URL, presentImmediately: Bool = true) -> VideoProject {
         let doc = VideoProject()
+        doc.autoPresentEditor = presentImmediately
         doc.fileURL = url
         doc.fileType = VideoProject.typeIdentifier
         NSDocumentController.shared.addDocument(doc)
@@ -234,8 +242,9 @@ final class AppState {
     }
 
     /// Creates a new project in the storage folder; errors if the name is invalid or already taken.
+    /// - Parameter presentImmediately: When false, prepares the document without activating the editor UI.
     @discardableResult
-    func createProject(named name: String) async throws -> VideoProject {
+    func createProject(named name: String, presentImmediately: Bool = true) async throws -> VideoProject {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = trimmed.isEmpty ? Project.defaultProjectName : trimmed
         guard !base.contains("/"), !base.contains("\\"), base != ".", base != ".." else {
@@ -248,7 +257,7 @@ final class AppState {
             throw ProjectError.nameTaken(url)
         }
         try await closeCurrentProjectIfNeeded()
-        let doc = instantiateProject(at: url)
+        let doc = instantiateProject(at: url, presentImmediately: presentImmediately)
         do {
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
                 doc.save(to: url, ofType: VideoProject.typeIdentifier, for: .saveOperation) { error in

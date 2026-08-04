@@ -143,15 +143,31 @@ extension EditorViewModel {
     }
 
     func insertSessionMedia(_ session: WorkbenchSession, startFrame: Int? = nil) async {
+        do {
+            try await insertSessionMediaThrowing(session, startFrame: startFrame)
+        } catch {
+            if mediaPanelToast == nil {
+                mediaPanelToast = MediaPanelToast(message: error.localizedDescription)
+            }
+        }
+    }
+
+    func insertSessionMediaThrowing(
+        _ session: WorkbenchSession,
+        startFrame: Int? = nil
+    ) async throws {
         guard let sourceURL = session.sourceURL else {
-            await insertSessionOutputMedia(session, startFrame: startFrame)
+            try await insertSessionOutputMediaThrowing(session, startFrame: startFrame)
             return
         }
 
-        guard let asset = addMediaAsset(from: sourceURL, finalize: false) else { return }
+        guard let asset = addMediaAsset(from: sourceURL, finalize: false) else {
+            throw WorkbenchEditorBridgeError.failedToPlaceSession
+        }
         guard await finalizeImportedAsset(asset) else {
-            mediaPanelToast = MediaPanelToast(message: L10n.string("The session media could not be opened."))
-            return
+            let message = L10n.string("The session media could not be opened.")
+            mediaPanelToast = MediaPanelToast(message: message)
+            throw WorkbenchEditorBridgeError.failedToPlaceSession
         }
 
         let trackType: ClipType = asset.type == .audio ? .audio : .video
@@ -168,9 +184,12 @@ extension EditorViewModel {
             forcedLinkGroupId: nil,
             sourceSessionId: session.id
         )
-        guard !mediaClipIDs.isEmpty else { return }
+        guard !mediaClipIDs.isEmpty else {
+            throw WorkbenchEditorBridgeError.failedToPlaceSession
+        }
 
-        if let sourceTrack = session.subtitleTrack {
+        if let sourceTrack = session.subtitleTrack
+            ?? session.transcript.map(SubtitleTrack.fromTranscript) {
             insertSessionSubtitleTrack(
                 session,
                 track: sourceTrack,
@@ -178,17 +197,40 @@ extension EditorViewModel {
                 startFrame: resolvedStart
             )
         }
+        for translation in session.translationTracks where !translation.track.cues.isEmpty {
+            insertSessionSubtitleTrack(
+                session,
+                track: translation.track,
+                scope: .translation(languageCode: translation.languageCode),
+                startFrame: resolvedStart
+            )
+        }
     }
 
     func insertSessionOutputMedia(_ session: WorkbenchSession, startFrame: Int? = nil) async {
+        do {
+            try await insertSessionOutputMediaThrowing(session, startFrame: startFrame)
+        } catch {
+            if mediaPanelToast == nil {
+                mediaPanelToast = MediaPanelToast(message: error.localizedDescription)
+            }
+        }
+    }
+
+    func insertSessionOutputMediaThrowing(
+        _ session: WorkbenchSession,
+        startFrame: Int? = nil
+    ) async throws {
         guard let outputURL = session.outputURL else {
-            mediaPanelToast = MediaPanelToast(message: L10n.string("This session has no generated audio."))
-            return
+            let message = L10n.string("This session has no generated audio.")
+            mediaPanelToast = MediaPanelToast(message: message)
+            throw WorkbenchEditorBridgeError.missingSessionMedia
         }
         guard let asset = addMediaAsset(from: outputURL, finalize: false),
               await finalizeImportedAsset(asset) else {
-            mediaPanelToast = MediaPanelToast(message: L10n.string("The generated audio could not be opened."))
-            return
+            let message = L10n.string("The generated audio could not be opened.")
+            mediaPanelToast = MediaPanelToast(message: message)
+            throw WorkbenchEditorBridgeError.failedToPlaceSession
         }
         let trackIndex = timeline.tracks.firstIndex(where: { $0.role == .dub })
             ?? insertTrack(at: timeline.tracks.count, type: .dub, role: .dub)

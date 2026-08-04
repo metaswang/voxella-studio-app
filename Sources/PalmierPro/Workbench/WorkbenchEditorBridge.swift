@@ -22,7 +22,7 @@ enum WorkbenchEditorBridge {
             }
         }
 
-        let project = try await AppState.shared.createProject(named: availableProjectName(for: job))
+        let project = try await AppState.shared.createProject(named: availableProjectName(for: job), presentImmediately: false)
         let editor = project.editorViewModel
 
         guard let asset = editor.addMediaAsset(from: job.sourceURL, finalize: false),
@@ -63,12 +63,51 @@ enum WorkbenchEditorBridge {
         AppState.shared.presentEditor(for: project)
     }
 
+    static func openSession(_ session: WorkbenchSession) async throws {
+        guard session.sourceURL != nil || session.outputURL != nil else {
+            throw WorkbenchEditorBridgeError.missingSessionMedia
+        }
+        let project = try await AppState.shared.createProject(
+            named: availableProjectName(for: session),
+            presentImmediately: false
+        )
+        let editor = project.editorViewModel
+        try await editor.insertSessionMediaThrowing(session, startFrame: 0)
+        let hasClips = editor.timeline.tracks.contains { !$0.clips.isEmpty }
+        guard hasClips else {
+            throw WorkbenchEditorBridgeError.failedToPlaceSession
+        }
+        project.updateChangeCount(.changeDone)
+        AppState.shared.presentEditor(for: project)
+    }
+
     private static func availableProjectName(for job: WorkbenchTranscriptionJob) -> String {
-        let base = job.displayName + " – Captioned"
+        uniqueProjectName(base: job.displayName + " – Captioned")
+    }
+
+    private static func availableProjectName(for session: WorkbenchSession) -> String {
+        uniqueProjectName(base: session.title + " – Clip")
+    }
+
+    private static func uniqueProjectName(base: String) -> String {
         let candidate = Project.storageDirectory
             .appendingPathComponent(base)
             .appendingPathExtension(Project.fileExtension)
         guard FileManager.default.fileExists(atPath: candidate.path) else { return base }
         return "\(base) \(Date().formatted(.dateTime.month().day().hour().minute().second()))"
+    }
+}
+
+enum WorkbenchEditorBridgeError: LocalizedError {
+    case missingSessionMedia
+    case failedToPlaceSession
+
+    var errorDescription: String? {
+        switch self {
+        case .missingSessionMedia:
+            "This session has no media file to place on the timeline."
+        case .failedToPlaceSession:
+            "The session media could not be opened."
+        }
     }
 }
