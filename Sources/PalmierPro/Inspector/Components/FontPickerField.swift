@@ -7,11 +7,13 @@ struct FontPickerField: View {
     let onChange: (String) -> Void
     let onCancel: () -> Void
 
-    @State private var anchorHolder = FontMenuAnchorHolder()
+    @State private var isPresented = false
+    @State private var didPick = false
 
     var body: some View {
         Button {
-            presentMenu()
+            didPick = false
+            isPresented = true
         } label: {
             HStack(spacing: AppTheme.Spacing.xs) {
                 Text(displayName)
@@ -29,64 +31,26 @@ struct FontPickerField: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .background(FontMenuAnchorView(holder: anchorHolder))
-    }
-
-    private func presentMenu() {
-        guard let anchor = anchorHolder.view else { return }
-
-        let handler = FontMenuHandler(
-            onPreview: onPreview,
-            onChange: onChange,
-            onCancel: onCancel
-        )
-
-        let menu = NSMenu()
-        menu.delegate = handler
-        menu.autoenablesItems = false
-
-        if !BundledFonts.families.isEmpty {
-            let header = NSMenuItem(title: L10n.string("Featured"), action: nil, keyEquivalent: "")
-            header.isEnabled = false
-            menu.addItem(header)
-            for family in BundledFonts.families {
-                menu.addItem(makeItem(name: family, previewFamily: family, handler: handler))
-            }
-            menu.addItem(.separator())
-            let all = NSMenuItem(title: L10n.string("All fonts"), action: nil, keyEquivalent: "")
-            all.isEnabled = false
-            menu.addItem(all)
-        }
-
-        for entry in BundledFonts.systemFamiliesForPicker {
-            menu.addItem(
-                makeItem(
-                    name: entry.name,
-                    previewFamily: entry.previewable ? entry.name : nil,
-                    handler: handler
-                )
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            FontPickerPopover(
+                current: current,
+                onPreview: onPreview,
+                onPick: { name in
+                    didPick = true
+                    onChange(name)
+                    isPresented = false
+                }
+            )
+            .frame(
+                width: AppTheme.EditorPanel.fontPickerWidth,
+                height: AppTheme.EditorPanel.fontPickerHeight
             )
         }
-
-        let origin = NSPoint(x: 0, y: anchor.bounds.height + 2)
-        menu.popUp(positioning: nil, at: origin, in: anchor)
-    }
-
-    private func makeItem(name: String, previewFamily: String?, handler: FontMenuHandler) -> NSMenuItem {
-        let item = NSMenuItem(
-            title: name,
-            action: #selector(FontMenuHandler.pick(_:)),
-            keyEquivalent: ""
-        )
-        item.target = handler
-        item.representedObject = name
-        if name == current {
-            item.state = .on
+        .onChange(of: isPresented) { _, presented in
+            if !presented, !didPick {
+                onCancel()
+            }
         }
-        if let family = previewFamily, let font = NSFont(name: family, size: 13) {
-            item.attributedTitle = NSAttributedString(string: name, attributes: [.font: font])
-        }
-        return item
     }
 
     private var displayName: String {
@@ -95,62 +59,150 @@ struct FontPickerField: View {
     }
 }
 
-@MainActor
-private final class FontMenuHandler: NSObject, NSMenuDelegate {
+private struct FontPickerPopover: View {
+    let current: String?
     let onPreview: (String) -> Void
-    let onChange: (String) -> Void
-    let onCancel: () -> Void
-    private var didPick = false
-    private var lastPreviewed: String?
+    let onPick: (String) -> Void
 
-    init(
-        onPreview: @escaping (String) -> Void,
-        onChange: @escaping (String) -> Void,
-        onCancel: @escaping () -> Void
-    ) {
-        self.onPreview = onPreview
-        self.onChange = onChange
-        self.onCancel = onCancel
+    @State private var query = ""
+    @FocusState private var isSearchFocused: Bool
+
+    private var normalizedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    @objc func pick(_ sender: NSMenuItem) {
-        guard let name = sender.representedObject as? String else { return }
-        didPick = true
-        onChange(name)
+    private var featuredMatches: [FontPickerEntry] {
+        BundledFonts.families
+            .filter { matches($0) }
+            .map { FontPickerEntry(name: $0, previewable: true) }
     }
 
-    nonisolated func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
-        nonisolated(unsafe) let unsafeItem = item
-        MainActor.assumeIsolated {
-            guard let name = unsafeItem?.representedObject as? String,
-                  name != lastPreviewed else { return }
-            lastPreviewed = name
-            onPreview(name)
+    private var systemMatches: [FontPickerEntry] {
+        BundledFonts.systemFamiliesForPicker
+            .filter { matches($0.name) }
+            .map { FontPickerEntry(name: $0.name, previewable: $0.previewable) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                TextField(L10n.string("Filter fonts"), text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: AppTheme.FontSize.smMd))
+                    .focused($isSearchFocused)
+                if !query.isEmpty {
+                    Button {
+                        query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: AppTheme.FontSize.smMd))
+                            .foregroundStyle(AppTheme.Text.mutedColor)
+                    }
+                    .buttonStyle(.plain)
+                    .help(L10n.string("Clear"))
+                }
+            }
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.smMd)
+            .background(AppTheme.Background.raisedColor)
+
+            Divider()
+
+            if featuredMatches.isEmpty, systemMatches.isEmpty {
+                ContentUnavailableView(
+                    L10n.string("No matching fonts"),
+                    systemImage: "textformat",
+                    description: Text(L10n.string("Try a different name or clear the filter."))
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        if !featuredMatches.isEmpty {
+                            sectionHeader(L10n.string("Featured"))
+                            ForEach(featuredMatches) { entry in
+                                fontRow(entry)
+                            }
+                        }
+                        if !featuredMatches.isEmpty, !systemMatches.isEmpty {
+                            Divider()
+                                .padding(.vertical, AppTheme.Spacing.xxs)
+                        }
+                        if !systemMatches.isEmpty {
+                            sectionHeader(L10n.string("All fonts"))
+                            ForEach(systemMatches) { entry in
+                                fontRow(entry)
+                            }
+                        }
+                    }
+                    .padding(.vertical, AppTheme.Spacing.xs)
+                }
+            }
+        }
+        .background(AppTheme.Background.surfaceColor)
+        .onAppear {
+            isSearchFocused = true
         }
     }
 
-    nonisolated func menuDidClose(_ menu: NSMenu) {
-        MainActor.assumeIsolated {
-            if !didPick { onCancel() }
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+            .foregroundStyle(AppTheme.Text.tertiaryColor)
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.top, AppTheme.Spacing.sm)
+            .padding(.bottom, AppTheme.Spacing.xxs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func fontRow(_ entry: FontPickerEntry) -> some View {
+        let isSelected = entry.name == current
+        return Button {
+            onPick(entry.name)
+        } label: {
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Text(entry.name)
+                    .font(entry.previewable
+                        ? .custom(entry.name, size: AppTheme.FontSize.md)
+                        : .system(size: AppTheme.FontSize.md))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: AppTheme.Spacing.zero)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                        .foregroundStyle(AppTheme.Accent.primary)
+                }
+            }
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                isSelected
+                    ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.soft)
+                    : Color.clear
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            guard hovering else { return }
+            onPreview(entry.name)
         }
     }
+
+    private func matches(_ name: String) -> Bool {
+        guard !normalizedQuery.isEmpty else { return true }
+        return name.localizedCaseInsensitiveContains(normalizedQuery)
+    }
 }
 
-@MainActor
-private final class FontMenuAnchorHolder {
-    weak var view: NSView?
-}
-
-private struct FontMenuAnchorView: NSViewRepresentable {
-    let holder: FontMenuAnchorHolder
-
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        holder.view = v
-        return v
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        holder.view = nsView
-    }
+private struct FontPickerEntry: Identifiable {
+    let name: String
+    let previewable: Bool
+    var id: String { name }
 }

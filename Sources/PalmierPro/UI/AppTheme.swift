@@ -449,6 +449,8 @@ enum AppTheme {
         static let numericFieldWidth: CGFloat = 56
         static let compactNumericFieldWidth: CGFloat = 36
         static let fontMenuWidth: CGFloat = 160
+        static let fontPickerWidth: CGFloat = 280
+        static let fontPickerHeight: CGFloat = 360
         static let textEditorMinHeight: CGFloat = 96
     }
 
