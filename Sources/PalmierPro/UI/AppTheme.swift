@@ -496,6 +496,10 @@ enum AppTheme {
         static let floatingPlayerHeight: CGFloat = 200
         static let sessionVideoMinHeight: CGFloat = 360
         static let sessionVideoIdealHeight: CGFloat = 480
+        static let clipPreviewMaxHeight: CGFloat = 220
+        static let clipTimelineHeight: CGFloat = 28
+        static let clipHandleSize: CGFloat = 14
+        static let clipHandleHitWidth: CGFloat = 16
         static let playbackRates: [Double] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
         static let transcriptCardMinHeight: CGFloat = 76
         static let filterWidth: CGFloat = 170

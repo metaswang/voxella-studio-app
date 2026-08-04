@@ -1282,6 +1282,9 @@ final class WorkbenchStore {
         if activeQueuedTranscriptionID == id { activeQueuedTranscriptionID = nil }
         flowTasks[id]?.cancel()
         flowTasks[id] = nil
+        if let job = transcriptions.first(where: { $0.id == id }) {
+            removeManagedClipMediaIfNeeded(job.sourceURL)
+        }
         transcriptions.removeAll { $0.id == id }
         if selectedTranscriptionID == id { selectedTranscriptionID = transcriptions.first?.id }
         if var batch = activeTranscriptionBatch {
@@ -1563,7 +1566,6 @@ final class WorkbenchStore {
             finishTranscriptionSlot(id)
             return
         }
-        let snapshot = transcriptions[index]
         transcriptions[index].state = .running
         transcriptions[index].progress = 0.02
         transcriptions[index].progressMessage = "Preparing audio…"
@@ -1607,11 +1609,31 @@ final class WorkbenchStore {
                 }
                 return
             }
+            do {
+                try await materializeClipMediaIfNeeded(for: id)
+            } catch is CancellationError {
+                updateTranscription(id) {
+                    $0.state = .cancelled
+                    $0.errorMessage = nil
+                    $0.progressMessage = "Cancelled — ready to retry"
+                }
+                return
+            } catch {
+                updateTranscription(id) {
+                    $0.state = .failed
+                    $0.errorMessage = error.localizedDescription
+                    $0.progressMessage = "Clip extraction failed"
+                    $0.flowProgressStage = nil
+                    $0.progressStep = nil
+                }
+                return
+            }
+            guard let job = transcriptions.first(where: { $0.id == id }) else { return }
             let request = MediaFlowRequest(
                 id: id,
-                input: .media(snapshot.sourceURL),
+                input: .media(job.sourceURL),
                 steps: WorkbenchMediaFlowPlanner.transcriptionSteps(
-                    for: snapshot,
+                    for: job,
                     hasAPIKey: hasSubtitleModel
                 )
             )
@@ -1622,9 +1644,9 @@ final class WorkbenchStore {
                 await consumeTranscriptionEvent(
                     event,
                     jobID: id,
-                    sourceURL: snapshot.sourceURL,
-                    languageCode: snapshot.languageCode,
-                    speakerCount: snapshot.speakerCount.count
+                    sourceURL: job.sourceURL,
+                    languageCode: job.languageCode,
+                    speakerCount: job.speakerCount.count
                 )
             }
             if Task.isCancelled {
@@ -1635,8 +1657,8 @@ final class WorkbenchStore {
                 }
                 return
             }
-            guard let job = transcriptions.first(where: { $0.id == id }),
-                  job.state == .completed else { return }
+            guard let completed = transcriptions.first(where: { $0.id == id }),
+                  completed.state == .completed else { return }
 
             // Free the local ASR slot before title/summary LLM enrichment.
             flowTasks[id] = nil
@@ -1645,6 +1667,43 @@ final class WorkbenchStore {
             await enrichCompletedTranscription(id)
         }
         flowTasks[id] = task
+    }
+
+    /// Writes the selected clip window to managed storage and retargets the job source.
+    private func materializeClipMediaIfNeeded(for id: UUID) async throws {
+        guard let index = transcriptions.firstIndex(where: { $0.id == id }),
+              let range = transcriptions[index].clipRangeSeconds else { return }
+
+        let sourceURL = transcriptions[index].sourceURL
+        updateTranscription(id) {
+            $0.progress = 0.04
+            $0.progressMessage = "Extracting clip…"
+            $0.flowProgressStage = .transcription
+            $0.progressStep = "extract_clip"
+        }
+
+        let isVideo = ClipType(fileExtension: sourceURL.pathExtension.lowercased()) == .video
+        let destinationURL = Self.clipsDirectory
+            .appendingPathComponent(id.uuidString)
+            .appendingPathExtension(isVideo ? "mp4" : "m4a")
+
+        try await Task.detached(priority: .userInitiated) {
+            try await MediaRangeExtractor.extract(
+                sourceURL: sourceURL,
+                range: range,
+                destinationURL: destinationURL
+            )
+        }.value
+        try Task.checkCancellation()
+
+        updateTranscription(id) {
+            $0.sourcePath = destinationURL.path
+            // Source is already clipped; ASR must not re-window or offset timestamps.
+            $0.clipStartMs = nil
+            $0.clipEndMs = nil
+            $0.progressMessage = "Preparing audio…"
+            $0.progressStep = "flow_started"
+        }
     }
 
     func cancelTranscription(_ id: UUID) {
@@ -2414,8 +2473,19 @@ final class WorkbenchStore {
             .appendingPathComponent("Voxella Studio", isDirectory: true)
     }
 
+    private static var clipsDirectory: URL {
+        dataDirectory.appendingPathComponent("Clips", isDirectory: true)
+    }
+
     private static var snapshotURL: URL {
         dataDirectory.appendingPathComponent("workbench.json")
+    }
+
+    private func removeManagedClipMediaIfNeeded(_ url: URL) {
+        let clipsRoot = Self.clipsDirectory.resolvingSymlinksInPath().path
+        let candidate = url.resolvingSymlinksInPath().path
+        guard candidate.hasPrefix(clipsRoot + "/") else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 
     private func hydrate() async {

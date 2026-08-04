@@ -41,9 +41,16 @@ struct ProcessingOptionsSheet: View {
             }
             footer
         }
-        .frame(width: 560, height: isSingleFile ? 680 : 620)
+        .frame(width: 560, height: sheetHeight)
         .background(AppTheme.Background.surfaceColor)
         .colorScheme(.dark)
+    }
+
+    private var sheetHeight: CGFloat {
+        if isSingleFile, enableClip, showAdvanced {
+            return 820
+        }
+        return isSingleFile ? 680 : 620
     }
 
     private var header: some View {
@@ -51,7 +58,7 @@ struct ProcessingOptionsSheet: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Processing options")
                     .font(.system(size: AppTheme.FontSize.xl, weight: .semibold))
-                Text("Optionally clip the audio and enable translation before processing.")
+                Text("Optionally clip the media and enable translation before processing.")
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
@@ -206,7 +213,7 @@ struct ProcessingOptionsSheet: View {
             }
             .toggleStyle(.checkbox)
             if enableClip {
-                Text("Select a time range to process.")
+                Text("Select a time range. The session keeps only this portion.")
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
                 ClipRangeControl(mediaURL: mediaURLs[0], range: $clipRange)
