@@ -201,6 +201,7 @@ struct WorkbenchSessionDetailView: View {
     @State private var subtitleLanguageCode: String?
     @State private var isRenamingTitle = false
     @State private var showTranslateSheet = false
+    @State private var showExportSheet = false
     @State private var showDubOptionsSheet = false
     @State private var showTemplateLoginAlert = false
     @State private var showSummaryRefinementSheet = false
@@ -239,6 +240,15 @@ struct WorkbenchSessionDetailView: View {
                         showTranslateSheet = false
                         store.runTranslation(transcriptionID)
                     }
+                )
+            }
+        }
+        .sheet(isPresented: $showExportSheet) {
+            if let session = store.selectedSession {
+                SessionExportCenter(
+                    session: session,
+                    preferredContent: selectedTab == .subtitles ? .subtitle : .transcript,
+                    onCancel: { showExportSheet = false }
                 )
             }
         }
@@ -533,6 +543,16 @@ struct WorkbenchSessionDetailView: View {
             .layoutPriority(1)
 
             HStack(spacing: AppTheme.Spacing.smMd) {
+                if session.transcriptionID != nil || session.subtitleTrack != nil
+                    || session.sourceURL != nil || session.outputURL != nil {
+                    sessionActionButton(
+                        systemImage: "square.and.arrow.down",
+                        accessibilityLabel: "Export",
+                        help: "Export transcript, subtitles, or audio"
+                    ) {
+                        showExportSheet = true
+                    }
+                }
                 if session.transcriptionID != nil {
                     sessionActionButton(
                         systemImage: "character.book.closed",
@@ -645,7 +665,9 @@ struct WorkbenchSessionDetailView: View {
     private func sessionContent(_ session: WorkbenchSession) -> some View {
         let scope = cueScope(for: session)
         let cues = editableCues(for: session, scope: scope)
-        let allowsEditing = selectedTab == .subtitles || !hasFineGrainedSubtitleTrack(session, scope: scope)
+        let allowsEditing = selectedTab == .subtitles
+            || scope == .transcript
+            || !hasFineGrainedSubtitleTrack(session, scope: scope)
         SessionSegmentEditor(
             sessionID: session.id,
             contentKey: "\(session.id.uuidString)-\(selectedTab.rawValue)-\(scope.contentKey)-\(allowsEditing)",
@@ -666,7 +688,7 @@ struct WorkbenchSessionDetailView: View {
         if selectedTrack == .dub { return .dub }
         let languageCode = selectedTab == .transcript ? transcriptLanguageCode : subtitleLanguageCode
         if let languageCode { return .translation(languageCode) }
-        return .source
+        return selectedTab == .transcript ? .transcript : .source
     }
 
     private func hasFineGrainedSubtitleTrack(
@@ -674,6 +696,8 @@ struct WorkbenchSessionDetailView: View {
         scope: WorkbenchStore.SessionCueScope
     ) -> Bool {
         switch scope {
+        case .transcript:
+            return false
         case .source:
             return session.subtitleTrack?.cues.isEmpty == false
         case .translation(let languageCode):
@@ -692,7 +716,12 @@ struct WorkbenchSessionDetailView: View {
     ) -> [SubtitleCue] {
         let rawCues = rawCues(for: session, scope: scope)
         guard selectedTab == .transcript else { return rawCues }
-        return aggregatedTranscriptCues(for: session, scope: scope, rawCues: rawCues)
+        switch scope {
+        case .transcript:
+            return rawCues
+        case .source, .translation, .dub:
+            return aggregatedTranscriptCues(for: session, scope: scope, rawCues: rawCues)
+        }
     }
 
     private func rawCues(
@@ -718,6 +747,19 @@ struct WorkbenchSessionDetailView: View {
             return session.translationTracks.first(where: {
                 $0.languageCode.caseInsensitiveCompare(languageCode) == .orderedSame
             })?.track.cues ?? []
+        case .transcript:
+            if let transcript = session.transcript {
+                let display = transcript.segments.isEmpty
+                    ? transcript.aggregatingSegments()
+                    : transcript
+                return SubtitleTrack.fromTranscript(display).cues
+            }
+            if let track = session.subtitleTrack, !track.cues.isEmpty {
+                let timed = track.asTranscriptionResult(preservingWords: [])
+                    .aggregatingSegments()
+                return SubtitleTrack.fromTranscript(timed).cues
+            }
+            return []
         case .source:
             if let cues = session.subtitleTrack?.cues, !cues.isEmpty {
                 return cues
@@ -735,6 +777,8 @@ struct WorkbenchSessionDetailView: View {
         rawCues: [SubtitleCue]
     ) -> [SubtitleCue] {
         switch scope {
+        case .transcript:
+            return rawCues
         case .source:
             if let track = session.subtitleTrack, !track.cues.isEmpty {
                 let timed = track.asTranscriptionResult(preservingWords: session.transcript?.words ?? [])
@@ -754,7 +798,7 @@ struct WorkbenchSessionDetailView: View {
         guard !rawCues.isEmpty else { return [] }
         let language: String?
         switch scope {
-        case .source:
+        case .transcript, .source:
             language = session.transcript?.language ?? session.subtitleTrack?.language
         case .dub:
             language = session.dubTranscript?.language ?? session.dubSubtitleTrack?.language
@@ -763,7 +807,7 @@ struct WorkbenchSessionDetailView: View {
         }
         let words: [TranscriptionWord]
         switch scope {
-        case .source:
+        case .transcript, .source:
             words = session.transcript?.words ?? []
         case .dub:
             words = session.dubTranscript?.words ?? []

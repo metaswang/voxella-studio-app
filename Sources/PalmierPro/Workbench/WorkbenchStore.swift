@@ -771,7 +771,7 @@ final class WorkbenchStore {
                 dubID: dub?.id,
                 sourceURL: job.sourceURL,
                 outputURL: dub?.outputURL,
-                transcript: job.displayedResult ?? job.result,
+                transcript: job.result,
                 subtitleTrack: job.subtitleTrack,
                 translationTracks: job.translationTracks,
                 selectedTranslationLanguageCode: job.selectedTranslationLanguageCode,
@@ -1361,6 +1361,7 @@ final class WorkbenchStore {
     }
 
     enum SessionCueScope: Equatable, Sendable {
+        case transcript
         case source
         case translation(String)
         case dub
@@ -1432,7 +1433,7 @@ final class WorkbenchStore {
         guard !source.isEmpty, !destination.isEmpty, source != destination else { return }
 
         switch scope {
-        case .source, .translation:
+        case .transcript, .source, .translation:
             guard let transcriptionID = sessions.first(where: { $0.id == sessionID })?.transcriptionID
                     ?? (transcriptions.contains(where: { $0.id == sessionID }) ? sessionID : nil)
             else { return }
@@ -1468,6 +1469,15 @@ final class WorkbenchStore {
         _ transform: (SubtitleTrack) -> SubtitleTrack?
     ) {
         switch scope {
+        case .transcript:
+            guard let transcriptionID = resolveTranscriptionID(forSession: sessionID) else { return }
+            updateTranscription(transcriptionID) { job in
+                let base = job.result.map(SubtitleTrack.fromTranscript)
+                guard let base, let updated = transform(base) else { return }
+                let next = updated.asTranscriptionResult(preservingWords: job.result?.words ?? [])
+                job.result = next
+                job.editedText = next.text
+            }
         case .source:
             guard let transcriptionID = resolveTranscriptionID(forSession: sessionID) else { return }
             updateTranscription(transcriptionID) { job in
@@ -1475,8 +1485,6 @@ final class WorkbenchStore {
                     ?? job.result.map(SubtitleTrack.fromTranscript)
                 guard let base, let updated = transform(base) else { return }
                 job.subtitleTrack = updated
-                job.result = updated.asTranscriptionResult(preservingWords: job.result?.words ?? [])
-                    .aggregatingSegments()
                 job.editedText = updated.text
             }
         case .translation(let languageCode):

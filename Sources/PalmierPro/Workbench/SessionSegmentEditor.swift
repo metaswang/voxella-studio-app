@@ -232,6 +232,8 @@ struct SessionSegmentEditor: View {
 extension WorkbenchStore.SessionCueScope {
     var contentKey: String {
         switch self {
+        case .transcript:
+            return "transcript"
         case .source:
             return "source"
         case .translation(let languageCode):
