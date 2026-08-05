@@ -52,10 +52,10 @@ final class SessionPlaybackController {
 
     func activeSubtitleText(at time: Double) -> String? {
         guard !activeSubtitleCues.isEmpty else { return nil }
-        return activeSubtitleCues.first(where: { time >= $0.start && time < $0.end })?
-            .text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfEmpty
+        guard let cue = activeSubtitleCues.first(where: { time >= $0.start && time < $0.end }) else {
+            return nil
+        }
+        return TranscriptSegmenter.renderedSubtitleText(cue.text).nilIfEmpty
     }
 
     func applyPlaybackRate() {

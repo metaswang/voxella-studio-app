@@ -298,6 +298,7 @@ actor LocalSpeechPipeline {
         let speechRanges = speechRegions.map {
             SpeechTimeRange(start: Double($0.startTime), end: Double($0.endTime))
         }
+        let diarizationPolicy = SpeakerDiarizationPolicy.standard(requestedSpeakerCount: speakerCount)
         let timeline: SpeakerActivityTimeline
         if speakerCount == 1 {
             progressUpdate(.init(stage: .assigningSpeakers, fraction: 0.88, message: "Assigning the single speaker locally…"))
@@ -312,7 +313,7 @@ actor LocalSpeechPipeline {
                 audio: samples,
                 sampleRate: 16_000,
                 speechRanges: speechRanges,
-                policy: .standard(requestedSpeakerCount: speakerCount),
+                policy: diarizationPolicy,
                 progress: { update in
                     progressUpdate(.init(
                         stage: .diarizing,
@@ -329,7 +330,8 @@ actor LocalSpeechPipeline {
             Self.assignSpeakers(
             to: aligned,
             timeline: timeline,
-            audioDuration: Double(samples.count) / 16_000
+            audioDuration: Double(samples.count) / 16_000,
+            policy: diarizationPolicy
             ),
             chineseScript: TranscriptionLanguage(code: resolvedLanguageCode).chineseScript
         )
@@ -475,7 +477,13 @@ actor LocalSpeechPipeline {
         case .diarize(let requestedSpeakerCount):
             if requestedSpeakerCount == 1 {
                 words = untitledWords.map {
-                    TranscriptionWord(text: $0.text, start: $0.start, end: $0.end, speaker: "Speaker 1")
+                    TranscriptionWord(
+                        text: $0.text,
+                        start: $0.start,
+                        end: $0.end,
+                        speaker: "Speaker 1",
+                        speakerConfidence: 1
+                    )
                 }
             } else {
                 Memory.clearCache()
@@ -485,17 +493,21 @@ actor LocalSpeechPipeline {
                     SpeechTimeRange(start: Double($0.startTime), end: Double($0.endTime))
                 }
                 let diarizer = try streamingDiarizationModel()
+                let diarizationPolicy = SpeakerDiarizationPolicy.standard(
+                    requestedSpeakerCount: requestedSpeakerCount
+                )
                 let timeline = try await diarizer.diarize(
                     audio: samples,
                     sampleRate: 16_000,
                     speechRanges: speechRanges,
-                    policy: .standard(requestedSpeakerCount: requestedSpeakerCount),
+                    policy: diarizationPolicy,
                     progress: { _ in }
                 )
                 words = Self.assignSpeakers(
                     to: aligned.words,
                     timeline: timeline,
-                    audioDuration: audioDuration
+                    audioDuration: audioDuration,
+                    policy: diarizationPolicy
                 )
             }
         }
@@ -759,10 +771,11 @@ actor LocalSpeechPipeline {
     nonisolated static func assignSpeakers(
         to aligned: [AlignedWord],
         timeline: SpeakerActivityTimeline,
-        audioDuration: Double
+        audioDuration: Double,
+        policy: SpeakerDiarizationPolicy = .standard(requestedSpeakerCount: nil)
     ) -> [TranscriptionWord] {
         var previousStart = 0.0
-        return aligned.map { word in
+        let assigned = aligned.map { word in
             let timing = normalizedWordTiming(
                 start: Double(word.startTime),
                 end: Double(word.endTime),
@@ -770,14 +783,108 @@ actor LocalSpeechPipeline {
                 audioDuration: audioDuration
             )
             previousStart = timing.start
-            let speakerID = timeline.speakerForWord(start: timing.start, end: timing.end)
+            let attribution = timeline.attributionForWord(start: timing.start, end: timing.end)
             return TranscriptionWord(
                 text: word.text,
                 start: timing.start,
                 end: timing.end,
-                speaker: speakerID.map { "Speaker \($0 + 1)" }
+                speaker: attribution.map { "Speaker \($0.speakerID + 1)" },
+                speakerConfidence: attribution?.confidence
             )
         }
+        return smoothSpeakerAssignments(assigned, policy: policy)
+    }
+
+    private static func smoothSpeakerAssignments(
+        _ words: [TranscriptionWord],
+        policy: SpeakerDiarizationPolicy
+    ) -> [TranscriptionWord] {
+        guard words.count >= 3 else {
+            return markingSpeakerBoundaries(words, policy: policy)
+        }
+
+        var resolved = words
+        var index = 0
+        while index < resolved.count {
+            let runStart = index
+            let speaker = normalizedSpeaker(resolved[index].speaker)
+            index += 1
+            while index < resolved.count,
+                  normalizedSpeaker(resolved[index].speaker) == speaker {
+                index += 1
+            }
+            let runEnd = index
+            guard runStart > 0,
+                  runEnd < resolved.count,
+                  runEnd - runStart <= max(1, policy.maximumShortTurnWords),
+                  let previousSpeaker = normalizedSpeaker(resolved[runStart - 1].speaker),
+                  let followingSpeaker = normalizedSpeaker(resolved[runEnd].speaker),
+                  previousSpeaker == followingSpeaker,
+                  speaker != nil,
+                  speaker != previousSpeaker else {
+                continue
+            }
+
+            let start = resolved[runStart].start ?? 0
+            let end = resolved[runEnd - 1].end ?? start
+            guard end >= start, end - start <= policy.shortTurnDuration else { continue }
+            for wordIndex in runStart..<runEnd {
+                let word = resolved[wordIndex]
+                resolved[wordIndex] = TranscriptionWord(
+                    text: word.text,
+                    start: word.start,
+                    end: word.end,
+                    speaker: previousSpeaker,
+                    speakerConfidence: word.speakerConfidence
+                )
+            }
+        }
+        return markingSpeakerBoundaries(resolved, policy: policy)
+    }
+
+    private static func markingSpeakerBoundaries(
+        _ words: [TranscriptionWord],
+        policy: SpeakerDiarizationPolicy
+    ) -> [TranscriptionWord] {
+        words.enumerated().map { index, word in
+            guard index > 0,
+                  let previousSpeaker = normalizedSpeaker(words[index - 1].speaker),
+                  let currentSpeaker = normalizedSpeaker(word.speaker),
+                  previousSpeaker != currentSpeaker else {
+                return TranscriptionWord(
+                    text: word.text,
+                    start: word.start,
+                    end: word.end,
+                    speaker: word.speaker,
+                    speakerConfidence: word.speakerConfidence,
+                    speakerBoundary: .none
+                )
+            }
+
+            let confidence = min(
+                word.speakerConfidence ?? 0,
+                words[index - 1].speakerConfidence ?? 0
+            )
+            let boundary: SpeakerBoundary
+            if confidence < policy.softBoundaryConfidence {
+                boundary = .soft
+            } else {
+                boundary = confidence >= policy.hardBoundaryConfidence ? .hard : .soft
+            }
+            return TranscriptionWord(
+                text: word.text,
+                start: word.start,
+                end: word.end,
+                speaker: word.speaker,
+                speakerConfidence: word.speakerConfidence,
+                speakerBoundary: boundary
+            )
+        }
+    }
+
+    private static func normalizedSpeaker(_ value: String?) -> String? {
+        let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return normalized.isEmpty ? nil : normalized
     }
 
     nonisolated static func assignSpeakers(
@@ -786,7 +893,7 @@ actor LocalSpeechPipeline {
         audioDuration: Double
     ) -> [TranscriptionWord] {
         var previousStart = 0.0
-        return aligned.map { word in
+        let assigned = aligned.map { word in
             let timing = normalizedWordTiming(
                 start: Double(word.startTime),
                 end: Double(word.endTime),
@@ -806,13 +913,22 @@ actor LocalSpeechPipeline {
                     abs((Double(lhs.startTime + lhs.endTime) / 2) - ((start + end) / 2))
                         < abs((Double(rhs.startTime + rhs.endTime) / 2) - ((start + end) / 2))
                 }?.speakerId
+            let totalOverlap = overlapBySpeaker.values.reduce(0, +)
+            let speakerConfidence = speakerID.flatMap {
+                totalOverlap > 0 ? (overlapBySpeaker[$0] ?? 0) / totalOverlap : nil
+            }
             return TranscriptionWord(
                 text: word.text,
                 start: start,
                 end: end,
-                speaker: speakerID.map { "Speaker \($0 + 1)" }
+                speaker: speakerID.map { "Speaker \($0 + 1)" },
+                speakerConfidence: speakerConfidence
             )
         }
+        return smoothSpeakerAssignments(
+            assigned,
+            policy: .standard(requestedSpeakerCount: nil)
+        )
     }
 
     /// Forced aligners can return zero-width tokens or extend slightly beyond the

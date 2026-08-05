@@ -80,7 +80,9 @@ enum KnownTextSpeakerMapper {
                 text: word.text,
                 start: start,
                 end: end,
-                speaker: best?.speaker?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                speaker: best?.speaker?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                speakerConfidence: word.speakerConfidence,
+                speakerBoundary: word.speakerBoundary
             )
         }
     }

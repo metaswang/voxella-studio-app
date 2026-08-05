@@ -30,7 +30,7 @@ enum CaptionTranscriptMapper {
         fps: Int,
         maxWords: Int?,
         minDuration: Double,
-        fits: (String) -> Bool
+        fits: @escaping (String) -> Bool
     ) -> [CaptionBuilder.Phrase] {
         let hasWordTimings = result.words.contains { $0.start != nil && $0.end != nil }
         let source = sourceSpan(for: clip)
@@ -58,7 +58,8 @@ enum CaptionTranscriptMapper {
                 for: clipped,
                 fits: fits,
                 maxWords: maxWords,
-                minDuration: minDuration
+                minDuration: minDuration,
+                language: result.language
             )
         }
     }
@@ -69,7 +70,7 @@ enum CaptionTranscriptMapper {
         result: TranscriptionResult,
         maxWords: Int?,
         minDuration: Double,
-        fits: (String) -> Bool
+        fits: @escaping (String) -> Bool
     ) -> [CaptionBuilder.Phrase] {
         let segments = result.segments.isEmpty ? [fallbackSegment(for: result)] : result.segments
         var phrases: [CaptionBuilder.Phrase] = []
@@ -109,7 +110,8 @@ enum CaptionTranscriptMapper {
                 fromTimedWords: segmentWords,
                 fits: fits,
                 maxWords: maxWords,
-                minDuration: minDuration
+                minDuration: minDuration,
+                language: result.language
             ))
         }
         return phrases

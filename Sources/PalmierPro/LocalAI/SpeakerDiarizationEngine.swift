@@ -88,6 +88,12 @@ struct DiarizationDiagnostics: Equatable, Codable, Sendable {
     }
 }
 
+struct SpeakerAttribution: Equatable, Sendable {
+    let speakerID: Int
+    let confidence: Double
+    let margin: Double
+}
+
 /// Common diarization representation used by both the neural streaming path and
 /// the legacy segmentation/embedding path. Frame probabilities are retained so
 /// word attribution can integrate evidence instead of assigning a speaker from
@@ -105,12 +111,17 @@ struct SpeakerActivityTimeline: Equatable, Sendable {
     }
 
     func speakerForWord(start rawStart: Double, end rawEnd: Double) -> Int? {
+        attributionForWord(start: rawStart, end: rawEnd)?.speakerID
+    }
+
+    func attributionForWord(start rawStart: Double, end rawEnd: Double) -> SpeakerAttribution? {
         let start = min(audioDuration, max(0, rawStart))
         let end = min(audioDuration, max(start, rawEnd))
         guard end >= start else { return nil }
 
         if frameDuration > 0, speakerCapacity > 0, !probabilities.isEmpty {
             let frameCount = probabilities.count / speakerCapacity
+            guard frameCount > 0 else { return nil }
             let first = min(frameCount - 1, max(0, Int(floor(start / frameDuration))))
             let last = min(frameCount - 1, max(first, Int(ceil(max(end, start + frameDuration) / frameDuration)) - 1))
             if first >= 0, last >= first {
@@ -125,7 +136,15 @@ struct SpeakerActivityTimeline: Equatable, Sendable {
                     }
                 }
                 if let best = scores.indices.max(by: { scores[$0] < scores[$1] }), scores[best] > 0 {
-                    return best
+                    let ordered = scores.sorted(by: >)
+                    let total = scores.reduce(0, +)
+                    let confidence = total > 0 ? scores[best] / total : 0
+                    let margin = ordered.count > 1 ? ordered[0] - ordered[1] : ordered[0]
+                    return SpeakerAttribution(
+                        speakerID: best,
+                        confidence: confidence,
+                        margin: total > 0 ? margin / total : 0
+                    )
                 }
             }
         }
@@ -140,13 +159,28 @@ struct SpeakerActivityTimeline: Equatable, Sendable {
         if let best = overlapBySpeaker.max(by: { lhs, rhs in
             lhs.value == rhs.value ? lhs.key > rhs.key : lhs.value < rhs.value
         })?.key {
-            return best
+            let ordered = overlapBySpeaker.values.sorted(by: >)
+            let total = overlapBySpeaker.values.reduce(0, +)
+            let confidence = total > 0 ? (overlapBySpeaker[best] ?? 0) / total : 0
+            let margin = ordered.count > 1 ? ordered[0] - ordered[1] : ordered[0]
+            return SpeakerAttribution(
+                speakerID: best,
+                confidence: confidence,
+                margin: total > 0 ? margin / total : 0
+            )
         }
 
         let midpoint = (start + end) / 2
-        return intervals.min { lhs, rhs in
+        guard let nearest = intervals.min(by: { lhs, rhs in
             abs((lhs.start + lhs.end) / 2 - midpoint) < abs((rhs.start + rhs.end) / 2 - midpoint)
-        }?.speakerID
+        }) else {
+            return nil
+        }
+        return SpeakerAttribution(
+            speakerID: nearest.speakerID,
+            confidence: max(0, min(1, nearest.confidence)),
+            margin: 0
+        )
     }
 }
 
@@ -157,6 +191,10 @@ struct SpeakerDiarizationPolicy: Equatable, Sendable {
     var offsetThreshold: Float = 0.45
     var minimumTurnDuration: Double = 0.16
     var mergeGap: Double = 0.24
+    var shortTurnDuration: Double = 0.6
+    var maximumShortTurnWords: Int = 2
+    var softBoundaryConfidence: Double = 0.72
+    var hardBoundaryConfidence: Double = 0.84
 
     static func standard(requestedSpeakerCount: Int?) -> Self {
         Self(requestedSpeakerCount: requestedSpeakerCount)

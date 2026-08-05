@@ -12,7 +12,7 @@ enum CaptionPreviewRender {
                      preset: TextAnimation.Preset, highlight: TextStyle.RGBA?) -> Clip {
         var c = Clip(mediaRef: "", startFrame: 0, durationFrames: loopFrames(preset))
         c.mediaType = .text
-        c.textContent = content
+        c.textContent = TranscriptSegmenter.renderedSubtitleText(content)
         c.textStyle = style
         c.transform = transform
         c.textAnimation = TextAnimation(preset: preset, highlight: highlight)

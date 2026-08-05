@@ -7,6 +7,8 @@ struct SubtitleLLMProcessor: Sendable {
         let start: Double
         let end: Double
         let speaker: String?
+        let speakerConfidence: Double?
+        let speakerBoundary: SpeakerBoundary
     }
 
     private struct RequestEnvelope: Codable {
@@ -16,6 +18,7 @@ struct SubtitleLLMProcessor: Sendable {
         let maximumCharactersPerCue: Int
         let tokens: [Token]
         let contextTokens: [Token]?
+        let repairContext: Bool
         let userInstruction: String?
 
         init(
@@ -25,6 +28,7 @@ struct SubtitleLLMProcessor: Sendable {
             maximumCharactersPerCue: Int,
             tokens: [Token],
             contextTokens: [Token]? = nil,
+            repairContext: Bool = false,
             userInstruction: String?
         ) {
             self.language = language
@@ -33,6 +37,7 @@ struct SubtitleLLMProcessor: Sendable {
             self.maximumCharactersPerCue = maximumCharactersPerCue
             self.tokens = tokens
             self.contextTokens = contextTokens
+            self.repairContext = repairContext
             self.userInstruction = userInstruction
         }
     }
@@ -88,6 +93,11 @@ struct SubtitleLLMProcessor: Sendable {
 
     let client: any LLMTextClient
 
+    private enum RepairPolicy {
+        static let contextTokenRadius = 12
+        static let maximumGap: Double = 0.35
+    }
+
     func process(
         transcript: TranscriptionResult,
         options: SubtitleProcessingPayload,
@@ -119,7 +129,14 @@ struct SubtitleLLMProcessor: Sendable {
                 preferredCharactersPerCue: readabilityLimits.preferred,
                 maximumCharactersPerCue: readabilityLimits.maximum,
                 tokens: batch,
-                contextTokens: nil,
+                contextTokens: batch.first.flatMap { firstToken in
+                    guard let firstIndex = tokens.firstIndex(where: { $0.id == firstToken.id }),
+                          firstIndex > 0 else {
+                        return nil
+                    }
+                    let start = max(0, firstIndex - RepairPolicy.contextTokenRadius)
+                    return Array(tokens[start..<firstIndex])
+                },
                 userInstruction: options.userInstruction
             )
             let response = try await completeValidated(
@@ -134,6 +151,14 @@ struct SubtitleLLMProcessor: Sendable {
             allCues,
             tokens: tokens,
             maximumCharactersPerCue: readabilityLimits.maximum
+        )
+        allCues = try await healCues(
+            allCues,
+            tokens: tokens,
+            maximumCharactersPerCue: readabilityLimits.maximum,
+            language: transcript.language,
+            userInstruction: options.userInstruction,
+            maximumAttempts: options.maximumAttempts
         )
         for index in allCues.indices { allCues[index].id = index }
         progress(1, batches.count, batches.count, "Subtitles cleaned and segmented")
@@ -223,7 +248,8 @@ struct SubtitleLLMProcessor: Sendable {
                 preferredCharactersPerCue: request.preferredCharactersPerCue,
                 maximumCharactersPerCue: request.maximumCharactersPerCue,
                 tokens: group,
-                contextTokens: nil,
+                contextTokens: request.contextTokens,
+                repairContext: request.repairContext,
                 userInstruction: request.userInstruction
             )
             let response = try await completeRecovering(
@@ -261,7 +287,7 @@ struct SubtitleLLMProcessor: Sendable {
 
     /// Partition the corrected subtitle strings over contiguous source words.
     /// This is deliberately language-neutral: it compares normalized Unicode
-    /// characters and uses speaker changes as hard boundaries, while preserving
+    /// characters and uses hard speaker boundaries, while preserving
     /// every timed source word exactly once for stable timeline coverage.
     private static func partitionCueTexts(_ texts: [String], tokens: [Token]) -> [[Int]] {
         guard !texts.isEmpty, !tokens.isEmpty, texts.count <= tokens.count else { return [] }
@@ -328,8 +354,8 @@ struct SubtitleLLMProcessor: Sendable {
     }
 
     /// Split only when the model ignored the requested readability ceiling.
-    /// Prefer sentence and clause punctuation, then whitespace, and finally a
-    /// hard character boundary for scripts without explicit word separators.
+    /// Prefer sentence and clause punctuation, then whitespace, without unsafe
+    /// character cuts in scripts that do not expose word separators.
     private static func splitTextForBudget(
         _ rawText: String,
         maximumCharactersPerCue: Int
@@ -356,6 +382,12 @@ struct SubtitleLLMProcessor: Sendable {
             }
 
             let boundary = bestSplitBoundary(in: characters, start: start, upperBound: end)
+            if boundary == end,
+               end < characters.count,
+               isCJK(characters[end - 1]),
+               isCJK(characters[end]) {
+                return [text]
+            }
             let splitAt = max(start + 1, boundary)
             let chunk = String(characters[start..<splitAt]).trimmingCharacters(in: .whitespacesAndNewlines)
             if !chunk.isEmpty { chunks.append(chunk) }
@@ -387,8 +419,22 @@ struct SubtitleLLMProcessor: Sendable {
     }
 
     private static func speakersAreCompatible(_ tokens: [Token], start: Int, end: Int) -> Bool {
-        let speakers = Set(tokens[start..<end].compactMap(\.speaker).map(normalizedSpeaker))
-        return speakers.count <= 1
+        guard end > start else { return true }
+        var previousSpeaker: String?
+        for index in start..<end {
+            let currentSpeaker = normalizedSpeaker(tokens[index].speaker)
+            if let previousSpeaker,
+               !previousSpeaker.isEmpty,
+               !currentSpeaker.isEmpty,
+               previousSpeaker != currentSpeaker,
+               tokens[index].speakerBoundary != .soft {
+                return false
+            }
+            if !currentSpeaker.isEmpty {
+                previousSpeaker = currentSpeaker
+            }
+        }
+        return true
     }
 
     private static func normalizedSpeaker(_ value: String?) -> String {
@@ -456,7 +502,15 @@ struct SubtitleLLMProcessor: Sendable {
         let timedWords = transcript.words.enumerated().compactMap { index, word -> Token? in
             guard let start = word.start, let end = word.end,
                   start.isFinite, end.isFinite, end > start else { return nil }
-            return Token(id: index, text: word.text, start: start, end: end, speaker: word.speaker)
+            return Token(
+                id: index,
+                text: word.text,
+                start: start,
+                end: end,
+                speaker: word.speaker,
+                speakerConfidence: word.speakerConfidence,
+                speakerBoundary: word.speakerBoundary
+            )
         }
         if !timedWords.isEmpty { return timedWords }
         return transcript.segments.enumerated().compactMap { index, segment in
@@ -468,7 +522,9 @@ struct SubtitleLLMProcessor: Sendable {
                 text: segment.text,
                 start: segment.start,
                 end: segment.end,
-                speaker: segment.speaker
+                speaker: segment.speaker,
+                speakerConfidence: nil,
+                speakerBoundary: segment.speakerBoundary
             )
         }
     }
@@ -478,16 +534,178 @@ struct SubtitleLLMProcessor: Sendable {
         return response.enumerated().compactMap { index, item in
             let members = item.tokenIDs.compactMap { byID[$0] }
             guard let first = members.first, let last = members.last else { return nil }
-            let speakers = Set(members.compactMap(\.speaker))
             return SubtitleCue(
                 id: index,
                 sourceIDs: item.tokenIDs,
                 text: item.text.trimmingCharacters(in: .whitespacesAndNewlines),
                 start: first.start,
                 end: last.end,
-                speaker: speakers.count == 1 ? speakers.first : nil
+                    speaker: Self.dominantSpeaker(in: members)
             )
         }
+    }
+
+    private static func dominantSpeaker(in tokens: [Token]) -> String? {
+        var scores: [String: Double] = [:]
+        var firstIndex: [String: Int] = [:]
+        for (index, token) in tokens.enumerated() {
+            let speaker = normalizedSpeaker(token.speaker)
+            guard !speaker.isEmpty else { continue }
+            scores[speaker, default: 0] += token.speakerConfidence ?? 1
+            if firstIndex[speaker] == nil { firstIndex[speaker] = index }
+        }
+        return scores.max { lhs, rhs in
+            if lhs.value != rhs.value { return lhs.value < rhs.value }
+            return (firstIndex[lhs.key] ?? .max) > (firstIndex[rhs.key] ?? .max)
+        }?.key
+    }
+
+    private func healCues(
+        _ cues: [SubtitleCue],
+        tokens: [Token],
+        maximumCharactersPerCue: Int,
+        language: String?,
+        userInstruction: String?,
+        maximumAttempts: Int
+    ) async throws -> [SubtitleCue] {
+        guard !cues.isEmpty, !tokens.isEmpty else { return cues }
+        let ordered = cues.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            return $0.end < $1.end
+        }
+        var repaired: [SubtitleCue] = []
+        var index = 0
+        while index < ordered.count {
+            guard index + 1 < ordered.count else {
+                repaired.append(ordered[index])
+                break
+            }
+            let upper = ordered[index]
+            let lower = ordered[index + 1]
+            guard shouldRequestContextRepair(upper, lower, tokens: tokens),
+                  let firstIndex = tokens.firstIndex(where: { $0.id == upper.sourceIDs.first }),
+                  let lastIndex = tokens.firstIndex(where: { $0.id == lower.sourceIDs.last }),
+                  firstIndex <= lastIndex else {
+                repaired.append(upper)
+                index += 1
+                continue
+            }
+
+            let sourceTokens = Array(tokens[firstIndex...lastIndex])
+            let contextStart = max(0, firstIndex - RepairPolicy.contextTokenRadius)
+            let contextEnd = min(tokens.count, lastIndex + 1 + RepairPolicy.contextTokenRadius)
+            let contextTokens = Array(tokens[contextStart..<firstIndex])
+                + Array(tokens[(lastIndex + 1)..<contextEnd])
+            let sourceText = TranscriptSegmenter.joinedText(
+                sourceTokens.map(\.text),
+                language: language
+            )
+            let limits = SubtitleReadabilityPolicy.limits(
+                for: sourceText,
+                overridingMaximum: maximumCharactersPerCue
+            )
+            let request = RequestEnvelope(
+                language: language,
+                minimumCharactersPerCue: limits.minimum,
+                preferredCharactersPerCue: limits.preferred,
+                maximumCharactersPerCue: maximumCharactersPerCue,
+                tokens: sourceTokens,
+                contextTokens: contextTokens.isEmpty ? nil : contextTokens,
+                repairContext: true,
+                userInstruction: userInstruction
+            )
+            let response = try await completeValidated(
+                request: request,
+                expectedTokens: sourceTokens,
+                maximumAttempts: maximumAttempts
+            )
+            let repairedCues = makeCues(response.cues, tokens: sourceTokens)
+            guard !repairedCues.isEmpty else {
+                repaired.append(upper)
+                index += 1
+                continue
+            }
+            repaired.append(contentsOf: repairedCues)
+            index += 2
+        }
+
+        var healed: [SubtitleCue] = []
+        for cue in repaired {
+            let visibleLength = cue.text.filter { !$0.isWhitespace }.count
+            guard visibleLength > maximumCharactersPerCue else {
+                healed.append(cue)
+                continue
+            }
+            let pieces = Self.splitTextForBudget(
+                cue.text,
+                maximumCharactersPerCue: maximumCharactersPerCue
+            )
+            guard let firstID = cue.sourceIDs.first,
+                  let lastID = cue.sourceIDs.last,
+                  let firstIndex = tokens.firstIndex(where: { $0.id == firstID }),
+                  let lastIndex = tokens.firstIndex(where: { $0.id == lastID }),
+                  lastIndex >= firstIndex else {
+                var overBudget = cue
+                overBudget.overBudget = true
+                healed.append(overBudget)
+                continue
+            }
+            let sourceTokens = Array(tokens[firstIndex...lastIndex])
+            let groups = Self.partitionCueTexts(pieces, tokens: sourceTokens)
+            guard pieces.count > 1, groups.count == pieces.count else {
+                var overBudget = cue
+                overBudget.overBudget = true
+                healed.append(overBudget)
+                continue
+            }
+            for (piece, group) in zip(pieces, groups) {
+                let members = group.map { sourceTokens[$0] }
+                guard let first = members.first, let last = members.last else { continue }
+                healed.append(
+                    SubtitleCue(
+                        id: cue.id,
+                        sourceIDs: members.map { $0.id },
+                        text: piece,
+                        start: first.start,
+                        end: last.end,
+                        speaker: Self.dominantSpeaker(in: members),
+                        characterBudget: cue.characterBudget,
+                        overBudget: false
+                    )
+                )
+            }
+        }
+        return healed.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            if $0.end != $1.end { return $0.end < $1.end }
+            return $0.id < $1.id
+        }
+    }
+
+    private func shouldRequestContextRepair(
+        _ upper: SubtitleCue,
+        _ lower: SubtitleCue,
+        tokens: [Token]
+    ) -> Bool {
+        guard let upperLastID = upper.sourceIDs.last,
+              let lowerFirstID = lower.sourceIDs.first,
+              let upperLastIndex = tokens.firstIndex(where: { $0.id == upperLastID }),
+              let lowerFirstIndex = tokens.firstIndex(where: { $0.id == lowerFirstID }),
+              upperLastIndex + 1 == lowerFirstIndex,
+              lower.start - upper.end <= RepairPolicy.maximumGap,
+              let firstIndex = tokens.firstIndex(where: { $0.id == upper.sourceIDs.first }),
+              let lastIndex = tokens.firstIndex(where: { $0.id == lower.sourceIDs.last }),
+              firstIndex <= lastIndex,
+              Self.speakersAreCompatible(tokens, start: firstIndex, end: lastIndex + 1) else {
+            return false
+        }
+        let upperEndsSentence = upper.text.trimmingCharacters(in: .whitespacesAndNewlines).last
+            .map { ".?!。？！".contains($0) } == true
+        let speakersDiffer = Self.normalizedSpeaker(upper.speaker) != Self.normalizedSpeaker(lower.speaker)
+        let upperEndsWeakPunctuation = upper.text.trimmingCharacters(in: .whitespacesAndNewlines).last
+            .map { ",;:，；：、".contains($0) } == true
+        let lowerHasSoftSpeakerBoundary = tokens[lowerFirstIndex].speakerBoundary == .soft
+        return !upperEndsSentence && (upperEndsWeakPunctuation || speakersDiffer || lowerHasSoftSpeakerBoundary)
     }
 
     /// Keep the final subtitle track a lossless projection of timed source
@@ -518,7 +736,7 @@ struct SubtitleLLMProcessor: Sendable {
                 let candidate = tokens[index]
                 guard !covered.contains(candidate.id) else { break }
                 if let previous = group.last,
-                   Self.normalizedSpeaker(previous.speaker) != Self.normalizedSpeaker(candidate.speaker),
+                   !Self.speakersAreCompatible([previous, candidate], start: 0, end: 2),
                    !group.isEmpty {
                     break
                 }
@@ -540,7 +758,7 @@ struct SubtitleLLMProcessor: Sendable {
                     text: Self.joinedTokenText(group.map(\.text)),
                     start: first.start,
                     end: last.end,
-                    speaker: Self.normalizedSpeaker(first.speaker).isEmpty ? nil : first.speaker
+                    speaker: Self.dominantSpeaker(in: group)
                 )
             )
         }
@@ -578,8 +796,18 @@ struct SubtitleLLMProcessor: Sendable {
                     "Every cue must fit maximumCharactersPerCue."
                 )
             }
-            let speakers = Set(cue.tokenIDs.compactMap { tokenByID[$0]?.speaker })
-            guard speakers.count <= 1 else {
+            let members = cue.tokenIDs.compactMap { tokenByID[$0] }
+            guard let firstIndex = members.first.flatMap({ first in
+                expectedTokens.firstIndex(where: { $0.id == first.id })
+            }),
+            let lastIndex = members.last.flatMap({ last in
+                expectedTokens.firstIndex(where: { $0.id == last.id })
+            }),
+            Self.speakersAreCompatible(
+                expectedTokens,
+                start: firstIndex,
+                end: lastIndex + 1
+            ) else {
                 throw MediaFlowError.invalidLLMOutput("A cue cannot cross a speaker boundary.")
             }
             let sourceText = cue.tokenIDs.compactMap { tokenByID[$0]?.text }.joined()
@@ -601,21 +829,26 @@ struct SubtitleLLMProcessor: Sendable {
     - Do not translate, invent facts, summarize, or expand.
 
     Correction priority (must follow):
-    1) Phonetic plausibility first — prefer same/near pronunciation replacements.
-    2) Minimal edit — change as few characters as needed.
-    3) Overall fluency — only after (1) and (2).
+    1) Preserve lexical and sentence integrity — never split a word, fixed expression, name, or CJK compound across cues.
+    2) Phonetic plausibility first — prefer same/near pronunciation replacements.
+    3) Minimal edit — change as few characters as needed.
+    4) Overall fluency — only after (1)–(3).
     Correct clear phonetic/homophone, spelling, word-boundary, fixed-expression, and named-entity ASR errors. Keep uncertain wording close to the recognized text.
 
     Punctuation (required):
     - ASR text is typically unpunctuated. You MUST restore natural written punctuation in every subtitle line.
     - Allowed punctuation only: ， 。 ？ ！ , . ? !
     - Sentence-ending 。？！.?! must appear where a sentence ends. Do not leave long runs of plain text without punctuation.
+    - Do not attach sentence punctuation to an incomplete word or fragment. A question or sentence-ending mark belongs after the complete sentence.
 
-    Segmentation (highest priority with length control > semantic completeness > correction quality):
+    Segmentation (highest priority with lexical integrity > sentence completeness > natural punctuation > length preference):
     - Punctuation restoration and segmentation happen together. When you place a sentence-ending mark, cut a new subtitle line there.
     - Near preferredCharactersPerCue, also split at clause/comma pauses. Avoid tiny fragments; merge when the hard maximum still permits it.
     - Treat minimumCharactersPerCue as a readability recommendation, preferredCharactersPerCue as the soft target, and maximumCharactersPerCue as the hard limit.
-    - Never cross a known speaker boundary. Never emit an over-long cue that exceeds maximumCharactersPerCue.
+    - A soft speaker boundary is a diarization uncertainty marker, not a required cut. A hard speaker boundary is a required cut.
+    - Never cross a known speaker boundary when it is hard. A soft speaker boundary is uncertainty, not a required cut.
+    - Never emit an over-long cue that exceeds maximumCharactersPerCue unless no safe lexical boundary exists; in that case preserve the complete lexical unit and mark no invented punctuation.
+    - When repairContext is true, treat the complete `tokens` array as one continuous context. Re-proofread correction, punctuation, and segmentation jointly instead of preserving the incoming cue boundary by default.
 
     Output rules:
     Return one JSON object only: {"subtitles":["corrected punctuated subtitle 1", "corrected punctuated subtitle 2"]}.

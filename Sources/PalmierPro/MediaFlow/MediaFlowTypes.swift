@@ -243,6 +243,27 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
         return updated
     }
 
+    /// Update cue timing without overlapping adjacent cues (touching ends is allowed).
+    func updatingCueTiming(id: Int, start: Double, end: Double) -> SubtitleTrack? {
+        guard start.isFinite, end.isFinite, end > start,
+              let index = cues.firstIndex(where: { $0.id == id }) else { return nil }
+        var newStart = start
+        var newEnd = end
+        if index > 0 {
+            newStart = max(newStart, cues[index - 1].end)
+        }
+        if index + 1 < cues.count {
+            newEnd = min(newEnd, cues[index + 1].start)
+        }
+        guard newEnd > newStart else { return nil }
+        let cue = cues[index]
+        if newStart == cue.start, newEnd == cue.end { return self }
+        var updated = self
+        updated.cues[index].start = newStart
+        updated.cues[index].end = newEnd
+        return updated
+    }
+
     func assigningSpeaker(toCue id: Int, speaker: String) -> SubtitleTrack? {
         let normalized = speaker.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty,
@@ -259,8 +280,26 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
         let upper = cues[index]
         let lower = cues[index + 1]
         let language = language ?? sourceLanguage
-        let mergedText = TranscriptSegmenter.joinedText([upper.text, lower.text], language: language)
+        let mergedText = TranscriptSegmenter.joinedText(
+            [upper.text, lower.text],
+            language: language
+        )
         guard !mergedText.isEmpty else { return nil }
+        let mergedSpeaker: String?
+        switch (upper.speaker, lower.speaker) {
+        case let (upperSpeaker?, lowerSpeaker?) where upperSpeaker == lowerSpeaker:
+            mergedSpeaker = upperSpeaker
+        case let (upperSpeaker?, lowerSpeaker?):
+            let upperDuration = max(0, upper.end - upper.start)
+            let lowerDuration = max(0, lower.end - lower.start)
+            mergedSpeaker = upperDuration >= lowerDuration ? upperSpeaker : lowerSpeaker
+        case let (upperSpeaker?, nil):
+            mergedSpeaker = upperSpeaker
+        case let (nil, lowerSpeaker?):
+            mergedSpeaker = lowerSpeaker
+        case (nil, nil):
+            mergedSpeaker = nil
+        }
         var updated = self
         updated.cues[index] = SubtitleCue(
             id: upper.id,
@@ -268,7 +307,7 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
             text: mergedText,
             start: upper.start,
             end: lower.end,
-            speaker: upper.speaker ?? lower.speaker,
+            speaker: mergedSpeaker,
             characterBudget: upper.characterBudget ?? lower.characterBudget,
             overBudget: upper.overBudget || lower.overBudget
         )

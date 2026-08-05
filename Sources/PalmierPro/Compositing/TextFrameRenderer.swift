@@ -10,7 +10,11 @@ enum TextFrameRenderer {
     static func image(clip: Clip, frame: Int, renderSize: CGSize) -> CIImage? {
         guard renderSize.width >= 1, renderSize.height >= 1 else { return nil }
         let style = (clip.textStyle ?? TextStyle()).scaledVisualStyle
-        let content = style.displayText(clip.textContent ?? "")
+        let rawContent = clip.textContent ?? ""
+        let subtitleContent = clip.captionGroupId == nil
+            ? rawContent
+            : TranscriptSegmenter.renderedSubtitleText(rawContent)
+        let content = style.displayText(subtitleContent)
         guard !content.isEmpty else { return nil }
         let transform = clip.transformAt(frame: frame)
         let box = boxRect(transform, renderSize)

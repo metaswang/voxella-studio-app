@@ -20,17 +20,33 @@ enum CaptionBuilder {
     static func phrases(
         for segment: TranscriptionSegment,
         words: [TranscriptionWord] = [],
-        fits: (String) -> Bool,
+        fits: @escaping (String) -> Bool,
         maxWords: Int? = nil,
-        minDuration: Double
+        minDuration: Double,
+        language: String? = nil,
+        characterBudget: Int? = nil
     ) -> [Phrase] {
+        let maximumCharacters = characterBudget
+            ?? SubtitleReadabilityPolicy.maximumCharacters(for: segment.text)
+        let accepts: (String) -> Bool = {
+            fits($0) && visibleLength($0) <= maximumCharacters
+        }
         // Only phrases that fit visually and within the word cap are accepted; else, keep splitting.
         let pieces: [String]
-        if let limit = maxWords {
+        if !words.isEmpty, isDenseScript(segment.text) {
+            pieces = splitTimedWordUnits(
+                words,
+                fits: accepts,
+                maxWords: maxWords,
+                language: language
+            )
+        } else if let limit = maxWords {
             let cap = max(1, limit)
-            pieces = split(segment.text, fits: { fits($0) && wordCount($0) <= cap })
+            pieces = split(segment.text, fits: { text in
+                accepts(text) && (isDenseScript(text) || wordCount(text) <= cap)
+            })
         } else {
-            pieces = split(segment.text, fits: fits)
+            pieces = split(segment.text, fits: accepts)
         }
         let timed = time(pieces, segment: segment, words: words)
         return enforceMinDuration(timed, minDuration: minDuration)
@@ -38,25 +54,76 @@ enum CaptionBuilder {
 
     static func phrases(
         fromTimedWords words: [TranscriptionWord],
-        fits: (String) -> Bool,
+        fits: @escaping (String) -> Bool,
         maxWords: Int? = nil,
-        minDuration: Double
+        minDuration: Double,
+        language: String? = nil,
+        characterBudget: Int? = nil
     ) -> [Phrase] {
         let timed = words.filter { $0.start != nil && $0.end != nil }
         guard let first = timed.first, let last = timed.last, let start = first.start, let end = last.end, end > start else { return [] }
-        let text = timed.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = TranscriptSegmenter.joinedText(timed.map(\.text), language: language)
         guard !text.isEmpty else { return [] }
         return phrases(
             for: TranscriptionSegment(text: text, start: start, end: end, speaker: first.speaker),
             words: timed,
             fits: fits,
             maxWords: maxWords,
-            minDuration: minDuration
+            minDuration: minDuration,
+            language: language,
+            characterBudget: characterBudget
         )
     }
 
     private static func wordCount(_ text: String) -> Int {
         text.split(whereSeparator: \.isWhitespace).count
+    }
+
+    private static func visibleLength(_ text: String) -> Int {
+        text.filter { !$0.isWhitespace }.count
+    }
+
+    private static func isDenseScript(_ text: String) -> Bool {
+        let visible = text.filter { !$0.isWhitespace }
+        guard !visible.isEmpty else { return false }
+        let denseCount = visible.filter(TranscriptSegmenter.isCJK).count
+        return Double(denseCount) / Double(visible.count) >= 0.25
+    }
+
+    private static func splitTimedWordUnits(
+        _ words: [TranscriptionWord],
+        fits: (String) -> Bool,
+        maxWords: Int?,
+        language: String?
+    ) -> [String] {
+        let cap = maxWords.map { max(1, $0) }
+        var chunks: [String] = []
+        var current: [String] = []
+
+        func emit() {
+            let text = TranscriptSegmenter.joinedText(current, language: language)
+            if !text.isEmpty { chunks.append(text) }
+            current.removeAll(keepingCapacity: true)
+        }
+
+        for word in words {
+            let candidate = TranscriptSegmenter.joinedText(
+                current + [word.text],
+                language: language
+            )
+            let exceedsWordCap = cap.map { !isDenseScript(candidate) && wordCount(candidate) > $0 } ?? false
+            if !current.isEmpty, (!fits(candidate) || exceedsWordCap) {
+                emit()
+            }
+            current.append(word.text)
+            let completedSentence = word.text.trimmingCharacters(in: .whitespacesAndNewlines).last
+                .map { ".!?。！？".contains($0) } == true
+            if completedSentence {
+                emit()
+            }
+        }
+        emit()
+        return chunks
     }
 
     private static func split(_ text: String, fits: (String) -> Bool) -> [String] {
@@ -70,7 +137,7 @@ enum CaptionBuilder {
 
     /// Break once at the best boundary present: sentence, then clause, then midpoint word.
     private static func breakOnce(_ text: String) -> [String] {
-        breakOn(text, delimiters: ".!?") ?? breakOn(text, delimiters: ",;:") ?? breakAtMidWord(text)
+        breakOn(text, delimiters: ".!?。！？") ?? breakOn(text, delimiters: ",;:，；：、") ?? breakAtMidWord(text)
     }
 
     /// Split after delimiters followed by a space, so "U.S." and "3.14" stay intact.
@@ -81,7 +148,9 @@ enum CaptionBuilder {
         var current = ""
         for (i, c) in chars.enumerated() {
             current.append(c)
-            let nextIsBreak = i + 1 >= chars.count || chars[i + 1] == " "
+            let nextIsBreak = i + 1 >= chars.count
+                || chars[i + 1].isWhitespace
+                || isCJKPunctuation(c)
             if set.contains(c), nextIsBreak {
                 let piece = current.trimmingCharacters(in: .whitespaces)
                 if !piece.isEmpty { pieces.append(piece) }
@@ -91,6 +160,10 @@ enum CaptionBuilder {
         let tail = current.trimmingCharacters(in: .whitespaces)
         if !tail.isEmpty { pieces.append(tail) }
         return pieces.count > 1 ? pieces : nil
+    }
+
+    private static func isCJKPunctuation(_ character: Character) -> Bool {
+        "。！？；，、：".contains(character)
     }
 
     private static func breakAtMidWord(_ text: String) -> [String] {
@@ -224,7 +297,7 @@ enum CaptionBuilder {
                 durationFrames: duration,
                 content: p.text,
                 style: style,
-                transform: transformFor(p.text),
+                transform: transformFor(TranscriptSegmenter.renderedSubtitleText(p.text)),
                 captionGroupId: captionGroupId,
                 words: words.isEmpty ? nil : words,
                 animation: animation

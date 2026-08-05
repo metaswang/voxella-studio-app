@@ -14,17 +14,63 @@ enum TranscriptionProvider: String, CaseIterable, Sendable, Codable {
     }
 }
 
+enum SpeakerBoundary: String, Sendable, Codable {
+    case none
+    case soft
+    case hard
+}
+
 struct TranscriptionWord: Sendable, Codable {
     let text: String
     let start: Double?
     let end: Double?
     let speaker: String?
+    let speakerConfidence: Double?
+    let speakerBoundary: SpeakerBoundary
 
-    init(text: String, start: Double?, end: Double?, speaker: String? = nil) {
+    init(
+        text: String,
+        start: Double?,
+        end: Double?,
+        speaker: String? = nil,
+        speakerConfidence: Double? = nil,
+        speakerBoundary: SpeakerBoundary = .none
+    ) {
         self.text = text
         self.start = start
         self.end = end
         self.speaker = speaker
+        self.speakerConfidence = speakerConfidence
+        self.speakerBoundary = speakerBoundary
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+        case start
+        case end
+        case speaker
+        case speakerConfidence
+        case speakerBoundary
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text = try container.decode(String.self, forKey: .text)
+        start = try container.decodeIfPresent(Double.self, forKey: .start)
+        end = try container.decodeIfPresent(Double.self, forKey: .end)
+        speaker = try container.decodeIfPresent(String.self, forKey: .speaker)
+        speakerConfidence = try container.decodeIfPresent(Double.self, forKey: .speakerConfidence)
+        speakerBoundary = try container.decodeIfPresent(SpeakerBoundary.self, forKey: .speakerBoundary) ?? .none
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(text, forKey: .text)
+        try container.encodeIfPresent(start, forKey: .start)
+        try container.encodeIfPresent(end, forKey: .end)
+        try container.encodeIfPresent(speaker, forKey: .speaker)
+        try container.encodeIfPresent(speakerConfidence, forKey: .speakerConfidence)
+        try container.encode(speakerBoundary, forKey: .speakerBoundary)
     }
 }
 
@@ -33,12 +79,46 @@ struct TranscriptionSegment: Sendable, Codable {
     let start: Double
     let end: Double
     let speaker: String?
+    let speakerBoundary: SpeakerBoundary
 
-    init(text: String, start: Double, end: Double, speaker: String? = nil) {
+    init(
+        text: String,
+        start: Double,
+        end: Double,
+        speaker: String? = nil,
+        speakerBoundary: SpeakerBoundary = .none
+    ) {
         self.text = text
         self.start = start
         self.end = end
         self.speaker = speaker
+        self.speakerBoundary = speakerBoundary
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+        case start
+        case end
+        case speaker
+        case speakerBoundary
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text = try container.decode(String.self, forKey: .text)
+        start = try container.decode(Double.self, forKey: .start)
+        end = try container.decode(Double.self, forKey: .end)
+        speaker = try container.decodeIfPresent(String.self, forKey: .speaker)
+        speakerBoundary = try container.decodeIfPresent(SpeakerBoundary.self, forKey: .speakerBoundary) ?? .none
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(text, forKey: .text)
+        try container.encode(start, forKey: .start)
+        try container.encode(end, forKey: .end)
+        try container.encodeIfPresent(speaker, forKey: .speaker)
+        try container.encode(speakerBoundary, forKey: .speakerBoundary)
     }
 }
 
@@ -59,11 +139,19 @@ struct TranscriptionResult: Sendable, Codable {
                     text: $0.text,
                     start: $0.start.map { $0 + offset },
                     end: $0.end.map { $0 + offset },
-                    speaker: $0.speaker
+                    speaker: $0.speaker,
+                    speakerConfidence: $0.speakerConfidence,
+                    speakerBoundary: $0.speakerBoundary
                 )
             },
             segments: segments.map {
-                TranscriptionSegment(text: $0.text, start: $0.start + offset, end: $0.end + offset, speaker: $0.speaker)
+                TranscriptionSegment(
+                    text: $0.text,
+                    start: $0.start + offset,
+                    end: $0.end + offset,
+                    speaker: $0.speaker,
+                    speakerBoundary: $0.speakerBoundary
+                )
             }
         )
     }
@@ -105,7 +193,9 @@ struct TranscriptionResult: Sendable, Codable {
                 text: word.text,
                 start: fitted.0,
                 end: fitted.1,
-                speaker: word.speaker
+                speaker: word.speaker,
+                speakerConfidence: word.speakerConfidence,
+                speakerBoundary: word.speakerBoundary
             )
         }
 
@@ -117,7 +207,8 @@ struct TranscriptionResult: Sendable, Codable {
                 text: segment.text,
                 start: fitted.0,
                 end: fitted.1,
-                speaker: segment.speaker
+                speaker: segment.speaker,
+                speakerBoundary: segment.speakerBoundary
             )
         }
         return TranscriptionResult(
@@ -151,7 +242,13 @@ enum TranscriptSegmenter {
                   start.isFinite,
                   end.isFinite,
                   end > start else { return nil }
-            return TimedText(text: word.text, start: start, end: end, speaker: word.speaker)
+            return TimedText(
+                text: word.text,
+                start: start,
+                end: end,
+                speaker: word.speaker,
+                speakerBoundary: word.speakerBoundary
+            )
         }
         return aggregate(items, language: language)
     }
@@ -168,7 +265,8 @@ enum TranscriptSegmenter {
                 text: segment.text,
                 start: segment.start,
                 end: segment.end,
-                speaker: segment.speaker
+                speaker: segment.speaker,
+                speakerBoundary: segment.speakerBoundary
             )
         }, language: language)
     }
@@ -178,6 +276,7 @@ enum TranscriptSegmenter {
         let start: Double
         let end: Double
         let speaker: String?
+        let speakerBoundary: SpeakerBoundary
     }
 
     private static func aggregate(
@@ -213,7 +312,11 @@ enum TranscriptSegmenter {
                 continue
             }
 
-            if isKnownSpeakerChange(from: previous.speaker, to: item.speaker) {
+            if isKnownSpeakerChange(
+                from: previous.speaker,
+                to: item.speaker,
+                boundary: item.speakerBoundary
+            ) {
                 emit(buffer.count)
                 continue
             }
@@ -264,7 +367,8 @@ enum TranscriptSegmenter {
                 text: joinedText(group.map(\.text), language: language),
                 start: first.start,
                 end: last.end,
-                speaker: dominantSpeaker(in: group)
+                speaker: dominantSpeaker(in: group),
+                speakerBoundary: first.speakerBoundary
             )
         }
     }
@@ -281,11 +385,16 @@ enum TranscriptSegmenter {
         return left == right
     }
 
-    private static func isKnownSpeakerChange(from lhs: String?, to rhs: String?) -> Bool {
+    private static func isKnownSpeakerChange(
+        from lhs: String?,
+        to rhs: String?,
+        boundary: SpeakerBoundary
+    ) -> Bool {
         guard let lhs = normalizedSpeaker(lhs), let rhs = normalizedSpeaker(rhs) else {
             return false
         }
-        return lhs != rhs
+        guard lhs != rhs else { return false }
+        return boundary != .soft
     }
 
     private static func dominantSpeaker(in group: [TimedText]) -> String? {
@@ -328,6 +437,19 @@ enum TranscriptSegmenter {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: " "), language: language)
+    }
+
+    static func renderedSubtitleText(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        let characters = Array(trimmed)
+        var suffixStart = characters.count
+        while suffixStart > 0, isPunctuationOrSymbol(characters[suffixStart - 1]) {
+            suffixStart -= 1
+        }
+        guard suffixStart < characters.count else { return trimmed }
+        let preserved = characters[suffixStart...].filter { "?!？！".contains($0) }
+        return String(characters[..<suffixStart]) + String(preserved)
     }
 
     /// Normalizes text at the display boundary using the same punctuation and
@@ -409,6 +531,13 @@ enum TranscriptSegmenter {
         ",.!?;:，。！？；：、)]}".contains(character)
     }
 
+    private static func isPunctuationOrSymbol(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy {
+            CharacterSet.punctuationCharacters.contains($0)
+                || CharacterSet.symbols.contains($0)
+        }
+    }
+
     static func isCJK(_ character: Character) -> Bool {
         character.unicodeScalars.contains { scalar in
             (0x3400...0x9FFF).contains(Int(scalar.value))
@@ -444,7 +573,9 @@ extension TranscriptionResult {
                 text: word.text,
                 start: word.start,
                 end: word.end,
-                speaker: normalized
+                speaker: normalized,
+                speakerConfidence: 1,
+                speakerBoundary: .none
             )
         }
         let updatedSegments = segments.map { segment in
@@ -458,7 +589,8 @@ extension TranscriptionResult {
                 text: segment.text,
                 start: segment.start,
                 end: segment.end,
-                speaker: normalized
+                speaker: normalized,
+                speakerBoundary: .none
             )
         }
         let rebuiltSegments = TranscriptSegmenter.aggregate(words: updatedWords, language: language)
@@ -482,7 +614,9 @@ extension TranscriptionResult {
                 text: word.text,
                 start: word.start,
                 end: word.end,
-                speaker: destination
+                speaker: destination,
+                speakerConfidence: word.speakerConfidence,
+                speakerBoundary: word.speakerBoundary
             )
         }
         let updatedSegments = segments.map { segment in
@@ -493,7 +627,8 @@ extension TranscriptionResult {
                 text: segment.text,
                 start: segment.start,
                 end: segment.end,
-                speaker: destination
+                speaker: destination,
+                speakerBoundary: segment.speakerBoundary
             )
         }
         let rebuiltSegments = TranscriptSegmenter.aggregate(words: updatedWords, language: language)

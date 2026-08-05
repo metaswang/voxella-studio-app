@@ -38,8 +38,9 @@ struct CaptionAnimatedPreview: View {
     }
 
     private var previewClip: Clip {
+        let renderedText = TranscriptSegmenter.renderedSubtitleText(text)
         let natural = TextLayout.naturalSize(
-            content: text, style: style,
+            content: renderedText, style: style,
             maxWidth: canvas.width * AppTheme.ComponentSize.captionPreviewMaxTextWidthRatio,
             canvasHeight: canvas.height
         )
@@ -47,6 +48,12 @@ struct CaptionAnimatedPreview: View {
             centerX: center.x, centerY: center.y,
             width: natural.width / canvas.width, height: natural.height / canvas.height
         )
-        return CaptionPreviewRender.clip(content: text, style: style, transform: transform, preset: preset, highlight: highlight)
+        return CaptionPreviewRender.clip(
+            content: renderedText,
+            style: style,
+            transform: transform,
+            preset: preset,
+            highlight: highlight
+        )
     }
 }

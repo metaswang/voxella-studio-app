@@ -80,7 +80,9 @@ enum TranscriptionQualityProcessor {
                 text: chineseScript.applying(to: $0.text),
                 start: $0.start,
                 end: $0.end,
-                speaker: $0.speaker
+                speaker: $0.speaker,
+                speakerConfidence: $0.speakerConfidence,
+                speakerBoundary: $0.speakerBoundary
             )
         }
     }
