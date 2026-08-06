@@ -161,6 +161,9 @@ enum ClipRenderer {
             context.setLineWidth(AppTheme.BorderWidth.medium)
             context.addPath(path)
             context.strokePath()
+            if clip.sourceCueId != nil {
+                drawSourceCueTrimHandles(in: rect, context: context)
+            }
         }
 
         // Subtle wash while the clip's media is being rendered/generated.
@@ -208,6 +211,17 @@ enum ClipRenderer {
 
         if opacity < 1.0 {
             context.restoreGState()
+        }
+    }
+
+    private static func drawSourceCueTrimHandles(in rect: NSRect, context: CGContext) {
+        let handleWidth = AppTheme.BorderWidth.thick
+        let handleHeight = min(rect.height, AppTheme.IconSize.md)
+        guard handleHeight > 0, rect.width > handleWidth else { return }
+        context.setFillColor(AppTheme.Text.primary.cgColor)
+        let y = rect.midY - handleHeight / 2
+        for x in [rect.minX - handleWidth / 2, rect.maxX - handleWidth / 2] {
+            context.fill(NSRect(x: x, y: y, width: handleWidth, height: handleHeight))
         }
     }
 

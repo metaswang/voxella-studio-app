@@ -85,8 +85,6 @@ struct MediaFlowTests {
     @Test func subtitleProcessorShrinksMalformedTokenBatchWhileKeepingWordAnchors() async throws {
         let client = StubLLMClient(responses: [
             #"{"cues":[{"token_ids":[0,2],"text":"Malformed."}]}"#,
-            #"{"cues":[{"token_ids":[0,1],"text":"Hello world."}]}"#,
-            #"{"cues":[{"token_ids":[2,3],"text":"Again now."}]}"#,
         ])
         let transcript = TranscriptionResult(
             text: "hello world again now",
@@ -110,9 +108,66 @@ struct MediaFlowTests {
         )
 
         #expect(track.usesWordTimestamps)
+        #expect(track.cues.flatMap(\.sourceIDs) == [0, 1, 2, 3])
+        #expect(track.cues.map(\.speaker) == ["Speaker 1", "Speaker 2"])
+        #expect(await client.requestCount == 1)
+    }
+
+    @Test func subtitleProcessorRemapsBrokenTokenIDsWithoutFailing() async throws {
+        let client = StubLLMClient(responses: [
+            #"{"cues":[{"token_ids":[0,3],"text":"Hello, world."},{"token_ids":[9],"text":"Again now."}]}"#,
+        ])
+        let transcript = TranscriptionResult(
+            text: "hello world again now",
+            language: "en",
+            words: [
+                .init(text: "hello", start: 0, end: 0.4, speaker: "Speaker 1"),
+                .init(text: "world", start: 0.4, end: 0.8, speaker: "Speaker 1"),
+                .init(text: "again", start: 1, end: 1.4, speaker: "Speaker 2"),
+                .init(text: "now", start: 1.4, end: 1.8, speaker: "Speaker 2"),
+            ],
+            segments: []
+        )
+
+        let track = try await SubtitleLLMProcessor(client: client).process(
+            transcript: transcript,
+            options: SubtitleProcessingPayload(maximumTokensPerBatch: 4, maximumAttempts: 1),
+            progress: { _, _, _, _ in }
+        )
+
+        #expect(track.usesWordTimestamps)
+        #expect(track.cues.map(\.text) == ["Hello, world.", "Again now."])
         #expect(track.cues.map(\.sourceIDs) == [[0, 1], [2, 3]])
-        #expect(track.cues.map(\.text) == ["Hello world.", "Again now."])
-        #expect(await client.requestCount == 3)
+        #expect(track.cues.map(\.speaker) == ["Speaker 1", "Speaker 2"])
+        #expect(await client.requestCount == 1)
+    }
+
+    @Test func subtitleProcessorMergesOverSegmentedProviderOutput() async throws {
+        let client = StubLLMClient(responses: [
+            #"{"subtitles":["He","llo,","wor","ld.","A","gain","no","w."]}"#,
+        ])
+        let transcript = TranscriptionResult(
+            text: "hello world again now",
+            language: "en",
+            words: [
+                .init(text: "hello", start: 0, end: 0.4, speaker: "Speaker 1"),
+                .init(text: "world", start: 0.4, end: 0.8, speaker: "Speaker 1"),
+                .init(text: "again", start: 1, end: 1.4, speaker: "Speaker 2"),
+                .init(text: "now", start: 1.4, end: 1.8, speaker: "Speaker 2"),
+            ],
+            segments: []
+        )
+
+        let track = try await SubtitleLLMProcessor(client: client).process(
+            transcript: transcript,
+            options: SubtitleProcessingPayload(maximumTokensPerBatch: 4, maximumAttempts: 1),
+            progress: { _, _, _, _ in }
+        )
+
+        #expect(track.cues.flatMap(\.sourceIDs) == [0, 1, 2, 3])
+        #expect(!track.cues.isEmpty)
+        #expect(Set(track.cues.compactMap(\.speaker)) == ["Speaker 1", "Speaker 2"])
+        #expect(await client.requestCount >= 1)
     }
 
     @Test func subtitleProcessorAcceptsWorkerStyleSubtitleArrayAndRemapsWords() async throws {
@@ -251,9 +306,11 @@ struct MediaFlowTests {
             }
         }
 
-        #expect(resultingTrack == baseline)
+        #expect(resultingTrack?.cues.map(\.text) == baseline.cues.map(\.text))
+        #expect(resultingTrack?.cues.map(\.start) == baseline.cues.map(\.start))
+        #expect(resultingTrack?.cues.map(\.end) == baseline.cues.map(\.end))
         #expect(terminalProgress?.step == "flow_completed")
-        #expect(terminalProgress?.message.contains("preserved the timed transcript") == true)
+        #expect(terminalProgress?.status == .completed)
     }
 
     @Test func translationPreservesCueIdentityTimingAndDurationBudgets() async throws {

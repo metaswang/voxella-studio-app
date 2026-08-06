@@ -528,34 +528,68 @@ extension EditorViewModel {
         let prevStart = clip.trimStartFrame
         let prevEnd = clip.trimEndFrame
         let prevDuration = clip.durationFrames
+        let prevStartFrame = clip.startFrame
+        let prevEndFrame = clip.endFrame
+        let isSourceCue = isSourceCueClip(clip)
         // The incoming trim values are source frames; translate their deltas
         // into timeline frames before applying to `startFrame` / `durationFrames`.
         let deltaStartSource = trimStartFrame - prevStart
         let deltaEndSource = trimEndFrame - prevEnd
         let deltaStartTimeline = Int((Double(deltaStartSource) / clip.speed).rounded())
         let deltaEndTimeline = Int((Double(deltaEndSource) / clip.speed).rounded())
-        let newDuration = prevDuration - deltaStartTimeline - deltaEndTimeline
-        let newStartFrame = clip.startFrame + deltaStartTimeline
+        var newDuration = prevDuration - deltaStartTimeline - deltaEndTimeline
+        var newStartFrame = clip.startFrame + deltaStartTimeline
+        var appliedTrimStart = trimStartFrame
+        var appliedTrimEnd = trimEndFrame
+
+        if isSourceCue {
+            guard let bounds = sourceCueNeighborFrameBounds(for: clip, trackIndex: ti) else { return }
+            let unclampedStart = newStartFrame
+            let unclampedEnd = newStartFrame + newDuration
+            var clampedEnd = unclampedEnd
+            newStartFrame = max(bounds.minStart, unclampedStart)
+            clampedEnd = min(bounds.maxEnd, clampedEnd)
+            clampedEnd = max(clampedEnd, newStartFrame + 1)
+            newStartFrame = min(newStartFrame, clampedEnd - 1)
+            newDuration = clampedEnd - newStartFrame
+            guard newDuration >= 1 else { return }
+            let startClamp = newStartFrame - unclampedStart
+            let endClamp = clampedEnd - unclampedEnd
+            appliedTrimStart = trimStartFrame + startClamp
+            appliedTrimEnd = trimEndFrame - endClamp
+            if newStartFrame == prevStartFrame, newDuration == prevDuration { return }
+        }
 
         undo.perform("Trim Clip") {
-            let prevStartFrame = clip.startFrame
-            let prevEndFrame = clip.endFrame
             let newEndFrame = newStartFrame + newDuration
             let protected = protecting.union([clipId])
-            if newStartFrame < prevStartFrame {
-                clearRegion(trackIndex: ti, start: newStartFrame, end: prevStartFrame, prune: false, excluding: protected)
-            }
-            if newEndFrame > prevEndFrame {
-                clearRegion(trackIndex: ti, start: prevEndFrame, end: newEndFrame, prune: false, excluding: protected)
+            // Source-cue parts must not overwrite neighbors; range was clamped above.
+            if !isSourceCue {
+                if newStartFrame < prevStartFrame {
+                    clearRegion(trackIndex: ti, start: newStartFrame, end: prevStartFrame, prune: false, excluding: protected)
+                }
+                if newEndFrame > prevEndFrame {
+                    clearRegion(trackIndex: ti, start: prevEndFrame, end: newEndFrame, prune: false, excluding: protected)
+                }
             }
 
             guard let loc = findClip(id: clipId) else { return }
-            timeline.tracks[loc.trackIndex].clips[loc.clipIndex].trimStartFrame = trimStartFrame
-            timeline.tracks[loc.trackIndex].clips[loc.clipIndex].trimEndFrame = trimEndFrame
+            timeline.tracks[loc.trackIndex].clips[loc.clipIndex].trimStartFrame = appliedTrimStart
+            timeline.tracks[loc.trackIndex].clips[loc.clipIndex].trimEndFrame = appliedTrimEnd
             timeline.tracks[loc.trackIndex].clips[loc.clipIndex].startFrame = newStartFrame
             timeline.tracks[loc.trackIndex].clips[loc.clipIndex].setDuration(newDuration)
 
             sortClips(trackIndex: loc.trackIndex)
+
+            if isSourceCue {
+                syncSourceCueTiming(
+                    clipId: clipId,
+                    previousStartFrame: prevStartFrame,
+                    previousEndFrame: prevEndFrame,
+                    newStartFrame: newStartFrame,
+                    newEndFrame: newEndFrame
+                )
+            }
 
             registerTimelineUndo("Trim Clip") { vm in
                 vm.trimClipInternal(clipId: clipId, trimStartFrame: prevStart, trimEndFrame: prevEnd, protecting: protecting)

@@ -364,9 +364,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
             models.presentManager()
             return
         }
-        store.selectedTranscriptionID = transcriptionID
-        store.route = .transcribe
-        store.runTranscription(transcriptionID)
+        store.retranscribe(transcriptionID, options: job.processingOptions)
     }
 
     private func createDub(for transcriptionID: UUID) {

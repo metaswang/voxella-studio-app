@@ -19,7 +19,6 @@ final class TimelineInputController {
     private(set) var razorPreviewPoint: NSPoint?
     private(set) var razorSubtitleHint: RazorSubtitleHint?
     private var snapState = SnapEngine.SnapState()
-    private var razorSnapState = SnapEngine.SnapState()
     private var scrubWasPlaying = false
     private var playheadAutoScrollTimer: Timer?
     private var playheadAutoScrollWindowPoint: NSPoint?
@@ -214,9 +213,12 @@ final class TimelineInputController {
             let linkedOn = !isOption
 
             let localX = point.x - rect.minX
-            let trimEdge = isOption ? nil : Self.trimEdge(localX: localX, clipWidth: rect.width)
+            let isSourceCue = editor.isSourceCueClip(clip)
+            let trimHandleWidth = Self.trimHandleWidth(for: clip, clipWidth: rect.width, isSourceCue: isSourceCue)
+            let trimEdge = isOption ? nil : Self.trimEdge(localX: localX, clipWidth: rect.width, handleWidth: trimHandleWidth)
             let onTrimHandle = trimEdge != nil
-            let rippleTrim = isShift && onTrimHandle
+            // Source-cue parts never ripple — shifting neighbors would desync source timings.
+            let rippleTrim = isShift && onTrimHandle && !isSourceCue
 
             if rippleTrim {
                 if !editor.selectedClipIds.contains(clip.id) {
@@ -269,10 +271,14 @@ final class TimelineInputController {
             } else if !multiPartSelection, isCommand, clip.mediaType.isAudio,
                       addVolumeKeyframeOnClick(at: point, clip: clip, clipRect: rect) {
                 dragState = .idle
-            } else if !multiPartSelection, let edge = trimEdge {
+            } else if let edge = trimEdge, !multiPartSelection || isSourceCue {
+                // Trim handle on a source-cue part collapses a multi-part selection to that part.
+                if multiPartSelection {
+                    editor.selectedClipIds = [clip.id]
+                }
                 Self.trimCursor(for: edge).set()
                 let modelEdge: EditorViewModel.TrimEdge = edge == .left ? .left : .right
-                let headroom = trimHeadroom(for: clip, edge: modelEdge, linked: linkedOn, ripple: rippleTrim)
+                let headroom = trimHeadroom(for: clip, edge: modelEdge, linked: linkedOn && !isSourceCue, ripple: rippleTrim)
                 let drag = DragState.TrimDrag(
                     clipId: clip.id,
                     trackIndex: hit.trackIndex,
@@ -281,7 +287,7 @@ final class TimelineInputController {
                     originalStartFrame: clip.startFrame,
                     originalDuration: clip.durationFrames,
                     hasNoSourceMedia: clip.mediaType == .image || clip.mediaType == .text,
-                    propagateToLinked: linkedOn,
+                    propagateToLinked: linkedOn && !isSourceCue,
                     isRipple: rippleTrim
                 )
                 dragState = edge == .left ? .trimLeft(drag) : .trimRight(drag)
@@ -329,6 +335,10 @@ final class TimelineInputController {
                     dropTarget: .existingTrack(hit.trackIndex),
                     isDuplicate: isOption
                 ))
+            }
+
+            if editor.selectedClipIds.contains(clip.id) {
+                editor.seekToFrame(clip.startFrame)
             }
         } else {
             view.setHoveredClipId(nil)
@@ -458,7 +468,16 @@ final class TimelineInputController {
             let delta = snappedStart - drag.originalStartFrame
             let maxDelta = drag.originalDuration - 1
             let minDelta = drag.hasNoSourceMedia ? -drag.originalStartFrame : -drag.originalTrimStart
-            drag.deltaFrames = max(minDelta, min(maxDelta, delta))
+            var clamped = max(minDelta, min(maxDelta, delta))
+            if let clip = editor.clipFor(id: drag.clipId), editor.isSourceCueClip(clip) {
+                clamped = editor.clampedSourceCueTrimDelta(
+                    for: clip,
+                    trackIndex: drag.trackIndex,
+                    edge: .left,
+                    deltaFrames: clamped
+                )
+            }
+            drag.deltaFrames = clamped
             dragState = .trimLeft(drag)
 
         case .trimRight(var drag):
@@ -494,6 +513,14 @@ final class TimelineInputController {
             } else {
                 let maxDelta = drag.originalTrimEnd
                 drag.deltaFrames = max(minDelta, min(maxDelta, drag.deltaFrames))
+            }
+            if let clip = editor.clipFor(id: drag.clipId), editor.isSourceCueClip(clip) {
+                drag.deltaFrames = editor.clampedSourceCueTrimDelta(
+                    for: clip,
+                    trackIndex: drag.trackIndex,
+                    edge: .right,
+                    deltaFrames: drag.deltaFrames
+                )
             }
             dragState = .trimRight(drag)
 
@@ -752,33 +779,16 @@ final class TimelineInputController {
             razorPreviewFrame = nil
             razorPreviewPoint = nil
             razorSubtitleHint = nil
-            razorSnapState = SnapEngine.SnapState()
             return
         }
 
         if editor.toolMode == .razor && point.y >= scrollOffsetY + geometry.rulerHeight {
             view.setHoveredClipId(nil)
             let candidate = geometry.frameAt(x: point.x)
-            let targets = SnapEngine.collectTargets(
-                tracks: editor.timeline.tracks,
-                playheadFrame: editor.currentFrame,
-                includePlayhead: true,
-                beatFrames: editor.beatSnapFrames(for:)
-            )
-            if let snap = SnapEngine.findSnap(
-                position: candidate,
-                targets: targets,
-                state: &razorSnapState,
-                baseThreshold: Snap.thresholdPixels,
-                pixelsPerFrame: geometry.pixelsPerFrame
-            ) {
-                razorPreviewFrame = snap.frame
-            } else {
-                razorPreviewFrame = candidate
-            }
+            razorPreviewFrame = candidate
             razorPreviewPoint = point
-            updateRazorSubtitleHint(at: razorPreviewFrame ?? candidate, geometry: geometry)
-            editor.seekToFrame(razorPreviewFrame ?? candidate, mode: .interactiveScrub)
+            updateRazorSubtitleHint(at: candidate, geometry: geometry)
+            editor.seekToFrame(candidate, mode: .interactiveScrub)
             NSCursor.crosshair.set()
             view.needsDisplay = true
             return
@@ -786,7 +796,6 @@ final class TimelineInputController {
         razorPreviewFrame = nil
         razorPreviewPoint = nil
         razorSubtitleHint = nil
-        razorSnapState = SnapEngine.SnapState()
 
         let trackIndex = geometry.trackAt(y: point.y)
 
@@ -795,11 +804,16 @@ final class TimelineInputController {
             view.setHoveredClipId(clip.id)
             let rect = geometry.clipRect(for: clip, trackIndex: hit.trackIndex)
             let localX = point.x - rect.minX
-            if !isMultiPartSelection {
-                if let trimEdge = Self.trimEdge(localX: localX, clipWidth: rect.width) {
+            let isSourceCue = editor.isSourceCueClip(clip)
+            let allowTrimCursor = !isMultiPartSelection || isSourceCue
+            if allowTrimCursor {
+                let handleWidth = Self.trimHandleWidth(for: clip, clipWidth: rect.width, isSourceCue: isSourceCue)
+                if let trimEdge = Self.trimEdge(localX: localX, clipWidth: rect.width, handleWidth: handleWidth) {
                     Self.trimCursor(for: trimEdge).set()
                     return
                 }
+            }
+            if !isMultiPartSelection {
                 if fadeKneeHit(at: point, clip: clip, clipRect: rect) != nil {
                     NSCursor.resizeLeftRight.set()
                     return
@@ -1005,9 +1019,15 @@ final class TimelineInputController {
         }
     }
 
-    private static func trimEdge(localX: CGFloat, clipWidth: CGFloat) -> TrimEdge? {
-        if localX <= Trim.handleWidth { return .left }
-        if localX >= clipWidth - Trim.handleWidth { return .right }
+    private static func trimHandleWidth(for clip: Clip, clipWidth: CGFloat, isSourceCue: Bool) -> CGFloat {
+        guard isSourceCue else { return Trim.handleWidth }
+        // Short subtitle parts need a wider grab target than the default 4pt edge.
+        return min(max(Trim.handleWidth, clipWidth / 3), AppTheme.Spacing.md)
+    }
+
+    private static func trimEdge(localX: CGFloat, clipWidth: CGFloat, handleWidth: CGFloat = Trim.handleWidth) -> TrimEdge? {
+        if localX <= handleWidth { return .left }
+        if localX >= clipWidth - handleWidth { return .right }
         return nil
     }
 

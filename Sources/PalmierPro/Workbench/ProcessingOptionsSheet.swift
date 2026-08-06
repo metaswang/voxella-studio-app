@@ -1,7 +1,14 @@
 import SwiftUI
 
 struct ProcessingOptionsSheet: View {
+    enum Mode: Equatable {
+        case upload
+        case retranscribe
+    }
+
     let mediaURLs: [URL]
+    var mode: Mode = .upload
+    var initialOptions: LocalProcessingOptions?
     let onCancel: () -> Void
     let onContinue: (LocalProcessingOptions) -> Void
 
@@ -13,12 +20,36 @@ struct ProcessingOptionsSheet: View {
     @State private var clipRange: ClosedRange<Double> = 0...1
     @State private var enableTranslation = false
     @State private var targetLanguageCode = ""
+    @State private var didApplyInitialOptions = false
     @Bindable private var models = LocalModelManager.shared
     @Bindable private var llmSettings = LLMSettingsStore.shared
 
     private var isSingleFile: Bool { mediaURLs.count == 1 }
     private var continueDisabled: Bool {
         enableTranslation && targetLanguageCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var titleText: String {
+        switch mode {
+        case .upload: "Processing options"
+        case .retranscribe: "Retranscribe"
+        }
+    }
+
+    private var descriptionText: String {
+        switch mode {
+        case .upload:
+            "Optionally clip the media and enable translation before processing."
+        case .retranscribe:
+            "Regenerate transcript with new parameters."
+        }
+    }
+
+    private var continueLabel: String {
+        switch mode {
+        case .upload: "Continue"
+        case .retranscribe: "Retranscribe"
+        }
     }
 
     var body: some View {
@@ -44,6 +75,7 @@ struct ProcessingOptionsSheet: View {
         .frame(width: 560, height: sheetHeight)
         .background(AppTheme.Background.surfaceColor)
         .colorScheme(.dark)
+        .onAppear { applyInitialOptionsIfNeeded() }
     }
 
     private var sheetHeight: CGFloat {
@@ -56,9 +88,9 @@ struct ProcessingOptionsSheet: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Processing options")
+                Text(titleText)
                     .font(.system(size: AppTheme.FontSize.xl, weight: .semibold))
-                Text("Optionally clip the media and enable translation before processing.")
+                Text(descriptionText)
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
@@ -325,7 +357,7 @@ struct ProcessingOptionsSheet: View {
             Spacer()
             Button("Cancel", action: onCancel)
                 .keyboardShortcut(.cancelAction)
-            Button("Continue") {
+            Button(continueLabel) {
                 var options = LocalProcessingOptions(
                     languageCode: languageCode,
                     customTitle: SessionTitlePolicy.normalizedUserTitle(sessionTitle),
@@ -347,5 +379,23 @@ struct ProcessingOptionsSheet: View {
         .padding(AppTheme.Spacing.xl)
         .background(AppTheme.Background.surfaceColor.opacity(0.96))
         .overlay(alignment: .top) { Divider() }
+    }
+
+    private func applyInitialOptionsIfNeeded() {
+        guard !didApplyInitialOptions, let initialOptions else { return }
+        didApplyInitialOptions = true
+        languageCode = initialOptions.languageCode
+        sessionTitle = initialOptions.customTitle ?? ""
+        speakerCount = initialOptions.speakerCount
+        enableTranslation = initialOptions.enableTranslation
+            || !(initialOptions.normalizedTargetLanguageCode ?? "").isEmpty
+        targetLanguageCode = initialOptions.normalizedTargetLanguageCode ?? ""
+        if let startMs = initialOptions.clipStartMs, let endMs = initialOptions.clipEndMs, endMs > startMs {
+            enableClip = true
+            clipRange = Double(startMs) / 1000 ... Double(endMs) / 1000
+            showAdvanced = true
+        } else if enableTranslation {
+            showAdvanced = true
+        }
     }
 }

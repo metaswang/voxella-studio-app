@@ -207,6 +207,19 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    var processingOptions: LocalProcessingOptions {
+        LocalProcessingOptions(
+            languageCode: languageCode,
+            customTitle: customTitle,
+            speakerCount: speakerCount,
+            enableTranslation: normalizedTargetLanguageCode != nil,
+            targetLanguageCode: targetLanguageCode,
+            useLLMSubtitleProcessing: useLLMSubtitleProcessing,
+            clipStartMs: clipStartMs,
+            clipEndMs: clipEndMs
+        )
+    }
+
     var translationTrack: SubtitleTrack? {
         get {
             if let selectedTranslationLanguageCode,
@@ -1381,6 +1394,36 @@ final class WorkbenchStore {
         }
     }
 
+    func updateSessionCueTiming(
+        sessionID: UUID,
+        scope: SessionCueScope,
+        cueID: Int,
+        start: Double,
+        end: Double
+    ) {
+        mutateSessionCueTrack(sessionID: sessionID, scope: scope) { track in
+            track.updatingCueTiming(id: cueID, start: start, end: end)
+        }
+    }
+
+    func adjustSessionCueTiming(
+        sessionID: UUID,
+        scope: SessionCueScope,
+        cueID: Int,
+        startDelta: Double,
+        endDelta: Double
+    ) {
+        guard startDelta != 0 || endDelta != 0 else { return }
+        mutateSessionCueTrack(sessionID: sessionID, scope: scope) { track in
+            guard let cue = track.cues.first(where: { $0.id == cueID }) else { return nil }
+            return track.updatingCueTiming(
+                id: cueID,
+                start: cue.start + startDelta,
+                end: cue.end + endDelta
+            )
+        }
+    }
+
     func mergeSessionCueDown(
         sessionID: UUID,
         scope: SessionCueScope,
@@ -1557,7 +1600,35 @@ final class WorkbenchStore {
     }
 
     func runTranscription(_ id: UUID) {
+        guard let job = transcriptions.first(where: { $0.id == id }) else { return }
+        guard job.state != .running, job.state != .cancelling else { return }
+        if job.state == .completed || job.state == .cancelled || job.state == .failed {
+            updateTranscription(id) {
+                $0.state = .ready
+                $0.progress = 0
+                $0.progressMessage = "Queued for local processing"
+                $0.errorMessage = nil
+            }
+        }
+        selectedTranscriptionID = id
+        route = .transcribe
         enqueueTranscription(id, openSessionWhenBatchCompletes: true)
+    }
+
+    /// Applies new processing options and re-runs ASR for an existing transcription job.
+    func retranscribe(_ id: UUID, options: LocalProcessingOptions) {
+        guard let job = transcriptions.first(where: { $0.id == id }) else { return }
+        guard job.state != .running, job.state != .cancelling else { return }
+        updateTranscription(id) {
+            $0.languageCode = options.languageCode
+            $0.speakerCount = options.speakerCount
+            $0.clipStartMs = options.clipStartMs
+            $0.clipEndMs = options.clipEndMs
+            $0.useLLMSubtitleProcessing = options.useLLMSubtitleProcessing
+            $0.targetLanguageCode = options.normalizedTargetLanguageCode
+            $0.customTitle = SessionTitlePolicy.normalizedUserTitle(options.customTitle)
+        }
+        runTranscription(id)
     }
 
     private func startTranscriptionPipeline(_ id: UUID) {

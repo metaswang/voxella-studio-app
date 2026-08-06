@@ -97,6 +97,50 @@ struct LLMResilienceTests {
         ))
     }
 
+    @Test
+    func deepSeekV4FlashDisablesDefaultThinkingMode() {
+        let profile = LLMProviderProfile(
+            provider: .openAICompatible,
+            prefix: "deepseek",
+            displayName: "DeepSeek",
+            baseURL: "https://api.deepseek.com",
+            model: "deepseek-v4-flash"
+        )
+        let configuration = LLMRuntimeConfiguration(
+            profile: profile,
+            modelIdentifier: "deepseek/deepseek-v4-flash",
+            modelName: "deepseek-v4-flash",
+            endpoint: URL(string: "https://api.deepseek.com/chat/completions")!,
+            apiKey: "test-deepseek"
+        )
+
+        #expect(configuration.openAICompatibleRequestOptions == .init(
+            thinkingType: "disabled"
+        ))
+    }
+
+    @Test
+    func deepSeekHostDetectionDisablesThinkingWithoutDeepSeekPrefix() {
+        let profile = LLMProviderProfile(
+            provider: .openAICompatible,
+            prefix: "provider",
+            displayName: "Custom DeepSeek",
+            baseURL: "https://api.deepseek.com",
+            model: "deepseek-v4-pro"
+        )
+        let configuration = LLMRuntimeConfiguration(
+            profile: profile,
+            modelIdentifier: "provider/deepseek-v4-pro",
+            modelName: "deepseek-v4-pro",
+            endpoint: URL(string: "https://api.deepseek.com/chat/completions")!,
+            apiKey: "test-deepseek"
+        )
+
+        #expect(configuration.openAICompatibleRequestOptions == .init(
+            thinkingType: "disabled"
+        ))
+    }
+
     @Test @MainActor
     func legacySingleProviderMigratesIntoMultiProviderRoutes() throws {
         let suiteName = "LLMLegacyMigrationTests.\(UUID().uuidString)"

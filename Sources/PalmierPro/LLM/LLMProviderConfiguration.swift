@@ -315,18 +315,31 @@ struct LLMRuntimeConfiguration: Sendable {
     let apiKey: String
 
     var openAICompatibleRequestOptions: LLMOpenAICompatibleRequestOptions {
-        let isMiniMax = profile.provider == .miniMax
-            || profile.normalizedPrefix == LLMProviderKind.miniMax.defaultPrefix
-            || endpoint.host?.lowercased().hasSuffix("minimax.io") == true
-        guard isMiniMax else { return .init() }
-
+        let host = endpoint.host?.lowercased() ?? ""
         let normalizedModel = modelName
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        return LLMOpenAICompatibleRequestOptions(
-            reasoningSplit: true,
-            thinkingType: normalizedModel == "minimax-m3" ? "disabled" : nil
-        )
+        let isMiniMax = profile.provider == .miniMax
+            || profile.normalizedPrefix == LLMProviderKind.miniMax.defaultPrefix
+            || host.hasSuffix("minimax.io")
+        if isMiniMax {
+            return LLMOpenAICompatibleRequestOptions(
+                reasoningSplit: true,
+                thinkingType: normalizedModel == "minimax-m3" ? "disabled" : nil
+            )
+        }
+
+        // DeepSeek V4 defaults to thinking mode with high effort. Structured
+        // subtitle/translation completions wait for the full non-streaming
+        // response, so leave thinking disabled unless the caller opts in.
+        let isDeepSeek = profile.normalizedPrefix.caseInsensitiveCompare("deepseek") == .orderedSame
+            || host.contains("deepseek.com")
+            || normalizedModel.hasPrefix("deepseek-")
+        if isDeepSeek {
+            return LLMOpenAICompatibleRequestOptions(thinkingType: "disabled")
+        }
+
+        return .init()
     }
 }
 

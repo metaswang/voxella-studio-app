@@ -167,6 +167,18 @@ extension EditorViewModel {
     func commitTrim(clipId: String, edge: TrimEdge, deltaFrames: Int, propagateToLinked: Bool) {
         guard let loc = findClip(id: clipId) else { return }
         let leadClip = timeline.tracks[loc.trackIndex].clips[loc.clipIndex]
+        if isSourceCueClip(leadClip) {
+            let delta = clampedSourceCueTrimDelta(
+                for: leadClip,
+                trackIndex: loc.trackIndex,
+                edge: edge,
+                deltaFrames: deltaFrames
+            )
+            guard delta != 0 else { return }
+            let values = trimValues(for: leadClip, edge: edge, delta: delta)
+            trimClips([(leadClip.id, values.trimStart, values.trimEnd)])
+            return
+        }
         var targets = [leadClip]
         if propagateToLinked {
             targets += linkedPartnerIds(of: clipId).compactMap { pid in
@@ -183,6 +195,46 @@ extension EditorViewModel {
             return (clip.id, v.trimStart, v.trimEnd)
         }
         trimClips(edits)
+    }
+
+    func isSourceCueClip(_ clip: Clip) -> Bool {
+        clip.sourceCueId != nil && clip.sourceSessionId != nil && clip.sourceCueScope != nil
+    }
+
+    /// Neighbor frame bounds for a source-cue part: touching is allowed, overlap is not.
+    func sourceCueNeighborFrameBounds(
+        for clip: Clip,
+        trackIndex: Int
+    ) -> (minStart: Int, maxEnd: Int)? {
+        guard isSourceCueClip(clip), timeline.tracks.indices.contains(trackIndex) else { return nil }
+        let ordered = timeline.tracks[trackIndex].clips.sorted { $0.startFrame < $1.startFrame }
+        guard let index = ordered.firstIndex(where: { $0.id == clip.id }) else { return nil }
+        let minStart = index > 0 ? ordered[index - 1].endFrame : 0
+        let maxEnd = index + 1 < ordered.count ? ordered[index + 1].startFrame : Int.max
+        return (minStart, maxEnd)
+    }
+
+    func clampedSourceCueTrimDelta(
+        for clip: Clip,
+        trackIndex: Int,
+        edge: TrimEdge,
+        deltaFrames: Int
+    ) -> Int {
+        guard let bounds = sourceCueNeighborFrameBounds(for: clip, trackIndex: trackIndex) else {
+            return deltaFrames
+        }
+        switch edge {
+        case .left:
+            let minDelta = bounds.minStart - clip.startFrame
+            let maxDelta = clip.durationFrames - 1
+            return max(minDelta, min(maxDelta, deltaFrames))
+        case .right:
+            let minDelta = -(clip.durationFrames - 1)
+            let maxDelta = bounds.maxEnd == .max
+                ? .max
+                : bounds.maxEnd - clip.endFrame
+            return max(minDelta, min(maxDelta, deltaFrames))
+        }
     }
 
     /// Nest trim limits come from the child's live length, not creation time.

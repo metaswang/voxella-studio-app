@@ -201,12 +201,25 @@ struct SubtitleLLMProcessor: Sendable {
             do {
                 let response = try Self.decodeJSON(ResponseEnvelope.self, from: raw)
                 priorResponse = response
-                try Self.validate(
-                    response,
-                    expectedTokens: expectedTokens,
-                    maximumCharactersPerCue: request.maximumCharactersPerCue
-                )
-                return response
+                do {
+                    try Self.validate(
+                        response,
+                        expectedTokens: expectedTokens,
+                        maximumCharactersPerCue: request.maximumCharactersPerCue
+                    )
+                    return response
+                } catch {
+                    if let remapped = Self.recoverByText(
+                        from: response,
+                        expectedTokens: expectedTokens,
+                        maximumCharactersPerCue: request.maximumCharactersPerCue
+                    ) {
+                        return remapped
+                    }
+                    throw error
+                }
+            } catch let MediaFlowError.invalidLLMOutput(reason) {
+                priorFailure = reason
             } catch {
                 priorFailure = error.localizedDescription
             }
@@ -225,7 +238,26 @@ struct SubtitleLLMProcessor: Sendable {
             return recovered
         }
 
+        // When the provider already returned JSON subtitle text but timing
+        // hints / remapping failed, prefer a local source-timed fallback over
+        // recursively re-querying the model on smaller windows.
+        if priorResponse != nil,
+           let fallback = Self.fallbackFromSourceTokens(
+            preferredTexts: priorResponse?.cues.map(\.text) ?? [],
+            expectedTokens: expectedTokens,
+            maximumCharactersPerCue: request.maximumCharactersPerCue
+           ) {
+            return fallback
+        }
+
         guard expectedTokens.count > 1 else {
+            if let fallback = Self.fallbackFromSourceTokens(
+                preferredTexts: [],
+                expectedTokens: expectedTokens,
+                maximumCharactersPerCue: request.maximumCharactersPerCue
+            ) {
+                return fallback
+            }
             throw MediaFlowError.invalidLLMOutput(
                 priorFailure ?? "No usable subtitle response."
             )
@@ -268,19 +300,168 @@ struct SubtitleLLMProcessor: Sendable {
         maximumCharactersPerCue: Int
     ) -> ResponseEnvelope? {
         guard let response, !response.cues.isEmpty, !expectedTokens.isEmpty else { return nil }
-        let texts = response.cues
+        var texts = response.cues
             .flatMap { splitTextForBudget($0.text, maximumCharactersPerCue: maximumCharactersPerCue) }
-        guard texts.allSatisfy({ !$0.isEmpty }) else { return nil }
-        // A single unrelated cue is not recoverable (and is intentionally
-        // sent through the bounded split retry), but a multi-cue response can
-        // still be mapped when a provider ignored the optional ID hints or
-        // returned a slightly over-budget line.
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !texts.isEmpty else { return nil }
+        // A single cue over a wide token window is left for bounded split retry
+        // so providers can succeed on a smaller range. Final single-token
+        // recovery uses fallbackFromSourceTokens instead.
         if texts.count == 1, expectedTokens.count > 2 { return nil }
 
-        let groups = partitionCueTexts(texts, tokens: expectedTokens)
-        guard groups.count == texts.count else { return nil }
-        let cues = zip(texts, groups).map { text, indices in
-            ResponseEnvelope.Cue(tokenIDs: indices.map { expectedTokens[$0].id }, text: text)
+        // Providers often over-segment. Merge adjacent lines until the cue
+        // count can be projected onto the timed word window.
+        while texts.count > expectedTokens.count {
+            let mergeAt = texts.indices.dropLast().min { lhs, rhs in
+                texts[lhs].count + texts[lhs + 1].count < texts[rhs].count + texts[rhs + 1].count
+            } ?? (texts.count - 2)
+            let merged = (texts[mergeAt] + texts[mergeAt + 1])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            texts.replaceSubrange(mergeAt...(mergeAt + 1), with: [merged])
+        }
+
+        let partitioned = partitionCueTexts(texts, tokens: expectedTokens)
+        if partitioned.count == texts.count,
+           let recovered = envelope(texts: texts, groups: partitioned, tokens: expectedTokens) {
+            return recovered
+        }
+
+        // Similarity DP can reject plausible corrections. Fall back to a
+        // length-proportional projection that still respects hard speakers.
+        if let groups = assignTextsProportionally(texts, tokens: expectedTokens) {
+            return envelope(texts: texts, groups: groups, tokens: expectedTokens)
+        }
+        return nil
+    }
+
+    private static func envelope(
+        texts: [String],
+        groups: [[Int]],
+        tokens: [Token]
+    ) -> ResponseEnvelope? {
+        guard texts.count == groups.count else { return nil }
+        let cues = zip(texts, groups).compactMap { text, indices -> ResponseEnvelope.Cue? in
+            guard !indices.isEmpty else { return nil }
+            return ResponseEnvelope.Cue(
+                tokenIDs: indices.map { tokens[$0].id },
+                text: text
+            )
+        }
+        guard cues.count == texts.count else { return nil }
+        return ResponseEnvelope(cues: cues)
+    }
+
+    /// Project corrected lines onto timed words by character weight when the
+    /// similarity DP cannot find a valid alignment.
+    private static func assignTextsProportionally(
+        _ texts: [String],
+        tokens: [Token]
+    ) -> [[Int]]? {
+        guard !texts.isEmpty, !tokens.isEmpty, texts.count <= tokens.count else { return nil }
+
+        var runs: [(start: Int, end: Int)] = []
+        var runStart = 0
+        for index in 1..<tokens.count {
+            if !speakersAreCompatible(tokens, start: runStart, end: index + 1) {
+                runs.append((runStart, index))
+                runStart = index
+            }
+        }
+        runs.append((runStart, tokens.count))
+        guard runs.count <= texts.count else { return nil }
+
+        var cuesPerRun = Array(repeating: 1, count: runs.count)
+        var remainingCues = texts.count - runs.count
+        while remainingCues > 0 {
+            guard let runIndex = runs.indices.max(by: { lhs, rhs in
+                let leftRoom = (runs[lhs].end - runs[lhs].start) - cuesPerRun[lhs]
+                let rightRoom = (runs[rhs].end - runs[rhs].start) - cuesPerRun[rhs]
+                if leftRoom != rightRoom { return leftRoom < rightRoom }
+                return lhs < rhs
+            }) else { return nil }
+            guard (runs[runIndex].end - runs[runIndex].start) > cuesPerRun[runIndex] else {
+                return nil
+            }
+            cuesPerRun[runIndex] += 1
+            remainingCues -= 1
+        }
+
+        var result: [[Int]] = []
+        var textCursor = 0
+        for (run, cueCount) in zip(runs, cuesPerRun) {
+            let runTokens = Array(run.start..<run.end)
+            let runTexts = Array(texts[textCursor..<(textCursor + cueCount)])
+            textCursor += cueCount
+            let weights = runTexts.map { max(1, normalizedAlignmentText($0).count) }
+            let totalWeight = Double(weights.reduce(0, +))
+            var tokenCursor = 0
+            for (index, weight) in weights.enumerated() {
+                let remainingCueCount = cueCount - index
+                let remainingTokenCount = runTokens.count - tokenCursor
+                guard remainingTokenCount >= remainingCueCount else { return nil }
+                let count: Int
+                if index == cueCount - 1 {
+                    count = remainingTokenCount
+                } else {
+                    let ideal = Int((Double(weight) / totalWeight * Double(runTokens.count)).rounded())
+                    count = min(remainingTokenCount - (remainingCueCount - 1), max(1, ideal))
+                }
+                let slice = Array(runTokens[tokenCursor..<(tokenCursor + count)])
+                guard !slice.isEmpty else { return nil }
+                result.append(slice)
+                tokenCursor += count
+            }
+        }
+        guard result.count == texts.count,
+              result.flatMap({ $0 }) == Array(tokens.indices) else { return nil }
+        return result
+    }
+
+    /// Emit speaker-safe cues from source timing when the model response cannot
+    /// be remapped. Prefer corrected LLM text when the whole window fits one cue.
+    private static func fallbackFromSourceTokens(
+        preferredTexts: [String],
+        expectedTokens: [Token],
+        maximumCharactersPerCue: Int
+    ) -> ResponseEnvelope? {
+        guard !expectedTokens.isEmpty else { return nil }
+        let preferred = preferredTexts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        var cues: [ResponseEnvelope.Cue] = []
+        var index = 0
+        while index < expectedTokens.count {
+            var group: [Token] = []
+            while index < expectedTokens.count {
+                let candidate = expectedTokens[index]
+                if let previous = group.last,
+                   !speakersAreCompatible([previous, candidate], start: 0, end: 2),
+                   !group.isEmpty {
+                    break
+                }
+                let candidateText = joinedTokenText((group + [candidate]).map(\.text))
+                let displayLength = candidateText.filter { !$0.isWhitespace }.count
+                if !group.isEmpty, displayLength > maximumCharactersPerCue { break }
+                group.append(candidate)
+                index += 1
+            }
+            guard !group.isEmpty else {
+                index += 1
+                continue
+            }
+            cues.append(
+                ResponseEnvelope.Cue(
+                    tokenIDs: group.map(\.id),
+                    text: joinedTokenText(group.map(\.text))
+                )
+            )
+        }
+        guard !cues.isEmpty else { return nil }
+        if cues.count == 1, !preferred.isEmpty {
+            cues[0] = ResponseEnvelope.Cue(tokenIDs: cues[0].tokenIDs, text: preferred)
         }
         return ResponseEnvelope(cues: cues)
     }
@@ -614,12 +795,21 @@ struct SubtitleLLMProcessor: Sendable {
                 repairContext: true,
                 userInstruction: userInstruction
             )
-            let response = try await completeValidated(
-                request: request,
-                expectedTokens: sourceTokens,
-                maximumAttempts: maximumAttempts
-            )
-            let repairedCues = makeCues(response.cues, tokens: sourceTokens)
+            let repairedCues: [SubtitleCue]
+            do {
+                let response = try await completeValidated(
+                    request: request,
+                    expectedTokens: sourceTokens,
+                    maximumAttempts: maximumAttempts
+                )
+                repairedCues = makeCues(response.cues, tokens: sourceTokens)
+            } catch {
+                // Context repair is opportunistic. Keep the original cues when
+                // the provider cannot return a usable structured repair.
+                repaired.append(upper)
+                index += 1
+                continue
+            }
             guard !repairedCues.isEmpty else {
                 repaired.append(upper)
                 index += 1

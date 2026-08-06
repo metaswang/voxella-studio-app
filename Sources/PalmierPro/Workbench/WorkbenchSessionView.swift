@@ -194,6 +194,7 @@ private struct SessionListRow: View {
 
 struct WorkbenchSessionDetailView: View {
     @Bindable private var store = WorkbenchStore.shared
+    @Bindable private var models = LocalModelManager.shared
     @State private var selectedTrack = SessionPlaybackTrack.original
     @State private var selectedTab = SessionDetailTab.transcript
     /// `nil` means Original; otherwise a translation language code.
@@ -203,8 +204,10 @@ struct WorkbenchSessionDetailView: View {
     @State private var showTranslateSheet = false
     @State private var showExportSheet = false
     @State private var showDubOptionsSheet = false
+    @State private var showRetranscribeSheet = false
     @State private var showTemplateLoginAlert = false
     @State private var showSummaryRefinementSheet = false
+    @State private var sessionPendingDeletion: WorkbenchSession?
     @State private var isOpeningClip = false
     @State private var seekSeconds: Double?
     @State private var probedMediaURL: URL?
@@ -295,6 +298,29 @@ struct WorkbenchSessionDetailView: View {
                 )
             }
         }
+        .sheet(isPresented: $showRetranscribeSheet) {
+            if let session = store.selectedSession,
+               let transcriptionID = session.transcriptionID,
+               let job = store.transcriptions.first(where: { $0.id == transcriptionID }) {
+                ProcessingOptionsSheet(
+                    mediaURLs: [job.sourceURL],
+                    mode: .retranscribe,
+                    initialOptions: job.processingOptions,
+                    onCancel: { showRetranscribeSheet = false },
+                    onContinue: { options in
+                        guard models.hasRequiredTranscriptionModels(
+                            languageCode: options.languageCode,
+                            speakerCount: options.speakerCount.count
+                        ) else {
+                            models.presentManager()
+                            return
+                        }
+                        showRetranscribeSheet = false
+                        store.retranscribe(transcriptionID, options: options)
+                    }
+                )
+            }
+        }
         .alert("My Template", isPresented: $showTemplateLoginAlert) {
             Button("Open voxstudio.me") {
                 if let url = URL(string: "https://voxstudio.me") {
@@ -304,6 +330,16 @@ struct WorkbenchSessionDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Sign in at voxstudio.me to use custom summary templates. Local Studio does not support custom templates yet.")
+        }
+        .alert(item: $sessionPendingDeletion) { session in
+            Alert(
+                title: Text("Delete session?"),
+                message: Text("\"\(session.title)\" and its saved workflow data will be removed."),
+                primaryButton: .destructive(Text("Delete")) {
+                    store.deleteSession(session.id)
+                },
+                secondaryButton: .cancel()
+            )
         }
     }
 
@@ -521,6 +557,8 @@ struct WorkbenchSessionDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isOpeningClip)
+
+                sessionOptionsMenu(session)
             }
         }
         .padding(AppTheme.Spacing.xlXxl)
@@ -546,6 +584,33 @@ struct WorkbenchSessionDetailView: View {
             .labelsHidden()
             .frame(width: AppTheme.Workbench.revisionPickerWidth)
         }
+    }
+
+    private func sessionOptionsMenu(_ session: WorkbenchSession) -> some View {
+        let isProcessing = session.state == .running || session.state == .cancelling
+        return Menu {
+            if session.transcriptionID != nil {
+                Button("Regenerate Transcript") {
+                    showRetranscribeSheet = true
+                }
+                .disabled(isProcessing || session.sourceURL == nil)
+            }
+            Divider()
+            Button("Delete", role: .destructive) {
+                sessionPendingDeletion = session
+            }
+            .disabled(isProcessing)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                .foregroundStyle(AppTheme.Text.mutedColor)
+                .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .help("Session options")
+        .accessibilityLabel("Session options")
     }
 
     private func tabBar(_ session: WorkbenchSession) -> some View {

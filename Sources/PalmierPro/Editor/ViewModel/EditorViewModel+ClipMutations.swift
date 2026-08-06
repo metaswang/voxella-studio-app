@@ -541,6 +541,28 @@ extension EditorViewModel {
         )
     }
 
+    func syncSourceCueTiming(
+        clipId: String,
+        previousStartFrame: Int,
+        previousEndFrame: Int,
+        newStartFrame: Int,
+        newEndFrame: Int
+    ) {
+        guard let reference = sourceCueReference(for: clipId) else { return }
+        let fps = Double(timeline.fps)
+        guard fps > 0 else { return }
+        let startDelta = Double(newStartFrame - previousStartFrame) / fps
+        let endDelta = Double(newEndFrame - previousEndFrame) / fps
+        guard startDelta != 0 || endDelta != 0 else { return }
+        WorkbenchStore.shared.adjustSessionCueTiming(
+            sessionID: reference.sessionID,
+            scope: reference.scope,
+            cueID: reference.cueID,
+            startDelta: startDelta,
+            endDelta: endDelta
+        )
+    }
+
     func applyTextStyle(clipId: String, fitToContent: Bool = false, _ modify: @escaping (inout TextStyle) -> Void) {
         let canvasW = Double(timeline.width)
         let canvasH = Double(timeline.height)
