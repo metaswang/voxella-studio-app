@@ -257,7 +257,11 @@ actor LocalSpeechPipeline {
             spans: recognizedSpans,
             languageCode: recognitionLanguageCode
         )
-        recognizedSpans = quality.spans
+        let ownership = ASROwnershipResolver.resolve(
+            spans: quality.spans,
+            languageCode: recognitionLanguageCode
+        )
+        recognizedSpans = ownership.spans
         let text = recognizedSpans.map(\.text).joined(separator: " ")
         guard !text.isEmpty else { throw LocalAIError.emptyTranscript }
         let inferredLanguage = TranscriptionLanguage(
@@ -328,10 +332,11 @@ actor LocalSpeechPipeline {
         }
         let words = TranscriptionQualityProcessor.postprocess(
             Self.assignSpeakers(
-            to: aligned,
-            timeline: timeline,
-            audioDuration: Double(samples.count) / 16_000,
-            policy: diarizationPolicy
+                to: aligned,
+                timeline: timeline,
+                audioDuration: Double(samples.count) / 16_000,
+                languageCode: resolvedLanguageCode,
+                policy: diarizationPolicy
             ),
             chineseScript: TranscriptionLanguage(code: resolvedLanguageCode).chineseScript
         )
@@ -345,6 +350,11 @@ actor LocalSpeechPipeline {
         }
         if let warning = quality.statistics.warning {
             diagnostics = diagnostics.addingWarning(warning)
+        }
+        if ownership.removedDuplicatePrefixes > 0 || ownership.removedContainedSpans > 0 {
+            diagnostics = diagnostics.addingWarning(
+                "ASR ownership removed \(ownership.removedDuplicatePrefixes) duplicate prefix\(ownership.removedDuplicatePrefixes == 1 ? "" : "es") and \(ownership.removedContainedSpans) contained span\(ownership.removedContainedSpans == 1 ? "" : "s")."
+            )
         }
         return LocalTranscriptionOutput(
             result: TranscriptionResult(
@@ -466,7 +476,8 @@ actor LocalSpeechPipeline {
         let untitledWords = Self.assignSpeakers(
             to: aligned.words,
             turns: [],
-            audioDuration: audioDuration
+            audioDuration: audioDuration,
+            languageCode: resolvedLanguageCode
         )
         let words: [TranscriptionWord]
         switch request.speakerAttribution {
@@ -507,6 +518,7 @@ actor LocalSpeechPipeline {
                     to: aligned.words,
                     timeline: timeline,
                     audioDuration: audioDuration,
+                    languageCode: resolvedLanguageCode,
                     policy: diarizationPolicy
                 )
             }
@@ -626,13 +638,29 @@ actor LocalSpeechPipeline {
             let start = max(ownershipStart, absoluteStart)
             let end = min(ownershipEnd, absoluteEnd)
             guard end > start else { return nil }
-            return RecognizedSpan(text: trimmed, startTime: start, endTime: end)
+            let ownedText = ASROwnershipResolver.clampTextToOwnership(
+                text: trimmed,
+                absoluteStart: absoluteStart,
+                absoluteEnd: absoluteEnd,
+                ownershipStart: ownershipStart,
+                ownershipEnd: ownershipEnd
+            )
+            guard !ownedText.isEmpty else { return nil }
+            return RecognizedSpan(text: ownedText, startTime: start, endTime: end)
         }
         if !parsed.isEmpty { return parsed }
         let start = min(audioDuration, max(0, ownershipStart))
         let end = min(audioDuration, max(start, min(ownershipEnd, recognitionEnd)))
         guard end > start else { return [] }
-        return [RecognizedSpan(text: fallbackText, startTime: start, endTime: end)]
+        let ownedFallback = ASROwnershipResolver.clampTextToOwnership(
+            text: fallbackText,
+            absoluteStart: recognitionStart,
+            absoluteEnd: recognitionEnd,
+            ownershipStart: ownershipStart,
+            ownershipEnd: ownershipEnd
+        )
+        guard !ownedFallback.isEmpty else { return [] }
+        return [RecognizedSpan(text: ownedFallback, startTime: start, endTime: end)]
     }
 
     private nonisolated static func languageDetectionSamples(
@@ -772,162 +800,29 @@ actor LocalSpeechPipeline {
         to aligned: [AlignedWord],
         timeline: SpeakerActivityTimeline,
         audioDuration: Double,
+        languageCode: String? = nil,
         policy: SpeakerDiarizationPolicy = .standard(requestedSpeakerCount: nil)
     ) -> [TranscriptionWord] {
-        var previousStart = 0.0
-        let assigned = aligned.map { word in
-            let timing = normalizedWordTiming(
-                start: Double(word.startTime),
-                end: Double(word.endTime),
-                previousStart: previousStart,
-                audioDuration: audioDuration
-            )
-            previousStart = timing.start
-            let attribution = timeline.attributionForWord(start: timing.start, end: timing.end)
-            return TranscriptionWord(
-                text: word.text,
-                start: timing.start,
-                end: timing.end,
-                speaker: attribution.map { "Speaker \($0.speakerID + 1)" },
-                speakerConfidence: attribution?.confidence
-            )
-        }
-        return smoothSpeakerAssignments(assigned, policy: policy)
-    }
-
-    private static func smoothSpeakerAssignments(
-        _ words: [TranscriptionWord],
-        policy: SpeakerDiarizationPolicy
-    ) -> [TranscriptionWord] {
-        guard words.count >= 3 else {
-            return markingSpeakerBoundaries(words, policy: policy)
-        }
-
-        var resolved = words
-        var index = 0
-        while index < resolved.count {
-            let runStart = index
-            let speaker = normalizedSpeaker(resolved[index].speaker)
-            index += 1
-            while index < resolved.count,
-                  normalizedSpeaker(resolved[index].speaker) == speaker {
-                index += 1
-            }
-            let runEnd = index
-            guard runStart > 0,
-                  runEnd < resolved.count,
-                  runEnd - runStart <= max(1, policy.maximumShortTurnWords),
-                  let previousSpeaker = normalizedSpeaker(resolved[runStart - 1].speaker),
-                  let followingSpeaker = normalizedSpeaker(resolved[runEnd].speaker),
-                  previousSpeaker == followingSpeaker,
-                  speaker != nil,
-                  speaker != previousSpeaker else {
-                continue
-            }
-
-            let start = resolved[runStart].start ?? 0
-            let end = resolved[runEnd - 1].end ?? start
-            guard end >= start, end - start <= policy.shortTurnDuration else { continue }
-            for wordIndex in runStart..<runEnd {
-                let word = resolved[wordIndex]
-                resolved[wordIndex] = TranscriptionWord(
-                    text: word.text,
-                    start: word.start,
-                    end: word.end,
-                    speaker: previousSpeaker,
-                    speakerConfidence: word.speakerConfidence
-                )
-            }
-        }
-        return markingSpeakerBoundaries(resolved, policy: policy)
-    }
-
-    private static func markingSpeakerBoundaries(
-        _ words: [TranscriptionWord],
-        policy: SpeakerDiarizationPolicy
-    ) -> [TranscriptionWord] {
-        words.enumerated().map { index, word in
-            guard index > 0,
-                  let previousSpeaker = normalizedSpeaker(words[index - 1].speaker),
-                  let currentSpeaker = normalizedSpeaker(word.speaker),
-                  previousSpeaker != currentSpeaker else {
-                return TranscriptionWord(
-                    text: word.text,
-                    start: word.start,
-                    end: word.end,
-                    speaker: word.speaker,
-                    speakerConfidence: word.speakerConfidence,
-                    speakerBoundary: .none
-                )
-            }
-
-            let confidence = min(
-                word.speakerConfidence ?? 0,
-                words[index - 1].speakerConfidence ?? 0
-            )
-            let boundary: SpeakerBoundary
-            if confidence < policy.softBoundaryConfidence {
-                boundary = .soft
-            } else {
-                boundary = confidence >= policy.hardBoundaryConfidence ? .hard : .soft
-            }
-            return TranscriptionWord(
-                text: word.text,
-                start: word.start,
-                end: word.end,
-                speaker: word.speaker,
-                speakerConfidence: word.speakerConfidence,
-                speakerBoundary: boundary
-            )
-        }
-    }
-
-    private static func normalizedSpeaker(_ value: String?) -> String? {
-        let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return normalized.isEmpty ? nil : normalized
+        LexicalSpeakerResolver.assignSpeakers(
+            to: aligned,
+            timeline: timeline,
+            audioDuration: audioDuration,
+            languageCode: languageCode,
+            policy: policy
+        )
     }
 
     nonisolated static func assignSpeakers(
         to aligned: [AlignedWord],
         turns: [DiarizedSegment],
-        audioDuration: Double
+        audioDuration: Double,
+        languageCode: String? = nil
     ) -> [TranscriptionWord] {
-        var previousStart = 0.0
-        let assigned = aligned.map { word in
-            let timing = normalizedWordTiming(
-                start: Double(word.startTime),
-                end: Double(word.endTime),
-                previousStart: previousStart,
-                audioDuration: audioDuration
-            )
-            let start = timing.start
-            let end = timing.end
-            previousStart = start
-            var overlapBySpeaker: [Int: Double] = [:]
-            for turn in turns {
-                let overlap = min(end, Double(turn.endTime)) - max(start, Double(turn.startTime))
-                if overlap > 0 { overlapBySpeaker[turn.speakerId, default: 0] += overlap }
-            }
-            let speakerID = overlapBySpeaker.max { $0.value < $1.value }?.key
-                ?? turns.min { lhs, rhs in
-                    abs((Double(lhs.startTime + lhs.endTime) / 2) - ((start + end) / 2))
-                        < abs((Double(rhs.startTime + rhs.endTime) / 2) - ((start + end) / 2))
-                }?.speakerId
-            let totalOverlap = overlapBySpeaker.values.reduce(0, +)
-            let speakerConfidence = speakerID.flatMap {
-                totalOverlap > 0 ? (overlapBySpeaker[$0] ?? 0) / totalOverlap : nil
-            }
-            return TranscriptionWord(
-                text: word.text,
-                start: start,
-                end: end,
-                speaker: speakerID.map { "Speaker \($0 + 1)" },
-                speakerConfidence: speakerConfidence
-            )
-        }
-        return smoothSpeakerAssignments(
-            assigned,
-            policy: .standard(requestedSpeakerCount: nil)
+        LexicalSpeakerResolver.assignSpeakers(
+            to: aligned,
+            turns: turns,
+            audioDuration: audioDuration,
+            languageCode: languageCode
         )
     }
 

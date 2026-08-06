@@ -388,6 +388,8 @@ struct ScriptAlignmentPayload: Sendable {
 
 struct SubtitleProcessingPayload: Sendable {
     var maximumTokensPerBatch = 180
+    /// Speaker-safe source segments per Stage 1 LLM batch, matching the postprocess worker.
+    var maximumSegmentsPerBatch = 10
     var maximumCharactersPerCue: Int?
     var maximumAttempts = 2
     var userInstruction: String?
@@ -624,7 +626,7 @@ struct MediaJobProgressEvent: Codable, Equatable, Sendable {
 enum MediaFlowArtifact: Sendable {
     case transcription(TranscriptionResult, DiarizationDiagnostics)
     case alignment(KnownTextAlignmentOutput)
-    case subtitles(SubtitleTrack)
+    case subtitles(SubtitleTrack, rebuiltSegments: [TranscriptionSegment]?)
     case translation(SubtitleTrack)
     case dub(DubFlowResult)
 }

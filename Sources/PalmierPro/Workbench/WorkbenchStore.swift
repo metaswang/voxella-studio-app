@@ -2124,14 +2124,16 @@ final class WorkbenchStore {
                 configuration: .init(languageCode: languageCode, speakerCount: speakerCount)
             )
 
-        case .artifact(.subtitles(let track)):
+        case .artifact(.subtitles(let track, let rebuiltSegments)):
             updateTranscription(jobID) {
                 $0.subtitleTrack = track
-                $0.editedText = track.text
-                if let result = $0.result {
-                    let timed = track.asTranscriptionResult(preservingWords: result.words)
-                    $0.result = timed.aggregatingSegments()
-                }
+                let prepared = Self.preparedTranscript(
+                    from: track,
+                    base: $0.result,
+                    rebuiltSegments: rebuiltSegments
+                )
+                $0.result = prepared
+                $0.editedText = prepared.text
             }
 
         case .artifact(.translation(let track)):
@@ -2145,6 +2147,30 @@ final class WorkbenchStore {
         case .artifact(.alignment), .artifact(.dub):
             break
         }
+    }
+
+    private static func preparedTranscript(
+        from track: SubtitleTrack,
+        base: TranscriptionResult?,
+        rebuiltSegments: [TranscriptionSegment]?
+    ) -> TranscriptionResult {
+        let fallback = track.asTranscriptionResult(
+            preservingWords: base?.words ?? []
+        ).aggregatingSegments()
+        guard let rebuiltSegments, !rebuiltSegments.isEmpty else {
+            return fallback
+        }
+
+        let language = base?.language ?? track.language ?? track.sourceLanguage
+        return TranscriptionResult(
+            text: TranscriptSegmenter.joinedText(
+                rebuiltSegments.map(\.text),
+                language: language
+            ),
+            language: language,
+            words: base?.words ?? fallback.words,
+            segments: rebuiltSegments
+        )
     }
 
     /// Auto title + template summary after transcription, aligned with postprocess finalize → digest → template summary.
@@ -2503,12 +2529,14 @@ final class WorkbenchStore {
                 }
             }
 
-        case .artifact(.subtitles(let track)):
+        case .artifact(.subtitles(let track, let rebuiltSegments)):
             updateDub(jobID) { job in
                 job.subtitleTrack = track
-                let transcript = track.asTranscriptionResult(
-                    preservingWords: job.alignedTranscript?.words ?? []
-                ).aggregatingSegments()
+                let transcript = Self.preparedTranscript(
+                    from: track,
+                    base: job.alignedTranscript,
+                    rebuiltSegments: rebuiltSegments
+                )
                 job.alignedTranscript = transcript
                 if let activeRevisionID = job.activeRevisionID,
                    let index = job.revisions?.firstIndex(where: { $0.id == activeRevisionID }) {

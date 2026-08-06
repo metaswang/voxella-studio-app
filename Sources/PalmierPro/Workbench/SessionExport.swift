@@ -465,13 +465,7 @@ enum SessionExportFormatter {
     }
 
     private static func stripEdgePunct(_ text: String) -> String {
-        var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let edge = CharacterSet(charactersIn: ",，。.")
-        while true {
-            let trimmed = value.trimmingCharacters(in: edge.union(.whitespacesAndNewlines))
-            if trimmed == value { return value }
-            value = trimmed
-        }
+        TranscriptSegmenter.renderedSubtitleText(text)
     }
 
     private static func clampedMilliseconds(_ seconds: Double) -> Int {

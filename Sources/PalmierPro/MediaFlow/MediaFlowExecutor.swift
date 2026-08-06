@@ -188,7 +188,7 @@ actor MediaFlowExecutor: MediaJobEventSource {
                     ) ?? SubtitleTrack.fromTranscript(output.result)
                     context.subtitles = track
                     continuation.yield(.artifact(.alignment(output)))
-                    continuation.yield(.artifact(.subtitles(track)))
+                    continuation.yield(.artifact(.subtitles(track, rebuiltSegments: nil)))
 
                 case .prepareSubtitles(let payload):
                     guard let transcript = context.transcript else {
@@ -202,10 +202,11 @@ actor MediaFlowExecutor: MediaJobEventSource {
                     guard let client = LLMClients[.subtitleProcessing] else {
                         throw LLMConfigurationError.noConfiguredModel(.subtitleProcessing)
                     }
-                    let processor = SubtitleLLMProcessor(client: client)
+                    let pipeline = SubtitlePostprocessPipeline(client: client)
                     let track: SubtitleTrack
+                    let rebuiltSegments: [TranscriptionSegment]?
                     do {
-                        track = try await processor.process(
+                        let output = try await pipeline.process(
                             transcript: transcript,
                             options: payload,
                             progress: { fraction, current, total, message in
@@ -219,6 +220,18 @@ actor MediaFlowExecutor: MediaJobEventSource {
                                 )
                             }
                         )
+                        track = output.track
+                        rebuiltSegments = output.rebuiltSegments
+                        context.transcript = TranscriptionResult(
+                            text: TranscriptSegmenter.joinedText(
+                                output.rebuiltSegments.map(\.text),
+                                language: transcript.language
+                            ),
+                            language: transcript.language,
+                            words: transcript.words,
+                            segments: output.rebuiltSegments
+                        )
+                        context.warnings.append(contentsOf: output.warnings)
                     } catch MediaFlowError.invalidLLMOutput(let reason)
                         where payload.invalidOutputFallback == .preserveTimedTranscript {
                         let fallback = context.subtitles ?? SubtitleTrack.fromTranscript(transcript)
@@ -237,9 +250,12 @@ actor MediaFlowExecutor: MediaJobEventSource {
                             nil,
                             "Using timed subtitles because LLM cleanup returned invalid JSON"
                         )
+                        rebuiltSegments = nil
                     }
                     context.subtitles = track
-                    continuation.yield(.artifact(.subtitles(track)))
+                    continuation.yield(
+                        .artifact(.subtitles(track, rebuiltSegments: rebuiltSegments))
+                    )
 
                 case .translate(let payload):
                     let sourceTrack: SubtitleTrack

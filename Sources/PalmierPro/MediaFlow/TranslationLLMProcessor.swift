@@ -58,7 +58,24 @@ struct TranslationLLMProcessor: Sendable {
 
     let client: any LLMTextClient
 
+    /// Single translation entry point. Track construction itself lives in
+    /// `TranslationTrackBuilder`, which owns target-language cue boundaries.
     func translate(
+        track: SubtitleTrack,
+        options: TranslationFlowPayload,
+        progress: @escaping @Sendable (Double, Int?, Int?, String) -> Void
+    ) async throws -> SubtitleTrack {
+        try await TranslationTrackBuilder(client: client).build(
+            sourceTrack: track,
+            options: options,
+            progress: progress
+        )
+    }
+
+    /// 1:1 line-aligned translation that keeps every source cue id and timing.
+    /// `TranslationTrackBuilder` falls back to this when a window's structured
+    /// track output is unusable.
+    func lineAlignedTranslate(
         track: SubtitleTrack,
         options: TranslationFlowPayload,
         progress: @escaping @Sendable (Double, Int?, Int?, String) -> Void

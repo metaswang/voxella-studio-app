@@ -297,7 +297,7 @@ struct MediaFlowTests {
 
         for await event in executor.events(for: request) {
             switch event {
-            case .artifact(.subtitles(let track)):
+            case .artifact(.subtitles(let track, _)):
                 resultingTrack = track
             case .progress(let progress) where progress.status == .completed:
                 terminalProgress = progress
@@ -341,7 +341,7 @@ struct MediaFlowTests {
             ]
         )
 
-        let translated = try await TranslationLLMProcessor(client: client).translate(
+        let translated = try await TranslationLLMProcessor(client: client).lineAlignedTranslate(
             track: source,
             options: TranslationFlowPayload(targetLanguage: "en-US"),
             progress: { _, _, _, _ in }
@@ -371,7 +371,7 @@ struct MediaFlowTests {
             ]
         )
 
-        let translated = try await TranslationLLMProcessor(client: client).translate(
+        let translated = try await TranslationLLMProcessor(client: client).lineAlignedTranslate(
             track: source,
             options: TranslationFlowPayload(targetLanguage: "en-US", maximumAttempts: 1),
             progress: { _, _, _, _ in }
@@ -398,7 +398,7 @@ struct MediaFlowTests {
             ]
         )
 
-        let translated = try await TranslationLLMProcessor(client: client).translate(
+        let translated = try await TranslationLLMProcessor(client: client).lineAlignedTranslate(
             track: source,
             options: TranslationFlowPayload(targetLanguage: "en-US", maximumAttempts: 1),
             progress: { _, _, _, _ in }
@@ -429,7 +429,7 @@ struct MediaFlowTests {
             ]
         )
 
-        let translated = try await TranslationLLMProcessor(client: client).translate(
+        let translated = try await TranslationLLMProcessor(client: client).lineAlignedTranslate(
             track: source,
             options: TranslationFlowPayload(targetLanguage: "en-US", maximumAttempts: 1),
             progress: { _, _, _, _ in }

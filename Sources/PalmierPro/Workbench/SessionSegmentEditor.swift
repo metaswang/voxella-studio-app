@@ -10,6 +10,7 @@ struct SessionSegmentEditor: View {
     let cues: [SubtitleCue]
     let speakerLabels: [String]
     var allowsEditing = true
+    var showsSubtitleDisplayText = false
     let emptyText: String
     let onSeek: (Double) -> Void
 
@@ -43,6 +44,7 @@ struct SessionSegmentEditor: View {
                             : .constant(nil),
                         canSplit: allowsEditing && canSplit,
                         allowsEditing: allowsEditing,
+                        showsSubtitleDisplayText: showsSubtitleDisplayText,
                         onPlay: { onSeek(cue.start) },
                         onBeginEdit: { beginEdit(cue) },
                         onCommitEdit: { commitEditAndClose() },
@@ -301,6 +303,7 @@ private struct SessionCueRow: View {
     @Binding var cursorOffset: Int?
     let canSplit: Bool
     var allowsEditing = true
+    var showsSubtitleDisplayText = false
     let onPlay: () -> Void
     let onBeginEdit: () -> Void
     let onCommitEdit: () -> Void
@@ -382,7 +385,11 @@ private struct SessionCueRow: View {
                             .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     } else {
-                        Text(cue.text)
+                        Text(
+                            showsSubtitleDisplayText
+                                ? TranscriptSegmenter.renderedSubtitleText(cue.text)
+                                : cue.text
+                        )
                             .font(.system(size: AppTheme.FontSize.mdLg))
                             .foregroundStyle(AppTheme.Text.primaryColor)
                             .frame(maxWidth: .infinity, alignment: .leading)

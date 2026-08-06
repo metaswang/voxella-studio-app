@@ -55,6 +55,37 @@ struct TranscriptSegmenterTests {
         )
     }
 
+    @Test func keepsCanonicalPunctuationSeparateFromSubtitleDisplayText() {
+        let track = SubtitleTrack(
+            sourceLanguage: "zh-CN",
+            language: "zh-CN",
+            cues: [
+                SubtitleCue(
+                    id: 0,
+                    sourceIDs: [0],
+                    text: "真的吗？！",
+                    start: 0,
+                    end: 2,
+                    speaker: nil
+                ),
+                SubtitleCue(
+                    id: 1,
+                    sourceIDs: [1],
+                    text: "请立即预定。",
+                    start: 2,
+                    end: 4,
+                    speaker: nil
+                ),
+            ]
+        )
+
+        #expect(track.cues.map(\.text) == ["真的吗？！", "请立即预定。"])
+        #expect(
+            track.cues.map { TranscriptSegmenter.renderedSubtitleText($0.text) }
+                == ["真的吗？！", "请立即预定"]
+        )
+    }
+
     @Test func keepsLanguageAwareSpacingWhenRebuildingPublicSegments() {
         let result = TranscriptionResult(
             text: "你 是 1996 年",

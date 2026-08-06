@@ -760,6 +760,7 @@ struct WorkbenchSessionDetailView: View {
             cues: cues,
             speakerLabels: speakerLabels(for: session, cues: cues),
             allowsEditing: allowsEditing,
+            showsSubtitleDisplayText: selectedTab == .subtitles,
             emptyText: selectedTab == .transcript
                 ? "No timed transcript is available for this track."
                 : "No subtitle track is available.",

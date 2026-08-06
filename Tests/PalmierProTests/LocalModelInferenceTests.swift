@@ -222,7 +222,7 @@ struct LocalModelInferenceTests {
                 dub = output
             case .artifact(.alignment(let output)):
                 alignment = output
-            case .artifact(.subtitles(let track)):
+            case .artifact(.subtitles(let track, _)):
                 subtitles = track
             case .progress(let progress) where progress.status == .failed:
                 Issue.record(NSError(
