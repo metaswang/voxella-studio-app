@@ -17,7 +17,7 @@ struct LocalTranscriptCacheConfiguration: Codable, Equatable, Sendable {
 /// Disk + memory cache for local and cloud transcripts, keyed by file identity so edits invalidate naturally.
 actor TranscriptCache {
     static let shared = TranscriptCache()
-    static let localPipelineSchemaVersion = 4
+    static let localPipelineSchemaVersion = 5
     static let directory = FileManager.default
         .urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("\(Log.subsystem)/Transcripts", isDirectory: true)

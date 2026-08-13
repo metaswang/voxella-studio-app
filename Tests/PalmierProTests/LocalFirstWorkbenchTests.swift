@@ -131,7 +131,7 @@ struct LocalFirstWorkbenchTests {
             audioDuration: 95,
             configuration: .init(
                 maximumWindowDuration: 28,
-                boundaryContextDuration: 0.15,
+                boundaryContextDuration: 0.75,
                 maximumMergeGap: 0.75
             )
         )
@@ -139,7 +139,7 @@ struct LocalFirstWorkbenchTests {
         #expect(!chunks.isEmpty)
         #expect(chunks.allSatisfy { $0.ownershipEnd > $0.ownershipStart })
         #expect(chunks.allSatisfy { $0.inputStart >= 0 && $0.inputEnd <= 95 })
-        #expect(chunks.allSatisfy { $0.inputDuration <= 28.3 + 0.000_001 })
+        #expect(chunks.allSatisfy { $0.inputDuration <= 29.5 + 0.000_001 })
         #expect(zip(chunks, chunks.dropFirst()).allSatisfy { pair in
             pair.0.ownershipEnd <= pair.1.ownershipStart
         })
@@ -436,6 +436,39 @@ struct LocalFirstWorkbenchTests {
         #expect(AlignmentAnchorMatcher.normalized("🌍").isEmpty)
     }
 
+    @Test func alignmentTimestampGeometryRejectsLongCJKUnitAgainstLocalTiming() {
+        let outlier = AlignmentTimestampGeometry.excessiveUnit(in: [
+            .init(text: "刚", start: 0, end: 0.08),
+            .init(text: "刚", start: 0.08, end: 4.4),
+            .init(text: "听", start: 4.4, end: 4.52),
+            .init(text: "那", start: 4.52, end: 4.62),
+        ])
+
+        #expect(outlier?.unitIndex == 1)
+        #expect(outlier?.duration == 4.32)
+    }
+
+    @Test func alignmentTimestampGeometryAllowsLongSilenceBetweenWords() {
+        let outlier = AlignmentTimestampGeometry.excessiveUnit(in: [
+            .init(text: "开", start: 0, end: 0.12),
+            .init(text: "始", start: 9.1, end: 9.24),
+            .init(text: "吧", start: 9.24, end: 9.38),
+        ])
+
+        #expect(outlier == nil)
+    }
+
+    @Test func alignmentTimestampGeometryRejectsStretchedCJKClusterWithoutMedianEscape() {
+        let outlier = AlignmentTimestampGeometry.excessiveUnit(in: [
+            .init(text: "刚", start: 0, end: 4.3),
+            .init(text: "听", start: 4.3, end: 8.6),
+            .init(text: "那", start: 8.6, end: 12.9),
+        ])
+
+        #expect(outlier?.unitIndex == 0)
+        #expect(outlier?.duration == 4.3)
+    }
+
     #if BUNDLED_SPEECH
     @Test func alignmentCoalescesFineSpansByModelCapabilityWithoutLanguageRules() throws {
         var capabilities = AlignmentModelCapabilities.qwen3ForcedAligner
@@ -444,18 +477,20 @@ struct LocalFirstWorkbenchTests {
         let chunks = try LongFormAlignmentEngine.alignmentChunks(
             from: [
                 .init(text: "Hello", startTime: 0, endTime: 2),
-                .init(text: "世界", startTime: 3, endTime: 5),
+                .init(text: "世界", startTime: 2.1, endTime: 5),
                 .init(text: "مرحبا", startTime: 9, endTime: 11),
                 .init(text: "again", startTime: 12, endTime: 14),
             ],
             capabilities: capabilities
         )
 
-        #expect(chunks.count == 2)
+        #expect(chunks.count == 3)
         #expect(chunks[0].text == "Hello 世界")
         #expect(chunks[0].startTime == 0 && chunks[0].endTime == 5)
-        #expect(chunks[1].text == "مرحبا again")
-        #expect(chunks[1].startTime == 9 && chunks[1].endTime == 14)
+        #expect(chunks[1].text == "مرحبا")
+        #expect(chunks[1].startTime == 9 && chunks[1].endTime == 11)
+        #expect(chunks[2].text == "again")
+        #expect(chunks[2].startTime == 12 && chunks[2].endTime == 14)
         #expect(chunks.allSatisfy { $0.duration <= capabilities.targetChunkDuration })
     }
 
@@ -470,6 +505,42 @@ struct LocalFirstWorkbenchTests {
         #expect(words.first?.startTime == 12.5)
         #expect(words.last?.endTime == 14.5)
         #expect(zip(words, words.dropFirst()).allSatisfy { $0.endTime == $1.startTime })
+    }
+
+    @Test func coarseAlignmentFallbackLeavesLongSpanRemainderAsSilence() {
+        let words = LongFormAlignmentEngine.evenlyTimed(
+            units: ["你", "好", "吗"],
+            within: .init(text: "你 好 吗", startTime: 0, endTime: 12)
+        )
+
+        #expect(words.allSatisfy { $0.endTime - $0.startTime <= 2 })
+        #expect(words[1].startTime - words[0].endTime > 0)
+    }
+
+    @Test func alignmentRetriesUnstableChunksBeforeUsingCoarseTiming() {
+        var capabilities = AlignmentModelCapabilities.qwen3ForcedAligner
+        capabilities.contextDuration = 0.5
+        capabilities.minimumRetryUnitCount = 4
+        capabilities.maximumRetryDepth = 2
+
+        #expect(LongFormAlignmentEngine.canRetry(
+            spanDuration: 12,
+            unitCount: 4,
+            retryDepth: 0,
+            capabilities: capabilities
+        ))
+        #expect(!LongFormAlignmentEngine.canRetry(
+            spanDuration: 12,
+            unitCount: 4,
+            retryDepth: 2,
+            capabilities: capabilities
+        ))
+        #expect(!LongFormAlignmentEngine.canRetry(
+            spanDuration: 1,
+            unitCount: 4,
+            retryDepth: 0,
+            capabilities: capabilities
+        ))
     }
     #endif
 

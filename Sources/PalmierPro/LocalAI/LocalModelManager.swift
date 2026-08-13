@@ -202,7 +202,7 @@ final class LocalModelManager {
                 quantizationBits: 8,
                 quantizationGroupSize: 64,
                 maximumWindowDuration: 28,
-                boundaryContextDuration: 0.15,
+                boundaryContextDuration: 0.75,
                 maximumMergeGap: 0.75
             ),
             requiredArtifacts: largeTurboSharedArtifacts + [
@@ -233,7 +233,7 @@ final class LocalModelManager {
                 quantizationBits: nil,
                 quantizationGroupSize: nil,
                 maximumWindowDuration: 28,
-                boundaryContextDuration: 0.15,
+                boundaryContextDuration: 0.75,
                 maximumMergeGap: 0.75
             ),
             requiredArtifacts: largeTurboSharedArtifacts + [

@@ -62,6 +62,7 @@ struct LocalSpeechProgress: Equatable, Sendable {
 struct LocalTranscriptionOutput: Sendable {
     let result: TranscriptionResult
     let diarizationDiagnostics: DiarizationDiagnostics
+    let alignmentDiagnostics: TranscriptionAlignmentDiagnostics
 }
 
 actor LocalSpeechPipeline {
@@ -135,24 +136,7 @@ actor LocalSpeechPipeline {
         defer { MLXRuntime.endInference() }
 
         progressUpdate(.init(stage: .decoding, fraction: 0.03, message: "Decoding audio locally…"))
-        let preparedURL: URL
-        let shouldRemovePrepared: Bool
-        let needsExtraction = clipRangeSeconds != nil
-            || ClipType(fileExtension: sourceURL.pathExtension.lowercased()) == .video
-        if needsExtraction {
-            preparedURL = try await Transcription.extractAudioTrack(
-                from: sourceURL,
-                range: clipRangeSeconds
-            )
-            shouldRemovePrepared = true
-        } else {
-            preparedURL = sourceURL
-            shouldRemovePrepared = false
-        }
-        defer {
-            if shouldRemovePrepared { try? FileManager.default.removeItem(at: preparedURL) }
-        }
-
+        let preparedURL = try await DecodedAudioCache.file(for: sourceURL, range: clipRangeSeconds)
         let samples = try AudioFileLoader.load(url: preparedURL, targetSampleRate: 16_000)
         guard !samples.isEmpty else { throw LocalAIError.emptyTranscript }
 
@@ -182,16 +166,19 @@ actor LocalSpeechPipeline {
             outputLanguageCode = detected.outputLanguageCode
         }
 
+        let audioDuration = Double(samples.count) / 16_000
+        let speechMask = Self.makeAlignmentSpeechMask(samples: samples, speechRegions: speechRegions)
+        let chunkConfiguration = ASRChunkPlannerConfiguration(
+            maximumWindowDuration: asrSpecification.maximumWindowDuration,
+            boundaryContextDuration: asrSpecification.boundaryContextDuration,
+            maximumMergeGap: asrSpecification.maximumMergeGap
+        )
         let recognitionChunks = ASRChunkPlanner.chunks(
             speechRanges: speechRegions.map {
                 ASRSpeechRange(start: Double($0.startTime), end: Double($0.endTime))
             },
-            audioDuration: Double(samples.count) / 16_000,
-            configuration: .init(
-                maximumWindowDuration: asrSpecification.maximumWindowDuration,
-                boundaryContextDuration: asrSpecification.boundaryContextDuration,
-                maximumMergeGap: asrSpecification.maximumMergeGap
-            )
+            audioDuration: audioDuration,
+            configuration: chunkConfiguration
         )
         guard !recognitionChunks.isEmpty else { throw LocalAIError.emptyTranscript }
 
@@ -218,100 +205,189 @@ actor LocalSpeechPipeline {
             total: recognitionChunks.count,
             message: "Recognizing speech with \(asrDescriptor.title)…"
         ))
-        var recognizedSpans: [RecognizedSpan] = []
-        var whisperLanguage: String?
-        for (index, chunk) in recognitionChunks.enumerated() {
-            try Task.checkCancellation()
-            let start = max(0, Int((chunk.inputStart * 16_000).rounded(.down)))
-            let end = min(samples.count, Int((chunk.inputEnd * 16_000).rounded(.up)))
-            guard end > start else { continue }
-            let output = whisper.generate(
-                audio: MLXArray(Array(samples[start..<end])),
-                generationParameters: parameters
-            )
-            let regionText = output.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !regionText.isEmpty {
-                let recognitionStart = Double(start) / 16_000
-                let recognitionEnd = Double(end) / 16_000
-                let outputSpans = Self.recognizedSpans(
-                    from: output.segments,
-                    fallbackText: regionText,
-                    recognitionStart: recognitionStart,
-                    recognitionEnd: recognitionEnd,
-                    ownershipStart: chunk.ownershipStart,
-                    ownershipEnd: chunk.ownershipEnd,
-                    audioDuration: Double(samples.count) / 16_000
-                )
-                recognizedSpans.append(contentsOf: outputSpans)
-            }
-            if whisperLanguage == nil { whisperLanguage = output.language }
-            progressUpdate(.init(
-                stage: .recognizing,
-                fraction: 0.20 + 0.30 * Double(index + 1) / Double(recognitionChunks.count),
-                completed: index + 1,
-                total: recognitionChunks.count,
-                message: "Recognizing speech chunk \(index + 1) of \(recognitionChunks.count)…"
-            ))
-        }
+        var recognition = try recognize(
+            samples: samples,
+            chunks: recognitionChunks,
+            whisper: whisper,
+            parameters: parameters,
+            audioDuration: audioDuration,
+            progressStart: 0.20,
+            progressEnd: 0.50,
+            progressUpdate: progressUpdate,
+            chunkMessage: { "Recognizing speech chunk \($0) of \($1)…" }
+        )
+        let rawLexicalUnitCount = Self.lexicalUnitCount(recognition.spans)
         let quality = TranscriptionQualityProcessor.preprocess(
-            spans: recognizedSpans,
+            spans: recognition.spans,
             languageCode: recognitionLanguageCode
         )
         let ownership = ASROwnershipResolver.resolve(
             spans: quality.spans,
             languageCode: recognitionLanguageCode
         )
-        recognizedSpans = ownership.spans
+        let recognizedSpans = ownership.spans
         let text = recognizedSpans.map(\.text).joined(separator: " ")
         guard !text.isEmpty else { throw LocalAIError.emptyTranscript }
         let inferredLanguage = TranscriptionLanguage(
-            code: whisperLanguage ?? Self.detectLanguageCode(in: text)
+            code: recognition.language ?? Self.detectLanguageCode(in: text)
         )
         let resolvedLanguageCode = outputLanguageCode ?? inferredLanguage.outputLanguageCode
 
-        let alignmentSpans = try LongFormAlignmentEngine.alignmentChunks(from: recognizedSpans)
-        progressUpdate(.init(
-            stage: .aligning,
-            fraction: 0.52,
-            completed: 0,
-            total: alignmentSpans.count,
-            message: "Aligning words to the waveform…"
-        ))
         let aligner = try await alignerModel()
         let language = Self.alignerLanguage(from: resolvedLanguageCode)
-        let alignmentSpanCount = alignmentSpans.count
-        let alignment = try LongFormAlignmentEngine.alignDetailed(
+        let alignment = try alignRecognizedSpans(
+            recognizedSpans,
             audio: samples,
-            sampleRate: 16_000,
-            spans: recognizedSpans,
             language: language,
             aligner: aligner,
-            progress: { fraction, message in
-                progressUpdate(.init(
-                    stage: .aligning,
-                    fraction: 0.52 + 0.18 * fraction,
-                    completed: min(alignmentSpanCount, Int((fraction * Double(alignmentSpanCount)).rounded())),
-                    total: alignmentSpanCount,
-                    message: message
-                ))
+            speechMask: speechMask,
+            progressStart: 0.52,
+            progressEnd: 0.70,
+            progressUpdate: progressUpdate
+        )
+        var aligned = alignment.words
+
+        let uncovered = ASRCoverageRepair.uncoveredSpeech(
+            mask: speechMask,
+            covered: aligned.map {
+                ASRSpeechRange(start: Double($0.startTime), end: Double($0.endTime))
             }
         )
-        let aligned = alignment.words
+        var retriedUncoveredRangeCount = uncovered.count
+        var retriedUncoveredSpeechSeconds = uncovered.reduce(0) { $0 + ($1.end - $1.start) }
+        var retriedUncoveredAcceptedCount = 0
+        var retriedUncoveredKeptFirstPassCount = 0
+        var retryLexicalUnitCount = 0
+        var atomicSegmentFallbackCount = recognition.timestampFallbackCount
+        if !uncovered.isEmpty {
+            let cores = uncovered
+            let retryInputs = ASRCoverageRepair.retryRanges(
+                from: cores,
+                audioDuration: audioDuration
+            )
+            Log.transcription.notice(
+                "coverage retry cores=\(retriedUncoveredRangeCount) seconds=\(String(format: "%.1f", retriedUncoveredSpeechSeconds))"
+            )
+            let retryChunks = ASRChunkPlanner.chunks(
+                speechRanges: retryInputs,
+                audioDuration: audioDuration,
+                configuration: chunkConfiguration
+            )
+            if retryChunks.isEmpty {
+                retriedUncoveredKeptFirstPassCount = cores.count
+                Log.transcription.warning("coverage retry produced no recognition chunks")
+            } else {
+                progressUpdate(.init(
+                    stage: .recognizing,
+                    fraction: 0.70,
+                    completed: 0,
+                    total: retryChunks.count,
+                    message: "Recognizing uncovered speech…"
+                ))
+                do {
+                    let retryRecognition = try recognize(
+                        samples: samples,
+                        chunks: retryChunks,
+                        whisper: whisper,
+                        parameters: parameters,
+                        audioDuration: audioDuration,
+                        progressStart: 0.70,
+                        progressEnd: 0.78,
+                        progressUpdate: progressUpdate,
+                        chunkMessage: { "Recognizing uncovered speech \($0) of \($1)…" }
+                    )
+                    atomicSegmentFallbackCount += retryRecognition.timestampFallbackCount
+                    retryLexicalUnitCount = Self.lexicalUnitCount(retryRecognition.spans)
+                    if retryRecognition.spans.isEmpty {
+                        retriedUncoveredKeptFirstPassCount = cores.count
+                        Log.transcription.warning("coverage retry returned no spans; keeping first pass")
+                    } else {
+                        let retryQuality = TranscriptionQualityProcessor.preprocess(
+                            spans: retryRecognition.spans,
+                            languageCode: recognitionLanguageCode
+                        )
+                        let retryOwnership = ASROwnershipResolver.resolve(
+                            spans: retryQuality.spans,
+                            languageCode: recognitionLanguageCode
+                        )
+                        if retryOwnership.spans.isEmpty {
+                            retriedUncoveredKeptFirstPassCount = cores.count
+                            Log.transcription.warning("coverage retry left no spans; keeping first pass")
+                        } else {
+                            let retryAlignment = try alignRecognizedSpans(
+                                retryOwnership.spans,
+                                audio: samples,
+                                language: language,
+                                aligner: aligner,
+                                speechMask: speechMask,
+                                progressStart: 0.78,
+                                progressEnd: 0.88,
+                                progressUpdate: progressUpdate
+                            )
+                            retryLexicalUnitCount = retryAlignment.words.count
+                            let firstPassCovered = aligned.map {
+                                ASRSpeechRange(start: Double($0.startTime), end: Double($0.endTime))
+                            }
+                            let retryCovered = retryAlignment.words.map {
+                                ASRSpeechRange(start: Double($0.startTime), end: Double($0.endTime))
+                            }
+                            let outcome = ASRCoverageRepair.retryOutcome(
+                                firstPassCovered: firstPassCovered,
+                                retryCovered: retryCovered,
+                                cores: cores,
+                                mask: speechMask
+                            )
+                            if outcome == .accept {
+                                let kept = aligned.filter { word in
+                                    !ASRCoverageRepair.overlaps(
+                                        ASRSpeechRange(start: Double(word.startTime), end: Double(word.endTime)),
+                                        with: cores
+                                    )
+                                }
+                                let incoming = retryAlignment.words.filter { word in
+                                    ASRCoverageRepair.overlaps(
+                                        ASRSpeechRange(start: Double(word.startTime), end: Double(word.endTime)),
+                                        with: cores
+                                    )
+                                }
+                                aligned = (kept + incoming).sorted {
+                                    if $0.startTime != $1.startTime { return $0.startTime < $1.startTime }
+                                    return $0.endTime < $1.endTime
+                                }
+                                retriedUncoveredAcceptedCount = cores.count
+                            } else {
+                                retriedUncoveredKeptFirstPassCount = cores.count
+                                Log.transcription.notice("coverage retry did not improve core coverage; keeping first pass")
+                            }
+                        }
+                    }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    try Task.checkCancellation()
+                    retriedUncoveredKeptFirstPassCount = cores.count
+                    Log.transcription.warning(
+                        "coverage retry failed; keeping first pass: \(error.localizedDescription)"
+                    )
+                }
+            }
+        }
 
         Memory.clearCache()
         let speechRanges = speechRegions.map {
             SpeechTimeRange(start: Double($0.startTime), end: Double($0.endTime))
         }
         let diarizationPolicy = SpeakerDiarizationPolicy.standard(requestedSpeakerCount: speakerCount)
+        let diarizeStart = retriedUncoveredRangeCount > 0 ? 0.88 : 0.72
         let timeline: SpeakerActivityTimeline
         if speakerCount == 1 {
-            progressUpdate(.init(stage: .assigningSpeakers, fraction: 0.88, message: "Assigning the single speaker locally…"))
+            progressUpdate(.init(stage: .assigningSpeakers, fraction: 0.90, message: "Assigning the single speaker locally…"))
             timeline = SpeakerActivityPostprocessor.singleSpeaker(
                 speechRanges: speechRanges,
-                audioDuration: Double(samples.count) / 16_000
+                audioDuration: audioDuration
             )
         } else {
-            progressUpdate(.init(stage: .diarizing, fraction: 0.72, message: "Loading streaming speaker model…"))
+            progressUpdate(.init(stage: .diarizing, fraction: diarizeStart, message: "Loading streaming speaker model…"))
             let diarizer = try streamingDiarizationModel()
             timeline = try await diarizer.diarize(
                 audio: samples,
@@ -321,7 +397,7 @@ actor LocalSpeechPipeline {
                 progress: { update in
                     progressUpdate(.init(
                         stage: .diarizing,
-                        fraction: 0.72 + update.fraction * 0.24,
+                        fraction: diarizeStart + update.fraction * 0.10,
                         completed: update.completed,
                         total: update.total,
                         message: update.message
@@ -334,7 +410,7 @@ actor LocalSpeechPipeline {
             Self.assignSpeakers(
                 to: aligned,
                 timeline: timeline,
-                audioDuration: Double(samples.count) / 16_000,
+                audioDuration: audioDuration,
                 languageCode: resolvedLanguageCode,
                 policy: diarizationPolicy
             ),
@@ -342,20 +418,29 @@ actor LocalSpeechPipeline {
         )
         let segments = Self.makeSegments(from: words)
         progressUpdate(.init(stage: .finalizing, fraction: 0.99, message: "Finalizing transcript…"))
-        var diagnostics = timeline.diagnostics
-        if alignment.coarseTimedUnitCount > 0 {
-            diagnostics = diagnostics.addingWarning(
-                "\(alignment.coarseTimedUnitCount) word timings are estimates from ASR segment boundaries because forced alignment was unstable."
-            )
-        }
-        if let warning = quality.statistics.warning {
-            diagnostics = diagnostics.addingWarning(warning)
-        }
-        if ownership.removedDuplicatePrefixes > 0 || ownership.removedContainedSpans > 0 {
-            diagnostics = diagnostics.addingWarning(
-                "ASR ownership removed \(ownership.removedDuplicatePrefixes) duplicate prefix\(ownership.removedDuplicatePrefixes == 1 ? "" : "es") and \(ownership.removedContainedSpans) contained span\(ownership.removedContainedSpans == 1 ? "" : "s")."
-            )
-        }
+        let alignmentDiagnostics = TranscriptionAlignmentDiagnostics(
+            trimmedHallucinatedSpanCount: quality.statistics.trimmedRepeatedSpans,
+            rejectedAlignmentChunkCount: alignment.rejectedAlignmentChunkCount,
+            retriedAlignmentChunkCount: alignment.retriedAlignmentChunkCount,
+            estimatedUnitCount: alignment.coarseTimedUnitCount,
+            longestRejectedUnitDuration: alignment.longestRejectedUnitDuration,
+            removedDuplicatePrefixes: ownership.removedDuplicatePrefixes,
+            removedDuplicateSuffixes: ownership.removedDuplicateSuffixes,
+            removedContainedSpans: ownership.removedContainedSpans,
+            atomicSegmentFallbackCount: atomicSegmentFallbackCount,
+            reconciledBoundaryCount: ownership.reconciledBoundaryCount,
+            unresolvedBoundaryCount: ownership.unresolvedBoundaryCount,
+            retriedUncoveredRangeCount: retriedUncoveredRangeCount,
+            retriedUncoveredSpeechSeconds: retriedUncoveredSpeechSeconds,
+            retriedUncoveredAcceptedCount: retriedUncoveredAcceptedCount,
+            retriedUncoveredKeptFirstPassCount: retriedUncoveredKeptFirstPassCount,
+            rawLexicalUnitCount: rawLexicalUnitCount,
+            qualityLexicalUnitCount: Self.lexicalUnitCount(quality.spans),
+            ownershipLexicalUnitCount: Self.lexicalUnitCount(ownership.spans),
+            alignmentLexicalUnitCount: aligned.count,
+            retryLexicalUnitCount: retryLexicalUnitCount,
+            finalLexicalUnitCount: words.count
+        )
         return LocalTranscriptionOutput(
             result: TranscriptionResult(
                 text: TranscriptSegmenter.joinedText(words.map(\.text)),
@@ -363,7 +448,8 @@ actor LocalSpeechPipeline {
                 words: words,
                 segments: segments
             ),
-            diarizationDiagnostics: diagnostics
+            diarizationDiagnostics: timeline.diagnostics,
+            alignmentDiagnostics: alignmentDiagnostics
         )
         #else
         throw LocalAIError.modelsUnavailable
@@ -397,26 +483,17 @@ actor LocalSpeechPipeline {
         #if BUNDLED_SPEECH
         let script = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !script.isEmpty else { throw LocalAIError.emptyTranscript }
-        var requiredModels: [LocalModelID] = [.forcedAligner]
+        var requiredModels: [LocalModelID] = [.forcedAligner, .sileroVAD]
         if case .diarize(let requestedSpeakerCount) = request.speakerAttribution,
            requestedSpeakerCount != 1 {
-            requiredModels.append(contentsOf: [.sileroVAD, .sortformerDiarization])
+            requiredModels.append(.sortformerDiarization)
         }
         try Self.requireModels(requiredModels)
         try await MLXRuntime.beginInference()
         defer { MLXRuntime.endInference() }
 
         progressUpdate(.init(stage: .decoding, fraction: 0.04, message: "Decoding audio for script alignment…"))
-        let preparedURL: URL
-        let shouldRemovePrepared: Bool
-        if ClipType(fileExtension: sourceURL.pathExtension.lowercased()) == .video {
-            preparedURL = try await Transcription.extractAudioTrack(from: sourceURL)
-            shouldRemovePrepared = true
-        } else {
-            preparedURL = sourceURL
-            shouldRemovePrepared = false
-        }
-        defer { if shouldRemovePrepared { try? FileManager.default.removeItem(at: preparedURL) } }
+        let preparedURL = try await DecodedAudioCache.file(for: sourceURL)
         let samples = try AudioFileLoader.load(url: preparedURL, targetSampleRate: 16_000)
         guard !samples.isEmpty else { throw LocalAIError.noAudioOutput }
         let aligner = try await alignerModel()
@@ -429,6 +506,9 @@ actor LocalSpeechPipeline {
             : requestedLanguage
         let language = Self.alignerLanguage(from: resolvedLanguageCode)
         let audioDuration = Double(samples.count) / 16_000
+        let vad = try await vadModel()
+        let speechRegions = vad.detectSpeech(audio: samples, sampleRate: 16_000)
+        let speechMask = Self.makeAlignmentSpeechMask(samples: samples, speechRegions: speechRegions)
         let spans: [RecognizedSpan]
         if !request.spans.isEmpty {
             spans = try request.spans.map { span in
@@ -464,6 +544,7 @@ actor LocalSpeechPipeline {
             spans: spans,
             language: language,
             aligner: aligner,
+            speechMask: speechMask,
             progress: { fraction, message in
                 progressUpdate(.init(
                     stage: .aligning,
@@ -498,8 +579,6 @@ actor LocalSpeechPipeline {
                 }
             } else {
                 Memory.clearCache()
-                let vad = try await vadModel()
-                let speechRegions = vad.detectSpeech(audio: samples, sampleRate: 16_000)
                 let speechRanges = speechRegions.map {
                     SpeechTimeRange(start: Double($0.startTime), end: Double($0.endTime))
                 }
@@ -616,51 +695,117 @@ actor LocalSpeechPipeline {
         if !missing.isEmpty { throw LocalAIError.missingModels(missing.joined(separator: ", ")) }
     }
 
-    private nonisolated static func recognizedSpans(
-        from segments: [[String: Any]]?,
-        fallbackText: String,
-        recognitionStart: Double,
-        recognitionEnd: Double,
-        ownershipStart: Double,
-        ownershipEnd: Double,
-        audioDuration: Double
-    ) -> [RecognizedSpan] {
-        let parsed = (segments ?? []).compactMap { segment -> RecognizedSpan? in
-            guard let text = segment["text"] as? String else { return nil }
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty,
-                  let localStart = numericValue(segment["start"]),
-                  let localEnd = numericValue(segment["end"]) else { return nil }
-            let absoluteStart = min(audioDuration, max(0, recognitionStart + localStart))
-            let absoluteEnd = min(audioDuration, max(absoluteStart, recognitionStart + localEnd))
-            let midpoint = absoluteStart + (absoluteEnd - absoluteStart) / 2
-            guard midpoint >= ownershipStart, midpoint < ownershipEnd else { return nil }
-            let start = max(ownershipStart, absoluteStart)
-            let end = min(ownershipEnd, absoluteEnd)
-            guard end > start else { return nil }
-            let ownedText = ASROwnershipResolver.clampTextToOwnership(
-                text: trimmed,
-                absoluteStart: absoluteStart,
-                absoluteEnd: absoluteEnd,
-                ownershipStart: ownershipStart,
-                ownershipEnd: ownershipEnd
-            )
-            guard !ownedText.isEmpty else { return nil }
-            return RecognizedSpan(text: ownedText, startTime: start, endTime: end)
-        }
-        if !parsed.isEmpty { return parsed }
-        let start = min(audioDuration, max(0, ownershipStart))
-        let end = min(audioDuration, max(start, min(ownershipEnd, recognitionEnd)))
-        guard end > start else { return [] }
-        let ownedFallback = ASROwnershipResolver.clampTextToOwnership(
-            text: fallbackText,
-            absoluteStart: recognitionStart,
-            absoluteEnd: recognitionEnd,
-            ownershipStart: ownershipStart,
-            ownershipEnd: ownershipEnd
+    private nonisolated static func makeAlignmentSpeechMask(
+        samples: [Float],
+        speechRegions: [SpeechSegment]
+    ) -> AlignmentSpeechMask {
+        AlignmentSpeechGate.mask(
+            samples: samples,
+            sampleRate: 16_000,
+            speechIntervals: speechRegions.map {
+                AlignmentSpeechInterval(startTime: Double($0.startTime), endTime: Double($0.endTime))
+            },
+            sceneClassifier: SoundAnalysisSceneClassifier()
         )
-        guard !ownedFallback.isEmpty else { return [] }
-        return [RecognizedSpan(text: ownedFallback, startTime: start, endTime: end)]
+    }
+
+    private struct RecognitionPass: Sendable {
+        var spans: [RecognizedSpan]
+        var language: String?
+        var timestampFallbackCount: Int
+    }
+
+    private func recognize(
+        samples: [Float],
+        chunks: [ASRRecognitionChunk],
+        whisper: WhisperModel,
+        parameters: STTGenerateParameters,
+        audioDuration: Double,
+        progressStart: Double,
+        progressEnd: Double,
+        progressUpdate: @escaping @Sendable (LocalSpeechProgress) -> Void,
+        chunkMessage: @Sendable (Int, Int) -> String
+    ) throws -> RecognitionPass {
+        var spans: [RecognizedSpan] = []
+        var language: String?
+        var timestampFallbackCount = 0
+        let span = max(0, progressEnd - progressStart)
+        for (index, chunk) in chunks.enumerated() {
+            try Task.checkCancellation()
+            let start = max(0, Int((chunk.inputStart * 16_000).rounded(.down)))
+            let end = min(samples.count, Int((chunk.inputEnd * 16_000).rounded(.up)))
+            guard end > start else { continue }
+            let output = whisper.generate(
+                audio: MLXArray(Array(samples[start..<end])),
+                generationParameters: parameters
+            )
+            let regionText = output.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !regionText.isEmpty {
+                let owned = ASRRecognitionSpans.ownedChunk(
+                    segments: ASRRecognitionSpans.segments(from: output.segments),
+                    fallbackText: regionText,
+                    recognitionStart: chunk.inputStart,
+                    recognitionEnd: chunk.inputEnd,
+                    ownershipStart: chunk.ownershipStart,
+                    ownershipEnd: chunk.ownershipEnd,
+                    audioDuration: audioDuration
+                )
+                spans.append(contentsOf: owned.spans)
+                timestampFallbackCount += owned.timestampFallbackCount
+            }
+            if language == nil { language = output.language }
+            let completed = index + 1
+            progressUpdate(.init(
+                stage: .recognizing,
+                fraction: progressStart + span * Double(completed) / Double(max(chunks.count, 1)),
+                completed: completed,
+                total: chunks.count,
+                message: chunkMessage(completed, chunks.count)
+            ))
+        }
+        return RecognitionPass(spans: spans, language: language, timestampFallbackCount: timestampFallbackCount)
+    }
+
+    private func alignRecognizedSpans(
+        _ spans: [RecognizedSpan],
+        audio: [Float],
+        language: String,
+        aligner: Qwen3ForcedAligner,
+        speechMask: AlignmentSpeechMask,
+        progressStart: Double,
+        progressEnd: Double,
+        progressUpdate: @escaping @Sendable (LocalSpeechProgress) -> Void
+    ) throws -> LongFormAlignmentResult {
+        let alignmentSpans = try LongFormAlignmentEngine.alignmentChunks(from: spans)
+        progressUpdate(.init(
+            stage: .aligning,
+            fraction: progressStart,
+            completed: 0,
+            total: alignmentSpans.count,
+            message: "Aligning words to the waveform…"
+        ))
+        let span = max(0, progressEnd - progressStart)
+        return try LongFormAlignmentEngine.alignDetailed(
+            audio: audio,
+            sampleRate: 16_000,
+            spans: spans,
+            language: language,
+            aligner: aligner,
+            speechMask: speechMask,
+            progress: { fraction, message in
+                progressUpdate(.init(
+                    stage: .aligning,
+                    fraction: progressStart + span * fraction,
+                    completed: min(alignmentSpans.count, Int((fraction * Double(alignmentSpans.count)).rounded())),
+                    total: alignmentSpans.count,
+                    message: message
+                ))
+            }
+        )
+    }
+
+    private nonisolated static func lexicalUnitCount(_ spans: [RecognizedSpan]) -> Int {
+        spans.reduce(0) { $0 + $1.text.filter { !$0.isWhitespace }.count }
     }
 
     private nonisolated static func languageDetectionSamples(
@@ -679,16 +824,6 @@ actor LocalSpeechPipeline {
             selected.append(contentsOf: samples[start..<min(end, start + remaining)])
         }
         return selected.isEmpty ? samples : selected
-    }
-
-    private nonisolated static func numericValue(_ value: Any?) -> Double? {
-        switch value {
-        case let value as Double: value
-        case let value as Float: Double(value)
-        case let value as Int: Double(value)
-        case let value as NSNumber: value.doubleValue
-        default: nil
-        }
     }
 
     private nonisolated static func alignerLanguage(from code: String?) -> String {

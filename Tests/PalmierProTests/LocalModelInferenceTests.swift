@@ -108,6 +108,56 @@ struct LocalModelInferenceTests {
         #expect(output.diarizationDiagnostics.backend == .singleSpeaker)
     }
 
+    @Test(.enabled(if: realAudioEnabled))
+    func realChinese1234KeepsChunkBoundaryCharacters() async throws {
+        let source = URL(fileURLWithPath: "/Users/adamwang/Downloads/1234.mp3")
+        let output = try await LocalSpeechPipeline.shared.transcribeDetailed(
+            sourceURL: source,
+            languageCode: nil,
+            speakerCount: nil,
+            progressUpdate: { update in
+                print(
+                    "[1234] \(update.stage.rawValue) "
+                        + "\(update.completed ?? 0)/\(update.total ?? 0) \(update.message)"
+                )
+            }
+        )
+
+        let words = output.result.words
+        let duration = words.last?.end ?? 0
+        let compact = words.map(\.text).joined()
+        let alignment = output.alignmentDiagnostics
+        let squeezed = words.filter { word in
+            guard let start = word.start, let end = word.end else { return false }
+            return end - start <= 0.025
+        }.count
+        print("[1234] duration=\(duration) words=\(words.count) squeezed20ms=\(squeezed)")
+        print(
+            "[1234] diagnostics fallback=\(alignment.atomicSegmentFallbackCount) "
+                + "reconciled=\(alignment.reconciledBoundaryCount) "
+                + "unresolved=\(alignment.unresolvedBoundaryCount) "
+                + "retryCandidates=\(alignment.retriedUncoveredRangeCount) "
+                + "retryAccepted=\(alignment.retriedUncoveredAcceptedCount) "
+                + "retryKeptFirst=\(alignment.retriedUncoveredKeptFirstPassCount) "
+                + "alignmentRetries=\(alignment.retriedAlignmentChunkCount)"
+        )
+        for window in [70.0...80.0, 85.0...95.0, 120.0...135.0, 150.0...175.0] {
+            let snippet = words.filter { word in
+                guard let start = word.start else { return false }
+                return window.contains(start)
+            }.map(\.text).joined()
+            print("[1234] snippet \(window.lowerBound)-\(window.upperBound)s \(snippet)")
+        }
+        print("[1234] hasWelcome=\(compact.contains("欢迎国斌")) hasBaizai=\(compact.contains("拜在他的门下"))")
+
+        #expect(compact.contains("为什么今天"))
+        #expect(compact.contains("土木工程的研究所"))
+        #expect(compact.contains("吴奇医师"))
+        #expect(compact.contains("门下"))
+        #expect(Self.timestampsAreValid(words, duration: duration))
+        #expect(Double(squeezed) / Double(max(words.count, 1)) < 0.25)
+    }
+
     @Test(.enabled(if: enabled))
     func chineseSingleSpeakerTranscriptionIsTimed() async throws {
         let source = Self.fixture("zh-single.wav")
