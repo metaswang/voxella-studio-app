@@ -18,6 +18,8 @@ final class SessionPlaybackController {
     var posterImage: NSImage?
     var peaks: [Float] = []
     var isPlaying = false
+    var currentTime = 0.0
+    var activeCueID: Int?
     var duration = 0.0
     var playbackRate = 1.0
     var subtitleMode: SessionSubtitleDisplayMode = .original
@@ -27,7 +29,10 @@ final class SessionPlaybackController {
     private(set) var subtitleTrack: SubtitleTrack?
     private(set) var translationTracks: [WorkbenchTranslationTrack] = []
     private var endObserver: NSObjectProtocol?
+    private var timeObserver: Any?
+    private var highlightedCues: [SubtitleCue] = []
     private var loadGeneration = UUID()
+    private var seekGeneration = UUID()
 
     func configureSubtitles(
         subtitleTrack: SubtitleTrack?,
@@ -35,6 +40,11 @@ final class SessionPlaybackController {
     ) {
         self.subtitleTrack = subtitleTrack
         self.translationTracks = translationTracks
+    }
+
+    func configureHighlightCues(_ cues: [SubtitleCue]) {
+        highlightedCues = cues
+        updateActiveCueID()
     }
 
     var activeSubtitleCues: [SubtitleCue] {
@@ -72,14 +82,38 @@ final class SessionPlaybackController {
         guard let player else { return }
         if isPlaying {
             player.pause()
+            isPlaying = false
+            updateActiveCueID()
         } else {
             if duration > 0, player.currentTime().seconds >= duration - AppTheme.Workbench.playerEndTolerance {
-                player.seek(to: .zero)
+                seekAbsolute(to: 0, resumesPlayback: true)
+                return
             }
             player.play()
             player.rate = Float(playbackRate)
+            isPlaying = true
+            updateActiveCueID()
         }
-        isPlaying.toggle()
+    }
+
+    func toggleCuePlayback(start: Double, end: Double) {
+        guard player != nil else { return }
+        let time = player?.currentTime().seconds.finiteOrZero ?? currentTime
+        let playheadInCue = time.isFinite
+            && start.isFinite
+            && end.isFinite
+            && end > start
+            && time >= start
+            && time < end
+        if isPlaying, playheadInCue {
+            stop()
+            return
+        }
+        if !isPlaying, playheadInCue {
+            togglePlayback()
+            return
+        }
+        seekAbsolute(to: start)
     }
 
     func seek(to progress: Double, resumesPlayback: Bool = true) {
@@ -90,19 +124,35 @@ final class SessionPlaybackController {
     func seekAbsolute(to seconds: Double, resumesPlayback: Bool = true) {
         guard let player else { return }
         let clamped = max(0, duration > 0 ? min(seconds, duration) : seconds)
+        let generation = UUID()
+        seekGeneration = generation
+        currentTime = clamped
+        player.pause()
         player.seek(
             to: CMTime(seconds: clamped, preferredTimescale: AppTheme.Workbench.playerTimescale),
             toleranceBefore: .zero,
             toleranceAfter: .zero
-        )
-        if resumesPlayback {
-            player.play()
-            player.rate = Float(playbackRate)
-            isPlaying = true
-        } else {
+        ) { [weak self] completed in
+            Task { @MainActor in
+                guard let self, self.seekGeneration == generation else { return }
+                guard completed else { return }
+                self.currentTime = player.currentTime().seconds.finiteOrZero
+                if resumesPlayback {
+                    player.play()
+                    player.rate = Float(self.playbackRate)
+                    self.isPlaying = true
+                } else {
+                    player.pause()
+                    self.isPlaying = false
+                }
+                self.updateActiveCueID()
+            }
+        }
+        if !resumesPlayback {
             player.pause()
             isPlaying = false
         }
+        updateActiveCueID()
     }
 
     func seekBy(_ delta: Double, resumesPlayback: Bool = true) {
@@ -113,6 +163,7 @@ final class SessionPlaybackController {
     func stop() {
         player?.pause()
         isPlaying = false
+        updateActiveCueID()
     }
 
     func dismissFullscreen() {
@@ -148,8 +199,11 @@ final class SessionPlaybackController {
         loadGeneration = generation
         dismissFullscreen()
         removeEndObserver()
+        removeTimeObserver()
         player?.pause()
         isPlaying = false
+        currentTime = 0
+        activeCueID = nil
         posterImage = nil
         peaks = []
         duration = 0
@@ -158,16 +212,24 @@ final class SessionPlaybackController {
             player = nil
             return
         }
-        let nextPlayer = AVPlayer(url: url)
+        let playbackURL: URL
+        if showsVideoCanvas {
+            playbackURL = url
+        } else {
+            playbackURL = (try? await DecodedAudioCache.file(for: url)) ?? url
+        }
+        guard !Task.isCancelled, generation == loadGeneration else { return }
+        let nextPlayer = AVPlayer(url: playbackURL)
         nextPlayer.defaultRate = Float(playbackRate)
         player = nextPlayer
+        installTimeObserver(for: nextPlayer)
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: nextPlayer.currentItem,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.isPlaying = false
+                self?.stop()
             }
         }
         async let posterData = SessionPosterFrameLoader.load(
@@ -178,7 +240,7 @@ final class SessionPlaybackController {
         guard !Task.isCancelled, generation == loadGeneration else { return }
         duration = loadedDuration
         if !showsVideoCanvas {
-            peaks = (try? await WaveformExtractor.peakEnvelope(from: url)) ?? []
+            peaks = (try? await WaveformExtractor.peakEnvelope(from: playbackURL)) ?? []
             guard !Task.isCancelled, generation == loadGeneration else { return }
         }
         if let data = await posterData,
@@ -199,6 +261,7 @@ final class SessionPlaybackController {
         loadGeneration = UUID()
         dismissFullscreen()
         removeEndObserver()
+        removeTimeObserver()
         stop()
         posterImage = nil
     }
@@ -208,6 +271,48 @@ final class SessionPlaybackController {
             NotificationCenter.default.removeObserver(endObserver)
             self.endObserver = nil
         }
+    }
+
+    private func installTimeObserver(for player: AVPlayer) {
+        timeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(
+                seconds: AppTheme.Workbench.playerRefreshInterval,
+                preferredTimescale: AppTheme.Workbench.playerTimescale
+            ),
+            queue: .main
+        ) { [weak self] time in
+            MainActor.assumeIsolated {
+                self?.updatePlaybackTime(time)
+            }
+        }
+    }
+
+    private func removeTimeObserver() {
+        if let timeObserver, let player {
+            player.removeTimeObserver(timeObserver)
+        }
+        timeObserver = nil
+    }
+
+    private func updatePlaybackTime(_ time: CMTime) {
+        let seconds = time.seconds
+        guard seconds.isFinite else { return }
+        currentTime = seconds
+        updateActiveCueID()
+    }
+
+    private func updateActiveCueID() {
+        guard isPlaying, currentTime.isFinite else {
+            activeCueID = nil
+            return
+        }
+        activeCueID = highlightedCues.first(where: { cue in
+            cue.start.isFinite
+                && cue.end.isFinite
+                && cue.end > cue.start
+                && currentTime >= cue.start
+                && currentTime < cue.end
+        })?.id
     }
 }
 
@@ -255,11 +360,14 @@ struct SessionFullscreenChrome: View {
             ZStack {
                 Color.clear
                     .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        chrome.revealControls()
+                        playback.toggleFullscreen()
+                    }
                     .onTapGesture {
-                        if chrome.controlsVisible {
-                            chrome.hideControls()
-                        } else {
-                            chrome.revealControls()
+                        chrome.revealControls()
+                        if playback.player != nil {
+                            playback.togglePlayback()
                         }
                     }
 

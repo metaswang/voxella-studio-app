@@ -34,6 +34,8 @@ struct SubtitleRemapStats: Equatable, Sendable {
 
 struct SubtitleRemapResult: Equatable, Sendable {
     var wordsBySubtitle: [[SubtitleRemappedWord]]
+    var sourceAnchorRangesBySubtitle: [Range<Int>?]
+    var usesAnchorTiming: Bool
     var stats: SubtitleRemapStats
 }
 
@@ -862,6 +864,14 @@ enum SubtitleTokenRemapper {
         let mappedCount = assignments.count
         let denominator = Double(sourceTexts.count + alignableTexts.count)
         let globalRatio = denominator > 0.0 ? Double(usedSourceIndices.count + mappedCount) / denominator : 1.0
+        let sourceAnchorRangesBySubtitle = anchorRanges(
+            assignments: assignments,
+            destinationSubtitles: alignableSubtitles,
+            subtitleCount: subtitleCount
+        )
+        let usesAnchorTiming = globalRatio >= globalRatioThreshold
+            && abstainedGaps == 0
+            && hasMonotonicNonOverlappingAnchors(sourceAnchorRangesBySubtitle)
 
         var windowStarts = [Double?](repeating: nil, count: subtitleCount)
         var windowEnds = [Double?](repeating: nil, count: subtitleCount)
@@ -1023,6 +1033,8 @@ enum SubtitleTokenRemapper {
 
         return SubtitleRemapResult(
             wordsBySubtitle: wordsBySubtitle,
+            sourceAnchorRangesBySubtitle: sourceAnchorRangesBySubtitle,
+            usesAnchorTiming: usesAnchorTiming,
             stats: SubtitleRemapStats(
                 globalRatio: globalRatio,
                 insertedCount: max(0, alignableTexts.count - mappedCount),
@@ -1032,5 +1044,38 @@ enum SubtitleTokenRemapper {
                 usedSourceCount: usedSourceIndices.count
             )
         )
+    }
+
+    private static func anchorRanges(
+        assignments: [Int: Assignment],
+        destinationSubtitles: [Int],
+        subtitleCount: Int
+    ) -> [Range<Int>?] {
+        var bounds = [(lower: Int, upper: Int)?](repeating: nil, count: subtitleCount)
+        for (destinationIndex, assignment) in assignments {
+            guard destinationIndex >= 0, destinationIndex < destinationSubtitles.count,
+                  let lower = assignment.sourceIndices.min(),
+                  let upper = assignment.sourceIndices.max() else {
+                continue
+            }
+            let subtitleIndex = destinationSubtitles[destinationIndex]
+            guard subtitleIndex >= 0, subtitleIndex < subtitleCount else { continue }
+            if let current = bounds[subtitleIndex] {
+                bounds[subtitleIndex] = (min(current.lower, lower), max(current.upper, upper))
+            } else {
+                bounds[subtitleIndex] = (lower, upper)
+            }
+        }
+        return bounds.map { $0.map { $0.lower..<$0.upper + 1 } }
+    }
+
+    private static func hasMonotonicNonOverlappingAnchors(_ anchors: [Range<Int>?]) -> Bool {
+        guard anchors.allSatisfy({ $0 != nil }) else { return false }
+        var previousEnd = 0
+        for anchor in anchors.compactMap({ $0 }) {
+            guard anchor.lowerBound >= previousEnd else { return false }
+            previousEnd = anchor.upperBound
+        }
+        return true
     }
 }

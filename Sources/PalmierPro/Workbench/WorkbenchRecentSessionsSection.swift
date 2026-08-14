@@ -277,7 +277,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
             Menu {
                 Button("Open session") { store.openSession(session.id) }
                 if let transcriptionID = session.transcriptionID {
-                    Button("Transcribe again") {
+                    Button("Re-transcribe and rebuild subtitles") {
                         retranscribe(transcriptionID)
                     }
                     .disabled(session.state == .running || session.state == .cancelling)
@@ -310,7 +310,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
         .contextMenu {
             Button("Open session") { store.openSession(session.id) }
             if let transcriptionID = session.transcriptionID {
-                Button("Transcribe again") { retranscribe(transcriptionID) }
+                Button("Re-transcribe and rebuild subtitles") { retranscribe(transcriptionID) }
                 Button(session.hasDub ? "Redub" : "Create dub") { createDub(for: transcriptionID) }
                     .disabled(session.transcript == nil)
             }

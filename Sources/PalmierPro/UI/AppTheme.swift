@@ -525,6 +525,7 @@ enum AppTheme {
         static let tipHorizontalInset: CGFloat = 16
         static let tipVerticalInset: CGFloat = 12
         static let emptyStateMinHeight: CGFloat = 260
+        static let summaryPanelMinHeight: CGFloat = 160
         static let waveformHeight: CGFloat = 54
         static let waveformBarStep: CGFloat = 5
         static let waveformBarSpacing: CGFloat = 2

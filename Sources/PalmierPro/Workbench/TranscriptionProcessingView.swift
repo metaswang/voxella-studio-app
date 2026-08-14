@@ -5,6 +5,7 @@ struct TranscriptionProcessingView: View {
 
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var models = LocalModelManager.shared
+    @Bindable private var llmSettings = LLMSettingsStore.shared
     @State private var events: [ProcessingLogEvent] = []
     @State private var showAdvanced = false
     @State private var wavePhase: CGFloat = 0
@@ -25,7 +26,7 @@ struct TranscriptionProcessingView: View {
                 if let job {
                     header(job)
                     processingCard(job)
-                    advancedDetails
+                    advancedDetails(for: job)
                 } else {
                     ContentUnavailableView("Processing job unavailable", systemImage: "waveform")
                 }
@@ -243,17 +244,21 @@ struct TranscriptionProcessingView: View {
         }
     }
 
-    private var advancedDetails: some View {
+    private func advancedDetails(for job: WorkbenchTranscriptionJob) -> some View {
         DisclosureGroup(isExpanded: $showAdvanced) {
-            LazyVStack(alignment: .leading, spacing: 8) {
-                ForEach(events) { event in
-                    Text("\(event.time)  \(event.message)")
-                        .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
-                        .foregroundStyle(AppTheme.Text.secondaryColor)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                stageModelList(for: job)
+
+                LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
+                    ForEach(events) { event in
+                        Text("\(event.time)  \(event.message)")
+                            .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
+                            .foregroundStyle(AppTheme.Text.secondaryColor)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
+                .padding(.top, AppTheme.Spacing.xs)
             }
-            .padding(.top, 8)
         } label: {
             HStack {
                 Text("Advanced Details")
@@ -266,6 +271,78 @@ struct TranscriptionProcessingView: View {
         }
         .padding(AppTheme.Spacing.mdLg)
         .background(Color.indigo.opacity(0.08), in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
+    }
+
+    private func stageModelList(for job: WorkbenchTranscriptionJob) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
+            Text("Models by stage")
+                .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+
+            ForEach(ProcessingMilestone.allCases) { milestone in
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                    Text(milestone.title)
+                        .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+                    ForEach(modelLines(for: milestone, job: job), id: \.self) { line in
+                        Text(line)
+                            .font(.system(size: AppTheme.FontSize.xs))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private func modelLines(
+        for milestone: ProcessingMilestone,
+        job: WorkbenchTranscriptionJob
+    ) -> [String] {
+        switch milestone {
+        case .preparing:
+            return ["No model · local job admission and media preparation"]
+        case .preprocessing:
+            var lines = [localModelTitle(.sileroVAD)]
+            if job.languageCode == nil {
+                lines.append(localModelTitle(.spokenLanguageID))
+            }
+            return lines
+        case .speechRecognition:
+            var lines = [localModelTitle(models.activeASRModelID), localModelTitle(.forcedAligner)]
+            if job.speakerCount.count == 1 {
+                lines.append("Deterministic single-speaker assignment · no diarization model")
+            } else {
+                lines.append(localModelTitle(.sortformerDiarization))
+            }
+            return lines
+        case .finalizing:
+            let subtitleWillRun = job.shouldProcessSubtitles(
+                hasAPIKey: llmSettings.hasConfiguredModel(for: .subtitleProcessing)
+            ) || job.normalizedTargetLanguageCode != nil
+            var lines = [
+                subtitleWillRun
+                    ? "Subtitle cleanup · configured route: \(llmRouteDescription(for: .subtitleProcessing))"
+                    : "Subtitle cleanup · not run",
+            ]
+            if job.normalizedTargetLanguageCode != nil {
+                lines.append("Translation · configured route: \(llmRouteDescription(for: .translation))")
+            } else {
+                lines.append("Translation · not run")
+            }
+            return lines
+        case .completed:
+            return ["No additional model · result committed to the session"]
+        }
+    }
+
+    private func localModelTitle(_ id: LocalModelID) -> String {
+        models.descriptor(for: id).title
+    }
+
+    private func llmRouteDescription(for useCase: LLMUseCase) -> String {
+        let chain = llmSettings.route(for: useCase).modelChain
+        return chain.isEmpty ? "not configured" : chain.joined(separator: " → ")
     }
 
     private func etaText(for job: WorkbenchTranscriptionJob) -> String {

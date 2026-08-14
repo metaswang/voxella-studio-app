@@ -68,36 +68,70 @@ struct SubtitlePostprocessPipeline: Sendable {
             )
         }
 
+        let maximumConcurrentBatches = min(
+            max(1, options.maximumConcurrentBatches),
+            batches.count
+        )
+        progress(
+            0,
+            0,
+            batches.count,
+            "Cleaning and segmenting subtitle batches…"
+        )
+
+        var outcomes = Array<BatchOutcome?>(repeating: nil, count: batches.count)
+        try await withThrowingTaskGroup(of: IndexedBatchOutcome.self) { group in
+            var nextBatchIndex = 0
+            for _ in 0..<maximumConcurrentBatches {
+                let batchIndex = nextBatchIndex
+                nextBatchIndex += 1
+                group.addTask {
+                    try await self.processBatch(
+                        index: batchIndex,
+                        batch: batches[batchIndex],
+                        batchTexts: batchTexts,
+                        sourceWords: sourceWords,
+                        languageCode: languageCode,
+                        isCJK: isCJK,
+                        limits: limits,
+                        options: options
+                    )
+                }
+            }
+
+            var completedBatches = 0
+            while let result = try await group.next() {
+                outcomes[result.index] = result.outcome
+                completedBatches += 1
+                progress(
+                    Double(completedBatches) / Double(batches.count),
+                    completedBatches,
+                    batches.count,
+                    "Cleaned and segmented subtitle batch \(result.index + 1) (\(completedBatches) of \(batches.count) complete)…"
+                )
+
+                if nextBatchIndex < batches.count {
+                    let batchIndex = nextBatchIndex
+                    nextBatchIndex += 1
+                    group.addTask {
+                        try await self.processBatch(
+                            index: batchIndex,
+                            batch: batches[batchIndex],
+                            batchTexts: batchTexts,
+                            sourceWords: sourceWords,
+                            languageCode: languageCode,
+                            isCJK: isCJK,
+                            limits: limits,
+                            options: options
+                        )
+                    }
+                }
+            }
+        }
+
         var cues: [PendingCue] = []
         var warnings: [String] = []
-
-        for (batchIndex, batch) in batches.enumerated() {
-            try Task.checkCancellation()
-            progress(
-                Double(batchIndex) / Double(batches.count),
-                batchIndex,
-                batches.count,
-                "Cleaning and segmenting subtitle batch \(batchIndex + 1) of \(batches.count)…"
-            )
-
-            let words = Array(sourceWords[batch])
-            let batchText = batchTexts[batchIndex]
-            guard !batchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-
-            let outcome = try await stage1(
-                words: words,
-                batchText: batchText,
-                contextBefore: batchIndex > 0
-                    ? String(batchTexts[batchIndex - 1].suffix(Policy.contextCharacters))
-                    : nil,
-                contextAfter: batchIndex + 1 < batchTexts.count
-                    ? String(batchTexts[batchIndex + 1].prefix(Policy.contextCharacters))
-                    : nil,
-                languageCode: languageCode,
-                isCJK: isCJK,
-                limits: limits,
-                options: options
-            )
+        for outcome in outcomes.compactMap({ $0 }) {
             if let warning = outcome.warning { warnings.append(warning) }
             cues.append(contentsOf: outcome.cues)
         }
@@ -113,7 +147,6 @@ struct SubtitlePostprocessPipeline: Sendable {
             isCJK: isCJK,
             limits: limits
         )
-        cues = Self.normalizedTiming(cues)
 
         let track = SubtitleTrack(
             sourceLanguage: languageCode,
@@ -135,6 +168,40 @@ struct SubtitlePostprocessPipeline: Sendable {
 
         progress(1, batches.count, batches.count, "Subtitles cleaned and segmented")
         return SubtitlePostprocessResult(track: track, rebuiltSegments: rebuilt, warnings: warnings)
+    }
+
+    private func processBatch(
+        index: Int,
+        batch: Range<Int>,
+        batchTexts: [String],
+        sourceWords: [SourceWord],
+        languageCode: String?,
+        isCJK: Bool,
+        limits: SubtitleReadabilityPolicy.Limits,
+        options: SubtitleProcessingPayload
+    ) async throws -> IndexedBatchOutcome {
+        try Task.checkCancellation()
+        let words = Array(sourceWords[batch])
+        let batchText = batchTexts[index]
+        guard !batchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return IndexedBatchOutcome(index: index, outcome: BatchOutcome(cues: [], warning: nil))
+        }
+
+        let outcome = try await stage1(
+            words: words,
+            batchText: batchText,
+            contextBefore: index > 0
+                ? String(batchTexts[index - 1].suffix(Policy.contextCharacters))
+                : nil,
+            contextAfter: index + 1 < batchTexts.count
+                ? String(batchTexts[index + 1].prefix(Policy.contextCharacters))
+                : nil,
+            languageCode: languageCode,
+            isCJK: isCJK,
+            limits: limits,
+            options: options
+        )
+        return IndexedBatchOutcome(index: index, outcome: outcome)
     }
 
     // MARK: - Source model
@@ -162,6 +229,11 @@ struct SubtitlePostprocessPipeline: Sendable {
     private struct BatchOutcome: Sendable {
         var cues: [PendingCue]
         var warning: String?
+    }
+
+    private struct IndexedBatchOutcome: Sendable {
+        let index: Int
+        let outcome: BatchOutcome
     }
 
     private static func makeSourceWords(from transcript: TranscriptionResult) -> [SourceWord] {
@@ -460,15 +532,23 @@ struct SubtitlePostprocessPipeline: Sendable {
                 continue
             }
 
-            return BatchOutcome(
-                cues: Self.makeCues(
-                    subtitles: subtitles,
-                    remap: remap,
-                    words: words,
-                    languageCode: languageCode
-                ),
-                warning: nil
+            guard remap.usesAnchorTiming else {
+                failureReason = "unanchored_timing"
+                continue
+            }
+
+            let cues = Self.makeCues(
+                subtitles: subtitles,
+                remap: remap,
+                words: words,
+                languageCode: languageCode
             )
+            guard !cues.isEmpty, Self.cuesAlignWithSourceWords(cues, words: words) else {
+                failureReason = cues.isEmpty ? "unanchored_timing" : "mismatched_source_timing"
+                continue
+            }
+
+            return BatchOutcome(cues: cues, warning: nil)
         }
 
         // Never fabricate success from a plausible character ratio: fall back to
@@ -494,6 +574,7 @@ struct SubtitlePostprocessPipeline: Sendable {
         isCJK: Bool
     ) -> String? {
         if sourceTokenCount > 0, subtitles.isEmpty { return "empty_subtitles" }
+        if subtitles.count > sourceTokenCount { return "excessive_subtitle_count" }
         let sourceLength = max(1, displayLength(sourceText, isCJK: isCJK))
         let outputLength = subtitles.reduce(0) { $0 + displayLength($1, isCJK: isCJK) }
         guard sourceTokenCount >= 3 else { return nil }
@@ -512,30 +593,37 @@ struct SubtitlePostprocessPipeline: Sendable {
         words: [SourceWord],
         languageCode: String?
     ) -> [PendingCue] {
+        guard remap.usesAnchorTiming,
+              let partitions = SubtitleTimingPartitioner.anchoredRanges(
+                cueCount: subtitles.count,
+                sourceWordCount: words.count,
+                anchorRanges: remap.sourceAnchorRangesBySubtitle
+              ),
+              partitions.count == subtitles.count else {
+            return []
+        }
         var cues: [PendingCue] = []
         cues.reserveCapacity(subtitles.count)
         for (index, text) in subtitles.enumerated() {
             let tokens = index < remap.wordsBySubtitle.count ? remap.wordsBySubtitle[index] : []
-            let bounds = preferredBounds(of: tokens)
-                ?? (cues.last.map { ($0.end, $0.end) } ?? (words[0].start, words[0].start))
+            let sourceRange = partitions[index]
+            guard let first = words[sourceRange].first, let last = words[sourceRange].last else { continue }
             cues.append(
                 PendingCue(
                     text: text,
                     tokens: tokens,
-                    start: bounds.0,
-                    end: max(bounds.0, bounds.1),
-                    sourceIndices: [],
+                    start: first.start,
+                    end: max(first.start, last.end),
+                    sourceIndices: words[sourceRange].map(\.index),
                     speaker: dominantSpeaker(in: tokens.map(\.speaker)),
                     overBudget: false
                 )
             )
         }
-        assignSourceIndices(to: &cues, words: words)
 
         let wordByIndex = Dictionary(uniqueKeysWithValues: words.map { ($0.index, $0) })
         for index in cues.indices {
-            if cues[index].end - cues[index].start <= 0.001,
-               let first = cues[index].sourceIndices.first.flatMap({ wordByIndex[$0] }),
+            if let first = cues[index].sourceIndices.first.flatMap({ wordByIndex[$0] }),
                let last = cues[index].sourceIndices.last.flatMap({ wordByIndex[$0] }) {
                 cues[index].start = first.start
                 cues[index].end = max(first.start, last.end)
@@ -552,28 +640,30 @@ struct SubtitlePostprocessPipeline: Sendable {
         return anchored.isEmpty ? cues : anchored
     }
 
-    /// Claims each source word for exactly one cue, so Stage 1 can never double
-    /// count or drop a timed word regardless of what the model returned. Cue
-    /// membership is a contiguous ordered partition, so it stays valid even when
-    /// the remap could not anchor part of the rewritten text.
-    private static func assignSourceIndices(to cues: inout [PendingCue], words: [SourceWord]) {
-        for index in cues.indices { cues[index].sourceIndices = [] }
-        guard !cues.isEmpty, !words.isEmpty else { return }
-
-        var counts = [Int](repeating: 0, count: cues.count)
-        var cursor = 0
-        for word in words {
-            let midpoint = (word.start + word.end) / 2
-            while cursor + 1 < cues.count, midpoint >= cues[cursor].end { cursor += 1 }
-            counts[cursor] += 1
+    private static func cuesAlignWithSourceWords(
+        _ cues: [PendingCue],
+        words: [SourceWord]
+    ) -> Bool {
+        let wordByIndex = Dictionary(uniqueKeysWithValues: words.map { ($0.index, $0) })
+        var compared = 0
+        var mismatched = 0
+        for cue in cues {
+            let source = cue.sourceIndices.compactMap { wordByIndex[$0]?.text }.joined()
+            let cueCharacters = alignableCharacters(in: cue.text)
+            let sourceCharacters = alignableCharacters(in: source)
+            guard cueCharacters.count >= 4, sourceCharacters.count >= 4 else { continue }
+            compared += 1
+            let hits = cueCharacters.filter { sourceCharacters.contains($0) }.count
+            if Double(hits) / Double(cueCharacters.count) < 0.5 {
+                mismatched += 1
+            }
         }
+        guard compared > 0 else { return true }
+        return mismatched * 2 < compared
+    }
 
-        var start = 0
-        for index in cues.indices {
-            let end = min(words.count, start + counts[index])
-            cues[index].sourceIndices = words[start..<end].map(\.index)
-            start = end
-        }
+    private static func alignableCharacters(in text: String) -> [Character] {
+        Array(text.lowercased().filter { $0.isLetter || $0.isNumber })
     }
 
     private static func sourceTimedCues(
@@ -711,7 +801,26 @@ struct SubtitlePostprocessPipeline: Sendable {
             return [overBudget]
         }
 
-        assignSourceIndices(to: &children, words: cue.sourceIndices.map { sourceWords[$0] })
+        let source = cue.sourceIndices.map { sourceWords[$0] }
+        let partitions = SubtitleTimingPartitioner.partition(
+            cueCount: children.count,
+            sourceWordCount: source.count,
+            anchorRanges: Array(repeating: nil, count: children.count),
+            usesAnchorTiming: false,
+            weights: children.map { displayLength($0.text, isCJK: isCJK) }
+        )
+        guard partitions.count == children.count else {
+            var overBudget = cue
+            overBudget.overBudget = true
+            return [overBudget]
+        }
+        for index in children.indices {
+            let words = source[partitions[index]]
+            guard let first = words.first, let last = words.last else { continue }
+            children[index].sourceIndices = words.map(\.index)
+            children[index].start = first.start
+            children[index].end = max(first.start, last.end)
+        }
         return children.flatMap {
             split(
                 $0,
@@ -765,13 +874,11 @@ struct SubtitlePostprocessPipeline: Sendable {
             let chunk = Array(buffer.prefix(upTo))
             buffer.removeFirst(min(upTo, buffer.count))
             guard let first = chunk.first, let last = chunk.last else { return }
-            let tokens = chunk.flatMap(\.tokens)
-            let bounds = preferredBounds(of: tokens) ?? (first.start, last.end)
             output.append(
                 TranscriptionSegment(
                     text: TranscriptSegmenter.joinedText(chunk.map(\.text), language: languageCode),
-                    start: bounds.0,
-                    end: max(bounds.0, bounds.1),
+                    start: first.start,
+                    end: max(first.start, last.end),
                     speaker: dominantSpeaker(in: chunk.map(\.speaker)),
                     speakerBoundary: .none
                 )
@@ -894,17 +1001,6 @@ struct SubtitlePostprocessPipeline: Sendable {
 
     // MARK: - Shared helpers
 
-    private static func normalizedTiming(_ cues: [PendingCue]) -> [PendingCue] {
-        var output = cues.sorted { $0.start == $1.start ? $0.end < $1.end : $0.start < $1.start }
-        var cursor = -Double.infinity
-        for index in output.indices {
-            output[index].start = max(output[index].start, cursor)
-            output[index].end = max(output[index].end, output[index].start)
-            cursor = output[index].end
-        }
-        return output
-    }
-
     private static func preferredBounds(of tokens: [SubtitleRemappedWord]) -> (Double, Double)? {
         let anchored = tokens.filter { !$0.synthetic }
         let usable = anchored.isEmpty ? tokens : anchored
@@ -987,31 +1083,50 @@ struct SubtitlePostprocessPipeline: Sendable {
                 + " merges and splits, idioms and fixed expressions, and named entities."
         )
         lines.append("4) Allowed punctuation only: ， 。 ？ ！ , . ? !")
-        lines.append("5) Return strict JSON. No Markdown, no reasoning, no explanation.")
-        lines.append("6) batch_summary must be faithful to the input and stay within 1-3 short sentences.")
         lines.append(
-            "7) Input language (language_code) = \(languageCode ?? "unknown"). Keep subtitles in that"
+            "5) Punctuation restoration is mandatory and equal in priority to length control."
+                + " Never return a long unpunctuated run-on line. Restore natural clause and"
+                + " sentence punctuation in standard written form for the input language."
+        )
+        if isCJK {
+            lines.append(
+                "6) For Chinese/Japanese/Korean text, every semantically complete subtitle must"
+                    + " include natural punctuation such as ，。？！. Complete questions end with ？;"
+                    + " complete statements end with 。 or the appropriate terminal mark. Do not"
+                    + " emit dense-script text that has been split by length alone with no"
+                    + " punctuation restored."
+            )
+        }
+        lines.append("7) Return strict JSON. No Markdown, no reasoning, no explanation.")
+        lines.append("8) batch_summary must be faithful to the input and stay within 1-3 short sentences.")
+        lines.append(
+            "9) Input language (language_code) = \(languageCode ?? "unknown"). Keep subtitles in that"
                 + " language, in its standard written form. Do not translate."
         )
         if !isCJK {
-            lines.append("8) Never output CJK characters or CJK punctuation (，。？！).")
+            lines.append("10) Never output CJK characters or CJK punctuation (，。？！).")
         }
         lines.append("")
         lines.append("Segmentation rules (highest priority):")
-        lines.append("Core principle: length control > semantic completeness > correction quality.")
+        lines.append("Never cross a known speaker boundary.")
+        lines.append(
+            "Core principle: punctuation restoration = length control > semantic completeness"
+                + " > correction quality."
+        )
         lines.append(
             "C1) Each subtitle should land in the readable range: recommended"
                 + " \(limits.minimum)-\(limits.preferred) characters, absolute limit"
                 + " \(limits.maximum) characters including punctuation."
         )
         lines.append(
-            "C2) ASR input usually has no punctuation, so punctuation restoration and segmentation"
-                + " happen together: wherever a sentence ends and you place . ? ! 。？！, cut a new"
-                + " subtitle line there. Never merge across sentences."
+            "C2) Punctuation restoration and segmentation happen together. ASR input usually has"
+                + " no punctuation, so first restore natural commas and sentence endings, then cut a"
+                + " new subtitle line wherever a sentence ends with . ? ! 。？！. Never merge across"
+                + " sentences. Never omit punctuation merely to make a cue shorter."
         )
         lines.append(
-            "C3) At a natural comma pause, cut a new line as soon as the current line approaches the"
-                + " length limit."
+            "C3) At a natural comma pause, keep the comma and cut a new line as soon as the current"
+                + " line approaches the length limit."
         )
         lines.append(
             "C4) When two cuts are both possible, prefer the one that lands inside the recommended"
@@ -1026,11 +1141,13 @@ struct SubtitlePostprocessPipeline: Sendable {
                 + " Never emit an over-long subtitle just to keep a sentence whole."
         )
         lines.append(
-            "Self-check: verify every line's length before answering; split any over-long line first."
+            "Self-check before answering: (1) every line is within the length limit;"
+                + " (2) no long line is missing natural punctuation from the allowed set;"
+                + " (3) split any over-long line first."
         )
         lines.append("")
         lines.append("Correction priority:")
-        lines.append("Core principle: pronunciation first > minimal edit > overall fluency.")
+        lines.append("Core principle: Phonetic plausibility first > minimal edit > overall fluency.")
         lines.append(
             "1) Pronunciation first: prefer a replacement that sounds the same or nearly the same as"
                 + " the recognized text, even when a smoother rewrite exists."
@@ -1060,12 +1177,28 @@ struct SubtitlePostprocessPipeline: Sendable {
         var lines: [String] = []
         lines.append("Correct, restore punctuation, and segment the following ASR text. Do not translate.")
         lines.append(
+            "Punctuation restoration is mandatory: restore natural clause and sentence punctuation"
+                + " before or while cutting lines. Never return a long unpunctuated run-on sentence."
+        )
+        lines.append(
             "Segmentation requirement (highest priority): return multiple subtitles in the original"
                 + " order. Each line should be \(limits.minimum)-\(limits.preferred) characters and"
                 + " must never exceed \(limits.maximum) characters. ASR input usually has no"
-                + " punctuation, so cut a new line wherever a sentence ends, and also at a natural"
-                + " pause once the line approaches the limit. Avoid tiny fragment lines."
+                + " punctuation, so restore punctuation and cut a new line wherever a sentence ends,"
+                + " and also at a natural pause once the line approaches the limit. Keep commas and"
+                + " terminal marks on the lines; avoid tiny fragment lines."
         )
+        lines.append(
+            "Readable cue limits: {\"minimumCharactersPerCue\":\(limits.minimum),"
+                + "\"preferredCharactersPerCue\":\(limits.preferred),"
+                + "\"maximumCharactersPerCue\":\(limits.maximum)}"
+        )
+        if SubtitleReadabilityPolicy.usesDenseScript(languageCode: nil, sampleText: batchText) {
+            lines.append(
+                "For dense-script text, every complete subtitle must include natural punctuation"
+                    + " such as ，。？！ rather than length-only splits with no punctuation."
+            )
+        }
         lines.append("Also return batch_summary: a faithful, short summary of this batch.")
         lines.append("")
         lines.append(
@@ -1107,8 +1240,9 @@ struct SubtitlePostprocessPipeline: Sendable {
         """
         The previous response was rejected (\(reason)). Return corrected JSON only. \
         Reproduce every part of asr_input as subtitles in order, keep the wording close to the \
-        recognized text, restore punctuation, respect the length limits, and never translate, \
-        summarize, or copy context or instruction text into the output.
+        recognized text, restore all natural internal and terminal punctuation, respect the \
+        length limits, and never translate, summarize, or copy context or instruction text into \
+        the output. Do not return long unpunctuated lines.
         """
     }
 }

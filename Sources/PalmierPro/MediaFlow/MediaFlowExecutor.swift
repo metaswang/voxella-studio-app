@@ -138,7 +138,8 @@ actor MediaFlowExecutor: MediaJobEventSource {
                     context.diagnostics = output.diarizationDiagnostics
                     continuation.yield(.artifact(.transcription(
                         transcript,
-                        output.diarizationDiagnostics
+                        output.diarizationDiagnostics,
+                        output.alignmentDiagnostics
                     )))
 
                 case .alignScript(let payload):

@@ -677,9 +677,14 @@ enum TranscriptionError: LocalizedError {
 enum Transcription {
     private static let audioExtractionGate = AsyncSemaphore(value: 2)
 
+    private static func removeIfTemporaryExtraction(_ url: URL) {
+        guard url.lastPathComponent.hasPrefix("voxella-stt-") else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
     static func transcribeVideoAudio(videoURL: URL, censorProfanity: Bool = false, preferredLocale: Locale? = nil, sourceRange: ClosedRange<Double>? = nil) async throws -> TranscriptionResult {
         let tempAudioURL = try await extractAudioTrack(from: videoURL, range: sourceRange)
-        defer { try? FileManager.default.removeItem(at: tempAudioURL) }
+        defer { removeIfTemporaryExtraction(tempAudioURL) }
         let result = try await transcribe(fileURL: tempAudioURL, censorProfanity: censorProfanity, preferredLocale: preferredLocale)
         return result.offsetting(by: sourceRange?.lowerBound ?? 0)
     }
@@ -713,7 +718,7 @@ enum Transcription {
         #if BUNDLED_SPEECH
         if let sourceRange {
             let tempURL = try await extractAudioTrack(from: fileURL, range: sourceRange)
-            defer { try? FileManager.default.removeItem(at: tempURL) }
+            defer { removeIfTemporaryExtraction(tempURL) }
             let result = try await LocalSpeechPipeline.shared.transcribe(
                 sourceURL: tempURL,
                 languageCode: TranscriptionLanguage.identifier(for: preferredLocale),
@@ -741,7 +746,7 @@ enum Transcription {
     private static func transcribeWithApple(fileURL: URL, censorProfanity: Bool = false, preferredLocale: Locale? = nil, sourceRange: ClosedRange<Double>? = nil) async throws -> TranscriptionResult {
         if let sourceRange {
             let tempURL = try await extractAudioTrack(from: fileURL, range: sourceRange)
-            defer { try? FileManager.default.removeItem(at: tempURL) }
+            defer { removeIfTemporaryExtraction(tempURL) }
             let result = try await transcribeWithApple(fileURL: tempURL, censorProfanity: censorProfanity, preferredLocale: preferredLocale)
             return result.offsetting(by: sourceRange.lowerBound)
         }
@@ -854,6 +859,16 @@ enum Transcription {
         range: ClosedRange<Double>? = nil,
         fileExtension: String = "caf"
     ) async throws -> URL {
+        if fileExtension == "caf" {
+            do {
+                return try await DecodedAudioCache.file(for: videoURL, range: range)
+            } catch let error as AudioTrackReader.ReadError {
+                throw TranscriptionError.audioExtractionFailed(error.message)
+            } catch {
+                throw TranscriptionError.audioExtractionFailed(error.localizedDescription)
+            }
+        }
+
         let outURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("voxella-stt-\(UUID().uuidString).\(fileExtension)")
         try await audioExtractionGate.wait()
@@ -867,15 +882,7 @@ enum Transcription {
 
         var audioFile: AVAudioFile?
         do {
-            try await AudioTrackReader.read(from: videoURL, outputSettings: [
-                AVFormatIDKey: kAudioFormatLinearPCM,
-                AVSampleRateKey: 16_000,
-                AVNumberOfChannelsKey: 1,
-                AVLinearPCMBitDepthKey: 16,
-                AVLinearPCMIsFloatKey: false,
-                AVLinearPCMIsBigEndianKey: false,
-                AVLinearPCMIsNonInterleaved: false,
-            ], range: range) { pcm in
+            try await AudioTrackReader.read(from: videoURL, outputSettings: DecodedAudioCache.pcmOutputSettings, range: range) { pcm in
                 if audioFile == nil {
                     audioFile = try AVAudioFile(
                         forWriting: outURL,

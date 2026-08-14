@@ -34,18 +34,19 @@ struct SummaryTemplateDefinition: Identifiable, Codable, Equatable, Sendable {
         3) Do NOT output role/persona/meta instructions.
         4) Prefer concrete facts, claims, offers, numbers, names, dates, and commitments over vague adjectives.
         5) Include short evidence quotes only when they materially support a key point.
-        6) Omit any section that would be empty or speculative.
+        6) Omit any section that would be empty or speculative — omit the heading too. Never leave a heading with a blank body.
         7) Keep the summary compact but information-dense.
+        8) Key Points are takeaways only. Put the concrete record in Details & Facts instead of dropping it.
 
-        ## Suggested sections (include only what fits the content)
+        ## Sections
         - **Overview** (required, short paragraph): What this session is about and why it matters.
-        - **Key Points** (required, bullets): The highest-value takeaways a busy reader would want first.
-        - **Details & Facts** (optional, bullets): Specifics — products, offers, prices, dates, places, technical constraints, evidence.
+        - **Key Points** (required, bullets): The highest-value takeaways a busy reader would want first. Keep this short.
+        - **Details & Facts** (required whenever unused specifics remain): People, organizations, dates, places, numbers, products, offers, constraints, and evidence. Interviews, lectures, and long sessions must include this.
         - **Decisions & Actions** (optional, bullets): Explicit decisions, commitments, next steps, owners/due dates if stated.
         - **Notable Quotes** (optional, bullets): A few high-signal lines with brief context.
         - **Open Questions / Risks** (optional, bullets): Unresolved questions, risks, or follow-ups implied by the source.
 
-        Choose section set and ordering dynamically so a meeting, a class lecture, and a short promo each feel correctly summarized — not forced into an interview template.
+        Choose optional sections dynamically so a meeting, a class lecture, and a short promo each feel correctly summarized — not forced into an interview template. Always finish required sections that have source support.
         """,
         isFallback: true,
         categoryCode: "general"

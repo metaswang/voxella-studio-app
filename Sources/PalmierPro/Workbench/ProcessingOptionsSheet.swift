@@ -32,7 +32,7 @@ struct ProcessingOptionsSheet: View {
     private var titleText: String {
         switch mode {
         case .upload: "Processing options"
-        case .retranscribe: "Retranscribe"
+        case .retranscribe: "Re-transcribe and rebuild subtitles"
         }
     }
 
@@ -41,14 +41,14 @@ struct ProcessingOptionsSheet: View {
         case .upload:
             "Optionally clip the media and enable translation before processing."
         case .retranscribe:
-            "Regenerate transcript with new parameters."
+            "Reprocess the media and replace the transcript and subtitles only after it completes."
         }
     }
 
     private var continueLabel: String {
         switch mode {
         case .upload: "Continue"
-        case .retranscribe: "Retranscribe"
+        case .retranscribe: "Re-transcribe and rebuild"
         }
     }
 

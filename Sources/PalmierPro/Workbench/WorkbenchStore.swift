@@ -183,6 +183,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var progressCompleted: Int?
     var progressTotal: Int?
     var diarizationDiagnostics: DiarizationDiagnostics?
+    var transcriptionAlignmentDiagnostics: TranscriptionAlignmentDiagnostics?
     var errorMessage: String?
 
     var sourceURL: URL { URL(fileURLWithPath: sourcePath) }
@@ -301,7 +302,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         case sessionTag, internalSummary, summaryState, summaryErrorMessage
         case progress, progressMessage, progressStage, flowProgressStage
         case progressStep, progressCompleted, progressTotal
-        case diarizationDiagnostics, errorMessage
+        case diarizationDiagnostics, transcriptionAlignmentDiagnostics, errorMessage
     }
 
     init(
@@ -339,6 +340,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         progressCompleted: Int? = nil,
         progressTotal: Int? = nil,
         diarizationDiagnostics: DiarizationDiagnostics? = nil,
+        transcriptionAlignmentDiagnostics: TranscriptionAlignmentDiagnostics? = nil,
         errorMessage: String? = nil
     ) {
         self.id = id
@@ -375,6 +377,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         self.progressCompleted = progressCompleted
         self.progressTotal = progressTotal
         self.diarizationDiagnostics = diarizationDiagnostics
+        self.transcriptionAlignmentDiagnostics = transcriptionAlignmentDiagnostics
         self.errorMessage = errorMessage
     }
 
@@ -435,6 +438,10 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
             DiarizationDiagnostics.self,
             forKey: .diarizationDiagnostics
         )
+        transcriptionAlignmentDiagnostics = try container.decodeIfPresent(
+            TranscriptionAlignmentDiagnostics.self,
+            forKey: .transcriptionAlignmentDiagnostics
+        )
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
     }
 
@@ -475,6 +482,10 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(progressCompleted, forKey: .progressCompleted)
         try container.encodeIfPresent(progressTotal, forKey: .progressTotal)
         try container.encodeIfPresent(diarizationDiagnostics, forKey: .diarizationDiagnostics)
+        try container.encodeIfPresent(
+            transcriptionAlignmentDiagnostics,
+            forKey: .transcriptionAlignmentDiagnostics
+        )
         try container.encodeIfPresent(errorMessage, forKey: .errorMessage)
     }
 }
@@ -723,6 +734,47 @@ final class WorkbenchStore {
 
     private static let routeDefaultsKey = "voxella.workbench.route"
 
+    private struct StagedTranscriptionArtifacts {
+        var rawResult: TranscriptionResult?
+        var preparedResult: TranscriptionResult?
+        var subtitleTrack: SubtitleTrack?
+        var translationTracks: [WorkbenchTranslationTrack] = []
+        var diarizationDiagnostics: DiarizationDiagnostics?
+        var alignmentDiagnostics: TranscriptionAlignmentDiagnostics?
+        var processedSourcePath: String?
+
+        mutating func upsertTranslation(_ track: SubtitleTrack, languageCode: String) {
+            let normalizedCode = languageCode.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedCode.isEmpty else { return }
+            let item = WorkbenchTranslationTrack(languageCode: normalizedCode, track: track)
+            if let index = translationTracks.firstIndex(where: {
+                $0.languageCode.caseInsensitiveCompare(normalizedCode) == .orderedSame
+            }) {
+                translationTracks[index] = item
+            } else {
+                translationTracks.append(item)
+            }
+        }
+
+        var completedArtifacts: CompletedTranscriptionArtifacts? {
+            guard let rawResult else { return nil }
+            return CompletedTranscriptionArtifacts(
+                rawResult: rawResult,
+                result: preparedResult ?? rawResult,
+                subtitleTrack: subtitleTrack,
+                translationTracks: translationTracks,
+                diarizationDiagnostics: diarizationDiagnostics,
+                alignmentDiagnostics: alignmentDiagnostics,
+                processedSourcePath: processedSourcePath
+            )
+        }
+    }
+
+    private struct MaterializedTranscriptionInput: Sendable {
+        let sourceURL: URL
+        let usesExtractedClip: Bool
+    }
+
     var route: WorkbenchRoute {
         didSet {
             UserDefaults.standard.set(route.rawValue, forKey: Self.routeDefaultsKey)
@@ -737,6 +789,7 @@ final class WorkbenchStore {
     var activeTranscriptionBatch: TranscriptionBatchState?
     var transcriptionAdmissionError: String?
     private var flowTasks: [UUID: Task<Void, Never>] = [:]
+    private var stagedTranscriptions: [UUID: StagedTranscriptionArtifacts] = [:]
     private var summaryTaskIDs: Set<UUID> = []
     /// FIFO of transcription job IDs waiting for the single local ASR slot.
     private var pendingTranscriptionQueue: [UUID] = []
@@ -1295,8 +1348,9 @@ final class WorkbenchStore {
         if activeQueuedTranscriptionID == id { activeQueuedTranscriptionID = nil }
         flowTasks[id]?.cancel()
         flowTasks[id] = nil
+        discardStagedTranscription(id)
         if let job = transcriptions.first(where: { $0.id == id }) {
-            removeManagedClipMediaIfNeeded(job.sourceURL)
+            Self.removeManagedClipMediaIfNeeded(job.sourceURL)
         }
         transcriptions.removeAll { $0.id == id }
         if selectedTranscriptionID == id { selectedTranscriptionID = transcriptions.first?.id }
@@ -1645,18 +1699,8 @@ final class WorkbenchStore {
         transcriptions[index].progressStep = "flow_started"
         transcriptions[index].progressCompleted = nil
         transcriptions[index].progressTotal = nil
-        transcriptions[index].subtitleTrack = nil
-        transcriptions[index].translationTracks = []
-        transcriptions[index].selectedTranslationLanguageCode = nil
-        transcriptions[index].selectedTrack = .source
-        transcriptions[index].summaryMarkdown = nil
-        transcriptions[index].summaryTemplateID = nil
-        transcriptions[index].summaryTemplateName = nil
-        transcriptions[index].sessionTag = nil
-        transcriptions[index].internalSummary = nil
-        transcriptions[index].summaryState = nil
-        transcriptions[index].summaryErrorMessage = nil
         transcriptions[index].errorMessage = nil
+        stagedTranscriptions[id] = .init()
         save()
 
         let task = Task { [weak self] in
@@ -1678,16 +1722,19 @@ final class WorkbenchStore {
                     $0.errorMessage = nil
                     $0.progressMessage = "Cancelled — ready to retry"
                 }
+                discardStagedTranscription(id)
                 return
             }
+            let input: MaterializedTranscriptionInput
             do {
-                try await materializeClipMediaIfNeeded(for: id)
+                input = try await materializeClipMediaIfNeeded(for: id)
             } catch is CancellationError {
                 updateTranscription(id) {
                     $0.state = .cancelled
                     $0.errorMessage = nil
                     $0.progressMessage = "Cancelled — ready to retry"
                 }
+                discardStagedTranscription(id)
                 return
             } catch {
                 updateTranscription(id) {
@@ -1697,14 +1744,25 @@ final class WorkbenchStore {
                     $0.flowProgressStage = nil
                     $0.progressStep = nil
                 }
+                discardStagedTranscription(id)
                 return
             }
             guard let job = transcriptions.first(where: { $0.id == id }) else { return }
+            if input.usesExtractedClip, var staged = stagedTranscriptions[id] {
+                staged.processedSourcePath = input.sourceURL.path
+                stagedTranscriptions[id] = staged
+            }
+            var flowJob = job
+            flowJob.sourcePath = input.sourceURL.path
+            if input.usesExtractedClip {
+                flowJob.clipStartMs = nil
+                flowJob.clipEndMs = nil
+            }
             let request = MediaFlowRequest(
                 id: id,
-                input: .media(job.sourceURL),
+                input: .media(input.sourceURL),
                 steps: WorkbenchMediaFlowPlanner.transcriptionSteps(
-                    for: job,
+                    for: flowJob,
                     hasAPIKey: hasSubtitleModel
                 )
             )
@@ -1715,9 +1773,9 @@ final class WorkbenchStore {
                 await consumeTranscriptionEvent(
                     event,
                     jobID: id,
-                    sourceURL: job.sourceURL,
-                    languageCode: job.languageCode,
-                    speakerCount: job.speakerCount.count
+                    sourceURL: input.sourceURL,
+                    languageCode: flowJob.languageCode,
+                    speakerCount: flowJob.speakerCount.count
                 )
             }
             if Task.isCancelled {
@@ -1726,6 +1784,7 @@ final class WorkbenchStore {
                     $0.errorMessage = nil
                     $0.progressMessage = "Cancelled — ready to retry"
                 }
+                discardStagedTranscription(id)
                 return
             }
             guard let completed = transcriptions.first(where: { $0.id == id }),
@@ -1740,10 +1799,15 @@ final class WorkbenchStore {
         flowTasks[id] = task
     }
 
-    /// Writes the selected clip window to managed storage and retargets the job source.
-    private func materializeClipMediaIfNeeded(for id: UUID) async throws {
+    /// Writes the selected clip window to managed storage without changing persisted job state.
+    private func materializeClipMediaIfNeeded(for id: UUID) async throws -> MaterializedTranscriptionInput {
         guard let index = transcriptions.firstIndex(where: { $0.id == id }),
-              let range = transcriptions[index].clipRangeSeconds else { return }
+              let range = transcriptions[index].clipRangeSeconds else {
+            guard let job = transcriptions.first(where: { $0.id == id }) else {
+                throw CancellationError()
+            }
+            return .init(sourceURL: job.sourceURL, usesExtractedClip: false)
+        }
 
         let sourceURL = transcriptions[index].sourceURL
         updateTranscription(id) {
@@ -1766,15 +1830,11 @@ final class WorkbenchStore {
             )
         }.value
         try Task.checkCancellation()
-
         updateTranscription(id) {
-            $0.sourcePath = destinationURL.path
-            // Source is already clipped; ASR must not re-window or offset timestamps.
-            $0.clipStartMs = nil
-            $0.clipEndMs = nil
             $0.progressMessage = "Preparing audio…"
             $0.progressStep = "flow_started"
         }
+        return .init(sourceURL: destinationURL, usesExtractedClip: true)
     }
 
     func cancelTranscription(_ id: UUID) {
@@ -1852,13 +1912,7 @@ final class WorkbenchStore {
             defer { flowTasks[id] = nil }
             for await event in MediaFlowExecutor.shared.events(for: request) {
                 if Task.isCancelled { break }
-                await consumeTranscriptionEvent(
-                    event,
-                    jobID: id,
-                    sourceURL: snapshot.sourceURL,
-                    languageCode: snapshot.languageCode,
-                    speakerCount: snapshot.speakerCount.count
-                )
+                await consumeTranslationEvent(event, jobID: id)
             }
             if Task.isCancelled {
                 updateTranscription(id) {
@@ -2081,6 +2135,20 @@ final class WorkbenchStore {
     ) async {
         switch event {
         case .progress(let progress):
+            let committed: Bool
+            if progress.status == .completed {
+                committed = await commitStagedTranscription(
+                    jobID,
+                    sourceURL: sourceURL,
+                    languageCode: languageCode,
+                    speakerCount: speakerCount
+                )
+            } else if progress.status == .cancelled || progress.status == .failed {
+                discardStagedTranscription(jobID)
+                committed = false
+            } else {
+                committed = false
+            }
             updateTranscription(jobID) { job in
                 job.flowProgressStage = progress.stage
                 job.progressStep = progress.step
@@ -2091,9 +2159,17 @@ final class WorkbenchStore {
                     job.state = .running
                     job.progress = max(job.progress, progress.progress)
                 } else if progress.status == .completed {
+                    guard committed else {
+                        job.state = .failed
+                        job.progressMessage = "Transcription result unavailable"
+                        job.errorMessage = "The transcription finished without a result to apply."
+                        return
+                    }
                     job.state = .completed
                     job.progress = 1
-                    if job.translationTrack != nil {
+                    if let detail = job.transcriptionAlignmentDiagnostics?.completionDetail {
+                        job.progressMessage = "Transcript ready · \(detail)"
+                    } else if job.translationTrack != nil {
                         job.progressMessage = "Transcript and translation ready"
                     } else if job.subtitleTrack != nil {
                         job.progressMessage = "Transcript and subtitles ready"
@@ -2112,28 +2188,78 @@ final class WorkbenchStore {
                 }
             }
 
-        case .artifact(.transcription(let result, let diagnostics)):
-            updateTranscription(jobID) {
-                $0.result = result
-                $0.editedText = result.text
-                $0.diarizationDiagnostics = diagnostics
-            }
-            await TranscriptCache.shared.storeLocalTranscript(
-                result,
-                for: sourceURL,
-                configuration: .init(languageCode: languageCode, speakerCount: speakerCount)
-            )
+        case .artifact(.transcription(let result, let diagnostics, let alignmentDiagnostics)):
+            guard var staged = stagedTranscriptions[jobID] else { return }
+            staged.rawResult = result
+            staged.preparedResult = result
+            staged.diarizationDiagnostics = diagnostics
+            staged.alignmentDiagnostics = alignmentDiagnostics
+            stagedTranscriptions[jobID] = staged
 
         case .artifact(.subtitles(let track, let rebuiltSegments)):
-            updateTranscription(jobID) {
-                $0.subtitleTrack = track
+            guard var staged = stagedTranscriptions[jobID] else { return }
+            staged.subtitleTrack = track
+            staged.preparedResult = Self.preparedTranscript(
+                from: track,
+                base: staged.preparedResult ?? staged.rawResult,
+                rebuiltSegments: rebuiltSegments
+            )
+            stagedTranscriptions[jobID] = staged
+
+        case .artifact(.translation(let track)):
+            guard var staged = stagedTranscriptions[jobID],
+                  let job = transcriptions.first(where: { $0.id == jobID }) else { return }
+            let code = (track.language ?? job.targetLanguageCode ?? "und")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            staged.upsertTranslation(track, languageCode: code.isEmpty ? "und" : code)
+            stagedTranscriptions[jobID] = staged
+
+        case .artifact(.alignment), .artifact(.dub):
+            break
+        }
+    }
+
+    private func consumeTranslationEvent(_ event: MediaJobEvent, jobID: UUID) async {
+        switch event {
+        case .progress(let progress):
+            updateTranscription(jobID) { job in
+                job.flowProgressStage = progress.stage
+                job.progressStep = progress.step
+                job.progressCompleted = progress.current
+                job.progressTotal = progress.total
+                job.progressMessage = progress.message
+                switch progress.status {
+                case .started, .processing:
+                    job.state = .running
+                    job.progress = max(job.progress, progress.progress)
+                case .completed:
+                    job.state = .completed
+                    job.progress = 1
+                    job.progressMessage = job.subtitleTrack == nil
+                        ? "Translation ready"
+                        : "Subtitles and translation ready"
+                    job.selectedTrack = job.translationTrack == nil ? .source : .translation
+                    job.errorMessage = nil
+                case .cancelled:
+                    job.state = .cancelled
+                    job.progressMessage = "Cancelled — ready to retry"
+                    job.errorMessage = nil
+                case .failed:
+                    job.state = .failed
+                    job.errorMessage = progress.message
+                }
+            }
+
+        case .artifact(.subtitles(let track, let rebuiltSegments)):
+            updateTranscription(jobID) { job in
+                job.subtitleTrack = track
                 let prepared = Self.preparedTranscript(
                     from: track,
-                    base: $0.result,
+                    base: job.result,
                     rebuiltSegments: rebuiltSegments
                 )
-                $0.result = prepared
-                $0.editedText = prepared.text
+                job.result = prepared
+                job.editedText = prepared.text
             }
 
         case .artifact(.translation(let track)):
@@ -2144,8 +2270,49 @@ final class WorkbenchStore {
                 job.selectedTrack = .translation
             }
 
-        case .artifact(.alignment), .artifact(.dub):
+        case .artifact(.transcription), .artifact(.alignment), .artifact(.dub):
             break
+        }
+    }
+
+    private func commitStagedTranscription(
+        _ id: UUID,
+        sourceURL: URL,
+        languageCode: String?,
+        speakerCount: Int?
+    ) async -> Bool {
+        guard let staged = stagedTranscriptions.removeValue(forKey: id),
+              let artifacts = staged.completedArtifacts,
+              TranscriptionCommitPolicy.shouldCommit(status: .completed, artifacts: artifacts) else {
+            return false
+        }
+        updateTranscription(id) { job in
+            artifacts.apply(to: &job)
+        }
+        await TranscriptCache.shared.storeLocalTranscript(
+            artifacts.rawResult,
+            for: sourceURL,
+            configuration: .init(languageCode: languageCode, speakerCount: speakerCount)
+        )
+        markDubsOutdated(afterRetranscription: id)
+        return true
+    }
+
+    private func discardStagedTranscription(_ id: UUID) {
+        guard let staged = stagedTranscriptions.removeValue(forKey: id),
+              let processedSourcePath = staged.processedSourcePath else { return }
+        let url = URL(fileURLWithPath: processedSourcePath)
+        Task.detached(priority: .utility) {
+            Self.removeManagedClipMediaIfNeeded(url)
+        }
+    }
+
+    private func markDubsOutdated(afterRetranscription id: UUID) {
+        if TranscriptionCommitPolicy.markLinkedCompletedDubsOutdated(
+            &dubs,
+            sourceTranscriptionID: id
+        ) {
+            save()
         }
     }
 
@@ -2552,7 +2719,13 @@ final class WorkbenchStore {
 
     func revealTranscriptionDiagnostics(_ id: UUID) async throws {
         guard let job = transcriptions.first(where: { $0.id == id }),
-              let diagnostics = job.diarizationDiagnostics else { return }
+              job.diarizationDiagnostics != nil || job.transcriptionAlignmentDiagnostics != nil else {
+            return
+        }
+        let diagnostics = TranscriptionDiagnosticsReport(
+            diarization: job.diarizationDiagnostics,
+            alignment: job.transcriptionAlignmentDiagnostics
+        )
         let directory = Self.dataDirectory.appendingPathComponent("Diagnostics", isDirectory: true)
         let url = directory.appendingPathComponent("transcription-\(id.uuidString).json")
         try await Task.detached(priority: .utility) {
@@ -2567,12 +2740,12 @@ final class WorkbenchStore {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    private static var dataDirectory: URL {
+    nonisolated private static var dataDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Voxella Studio", isDirectory: true)
     }
 
-    private static var clipsDirectory: URL {
+    nonisolated private static var clipsDirectory: URL {
         dataDirectory.appendingPathComponent("Clips", isDirectory: true)
     }
 
@@ -2580,7 +2753,7 @@ final class WorkbenchStore {
         dataDirectory.appendingPathComponent("workbench.json")
     }
 
-    private func removeManagedClipMediaIfNeeded(_ url: URL) {
+    nonisolated private static func removeManagedClipMediaIfNeeded(_ url: URL) {
         let clipsRoot = Self.clipsDirectory.resolvingSymlinksInPath().path
         let candidate = url.resolvingSymlinksInPath().path
         guard candidate.hasPrefix(clipsRoot + "/") else { return }

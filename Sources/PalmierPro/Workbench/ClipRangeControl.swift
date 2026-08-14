@@ -10,25 +10,43 @@ private final class ClipRangePlayback {
     var playheadSeconds = 0.0
 
     private var endObserver: Any?
+    private var seekGeneration = UUID()
+    private var installedURL: URL?
 
     func install(url: URL, at seconds: Double) {
-        if player == nil {
+        if installedURL != url {
+            clearObserver()
             player = AVPlayer(playerItem: AVPlayerItem(url: url))
+            installedURL = url
         }
         seek(to: seconds, resume: false)
     }
 
-    func seek(to seconds: Double, resume: Bool) {
+    func seek(to seconds: Double, resume: Bool, playUntil endSeconds: Double? = nil, rangeStart: Double? = nil) {
         guard let player else { return }
+        let generation = UUID()
+        seekGeneration = generation
+        playheadSeconds = seconds
+        player.pause()
         player.seek(
             to: CMTime(seconds: seconds, preferredTimescale: AppTheme.Workbench.playerTimescale),
             toleranceBefore: .zero,
             toleranceAfter: .zero
-        )
-        playheadSeconds = seconds
-        if resume {
-            player.play()
-            isPlaying = true
+        ) { [weak self] completed in
+            Task { @MainActor [weak self] in
+                guard let self, self.seekGeneration == generation, completed else { return }
+                self.playheadSeconds = player.currentTime().seconds.finiteOrZero
+                if resume, let endSeconds, let rangeStart {
+                    self.play(until: endSeconds, rangeStart: rangeStart)
+                } else if resume {
+                    player.play()
+                    self.isPlaying = true
+                }
+            }
+        }
+        if !resume {
+            player.pause()
+            isPlaying = false
         }
     }
 
@@ -66,6 +84,7 @@ private final class ClipRangePlayback {
     func tearDown() {
         pause()
         player = nil
+        installedURL = nil
     }
 
     private func clearObserver() {
@@ -86,6 +105,7 @@ struct ClipRangeControl: View {
     @State private var dragOriginRange: ClosedRange<Double>?
     @State private var moveGrabOffset = 0.0
     @State private var isVideo = false
+    @State private var playbackURL: URL?
 
     private enum DragTarget {
         case playhead
@@ -296,7 +316,14 @@ struct ClipRangeControl: View {
     private func prepareMedia() async {
         isVideo = UTType(filenameExtension: mediaURL.pathExtension)?.conforms(to: .movie) == true
         playback.tearDown()
-        let asset = AVURLAsset(url: mediaURL)
+        let resolvedURL: URL
+        if isVideo {
+            resolvedURL = mediaURL
+        } else {
+            resolvedURL = (try? await DecodedAudioCache.file(for: mediaURL)) ?? mediaURL
+        }
+        playbackURL = resolvedURL
+        let asset = AVURLAsset(url: resolvedURL)
         do {
             let cmDuration = try await asset.load(.duration)
             let seconds = cmDuration.seconds
@@ -308,7 +335,7 @@ struct ClipRangeControl: View {
             if range.upperBound <= range.lowerBound || range.upperBound > seconds {
                 range = 0...seconds
             }
-            playback.install(url: mediaURL, at: range.lowerBound)
+            playback.install(url: resolvedURL, at: range.lowerBound)
         } catch {
             duration = 0
         }
@@ -322,8 +349,9 @@ struct ClipRangeControl: View {
         let startAt = playback.playheadSeconds < range.upperBound - AppTheme.Workbench.playerEndTolerance
             ? playback.playheadSeconds
             : range.lowerBound
-        playback.install(url: mediaURL, at: startAt)
-        playback.play(until: range.upperBound, rangeStart: range.lowerBound)
+        let url = playbackURL ?? mediaURL
+        playback.install(url: url, at: startAt)
+        playback.seek(to: startAt, resume: true, playUntil: range.upperBound, rangeStart: range.lowerBound)
     }
 
     private func clampPlayhead(to newRange: ClosedRange<Double>) {

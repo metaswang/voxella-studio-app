@@ -209,7 +209,8 @@ struct WorkbenchSessionDetailView: View {
     @State private var showSummaryRefinementSheet = false
     @State private var sessionPendingDeletion: WorkbenchSession?
     @State private var isOpeningClip = false
-    @State private var seekSeconds: Double?
+    @State private var cuePlaybackRequest: SessionCuePlaybackRequest?
+    @State private var activePlaybackCueID: Int?
     @State private var probedMediaURL: URL?
     @State private var probedMediaHasVideo = false
 
@@ -230,6 +231,7 @@ struct WorkbenchSessionDetailView: View {
         .background(AppTheme.Background.baseColor)
         .onChange(of: store.selectedSessionID) { _, _ in
             isRenamingTitle = false
+            activePlaybackCueID = nil
         }
         .sheet(isPresented: $showTranslateSheet) {
             if let session = store.selectedSession,
@@ -346,6 +348,8 @@ struct WorkbenchSessionDetailView: View {
     @ViewBuilder
     private func sessionView(_ session: WorkbenchSession) -> some View {
         let mediaURL = selectedTrack == .dub ? session.outputURL : session.sourceURL
+        let playbackCueScope = cueScope(for: session)
+        let playbackCues = editableCues(for: session, scope: playbackCueScope)
         let hasVideo = probedMediaURL == mediaURL
             ? probedMediaHasVideo
             : mediaURL?.isMovie == true
@@ -388,7 +392,9 @@ struct WorkbenchSessionDetailView: View {
                                     : session.subtitleTrack)
                                 : nil,
                             translationTracks: hasVideo ? session.translationTracks : [],
-                            seekSeconds: $seekSeconds,
+                            highlightCues: playbackCues,
+                            activeCueID: $activePlaybackCueID,
+                            cuePlaybackRequest: $cuePlaybackRequest,
                             onSelectTrack: { selectedTrack = $0 }
                         )
                         .layoutPriority(1)
@@ -399,7 +405,11 @@ struct WorkbenchSessionDetailView: View {
                             },
                             onRequestRefinement: { showSummaryRefinementSheet = true }
                         )
-                        .frame(maxHeight: hasVideo ? AppTheme.Workbench.emptyStateMinHeight : .infinity, alignment: .top)
+                        .frame(
+                            minHeight: AppTheme.Workbench.summaryPanelMinHeight,
+                            maxHeight: hasVideo ? AppTheme.Workbench.emptyStateMinHeight : .infinity,
+                            alignment: .top
+                        )
                     }
                     .frame(
                         minWidth: minimumLeftWidth,
@@ -414,10 +424,27 @@ struct WorkbenchSessionDetailView: View {
                         tabBar(session)
                             .padding(.horizontal, AppTheme.Spacing.xl)
                             .padding(.top, AppTheme.Spacing.lg)
-                        ScrollView {
-                            sessionContent(session)
-                                .padding(.horizontal, AppTheme.Spacing.xl)
-                                .padding(.bottom, AppTheme.Spacing.xl)
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                sessionContent(session, activeCueID: activePlaybackCueID)
+                                    .padding(.horizontal, AppTheme.Spacing.xl)
+                                    .padding(.bottom, AppTheme.Spacing.xl)
+                            }
+                            .onAppear {
+                                scrollToActiveCue(activePlaybackCueID, in: playbackCues, using: proxy)
+                            }
+                            .onChange(of: activePlaybackCueID) { _, cueID in
+                                scrollToActiveCue(cueID, in: playbackCues, using: proxy)
+                            }
+                            .onChange(of: selectedTab) { _, _ in
+                                scrollToActiveCue(activePlaybackCueID, in: playbackCues, using: proxy)
+                            }
+                            .onChange(of: transcriptLanguageCode) { _, _ in
+                                scrollToActiveCue(activePlaybackCueID, in: playbackCues, using: proxy)
+                            }
+                            .onChange(of: subtitleLanguageCode) { _, _ in
+                                scrollToActiveCue(activePlaybackCueID, in: playbackCues, using: proxy)
+                            }
                         }
                     }
                     .frame(
@@ -590,7 +617,7 @@ struct WorkbenchSessionDetailView: View {
         let isProcessing = session.state == .running || session.state == .cancelling
         return Menu {
             if session.transcriptionID != nil {
-                Button("Regenerate Transcript") {
+                Button("Re-transcribe and rebuild subtitles") {
                     showRetranscribeSheet = true
                 }
                 .disabled(isProcessing || session.sourceURL == nil)
@@ -747,7 +774,7 @@ struct WorkbenchSessionDetailView: View {
     }
 
     @ViewBuilder
-    private func sessionContent(_ session: WorkbenchSession) -> some View {
+    private func sessionContent(_ session: WorkbenchSession, activeCueID: Int?) -> some View {
         let scope = cueScope(for: session)
         let cues = editableCues(for: session, scope: scope)
         let allowsEditing = selectedTab == .subtitles
@@ -758,16 +785,28 @@ struct WorkbenchSessionDetailView: View {
             contentKey: "\(session.id.uuidString)-\(selectedTab.rawValue)-\(scope.contentKey)-\(allowsEditing)",
             scope: scope,
             cues: cues,
+            activeCueID: activeCueID,
             speakerLabels: speakerLabels(for: session, cues: cues),
             allowsEditing: allowsEditing,
             showsSubtitleDisplayText: selectedTab == .subtitles,
             emptyText: selectedTab == .transcript
                 ? "No timed transcript is available for this track."
                 : "No subtitle track is available.",
-            onSeek: { seconds in
-                seekSeconds = seconds
+            onSeek: { start, end in
+                cuePlaybackRequest = SessionCuePlaybackRequest(start: start, end: end)
             }
         )
+    }
+
+    private func scrollToActiveCue(
+        _ cueID: Int?,
+        in cues: [SubtitleCue],
+        using proxy: ScrollViewProxy
+    ) {
+        guard let cueID, cues.contains(where: { $0.id == cueID }) else { return }
+        withAnimation(.easeInOut(duration: AppTheme.Anim.transition)) {
+            proxy.scrollTo(cueID, anchor: .center)
+        }
     }
 
     private func cueScope(for session: WorkbenchSession) -> WorkbenchStore.SessionCueScope {
@@ -1141,6 +1180,11 @@ private struct SessionTranslateSheet: View {
     }
 }
 
+private struct SessionCuePlaybackRequest: Equatable {
+    let start: Double
+    let end: Double
+}
+
 private struct SessionMediaPlayer: View {
     let URL: URL?
     let track: SessionPlaybackTrack
@@ -1149,7 +1193,9 @@ private struct SessionMediaPlayer: View {
     var prefersVideoCanvas = false
     var subtitleTrack: SubtitleTrack? = nil
     var translationTracks: [WorkbenchTranslationTrack] = []
-    @Binding var seekSeconds: Double?
+    let highlightCues: [SubtitleCue]
+    @Binding var activeCueID: Int?
+    @Binding var cuePlaybackRequest: SessionCuePlaybackRequest?
     let onSelectTrack: (SessionPlaybackTrack) -> Void
 
     @State private var playback = SessionPlaybackController()
@@ -1194,7 +1240,11 @@ private struct SessionMediaPlayer: View {
                 subtitleTrack: subtitleTrack,
                 translationTracks: translationTracks
             )
+            playback.configureHighlightCues(highlightCues)
             await playback.load(url: URL, showsVideoCanvas: showsVideoCanvas)
+        }
+        .onChange(of: highlightCues) { _, cues in
+            playback.configureHighlightCues(cues)
         }
         .onChange(of: translationTracks.map(\.id)) { _, _ in
             playback.configureSubtitles(
@@ -1211,13 +1261,17 @@ private struct SessionMediaPlayer: View {
         .onChange(of: playback.playbackRate) { _, _ in
             playback.applyPlaybackRate()
         }
-        .onChange(of: seekSeconds) { _, seconds in
-            guard let seconds else { return }
-            playback.seekAbsolute(to: seconds)
-            seekSeconds = nil
+        .onChange(of: playback.activeCueID) { _, cueID in
+            activeCueID = cueID
+        }
+        .onChange(of: cuePlaybackRequest) { _, request in
+            guard let request else { return }
+            playback.toggleCuePlayback(start: request.start, end: request.end)
+            cuePlaybackRequest = nil
         }
         .onDisappear {
             playback.tearDown()
+            activeCueID = nil
         }
     }
 
@@ -1236,6 +1290,7 @@ private struct SessionMediaPlayer: View {
                             player: player,
                             onViewReady: { playback.playerViewRef = $0 }
                         )
+                        .allowsHitTesting(false)
                         if !isVideoReady {
                             if let posterImage = playback.posterImage {
                                 Image(nsImage: posterImage)
@@ -1247,16 +1302,19 @@ private struct SessionMediaPlayer: View {
                                 ProgressView()
                                     .controlSize(.small)
                                     .tint(.white)
+                                    .allowsHitTesting(false)
                             }
                         }
                     } else if URL != nil {
                         ProgressView()
                             .controlSize(.small)
                             .tint(.white)
+                            .allowsHitTesting(false)
                     } else {
                         Text("Media unavailable")
                             .font(.system(size: AppTheme.FontSize.sm))
                             .foregroundStyle(AppTheme.Text.mutedColor)
+                            .allowsHitTesting(false)
                     }
 
                     if playback.fullscreenController == nil, let cueText {
@@ -1269,7 +1327,19 @@ private struct SessionMediaPlayer: View {
                             .background(Color.black.opacity(AppTheme.Opacity.medium), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
                             .padding(.horizontal, AppTheme.Spacing.xl)
                             .padding(.bottom, AppTheme.Spacing.xl)
+                            .allowsHitTesting(false)
                     }
+
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            guard playback.player != nil else { return }
+                            playback.toggleFullscreen()
+                        }
+                        .onTapGesture {
+                            guard playback.player != nil else { return }
+                            playback.togglePlayback()
+                        }
                 }
                 .frame(maxWidth: .infinity)
                 .frame(
@@ -1546,9 +1616,10 @@ private struct SessionSummaryPanel: View {
             if session.summaryState == .running {
                 ProgressView("Generating summary…")
                     .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if let markdown = session.summaryMarkdown, !markdown.isEmpty {
                 ScrollView {
-                    StructuredText(markdown: markdown)
+                    StructuredText(markdown: TemplateSummaryLLMProcessor.sanitizeMarkdown(markdown))
                         .textual.structuredTextStyle(.default)
                         .textual.textSelection(.enabled)
                         .font(.system(size: AppTheme.FontSize.sm))
@@ -1556,7 +1627,12 @@ private struct SessionSummaryPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 }
-                .frame(minHeight: AppTheme.Workbench.emptyStateMinHeight / 2, maxHeight: 280)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: AppTheme.Workbench.summaryPanelMinHeight,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
             } else if session.summaryState == .failed,
                       let error = session.summaryErrorMessage,
                       !error.isEmpty,

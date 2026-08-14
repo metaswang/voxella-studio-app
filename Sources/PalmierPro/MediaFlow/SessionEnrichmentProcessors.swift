@@ -215,9 +215,12 @@ struct TemplateSummaryLLMProcessor: Sendable {
         5) Use markdown headings (##) only for user-facing summary sections requested by the template.
         6) Keep grounded to provided content; do not fabricate facts.
         7) Use concise and faithful evidence grounded in the provided transcript.
+        8) Never emit a heading with an empty body. If a section would be empty, omit the heading.
         """
         if isShort {
-            user += "\n8) Input is short; keep the summary compact and avoid padding."
+            user += "\n9) Input is short; keep the summary compact and avoid padding."
+        } else {
+            user += "\n9) Cover the full session. Unused concrete facts belong in a details section, not omitted after Key Points."
         }
 
         let raw = try await client.complete(system: system, user: user)
@@ -236,7 +239,55 @@ struct TemplateSummaryLLMProcessor: Sendable {
                 text = body.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
-        return text
+        return dropEmptyHeadingSections(text)
+    }
+
+    static func dropEmptyHeadingSections(_ text: String) -> String {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var heading: String?
+        var body: [String] = []
+        var kept: [String] = []
+
+        func flush() {
+            if let heading {
+                let content = body.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                guard !content.isEmpty else { return }
+                if !kept.isEmpty { kept.append("") }
+                kept.append(heading)
+                kept.append(contentsOf: trimSectionBody(body))
+            } else if !body.isEmpty {
+                kept.append(contentsOf: body)
+            }
+            heading = nil
+            body.removeAll()
+        }
+
+        for line in lines {
+            if isUserFacingHeading(line) {
+                flush()
+                heading = line.trimmingCharacters(in: .whitespaces)
+            } else {
+                body.append(line)
+            }
+        }
+        flush()
+        return kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func isUserFacingHeading(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("## ") && !trimmed.hasPrefix("###")
+    }
+
+    private static func trimSectionBody(_ body: [String]) -> [String] {
+        var lines = body
+        while lines.first?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+            lines.removeFirst()
+        }
+        while lines.last?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+            lines.removeLast()
+        }
+        return lines
     }
 
     static func transcriptLines(from result: TranscriptionResult) -> String {

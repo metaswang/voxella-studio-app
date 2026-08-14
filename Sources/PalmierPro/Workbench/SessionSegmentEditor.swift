@@ -8,11 +8,12 @@ struct SessionSegmentEditor: View {
     let contentKey: String
     let scope: WorkbenchStore.SessionCueScope
     let cues: [SubtitleCue]
+    let activeCueID: Int?
     let speakerLabels: [String]
     var allowsEditing = true
     var showsSubtitleDisplayText = false
     let emptyText: String
-    let onSeek: (Double) -> Void
+    let onSeek: (Double, Double) -> Void
 
     @Bindable private var store = WorkbenchStore.shared
     @State private var editingCueID: Int?
@@ -36,6 +37,7 @@ struct SessionSegmentEditor: View {
                 ForEach(Array(cues.enumerated()), id: \.element.id) { index, cue in
                     SessionCueRow(
                         cue: cue,
+                        isActive: activeCueID == cue.id,
                         speakerLabels: speakerLabels,
                         isEditing: allowsEditing && editingCueID == cue.id,
                         editingText: editingBinding(for: cue),
@@ -45,7 +47,7 @@ struct SessionSegmentEditor: View {
                         canSplit: allowsEditing && canSplit,
                         allowsEditing: allowsEditing,
                         showsSubtitleDisplayText: showsSubtitleDisplayText,
-                        onPlay: { onSeek(cue.start) },
+                        onPlay: { onSeek(cue.start, cue.end) },
                         onBeginEdit: { beginEdit(cue) },
                         onCommitEdit: { commitEditAndClose() },
                         onCancelEdit: { cancelEdit() },
@@ -66,6 +68,7 @@ struct SessionSegmentEditor: View {
                             addSpeakerName = ""
                         }
                     )
+                    .id(cue.id)
 
                     if allowsEditing, index < cues.count - 1 {
                         SessionMergeDivider {
@@ -297,6 +300,7 @@ private struct SessionMergeDivider: View {
 
 private struct SessionCueRow: View {
     let cue: SubtitleCue
+    let isActive: Bool
     let speakerLabels: [String]
     let isEditing: Bool
     @Binding var editingText: String
@@ -318,14 +322,14 @@ private struct SessionCueRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.mdLg) {
             Button(action: onPlay) {
-                Image(systemName: "play.fill")
+                Image(systemName: isActive ? "pause.fill" : "play.fill")
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Accent.link)
                     .frame(width: AppTheme.IconSize.lg, height: AppTheme.IconSize.lg)
                     .background(AppTheme.Accent.link.opacity(AppTheme.Opacity.soft), in: Circle())
             }
             .buttonStyle(.plain)
-            .help("Play from this segment")
+            .help(isActive ? "Pause" : "Play from this segment")
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
                 HStack(spacing: AppTheme.Spacing.sm) {
@@ -404,12 +408,21 @@ private struct SessionCueRow: View {
         }
         .padding(AppTheme.Spacing.lgXl)
         .frame(minHeight: AppTheme.Workbench.transcriptCardMinHeight, alignment: .topLeading)
-        .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
+        .background(
+            isActive
+                ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.soft)
+                : AppTheme.Background.surfaceColor,
+            in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+        )
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
                 .strokeBorder(
-                    isEditing ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.muted) : AppTheme.Border.subtleColor,
-                    lineWidth: AppTheme.BorderWidth.thin
+                    isActive
+                        ? AppTheme.Accent.primary
+                        : isEditing
+                            ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.muted)
+                            : AppTheme.Border.subtleColor,
+                    lineWidth: isActive ? AppTheme.BorderWidth.medium : AppTheme.BorderWidth.thin
                 )
         }
         .onHover { isHovered = $0 }

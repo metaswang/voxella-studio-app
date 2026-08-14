@@ -19,8 +19,205 @@ private actor StubLLMClient: LLMTextClient {
     var requestCount: Int { requests.count }
 }
 
+private actor ConcurrencyProbeLLMClient: LLMTextClient {
+    private var activeRequests = 0
+    private(set) var maximumActiveRequests = 0
+
+    func complete(system: String, user: String) async throws -> String {
+        activeRequests += 1
+        maximumActiveRequests = max(maximumActiveRequests, activeRequests)
+        await Task.yield()
+
+        let startTag = "<asr_input>"
+        let endTag = "</asr_input>"
+        let input: String
+        if let start = user.range(of: startTag, options: .backwards),
+           let end = user.range(of: endTag, range: start.upperBound..<user.endIndex) {
+            input = String(user[start.upperBound..<end.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            input = "fallback"
+        }
+        activeRequests -= 1
+        return #"{"subtitles":[""# + input + #""]}"#
+    }
+}
+
+private actor InputMappedLLMClient: LLMTextClient {
+    private let responsesByInput: [String: String]
+    private(set) var requests: [(system: String, user: String)] = []
+
+    init(responsesByInput: [String: String]) {
+        self.responsesByInput = responsesByInput
+    }
+
+    func complete(system: String, user: String) async throws -> String {
+        requests.append((system, user))
+        let startTag = "<asr_input>"
+        let endTag = "</asr_input>"
+        guard let start = user.range(of: startTag, options: .backwards),
+              let end = user.range(of: endTag, range: start.upperBound..<user.endIndex) else {
+            throw LLMClientError.emptyResponse
+        }
+        let input = String(user[start.upperBound..<end.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let response = responsesByInput[input] else { throw LLMClientError.emptyResponse }
+        return response
+    }
+
+    var requestCount: Int { requests.count }
+}
+
+private func assertContinuousCueCoverage(
+    _ track: SubtitleTrack,
+    sourceWords: [TranscriptionWord]
+) throws {
+    #expect(track.cues.flatMap(\.sourceIDs) == Array(sourceWords.indices))
+    for cue in track.cues {
+        let first = try #require(cue.sourceIDs.first)
+        let last = try #require(cue.sourceIDs.last)
+        let start = try #require(sourceWords[first].start)
+        let end = try #require(sourceWords[last].end)
+        #expect(cue.start == start)
+        #expect(cue.end == end)
+    }
+}
+
 @Suite("Flexible media flows")
 struct MediaFlowTests {
+    @Test func subtitleTimingPartitionerPreservesSourceCoverageWithAnchors() {
+        let ranges = SubtitleTimingPartitioner.partition(
+            cueCount: 3,
+            sourceWordCount: 8,
+            anchorRanges: [1..<3, 4..<5, 6..<8],
+            usesAnchorTiming: true,
+            weights: [2, 1, 2]
+        )
+
+        #expect(ranges == [0..<3, 3..<5, 5..<8])
+        #expect(ranges.flatMap { Array($0) } == Array(0..<8))
+    }
+
+    @Test func subtitleTimingPartitionerInterpolatesWhenAnyAnchorIsMissing() {
+        let ranges = SubtitleTimingPartitioner.partition(
+            cueCount: 2,
+            sourceWordCount: 5,
+            anchorRanges: [0..<2, nil],
+            usesAnchorTiming: true,
+            weights: [1, 2]
+        )
+
+        #expect(ranges == [0..<2, 2..<5])
+    }
+
+    @Test func subtitleTimingPartitionerAnchoredRangesRejectMissingAnchors() {
+        #expect(
+            SubtitleTimingPartitioner.anchoredRanges(
+                cueCount: 2,
+                sourceWordCount: 5,
+                anchorRanges: [0..<2, nil]
+            ) == nil
+        )
+        #expect(
+            SubtitleTimingPartitioner.anchoredRanges(
+                cueCount: 3,
+                sourceWordCount: 8,
+                anchorRanges: [1..<3, 4..<5, 6..<8]
+            ) == [0..<3, 3..<5, 5..<8]
+        )
+    }
+
+    @Test func subtitleProcessorFallsBackToSourceTimingWhenRemapIsUnanchored() async throws {
+        let client = StubLLMClient(responses: [
+            #"{"subtitles":["A concise rewritten opening.","A rewritten closing thought."]}"#,
+        ])
+        let words = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"].enumerated().map { index, text in
+            TranscriptionWord(text: text, start: Double(index), end: Double(index) + 0.5, speaker: "Speaker 1")
+        }
+        let output = try await SubtitlePostprocessPipeline(client: client).process(
+            transcript: .init(
+                text: words.map(\.text).joined(separator: " "),
+                language: "en",
+                words: words,
+                segments: []
+            ),
+            options: .init(maximumTokensPerBatch: 8, maximumAttempts: 1),
+            progress: { _, _, _, _ in }
+        )
+
+        #expect(output.track.cues.allSatisfy { cue in
+            !cue.text.contains("concise rewritten") && !cue.text.contains("closing thought")
+        })
+        #expect(output.track.cues.flatMap(\.sourceIDs) == Array(words.indices))
+        #expect(output.track.cues.first?.start == 0)
+        #expect(output.track.cues.last?.end == 5.5)
+        #expect(output.warnings.contains { $0.contains("source-timed") })
+        #expect(!output.warnings.contains { $0.contains("interpolated source timing") })
+    }
+
+    @Test func subtitleTimingAlwaysCoversItsContinuousSourceWordsAfterSplitting() async throws {
+        let client = StubLLMClient(responses: [
+            #"{"subtitles":["这是一个很长的字幕句子，需要在自然停顿处拆分，并且保持同步。"]}"#,
+        ])
+        let sourceWords = Array("这是一个很长的字幕句子需要在自然停顿处拆分并且保持同步").enumerated().map { index, character in
+            TranscriptionWord(text: String(character), start: Double(index) * 0.1, end: Double(index) * 0.1 + 0.08, speaker: "Speaker 1")
+        }
+        let track = try await SubtitleLLMProcessor(client: client).process(
+            transcript: .init(text: sourceWords.map(\.text).joined(), language: "zh", words: sourceWords, segments: []),
+            options: .init(maximumTokensPerBatch: 64, maximumAttempts: 1),
+            progress: { _, _, _, _ in }
+        )
+
+        #expect(track.cues.flatMap(\.sourceIDs) == Array(sourceWords.indices))
+        for cue in track.cues {
+            let first = try #require(cue.sourceIDs.first)
+            let last = try #require(cue.sourceIDs.last)
+            let start = try #require(sourceWords[first].start)
+            let end = try #require(sourceWords[last].end)
+            #expect(cue.start == start)
+            #expect(cue.end == end)
+        }
+    }
+
+    @Test func subtitleProcessorBoundsConcurrentBatchesAndRestoresSourceOrder() async throws {
+        let client = ConcurrencyProbeLLMClient()
+        let words = ["one", "two", "three", "four", "five", "six"].enumerated().map { index, text in
+            TranscriptionWord(
+                text: text,
+                start: Double(index),
+                end: Double(index) + 0.5,
+                speaker: "Speaker \(index)"
+            )
+        }
+        let transcript = TranscriptionResult(
+            text: words.map(\.text).joined(separator: " "),
+            language: "en",
+            words: words,
+            segments: words.enumerated().map { _, word in
+                TranscriptionSegment(
+                    text: word.text,
+                    start: word.start ?? 0,
+                    end: word.end ?? 0,
+                    speaker: word.speaker
+                )
+            }
+        )
+
+        let track = try await SubtitleLLMProcessor(client: client).process(
+            transcript: transcript,
+            options: SubtitleProcessingPayload(
+                maximumTokensPerBatch: 8,
+                maximumSegmentsPerBatch: 1,
+                maximumConcurrentBatches: 2,
+                maximumAttempts: 1
+            ),
+            progress: { _, _, _, _ in }
+        )
+
+        #expect(await client.maximumActiveRequests == 2)
+        #expect(track.cues.map(\.text) == words.map { $0.text })
+    }
+
     @Test func providerProfilesAreEndpointScopedAndRequireTransportSecurity() throws {
         let openAI = LLMProviderProfile.defaultOpenAI
         #expect(try openAI.completionEndpoint().absoluteString == "https://api.openai.com/v1/chat/completions")
@@ -45,7 +242,8 @@ struct MediaFlowTests {
     @Test func subtitleProcessorUsesStableTimingAnchorsAndRetriesInvalidStructure() async throws {
         let client = StubLLMClient(responses: [
             #"{"cues":[{"token_ids":[1,0],"text":"Wrong order"}]}"#,
-            #"{"cues":[{"token_ids":[0,1],"text":"Hello, world."},{"token_ids":[2],"text":"Again."}]}"#,
+            #"{"cues":[{"token_ids":[0,1],"text":"Hello, world."}]}"#,
+            #"{"cues":[{"token_ids":[0],"text":"Again."}]}"#,
         ])
         let transcript = TranscriptionResult(
             text: "hello world again",
@@ -60,17 +258,14 @@ struct MediaFlowTests {
 
         let track = try await SubtitleLLMProcessor(client: client).process(
             transcript: transcript,
-            options: SubtitleProcessingPayload(maximumAttempts: 2),
+            options: SubtitleProcessingPayload(maximumConcurrentBatches: 1, maximumAttempts: 2),
             progress: { _, _, _, _ in }
         )
 
-        #expect(track.cues.map(\.text) == ["Hello, world.", "Again."])
-        #expect(track.cues.map(\.sourceIDs) == [[0, 1], [2]])
+        try assertContinuousCueCoverage(track, sourceWords: transcript.words)
         #expect(track.cues.map(\.speaker) == ["Speaker 1", "Speaker 2"])
-        #expect(track.cues[0].start == 0.1)
-        #expect(track.cues[0].end == 0.9)
         let requestCount = await client.requestCount
-        #expect(requestCount == 2)
+        #expect(requestCount == 3)
         let requests = await client.requests
         let firstRequest = try #require(requests.first)
         #expect(firstRequest.system.contains("correction, punctuation restoration, and subtitle segmentation"))
@@ -85,6 +280,7 @@ struct MediaFlowTests {
     @Test func subtitleProcessorShrinksMalformedTokenBatchWhileKeepingWordAnchors() async throws {
         let client = StubLLMClient(responses: [
             #"{"cues":[{"token_ids":[0,2],"text":"Malformed."}]}"#,
+            #"{"cues":[{"token_ids":[0,1],"text":"Again now."}]}"#,
         ])
         let transcript = TranscriptionResult(
             text: "hello world again now",
@@ -108,14 +304,15 @@ struct MediaFlowTests {
         )
 
         #expect(track.usesWordTimestamps)
-        #expect(track.cues.flatMap(\.sourceIDs) == [0, 1, 2, 3])
+        try assertContinuousCueCoverage(track, sourceWords: transcript.words)
         #expect(track.cues.map(\.speaker) == ["Speaker 1", "Speaker 2"])
-        #expect(await client.requestCount == 1)
+        #expect(await client.requestCount == 2)
     }
 
     @Test func subtitleProcessorRemapsBrokenTokenIDsWithoutFailing() async throws {
-        let client = StubLLMClient(responses: [
-            #"{"cues":[{"token_ids":[0,3],"text":"Hello, world."},{"token_ids":[9],"text":"Again now."}]}"#,
+        let client = InputMappedLLMClient(responsesByInput: [
+            "hello world": #"{"cues":[{"token_ids":[0,3],"text":"Hello, world."}]}"#,
+            "again now": #"{"cues":[{"token_ids":[9],"text":"Again now."}]}"#,
         ])
         let transcript = TranscriptionResult(
             text: "hello world again now",
@@ -136,10 +333,10 @@ struct MediaFlowTests {
         )
 
         #expect(track.usesWordTimestamps)
+        try assertContinuousCueCoverage(track, sourceWords: transcript.words)
         #expect(track.cues.map(\.text) == ["Hello, world.", "Again now."])
-        #expect(track.cues.map(\.sourceIDs) == [[0, 1], [2, 3]])
         #expect(track.cues.map(\.speaker) == ["Speaker 1", "Speaker 2"])
-        #expect(await client.requestCount == 1)
+        #expect(await client.requestCount == 2)
     }
 
     @Test func subtitleProcessorMergesOverSegmentedProviderOutput() async throws {
@@ -171,8 +368,9 @@ struct MediaFlowTests {
     }
 
     @Test func subtitleProcessorAcceptsWorkerStyleSubtitleArrayAndRemapsWords() async throws {
-        let client = StubLLMClient(responses: [
-            #"{"subtitles":["Hello, world.","Again now."]}"#,
+        let client = InputMappedLLMClient(responsesByInput: [
+            "hello world": #"{"subtitles":["Hello, world."]}"#,
+            "again now": #"{"subtitles":["Again now."]}"#,
         ])
         let transcript = TranscriptionResult(
             text: "hello world again now",
@@ -194,7 +392,7 @@ struct MediaFlowTests {
 
         #expect(track.usesWordTimestamps)
         #expect(track.cues.map(\.text) == ["Hello, world.", "Again now."])
-        #expect(track.cues.map(\.sourceIDs) == [[0, 1], [2, 3]])
+        try assertContinuousCueCoverage(track, sourceWords: transcript.words)
         #expect(track.cues.map(\.speaker) == ["Speaker 1", "Speaker 2"])
     }
 
@@ -573,16 +771,16 @@ struct MediaFlowTests {
                 .init(text: "helo", start: 0, end: 4, speaker: "Speaker 1"),
                 .init(text: "world", start: 4, end: 10, speaker: "Speaker 1"),
                 .init(text: "this raw sentence", start: 10, end: 31, speaker: "Speaker 1"),
-                .init(text: "reply", start: 31, end: 34, speaker: "Speaker 2"),
+                .init(text: "reply", start: 31, end: 34, speaker: "Speaker 1"),
             ],
             segments: [
                 .init(text: "helo world", start: 0, end: 10, speaker: "Speaker 1"),
                 .init(text: "this raw sentence", start: 10, end: 31, speaker: "Speaker 1"),
-                .init(text: "reply", start: 31, end: 34, speaker: "Speaker 2"),
+                .init(text: "reply", start: 31, end: 34, speaker: "Speaker 1"),
             ]
         )
         let client = StubLLMClient(responses: [
-            #"{"cues":[{"token_ids":[0,1],"text":"Hello, world."},{"token_ids":[2],"text":"This sentence was corrected."},{"token_ids":[3],"text":"Reply."}]}"#,
+            #"{"cues":[{"token_ids":[0,1],"text":"Hello, world."},{"token_ids":[2],"text":"This raw sentence."},{"token_ids":[3],"text":"Reply."}]}"#,
         ])
         job.subtitleTrack = try await SubtitleLLMProcessor(client: client).process(
             transcript: try #require(job.result),
@@ -592,16 +790,12 @@ struct MediaFlowTests {
 
         let displayed = job.displayedSegments
 
-        #expect(displayed.count == 2)
-        #expect(job.subtitleTrack?.cues.map(\.sourceIDs) == [[0, 1], [2], [3]])
-        #expect(job.subtitleTrack?.cues.map(\.start) == [0, 10, 31])
-        #expect(job.subtitleTrack?.cues.map(\.end) == [10, 31, 34])
-        #expect(displayed[0].text == "Hello, world. This sentence was corrected.")
+        try assertContinuousCueCoverage(try #require(job.subtitleTrack), sourceWords: try #require(job.result).words)
+        #expect(displayed.count == 1)
+        #expect(displayed[0].text == "Hello, world. This raw sentence. Reply.")
         #expect(displayed[0].start == 0)
-        #expect(displayed[0].end == 31)
+        #expect(displayed[0].end == 34)
         #expect(displayed[0].speaker == "Speaker 1")
-        #expect(displayed[1].text == "Reply.")
-        #expect(displayed[1].speaker == "Speaker 2")
     }
 
     @Test func transcriptionFlowAutomaticallyPreparesSubtitlesWhenAKeyIsAvailable() {
@@ -730,5 +924,156 @@ struct MediaFlowTests {
 
         job.customTitle = "  "
         #expect(job.sessionTitle == "Customer Interview")
+    }
+
+    @Test func transcriptionAlignmentDiagnosticsPersistWithoutBreakingLegacyJobs() throws {
+        var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/interview.mov")
+        job.transcriptionAlignmentDiagnostics = .init(
+            trimmedHallucinatedSpanCount: 1,
+            rejectedAlignmentChunkCount: 2,
+            retriedAlignmentChunkCount: 3,
+            estimatedUnitCount: 4,
+            longestRejectedUnitDuration: 4.32
+        )
+
+        let restored = try JSONDecoder().decode(
+            WorkbenchTranscriptionJob.self,
+            from: JSONEncoder().encode(job)
+        )
+        #expect(restored.transcriptionAlignmentDiagnostics == job.transcriptionAlignmentDiagnostics)
+
+        let legacy = try JSONDecoder().decode(
+            WorkbenchTranscriptionJob.self,
+            from: Data(#"{"sourcePath":"/tmp/legacy.mov"}"#.utf8)
+        )
+        #expect(legacy.transcriptionAlignmentDiagnostics == nil)
+    }
+
+    @Test func completedRetranscriptionReplacesArtifactsOnlyOnSuccessAndMarksCompletedDubsOutdated() {
+        let transcriptionID = UUID()
+        var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/interview.mov")
+        job.id = transcriptionID
+        job.result = .init(text: "old transcript", language: "en", words: [], segments: [])
+        job.editedText = "old transcript"
+        job.subtitleTrack = .init(
+            sourceLanguage: "en",
+            language: "en",
+            cues: [.init(id: 0, sourceIDs: [0], text: "Old subtitle.", start: 0, end: 1, speaker: nil)]
+        )
+        job.translationTracks = [.init(
+            languageCode: "fr",
+            track: .init(
+                sourceLanguage: "en",
+                language: "fr",
+                cues: [.init(id: 0, sourceIDs: [0], text: "Ancien sous-titre.", start: 0, end: 1, speaker: nil)]
+            )
+        )]
+        job.summaryMarkdown = "Old summary"
+        job.summaryState = .completed
+
+        let replacement = CompletedTranscriptionArtifacts(
+            rawResult: .init(text: "raw replacement", language: "en", words: [], segments: []),
+            result: .init(text: "prepared replacement", language: "en", words: [], segments: []),
+            subtitleTrack: .init(
+                sourceLanguage: "en",
+                language: "en",
+                cues: [.init(id: 0, sourceIDs: [0], text: "New subtitle.", start: 2, end: 3, speaker: nil)]
+            ),
+            translationTracks: [.init(
+                languageCode: "ja",
+                track: .init(
+                    sourceLanguage: "en",
+                    language: "ja",
+                    cues: [.init(id: 0, sourceIDs: [0], text: "新しい字幕。", start: 2, end: 3, speaker: nil)]
+                )
+            )],
+            diarizationDiagnostics: nil,
+            alignmentDiagnostics: .init(rejectedAlignmentChunkCount: 1),
+            processedSourcePath: "/tmp/rebuilt-clip.m4a"
+        )
+
+        #expect(!TranscriptionCommitPolicy.shouldCommit(status: .cancelled, artifacts: replacement))
+        #expect(!TranscriptionCommitPolicy.shouldCommit(status: .failed, artifacts: replacement))
+        #expect(job.result?.text == "old transcript")
+        #expect(job.summaryMarkdown == "Old summary")
+        #expect(TranscriptionCommitPolicy.shouldCommit(status: .completed, artifacts: replacement))
+
+        replacement.apply(to: &job)
+        #expect(job.result?.text == "prepared replacement")
+        #expect(job.editedText == "prepared replacement")
+        #expect(job.subtitleTrack?.text == "New subtitle.")
+        #expect(job.translationTracks.map(\.languageCode) == ["ja"])
+        #expect(job.summaryMarkdown == nil)
+        #expect(job.summaryState == nil)
+        #expect(job.transcriptionAlignmentDiagnostics == .init(rejectedAlignmentChunkCount: 1))
+        #expect(job.sourcePath == "/tmp/rebuilt-clip.m4a")
+        #expect(job.clipStartMs == nil)
+        #expect(job.clipEndMs == nil)
+
+        var completedDub = WorkbenchDubJob()
+        completedDub.sourceTranscriptionID = transcriptionID
+        completedDub.state = .completed
+        var pendingDub = WorkbenchDubJob()
+        pendingDub.sourceTranscriptionID = transcriptionID
+        pendingDub.state = .ready
+        var unrelatedDub = WorkbenchDubJob()
+        unrelatedDub.sourceTranscriptionID = UUID()
+        unrelatedDub.state = .completed
+        var dubs = [completedDub, pendingDub, unrelatedDub]
+
+        #expect(TranscriptionCommitPolicy.markLinkedCompletedDubsOutdated(
+            &dubs,
+            sourceTranscriptionID: transcriptionID,
+            now: Date(timeIntervalSinceReferenceDate: 100)
+        ))
+        #expect(dubs[0].progressMessage == "Source subtitles changed — redub to update")
+        #expect(dubs[0].modifiedAt == Date(timeIntervalSinceReferenceDate: 100))
+        #expect(dubs[1].progressMessage == "Ready to synthesize")
+        #expect(dubs[2].progressMessage == "Ready to synthesize")
+    }
+
+    @Test func templateSummarySanitizeMarkdownDropsEmptyHeadings() {
+        let raw = """
+        ## Overview
+        A career-change interview.
+
+        ## Key Points
+        - Left civil engineering for Chinese medicine.
+
+        ## Details & Facts
+
+        ## Notable Quotes
+        """
+        let sanitized = TemplateSummaryLLMProcessor.sanitizeMarkdown(raw)
+        #expect(sanitized.contains("## Overview"))
+        #expect(sanitized.contains("## Key Points"))
+        #expect(!sanitized.contains("## Details & Facts"))
+        #expect(!sanitized.contains("## Notable Quotes"))
+    }
+
+    @Test func templateSummarySanitizeMarkdownKeepsHeadingsWithContent() {
+        let raw = """
+        ```markdown
+        ## Overview
+        A career-change interview.
+
+        ## Details & Facts
+        - Graduated from NTU civil engineering.
+        - Later trained as a TCM doctor.
+        ```
+        """
+        let sanitized = TemplateSummaryLLMProcessor.sanitizeMarkdown(raw)
+        #expect(sanitized.hasPrefix("## Overview"))
+        #expect(sanitized.contains("## Details & Facts"))
+        #expect(sanitized.contains("Graduated from NTU civil engineering."))
+        #expect(!sanitized.contains("```"))
+    }
+
+    @Test func generalSummaryTemplateRequiresDetailsWhenSpecificsRemain() {
+        let edition = SummaryTemplateDefinition.generalSummary.userEdition
+        #expect(edition.contains("Never leave a heading with a blank body"))
+        #expect(edition.contains("Details & Facts"))
+        #expect(edition.contains("Interviews, lectures, and long sessions must include this"))
+        #expect(!edition.contains("Details & Facts** (optional"))
     }
 }

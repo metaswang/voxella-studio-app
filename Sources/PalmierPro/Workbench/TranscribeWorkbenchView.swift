@@ -861,7 +861,7 @@ struct TranscribeWorkbenchView: View {
         ) {
             return "\(prefix): transcribe + subtitles"
         }
-        return job.state == .completed ? "Transcribe again" : "Transcribe"
+        return job.state == .completed ? "Re-transcribe and rebuild subtitles" : "Transcribe"
     }
 
     private func speakerColor(_ speaker: String?) -> Color {
