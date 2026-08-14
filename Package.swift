@@ -22,10 +22,7 @@ let package = Package(
         .package(url: "https://github.com/gonzalezreal/textual", from: "0.1.0"),
         .package(url: "https://github.com/soniqo/speech-swift", exact: "0.0.21"),
         .package(url: "https://github.com/huggingface/swift-huggingface.git", exact: "0.9.0"),
-        .package(
-            url: "https://github.com/Blaizzy/mlx-audio-swift.git",
-            revision: "4266f988d170a83017d1e82e2e4654602f277f1d"
-        ),
+        .package(path: "Vendor/mlx-audio-swift"),
     ],
     targets: [
         .executableTarget(
@@ -126,6 +123,7 @@ let package = Package(
                 // SwiftUI VideoPlayer crashes without an explicit AVKit link in non-debugger launches.
                 .linkedFramework("AVKit"),
                 .linkedFramework("AVFoundation"),
+                .linkedFramework("SoundAnalysis"),
             ],
             plugins: ["MetalCIKernelPlugin"]
         ),
