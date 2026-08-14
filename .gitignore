@@ -37,3 +37,10 @@ models/*/checkpoint*
 models/*/convert*.log
 
 AUDIO_SUITE_*
+
+# Python bytecode caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.ruff_cache/
