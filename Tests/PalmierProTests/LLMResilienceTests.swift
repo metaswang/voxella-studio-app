@@ -58,7 +58,7 @@ struct LLMResilienceTests {
         let settings = LLMSettingsStore(defaults: defaults)
 
         #expect(settings.route(for: .translation).primaryModel == "openai/gpt-5.4-nano")
-        #expect(settings.route(for: .subtitleProcessing).primaryModel == "openai/gpt-5.4-nano")
+        #expect(settings.route(for: .subtitleProcessing).primaryModel == "openai/gpt-5.6-luna")
         #expect(settings.route(for: .chat).primaryModel == "minimax/MiniMax-M3")
         #expect(Set(settings.providers.map(\.normalizedPrefix)) == ["openai", "minimax"])
     }

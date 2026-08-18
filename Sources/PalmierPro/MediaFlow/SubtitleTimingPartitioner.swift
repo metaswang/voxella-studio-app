@@ -24,23 +24,116 @@ struct SubtitleTimingPartitioner {
         cueCount: Int,
         sourceWordCount: Int,
         anchorRanges: [Range<Int>?],
-        usesAnchorTiming: Bool,
         weights: [Int]
     ) -> [Range<Int>] {
         guard cueCount > 0, sourceWordCount >= cueCount, weights.count == cueCount else { return [] }
-        if usesAnchorTiming,
-           let anchored = anchoredRanges(
-                cueCount: cueCount,
-                sourceWordCount: sourceWordCount,
-                anchorRanges: anchorRanges
-           ) {
-            return anchored
+        if let covering = coveringRanges(
+            cueCount: cueCount,
+            sourceWordCount: sourceWordCount,
+            anchorRanges: anchorRanges
+        ) {
+            return covering
         }
         return interpolatedPartition(
             cueCount: cueCount,
             sourceWordCount: sourceWordCount,
             weights: weights
         )
+    }
+
+    private static func coveringRanges(
+        cueCount: Int,
+        sourceWordCount: Int,
+        anchorRanges: [Range<Int>?]
+    ) -> [Range<Int>]? {
+        if let anchored = anchoredRanges(
+            cueCount: cueCount,
+            sourceWordCount: sourceWordCount,
+            anchorRanges: anchorRanges
+        ) {
+            return anchored
+        }
+        guard let filled = filledAnchors(
+            cueCount: cueCount,
+            sourceWordCount: sourceWordCount,
+            anchors: anchorRanges
+        ) else {
+            return nil
+        }
+        return anchoredRanges(
+            cueCount: cueCount,
+            sourceWordCount: sourceWordCount,
+            anchorRanges: filled.map { Optional($0) }
+        )
+    }
+
+    private static func filledAnchors(
+        cueCount: Int,
+        sourceWordCount: Int,
+        anchors: [Range<Int>?]
+    ) -> [Range<Int>]? {
+        guard cueCount > 0,
+              sourceWordCount >= cueCount,
+              anchors.count == cueCount,
+              anchors.contains(where: { $0 != nil }) else {
+            return nil
+        }
+
+        var known: [(index: Int, range: Range<Int>)] = []
+        known.reserveCapacity(cueCount)
+        for (index, anchor) in anchors.enumerated() {
+            guard let anchor else { continue }
+            guard anchor.lowerBound >= 0,
+                  anchor.lowerBound < anchor.upperBound,
+                  anchor.upperBound <= sourceWordCount else {
+                return nil
+            }
+            if let previous = known.last, anchor.lowerBound < previous.range.upperBound {
+                return nil
+            }
+            known.append((index, anchor))
+        }
+        guard !known.isEmpty else { return nil }
+
+        var filled = anchors
+        func assign(_ cueRange: Range<Int>, _ wordRange: Range<Int>) -> Bool {
+            let count = cueRange.count
+            guard count > 0 else { return true }
+            guard wordRange.count >= count else { return false }
+            let parts = interpolatedPartition(
+                cueCount: count,
+                sourceWordCount: wordRange.count,
+                weights: Array(repeating: 1, count: count)
+            )
+            for (offset, part) in parts.enumerated() {
+                filled[cueRange.lowerBound + offset] =
+                    (wordRange.lowerBound + part.lowerBound)..<(wordRange.lowerBound + part.upperBound)
+            }
+            return true
+        }
+
+        let first = known[0]
+        if first.index > 0 {
+            guard assign(0..<first.index, 0..<first.range.lowerBound) else { return nil }
+        }
+        for (left, right) in zip(known, known.dropFirst()) {
+            let cueStart = left.index + 1
+            if cueStart < right.index {
+                guard assign(cueStart..<right.index, left.range.upperBound..<right.range.lowerBound) else {
+                    return nil
+                }
+            }
+        }
+        let last = known[known.count - 1]
+        if last.index + 1 < cueCount {
+            guard assign((last.index + 1)..<cueCount, last.range.upperBound..<sourceWordCount) else {
+                return nil
+            }
+        }
+
+        let concrete = filled.compactMap { $0 }
+        guard concrete.count == cueCount else { return nil }
+        return concrete
     }
 
     private static func anchoredPartition(

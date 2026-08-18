@@ -204,55 +204,32 @@ actor MediaFlowExecutor: MediaJobEventSource {
                         throw LLMConfigurationError.noConfiguredModel(.subtitleProcessing)
                     }
                     let pipeline = SubtitlePostprocessPipeline(client: client)
-                    let track: SubtitleTrack
-                    let rebuiltSegments: [TranscriptionSegment]?
-                    do {
-                        let output = try await pipeline.process(
-                            transcript: transcript,
-                            options: payload,
-                            progress: { fraction, current, total, message in
-                                progressEvent(
-                                    .subtitlePreparation,
-                                    "subtitle_preparation",
-                                    fraction,
-                                    current,
-                                    total,
-                                    message
-                                )
-                            }
-                        )
-                        track = output.track
-                        rebuiltSegments = output.rebuiltSegments
-                        context.transcript = TranscriptionResult(
-                            text: TranscriptSegmenter.joinedText(
-                                output.rebuiltSegments.map(\.text),
-                                language: transcript.language
-                            ),
-                            language: transcript.language,
-                            words: transcript.words,
-                            segments: output.rebuiltSegments
-                        )
-                        context.warnings.append(contentsOf: output.warnings)
-                    } catch MediaFlowError.invalidLLMOutput(let reason)
-                        where payload.invalidOutputFallback == .preserveTimedTranscript {
-                        let fallback = context.subtitles ?? SubtitleTrack.fromTranscript(transcript)
-                        guard !fallback.cues.isEmpty else {
-                            throw MediaFlowError.invalidLLMOutput(reason)
+                    let output = try await pipeline.process(
+                        transcript: transcript,
+                        options: payload,
+                        progress: { fraction, current, total, message in
+                            progressEvent(
+                                .subtitlePreparation,
+                                "subtitle_preparation",
+                                fraction,
+                                current,
+                                total,
+                                message
+                            )
                         }
-                        track = fallback
-                        context.warnings.append(
-                            "LLM subtitle cleanup returned invalid JSON; preserved the timed transcript."
-                        )
-                        progressEvent(
-                            .subtitlePreparation,
-                            "subtitle_fallback",
-                            1,
-                            nil,
-                            nil,
-                            "Using timed subtitles because LLM cleanup returned invalid JSON"
-                        )
-                        rebuiltSegments = nil
-                    }
+                    )
+                    let track = output.track
+                    let rebuiltSegments = output.rebuiltSegments
+                    context.transcript = TranscriptionResult(
+                        text: TranscriptSegmenter.joinedText(
+                            output.rebuiltSegments.map(\.text),
+                            language: transcript.language
+                        ),
+                        language: transcript.language,
+                        words: transcript.words,
+                        segments: output.rebuiltSegments
+                    )
+                    context.warnings.append(contentsOf: output.warnings)
                     context.subtitles = track
                     continuation.yield(
                         .artifact(.subtitles(track, rebuiltSegments: rebuiltSegments))

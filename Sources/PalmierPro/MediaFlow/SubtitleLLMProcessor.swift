@@ -41,9 +41,81 @@ enum SubtitleReadabilityPolicy {
 
     static let strongEndPunctuation: Set<String> = [".", "?", "!", "。", "？", "！"]
     static let weakEndPunctuation: Set<String> = [",", "，", ";", "；", ":", "："]
+    static let denseScriptPunctuation: Set<Character> = ["，", "。", "？", "！"]
+    static let latinScriptPunctuation: Set<Character> = [",", ".", "?", "!"]
+
+    static func allowedPunctuation(denseScript: Bool) -> Set<Character> {
+        denseScript ? denseScriptPunctuation : latinScriptPunctuation
+    }
+
+    static func containsAllowedPunctuation(_ text: String, denseScript: Bool) -> Bool {
+        let allowed = allowedPunctuation(denseScript: denseScript)
+        return text.contains { allowed.contains($0) }
+    }
+
+    static func containsForeignPunctuation(_ text: String, denseScript: Bool) -> Bool {
+        let foreign = allowedPunctuation(denseScript: !denseScript)
+        return text.contains { foreign.contains($0) }
+    }
+
+    static func endsWithAllowedPunctuation(_ text: String, denseScript: Bool) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let last = trimmed.last else { return false }
+        return allowedPunctuation(denseScript: denseScript).contains(last)
+    }
+
+    /// True when the joined caption has a content run longer than one cue
+    /// without an allowed punctuation mark.
+    static func containsUnderpunctuatedRun(
+        _ text: String,
+        denseScript: Bool,
+        maximumRun: Int
+    ) -> Bool {
+        guard maximumRun > 0 else { return false }
+        let allowed = allowedPunctuation(denseScript: denseScript)
+        var run = 0
+        for character in text where !character.isWhitespace {
+            if allowed.contains(character) {
+                run = 0
+                continue
+            }
+            run += 1
+            if run > maximumRun { return true }
+        }
+        return false
+    }
+
+    /// Dense-script clitics that cannot start a clause after comma or period.
+    static let boundClauseParticles: Set<Character> = [
+        "的", "地", "得", "了", "着", "过", "们",
+        "の", "의",
+    ]
 
     private static let denseScriptLanguages: Set<String> = ["zh", "ja", "ko", "yue"]
     private static let maximumScoredSplitTokens = 400
+    private static let endPunctuationCharacters: Set<Character> = Set(
+        (strongEndPunctuation.union(weakEndPunctuation)).compactMap(\.first)
+    )
+
+    /// True when clause/sentence punctuation immediately precedes a bound particle,
+    /// including across subtitle boundaries once the cues are concatenated.
+    static func containsStrandedBoundParticle(_ text: String) -> Bool {
+        let characters = Array(text)
+        var index = 0
+        while index < characters.count {
+            if endPunctuationCharacters.contains(characters[index]) {
+                var next = index + 1
+                while next < characters.count, characters[next].isWhitespace {
+                    next += 1
+                }
+                if next < characters.count, boundClauseParticles.contains(characters[next]) {
+                    return true
+                }
+            }
+            index += 1
+        }
+        return false
+    }
 
     static func limits(for text: String, overridingMaximum: Int? = nil) -> Limits {
         limits(denseScript: usesDenseScript(text), overridingMaximum: overridingMaximum)

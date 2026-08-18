@@ -388,19 +388,13 @@ struct ScriptAlignmentPayload: Sendable {
 
 struct SubtitleProcessingPayload: Sendable {
     var maximumTokensPerBatch = 180
-    /// Speaker-safe source segments per Stage 1 LLM batch, matching the postprocess worker.
+    /// Speaker-safe source segments per two-pass subtitle batch.
     var maximumSegmentsPerBatch = 10
-    /// Maximum number of Stage 1 LLM requests in flight at once.
+    /// Maximum number of subtitle batches in flight at once.
     var maximumConcurrentBatches = 2
     var maximumCharactersPerCue: Int?
     var maximumAttempts = 2
     var userInstruction: String?
-    var invalidOutputFallback: SubtitleInvalidOutputFallback = .failFlow
-}
-
-enum SubtitleInvalidOutputFallback: Sendable {
-    case failFlow
-    case preserveTimedTranscript
 }
 
 struct TranslationFlowPayload: Sendable {

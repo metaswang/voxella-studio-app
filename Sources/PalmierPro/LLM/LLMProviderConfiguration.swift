@@ -280,9 +280,15 @@ struct LLMModelRoute: Codable, Equatable, Sendable {
 
     static func `default`(for useCase: LLMUseCase) -> LLMModelRoute {
         switch useCase {
-        case .translation, .subtitleProcessing:
+        case .translation:
             LLMModelRoute(
                 primaryModel: "openai/gpt-5.4-nano",
+                fallbackModels: ["minimax/MiniMax-M3"],
+                policy: .default(for: useCase)
+            )
+        case .subtitleProcessing:
+            LLMModelRoute(
+                primaryModel: "openai/gpt-5.6-luna",
                 fallbackModels: ["minimax/MiniMax-M3"],
                 policy: .default(for: useCase)
             )
@@ -460,6 +466,7 @@ final class LLMSettingsStore {
         for useCase in LLMUseCase.allCases where routes[useCase] == nil {
             routes[useCase] = .default(for: useCase)
         }
+        migrateLegacySubtitleRouteIfNeeded()
         persist()
         refreshCredentialStatus()
     }
@@ -736,5 +743,15 @@ final class LLMSettingsStore {
             result[useCase] = route
         }
         return result
+    }
+
+    private func migrateLegacySubtitleRouteIfNeeded() {
+        let legacyDefault = LLMModelRoute(
+            primaryModel: "openai/gpt-5.4-nano",
+            fallbackModels: ["minimax/MiniMax-M3"],
+            policy: .default(for: .subtitleProcessing)
+        )
+        guard routes[.subtitleProcessing] == legacyDefault else { return }
+        routes[.subtitleProcessing] = .default(for: .subtitleProcessing)
     }
 }
