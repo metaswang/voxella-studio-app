@@ -71,10 +71,10 @@ struct TaskPlacementTests {
         ))
     }
 
-    @Test func cancelledAuthenticationReturnsToLocalChoices() {
+    @Test func cancelledAuthenticationKeepsTheSelectedChoices() {
         let current = TranscriptionPlacement(storage: .cloud, compute: .cloud)
         let next = TranscriptionPlacementRouter.placement(afterCancelledAuthentication: current)
-        #expect(next == .localDefault)
+        #expect(next == current)
     }
 
     @Test func copyUsesTaskFactsInsteadOfModeLabels() {
@@ -201,6 +201,78 @@ struct TaskPlacementTests {
         #expect(CloudResultSyncPolicy.destination(for: .local) == .updateExisting)
         #expect(CloudResultSyncPolicy.destination(for: .cloud) == .createNew)
         #expect(CloudResultSyncPolicy.destination(for: nil) == .createNew)
+    }
+
+    @Test func dubCreditNoticePolicyCoversSignInFreeLowAndBlockedStates() {
+        #expect(CloudCreditNoticePolicy.notice(
+            isSignedIn: false,
+            isPaid: false,
+            estimate: nil
+        ) == .signIn)
+
+        let freeEstimate = CloudUsageEstimate(
+            mediaDurationSeconds: 120,
+            estimatedCostPoints: 2,
+            remainingCreditsPoints: 10,
+            maxDurationSecWithRemainingQuota: 600,
+            canAfford: true
+        )
+        #expect(CloudCreditNoticePolicy.notice(
+            isSignedIn: true,
+            isPaid: false,
+            estimate: freeEstimate
+        ) == .freeUpgrade)
+
+        let lowEstimate = CloudUsageEstimate(
+            durationSeconds: 600,
+            estimatedCredits: 8.5,
+            availableCredits: 10,
+            creditsPerSecond: 0.002,
+            canAfford: true
+        )
+        #expect(CloudCreditNoticePolicy.notice(
+            isSignedIn: true,
+            isPaid: true,
+            estimate: lowEstimate
+        ) == .lowBalance(remainingSeconds: 750))
+
+        let blockedEstimate = CloudUsageEstimate(
+            mediaDurationSeconds: 900,
+            estimatedCostPoints: 12,
+            remainingCreditsPoints: 4,
+            maxDurationSecWithRemainingQuota: 300,
+            canAfford: false
+        )
+        #expect(CloudCreditNoticePolicy.notice(
+            isSignedIn: true,
+            isPaid: true,
+            estimate: blockedEstimate
+        ) == .insufficient(mediaDuration: 900, availableDuration: 300))
+    }
+
+    @Test func dubJobWithoutPlacementFieldsDecodesToLocalDefaults() throws {
+        let encoded = try JSONEncoder().encode(WorkbenchDubJob())
+        var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        [
+            "storage",
+            "compute",
+            "remoteSessionID",
+            "remoteGenerationID",
+            "clientRequestID",
+            "localCachePath",
+            "cloudSyncState",
+            "remoteResultVersion",
+            "pendingCloudSyncError",
+        ].forEach { object.removeValue(forKey: $0) }
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(WorkbenchDubJob.self, from: legacyData)
+        #expect(decoded.placement == .localDefault)
+        #expect(decoded.resolvedCloudSyncState == .none)
+    }
+
+    @Test func dubSubmissionCarriesTheSelectedPlacement() {
+        let placement = TaskPlacement(storage: .cloud, compute: .local)
+        #expect(DubSubmission(placement: placement).placement == placement)
     }
 
     private static func request(placement: TranscriptionPlacement) -> TranscriptionTaskRequest {

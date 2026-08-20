@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import CryptoKit
 import Foundation
 import ImageIO
 import Observation
@@ -67,6 +68,10 @@ struct LocalVoiceReference: Codable, Identifiable, Sendable {
     var createdAt = Date()
     var modifiedAt = Date()
     var isDefault = false
+    /// Cloud metadata is optional so older workbench voice manifests remain valid.
+    var cloudReferenceID: UUID?
+    var cloudObjectKey: String?
+    var cloudFingerprint: String?
 }
 
 struct VoiceReferenceDraft: Sendable {
@@ -196,21 +201,45 @@ actor VoiceReferenceProcessor {
         try validateAudibleSpeech(in: samples)
 
         let outputURL = FileIO.temporaryFileURL(pathExtension: "wav")
-        guard let outputBuffer = AVAudioPCMBuffer(
-            pcmFormat: outputFormat,
+        do {
+            try Self.writePCM16WAV(samples: samples, sampleRate: sampleRate, to: outputURL)
+        } catch {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw error
+        }
+        return PreparedVoiceAudio(URL: outputURL, duration: duration)
+    }
+
+    private static func writePCM16WAV(
+        samples: [Float],
+        sampleRate: Double,
+        to outputURL: URL
+    ) throws {
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: sampleRate,
+            channels: 1,
+            interleaved: true
+        ),
+        let buffer = AVAudioPCMBuffer(
+            pcmFormat: format,
             frameCapacity: AVAudioFrameCount(samples.count)
-        ) else {
+        ),
+        let channel = buffer.int16ChannelData?[0] else {
             throw VoiceLibraryError.unsupportedAudio
         }
-        outputBuffer.frameLength = AVAudioFrameCount(samples.count)
-        samples.withUnsafeBufferPointer { source in
-            if let baseAddress = source.baseAddress {
-                outputBuffer.floatChannelData?[0].update(from: baseAddress, count: samples.count)
-            }
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        for (index, sample) in samples.enumerated() {
+            let normalized = sample.isFinite ? min(max(sample, -1), 1) : 0
+            channel[index] = Int16((normalized * Float(Int16.max)).rounded())
         }
-        let output = try AVAudioFile(forWriting: outputURL, settings: outputFormat.settings)
-        try output.write(from: outputBuffer)
-        return PreparedVoiceAudio(URL: outputURL, duration: duration)
+        let output = try AVAudioFile(
+            forWriting: outputURL,
+            settings: format.settings,
+            commonFormat: format.commonFormat,
+            interleaved: format.isInterleaved
+        )
+        try output.write(from: buffer)
     }
 
     private func validateAudibleSpeech(in samples: [Float]) throws {
@@ -380,6 +409,23 @@ private actor VoiceLibraryRepository {
             }
             return updated
         }
+        try save(next)
+        return next
+    }
+
+    func setCloudReference(
+        id: UUID,
+        remoteID: UUID,
+        objectKey: String,
+        fingerprint: String,
+        existing: [LocalVoiceReference]
+    ) throws -> [LocalVoiceReference] {
+        guard let index = existing.firstIndex(where: { $0.id == id }) else { return existing }
+        var next = existing
+        next[index].cloudReferenceID = remoteID
+        next[index].cloudObjectKey = objectKey
+        next[index].cloudFingerprint = fingerprint
+        next[index].modifiedAt = Date()
         try save(next)
         return next
     }
@@ -560,6 +606,55 @@ final class VoiceLibraryStore {
         )
     }
 
+    func ensureCloudReference(
+        _ id: UUID,
+        client: VoxellaAPIClient = .shared
+    ) async throws -> LocalVoiceReference {
+        guard let reference = reference(id: id) else { throw VoiceLibraryError.missingAudio }
+        let audioURL = self.audioURL(for: reference)
+        let fingerprint = try await Self.cloudFingerprint(
+            audioURL: audioURL,
+            languageCode: reference.languageCode,
+            gender: reference.gender.rawValue,
+            transcript: reference.transcript
+        )
+        if reference.cloudReferenceID != nil,
+           reference.cloudObjectKey != nil,
+           reference.cloudFingerprint == fingerprint {
+            return reference
+        }
+        let prepared = try await VoiceReferenceProcessor.shared.prepare(sourceURL: audioURL)
+        let uploaded: VoxellaDubReferenceAudio
+        do {
+            uploaded = try await client.uploadDubReferenceAudio(
+                fileURL: prepared.URL,
+                name: reference.name,
+                languageCode: reference.languageCode,
+                gender: reference.gender.rawValue,
+                transcript: reference.transcript
+            )
+        } catch {
+            await Self.removeTemporaryFile(at: prepared.URL)
+            throw error
+        }
+        await Self.removeTemporaryFile(at: prepared.URL)
+        guard let current = self.reference(id: id) else { throw VoiceLibraryError.missingAudio }
+        references = try await repository.setCloudReference(
+            id: id,
+            remoteID: uploaded.id,
+            objectKey: uploaded.r2ObjectKey,
+            fingerprint: fingerprint,
+            existing: references
+        )
+        return references.first { $0.id == id } ?? current
+    }
+
+    private static func removeTemporaryFile(at URL: URL) async {
+        await Task.detached(priority: .utility) {
+            try? FileManager.default.removeItem(at: URL)
+        }.value
+    }
+
     func togglePlayback(_ reference: LocalVoiceReference) {
         if playingID == reference.id {
             stopPlayback()
@@ -599,6 +694,20 @@ final class VoiceLibraryStore {
 
     private static func playbackID(_ id: UUID) -> String {
         "voice-reference:\(id.uuidString)"
+    }
+
+    private static func cloudFingerprint(
+        audioURL: URL,
+        languageCode: String,
+        gender: String,
+        transcript: String
+    ) async throws -> String {
+        try await Task.detached(priority: .utility) {
+            let audio = try Data(contentsOf: audioURL)
+            var data = Data("\(languageCode)\n\(gender)\n\(transcript)\n".utf8)
+            data.append(audio)
+            return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }.value
     }
 
     private func load() async {

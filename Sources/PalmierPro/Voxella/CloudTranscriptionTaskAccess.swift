@@ -3,13 +3,27 @@ import Foundation
 
 struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
     var client: VoxellaAPIClient = .shared
+    var prepareCloudAccess: @Sendable () async -> CloudAccessPreparation
 
     private static let remoteIDs = RemoteSessionMap()
+
+    init(
+        client: VoxellaAPIClient = .shared,
+        prepareCloudAccess: @escaping @Sendable () async -> CloudAccessPreparation = CloudTaskAccessDefaults.prepare
+    ) {
+        self.client = client
+        self.prepareCloudAccess = prepareCloudAccess
+    }
 
     func events(for request: TranscriptionTaskRequest) -> AsyncStream<MediaJobEvent> {
         AsyncStream { continuation in
             let task = Task {
-                await Self.run(request: request, client: client, continuation: continuation)
+                await Self.run(
+                    request: request,
+                    client: client,
+                    prepareCloudAccess: prepareCloudAccess,
+                    continuation: continuation
+                )
             }
             continuation.onTermination = { _ in task.cancel() }
         }
@@ -21,6 +35,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
     }
 
     func persistCloudCopyIfNeeded(_ request: TranscriptionResultSyncRequest) async throws -> UUID? {
+        try await requireCloudAccessIfNeeded(request.placement)
         if let remoteSessionID = request.remoteSessionID {
             do {
                 let detail = try await client.sessionDetail(remoteSessionID)
@@ -101,6 +116,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
     private static func run(
         request: TranscriptionTaskRequest,
         client: VoxellaAPIClient,
+        prepareCloudAccess: @Sendable () async -> CloudAccessPreparation,
         continuation: AsyncStream<MediaJobEvent>.Continuation
     ) async {
         let yieldProgress: @Sendable (MediaJobStatus, String, Double, String) -> Void = { status, step, progress, message in
@@ -113,6 +129,21 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
                 stageProgress: progress,
                 message: message
             )))
+        }
+
+        if request.placement.needsAuthentication {
+            switch await prepareCloudAccess() {
+            case .ready:
+                break
+            case .cancelled:
+                yieldProgress(.cancelled, "cancelled", 0, "Cancelled — ready to retry")
+                continuation.finish()
+                return
+            case .failed(let message):
+                yieldProgress(.failed, "cloud_access", 0, message)
+                continuation.finish()
+                return
+            }
         }
 
         do {
@@ -275,6 +306,18 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
             yieldProgress(.failed, "failed", 0, error.localizedDescription)
             await remoteIDs.remove(request.jobID)
             continuation.finish()
+        }
+    }
+
+    private func requireCloudAccessIfNeeded(_ placement: TranscriptionPlacement) async throws {
+        guard placement.needsAuthentication else { return }
+        switch await prepareCloudAccess() {
+        case .ready:
+            return
+        case .cancelled:
+            throw CancellationError()
+        case .failed(let message):
+            throw CloudTaskAccessError(message: message)
         }
     }
 
@@ -887,6 +930,12 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
             }
         )
     }
+}
+
+private struct CloudTaskAccessError: LocalizedError, Sendable {
+    let message: String
+
+    var errorDescription: String? { message }
 }
 
 private enum CloudWaitError: Error {

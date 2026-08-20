@@ -120,6 +120,11 @@ struct VoxellaSessionDetail: Decodable, Sendable {
     var originalFilename: String?
     var artifacts: [String: VoxellaJSONValue]?
     var options: VoxellaSessionOptions?
+    var dubSegments: [VoxellaDubSegment]
+
+    var generationID: String? {
+        artifacts?["generation_id"]?.stringValue
+    }
 
     var activeWorkflowRunID: String? {
         artifacts?["active_workflow_run_id"]?.stringValue
@@ -137,6 +142,7 @@ struct VoxellaSessionDetail: Decodable, Sendable {
         case originalFilename = "original_filename"
         case artifacts
         case options
+        case dubSegments = "dub_segments"
     }
 
     init(from decoder: Decoder) throws {
@@ -155,6 +161,155 @@ struct VoxellaSessionDetail: Decodable, Sendable {
         originalFilename = try container.decodeIfPresent(String.self, forKey: .originalFilename)
         artifacts = try container.decodeIfPresent([String: VoxellaJSONValue].self, forKey: .artifacts)
         options = try container.decodeIfPresent(VoxellaSessionOptions.self, forKey: .options)
+        dubSegments = try container.decodeIfPresent([VoxellaDubSegment].self, forKey: .dubSegments) ?? []
+    }
+}
+
+struct VoxellaDubSegment: Decodable, Sendable {
+    let index: Int
+    let text: String
+    let startS: Double
+    let endS: Double
+    let speakerLabel: String?
+    let sourceSubtitleID: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case index
+        case text
+        case startS = "start_s"
+        case endS = "end_s"
+        case speakerLabel = "speaker_label"
+        case sourceSubtitleID = "source_subtitle_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        index = try container.decodeIfPresent(Int.self, forKey: .index) ?? 0
+        text = try container.decode(String.self, forKey: .text)
+        startS = try container.decodeIfPresent(Double.self, forKey: .startS) ?? 0
+        endS = try container.decodeIfPresent(Double.self, forKey: .endS) ?? startS + 0.01
+        speakerLabel = try container.decodeIfPresent(String.self, forKey: .speakerLabel)
+        sourceSubtitleID = try container.decodeIfPresent(Int.self, forKey: .sourceSubtitleID)
+    }
+}
+
+struct VoxellaDubEstimate: Decodable, Sendable {
+    let estimatedDurationSec: Double
+    let estimatedCostPoints: Double
+    let quotaRemainingPoints: Double
+    let maxDurationSecWithRemainingQuota: Double
+    let canAfford: Bool
+    let message: String?
+
+    enum CodingKeys: String, CodingKey {
+        case estimatedDurationSec = "estimated_duration_sec"
+        case estimatedCostPoints = "estimated_cost_points"
+        case quotaRemainingPoints = "quota_remaining_points"
+        case maxDurationSecWithRemainingQuota = "max_duration_sec_with_remaining_quota"
+        case canAfford = "can_afford"
+        case message
+    }
+}
+
+struct VoxellaDubSessionCreateResponse: Decodable, Sendable {
+    let sessionID: UUID
+    let status: String
+    let queuedJobID: String?
+    let estimatedCredits: Double
+    let estimatedDurationSec: Double
+    let language: String
+    let scriptsCount: Int
+    let persistenceScope: RemotePersistenceScope
+    let clientCompute: RemoteClientCompute
+    let generationID: String?
+    let hasPlacementMetadata: Bool
+    let hasGenerationMetadata: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case status
+        case queuedJobID = "queued_job_id"
+        case estimatedCredits = "estimated_credits"
+        case estimatedDurationSec = "estimated_duration_sec"
+        case language
+        case scriptsCount = "scripts_count"
+        case persistenceScope = "persistence_scope"
+        case clientCompute = "client_compute"
+        case generationID = "generation_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID = try container.decode(UUID.self, forKey: .sessionID)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "queued"
+        queuedJobID = try container.decodeIfPresent(String.self, forKey: .queuedJobID)
+        estimatedCredits = try container.decodeIfPresent(Double.self, forKey: .estimatedCredits) ?? 0
+        estimatedDurationSec = try container.decodeIfPresent(Double.self, forKey: .estimatedDurationSec) ?? 0
+        language = try container.decodeIfPresent(String.self, forKey: .language) ?? "auto"
+        scriptsCount = try container.decodeIfPresent(Int.self, forKey: .scriptsCount) ?? 0
+        hasPlacementMetadata = container.contains(.persistenceScope) && container.contains(.clientCompute)
+        hasGenerationMetadata = container.contains(.generationID)
+        persistenceScope = try container.decodeIfPresent(RemotePersistenceScope.self, forKey: .persistenceScope) ?? .persistent
+        clientCompute = try container.decodeIfPresent(RemoteClientCompute.self, forKey: .clientCompute) ?? .cloud
+        generationID = try container.decodeIfPresent(String.self, forKey: .generationID)
+    }
+}
+
+struct VoxellaDubClientResultUpload: Decodable, Sendable {
+    let uploadID: UUID
+    let partSizeBytes: Int
+    let partCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case uploadID = "upload_id"
+        case partSizeBytes = "part_size_bytes"
+        case partCount = "part_count"
+    }
+}
+
+struct VoxellaDubClientResultResponse: Decodable, Sendable {
+    let sessionID: UUID
+    let status: String
+    let generationID: String
+    let uploadID: UUID
+    let objectKey: String
+    let segmentCount: Int
+    let idempotent: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case status
+        case generationID = "generation_id"
+        case uploadID = "upload_id"
+        case objectKey = "object_key"
+        case segmentCount = "segment_count"
+        case idempotent
+    }
+}
+
+struct VoxellaDubAudioPlayback: Decodable, Sendable {
+    let url: String
+    let expiresAt: Double?
+    let ttlSeconds: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case url
+        case expiresAt = "expires_at"
+        case ttlSeconds = "ttl_seconds"
+    }
+}
+
+struct VoxellaDubReferenceAudio: Decodable, Sendable {
+    let id: UUID
+    let r2ObjectKey: String
+    let durationSec: Double
+    let mimeType: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case r2ObjectKey = "r2_object_key"
+        case durationSec = "duration_sec"
+        case mimeType = "mime_type"
     }
 }
 
@@ -503,6 +658,30 @@ actor VoxellaAPIClient {
         return try await request(url: url, method: "GET", as: VoxellaUsageEstimate.self)
     }
 
+    func estimateDub(
+        language: String?,
+        script: String,
+        segments: [String],
+        speed: Double = 1
+    ) async throws -> VoxellaDubEstimate {
+        var body: [String: Any] = [
+            "segments": segments,
+            "speed": speed,
+            "voice_mode": "clone",
+            "emotion_profile": "neutral",
+        ]
+        if let language, !language.isEmpty { body["language"] = language }
+        if !script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            body["text"] = script
+        }
+        return try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/dub/estimate"),
+            method: "POST",
+            json: body,
+            as: VoxellaDubEstimate.self
+        )
+    }
+
     func createBillingCheckout(planID: String? = nil, topupAmountUSD: Double? = nil) async throws -> VoxellaCheckoutSession {
         var body: [String: Any] = [
             "interval": "month",
@@ -525,6 +704,137 @@ actor VoxellaAPIClient {
             method: "POST",
             json: ["return_url": VoxellaAPIConfiguration.baseURL.absoluteString],
             as: VoxellaPortalSession.self
+        )
+    }
+
+    func createDubSession(
+        sessionID: UUID? = nil,
+        regenerate: Bool = false,
+        language: String,
+        script: String,
+        segments: [DubSegmentPayload],
+        referenceAudioID: UUID?,
+        referenceAudioR2Key: String,
+        referenceText: String,
+        model: DubModelChoice,
+        placement: TaskPlacement,
+        generationID: String,
+        clientRequestID: String,
+        title: String?
+    ) async throws -> VoxellaDubSessionCreateResponse {
+        var body: [String: Any] = [
+            "language": language,
+            "script": script,
+            "segments": segments.map(Self.encodeDubSegment),
+            "reference_audio_r2_key": referenceAudioR2Key,
+            "ref_text": referenceText,
+            "options": [
+                "audio_format": "m4a",
+                "speed": 1.0,
+                "sample_rate": 24_000,
+            ],
+            "persistence_scope": placement.remotePersistenceScope?.rawValue ?? "persistent",
+            "client_compute": placement.compute == .local ? "local" : "cloud",
+            "client_request_id": clientRequestID,
+            "generation_id": generationID,
+        ]
+        if let referenceAudioID { body["reference_audio_id"] = referenceAudioID.uuidString }
+        if let title, !title.isEmpty { body["title"] = title }
+        if regenerate, let sessionID {
+            body["regenerate"] = true
+            body["session_id"] = sessionID.uuidString
+        }
+        return try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/dub/sessions"),
+            method: "POST",
+            json: body,
+            as: VoxellaDubSessionCreateResponse.self
+        )
+    }
+
+    func prepareDubClientResultUpload(
+        sessionID: UUID,
+        generationID: String,
+        filename: String,
+        contentType: String,
+        sizeBytes: Int64,
+        clientUploadID: String
+    ) async throws -> VoxellaDubClientResultUpload {
+        try await request(
+            url: VoxellaAPIConfiguration.sessionURL(sessionID)
+                .appending(path: "client-results/prepare"),
+            method: "POST",
+            json: [
+                "generation_id": generationID,
+                "filename": filename,
+                "content_type": contentType,
+                "size_bytes": sizeBytes,
+                "client_upload_id": clientUploadID,
+            ],
+            as: VoxellaDubClientResultUpload.self
+        )
+    }
+
+    func submitDubClientResult(
+        sessionID: UUID,
+        uploadID: UUID,
+        generationID: String,
+        durationSeconds: Double,
+        mimeType: String,
+        segments: [DubRenderedSegment],
+        resultID: String
+    ) async throws -> VoxellaDubClientResultResponse {
+        try await request(
+            url: VoxellaAPIConfiguration.sessionURL(sessionID).appending(path: "client-results"),
+            method: "POST",
+            json: [
+                "upload_id": uploadID.uuidString,
+                "generation_id": generationID,
+                "duration_sec": durationSeconds,
+                "mime_type": mimeType,
+                "segments": segments.map(Self.encodeDubRenderedSegment),
+                "result_id": resultID,
+            ],
+            as: VoxellaDubClientResultResponse.self
+        )
+    }
+
+    func dubAudioPlaybackURL(sessionID: UUID) async throws -> VoxellaDubAudioPlayback {
+        var components = URLComponents(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/media/audio"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [
+            URLQueryItem(name: "session_id", value: sessionID.uuidString),
+            URLQueryItem(name: "variant", value: "dub"),
+        ]
+        guard let url = components.url else { throw VoxellaAPIError.decoding }
+        return try await request(url: url, method: "GET", as: VoxellaDubAudioPlayback.self)
+    }
+
+    func uploadDubReferenceAudio(
+        fileURL: URL,
+        name: String,
+        languageCode: String,
+        gender: String,
+        transcript: String
+    ) async throws -> VoxellaDubReferenceAudio {
+        let audioData = try await Task.detached(priority: .utility) {
+            try Data(contentsOf: fileURL)
+        }.value
+        let fields: [String: String] = [
+            "language_code": languageCode,
+            "style_key": gender,
+            "style_name": name,
+            "script": transcript,
+        ]
+        return try await sendMultipart(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/dub/reference-audios"),
+            fields: fields,
+            fileData: audioData,
+            filename: fileURL.lastPathComponent,
+            contentType: Self.mimeType(for: fileURL),
+            as: VoxellaDubReferenceAudio.self
         )
     }
 
@@ -622,9 +932,19 @@ actor VoxellaAPIClient {
         )
     }
 
-    func sessionDetail(_ sessionID: UUID) async throws -> VoxellaSessionDetail {
-        try await request(
+    func sessionDetail(
+        _ sessionID: UUID,
+        includeDubSegments: Bool = false
+    ) async throws -> VoxellaSessionDetail {
+        var components = URLComponents(
             url: VoxellaAPIConfiguration.sessionURL(sessionID),
+            resolvingAgainstBaseURL: false
+        )!
+        if includeDubSegments {
+            components.queryItems = [URLQueryItem(name: "include_dub_segments", value: "true")]
+        }
+        return try await request(
+            url: components.url ?? VoxellaAPIConfiguration.sessionURL(sessionID),
             method: "GET",
             as: VoxellaSessionDetail.self
         )
@@ -1039,6 +1359,58 @@ actor VoxellaAPIClient {
         return request
     }
 
+    private func sendMultipart<T: Decodable>(
+        url: URL,
+        fields: [String: String],
+        fileData: Data,
+        filename: String,
+        contentType: String,
+        as type: T.Type,
+        retryingUnauthorized: Bool = true
+    ) async throws -> T {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+        for (key, value) in fields {
+            body.append(Data("--\(boundary)\r\n".utf8))
+            body.append(Data("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".utf8))
+            body.append(Data("\(value)\r\n".utf8))
+        }
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".utf8))
+        body.append(Data("Content-Type: \(contentType)\r\n\r\n".utf8))
+        body.append(fileData)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+
+        var request = try await authorizedRequest(url: url, method: "POST")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw VoxellaAPIError.http(0, "No response")
+        }
+        if http.statusCode == 401, retryingUnauthorized {
+            _ = try await auth.refreshAccessToken()
+            return try await sendMultipart(
+                url: url,
+                fields: fields,
+                fileData: fileData,
+                filename: filename,
+                contentType: contentType,
+                as: type,
+                retryingUnauthorized: false
+            )
+        }
+        if http.statusCode == 401 { throw VoxellaAPIError.unauthorized }
+        guard (200..<300).contains(http.statusCode) else {
+            throw VoxellaAPIError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw VoxellaAPIError.decoding
+        }
+    }
+
     private func sessionListURL(
         _ sessionID: UUID,
         path: String,
@@ -1083,6 +1455,41 @@ actor VoxellaAPIClient {
             "speaker": cue.speaker as Any,
         ]
     }
+
+    private static func encodeDubSegment(_ segment: DubSegmentPayload) -> [String: Any] {
+        var payload: [String: Any] = [
+            "index": segment.index,
+            "text": segment.text,
+        ]
+        if let start = segment.start { payload["start_s"] = start }
+        if let end = segment.end { payload["end_s"] = end }
+        if let speaker = segment.speaker { payload["speaker_label"] = speaker }
+        if let sourceID = segment.sourceSubtitleID { payload["source_subtitle_id"] = sourceID }
+        payload.merge(segment.options) { _, new in new }
+        return payload
+    }
+
+    private static func encodeDubRenderedSegment(_ segment: DubRenderedSegment) -> [String: Any] {
+        var payload: [String: Any] = [
+            "index": segment.index,
+            "text": segment.text,
+            "start_s": segment.start,
+            "end_s": segment.end,
+        ]
+        if let speaker = segment.speaker { payload["speaker_label"] = speaker }
+        if let sourceID = segment.sourceSubtitleID { payload["source_subtitle_id"] = sourceID }
+        return payload
+    }
+
+    private static func mimeType(for url: URL) -> String {
+        switch url.pathExtension.lowercased() {
+        case "wav": return "audio/wav"
+        case "mp3": return "audio/mpeg"
+        case "m4a", "aac": return "audio/mp4"
+        case "flac": return "audio/flac"
+        default: return "application/octet-stream"
+        }
+    }
 }
 
 struct VoxellaSSEEvent: Sendable {
@@ -1099,7 +1506,16 @@ struct VoxellaSSEEvent: Sendable {
     var workflowRunID: String? {
         data["workflow_run_id"]?.stringValue ?? data["transcribe_run_id"]?.stringValue
     }
+    var generationID: String? { data["generation_id"]?.stringValue }
     var progress: Double? { data["progress"]?.numberValue }
+    var step: String? { data["step"]?.stringValue }
+    var stageProgress: Double? { data["stage_progress"]?.numberValue }
+    var scriptIndex: Int? { integerValue(for: "script_index") }
+    var scriptTotal: Int? { integerValue(for: "script_total") }
+    var elapsedSeconds: Double? { data["elapsed_seconds"]?.numberValue }
+    var producer: String? { data["producer"]?.stringValue }
+    var commitPhase: String? { data["commit_phase"]?.stringValue }
+    var isSnapshot: Bool { data["is_snapshot"]?.boolValue ?? false }
     var chunkIndex: Int? { integerValue(for: "chunk_index") }
     var completedChunks: Int? { integerValue(for: "completed_chunks") }
     var totalChunks: Int? { integerValue(for: "total_chunks") ?? integerValue(for: "chunk_count") }

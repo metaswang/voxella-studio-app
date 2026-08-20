@@ -7,6 +7,7 @@ struct DubWorkbenchView: View {
     @Bindable private var models = LocalModelManager.shared
     @State private var showAdvanced = false
     @State private var rewriteSegmentIndex: Int?
+    @State private var showProcessingOptions = false
 
     var body: some View {
         Group {
@@ -45,6 +46,12 @@ struct DubWorkbenchView: View {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(AppTheme.Status.errorColor)
                     }
+                    if job.resolvedCloudSyncState == .pending {
+                        Button("Retry cloud sync") {
+                            store.retryDubCloudSync(job.id)
+                        }
+                        .buttonStyle(.borderless)
+                    }
                     if let output = job.outputURL {
                         outputCard(output: output)
                     }
@@ -66,6 +73,23 @@ struct DubWorkbenchView: View {
         )) { target in
             DubRewriteSheet(jobID: job.id, segmentIndex: target.segmentIndex) {
                 rewriteSegmentIndex = nil
+            }
+        }
+        .sheet(isPresented: $showProcessingOptions) {
+            if let current = store.dubs.first(where: { $0.id == job.id }) {
+                DubProcessingOptionsSheet(
+                    job: current,
+                    onPrepareCloud: { placement in
+                        await store.prepareCloudAccess(for: placement)
+                    },
+                    onCancel: { showProcessingOptions = false },
+                    onContinue: { submission in
+                        continueGeneration(jobID: job.id, placement: submission.placement)
+                    }
+                )
+            } else {
+                ProgressView()
+                    .frame(width: 620, height: 610)
             }
         }
     }
@@ -325,12 +349,10 @@ struct DubWorkbenchView: View {
     private func progressCard(_ job: WorkbenchDubJob) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                if let stage = job.flowProgressStage {
-                    Text(stage.title.uppercased())
-                        .font(.system(size: AppTheme.FontSize.xxs, weight: .bold))
-                        .foregroundStyle(AppTheme.Text.mutedColor)
-                }
-                Text(job.progressMessage)
+                Text(progressPhase(job).uppercased())
+                    .font(.system(size: AppTheme.FontSize.xxs, weight: .bold))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
+                Text(progressDisplayMessage(job))
                 Spacer()
                 if let current = job.progressCompleted, let total = job.progressTotal {
                     Text("\(current)/\(total)").monospacedDigit()
@@ -402,12 +424,21 @@ struct DubWorkbenchView: View {
     }
 
     private func start(_ job: WorkbenchDubJob) {
-        guard models.hasRequiredDubModels(modelID: job.model.modelID) else {
+        guard canGenerate(job) else { return }
+        showProcessingOptions = true
+    }
+
+    private func continueGeneration(jobID: UUID, placement: TaskPlacement) {
+        guard let job = store.dubs.first(where: { $0.id == jobID }) else { return }
+        if placement.compute == .local,
+           !models.hasRequiredDubModels(modelID: job.model.modelID) {
             models.presentManager()
             return
         }
-        store.normalizeDubSegments(job.id)
-        store.runDub(job.id)
+        store.updateDub(jobID) { $0.placement = placement }
+        store.normalizeDubSegments(jobID)
+        showProcessingOptions = false
+        store.runDub(jobID)
     }
 
     private func canGenerate(_ job: WorkbenchDubJob) -> Bool {
@@ -422,6 +453,31 @@ struct DubWorkbenchView: View {
         if job.state == .cancelling { return "Cancelling…" }
         if job.state == .completed { return "Ready to regenerate" }
         return "Ready to generate"
+    }
+
+    private func progressDisplayMessage(_ job: WorkbenchDubJob) -> String {
+        if let current = job.progressCompleted,
+           let total = job.progressTotal,
+           total > 0,
+           job.progressStep?.localizedCaseInsensitiveContains("script") == true {
+            return "Synthesizing \(current)/\(total)"
+        }
+        return job.progressMessage
+    }
+
+    private func progressPhase(_ job: WorkbenchDubJob) -> String {
+        let step = job.progressStep?.lowercased() ?? ""
+        if step.contains("script") || step.contains("synth") { return "Synthesizing" }
+        if step.contains("align") { return "Aligning audio" }
+        if step.contains("upload") || step.contains("download") || step.contains("sync") {
+            return "Saving result"
+        }
+        if step.contains("final") || step.contains("cleanup") { return "Finalizing" }
+        if step.contains("cancel") { return "Cancelled" }
+        if step.contains("fail") { return "Failed" }
+        if step.contains("queue") { return "Queued" }
+        if step.contains("prepar") || step.contains("create") { return "Preparing" }
+        return job.flowProgressStage?.title ?? "Preparing"
     }
 
     private func titleBinding(_ id: UUID) -> Binding<String> {

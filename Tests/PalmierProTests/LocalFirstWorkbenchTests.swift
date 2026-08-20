@@ -44,6 +44,7 @@ struct LocalFirstWorkbenchTests {
         let output = try AVAudioFile(forReading: prepared.URL)
         #expect(output.processingFormat.sampleRate == 24_000)
         #expect(output.processingFormat.channelCount == 1)
+        #expect(output.fileFormat.commonFormat == .pcmFormatInt16)
         let leadingFrameCount = AVAudioFrameCount(output.processingFormat.sampleRate * 0.5)
         let leading = try #require(AVAudioPCMBuffer(
             pcmFormat: output.processingFormat,

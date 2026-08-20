@@ -37,7 +37,11 @@ struct ProcessingOptionsSheet: View {
     private var isSingleFile: Bool { mediaURLs.count == 1 }
     private var continueDisabled: Bool {
         (enableTranslation && targetLanguageCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            || (computeDestination == .cloud && cloudQuota?.canAfford == false)
+            || (
+                computeDestination == .cloud
+                    && account.isSignedIn
+                    && (isLoadingCloudQuota || cloudAccessError != nil || cloudQuota == nil || cloudQuota?.canAfford != true)
+            )
     }
 
     private var titleText: String {
@@ -350,7 +354,7 @@ struct ProcessingOptionsSheet: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             cloudPlacementToggle(
                 title: TaskPlacementCopy.keepSessionTitle,
-                detail: "Keep an editable cloud copy you can open on other devices.",
+                detail: "Keep an editable cloud session you can reopen on other devices.",
                 isOn: cloudStorageBinding
             )
             cloudPlacementToggle(
@@ -453,14 +457,14 @@ struct ProcessingOptionsSheet: View {
         case .signIn:
             cloudNotice(
                 title: "VoxStudio Cloud",
-                detail: "Fast cloud transcription without model downloads. Sign in when you transcribe.",
-                color: Color.indigo
+                detail: TaskPlacementCopy.cloudAccountRequired,
+                color: AppTheme.Accent.primary
             )
         case .freeUpgrade:
             cloudNotice(
                 title: "Transcribe in VoxStudio Cloud",
-                detail: "No model download. Upgrade to Pro for more monthly transcription time and a lower rate.",
-                color: Color.indigo
+                detail: TaskPlacementCopy.freeCloudUpgrade,
+                color: AppTheme.Accent.primary
             )
         case .insufficientCredits:
             if let cloudQuota {
@@ -473,15 +477,21 @@ struct ProcessingOptionsSheet: View {
         case .lowBalance(let remaining):
             cloudNotice(
                 title: "Cloud credit balance",
-                detail: "After this file, your balance covers about \(CloudTranscriptionQuota.formatDuration(remaining)) of this cloud workflow.",
+                detail: "After this media, your balance covers about \(CloudTranscriptionQuota.formatDuration(remaining)) more of this cloud workflow.",
                 color: AppTheme.Status.warningColor
             )
         case .none:
-            if isLoadingCloudQuota && account.isLoading {
+            if isLoadingCloudQuota {
                 cloudNotice(
                     title: "VoxStudio Cloud",
                     detail: "Checking your cloud credit balance…",
-                    color: Color.indigo
+                    color: AppTheme.Accent.primary
+                )
+            } else if cloudAccessError != nil {
+                cloudNotice(
+                    title: "VoxStudio Cloud",
+                    detail: TaskPlacementCopy.cloudCreditsUnavailable,
+                    color: AppTheme.Status.warningColor
                 )
             } else {
                 EmptyView()
@@ -509,7 +519,7 @@ struct ProcessingOptionsSheet: View {
         let available = quota.affordableMediaSeconds
             .map(CloudTranscriptionQuota.formatDuration) ?? "no remaining time"
         let media = CloudTranscriptionQuota.formatDuration(quota.durationSeconds)
-        return "This file is \(media), but your balance covers \(available). Upgrade to Pro or add credits before transcribing."
+        return "This media is \(media), but your balance covers about \(available). Upgrade to Pro or add credits to continue in the Cloud."
     }
 
     private var footer: some View {
@@ -590,6 +600,7 @@ struct ProcessingOptionsSheet: View {
             enableTranslation ? targetLanguageCode : "",
             duration,
             account.isSignedIn.description,
+            String(account.cloudBillingBalance?.availableCredits ?? -1),
         ].joined(separator: "|")
     }
 
@@ -628,6 +639,7 @@ struct ProcessingOptionsSheet: View {
             return
         }
         isLoadingCloudQuota = true
+        cloudAccessError = nil
         defer { isLoadingCloudQuota = false }
         do {
             cloudQuota = try await account.cloudTranscriptionQuota(
@@ -638,6 +650,7 @@ struct ProcessingOptionsSheet: View {
             return
         } catch {
             cloudQuota = nil
+            cloudAccessError = TaskPlacementCopy.cloudCreditsUnavailable
         }
     }
 
@@ -671,15 +684,17 @@ struct ProcessingOptionsSheet: View {
         cloudAccessError = nil
         if placement.needsAuthentication {
             isPreparingCloud = true
-            let result = await onPrepareCloud?(placement) ?? .ready
+            let result: CloudAccessPreparation
+            if let onPrepareCloud {
+                result = await onPrepareCloud(placement)
+            } else {
+                result = await AccountService.shared.ensureCloudAccess()
+            }
             isPreparingCloud = false
             switch result {
             case .ready:
                 break
             case .cancelled:
-                let next = TranscriptionPlacementRouter.placement(afterCancelledAuthentication: placement)
-                storageDestination = next.storage
-                computeDestination = next.compute
                 return
             case .failed(let message):
                 cloudAccessError = message

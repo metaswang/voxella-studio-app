@@ -4,7 +4,6 @@ import SwiftUI
 /// Recent Dub sessions block aligned with the Transcribe entry-page session menu.
 struct WorkbenchRecentDubSessionsSection: View {
     @Bindable private var store = WorkbenchStore.shared
-    @Bindable private var models = LocalModelManager.shared
 
     @State private var searchText = ""
     @State private var statusFilter: WorkbenchSessionStatusFilter = .all
@@ -307,13 +306,8 @@ struct WorkbenchRecentDubSessionsSection: View {
     }
 
     private func regenerate(_ id: UUID) {
-        guard let job = store.dubs.first(where: { $0.id == id }) else { return }
-        guard models.hasRequiredDubModels(modelID: job.model.modelID) else {
-            models.presentManager()
-            return
-        }
+        guard store.dubs.contains(where: { $0.id == id }) else { return }
         store.openDub(id)
-        store.runDub(id)
     }
 
     private func relativeUpdated(_ date: Date) -> String {

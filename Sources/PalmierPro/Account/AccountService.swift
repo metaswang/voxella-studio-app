@@ -144,7 +144,9 @@ final class AccountService {
     @ObservationIgnored private var authStateTask: Task<Void, Never>?
     @ObservationIgnored private var didConfigure = false
     @ObservationIgnored private var buyCreditsTask: Task<Void, Never>?
+    @ObservationIgnored private var cloudAccessTask: Task<CloudAccessPreparation, Never>?
     @ObservationIgnored private let api = VoxellaAPIClient.shared
+    @ObservationIgnored private var sessionGeneration = UUID()
 
     private init() {}
 
@@ -181,20 +183,29 @@ final class AccountService {
 
     private func restoreSession() {
         authStateTask?.cancel()
+        let generation = UUID()
+        sessionGeneration = generation
         authStateTask = Task { @MainActor [weak self] in
             guard let self else { return }
             self.isLoading = true
-            defer { self.isLoading = false }
+            defer {
+                if self.sessionGeneration == generation {
+                    self.isLoading = false
+                    self.authStateTask = nil
+                }
+            }
 
             do {
                 guard let token = try await VoxellaAuthService.shared.validAccessToken() else {
+                    guard self.isCurrentSession(generation) else { return }
                     self.authState = .unauthenticated
                     self.clearAccount()
                     return
                 }
-                self.authState = .authenticated(token)
-                _ = await self.applyAuthenticatedSession(token: token)
+                guard self.isCurrentSession(generation) else { return }
+                _ = await self.applyAuthenticatedSession(token: token, generation: generation)
             } catch {
+                guard self.isCurrentSession(generation) else { return }
                 self.authState = .unauthenticated
                 self.clearAccount()
                 self.lastError = error.localizedDescription
@@ -202,7 +213,7 @@ final class AccountService {
         }
     }
 
-    private func reloadAccount() async throws {
+    private func reloadAccount(generation: UUID) async throws {
         async let plans = api.billingPlans()
         async let balance = api.billingBalance()
         let profileResponse = try await api.accountProfile()
@@ -240,6 +251,8 @@ final class AccountService {
         let budget = (currentPlan?.includedCredits ?? 0) + purchasedCredits
         let available = Int((balanceResponse?.availableCredits ?? 0).rounded(.down))
         let periodEnd = plansResponse?.currentPeriodEnd.flatMap(Self.periodMilliseconds)
+
+        guard isCurrentSession(generation) else { return }
 
         account = AccountResponse(
             user: AccountUser(
@@ -316,11 +329,18 @@ final class AccountService {
         isSigningIn = true
         lastError = nil
         Log.account.notice("sign in requested provider=google", telemetry: "Sign in requested", data: ["provider": "google"])
-        defer { isSigningIn = false }
+        let generation = beginSessionOperation()
+        defer {
+            if sessionGeneration == generation {
+                isSigningIn = false
+            }
+        }
         do {
             let token = try await VoxellaAuthService.shared.signInWithGoogle()
-            _ = await applyAuthenticatedSession(token: token)
+            guard isCurrentSession(generation) else { return }
+            _ = await applyAuthenticatedSession(token: token, generation: generation)
         } catch {
+            guard isCurrentSession(generation) else { return }
             lastError = error.localizedDescription
             Log.account.warning(
                 "sign in failed provider=google error=\(error.localizedDescription)",
@@ -338,11 +358,18 @@ final class AccountService {
         isSigningIn = true
         lastError = nil
         Log.account.notice("sign in requested provider=apple", telemetry: "Sign in requested", data: ["provider": "apple"])
-        defer { isSigningIn = false }
+        let generation = beginSessionOperation()
+        defer {
+            if sessionGeneration == generation {
+                isSigningIn = false
+            }
+        }
         do {
             let token = try await VoxellaAuthService.shared.signInWithApple()
-            _ = await applyAuthenticatedSession(token: token)
+            guard isCurrentSession(generation) else { return }
+            _ = await applyAuthenticatedSession(token: token, generation: generation)
         } catch {
+            guard isCurrentSession(generation) else { return }
             lastError = error.localizedDescription
             Log.account.warning(
                 "sign in failed provider=apple error=\(error.localizedDescription)",
@@ -358,21 +385,42 @@ final class AccountService {
            (try? await VoxellaAuthService.shared.validAccessToken()) != nil {
             return .ready
         }
-        isSigningIn = true
-        lastError = nil
-        defer { isSigningIn = false }
-        return await performCloudAccess()
+        if let cloudAccessTask {
+            return await cloudAccessTask.value
+        }
+        let generation = beginSessionOperation()
+        let task: Task<CloudAccessPreparation, Never> = Task { @MainActor [weak self] in
+            guard let self else { return CloudAccessPreparation.failed("VoxStudio could not finish setting up this account.") }
+            self.isSigningIn = true
+            self.lastError = nil
+            defer {
+                if self.sessionGeneration == generation {
+                    self.isSigningIn = false
+                }
+            }
+            return await self.performCloudAccess(generation: generation)
+        }
+        cloudAccessTask = task
+        let result = await task.value
+        if sessionGeneration == generation {
+            cloudAccessTask = nil
+        }
+        return result
     }
 
-    private func performCloudAccess() async -> CloudAccessPreparation {
+    private func performCloudAccess(generation: UUID) async -> CloudAccessPreparation {
+        guard isCurrentSession(generation) else { return .cancelled }
         do {
             if let token = try await VoxellaAuthService.shared.validAccessToken() {
-                guard await applyAuthenticatedSession(token: token) else {
+                guard isCurrentSession(generation) else { return .cancelled }
+                guard await applyAuthenticatedSession(token: token, generation: generation) else {
+                    guard isCurrentSession(generation) else { return .cancelled }
                     return .failed(lastError ?? "VoxStudio could not finish setting up this account.")
                 }
                 return .ready
             }
         } catch {
+            guard isCurrentSession(generation) else { return .cancelled }
             Log.account.warning(
                 "cloud token restore failed error=\(error.localizedDescription)",
                 telemetry: "Cloud token restore failed",
@@ -380,8 +428,11 @@ final class AccountService {
             )
         }
         do {
+            guard isCurrentSession(generation) else { return .cancelled }
             let token = try await VoxellaAuthService.shared.ensureSignedIn()
-            guard await applyAuthenticatedSession(token: token) else {
+            guard isCurrentSession(generation) else { return .cancelled }
+            guard await applyAuthenticatedSession(token: token, generation: generation) else {
+                guard isCurrentSession(generation) else { return .cancelled }
                 return .failed(lastError ?? "VoxStudio could not finish setting up this account.")
             }
             return .ready
@@ -389,6 +440,7 @@ final class AccountService {
             Log.account.notice("cloud sign-in cancelled", telemetry: "Cloud sign-in cancelled")
             return .cancelled
         } catch {
+            guard isCurrentSession(generation) else { return .cancelled }
             lastError = error.localizedDescription
             Log.account.warning(
                 "cloud sign-in failed error=\(error.localizedDescription)",
@@ -422,6 +474,25 @@ final class AccountService {
         )
     }
 
+    func cloudDubUsageEstimate(
+        language: String?,
+        script: String,
+        segments: [String]
+    ) async throws -> CloudUsageEstimate {
+        let estimate = try await api.estimateDub(
+            language: language,
+            script: script,
+            segments: segments
+        )
+        return CloudUsageEstimate(
+            mediaDurationSeconds: estimate.estimatedDurationSec,
+            estimatedCostPoints: estimate.estimatedCostPoints,
+            remainingCreditsPoints: estimate.quotaRemainingPoints,
+            maxDurationSecWithRemainingQuota: estimate.maxDurationSecWithRemainingQuota,
+            canAfford: estimate.canAfford
+        )
+    }
+
     func updateCloudAvailableCredits(_ credits: Double) {
         guard credits.isFinite, credits >= 0 else { return }
         guard let cloudBillingBalance else { return }
@@ -436,20 +507,26 @@ final class AccountService {
 
     func signOut() async {
         Log.account.notice("sign out requested", telemetry: "Sign out requested")
-        await VoxellaAuthService.shared.signOut()
-        await convex?.logout()
+        let generation = invalidateSessionOperations()
+        isSigningIn = false
         authState = .unauthenticated
         clearAccount()
+        await VoxellaAuthService.shared.signOut()
+        guard sessionGeneration == generation else { return }
+        await convex?.logout()
     }
 
     @discardableResult
-    private func applyAuthenticatedSession(token: String) async -> Bool {
+    private func applyAuthenticatedSession(token: String, generation: UUID) async -> Bool {
+        guard isCurrentSession(generation) else { return false }
         authState = .authenticated(token)
         _ = await convex?.loginFromCache()
+        guard isCurrentSession(generation) else { return false }
         do {
-            try await reloadAccount()
-            return true
+            try await reloadAccount(generation: generation)
+            return isCurrentSession(generation)
         } catch {
+            guard isCurrentSession(generation) else { return false }
             lastError = error.localizedDescription
             Log.account.warning(
                 "account refresh failed error=\(error.localizedDescription)",
@@ -458,6 +535,30 @@ final class AccountService {
             )
             return false
         }
+    }
+
+    private func beginSessionOperation() -> UUID {
+        authStateTask?.cancel()
+        authStateTask = nil
+        isLoading = false
+        let generation = UUID()
+        sessionGeneration = generation
+        return generation
+    }
+
+    private func invalidateSessionOperations() -> UUID {
+        authStateTask?.cancel()
+        authStateTask = nil
+        cloudAccessTask?.cancel()
+        cloudAccessTask = nil
+        isLoading = false
+        let generation = UUID()
+        sessionGeneration = generation
+        return generation
+    }
+
+    private func isCurrentSession(_ generation: UUID) -> Bool {
+        !Task.isCancelled && sessionGeneration == generation
     }
 
     func subscribe(tier: AccountTier) async {

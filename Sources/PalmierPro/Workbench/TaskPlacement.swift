@@ -28,11 +28,11 @@ enum TaskComputeDestination: String, Codable, CaseIterable, Identifiable, Sendab
     }
 }
 
-struct TranscriptionPlacement: Equatable, Codable, Sendable {
+struct TaskPlacement: Equatable, Codable, Sendable {
     var storage: TaskStorageDestination
     var compute: TaskComputeDestination
 
-    static let localDefault = TranscriptionPlacement(storage: .local, compute: .local)
+    static let localDefault = TaskPlacement(storage: .local, compute: .local)
 
     var needsAuthentication: Bool {
         storage == .cloud || compute == .cloud
@@ -50,12 +50,15 @@ struct TranscriptionPlacement: Equatable, Codable, Sendable {
     }
 }
 
-enum RemotePersistenceScope: String, Codable, Sendable {
+/// Compatibility name retained for the existing transcription flow.
+typealias TranscriptionPlacement = TaskPlacement
+
+enum RemotePersistenceScope: String, Codable, Equatable, Sendable {
     case persistent
     case temporary
 }
 
-enum RemoteClientCompute: String, Codable, Sendable {
+enum RemoteClientCompute: String, Codable, Equatable, Sendable {
     case local
     case cloud
 }
@@ -103,10 +106,20 @@ struct TranscriptionSubmission: Equatable, Sendable {
     var placement: TranscriptionPlacement = .localDefault
 }
 
+struct DubSubmission: Equatable, Sendable {
+    var placement: TaskPlacement
+}
+
 enum CloudAccessPreparation: Equatable, Sendable {
     case ready
     case cancelled
     case failed(String)
+}
+
+enum CloudTaskAccessDefaults {
+    static func prepare() async -> CloudAccessPreparation {
+        await AccountService.shared.ensureCloudAccess()
+    }
 }
 
 enum TranscriptionPlacementRouter {
@@ -151,10 +164,7 @@ enum TranscriptionPlacementRouter {
     }
 
     static func placement(afterCancelledAuthentication current: TranscriptionPlacement) -> TranscriptionPlacement {
-        var next = current
-        next.storage = .local
-        next.compute = .local
-        return next
+        current
     }
 }
 
@@ -179,13 +189,18 @@ struct TaskPlacementCopy {
     }
 
     static let checkingCloudAccount = "Checking your VoxStudio account…"
+    static let signingIn = "Signing in…"
+    static let cloudAccountRequired = "Sign in once to use VoxStudio Cloud. Your account stays connected on this Mac."
+    static let freeCloudUpgrade = "Cloud processing starts without local model downloads. Upgrade to Pro for more cloud time and a lower rate."
+    static let cloudCreditsUnavailable = "Cloud usage could not be checked. Try again before submitting."
+    static let cloudDubProcessDetail = "Generate dubbed audio without downloading local voice models."
 
     static func summaryLine(storage: TaskStorageDestination, compute: TaskComputeDestination) -> String {
         "\(keepSessionTitle): \(storage.label)  ·  \(processWithTitle): \(compute.label)"
     }
 }
 
-struct CloudTranscriptionQuota: Equatable, Sendable {
+struct CloudUsageEstimate: Equatable, Sendable {
     static let uploadUsageType = "upload_transcribe"
     static let translationUsageType = "translation"
 
@@ -194,19 +209,50 @@ struct CloudTranscriptionQuota: Equatable, Sendable {
     let availableCredits: Double
     let creditsPerSecond: Double
     let canAfford: Bool
+    let maxDurationWithRemainingQuota: Double?
 
     init(
         durationSeconds: Double,
         estimatedCredits: Double,
         availableCredits: Double,
         creditsPerSecond: Double,
-        canAfford: Bool
+        canAfford: Bool,
+        maxDurationWithRemainingQuota: Double? = nil
     ) {
         self.durationSeconds = max(0, durationSeconds)
         self.estimatedCredits = max(0, estimatedCredits)
         self.availableCredits = max(0, availableCredits)
         self.creditsPerSecond = max(0, creditsPerSecond)
         self.canAfford = canAfford
+        self.maxDurationWithRemainingQuota = maxDurationWithRemainingQuota.map { max(0, $0) }
+    }
+
+    init(
+        mediaDurationSeconds: Double,
+        estimatedCostPoints: Double,
+        remainingCreditsPoints: Double,
+        maxDurationSecWithRemainingQuota: Double?,
+        canAfford: Bool
+    ) {
+        let duration = max(0, mediaDurationSeconds)
+        let cost = max(0, estimatedCostPoints)
+        let remaining = max(0, remainingCreditsPoints)
+        let rate = duration > 0 ? cost / duration : 0
+        self.init(
+            durationSeconds: duration,
+            estimatedCredits: cost,
+            availableCredits: remaining,
+            creditsPerSecond: rate,
+            canAfford: canAfford,
+            maxDurationWithRemainingQuota: maxDurationSecWithRemainingQuota
+        )
+    }
+
+    var mediaDurationSeconds: Double { durationSeconds }
+    var estimatedCostPoints: Double { estimatedCredits }
+    var remainingCreditsPoints: Double { availableCredits }
+    var maxDurationSecWithRemainingQuota: Double? {
+        maxDurationWithRemainingQuota ?? affordableMediaSeconds
     }
 
     var affordableMediaSeconds: Double? {
@@ -243,6 +289,9 @@ struct CloudTranscriptionQuota: Equatable, Sendable {
     }
 }
 
+/// Existing transcription call sites continue to use the generalized estimate type.
+typealias CloudTranscriptionQuota = CloudUsageEstimate
+
 enum CloudTranscriptionNoticeKind: Equatable, Sendable {
     case signIn
     case freeUpgrade
@@ -268,5 +317,59 @@ enum CloudTranscriptionNoticePolicy {
             return .lowBalance(remainingSeconds: remaining)
         }
         return .none
+    }
+}
+
+enum CloudCreditNotice: Equatable, Sendable {
+    case signIn
+    case checking
+    case failed
+    case freeUpgrade
+    case insufficient(mediaDuration: Double, availableDuration: Double)
+    case lowBalance(remainingSeconds: Double)
+    case none
+
+    var message: String? {
+        switch self {
+        case .signIn:
+            return TaskPlacementCopy.cloudAccountRequired
+        case .checking:
+            return TaskPlacementCopy.checkingCloudAccount
+        case .failed:
+            return TaskPlacementCopy.cloudCreditsUnavailable
+        case .freeUpgrade:
+            return TaskPlacementCopy.freeCloudUpgrade
+        case .insufficient(let mediaDuration, let availableDuration):
+            return "This media is \(CloudUsageEstimate.formatDuration(mediaDuration)), but your balance covers about \(CloudUsageEstimate.formatDuration(availableDuration)). Upgrade to Pro or add credits to continue in the Cloud."
+        case .lowBalance(let remainingSeconds):
+            return "After this media, your balance covers about \(CloudUsageEstimate.formatDuration(remainingSeconds)) more of this cloud workflow."
+        case .none:
+            return nil
+        }
+    }
+}
+
+enum CloudCreditNoticePolicy {
+    static func notice(
+        isSignedIn: Bool,
+        isPaid: Bool,
+        estimate: CloudUsageEstimate?,
+        estimateFailed: Bool = false
+    ) -> CloudCreditNotice {
+        guard isSignedIn else { return .signIn }
+        guard !estimateFailed else { return .failed }
+        guard let estimate else { return .checking }
+        guard estimate.canAfford else {
+            return .insufficient(
+                mediaDuration: estimate.durationSeconds,
+                availableDuration: estimate.maxDurationSecWithRemainingQuota ?? 0
+            )
+        }
+        guard isPaid else { return .freeUpgrade }
+        guard estimate.shouldShowLowBalanceNotice,
+              let remaining = estimate.remainingMediaSecondsAfterSubmission else {
+            return .none
+        }
+        return .lowBalance(remainingSeconds: remaining)
     }
 }

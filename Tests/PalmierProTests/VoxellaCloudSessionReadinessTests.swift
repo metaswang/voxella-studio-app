@@ -143,4 +143,17 @@ struct VoxellaCloudSessionReadinessTests {
             resultReady: nil
         ))
     }
+
+    @Test func completedDubSessionWaitsForTheBackendResultReadyFlag() throws {
+        let detail = try JSONDecoder().decode(VoxellaSessionDetail.self, from: Data("""
+        {
+          "session_id": "01a01c85-35aa-700b-85fd-31ba1e92fa20",
+          "status": "completed",
+          "current_stage": "dub",
+          "result_ready": false
+        }
+        """.utf8))
+
+        #expect(!CloudDubTaskAccess.isReady(detail))
+    }
 }

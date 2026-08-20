@@ -531,6 +531,13 @@ enum DubModelChoice: String, Codable, CaseIterable, Identifiable, Sendable {
     var modelID: LocalModelID { .qwenTTS17B }
 }
 
+enum DubCloudSyncState: String, Codable, Sendable {
+    case none
+    case pending
+    case completed
+    case failed
+}
+
 struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     var id = UUID()
     /// User-authored title. Empty / placeholder means auto-generate after dub completes.
@@ -569,6 +576,16 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     var progressCompleted: Int?
     var progressTotal: Int?
     var errorMessage: String?
+    // Optional storage fields preserve local/local defaults for pre-placement projects.
+    var storage: TaskStorageDestination?
+    var compute: TaskComputeDestination?
+    var remoteSessionID: UUID?
+    var remoteGenerationID: String?
+    var clientRequestID: String?
+    var localCachePath: String?
+    var cloudSyncState: DubCloudSyncState?
+    var remoteResultVersion: String?
+    var pendingCloudSyncError: String?
 
     var displayTitle: String {
         SessionTitlePolicy.normalizedUserTitle(title) ?? SessionTitlePolicy.untitledPlaceholder
@@ -591,6 +608,23 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     var isActivelyProcessing: Bool {
         state == .running || state == .cancelling
     }
+
+    var placement: TaskPlacement {
+        get {
+            TaskPlacement(
+                storage: storage ?? .local,
+                compute: compute ?? .local
+            )
+        }
+        set {
+            storage = newValue.storage
+            compute = newValue.compute
+        }
+    }
+
+    var resolvedStorage: TaskStorageDestination { storage ?? .local }
+    var resolvedCompute: TaskComputeDestination { compute ?? .local }
+    var resolvedCloudSyncState: DubCloudSyncState { cloudSyncState ?? .none }
 }
 
 struct WorkbenchDubRevision: Codable, Identifiable, Sendable {
@@ -758,6 +792,7 @@ final class WorkbenchStore {
 
     private static let routeDefaultsKey = "voxella.workbench.route"
     private let taskAccess: any TranscriptionTaskAccessing
+    private let dubTaskAccess: any DubTaskAccessing
 
     private struct StagedTranscriptionArtifacts {
         var rawResult: TranscriptionResult?
@@ -825,8 +860,12 @@ final class WorkbenchStore {
     private var saveRequestedBeforeHydration = false
     private var saveRevision = 0
 
-    private init(taskAccess: any TranscriptionTaskAccessing = RoutedTranscriptionTaskAccess()) {
+    private init(
+        taskAccess: any TranscriptionTaskAccessing = RoutedTranscriptionTaskAccess(),
+        dubTaskAccess: any DubTaskAccessing = RoutedDubTaskAccess()
+    ) {
         self.taskAccess = taskAccess
+        self.dubTaskAccess = dubTaskAccess
         let storedRoute = UserDefaults.standard.string(forKey: Self.routeDefaultsKey)
             .flatMap(WorkbenchRoute.init(rawValue:))
         // Session detail requires an in-memory selection. Restore Recent when none exists.
@@ -875,9 +914,9 @@ final class WorkbenchStore {
                 dubTranscript: dub?.alignedTranscript,
                 dubSubtitleTrack: dub?.renderedSubtitleTrack,
                 dubSegments: dub?.renderedSegments ?? [],
-                storage: job.storage,
-                compute: job.compute,
-                remoteSessionID: job.remoteSessionID
+                storage: dub?.resolvedStorage ?? job.storage,
+                compute: dub?.resolvedCompute ?? job.compute,
+                remoteSessionID: dub?.remoteSessionID ?? job.remoteSessionID
             )
         }
         let standaloneDubs = dubs.filter { job in
@@ -906,7 +945,10 @@ final class WorkbenchStore {
                 sessionTag: job.sessionTag,
                 dubTranscript: job.alignedTranscript,
                 dubSubtitleTrack: job.renderedSubtitleTrack,
-                dubSegments: job.renderedSegments ?? Self.fallbackDubSegments(for: job)
+                dubSegments: job.renderedSegments ?? Self.fallbackDubSegments(for: job),
+                storage: job.resolvedStorage,
+                compute: job.resolvedCompute,
+                remoteSessionID: job.remoteSessionID
             )
         }
         return (transcriptSessions + standaloneDubs).sorted { $0.modifiedAt > $1.modifiedAt }
@@ -1324,6 +1366,7 @@ final class WorkbenchStore {
         job.referenceAudioPath = latest?.referenceAudioPath
         job.referenceText = latest?.referenceText ?? ""
         job.referenceVoiceID = latest?.referenceVoiceID
+        job.placement = latest?.placement ?? .localDefault
         if let latest {
             let firstSegmentIndex = latest.segments?.map(\.index).min() ?? 0
             if let voiceID = latest.resolvedSegmentVoiceIDs[firstSegmentIndex] {
@@ -2106,9 +2149,18 @@ final class WorkbenchStore {
         let segmentReferences = snapshot.resolvedSegmentVoiceIDs.compactMapValues {
             voiceLibrary.dubReference(for: $0)
         }
+        let generationID = UUID().uuidString.lowercased()
+        let clientRequestID = "desktop-dub-\(id.uuidString.lowercased())-\(generationID)"
+        let cacheURL = Self.dataDirectory
+            .appendingPathComponent("Dubs", isDirectory: true)
+            .appendingPathComponent(id.uuidString, isDirectory: true)
+            .appendingPathComponent("dub-\(generationID)")
+            .appendingPathExtension("m4a")
         dubs[index].state = .running
         dubs[index].progress = 0.02
-        dubs[index].progressMessage = "Loading local voice model…"
+        dubs[index].progressMessage = snapshot.placement.compute == .cloud
+            ? "Preparing VoxStudio Cloud…"
+            : "Loading local voice model…"
         dubs[index].flowProgressStage = .dubPreprocessing
         dubs[index].progressStep = "flow_started"
         dubs[index].progressCompleted = nil
@@ -2124,64 +2176,141 @@ final class WorkbenchStore {
         dubs[index].internalSummary = nil
         dubs[index].summaryState = nil
         dubs[index].summaryErrorMessage = nil
+        dubs[index].remoteGenerationID = generationID
+        dubs[index].clientRequestID = clientRequestID
+        dubs[index].localCachePath = cacheURL.path
+        dubs[index].remoteSessionID = snapshot.placement.storage == .cloud
+            ? snapshot.remoteSessionID
+            : nil
+        dubs[index].cloudSyncState = snapshot.placement.storage == .cloud && snapshot.placement.compute == .local
+            ? .pending
+            : DubCloudSyncState.none
+        dubs[index].pendingCloudSyncError = nil
+        dubs[index].remoteResultVersion = nil
         save()
 
-        let payload = DubFlowPayload(
-            segments: snapshot.segments ?? [],
-            language: snapshot.language,
-            model: snapshot.model,
-            reference: reference,
-            speakerReferences: speakerReferences,
-            segmentReferences: segmentReferences,
-            timelineMode: .automatic,
-            seed: DubSeed.deterministic(
-                language: snapshot.language,
-                text: "\(id.uuidString)\n\(snapshot.script)"
-            ),
-            xvecOnly: false
-        )
         let task = Task { [weak self] in
             guard let self else { return }
             defer { flowTasks[id] = nil }
-            _ = await LLMSettingsStore.shared.credentialAvailable()
-            let hasSubtitleModel = LLMSettingsStore.shared.hasConfiguredModel(
-                for: .subtitleProcessing
-            )
-            if Task.isCancelled {
-                updateDub(id) {
-                    $0.state = .cancelled
-                    $0.errorMessage = nil
-                    $0.progressMessage = "Cancelled — ready to retry"
+            do {
+                if snapshot.placement.needsAuthentication {
+                    switch await AccountService.shared.ensureCloudAccess() {
+                    case .ready:
+                        break
+                    case .cancelled:
+                        updateDub(id) {
+                            guard $0.remoteGenerationID == generationID else { return }
+                            $0.state = .cancelled
+                            $0.errorMessage = nil
+                            $0.progressMessage = "Cancelled — ready to retry"
+                        }
+                        return
+                    case .failed(let message):
+                        updateDub(id) {
+                            guard $0.remoteGenerationID == generationID else { return }
+                            $0.state = .failed
+                            $0.errorMessage = message
+                            $0.progressMessage = "Cloud account unavailable"
+                        }
+                        return
+                    }
                 }
-                return
-            }
-            let request = MediaFlowRequest(
-                id: id,
-                input: .script(snapshot.script),
-                steps: WorkbenchMediaFlowPlanner.dubSteps(
-                    payload: payload,
-                    hasAPIKey: hasSubtitleModel
-                )
-            )
-            for await event in MediaFlowExecutor.shared.events(for: request) {
-                if Task.isCancelled { break }
-                consumeDubEvent(
-                    event,
+                if snapshot.placement.compute != .cloud {
+                    _ = await LLMSettingsStore.shared.credentialAvailable()
+                }
+                let hasSubtitleModel = snapshot.placement.compute == .local
+                    && LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing)
+                var remoteReferences: [UUID: LocalVoiceReference] = [:]
+                if snapshot.placement.needsAuthentication {
+                    for voiceID in missingVoiceIDs.union(
+                        Set([defaultVoiceID].compactMap { $0 })
+                            .union(snapshot.resolvedSpeakerVoiceIDs.values)
+                            .union(snapshot.resolvedSegmentVoiceIDs.values)
+                    ) {
+                        let synced = try await voiceLibrary.ensureCloudReference(voiceID)
+                        remoteReferences[voiceID] = synced
+                    }
+                }
+                guard !snapshot.placement.needsAuthentication
+                    || (defaultVoiceID.flatMap { remoteReferences[$0]?.cloudObjectKey } != nil) else {
+                    throw VoxellaAPIError.http(409, "VoxStudio Cloud needs a synchronized voice reference.")
+                }
+                let remoteSegments = (snapshot.segments ?? []).map { segment in
+                    guard snapshot.placement.needsAuthentication else { return segment }
+                    let voiceID = snapshot.resolvedSegmentVoiceIDs[segment.index]
+                        ?? segment.speaker.flatMap { snapshot.resolvedSpeakerVoiceIDs[$0] }
+                        ?? defaultVoiceID
+                    guard let voiceID, let remote = remoteReferences[voiceID] else { return segment }
+                    var updated = segment
+                    if let remoteID = remote.cloudReferenceID {
+                        updated.options["reference_audio_id"] = remoteID.uuidString
+                    }
+                    if let objectKey = remote.cloudObjectKey {
+                        updated.options["reference_audio_r2_key"] = objectKey
+                    }
+                    return updated
+                }
+                let remoteDefault = defaultVoiceID.flatMap { remoteReferences[$0] }
+                let request = DubTaskRequest(
                     jobID: id,
-                    resolvedReferenceVoiceID: defaultVoiceID
+                    script: snapshot.script,
+                    segments: remoteSegments,
+                    language: snapshot.language,
+                    model: snapshot.model,
+                    referenceVoiceID: defaultVoiceID,
+                    reference: reference,
+                    speakerReferences: speakerReferences,
+                    segmentReferences: segmentReferences,
+                    referenceAudioID: remoteDefault?.cloudReferenceID,
+                    referenceAudioR2Key: remoteDefault?.cloudObjectKey,
+                    referenceText: snapshot.referenceText,
+                    placement: snapshot.placement,
+                    remoteSessionID: snapshot.placement.storage == .cloud
+                        ? snapshot.remoteSessionID
+                        : nil,
+                    generationID: generationID,
+                    clientRequestID: clientRequestID,
+                    title: snapshot.title.isEmpty ? nil : snapshot.title,
+                    cacheURL: cacheURL,
+                    hasSubtitleModel: hasSubtitleModel
                 )
-            }
-            if Task.isCancelled {
+                for await event in dubTaskAccess.events(for: request) {
+                    if Task.isCancelled { break }
+                    consumeDubTaskEvent(
+                        event,
+                        jobID: id,
+                        resolvedReferenceVoiceID: defaultVoiceID,
+                        generationID: generationID
+                    )
+                }
+                if Task.isCancelled {
+                    updateDub(id) {
+                        guard $0.remoteGenerationID == generationID else { return }
+                        $0.state = .cancelled
+                        $0.errorMessage = nil
+                        $0.progressMessage = "Cancelled — ready to retry"
+                    }
+                    return
+                }
+                guard let job = dubs.first(where: { $0.id == id }),
+                      job.remoteGenerationID == generationID,
+                      job.state == .completed else { return }
+                await enrichAfterDubCompletion(job)
+            } catch is CancellationError {
                 updateDub(id) {
+                    guard $0.remoteGenerationID == generationID else { return }
                     $0.state = .cancelled
                     $0.errorMessage = nil
                     $0.progressMessage = "Cancelled — ready to retry"
                 }
-                return
+            } catch {
+                updateDub(id) {
+                    guard $0.remoteGenerationID == generationID else { return }
+                    $0.state = .failed
+                    $0.errorMessage = error.localizedDescription
+                    $0.progressMessage = "Dub failed"
+                }
             }
-            guard let job = dubs.first(where: { $0.id == id }),
-                  job.state == .completed else { return }
-            await enrichAfterDubCompletion(job)
         }
         flowTasks[id] = task
     }
@@ -2205,13 +2334,115 @@ final class WorkbenchStore {
     }
 
     func cancelDub(_ id: UUID) {
-        guard flowTasks[id] != nil else { return }
-        flowTasks[id]?.cancel()
+        guard flowTasks[id] != nil,
+              let snapshot = dubs.first(where: { $0.id == id }) else { return }
+        let shouldReturnToSession = TranscriptionPlacementRouter.shouldReturnToSessionAfterCancellation(
+            snapshot.placement,
+            hasRemoteSession: snapshot.remoteSessionID != nil
+        )
         updateDub(id) {
             $0.state = .cancelling
             $0.errorMessage = nil
-            $0.progressMessage = "Cancelling media flow…"
+            $0.progressMessage = snapshot.placement.compute == .cloud
+                ? "Cancelling VoxStudio Cloud…"
+                : "Cancelling media flow…"
         }
+        Task { [weak self] in
+            do {
+                try await self?.dubTaskAccess.cancel(id)
+                guard let self else { return }
+                if shouldReturnToSession {
+                    self.selectedDubID = nil
+                    self.selectedTranscriptionID = nil
+                    self.selectedSessionID = id
+                    self.route = .session
+                }
+                self.flowTasks[id]?.cancel()
+            } catch {
+                guard let self,
+                      self.dubs.first(where: { $0.id == id })?.state == .cancelling else { return }
+                self.updateDub(id) {
+                    $0.state = .failed
+                    $0.errorMessage = error.localizedDescription
+                    $0.progressMessage = "Cancellation failed"
+                }
+            }
+        }
+    }
+
+    func retryDubCloudSync(_ id: UUID) {
+        guard flowTasks[id] == nil,
+              let index = dubs.firstIndex(where: { $0.id == id }),
+              let remoteSessionID = dubs[index].remoteSessionID,
+              let generationID = dubs[index].remoteGenerationID,
+              let clientRequestID = dubs[index].clientRequestID,
+              dubs[index].placement == TaskPlacement(storage: .cloud, compute: .local),
+              dubs[index].resolvedCloudSyncState == .pending,
+              let cachePath = dubs[index].localCachePath else { return }
+        let snapshot = dubs[index]
+        let syncSegments = (snapshot.renderedSegments ?? []).map { rendered in
+            DubSegmentPayload(
+                index: rendered.index,
+                text: rendered.text,
+                start: rendered.start,
+                end: rendered.end,
+                speaker: rendered.speaker,
+                sourceSubtitleID: rendered.sourceSubtitleID
+            )
+        }
+        let request = DubTaskRequest(
+            jobID: id,
+            script: snapshot.script,
+            segments: syncSegments.isEmpty ? (snapshot.segments ?? []) : syncSegments,
+            language: snapshot.language,
+            model: snapshot.model,
+            referenceVoiceID: snapshot.referenceVoiceID,
+            reference: nil,
+            speakerReferences: [:],
+            segmentReferences: [:],
+            referenceAudioID: nil,
+            referenceAudioR2Key: nil,
+            referenceText: snapshot.referenceText,
+            placement: snapshot.placement,
+            remoteSessionID: remoteSessionID,
+            generationID: generationID,
+            clientRequestID: clientRequestID,
+            title: snapshot.title.isEmpty ? nil : snapshot.title,
+            cacheURL: URL(fileURLWithPath: cachePath),
+            hasSubtitleModel: false,
+            syncCloudResultOnly: true
+        )
+        dubs[index].state = .running
+        dubs[index].progress = max(dubs[index].progress, 0.84)
+        dubs[index].flowProgressStage = .dubAssembly
+        dubs[index].progressStep = "sync_retry"
+        dubs[index].progressMessage = "Retrying cloud sync…"
+        dubs[index].pendingCloudSyncError = nil
+        dubs[index].errorMessage = nil
+        save()
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            defer { flowTasks[id] = nil }
+            for await event in dubTaskAccess.events(for: request) {
+                if Task.isCancelled { break }
+                consumeDubTaskEvent(
+                    event,
+                    jobID: id,
+                    resolvedReferenceVoiceID: snapshot.referenceVoiceID,
+                    generationID: generationID
+                )
+            }
+            if Task.isCancelled {
+                updateDub(id) {
+                    guard $0.remoteGenerationID == generationID else { return }
+                    $0.state = .completed
+                    $0.cloudSyncState = .pending
+                    $0.progressMessage = "Completed locally · cloud sync pending"
+                }
+            }
+        }
+        flowTasks[id] = task
     }
 
     func useTranscript(_ transcriptID: UUID, forDub dubID: UUID, track: WorkbenchTranscriptTrack) {
@@ -2779,6 +3010,67 @@ final class WorkbenchStore {
         return nil
     }
 
+    private func consumeDubTaskEvent(
+        _ event: DubTaskEvent,
+        jobID: UUID,
+        resolvedReferenceVoiceID: UUID?,
+        generationID: String
+    ) {
+        guard dubs.first(where: { $0.id == jobID })?.remoteGenerationID == generationID else {
+            return
+        }
+        switch event {
+        case .media(let mediaEvent):
+            consumeDubEvent(
+                mediaEvent,
+                jobID: jobID,
+                resolvedReferenceVoiceID: resolvedReferenceVoiceID
+            )
+        case .remoteSession(let remoteID, let eventGenerationID):
+            guard eventGenerationID == generationID else { return }
+            updateDub(jobID) { job in
+                guard job.remoteGenerationID == generationID else { return }
+                job.remoteSessionID = remoteID
+                job.cloudSyncState = job.placement.storage == .cloud && job.placement.compute == .local
+                    ? .pending
+                    : job.cloudSyncState
+            }
+        case .cloudSyncPending(let localPath, let message, let eventGenerationID):
+            guard eventGenerationID == generationID else { return }
+            updateDub(jobID) { job in
+                guard job.remoteGenerationID == generationID else { return }
+                job.state = .completed
+                job.outputPath = localPath
+                job.localCachePath = localPath
+                job.cloudSyncState = .pending
+                job.pendingCloudSyncError = message
+                job.errorMessage = message
+                job.progressMessage = "Completed locally · cloud sync pending"
+            }
+        case .cloudSyncCompleted(let remoteResultVersion, let eventGenerationID):
+            guard eventGenerationID == generationID else { return }
+            updateDub(jobID) { job in
+                guard job.remoteGenerationID == generationID else { return }
+                job.cloudSyncState = .completed
+                job.remoteResultVersion = remoteResultVersion
+                job.pendingCloudSyncError = nil
+                job.errorMessage = nil
+            }
+        case .failure(let message, let eventGenerationID):
+            guard eventGenerationID == generationID else { return }
+            updateDub(jobID) { job in
+                guard job.remoteGenerationID == generationID else { return }
+                job.state = .failed
+                job.errorMessage = message
+                job.progressMessage = "Dub failed"
+                if job.placement.storage == .cloud && job.placement.compute == .local {
+                    job.cloudSyncState = .failed
+                    job.pendingCloudSyncError = message
+                }
+            }
+        }
+    }
+
     private func consumeDubEvent(
         _ event: MediaJobEvent,
         jobID: UUID,
@@ -2832,6 +3124,7 @@ final class WorkbenchStore {
                     alignmentDiagnostics: nil
                 )
                 job.outputPath = output.outputURL.path
+                job.localCachePath = output.outputURL.path
                 job.renderedSegments = output.segments
                 job.revisions = (job.revisions ?? []) + [revision]
                 job.activeRevisionID = revision.id
@@ -2929,6 +3222,12 @@ final class WorkbenchStore {
 
     private func hydrate() async {
         let snapshot = await persistence.load()
+        let resumableCloudDubs = snapshot?.dubs.filter { job in
+            job.state == .running
+                && job.placement.needsAuthentication
+                && job.remoteSessionID != nil
+                && job.remoteGenerationID != nil
+        } ?? []
         if let snapshot {
             let currentTranscriptionIDs = Set(transcriptions.map(\.id))
             let currentDubIDs = Set(dubs.map(\.id))
@@ -2953,6 +3252,78 @@ final class WorkbenchStore {
             saveRequestedBeforeHydration = false
             save()
         }
+        for job in resumableCloudDubs {
+            resumePersistedCloudDub(job)
+        }
+    }
+
+    private func resumePersistedCloudDub(_ persisted: WorkbenchDubJob) {
+        guard flowTasks[persisted.id] == nil,
+              let index = dubs.firstIndex(where: { $0.id == persisted.id }),
+              let remoteSessionID = persisted.remoteSessionID,
+              let generationID = persisted.remoteGenerationID,
+              let cachePath = persisted.localCachePath ?? persisted.outputPath,
+              !cachePath.isEmpty else { return }
+        let voiceLibrary = VoiceLibraryStore.shared
+        let referenceVoiceID = persisted.referenceVoiceID
+            ?? voiceLibrary.defaultReference(languageCode: persisted.language)?.id
+        let request = DubTaskRequest(
+            jobID: persisted.id,
+            script: persisted.script,
+            segments: persisted.segments ?? [],
+            language: persisted.language,
+            model: persisted.model,
+            referenceVoiceID: referenceVoiceID,
+            reference: voiceLibrary.dubReference(for: referenceVoiceID),
+            speakerReferences: persisted.resolvedSpeakerVoiceIDs.compactMapValues {
+                voiceLibrary.dubReference(for: $0)
+            },
+            segmentReferences: persisted.resolvedSegmentVoiceIDs.compactMapValues {
+                voiceLibrary.dubReference(for: $0)
+            },
+            referenceAudioID: nil,
+            referenceAudioR2Key: nil,
+            referenceText: persisted.referenceText,
+            placement: persisted.placement,
+            remoteSessionID: remoteSessionID,
+            generationID: generationID,
+            clientRequestID: persisted.clientRequestID ?? "desktop-dub-(persisted.id.uuidString.lowercased())",
+            title: persisted.title.isEmpty ? nil : persisted.title,
+            cacheURL: URL(fileURLWithPath: cachePath),
+            hasSubtitleModel: persisted.placement.compute == .local
+                && LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing),
+            resumeRemoteSession: true
+        )
+        dubs[index].state = .running
+        dubs[index].progress = max(0.02, persisted.progress)
+        dubs[index].progressMessage = "Reconnecting to VoxStudio Cloud…"
+        dubs[index].flowProgressStage = .dubPreprocessing
+        dubs[index].progressStep = "reconnect"
+        dubs[index].errorMessage = nil
+        save()
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            defer { flowTasks[persisted.id] = nil }
+            for await event in dubTaskAccess.events(for: request) {
+                if Task.isCancelled { break }
+                consumeDubTaskEvent(
+                    event,
+                    jobID: persisted.id,
+                    resolvedReferenceVoiceID: referenceVoiceID,
+                    generationID: generationID
+                )
+            }
+            if Task.isCancelled {
+                updateDub(persisted.id) {
+                    guard $0.remoteGenerationID == generationID else { return }
+                    $0.state = .cancelled
+                    $0.errorMessage = nil
+                    $0.progressMessage = "Cancelled — ready to retry"
+                }
+            }
+        }
+        flowTasks[persisted.id] = task
     }
 
     nonisolated static func recoveredForLaunch(
@@ -3034,7 +3405,7 @@ final class WorkbenchStore {
             return
         }
         let snapshot = WorkbenchSnapshot(
-            schemaVersion: 4,
+            schemaVersion: 7,
             transcriptions: transcriptions,
             dubs: dubs
         )
