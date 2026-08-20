@@ -127,9 +127,15 @@ struct LocalModelManagerView: View {
 
     @ViewBuilder
     private var modelSections: some View {
+        let transcriptionModels = manager.models(for: .transcribe)
+        let transcriptionModelIDs = Set(transcriptionModels.map(\.id))
+        let dubbingModels = manager.models(for: .dub).filter {
+            !transcriptionModelIDs.contains($0.id)
+        }
+
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-            modelSection("Transcription & Captions", feature: .transcribe)
-            modelSection("Dubbing", feature: .dub)
+            modelSection("Transcription & Captions", models: transcriptionModels)
+            modelSection("Dubbing", models: dubbingModels)
             if !manager.installedLegacyModels.isEmpty {
                 modelSection("Legacy Models", models: manager.installedLegacyModels)
             }

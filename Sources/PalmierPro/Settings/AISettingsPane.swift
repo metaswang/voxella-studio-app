@@ -37,6 +37,10 @@ struct AISettingsPane: View {
             syncRouteDrafts()
             settings.refreshCredentialStatus()
         }
+        .onDisappear {
+            credentialAutosaveTask?.cancel()
+            persistCredentialIfReady()
+        }
         .confirmationDialog(
             "Remove \(providerPendingRemoval?.displayName ?? "provider")?",
             isPresented: Binding(

@@ -110,6 +110,10 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
     }
 
     var credentialAccount: String {
+        "llm-api-key-v2-\(id.uuidString.lowercased())"
+    }
+
+    var legacyCredentialAccount: String {
         let endpointIdentity = "\(provider.rawValue)|\(normalizedBaseURL.lowercased())"
         let digest = SHA256.hash(data: Data(endpointIdentity.utf8))
             .map { String(format: "%02x", $0) }
@@ -532,6 +536,7 @@ final class LLMSettingsStore {
         guard let profile = provider(id: id) else { return }
         try await Task.detached(priority: .userInitiated) {
             try KeychainStore.deleteProtected(account: profile.credentialAccount)
+            try KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
         }.value
         providers.removeAll { $0.id == id }
         credentialAvailability[id] = nil
@@ -567,10 +572,7 @@ final class LLMSettingsStore {
             var statusError: String?
             for profile in profiles {
                 do {
-                    let exists = try await Task.detached(priority: .utility) {
-                        try KeychainStore.containsProtected(account: profile.credentialAccount)
-                    }.value
-                    statuses[profile.id] = exists
+                    statuses[profile.id] = try await loadCredential(for: profile) != nil
                 } catch {
                     statuses[profile.id] = false
                     statusError = error.localizedDescription
@@ -590,9 +592,7 @@ final class LLMSettingsStore {
         var statusError: String?
         for profile in profiles {
             do {
-                statuses[profile.id] = try await Task.detached(priority: .utility) {
-                    try KeychainStore.containsProtected(account: profile.credentialAccount)
-                }.value
+                statuses[profile.id] = try await loadCredential(for: profile) != nil
             } catch {
                 statuses[profile.id] = false
                 statusError = error.localizedDescription
@@ -611,6 +611,7 @@ final class LLMSettingsStore {
         credentialGeneration += 1
         try await Task.detached(priority: .userInitiated) {
             try KeychainStore.saveProtected(value, account: profile.credentialAccount)
+            try? KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
         }.value
         guard provider(id: providerID)?.credentialAccount == profile.credentialAccount else { return }
         credentialAvailability[providerID] = true
@@ -624,10 +625,25 @@ final class LLMSettingsStore {
         credentialGeneration += 1
         try await Task.detached(priority: .userInitiated) {
             try KeychainStore.deleteProtected(account: profile.credentialAccount)
+            try KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
         }.value
         guard provider(id: providerID)?.credentialAccount == profile.credentialAccount else { return }
         credentialAvailability[providerID] = false
         credentialError = nil
+    }
+
+    private func loadCredential(for profile: LLMProviderProfile) async throws -> String? {
+        try await Task.detached(priority: .utility) {
+            if let value = try KeychainStore.loadProtected(account: profile.credentialAccount) {
+                return value
+            }
+            guard let value = try KeychainStore.loadProtected(account: profile.legacyCredentialAccount)
+            else { return nil }
+
+            try KeychainStore.saveProtected(value, account: profile.credentialAccount)
+            try? KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
+            return value
+        }.value
     }
 
     func runtimeRoute(for useCase: LLMUseCase) async throws -> LLMRuntimeRoute {
@@ -643,9 +659,7 @@ final class LLMSettingsStore {
             }) else { continue }
             let validated = try profile.validated()
             do {
-                guard let key = try await Task.detached(priority: .userInitiated, operation: {
-                    try KeychainStore.loadProtected(account: validated.credentialAccount)
-                }).value else {
+                guard let key = try await loadCredential(for: validated) else {
                     continue
                 }
                 configurations.append(LLMRuntimeConfiguration(

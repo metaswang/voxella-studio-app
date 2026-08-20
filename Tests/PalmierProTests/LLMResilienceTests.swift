@@ -64,6 +64,23 @@ struct LLMResilienceTests {
     }
 
     @Test
+    func credentialAccountRemainsStableWhenProviderEndpointChanges() {
+        var profile = LLMProviderProfile(
+            provider: .openAICompatible,
+            prefix: "deepseek",
+            displayName: "DeepSeek",
+            baseURL: "https://api.deepseek.com",
+            model: "deepseek-v4-flash"
+        )
+        let account = profile.credentialAccount
+
+        profile.baseURL = "https://api.deepseek.com/v1"
+
+        #expect(profile.credentialAccount == account)
+        #expect(profile.legacyCredentialAccount != account)
+    }
+
+    @Test
     func miniMaxM3DisablesThinkingAndSeparatesLegacyReasoning() {
         let configuration = LLMRuntimeConfiguration(
             profile: .defaultMiniMax,
