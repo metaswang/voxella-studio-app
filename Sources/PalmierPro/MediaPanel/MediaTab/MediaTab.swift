@@ -33,7 +33,6 @@ struct MediaTab: View {
     @State var assetFrames: [String: CGRect] = [:]
     @State var marqueeSelection = MarqueeSelection()
 
-    @State private var mediaPanelHeight: CGFloat = 600
     @State private var showMatteSheet = false
 
     enum ContentTab: String, CaseIterable, Identifiable {
@@ -154,11 +153,6 @@ struct MediaTab: View {
             .layoutPriority(1)
             .onChange(of: searchQuery) { _, _ in scheduleMomentSearch() }
 
-        }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { newValue in
-            mediaPanelHeight = newValue
         }
         .onExitCommand { if editor.pendingSwapClipId != nil { editor.cancelMediaSwap() } }
         .onChange(of: editor.folders.map(\.id)) { _, _ in pruneStaleFolderState() }
@@ -660,21 +654,6 @@ struct MediaTab: View {
         .buttonStyle(.capsule(filled ? .prominent : .secondary, fill: accentStyle))
         .focusable(false)
         .help(title)
-    }
-
-    private var mediaAreaCollapsed: Bool {
-        !editor.mediaPanelVisible
-            || (editor.maximizedPanel != nil && editor.maximizedPanel != .media)
-    }
-
-    private var generationPanelMaxHeight: Double {
-        Double(max(0, mediaPanelHeight - AppTheme.GenerationPanel.mediaAreaMinHeight))
-    }
-
-    private func toggleGenerationPanel() {
-        withAnimation(.easeInOut(duration: AppTheme.Anim.transition)) {
-            editor.showGenerationPanel.toggle()
-        }
     }
 
     private var overflowMenu: some View {

@@ -6,7 +6,7 @@ import Foundation
 @MainActor
 enum PreviewHitTester {
     static func clipID(at point: CGPoint, viewSize: CGSize, editor: EditorViewModel) -> String? {
-        let videoRect = videoContentRect(in: viewSize, timeline: editor.timeline)
+        let videoRect = PreviewCanvasGeometry.videoContentRect(in: viewSize, timeline: editor.timeline)
         guard videoRect.width > 0, videoRect.height > 0 else { return nil }
         let frame = editor.playheadState.timelineFrame
 
@@ -63,19 +63,6 @@ enum PreviewHitTester {
         let top = -halfH + (crop?.top ?? 0) * rect.height
         let bottom = halfH - (crop?.bottom ?? 0) * rect.height
         return lx >= left && lx <= right && ly >= top && ly <= bottom
-    }
-
-    static func videoContentRect(in viewSize: CGSize, timeline: Timeline) -> CGRect {
-        guard viewSize.width > 0, viewSize.height > 0 else { return .zero }
-        let videoAspect = CGFloat(timeline.width) / CGFloat(timeline.height)
-        let viewAspect = viewSize.width / viewSize.height
-        let w: CGFloat, h: CGFloat
-        if viewAspect > videoAspect {
-            h = viewSize.height; w = h * videoAspect
-        } else {
-            w = viewSize.width; h = w / videoAspect
-        }
-        return CGRect(x: (viewSize.width - w) / 2, y: (viewSize.height - h) / 2, width: w, height: h)
     }
 
     private static func clipFrame(_ t: Transform, videoRect: CGRect) -> CGRect {

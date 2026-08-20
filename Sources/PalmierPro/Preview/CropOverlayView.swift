@@ -10,7 +10,10 @@ struct CropOverlayView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let videoRect = videoContentRect(in: geo.size)
+            let videoRect = PreviewCanvasGeometry.videoContentRect(
+                in: geo.size,
+                timeline: editor.timeline
+            )
 
             if let clip = selectedClip {
                 let frame = editor.activeFrame
@@ -212,18 +215,6 @@ struct CropOverlayView: View {
     }
 
     // MARK: - Layout
-
-    private func videoContentRect(in viewSize: CGSize) -> CGRect {
-        let videoAspect = CGFloat(editor.timeline.width) / CGFloat(editor.timeline.height)
-        let viewAspect = viewSize.width / viewSize.height
-        let w: CGFloat, h: CGFloat
-        if viewAspect > videoAspect {
-            h = viewSize.height; w = h * videoAspect
-        } else {
-            w = viewSize.width; h = w / videoAspect
-        }
-        return CGRect(x: (viewSize.width - w) / 2, y: (viewSize.height - h) / 2, width: w, height: h)
-    }
 
     private func clipFrame(_ t: Transform, videoRect: CGRect) -> CGRect {
         let tl = t.topLeft

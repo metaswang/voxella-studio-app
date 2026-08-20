@@ -612,43 +612,6 @@ struct LocalFirstWorkbenchTests {
         #expect(englishSingle != englishTwo)
     }
 
-    @Test func heapClusteringPreservesCannotLinkAndDeterministicMerges() throws {
-        let result = try ConstrainedAgglomerativeClustering.cluster(
-            items: [
-                .init(windowIndex: 0, localSpeakerID: 0, embedding: [1, 0]),
-                .init(windowIndex: 1, localSpeakerID: 0, embedding: [0.99, 0.01]),
-                .init(windowIndex: 0, localSpeakerID: 1, embedding: [0, 1]),
-            ],
-            threshold: 0.2
-        )
-
-        #expect(result.assignments[0] == result.assignments[1])
-        #expect(result.assignments[0] != result.assignments[2])
-        #expect(result.centroids.count == 2)
-        #expect(result.performedMerges == 1)
-    }
-
-    @Test func heapClusteringDistanceUpdatesStayQuadratic() throws {
-        let itemCount = 96
-        let items = (0..<itemCount).map { index in
-            let angle = Double(index % 4) * .pi / 2 + Double(index) * 0.0001
-            return ConstrainedClusterItem(
-                windowIndex: index,
-                localSpeakerID: 0,
-                embedding: [Float(cos(angle)), Float(sin(angle))]
-            )
-        }
-        let result = try ConstrainedAgglomerativeClustering.cluster(
-            items: items,
-            threshold: 2,
-            targetCount: 4
-        )
-
-        #expect(result.reachedTargetCount)
-        #expect(result.centroids.count == 4)
-        #expect(result.distanceEvaluations <= itemCount * (itemCount - 1))
-    }
-
     #if BUNDLED_SPEECH
     @Test func captionSegmentationHandlesSpeakerChangesAndCJKSpacing() {
         let words = [
@@ -674,23 +637,6 @@ struct LocalFirstWorkbenchTests {
         #expect(LocalDubPipeline.ttsLanguage("auto", script: "Welcome to the local dubbing test.") == "english")
         #expect(LocalDubPipeline.ttsLanguage("auto", script: "欢迎使用本地配音功能。") == "chinese")
         #expect(LocalDubPipeline.ttsLanguage("pt-BR", script: "Olá") == "portuguese")
-    }
-
-    @Test func requestedSpeakerCountMergesTheClosestCentroids() {
-        let turns = [
-            DiarizedSegment(startTime: 0, endTime: 1, speakerId: 0),
-            DiarizedSegment(startTime: 1, endTime: 2, speakerId: 1),
-            DiarizedSegment(startTime: 2, endTime: 3, speakerId: 2),
-        ]
-        let merged = LocalSpeechPipeline.constrainSpeakers(
-            turns,
-            centroids: [[1, 0], [0.99, 0.01], [0, 1]],
-            requestedCount: 2
-        )
-
-        #expect(Set(merged.map(\.speakerId)).count == 2)
-        #expect(merged[0].speakerId == merged[1].speakerId)
-        #expect(merged[1].speakerId != merged[2].speakerId)
     }
 
     /// Opt-in installer used by release qualification on a real Apple Silicon Mac.

@@ -69,24 +69,13 @@ extension ToolExecutor {
                 email: nil,
                 mayContact: false,
                 screenshotPngBase64: nil,
-                appVersion: Self.appVersion,
-                osVersion: Self.osVersion
+                appVersion: AppEnvironmentInfo.version,
+                osVersion: AppEnvironmentInfo.operatingSystemVersion
             )
         } catch {
             return .error("Couldn't send feedback: \(error.localizedDescription)")
         }
         feedbackState.sentKeys.insert(dedupeKey)
         return .ok("Flagged this to the Palmier team. Thanks — this helps us improve the agent.")
-    }
-
-    private static var appVersion: String {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        return "\(version) (\(build))"
-    }
-
-    private static var osVersion: String {
-        let v = ProcessInfo.processInfo.operatingSystemVersion
-        return "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
     }
 }

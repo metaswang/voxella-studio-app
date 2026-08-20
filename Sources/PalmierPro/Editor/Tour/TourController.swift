@@ -36,8 +36,6 @@ enum TourAnchorID: Hashable {
     case smartSearch
     case screenshotButton
     case skillsButton
-    case aiEditTab
-    case aiEditPanel
     case timelineRuler
 
     var hostPanel: EditorViewModel.FocusedPanel {
@@ -45,7 +43,6 @@ enum TourAnchorID: Hashable {
         case .importButton, .generateButton, .generation, .smartSearch: return .media
         case .screenshotButton: return .preview
         case .skillsButton: return .agent
-        case .aiEditTab, .aiEditPanel: return .inspector
         case .timelineRuler: return .timeline
         }
     }

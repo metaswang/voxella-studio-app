@@ -74,7 +74,6 @@ actor LocalSpeechPipeline {
     private var aligner: Qwen3ForcedAligner?
     private var vad: SileroVADModel?
     private var streamingDiarizer: MLXStreamingSortformerEngine?
-    private var diarizer: PyannoteDiarizationPipeline?
     #endif
 
     func transcribe(
@@ -554,11 +553,9 @@ actor LocalSpeechPipeline {
             }
         )
         progressUpdate(.init(stage: .assigningSpeakers, fraction: 0.84, message: "Assigning script speakers…"))
-        let untitledWords = Self.assignSpeakers(
+        let untitledWords = LexicalSpeakerResolver.wordsWithoutSpeakerAttribution(
             to: aligned.words,
-            turns: [],
-            audioDuration: audioDuration,
-            languageCode: resolvedLanguageCode
+            audioDuration: audioDuration
         )
         let words: [TranscriptionWord]
         switch request.speakerAttribution {
@@ -674,16 +671,6 @@ actor LocalSpeechPipeline {
             modelRevision: descriptor.revision
         )
         streamingDiarizer = loaded
-        return loaded
-    }
-
-    private func diarizationModel() async throws -> PyannoteDiarizationPipeline {
-        if let diarizer { return diarizer }
-        let loaded = try await PyannoteDiarizationPipeline.fromPretrained(
-            useVADFilter: true,
-            offlineMode: true
-        )
-        diarizer = loaded
         return loaded
     }
 
@@ -844,93 +831,6 @@ actor LocalSpeechPipeline {
         return language.rawValue
     }
 
-    private nonisolated static func diarizationConfig(for requestedCount: Int?) -> DiarizationConfig {
-        // The upstream clustering loop merges while cosine distance is BELOW the
-        // threshold (despite an inverted comment in DiarizationConfig). For an
-        // explicit count, deliberately over-cluster first so the deterministic
-        // centroid merge below can reach that count instead of getting stuck below it.
-        let threshold: Float = switch requestedCount {
-        case 1: 2.0
-        case .some(let count) where (2...4).contains(count): 0.45
-        default: 0.715
-        }
-        return DiarizationConfig(clusteringThreshold: threshold)
-    }
-
-    nonisolated static func constrainSpeakers(
-        _ turns: [DiarizedSegment],
-        centroids: [[Float]],
-        requestedCount: Int?
-    ) -> [DiarizedSegment] {
-        guard let requestedCount, requestedCount > 0, !turns.isEmpty else { return turns }
-        if requestedCount == 1 {
-            return turns.map { DiarizedSegment(startTime: $0.startTime, endTime: $0.endTime, speakerId: 0) }
-        }
-        let ids = Array(Set(turns.map(\.speakerId))).sorted()
-        guard ids.count > requestedCount else { return turns }
-        let durationByID = Dictionary(grouping: turns, by: \.speakerId).mapValues { items in
-            items.reduce(Float(0)) { $0 + max(0, $1.endTime - $1.startTime) }
-        }
-
-        func cosineDistance(_ a: [Float], _ b: [Float]) -> Float {
-            guard a.count == b.count, !a.isEmpty else { return 2 }
-            var dot: Float = 0, aa: Float = 0, bb: Float = 0
-            for index in a.indices {
-                dot += a[index] * b[index]
-                aa += a[index] * a[index]
-                bb += b[index] * b[index]
-            }
-            let denominator = (aa * bb).squareRoot()
-            return denominator > 0 ? 1 - dot / denominator : 2
-        }
-
-        func centroid(of group: [Int]) -> [Float]? {
-            let available = group.filter { centroids.indices.contains($0) && !centroids[$0].isEmpty }
-            guard let first = available.first else { return nil }
-            var result = [Float](repeating: 0, count: centroids[first].count)
-            var totalWeight: Float = 0
-            for id in available where centroids[id].count == result.count {
-                let weight = max(durationByID[id] ?? 0, 0.001)
-                for index in result.indices { result[index] += centroids[id][index] * weight }
-                totalWeight += weight
-            }
-            guard totalWeight > 0 else { return nil }
-            return result.map { $0 / totalWeight }
-        }
-
-        var groups = ids.map { [$0] }
-        while groups.count > requestedCount {
-            var best: (left: Int, right: Int, distance: Float)?
-            for left in groups.indices {
-                for right in groups.indices where right > left {
-                    let distance: Float
-                    if let a = centroid(of: groups[left]), let b = centroid(of: groups[right]) {
-                        distance = cosineDistance(a, b)
-                    } else {
-                        distance = Float(abs((groups[left].first ?? 0) - (groups[right].first ?? 0)))
-                    }
-                    if best == nil || distance < best!.distance {
-                        best = (left, right, distance)
-                    }
-                }
-            }
-            guard let best else { break }
-            groups[best.left].append(contentsOf: groups[best.right])
-            groups.remove(at: best.right)
-        }
-
-        let compact = Dictionary(uniqueKeysWithValues: groups.enumerated().flatMap { groupIndex, members in
-            members.map { ($0, groupIndex) }
-        })
-        return turns.map {
-            DiarizedSegment(
-                startTime: $0.startTime,
-                endTime: $0.endTime,
-                speakerId: compact[$0.speakerId] ?? 0
-            )
-        }
-    }
-
     nonisolated static func assignSpeakers(
         to aligned: [AlignedWord],
         timeline: SpeakerActivityTimeline,
@@ -944,20 +844,6 @@ actor LocalSpeechPipeline {
             audioDuration: audioDuration,
             languageCode: languageCode,
             policy: policy
-        )
-    }
-
-    nonisolated static func assignSpeakers(
-        to aligned: [AlignedWord],
-        turns: [DiarizedSegment],
-        audioDuration: Double,
-        languageCode: String? = nil
-    ) -> [TranscriptionWord] {
-        LexicalSpeakerResolver.assignSpeakers(
-            to: aligned,
-            turns: turns,
-            audioDuration: audioDuration,
-            languageCode: languageCode
         )
     }
 

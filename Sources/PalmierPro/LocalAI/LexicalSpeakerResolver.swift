@@ -27,21 +27,8 @@ enum LexicalSpeakerResolver {
         languageCode: String?,
         policy: SpeakerDiarizationPolicy = .standard(requestedSpeakerCount: nil)
     ) -> [TranscriptionWord] {
-        guard !aligned.isEmpty else { return [] }
-
-        var previousStart = 0.0
-        var timed: [(text: String, start: Double, end: Double)] = []
-        timed.reserveCapacity(aligned.count)
-        for word in aligned {
-            let timing = LocalSpeechPipeline.normalizedWordTiming(
-                start: Double(word.startTime),
-                end: Double(word.endTime),
-                previousStart: previousStart,
-                audioDuration: audioDuration
-            )
-            previousStart = timing.start
-            timed.append((word.text, timing.start, timing.end))
-        }
+        let timed = normalizedTimings(for: aligned, audioDuration: audioDuration)
+        guard !timed.isEmpty else { return [] }
 
         let units = lexicalUnits(
             texts: timed.map(\.text),
@@ -73,44 +60,34 @@ enum LexicalSpeakerResolver {
         return smoothLexicalAssignments(attributed, units: units, policy: policy)
     }
 
-    static func assignSpeakers(
+    static func wordsWithoutSpeakerAttribution(
         to aligned: [AlignedWord],
-        turns: [DiarizedSegment],
-        audioDuration: Double,
-        languageCode: String?,
-        policy: SpeakerDiarizationPolicy = .standard(requestedSpeakerCount: nil)
+        audioDuration: Double
     ) -> [TranscriptionWord] {
-        let intervals = turns.map {
-            SpeakerActivityInterval(
-                start: Double($0.startTime),
-                end: Double($0.endTime),
-                speakerID: $0.speakerId,
-                confidence: 1
+        normalizedTimings(for: aligned, audioDuration: audioDuration).map {
+            TranscriptionWord(
+                text: $0.text,
+                start: $0.start,
+                end: $0.end
             )
         }
-        let detected = Set(turns.map(\.speakerId)).count
-        let timeline = SpeakerActivityTimeline(
-            intervals: intervals,
-            probabilities: [],
-            frameDuration: 0,
-            speakerCapacity: max(1, detected),
-            audioDuration: audioDuration,
-            diagnostics: DiarizationDiagnostics(
-                backend: .singleSpeaker,
-                elapsedSeconds: 0,
-                processedChunks: 0,
-                detectedSpeakerCount: detected,
-                requestedSpeakerCount: policy.requestedSpeakerCount,
-                warnings: []
+    }
+
+    private static func normalizedTimings(
+        for aligned: [AlignedWord],
+        audioDuration: Double
+    ) -> [(text: String, start: Double, end: Double)] {
+        var previousStart = 0.0
+        return aligned.map { word in
+            let timing = LocalSpeechPipeline.normalizedWordTiming(
+                start: Double(word.startTime),
+                end: Double(word.endTime),
+                previousStart: previousStart,
+                audioDuration: audioDuration
             )
-        )
-        return assignSpeakers(
-            to: aligned,
-            timeline: timeline,
-            audioDuration: audioDuration,
-            languageCode: languageCode,
-            policy: policy
-        )
+            previousStart = timing.start
+            return (word.text, timing.start, timing.end)
+        }
     }
     #endif
 

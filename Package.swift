@@ -99,12 +99,6 @@ let package = Package(
                 "Resources/Info.plist",
                 "Resources/AppIcon.icon",
                 "Resources/AppIcon.icns",
-                "Resources/Changelog",
-                "App/Updater.swift",
-                "App/UpdateBadgeView.swift",
-                "App/Changelog.swift",
-                "Home/UpdateOverlay.swift",
-                "Home/WelcomeOverlay.swift",
             ],
             resources: [
                 .copy("Resources/AppIcon.png"),

@@ -176,11 +176,8 @@ struct FeedbackView: View {
     }
 
     private var contextNoteText: String {
-        if account.isSignedIn {
-            return "App version \(Self.appVersion) and macOS \(Self.osVersion) are included."
-        } else {
-            return "App version \(Self.appVersion) and macOS \(Self.osVersion) are included."
-        }
+        "App version \(AppEnvironmentInfo.version) and macOS "
+            + "\(AppEnvironmentInfo.operatingSystemVersion) are included."
     }
 
     private var footer: some View {
@@ -266,8 +263,8 @@ struct FeedbackView: View {
                     email: trimmedEmail.isEmpty ? nil : trimmedEmail,
                     mayContact: hasReplyEmail ? mayContact : false,
                     screenshotPngBase64: attachedScreenshot,
-                    appVersion: Self.appVersion,
-                    osVersion: Self.osVersion
+                    appVersion: AppEnvironmentInfo.version,
+                    osVersion: AppEnvironmentInfo.operatingSystemVersion
                 )
                 didSend = true
             } catch {
@@ -276,18 +273,6 @@ struct FeedbackView: View {
         }
     }
 
-    // MARK: - Environment info
-
-    private static var appVersion: String {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        return "\(version) (\(build))"
-    }
-
-    private static var osVersion: String {
-        let v = ProcessInfo.processInfo.operatingSystemVersion
-        return "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
-    }
 }
 
 @MainActor

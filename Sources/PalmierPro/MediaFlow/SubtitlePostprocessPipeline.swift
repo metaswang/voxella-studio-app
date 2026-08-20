@@ -184,7 +184,7 @@ struct SubtitlePostprocessPipeline: Sendable {
             contextBefore: context.before,
             contextAfter: context.after,
             languageCode: languageCode,
-            speaker: Self.dominantSpeaker(in: words.map(\.speaker)),
+            speaker: SpeakerLabelResolver.dominant(in: words.map(\.speaker)),
             isCJK: isCJK,
             limits: limits,
             options: options
@@ -236,7 +236,7 @@ struct SubtitlePostprocessPipeline: Sendable {
                     text: word.text.trimmingCharacters(in: .whitespacesAndNewlines),
                     start: start,
                     end: end,
-                    speaker: normalizedSpeaker(word.speaker),
+                    speaker: SpeakerLabelResolver.normalized(word.speaker),
                     speakerConfidence: word.speakerConfidence,
                     speakerBoundary: word.speakerBoundary
                 )
@@ -253,7 +253,7 @@ struct SubtitlePostprocessPipeline: Sendable {
                     text: segment.text.trimmingCharacters(in: .whitespacesAndNewlines),
                     start: segment.start,
                     end: segment.end,
-                    speaker: normalizedSpeaker(segment.speaker),
+                    speaker: SpeakerLabelResolver.normalized(segment.speaker),
                     speakerConfidence: nil,
                     speakerBoundary: segment.speakerBoundary
                 )
@@ -289,7 +289,7 @@ struct SubtitlePostprocessPipeline: Sendable {
         var currentSpeaker: String?
 
         for segment in segments {
-            let speaker = dominantSpeaker(in: sourceWords[segment].map(\.speaker))
+            let speaker = SpeakerLabelResolver.dominant(in: sourceWords[segment].map(\.speaker))
             let crossesSpeaker = current != nil
                 && currentSpeaker != nil
                 && speaker != nil
@@ -404,8 +404,8 @@ struct SubtitlePostprocessPipeline: Sendable {
             guard let previous = output.last,
                   previous.upperBound == range.lowerBound,
                   sourceWords[range.lowerBound].speakerBoundary != .hard,
-                  dominantSpeaker(in: sourceWords[previous].map(\.speaker))
-                    == dominantSpeaker(in: sourceWords[range].map(\.speaker)),
+                  SpeakerLabelResolver.dominant(in: sourceWords[previous].map(\.speaker))
+                    == SpeakerLabelResolver.dominant(in: sourceWords[range].map(\.speaker)),
                   sourceWords[range.upperBound - 1].end - sourceWords[previous.lowerBound].start
                     <= Policy.maximumSegmentDuration else {
                 output.append(range)
@@ -739,7 +739,7 @@ struct SubtitlePostprocessPipeline: Sendable {
                     start: first.start,
                     end: max(first.start, last.end),
                     sourceIndices: words[sourceRange].map(\.index),
-                    speaker: dominantSpeaker(in: tokens.map(\.speaker)),
+                    speaker: SpeakerLabelResolver.dominant(in: tokens.map(\.speaker)),
                     overBudget: false
                 )
             )
@@ -753,7 +753,7 @@ struct SubtitlePostprocessPipeline: Sendable {
                 cues[index].end = max(first.start, last.end)
             }
             if cues[index].speaker == nil {
-                cues[index].speaker = dominantSpeaker(
+                cues[index].speaker = SpeakerLabelResolver.dominant(
                     in: cues[index].sourceIndices.map { wordByIndex[$0]?.speaker }
                 )
             }
@@ -825,7 +825,7 @@ struct SubtitlePostprocessPipeline: Sendable {
                     text: TranscriptSegmenter.joinedText(chunk.map(\.text), language: languageCode),
                     start: first.start,
                     end: max(first.start, last.end),
-                    speaker: dominantSpeaker(in: chunk.map(\.speaker)),
+                    speaker: SpeakerLabelResolver.dominant(in: chunk.map(\.speaker)),
                     speakerBoundary: .none
                 )
             )
@@ -943,28 +943,6 @@ struct SubtitlePostprocessPipeline: Sendable {
         }
         let text = cue.text.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? "" : String(text.suffix(1))
-    }
-
-    // MARK: - Shared helpers
-
-    private static func normalizedSpeaker(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private static func dominantSpeaker(in values: [String?]) -> String? {
-        var counts: [String: Int] = [:]
-        var firstSeen: [String: Int] = [:]
-        for (index, value) in values.enumerated() {
-            guard let speaker = normalizedSpeaker(value) else { continue }
-            counts[speaker, default: 0] += 1
-            if firstSeen[speaker] == nil { firstSeen[speaker] = index }
-        }
-        return counts.max { lhs, rhs in
-            lhs.value == rhs.value
-                ? (firstSeen[lhs.key] ?? .max) > (firstSeen[rhs.key] ?? .max)
-                : lhs.value < rhs.value
-        }?.key
     }
 
     private static func usesDenseScript(languageCode: String?, sampleText: String) -> Bool {

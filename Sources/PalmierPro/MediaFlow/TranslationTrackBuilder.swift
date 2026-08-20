@@ -139,7 +139,7 @@ struct TranslationTrackBuilder: Sendable {
                 text: cue.text.trimmingCharacters(in: .whitespacesAndNewlines),
                 start: cue.start,
                 end: cue.end,
-                speaker: normalizedSpeaker(cue.speaker)
+                speaker: SpeakerLabelResolver.normalized(cue.speaker)
             )
         }
     }
@@ -551,7 +551,7 @@ struct TranslationTrackBuilder: Sendable {
                     text: item.draft.text,
                     start: start,
                     end: end,
-                    speaker: dominantSpeaker(in: covered.map { source[$0].speaker }),
+                    speaker: SpeakerLabelResolver.dominant(in: covered.map { source[$0].speaker }),
                     characterBudget: budget,
                     overBudget: TranslationDurationPolicy.visibleCharacterCount(item.draft.text) > budget
                 )
@@ -611,28 +611,6 @@ struct TranslationTrackBuilder: Sendable {
         charactersPerSecond: Double
     ) -> Int {
         max(1, Int((max(0.1, end - start) * charactersPerSecond).rounded(.down)))
-    }
-
-    // MARK: - Shared helpers
-
-    private static func normalizedSpeaker(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private static func dominantSpeaker(in values: [String?]) -> String? {
-        var counts: [String: Int] = [:]
-        var firstSeen: [String: Int] = [:]
-        for (index, value) in values.enumerated() {
-            guard let speaker = normalizedSpeaker(value) else { continue }
-            counts[speaker, default: 0] += 1
-            if firstSeen[speaker] == nil { firstSeen[speaker] = index }
-        }
-        return counts.max { lhs, rhs in
-            lhs.value == rhs.value
-                ? (firstSeen[lhs.key] ?? .max) > (firstSeen[rhs.key] ?? .max)
-                : lhs.value < rhs.value
-        }?.key
     }
 
     private static func shortIndexList(_ values: [Int]) -> String {

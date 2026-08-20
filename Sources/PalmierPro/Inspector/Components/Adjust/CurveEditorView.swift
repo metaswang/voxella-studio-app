@@ -42,11 +42,23 @@ struct CurveEditorView: View {
                     Canvas { ctx, _ in
                         if histR.count > 1 {
                             // Luma silhouette behind, then the RGB parade additively on top.
-                            ctx.fill(histogramPath(histY, size), with: .color(AppTheme.Curve.lumaColor.opacity(AppTheme.Opacity.medium)))
+                            ctx.fill(
+                                CurveEditorGeometry.histogramAreaPath(histY, in: size),
+                                with: .color(AppTheme.Curve.lumaColor.opacity(AppTheme.Opacity.medium))
+                            )
                             ctx.blendMode = .plusLighter
-                            ctx.fill(histogramPath(histR, size), with: .color(AppTheme.Curve.redColor.opacity(AppTheme.Opacity.medium)))
-                            ctx.fill(histogramPath(histG, size), with: .color(AppTheme.Curve.greenColor.opacity(AppTheme.Opacity.medium)))
-                            ctx.fill(histogramPath(histB, size), with: .color(AppTheme.Curve.blueColor.opacity(AppTheme.Opacity.medium)))
+                            ctx.fill(
+                                CurveEditorGeometry.histogramAreaPath(histR, in: size),
+                                with: .color(AppTheme.Curve.redColor.opacity(AppTheme.Opacity.medium))
+                            )
+                            ctx.fill(
+                                CurveEditorGeometry.histogramAreaPath(histG, in: size),
+                                with: .color(AppTheme.Curve.greenColor.opacity(AppTheme.Opacity.medium))
+                            )
+                            ctx.fill(
+                                CurveEditorGeometry.histogramAreaPath(histB, in: size),
+                                with: .color(AppTheme.Curve.blueColor.opacity(AppTheme.Opacity.medium))
+                            )
                             ctx.blendMode = .normal
                         }
                         // Quarter grid: black · shadow · mid · highlight · white.
@@ -64,13 +76,20 @@ struct CurveEditorView: View {
                         ctx.stroke(border, with: .color(AppTheme.Border.subtleColor),
                                    lineWidth: AppTheme.BorderWidth.hairline)
                         var diag = Path()
-                        diag.move(to: point(CurvePoint(x: 0, y: 0), size))
-                        diag.addLine(to: point(CurvePoint(x: 1, y: 1), size))
+                        diag.move(
+                            to: CurveEditorGeometry.screenPoint(CurvePoint(x: 0, y: 0), in: size)
+                        )
+                        diag.addLine(
+                            to: CurveEditorGeometry.screenPoint(CurvePoint(x: 1, y: 1), in: size)
+                        )
                         ctx.stroke(diag, with: .color(AppTheme.Border.subtleColor),
                                    style: .init(lineWidth: AppTheme.BorderWidth.hairline, dash: [3, 3]))
                         var line = Path()
                         for i in stride(from: 0.0, through: 1.0, by: 0.02) {
-                            let p = point(CurvePoint(x: i, y: GradeCurve.eval(activePoints, i)), size)
+                            let p = CurveEditorGeometry.screenPoint(
+                                CurvePoint(x: i, y: GradeCurve.eval(activePoints, i)),
+                                in: size
+                            )
                             if i == 0 { line.move(to: p) } else { line.addLine(to: p) }
                         }
                         ctx.stroke(line, with: .color(channel.tint), lineWidth: AppTheme.BorderWidth.medium)
@@ -83,7 +102,7 @@ struct CurveEditorView: View {
                         Circle()
                             .fill(channel.tint)
                             .frame(width: AppTheme.Curve.pointDiameter, height: AppTheme.Curve.pointDiameter)
-                            .position(point(pt, size))
+                            .position(CurveEditorGeometry.screenPoint(pt, in: size))
                             .allowsHitTesting(false)
                     }
                 }
@@ -115,18 +134,6 @@ struct CurveEditorView: View {
         }
     }
 
-    private func histogramPath(_ bins: [Float], _ size: CGSize) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: 0, y: size.height))
-        for (i, v) in bins.enumerated() {
-            let x = CGFloat(i) / CGFloat(bins.count - 1) * size.width
-            path.addLine(to: CGPoint(x: x, y: size.height - CGFloat(v) * size.height))
-        }
-        path.addLine(to: CGPoint(x: size.width, y: size.height))
-        path.closeSubpath()
-        return path
-    }
-
     // MARK: - Points
 
     private var channelPoints: [CurvePoint] {
@@ -145,64 +152,49 @@ struct CurveEditorView: View {
     /// Points to draw — the live in-flight drag if any, else the committed curve.
     private var activePoints: [CurvePoint] { liveDrag?.points ?? sortedPoints }
 
-    private func point(_ p: CurvePoint, _ size: CGSize) -> CGPoint {
-        CGPoint(x: p.x * size.width, y: (1 - p.y) * size.height)
-    }
-
-    private func value(at location: CGPoint, _ size: CGSize) -> CurvePoint {
-        CurvePoint(x: min(1, max(0, location.x / size.width)),
-                   y: min(1, max(0, 1 - location.y / size.height)))
-    }
-
     /// One gesture: grab the nearest point (or drop a new one) at press, then drag it.
     private func curveDrag(_ size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 3)
             .onChanged { v in
-                var d = liveDrag ?? grab(at: v.startLocation, size)
-                d.points = moved(d.points, d.index, to: v.location, size)
+                var d = liveDrag ?? CurveEditorGeometry.grabbedPoint(
+                    at: v.startLocation,
+                    in: sortedPoints,
+                    canvasSize: size,
+                    hitDiameter: AppTheme.Curve.pointHitDiameter
+                )
+                d.points = CurveEditorGeometry.movedPoint(
+                    in: d.points,
+                    at: d.index,
+                    to: v.location,
+                    canvasSize: size
+                )
                 liveDrag = d
                 emit(d.points, commit: false)
             }
             .onEnded { v in
-                if let d = liveDrag { emit(moved(d.points, d.index, to: v.location, size), commit: true) }
+                if let d = liveDrag {
+                    emit(
+                        CurveEditorGeometry.movedPoint(
+                            in: d.points,
+                            at: d.index,
+                            to: v.location,
+                            canvasSize: size
+                        ),
+                        commit: true
+                    )
+                }
                 liveDrag = nil
             }
     }
 
-    private func grab(at location: CGPoint, _ size: CGSize) -> (points: [CurvePoint], index: Int) {
-        var pts = sortedPoints
-        if let i = nearestIndex(to: location, in: pts, size) { return (pts, i) }
-        let np = value(at: location, size)
-        pts.append(np)
-        pts.sort { $0.x < $1.x }
-        return (pts, pts.firstIndex { $0.x == np.x && $0.y == np.y } ?? 0)
-    }
-
-    private func nearestIndex(to location: CGPoint, in pts: [CurvePoint], _ size: CGSize) -> Int? {
-        var best: (Int, CGFloat)?
-        for (i, p) in pts.enumerated() {
-            let sp = point(p, size)
-            let dist = hypot(sp.x - location.x, sp.y - location.y)
-            if dist <= AppTheme.Curve.pointHitDiameter / 2, best == nil || dist < best!.1 { best = (i, dist) }
-        }
-        return best?.0
-    }
-
-    private func moved(_ points: [CurvePoint], _ index: Int, to location: CGPoint, _ size: CGSize) -> [CurvePoint] {
-        var pts = points
-        let v = value(at: location, size)
-        pts[index].y = v.y
-        if index != 0, index != pts.count - 1 {
-            pts[index].x = min(pts[index + 1].x - 0.001, max(pts[index - 1].x + 0.001, v.x))
-        }
-        return pts
-    }
-
     private func removeNearest(to location: CGPoint, _ size: CGSize) {
-        let pts = sortedPoints
-        guard let i = nearestIndex(to: location, in: pts, size), pts.count > 2, i > 0, i < pts.count - 1 else { return }
-        var out = pts; out.remove(at: i)
-        emit(out, commit: true)
+        guard let points = CurveEditorGeometry.removingNearestPoint(
+            to: location,
+            in: sortedPoints,
+            canvasSize: size,
+            hitDiameter: AppTheme.Curve.pointHitDiameter
+        ) else { return }
+        emit(points, commit: true)
     }
 
     private func emit(_ pts: [CurvePoint], commit: Bool) {

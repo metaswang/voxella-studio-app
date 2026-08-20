@@ -22,7 +22,10 @@ struct ChromaKeySamplerOverlayView: View {
     }
 
     private func sample(at point: CGPoint, viewSize: CGSize) {
-        let rect = PreviewHitTester.videoContentRect(in: viewSize, timeline: editor.timeline)
+        let rect = PreviewCanvasGeometry.videoContentRect(
+            in: viewSize,
+            timeline: editor.timeline
+        )
         guard let clipId = editor.chromaKeySamplingClipId,
               let engine = editor.videoEngine, rect.contains(point) else {
             NSSound.beep()

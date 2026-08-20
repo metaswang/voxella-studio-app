@@ -19,13 +19,10 @@ enum DiarizationBackend: String, Codable, Sendable {
     }
 }
 
-enum DiarizationStage: String, Codable, Sendable {
+enum DiarizationStage: String, Sendable {
     case preparing
     case diarizing
     case postprocessing
-    case embedding
-    case clustering
-    case assigning
 }
 
 struct DiarizationProgress: Equatable, Sendable {

@@ -150,7 +150,7 @@ final class EditorViewModel {
             if showGenerationPanel && !oldValue { showMediaPanelMediaTab() } else if !showGenerationPanel && oldValue { clearPendingGenerationPanelState() }
         }
     }
-    /// AIEditTab input consumed by GenerationView.
+    /// AI edit input consumed by GenerationView.
     var pendingPanelSeed: PendingPanelSeed?
     var pendingEditReplacementClipId: String?
     var pendingEditTrimmedSource: TrimmedSource?

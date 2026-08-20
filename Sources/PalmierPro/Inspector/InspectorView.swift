@@ -46,7 +46,6 @@ struct InspectorView: View {
         case effects
         case audio
         case multicam
-        case ai
 
         var titleKey: String {
             switch self {
@@ -56,25 +55,11 @@ struct InspectorView: View {
             case .effects: L10n.key("Adjust")
             case .audio: L10n.key("Audio")
             case .multicam: L10n.key("Multicam")
-            case .ai: L10n.key("AI Edit")
-            }
-        }
-    }
-
-    enum AssetTab: Hashable {
-        case details
-        case ai
-
-        var titleKey: String {
-            switch self {
-            case .details: L10n.key("Details")
-            case .ai: L10n.key("AI Edit")
             }
         }
     }
 
     @State private var preferredTab: ClipTab = .video
-    @State private var preferredAssetTab: AssetTab = .details
     @State private var transformExpanded = true
     @State private var imageAdjustmentExpanded = true
     @State var audioLevelsExpanded = true
@@ -301,7 +286,6 @@ struct InspectorView: View {
 
     private func availableTabs(
         for selection: InspectorClipSelection,
-        resolvedClipAsset: MediaAsset?,
         selectedMulticamGroupId: String?
     ) -> [ClipTab] {
         let audios = selection.audioClips
@@ -331,36 +315,15 @@ struct InspectorView: View {
         return nil
     }
 
-    private func aiEditEligible(
-        selection: InspectorClipSelection,
-        resolvedClipAsset: MediaAsset?
-    ) -> Bool {
-        let visualCount = selection.textClips.count + selection.nonTextVisualClips.count
-        let audios = selection.audioClips
-        guard resolvedClipAsset != nil else { return false }
-        if visualCount == 0 { return audios.count == 1 }
-        guard visualCount == 1, let visual = selection.firstVisualClip else { return false }
-        if audios.isEmpty { return true }
-        let partners = Set(editor.linkedPartnerIds(of: visual.id))
-        return audios.allSatisfy { partners.contains($0.id) }
-    }
-
     private func activeTab(in tabs: [ClipTab]) -> ClipTab? {
         return tabs.contains(preferredTab) ? preferredTab : tabs.first
     }
 
-    private func resolvedClipAsset(for selection: InspectorClipSelection) -> MediaAsset? {
-        guard let clip = selection.firstVisualClip ?? selection.firstAudioClip else { return nil }
-        return editor.mediaAssets.first { $0.id == clip.mediaRef }
-    }
-
     @ViewBuilder
     private func clipInspectorContent(selection: InspectorClipSelection) -> some View {
-        let clipAsset = resolvedClipAsset(for: selection)
         let multicamGroupId = selectedMulticamGroupId(for: selection)
         let tabs = availableTabs(
             for: selection,
-            resolvedClipAsset: clipAsset,
             selectedMulticamGroupId: multicamGroupId
         )
         let selectedTab = activeTab(in: tabs)
@@ -369,10 +332,7 @@ struct InspectorView: View {
                 tabBar(tabs, selectedTab: selectedTab)
             }
             Group {
-                if selectedTab == .ai, let asset = clipAsset {
-                    AIEditTab(asset: asset, clipId: selection.firstVisualClip?.id ?? selection.firstAudioClip?.id)
-                        .tourAnchor(.aiEditPanel)
-                } else if selectedTab == .effects {
+                if selectedTab == .effects {
                     ScrollView { effectsTabContent(clips: selection.nonTextVisualClips) }
                 } else {
                     ScrollView {
@@ -396,7 +356,7 @@ struct InspectorView: View {
                                 if let groupId = multicamGroupId {
                                     MulticamTab(groupId: groupId)
                                 }
-                            case .effects, .ai, .none:
+                            case .effects, .none:
                                 EmptyView()
                             }
                         }
@@ -409,19 +369,9 @@ struct InspectorView: View {
     private func tabBar(_ tabs: [ClipTab], selectedTab: ClipTab?) -> some View {
         TitleTabBar(
             titles: tabs.map(\.titleKey),
-            selected: selectedTab?.titleKey,
-            tourAnchors: tabs.contains(.ai) ? [ClipTab.ai.titleKey: .aiEditTab] : [:]
+            selected: selectedTab?.titleKey
         ) { title in
             if let tab = tabs.first(where: { $0.titleKey == title }) { preferredTab = tab }
-        }
-    }
-
-    private func assetTabBar(_ tabs: [AssetTab]) -> some View {
-        TitleTabBar(
-            titles: tabs.map(\.titleKey),
-            selected: preferredAssetTab.titleKey
-        ) { title in
-            if let tab = tabs.first(where: { $0.titleKey == title }) { preferredAssetTab = tab }
         }
     }
 

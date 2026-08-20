@@ -10,37 +10,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
     var onChooseMedia: (() -> Void)?
 
     @State private var searchText = ""
-    @State private var statusFilter: StatusFilter = .all
-
-    enum StatusFilter: String, CaseIterable, Identifiable {
-        case all
-        case ready
-        case processing
-        case completed
-        case needsAttention
-
-        var id: String { rawValue }
-
-        var label: String {
-            switch self {
-            case .all: "All statuses"
-            case .ready: "Ready"
-            case .processing: "Processing"
-            case .completed: "Completed"
-            case .needsAttention: "Needs attention"
-            }
-        }
-
-        func matches(_ state: WorkbenchJobState) -> Bool {
-            switch self {
-            case .all: true
-            case .ready: state == .ready
-            case .processing: state == .running || state == .cancelling
-            case .completed: state == .completed
-            case .needsAttention: state == .failed || state == .cancelled
-            }
-        }
-    }
+    @State private var statusFilter: WorkbenchSessionStatusFilter = .all
 
     private var uploadSessions: [WorkbenchSession] {
         store.sessions.filter { $0.source == .media }
@@ -113,7 +83,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
             }
 
             Menu {
-                ForEach(StatusFilter.allCases) { filter in
+                ForEach(WorkbenchSessionStatusFilter.allCases) { filter in
                     Button {
                         statusFilter = filter
                     } label: {

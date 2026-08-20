@@ -103,10 +103,6 @@ enum AppTheme {
         )
     }
 
-    enum Update {
-        static let accent = Accent.timecodeColor
-    }
-
     // MARK: - Adjust sliders
 
     enum Slider {
@@ -396,7 +392,6 @@ enum AppTheme {
         static let captionPreviewMaxHeight: CGFloat = 150
         static let captionPreviewMaxTextWidthRatio: CGFloat = 0.9
         static let toolImagePreviewMaxHeight: CGFloat = 50
-        static let mediaPanelSessionItemWidth: CGFloat = 220
         static let razorHintMaxTextWidth: CGFloat = 220
         static let razorHintMaxWidth: CGFloat = 560
         static let projectCardWidth: CGFloat = 150
@@ -410,14 +405,7 @@ enum AppTheme {
         static let timelineBadgePadV: CGFloat = 1
         static let timelineBadgeMinWidth: CGFloat = 16
         static let timelineDotSize: CGFloat = 5
-        static let updateOverlayWidth: CGFloat = 640
         static let speakerEditorWidth: CGFloat = 320
-    }
-
-    enum Onboarding {
-        static let cardWidth: CGFloat = 520
-        static let cardHeight: CGFloat = 420
-        static let welcomeHeroHeight: CGFloat = 240
     }
 
     enum Settings {
@@ -434,8 +422,6 @@ enum AppTheme {
         static let skillMenuWidth: CGFloat = 168
         static let skillToastDuration: Duration = .seconds(5)
         static let fieldLabelWidth: CGFloat = 84
-        static let providerControlWidth: CGFloat = 220
-        static let endpointControlWidth: CGFloat = 360
         static let providerListWidth: CGFloat = 152
     }
 
@@ -461,8 +447,6 @@ enum AppTheme {
             width: 960 + GenerationPanel.minimumWidthAdjustment,
             height: 600
         )
-        static let projectTitlebarLeadingWidth: CGFloat = 132
-        static let projectTitlebarTrailingWidth: CGFloat = 280
         static let settingsDefault = NSSize(width: 1200, height: 800)
         static let settingsMin = NSSize(width: 860, height: 640)
     }
@@ -480,9 +464,6 @@ enum AppTheme {
         /// Horizontal clearance past traffic lights when chrome spans the full titlebar width.
         static let windowControlsLeadingInset: CGFloat = 78
         static let contentMaxWidth: CGFloat = 1180
-        /// Workbench forms and session workspaces use the available canvas
-        /// more fully than the dashboard's intentionally compact grid.
-        static let wideContentMaxWidth: CGFloat = 1640
         static let composerMaxWidth: CGFloat = 1040
         static let translationSheetWidth: CGFloat = 420
         static let dubSheetWidth: CGFloat = 520
@@ -494,8 +475,6 @@ enum AppTheme {
         static let sessionSplitMaximumRatio: CGFloat = 0.7
         static let sessionSplitMinimumRightWidth: CGFloat = 400
         static let sessionSplitDividerHitWidth: CGFloat = 12
-        static let floatingPlayerWidth: CGFloat = 320
-        static let floatingPlayerHeight: CGFloat = 200
         static let sessionVideoMinHeight: CGFloat = 360
         static let sessionVideoIdealHeight: CGFloat = 480
         static let clipPreviewMaxHeight: CGFloat = 220
@@ -532,15 +511,10 @@ enum AppTheme {
         static let waveformBarWidth: CGFloat = 3
         static let waveformMinimumBarHeight: CGFloat = 3
         static let waveformMinimumLoudness: CGFloat = 0.08
-        static let floatingPlayerHeaderHeight: CGFloat = 34
         static let playerRefreshInterval: Double = 0.2
         static let playerEndTolerance: Double = 0.05
         static let playerTimescale: Int32 = 600
         static let dubScriptMinHeight: CGFloat = 190
-        static let dubSegmentLabelWidth: CGFloat = 76
-        static let dubSegmentLineLimit = 4
-        static let segmentVoicePickerWidth: CGFloat = 210
-        static let voiceAssignmentWidth: CGFloat = 230
         static let recentSessionControlHeight: CGFloat = 44
         static let recentSessionUpdatedColumnWidth: CGFloat = 132
         static let recentSessionTagColumnWidth: CGFloat = 160
@@ -562,7 +536,6 @@ enum AppTheme {
     enum GenerationPanel {
         static let typeTabWidth: CGFloat = IconSize.xl + Spacing.lg
         static let minimumWidthAdjustment: CGFloat = typeTabWidth + Spacing.xxl
-        static let mediaAreaMinHeight: CGFloat = 120
         static let loadingHeight: CGFloat = 180
         static let promptMinHeight: CGFloat = 40
         static let referenceTileWidth: CGFloat = 80
