@@ -139,7 +139,7 @@ extension GenerationView {
         .opacity((aiAllowed ? canSubmit : !account.isMisconfigured && !account.isSigningIn) ? AppTheme.Opacity.opaque : AppTheme.Opacity.strong)
         .help(aiAllowed
             ? (selectedType == .upscale ? "Upscale source media" : "")
-            : (account.isMisconfigured ? "AI is unavailable" : account.isSigningIn ? "Opening Google" : "Sign in to generate"))
+            : (account.isMisconfigured ? "AI is unavailable" : account.isSigningIn ? "Signing in…" : "Sign in to generate"))
     }
 
     // MARK: - Actions

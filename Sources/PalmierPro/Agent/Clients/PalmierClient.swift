@@ -1,5 +1,4 @@
 import Foundation
-import ClerkKit
 
 struct PalmierClient: AgentClient {
     let settings: AgentRunSettings
@@ -33,10 +32,10 @@ struct PalmierClient: AgentClient {
         }
         let endpoint = baseURL.appendingPathComponent("v1/agent/stream")
 
-        guard let session = await Clerk.shared.session, session.status == .active else {
-            throw AgentServiceError.unauthenticated
-        }
-        guard let jwt = try await session.getToken(), !jwt.isEmpty else {
+        let jwt: String
+        do {
+            jwt = try await VoxellaAuthService.shared.authorizedAccessToken()
+        } catch {
             throw AgentServiceError.unauthenticated
         }
 

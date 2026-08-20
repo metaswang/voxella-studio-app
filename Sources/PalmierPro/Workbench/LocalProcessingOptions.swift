@@ -1,29 +1,5 @@
 import Foundation
 
-/// Upload-transcribe options aligned with voxella-web `ProcessingOptions`.
-struct LocalProcessingOptions: Equatable, Sendable {
-    var languageCode: String?
-    /// Optional user title for a single-file import; blank means auto-generate after transcription.
-    var customTitle: String?
-    var speakerCount: SpeakerCountOption = .auto
-    var enableTranslation = false
-    var targetLanguageCode: String?
-    var useLLMSubtitleProcessing: Bool? = nil
-    var clipStartMs: Int?
-    var clipEndMs: Int?
-
-    var normalizedTargetLanguageCode: String? {
-        guard enableTranslation else { return nil }
-        let trimmed = targetLanguageCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    var clipRangeSeconds: ClosedRange<Double>? {
-        guard let startMs = clipStartMs, let endMs = clipEndMs, endMs > startMs else { return nil }
-        return Double(startMs) / 1000 ... Double(endMs) / 1000
-    }
-}
-
 struct TranscriptionBatchState: Identifiable, Equatable, Sendable {
     var id = UUID()
     var jobIDs: [UUID]

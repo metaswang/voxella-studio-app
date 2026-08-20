@@ -37,7 +37,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 }
 
 struct SettingsView: View {
-    @Bindable private var account = AccountService.shared
     @State private var selectedTab: SettingsTab
 
     init(initialTab: SettingsTab = .account) {
@@ -45,9 +44,7 @@ struct SettingsView: View {
     }
 
     private var visibleTabs: [SettingsTab] {
-        SettingsTab.allCases.filter { tab in
-            !(tab == .account && account.isMisconfigured)
-        }
+        SettingsTab.allCases
     }
 
     var body: some View {
@@ -78,13 +75,10 @@ struct SettingsView: View {
 private struct SettingsSidebar: View {
     @Binding var selectedTab: SettingsTab
     let visibleTabs: [SettingsTab]
-    @Bindable private var account = AccountService.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if !account.isMisconfigured {
-                IdentityStrip()
-            }
+            IdentityStrip()
             tabList
             Spacer(minLength: 0)
         }

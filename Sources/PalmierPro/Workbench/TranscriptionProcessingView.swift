@@ -117,10 +117,11 @@ struct TranscriptionProcessingView: View {
 
             milestoneList(for: job)
 
-            if !models.hasRequiredTranscriptionModels(
-                languageCode: job.languageCode,
-                speakerCount: job.speakerCount.count
-            ) {
+            if job.compute == .local,
+               !models.hasRequiredTranscriptionModels(
+                   languageCode: job.languageCode,
+                   speakerCount: job.speakerCount.count
+               ) {
                 HStack {
                     Text("Required speech models are missing.")
                         .font(.system(size: AppTheme.FontSize.xs))
@@ -247,7 +248,11 @@ struct TranscriptionProcessingView: View {
     private func advancedDetails(for job: WorkbenchTranscriptionJob) -> some View {
         DisclosureGroup(isExpanded: $showAdvanced) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-                stageModelList(for: job)
+                if job.compute == .cloud {
+                    cloudPipelineDetails(for: job)
+                } else {
+                    stageModelList(for: job)
+                }
 
                 LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
                     ForEach(events) { event in
@@ -271,6 +276,55 @@ struct TranscriptionProcessingView: View {
         }
         .padding(AppTheme.Spacing.mdLg)
         .background(Color.indigo.opacity(0.08), in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
+    }
+
+    private func cloudPipelineDetails(for job: WorkbenchTranscriptionJob) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
+            Text("Cloud pipeline")
+                .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+            Text("Speech recognition and result assembly run in VoxStudio Cloud. This Mac does not need speech models for this task.")
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ForEach(ProcessingMilestone.allCases) { milestone in
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                    Text(milestone.title)
+                        .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+                    ForEach(cloudPipelineLines(for: milestone, job: job), id: \.self) { line in
+                        Text(line)
+                            .font(.system(size: AppTheme.FontSize.xs))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private func cloudPipelineLines(
+        for milestone: ProcessingMilestone,
+        job: WorkbenchTranscriptionJob
+    ) -> [String] {
+        switch milestone {
+        case .preparing:
+            return ["Cloud session setup and secure media transfer"]
+        case .preprocessing:
+            return ["Audio preparation managed by VoxStudio Cloud"]
+        case .speechRecognition:
+            if let current = job.progressCompleted, let total = job.progressTotal, total > 0 {
+                return ["Cloud speech recognition · \(current) of \(total) segments"]
+            }
+            return ["Cloud speech recognition"]
+        case .finalizing:
+            return [job.normalizedTargetLanguageCode == nil
+                ? "Transcript and subtitle assembly in VoxStudio Cloud"
+                : "Transcript, subtitle, and translation assembly in VoxStudio Cloud"]
+        case .completed:
+            return ["Result committed to the session"]
+        }
     }
 
     private func stageModelList(for job: WorkbenchTranscriptionJob) -> some View {
@@ -349,7 +403,9 @@ struct TranscriptionProcessingView: View {
         if job.state == .failed { return "Processing stopped" }
         if job.state == .cancelling { return "Cancelling…" }
         if job.state == .completed { return "Completed" }
-        if store.isTranscriptionQueued(jobID), job.state == .ready {
+        if job.compute == .local,
+           store.isTranscriptionQueued(jobID),
+           job.state == .ready {
             return "Estimated: waiting for the local ASR slot"
         }
         if job.progress < 0.08 {
@@ -362,18 +418,31 @@ struct TranscriptionProcessingView: View {
     }
 
     private func metaLine(for job: WorkbenchTranscriptionJob) -> String {
-        if store.isTranscriptionQueued(jobID), job.state == .ready {
+        if job.compute == .local,
+           store.isTranscriptionQueued(jobID),
+           job.state == .ready {
             return "Queued • Local serial processing"
         }
+        if job.compute == .cloud,
+           job.isActivelyProcessing,
+           let completed = job.progressCompleted,
+           let total = job.progressTotal,
+           total > 0 {
+            let boundedCompleted = min(max(completed, 0), total)
+            return "Transcribing: \(boundedCompleted)/\(total) • VoxStudio Cloud"
+        }
         if job.isActivelyProcessing {
-            return "\(job.progressStep ?? "processing") • Live updates on this Mac"
+            let location = job.compute == .cloud ? "VoxStudio Cloud" : TaskPlacementCopy.thisMac
+            return "\(job.progressStep ?? "processing") • \(location)"
         }
         return job.state.label
     }
 
     private func activeMilestone(for job: WorkbenchTranscriptionJob) -> ProcessingMilestone {
         if job.state == .completed { return .completed }
-        if store.isTranscriptionQueued(jobID), job.state == .ready { return .preparing }
+        if job.compute == .local,
+           store.isTranscriptionQueued(jobID),
+           job.state == .ready { return .preparing }
         switch job.flowProgressStage {
         case .subtitlePreparation, .translation: return .finalizing
         case .transcription, .none:
@@ -413,13 +482,19 @@ struct TranscriptionProcessingView: View {
         guard milestone == active else { return nil }
         switch milestone {
         case .preparing:
-            return "Your file is queued. Only one local transcription runs at a time to protect GPU memory."
+            return job.compute == .cloud
+                ? "Preparing your session in VoxStudio Cloud."
+                : "Your file is queued. Only one local transcription runs at a time to protect GPU memory."
         case .preprocessing:
-            return "We’re cleaning and optimizing the audio so speech can be recognized more accurately."
+            return job.compute == .cloud
+                ? "VoxStudio Cloud is preparing the media."
+                : "We’re cleaning and optimizing the audio so speech can be recognized more accurately."
         case .speechRecognition:
             return job.progressMessage
         case .finalizing:
-            return "Polishing timings, speakers, and optional translation."
+            return job.compute == .cloud
+                ? "VoxStudio Cloud is assembling the transcript and optional translation."
+                : "Polishing timings, speakers, and optional translation."
         case .completed:
             return "Opening your session…"
         }
@@ -427,7 +502,7 @@ struct TranscriptionProcessingView: View {
 
     private func seedEvents() {
         guard events.isEmpty else { return }
-        appendEvent("Local processing started")
+        appendEvent(job?.compute == .cloud ? "Cloud processing started" : "Local processing started")
         if let message = job?.progressMessage {
             appendEvent(message)
         }

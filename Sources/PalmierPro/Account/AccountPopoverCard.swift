@@ -84,11 +84,8 @@ struct AccountPopoverCard: View {
     @ViewBuilder
     private var upgradeBlock: some View {
         VStack(spacing: AppTheme.Spacing.xs) {
-            if let pro = account.availablePlan(for: .pro) {
-                planRow(plan: pro, isPrimary: true)
-            }
-            if let max = account.availablePlan(for: .max) {
-                planRow(plan: max, isPrimary: false)
+            ForEach(Array(account.availablePlans.enumerated()), id: \.element.id) { index, plan in
+                planRow(plan: plan, isPrimary: index == 0)
             }
         }
     }
@@ -205,8 +202,13 @@ struct AccountPopoverCard: View {
                     dismiss()
                 }
             } else {
-                footerButton(label: account.isSigningIn ? "Opening Google…" : "Sign in", systemImage: "person.crop.circle") {
+                footerButton(label: account.isSigningIn ? "Signing in…" : "Sign in with Google", systemImage: "person.crop.circle") {
                     Task { await account.signInWithGoogle() }
+                    dismiss()
+                }
+                .disabled(account.isSigningIn)
+                footerButton(label: account.isSigningIn ? "Signing in…" : "Sign in with Apple", systemImage: "apple.logo") {
+                    Task { await account.signInWithApple() }
                     dismiss()
                 }
                 .disabled(account.isSigningIn)

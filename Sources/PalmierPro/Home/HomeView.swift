@@ -216,14 +216,6 @@ private struct WorkbenchTopBar: View {
                     .lineLimit(1)
             }
 
-            Text("LOCAL")
-                .font(.system(size: AppTheme.FontSize.micro, weight: AppTheme.FontWeight.bold))
-                .tracking(1.0)
-                .padding(.horizontal, AppTheme.Spacing.sm)
-                .padding(.vertical, AppTheme.Spacing.xxs)
-                .background(AppTheme.Status.successColor.opacity(0.16), in: Capsule())
-                .foregroundStyle(AppTheme.Status.successColor)
-
             Spacer(minLength: 0)
 
             Button {
@@ -334,23 +326,7 @@ private struct WorkbenchSidebar: View {
             .buttonStyle(.plain)
             .help("Settings")
 
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("Runs on this Mac", systemImage: "apple.logo")
-                    Text("No cloud account · Files stay local")
-                        .foregroundStyle(AppTheme.Text.mutedColor)
-                }
-                .font(.system(size: AppTheme.FontSize.xs))
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
-                .padding(AppTheme.Spacing.md)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-            } else {
-                Image(systemName: "lock.shield")
-                    .foregroundStyle(AppTheme.Status.successColor)
-                    .help("All processing stays on this Mac")
-                    .padding(.bottom, AppTheme.Spacing.md)
-            }
+            Spacer().frame(height: AppTheme.Spacing.sm)
         }
         .padding(.horizontal, AppTheme.Spacing.smMd)
         .padding(.bottom, AppTheme.Spacing.md)

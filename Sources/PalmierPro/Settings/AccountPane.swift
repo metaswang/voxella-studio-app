@@ -45,26 +45,13 @@ struct AccountPane: View {
     private var unpaidSection: some View {
         SettingsGroup(title: "Subscription") {
             if account.availablePlans.isEmpty {
-                HStack(spacing: AppTheme.Spacing.sm) {
-                    Button("Upgrade to Pro") {
-                        Task { await account.subscribe(tier: .pro) }
-                    }
-                    .buttonStyle(.capsule(.prominent, size: .regular))
-                    .pointerStyle(.link)
-
-                    Button("Upgrade to Max") {
-                        Task { await account.subscribe(tier: .max) }
-                    }
-                    .buttonStyle(accountSecondaryButtonStyle)
-                    .pointerStyle(.link)
-                }
+                Text("No subscription plans are available.")
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
             } else {
-                HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
-                    if let pro = account.availablePlan(for: .pro) {
-                        planCard(plan: pro, isPrimary: true)
-                    }
-                    if let max = account.availablePlan(for: .max) {
-                        planCard(plan: max, isPrimary: false)
+                VStack(spacing: AppTheme.Spacing.md) {
+                    ForEach(Array(account.availablePlans.enumerated()), id: \.element.id) { index, plan in
+                        planCard(plan: plan, isPrimary: index == 0)
                     }
                 }
 
@@ -247,11 +234,17 @@ struct AccountPane: View {
             .foregroundStyle(AppTheme.Text.tertiaryColor)
             .fixedSize(horizontal: false, vertical: true)
 
-        Button(account.isSigningIn ? "Opening Google…" : "Sign in with Google") {
+        Button(account.isSigningIn ? "Signing in…" : "Sign in with Google") {
             Task { await account.signInWithGoogle() }
         }
         .buttonStyle(.capsule(.secondary, size: .regular))
         .disabled(account.isSigningIn)
         .padding(.top, AppTheme.Spacing.xs)
+
+        Button(account.isSigningIn ? "Signing in…" : "Sign in with Apple") {
+            Task { await account.signInWithApple() }
+        }
+        .buttonStyle(.capsule(.secondary, size: .regular))
+        .disabled(account.isSigningIn)
     }
 }

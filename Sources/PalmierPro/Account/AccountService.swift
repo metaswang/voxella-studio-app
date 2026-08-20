@@ -1,29 +1,43 @@
 import AppKit
 import Foundation
-import Combine
-import ClerkKit
-import ClerkConvex
 @preconcurrency import ConvexMobile
 
-enum AccountTier: String, Decodable, Sendable {
-    case none, pro, max
+struct AccountTier: Hashable, Decodable, Sendable {
+    let rawValue: String
 
-    var isPaid: Bool { self != .none }
+    static let none = AccountTier(rawValue: "free")
+
+    init(rawValue: String) {
+        let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        self.rawValue = normalized.isEmpty ? "free" : normalized
+    }
+
+    init(planCode: String?) {
+        self.init(rawValue: planCode ?? Self.none.rawValue)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self.init(rawValue: try container.decode(String.self))
+    }
+
+    var isPaid: Bool { rawValue != Self.none.rawValue }
 
     var planLabel: String {
-        switch self {
-        case .none: return "Free"
-        case .pro: return "Pro plan"
-        case .max: return "Max plan"
-        }
+        isPaid ? "\(displayName) plan" : "Free"
     }
 
     var upgradeLabel: String {
-        switch self {
-        case .none: return ""
-        case .pro: return "Pro"
-        case .max: return "Max"
-        }
+        displayName
+    }
+
+    private var displayName: String {
+        rawValue
+            .split(separator: "_")
+            .map { word in
+                word.prefix(1).uppercased() + word.dropFirst()
+            }
+            .joined(separator: " ")
     }
 }
 
@@ -56,6 +70,7 @@ struct AccountPlan: Decodable, Sendable {
 
 struct AvailablePlan: Decodable, Sendable, Identifiable {
     let tier: AccountTier
+    let planID: String?
     let monthlyPriceUsd: Int
     let discountedMonthlyPriceUsd: Int?
     let monthlyBudgetCredits: Int?
@@ -80,10 +95,6 @@ enum TopOffLimits {
     static let maxDollars = 1000
 }
 
-private struct UrlResponse: Decodable, Sendable {
-    let url: String
-}
-
 private struct OkResponse: Decodable, Sendable {
     let ok: Bool
 }
@@ -106,10 +117,11 @@ final class AccountService {
     private(set) var isSigningIn: Bool = false
     private(set) var isBuyingCredits: Bool = false
     private(set) var authState: AuthState<String> = .loading
+    private(set) var cloudBillingBalance: VoxellaBillingBalance?
 
     var isSignedIn: Bool {
-        guard !isMisconfigured, case .authenticated = authState else { return false }
-        return true
+        if case .authenticated = authState { return true }
+        return false
     }
     var aiAllowed: Bool { isSignedIn && !isMisconfigured }
     var tier: AccountTier { account?.user.tier ?? .none }
@@ -124,13 +136,15 @@ final class AccountService {
 
     var remainingCredits: Int { max(0, (budgetCredits ?? 0) - spentCredits) }
     var hasCredits: Bool { remainingCredits > 0 }
+    var remainingCloudTranscriptionSeconds: Double? {
+        cloudBillingBalance?.estimatedSeconds[CloudTranscriptionQuota.uploadUsageType]
+    }
 
     @ObservationIgnored private(set) var convex: ConvexClientWithAuth<String>?
-    @ObservationIgnored private var accountSubscription: AnyCancellable?
-    @ObservationIgnored private var plansSubscription: AnyCancellable?
     @ObservationIgnored private var authStateTask: Task<Void, Never>?
     @ObservationIgnored private var didConfigure = false
     @ObservationIgnored private var buyCreditsTask: Task<Void, Never>?
+    @ObservationIgnored private let api = VoxellaAPIClient.shared
 
     private init() {}
 
@@ -138,176 +152,158 @@ final class AccountService {
         guard !didConfigure else { return }
         didConfigure = true
 
-        guard let publishableKey = BackendConfig.clerkPublishableKey,
-              let deploymentURL = BackendConfig.convexDeploymentURL
-        else {
+        if let deploymentURL = BackendConfig.convexDeploymentURL {
+            convex = ConvexClientWithAuth(
+                deploymentUrl: deploymentURL.absoluteString,
+                authProvider: VoxellaConvexAuthProvider()
+            )
+        } else {
             isMisconfigured = true
-            isLoading = false
             Log.account.warning(
-                "account backend misconfigured",
-                telemetry: "Account backend misconfigured",
+                "convex unavailable host=\(VoxellaAPIConfiguration.baseURL.host ?? "")",
+                telemetry: "Convex unavailable",
                 data: [
-                    "hasClerkKey": BackendConfig.clerkPublishableKey != nil,
-                    "hasConvexURL": BackendConfig.convexDeploymentURL != nil
+                    "hasConvexURL": false,
+                    "voxstudioHost": VoxellaAPIConfiguration.baseURL.host ?? "",
                 ]
             )
-            return
         }
-
-        let keychainConfig = BackendConfig.clerkKeychainAccessGroup
-            .map { Clerk.Options.KeychainConfig(accessGroup: $0) } ?? .init()
-        Clerk.configure(
-            publishableKey: publishableKey,
-            options: Clerk.Options(
-                keychainConfig: keychainConfig,
-                redirectConfig: .init(
-                    redirectUrl: "palmier://callback",
-                    callbackUrlScheme: "palmier"
-                )
-            )
+        Log.account.notice(
+            "account configured host=\(VoxellaAPIConfiguration.baseURL.host ?? "") convex=\(!isMisconfigured)",
+            telemetry: "Account configured",
+            data: [
+                "host": VoxellaAPIConfiguration.baseURL.host ?? "",
+                "convex": !isMisconfigured,
+            ]
         )
-        convex = ConvexClientWithAuth(
-            deploymentUrl: deploymentURL.absoluteString,
-            authProvider: ClerkConvexAuthProvider()
-        )
-        Log.account.notice("account configured", telemetry: "Account configured")
-        startPlansSubscription()
-
-        startAuthObservation()
+        restoreSession()
     }
 
-    private func startAuthObservation() {
-        guard let convex else { return }
+    private func restoreSession() {
+        authStateTask?.cancel()
         authStateTask = Task { @MainActor [weak self] in
-            // Wait for Clerk to restore any cached session first.
-            for _ in 0..<50 where !Clerk.shared.isLoaded {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
-            for await state in convex.authState.values {
-                guard let self else { return }
-                self.authState = state
-                switch state {
-                case .loading:
-                    Log.account.notice("auth state loading", telemetry: "Auth state changed", data: ["state": "loading"])
-                    self.isLoading = true
-                case .authenticated:
-                    Log.account.notice("auth state authenticated", telemetry: "Auth state changed", data: ["state": "authenticated"])
-                    await self.provisionAndSubscribe()
-                    self.isLoading = false
-                case .unauthenticated:
-                    Log.account.notice("auth state unauthenticated", telemetry: "Auth state changed", data: ["state": "unauthenticated"])
-                    self.clearAccount()
-                    self.isLoading = Clerk.shared.session != nil
-                }
-            }
-        }
-    }
+            guard let self else { return }
+            self.isLoading = true
+            defer { self.isLoading = false }
 
-    private func provisionAndSubscribe() async {
-        guard let convex else { return }
-
-        let user = Clerk.shared.user
-        Telemetry.setUser(id: user?.id)
-        Analytics.identifyUser(id: user?.id)
-        let name = [user?.firstName, user?.lastName]
-            .compactMap { $0 }
-            .joined(separator: " ")
-        let args: [String: ConvexEncodable?] = [
-            "email": user?.primaryEmailAddress?.emailAddress,
-            "name": name.isEmpty ? nil : name,
-            "image": user?.imageUrl,
-        ]
-
-        for attempt in 0..<3 {
             do {
-                if attempt == 0 {
-                    Log.account.notice("account provision start", telemetry: "Account provision started")
-                }
-                try await convex.mutation("users:upsertFromAuth", with: args)
-                Log.account.notice(
-                    "account provision ok attempt=\(attempt + 1)",
-                    telemetry: "Account provision finished",
-                    data: ["attempt": attempt + 1]
-                )
-                break
-            } catch {
-                lastError = error.localizedDescription
-                if attempt == 2 {
-                    Log.account.warning(
-                        "account provision failed error=\(error.localizedDescription)",
-                        telemetry: "Account provision failed",
-                        data: ["attempt": attempt + 1, "error": error.localizedDescription]
-                    )
+                guard let token = try await VoxellaAuthService.shared.validAccessToken() else {
+                    self.authState = .unauthenticated
+                    self.clearAccount()
                     return
                 }
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                self.authState = .authenticated(token)
+                _ = await self.applyAuthenticatedSession(token: token)
+            } catch {
+                self.authState = .unauthenticated
+                self.clearAccount()
+                self.lastError = error.localizedDescription
             }
         }
-        startAccountSubscription()
     }
 
-    private func startPlansSubscription() {
-        plansSubscription?.cancel()
-        plansSubscription = convex?
-            .subscribe(to: "billing:listPlans", yielding: [AvailablePlan].self)
-            .receive(on: DispatchQueue.main)
-            .sink(
-                receiveCompletion: { [weak self] completion in
-                    if case .failure(let err) = completion {
-                        Log.account.warning(
-                            "plans subscription failed error=\(err.localizedDescription)",
-                            telemetry: "Account plans subscription failed",
-                            data: ["error": err.localizedDescription]
-                        )
-                        self?.lastError = err.localizedDescription
-                    }
-                },
-                receiveValue: { [weak self] plans in
-                    self?.availablePlans = plans
-                }
+    private func reloadAccount() async throws {
+        async let plans = api.billingPlans()
+        async let balance = api.billingBalance()
+        let profileResponse = try await api.accountProfile()
+        let plansResponse: VoxellaUserPlans?
+        do {
+            plansResponse = try await plans
+        } catch {
+            plansResponse = nil
+            Log.account.warning(
+                "billing plans refresh failed error=\(error.localizedDescription)",
+                telemetry: "Billing plans refresh failed",
+                data: ["error": error.localizedDescription]
             )
+        }
+        let balanceResponse: VoxellaBillingBalance?
+        do {
+            balanceResponse = try await balance
+        } catch {
+            balanceResponse = nil
+            Log.account.warning(
+                "billing balance refresh failed error=\(error.localizedDescription)",
+                telemetry: "Billing balance refresh failed",
+                data: ["error": error.localizedDescription]
+            )
+        }
+
+        let currentPlan = plansResponse.flatMap { response in
+            response.plans.first { $0.id == response.userPlanID }
+        }
+        let currentTier = AccountTier(planCode: currentPlan?.planCode)
+        let purchasedCredits = Int(
+            ((balanceResponse?.topupCredits ?? 0) + (balanceResponse?.grantCredits ?? 0))
+                .rounded(.down)
+        )
+        let budget = (currentPlan?.includedCredits ?? 0) + purchasedCredits
+        let available = Int((balanceResponse?.availableCredits ?? 0).rounded(.down))
+        let periodEnd = plansResponse?.currentPeriodEnd.flatMap(Self.periodMilliseconds)
+
+        account = AccountResponse(
+            user: AccountUser(
+                email: profileResponse.email,
+                name: profileResponse.name,
+                image: profileResponse.pictureURL,
+                tier: currentTier,
+                currentPeriodEnd: periodEnd,
+                cancelAtPeriodEnd: plansResponse?.statusNote?.localizedCaseInsensitiveContains("cancel") ?? false,
+                spentCreditsThisPeriod: max(0, budget - available),
+                purchasedCredits: purchasedCredits
+            ),
+            plan: currentPlan.map {
+                AccountPlan(
+                    tier: currentTier,
+                    monthlyPriceUsd: Self.monthlyPrice(for: $0),
+                    monthlyBudgetCredits: $0.includedCredits
+                )
+            }
+        )
+        cloudBillingBalance = balanceResponse
+        availablePlans = plansResponse?.plans.compactMap { plan in
+            let tier = AccountTier(planCode: plan.planCode)
+            guard tier.isPaid else { return nil }
+            return AvailablePlan(
+                tier: tier,
+                planID: plan.id,
+                monthlyPriceUsd: Self.monthlyPrice(for: plan),
+                discountedMonthlyPriceUsd: nil,
+                monthlyBudgetCredits: plan.includedCredits
+            )
+        } ?? []
+        lastError = nil
+        Telemetry.setUser(id: profileResponse.id.uuidString)
+        Analytics.identifyUser(
+            id: profileResponse.id.uuidString,
+            properties: ["tier": currentTier.rawValue]
+        )
     }
 
-    private func startAccountSubscription() {
-        accountSubscription?.cancel()
-        accountSubscription = convex?
-            .subscribe(to: "account:get", yielding: AccountResponse.self)
-            .receive(on: DispatchQueue.main)
-            .sink(
-                receiveCompletion: { [weak self] completion in
-                    if case .failure(let err) = completion {
-                        Log.account.warning(
-                            "account subscription failed error=\(err.localizedDescription)",
-                            telemetry: "Account subscription failed",
-                            data: ["error": err.localizedDescription]
-                        )
-                        self?.lastError = err.localizedDescription
-                    }
-                },
-                receiveValue: { [weak self] response in
-                    self?.account = response
-                    self?.lastError = nil
-                    Analytics.identifyUser(
-                        id: Clerk.shared.user?.id,
-                        properties: ["tier": response.user.tier.rawValue]
-                    )
-                }
-            )
+    private static func monthlyPrice(for plan: VoxellaBillingPlan) -> Int {
+        let price = plan.prices.first { $0.billingInterval == "month" }?.price
+            ?? plan.prices.first?.price
+            ?? 0
+        return Int(price.rounded())
+    }
+
+    private static func periodMilliseconds(_ value: String) -> Double? {
+        guard let date = ISO8601DateFormatter().date(from: value) else { return nil }
+        return date.timeIntervalSince1970 * 1_000
     }
 
     private func clearAccount() {
         Telemetry.setUser(id: nil)
         Analytics.resetUser()
-        accountSubscription?.cancel()
-        accountSubscription = nil
         buyCreditsTask?.cancel()
         buyCreditsTask = nil
         account = nil
+        cloudBillingBalance = nil
+        availablePlans = []
         isBuyingCredits = false
     }
 
     func signInWithGoogle() async {
-        guard !isMisconfigured else { return }
         guard !isSigningIn else {
             lastError = "Sign-in is already in progress."
             Log.account.notice(
@@ -322,7 +318,8 @@ final class AccountService {
         Log.account.notice("sign in requested provider=google", telemetry: "Sign in requested", data: ["provider": "google"])
         defer { isSigningIn = false }
         do {
-            _ = try await Clerk.shared.auth.signInWithOAuth(provider: .google)
+            let token = try await VoxellaAuthService.shared.signInWithGoogle()
+            _ = await applyAuthenticatedSession(token: token)
         } catch {
             lastError = error.localizedDescription
             Log.account.warning(
@@ -333,37 +330,151 @@ final class AccountService {
         }
     }
 
-    func signOut() async {
-        guard !isMisconfigured else { return }
-        Log.account.notice("sign out requested", telemetry: "Sign out requested")
+    func signInWithApple() async {
+        guard !isSigningIn else {
+            lastError = "Sign-in is already in progress."
+            return
+        }
+        isSigningIn = true
+        lastError = nil
+        Log.account.notice("sign in requested provider=apple", telemetry: "Sign in requested", data: ["provider": "apple"])
+        defer { isSigningIn = false }
         do {
-            try await Clerk.shared.auth.signOut()
+            let token = try await VoxellaAuthService.shared.signInWithApple()
+            _ = await applyAuthenticatedSession(token: token)
         } catch {
             lastError = error.localizedDescription
             Log.account.warning(
-                "sign out failed error=\(error.localizedDescription)",
-                telemetry: "Sign out failed",
+                "sign in failed provider=apple error=\(error.localizedDescription)",
+                telemetry: "Sign in failed",
+                data: ["provider": "apple", "error": error.localizedDescription]
+            )
+        }
+    }
+
+    func ensureCloudAccess() async -> CloudAccessPreparation {
+        if isSignedIn,
+           account != nil,
+           (try? await VoxellaAuthService.shared.validAccessToken()) != nil {
+            return .ready
+        }
+        isSigningIn = true
+        lastError = nil
+        defer { isSigningIn = false }
+        return await performCloudAccess()
+    }
+
+    private func performCloudAccess() async -> CloudAccessPreparation {
+        do {
+            if let token = try await VoxellaAuthService.shared.validAccessToken() {
+                guard await applyAuthenticatedSession(token: token) else {
+                    return .failed(lastError ?? "VoxStudio could not finish setting up this account.")
+                }
+                return .ready
+            }
+        } catch {
+            Log.account.warning(
+                "cloud token restore failed error=\(error.localizedDescription)",
+                telemetry: "Cloud token restore failed",
                 data: ["error": error.localizedDescription]
             )
+        }
+        do {
+            let token = try await VoxellaAuthService.shared.ensureSignedIn()
+            guard await applyAuthenticatedSession(token: token) else {
+                return .failed(lastError ?? "VoxStudio could not finish setting up this account.")
+            }
+            return .ready
+        } catch VoxellaAuthError.cancelled {
+            Log.account.notice("cloud sign-in cancelled", telemetry: "Cloud sign-in cancelled")
+            return .cancelled
+        } catch {
+            lastError = error.localizedDescription
+            Log.account.warning(
+                "cloud sign-in failed error=\(error.localizedDescription)",
+                telemetry: "Cloud sign-in failed",
+                data: ["error": error.localizedDescription]
+            )
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    func cloudTranscriptionQuota(
+        durationSeconds: Double,
+        includesTranslation: Bool
+    ) async throws -> CloudTranscriptionQuota {
+        guard durationSeconds.isFinite, durationSeconds > 0 else {
+            throw VoxellaAPIError.http(0, "The media duration is unavailable.")
+        }
+        let usageTypes = includesTranslation
+            ? [CloudTranscriptionQuota.uploadUsageType, CloudTranscriptionQuota.translationUsageType]
+            : [CloudTranscriptionQuota.uploadUsageType]
+        let estimate = try await api.usageEstimate(
+            durationSeconds: durationSeconds,
+            usageTypes: usageTypes
+        )
+        return CloudTranscriptionQuota(
+            durationSeconds: durationSeconds,
+            estimatedCredits: estimate.estimatedCredits,
+            availableCredits: estimate.availableCredits,
+            creditsPerSecond: estimate.creditsPerSecond,
+            canAfford: estimate.canAfford
+        )
+    }
+
+    func updateCloudAvailableCredits(_ credits: Double) {
+        guard credits.isFinite, credits >= 0 else { return }
+        guard let cloudBillingBalance else { return }
+        self.cloudBillingBalance = VoxellaBillingBalance(
+            availableCredits: credits,
+            subscriptionCredits: cloudBillingBalance.subscriptionCredits,
+            topupCredits: cloudBillingBalance.topupCredits,
+            grantCredits: cloudBillingBalance.grantCredits,
+            estimatedSeconds: cloudBillingBalance.estimatedSeconds
+        )
+    }
+
+    func signOut() async {
+        Log.account.notice("sign out requested", telemetry: "Sign out requested")
+        await VoxellaAuthService.shared.signOut()
+        await convex?.logout()
+        authState = .unauthenticated
+        clearAccount()
+    }
+
+    @discardableResult
+    private func applyAuthenticatedSession(token: String) async -> Bool {
+        authState = .authenticated(token)
+        _ = await convex?.loginFromCache()
+        do {
+            try await reloadAccount()
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            Log.account.warning(
+                "account refresh failed error=\(error.localizedDescription)",
+                telemetry: "Account refresh failed",
+                data: ["error": error.localizedDescription]
+            )
+            return false
         }
     }
 
     func subscribe(tier: AccountTier) async {
         lastError = nil
-        guard tier.isPaid, let convex else { return }
+        guard tier.isPaid, let planID = availablePlan(for: tier)?.planID else {
+            lastError = "The selected plan is unavailable."
+            return
+        }
         do {
-            let result: UrlResponse = try await convex.action(
-                "billing:createCheckoutSession",
-                with: ["tier": tier.rawValue]
-            )
-            openInBrowser(result.url)
+            let result = try await api.createBillingCheckout(planID: planID)
+            openInBrowser(result.checkoutURL)
         } catch {
             lastError = error.localizedDescription
         }
     }
 
     func buyCredits(dollars: Int) {
-        guard let convex else { return }
         guard (TopOffLimits.minDollars...TopOffLimits.maxDollars).contains(dollars) else {
             lastError = "Amount must be $\(TopOffLimits.minDollars)–$\(TopOffLimits.maxDollars)."
             return
@@ -377,11 +488,9 @@ final class AccountService {
                 self?.buyCreditsTask = nil
             }
             do {
-                let result: UrlResponse = try await convex.action(
-                    "billing:createTopOffCheckoutSession",
-                    with: ["dollars": Double(dollars)]
-                )
-                self?.openInBrowser(result.url)
+                guard let self else { return }
+                let result = try await self.api.createBillingCheckout(topupAmountUSD: Double(dollars))
+                self.openInBrowser(result.checkoutURL)
             } catch {
                 self?.lastError = error.localizedDescription
             }
@@ -416,11 +525,8 @@ final class AccountService {
 
     func manageSubscription() async {
         lastError = nil
-        guard let convex else { return }
         do {
-            let result: UrlResponse = try await convex.action(
-                "billing:createPortalSession"
-            )
+            let result = try await api.createBillingPortal()
             openInBrowser(result.url)
         } catch {
             lastError = error.localizedDescription

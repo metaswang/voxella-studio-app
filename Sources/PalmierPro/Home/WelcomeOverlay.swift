@@ -26,7 +26,7 @@ struct WelcomeOverlay: View {
                     .font(.system(size: AppTheme.FontSize.title2, weight: .light))
                     .tracking(AppTheme.Tracking.tight)
                     .foregroundStyle(AppTheme.Text.primaryColor)
-                Text("Transcribe, dub, and edit video on this Mac.")
+                Text("Transcribe, dub, and edit video.")
                     .font(.system(size: AppTheme.FontSize.smMd))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .fixedSize(horizontal: false, vertical: true)
@@ -67,17 +67,25 @@ struct WelcomeOverlay: View {
 
     @ViewBuilder
     private var signInButton: some View {
-        if account.aiAllowed || account.isMisconfigured {
+        if account.isSignedIn {
             Button("Get started") { onDismiss() }
                 .buttonStyle(.capsule(.prominent, size: .regular))
                 .keyboardShortcut(.defaultAction)
         } else {
-            Button(account.isSigningIn ? "Opening Google…" : "Sign In") {
-                Task { await account.signInWithGoogle() }
-            }
+            HStack(spacing: AppTheme.Spacing.xs) {
+                Button(account.isSigningIn ? "Signing in…" : "Sign in with Google") {
+                    Task { await account.signInWithGoogle() }
+                }
                 .buttonStyle(.capsule(.prominent, size: .regular))
                 .keyboardShortcut(.defaultAction)
                 .disabled(account.isSigningIn)
+
+                Button(account.isSigningIn ? "Signing in…" : "Sign in with Apple") {
+                    Task { await account.signInWithApple() }
+                }
+                .buttonStyle(.capsule(.secondary, size: .regular))
+                .disabled(account.isSigningIn)
+            }
         }
     }
 

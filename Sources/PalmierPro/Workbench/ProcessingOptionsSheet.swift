@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 struct ProcessingOptionsSheet: View {
@@ -9,8 +10,10 @@ struct ProcessingOptionsSheet: View {
     let mediaURLs: [URL]
     var mode: Mode = .upload
     var initialOptions: LocalProcessingOptions?
+    var initialPlacement: TranscriptionPlacement = .localDefault
+    var onPrepareCloud: ((TranscriptionPlacement) async -> CloudAccessPreparation)?
     let onCancel: () -> Void
-    let onContinue: (LocalProcessingOptions) -> Void
+    let onContinue: (TranscriptionSubmission) -> Void
 
     @State private var languageCode: String? = WorkbenchTranscriptionLanguage.automatic.languageCode
     @State private var sessionTitle = ""
@@ -21,12 +24,20 @@ struct ProcessingOptionsSheet: View {
     @State private var enableTranslation = false
     @State private var targetLanguageCode = ""
     @State private var didApplyInitialOptions = false
+    @State private var storageDestination: TaskStorageDestination = .local
+    @State private var computeDestination: TaskComputeDestination = .local
+    @State private var isPreparingCloud = false
+    @State private var cloudAccessError: String?
+    @State private var mediaDurationSeconds: Double?
+    @State private var cloudQuota: CloudTranscriptionQuota?
+    @State private var isLoadingCloudQuota = false
     @Bindable private var models = LocalModelManager.shared
-    @Bindable private var llmSettings = LLMSettingsStore.shared
+    @Bindable private var account = AccountService.shared
 
     private var isSingleFile: Bool { mediaURLs.count == 1 }
     private var continueDisabled: Bool {
-        enableTranslation && targetLanguageCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        (enableTranslation && targetLanguageCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            || (computeDestination == .cloud && cloudQuota?.canAfford == false)
     }
 
     private var titleText: String {
@@ -47,9 +58,13 @@ struct ProcessingOptionsSheet: View {
 
     private var continueLabel: String {
         switch mode {
-        case .upload: "Continue"
+        case .upload: "Transcribe"
         case .retranscribe: "Re-transcribe and rebuild"
         }
+    }
+
+    private var placement: TranscriptionPlacement {
+        TranscriptionPlacement(storage: storageDestination, compute: computeDestination)
     }
 
     var body: some View {
@@ -66,23 +81,31 @@ struct ProcessingOptionsSheet: View {
                     if showAdvanced {
                         advancedSection
                     }
-                    modelHint
+                    placementSection
+                    computeDetail
+                    if let cloudAccessError {
+                        Text(cloudAccessError)
+                            .font(.system(size: AppTheme.FontSize.xs))
+                            .foregroundStyle(AppTheme.Status.errorColor)
+                    }
                 }
                 .padding(AppTheme.Spacing.xl)
             }
             footer
         }
-        .frame(width: 560, height: sheetHeight)
+        .frame(width: 620, height: sheetHeight)
         .background(AppTheme.Background.surfaceColor)
         .colorScheme(.dark)
         .onAppear { applyInitialOptionsIfNeeded() }
+        .task(id: mediaDurationTaskID) { await loadMediaDuration() }
+        .task(id: cloudQuotaTaskID) { await loadCloudQuota() }
     }
 
     private var sheetHeight: CGFloat {
         if isSingleFile, enableClip, showAdvanced {
-            return 820
+            return 920
         }
-        return isSingleFile ? 680 : 620
+        return isSingleFile ? 780 : 720
     }
 
     private var header: some View {
@@ -118,7 +141,7 @@ struct ProcessingOptionsSheet: View {
                       : "\(mediaURLs.count) files selected")
                     .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
                 Text(mediaURLs.count > 1
-                      ? "Files are processed one at a time on this Mac to protect memory and GPU."
+                      ? "Files are processed one at a time to protect memory and GPU."
                       : mediaURLs[0].path)
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
@@ -323,57 +346,188 @@ struct ProcessingOptionsSheet: View {
             .label ?? "Select language"
     }
 
-    private var modelHint: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "gearshape.2")
-                .foregroundStyle(Color.indigo)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("ASR and translation models are configured in Settings.")
-                    .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
-                Text("Active ASR: \(models.descriptor(for: models.activeASRModelID).title). Translation uses \(llmSettings.route(for: .translation).primaryModel).")
+    private var placementSection: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            cloudPlacementToggle(
+                title: TaskPlacementCopy.keepSessionTitle,
+                detail: "Keep an editable cloud copy you can open on other devices.",
+                isOn: cloudStorageBinding
+            )
+            cloudPlacementToggle(
+                title: TaskPlacementCopy.processWithTitle,
+                detail: "Transcribe without downloading models to this Mac.",
+                isOn: cloudComputeBinding
+            )
+        }
+    }
+
+    private var cloudStorageBinding: Binding<Bool> {
+        Binding(
+            get: { storageDestination == .cloud },
+            set: { storageDestination = $0 ? .cloud : .local }
+        )
+    }
+
+    private var cloudComputeBinding: Binding<Bool> {
+        Binding(
+            get: { computeDestination == .cloud },
+            set: { computeDestination = $0 ? .cloud : .local }
+        )
+    }
+
+    private func cloudPlacementToggle(
+        title: String,
+        detail: String,
+        isOn: Binding<Bool>
+    ) -> some View {
+        Toggle(isOn: isOn) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                Text(title)
+                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
+                Text(detail)
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
-                Button("AI Settings…") {
-                    SettingsWindowController.shared.show(tab: .ai)
-                }
-                .buttonStyle(.borderless)
-                .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
             }
-            Spacer()
+        }
+        .toggleStyle(.checkbox)
+    }
+
+    private var computeDetail: some View {
+        Group {
+            if computeDestination == .local {
+                localComputeCard
+            } else {
+                cloudComputeCard
+            }
+        }
+    }
+
+    private var localComputeCard: some View {
+        let plan = models.installPlan(
+            languageCode: languageCode,
+            speakerCount: speakerCount.count
+        )
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            Text("Models for this Mac")
+                .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
+            ForEach(plan.items) { item in
+                HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                    Image(systemName: item.isInstalled ? "checkmark.circle.fill" : "arrow.down.circle")
+                        .foregroundStyle(item.isInstalled ? AppTheme.Status.successColor : Color.indigo)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.title)
+                            .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
+                        Text("\(item.purpose) · \(item.sizeLabel) · \(item.license)")
+                            .font(.system(size: AppTheme.FontSize.xs))
+                            .foregroundStyle(AppTheme.Text.mutedColor)
+                        if item.requiresLicenseAcceptance, !item.isInstalled {
+                            Text("License acceptance required before download.")
+                                .font(.system(size: AppTheme.FontSize.xs))
+                                .foregroundStyle(AppTheme.Status.warningColor)
+                        }
+                    }
+                    Spacer()
+                }
+            }
+            if !plan.missingItems.isEmpty {
+                Text(plan.additionalDiskSpaceLabel)
+                    .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
+            }
+            Button("Local Models…") {
+                models.presentManager()
+            }
+            .buttonStyle(.borderless)
+            .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
         }
         .padding(AppTheme.Spacing.mdLg)
-        .background(
-            LinearGradient(
-                colors: [Color.indigo.opacity(0.14), Color.cyan.opacity(0.08)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
-        )
+        .background(AppTheme.Background.raisedColor.opacity(0.55), in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
+    }
+
+    @ViewBuilder
+    private var cloudComputeCard: some View {
+        switch CloudTranscriptionNoticePolicy.notice(
+            isSignedIn: account.isSignedIn,
+            isPaid: account.isPaid,
+            quota: cloudQuota
+        ) {
+        case .signIn:
+            cloudNotice(
+                title: "VoxStudio Cloud",
+                detail: "Fast cloud transcription without model downloads. Sign in when you transcribe.",
+                color: Color.indigo
+            )
+        case .freeUpgrade:
+            cloudNotice(
+                title: "Transcribe in VoxStudio Cloud",
+                detail: "No model download. Upgrade to Pro for more monthly transcription time and a lower rate.",
+                color: Color.indigo
+            )
+        case .insufficientCredits:
+            if let cloudQuota {
+                cloudNotice(
+                    title: "More credits are required",
+                    detail: insufficientCreditCopy(cloudQuota),
+                    color: AppTheme.Status.warningColor
+                )
+            }
+        case .lowBalance(let remaining):
+            cloudNotice(
+                title: "Cloud credit balance",
+                detail: "After this file, your balance covers about \(CloudTranscriptionQuota.formatDuration(remaining)) of this cloud workflow.",
+                color: AppTheme.Status.warningColor
+            )
+        case .none:
+            if isLoadingCloudQuota && account.isLoading {
+                cloudNotice(
+                    title: "VoxStudio Cloud",
+                    detail: "Checking your cloud credit balance…",
+                    color: Color.indigo
+                )
+            } else {
+                EmptyView()
+            }
+        }
+    }
+
+    private func cloudNotice(title: String, detail: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            Text(title)
+                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+            Text(detail)
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+        }
+        .padding(AppTheme.Spacing.mdLg)
+        .background(color.opacity(AppTheme.Opacity.subtle), in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+                .strokeBorder(color.opacity(AppTheme.Opacity.muted), lineWidth: AppTheme.BorderWidth.hairline)
+        }
+    }
+
+    private func insufficientCreditCopy(_ quota: CloudTranscriptionQuota) -> String {
+        let available = quota.affordableMediaSeconds
+            .map(CloudTranscriptionQuota.formatDuration) ?? "no remaining time"
+        let media = CloudTranscriptionQuota.formatDuration(quota.durationSeconds)
+        return "This file is \(media), but your balance covers \(available). Upgrade to Pro or add credits before transcribing."
     }
 
     private var footer: some View {
         HStack {
+            if isPreparingCloud {
+                Text(TaskPlacementCopy.checkingCloudAccount)
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
+            }
             Spacer()
             Button("Cancel", action: onCancel)
                 .keyboardShortcut(.cancelAction)
             Button(continueLabel) {
-                var options = LocalProcessingOptions(
-                    languageCode: languageCode,
-                    customTitle: SessionTitlePolicy.normalizedUserTitle(sessionTitle),
-                    speakerCount: speakerCount,
-                    enableTranslation: enableTranslation,
-                    targetLanguageCode: enableTranslation ? targetLanguageCode : nil
-                )
-                if isSingleFile, enableClip {
-                    options.clipStartMs = Int((clipRange.lowerBound * 1000).rounded())
-                    options.clipEndMs = Int((clipRange.upperBound * 1000).rounded())
-                }
-                onContinue(options)
+                Task { await prepareAndSubmit() }
             }
             .buttonStyle(.borderedProminent)
             .tint(.indigo)
-            .disabled(continueDisabled)
+            .disabled(continueDisabled || isPreparingCloud)
             .keyboardShortcut(.defaultAction)
         }
         .padding(AppTheme.Spacing.xl)
@@ -390,6 +544,8 @@ struct ProcessingOptionsSheet: View {
         enableTranslation = initialOptions.enableTranslation
             || !(initialOptions.normalizedTargetLanguageCode ?? "").isEmpty
         targetLanguageCode = initialOptions.normalizedTargetLanguageCode ?? ""
+        storageDestination = initialPlacement.storage
+        computeDestination = initialPlacement.compute
         if let startMs = initialOptions.clipStartMs, let endMs = initialOptions.clipEndMs, endMs > startMs {
             enableClip = true
             clipRange = Double(startMs) / 1000 ... Double(endMs) / 1000
@@ -397,5 +553,144 @@ struct ProcessingOptionsSheet: View {
         } else if enableTranslation {
             showAdvanced = true
         }
+    }
+
+    private func currentSubmission() -> TranscriptionSubmission {
+        var options = TranscriptionProcessingOptions(
+            languageCode: languageCode,
+            customTitle: SessionTitlePolicy.normalizedUserTitle(sessionTitle),
+            speakerCount: speakerCount,
+            enableTranslation: enableTranslation,
+            targetLanguageCode: enableTranslation ? targetLanguageCode : nil
+        )
+        if isSingleFile, enableClip {
+            options.clipStartMs = Int((clipRange.lowerBound * 1000).rounded())
+            options.clipEndMs = Int((clipRange.upperBound * 1000).rounded())
+        }
+        return TranscriptionSubmission(options: options, placement: placement)
+    }
+
+    private var requestedCloudDurationSeconds: Double? {
+        if isSingleFile,
+           enableClip,
+           clipRange.upperBound > clipRange.lowerBound {
+            return clipRange.upperBound - clipRange.lowerBound
+        }
+        return mediaDurationSeconds
+    }
+
+    private var mediaDurationTaskID: String {
+        mediaURLs.map(\.path).joined(separator: "|")
+    }
+
+    private var cloudQuotaTaskID: String {
+        let duration = requestedCloudDurationSeconds.map { String(format: "%.3f", $0) } ?? "unknown"
+        return [
+            computeDestination.rawValue,
+            enableTranslation ? targetLanguageCode : "",
+            duration,
+            account.isSignedIn.description,
+        ].joined(separator: "|")
+    }
+
+    private func loadMediaDuration() async {
+        let urls = mediaURLs
+        let task: Task<Double?, Error> = Task.detached(priority: .userInitiated) {
+            var result = 0.0
+            for url in urls {
+                try Task.checkCancellation()
+                let duration = try await AVURLAsset(url: url).load(.duration).seconds
+                guard duration.isFinite, duration > 0 else { return nil }
+                result += duration
+            }
+            return result > 0 ? result : nil
+        }
+        do {
+            let total = try await task.value
+            guard !Task.isCancelled else { return }
+            mediaDurationSeconds = total
+        } catch is CancellationError {
+            return
+        } catch {
+            mediaDurationSeconds = nil
+        }
+    }
+
+    private func loadCloudQuota() async {
+        guard computeDestination == .cloud,
+              account.isSignedIn,
+              let duration = requestedCloudDurationSeconds,
+              duration.isFinite,
+              duration > 0
+        else {
+            cloudQuota = nil
+            isLoadingCloudQuota = false
+            return
+        }
+        isLoadingCloudQuota = true
+        defer { isLoadingCloudQuota = false }
+        do {
+            cloudQuota = try await account.cloudTranscriptionQuota(
+                durationSeconds: duration,
+                includesTranslation: enableTranslation
+            )
+        } catch is CancellationError {
+            return
+        } catch {
+            cloudQuota = nil
+        }
+    }
+
+    private func refreshCloudQuotaBeforeSubmission() async -> Bool {
+        guard computeDestination == .cloud else { return true }
+        guard let duration = requestedCloudDurationSeconds,
+              duration.isFinite,
+              duration > 0
+        else {
+            return true
+        }
+        do {
+            let quota = try await account.cloudTranscriptionQuota(
+                durationSeconds: duration,
+                includesTranslation: enableTranslation
+            )
+            cloudQuota = quota
+            if !quota.canAfford {
+                cloudAccessError = insufficientCreditCopy(quota)
+                return false
+            }
+            return true
+        } catch {
+            cloudAccessError = "Could not verify the cloud credit balance. Try again."
+            return false
+        }
+    }
+
+    private func prepareAndSubmit() async {
+        guard !isPreparingCloud else { return }
+        cloudAccessError = nil
+        if placement.needsAuthentication {
+            isPreparingCloud = true
+            let result = await onPrepareCloud?(placement) ?? .ready
+            isPreparingCloud = false
+            switch result {
+            case .ready:
+                break
+            case .cancelled:
+                let next = TranscriptionPlacementRouter.placement(afterCancelledAuthentication: placement)
+                storageDestination = next.storage
+                computeDestination = next.compute
+                return
+            case .failed(let message):
+                cloudAccessError = message
+                return
+            }
+        }
+        guard await refreshCloudQuotaBeforeSubmission() else { return }
+        submitCurrentOptions()
+    }
+
+    private func submitCurrentOptions() {
+        onContinue(currentSubmission())
     }
 }

@@ -40,26 +40,31 @@ struct TranscribeWorkbenchView: View {
         }) {
             ProcessingOptionsSheet(
                 mediaURLs: store.pendingMediaImportURLs,
+                onPrepareCloud: { placement in
+                    await store.prepareCloudAccess(for: placement)
+                },
                 onCancel: {
                     store.clearPendingMediaImport()
                     showProcessingOptions = false
                 },
-                onContinue: { options in
+                onContinue: { submission in
                     let urls = store.pendingMediaImportURLs
                     guard !urls.isEmpty else {
                         showProcessingOptions = false
                         return
                     }
-                    guard models.hasRequiredTranscriptionModels(
-                        languageCode: options.languageCode,
-                        speakerCount: options.speakerCount.count
-                    ) else {
-                        models.presentManager()
-                        return
+                    if submission.placement.compute == .local {
+                        guard models.hasRequiredTranscriptionModels(
+                            languageCode: submission.options.languageCode,
+                            speakerCount: submission.options.speakerCount.count
+                        ) else {
+                            models.presentManager()
+                            return
+                        }
                     }
                     store.clearPendingMediaImport()
                     showProcessingOptions = false
-                    _ = store.beginTranscriptions(sourceURLs: urls, options: options)
+                    _ = store.beginTranscriptions(sourceURLs: urls, submission: submission)
                 }
             )
         }
@@ -225,9 +230,9 @@ struct TranscribeWorkbenchView: View {
                     .frame(width: 220)
                 }
                 HStack(alignment: .top) {
-                    Image(systemName: "lock.shield.fill")
-                        .foregroundStyle(AppTheme.Status.successColor)
-                    Text("Audio is decoded and transcribed on this Mac. Only transcript text is sent to the configured LLM when an AI step is enabled.")
+                    Image(systemName: job.compute == .local ? "lock.shield.fill" : "icloud")
+                        .foregroundStyle(job.compute == .local ? AppTheme.Status.successColor : Color.indigo)
+                    Text(recognitionPrivacyCopy(for: job))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                     Spacer()
@@ -236,6 +241,10 @@ struct TranscribeWorkbenchView: View {
             .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func recognitionPrivacyCopy(for job: WorkbenchTranscriptionJob) -> String {
+        TaskPlacementCopy.summaryLine(storage: job.storage, compute: job.compute)
     }
 
     private func subtitleFlowCard(_ job: WorkbenchTranscriptionJob) -> some View {
@@ -316,10 +325,11 @@ struct TranscribeWorkbenchView: View {
 
     @ViewBuilder
     private func processingState(_ job: WorkbenchTranscriptionJob) -> some View {
-        if !models.hasRequiredTranscriptionModels(
-            languageCode: job.languageCode,
-            speakerCount: job.speakerCount.count
-        ) {
+        if job.compute == .local,
+           !models.hasRequiredTranscriptionModels(
+               languageCode: job.languageCode,
+               speakerCount: job.speakerCount.count
+           ) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "arrow.down.circle")
                     .foregroundStyle(AppTheme.Status.warningColor)
@@ -717,9 +727,6 @@ struct TranscribeWorkbenchView: View {
                 }
             }
             Divider()
-            Text("LOCAL PROCESSING")
-                .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
-                .foregroundStyle(AppTheme.Text.mutedColor)
             Text("\(models.descriptor(for: models.activeASRModelID).title) · word timestamps · up to 4 speakers")
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -768,12 +775,14 @@ struct TranscribeWorkbenchView: View {
     }
 
     private func start(_ job: WorkbenchTranscriptionJob) {
-        guard models.hasRequiredTranscriptionModels(
-            languageCode: job.languageCode,
-            speakerCount: job.speakerCount.count
-        ) else {
-            models.presentManager()
-            return
+        if job.compute == .local {
+            guard models.hasRequiredTranscriptionModels(
+                languageCode: job.languageCode,
+                speakerCount: job.speakerCount.count
+            ) else {
+                models.presentManager()
+                return
+            }
         }
         store.runTranscription(job.id)
     }

@@ -308,17 +308,23 @@ struct WorkbenchSessionDetailView: View {
                     mediaURLs: [job.sourceURL],
                     mode: .retranscribe,
                     initialOptions: job.processingOptions,
+                    initialPlacement: job.placement,
+                    onPrepareCloud: { placement in
+                        await store.prepareCloudAccess(for: placement)
+                    },
                     onCancel: { showRetranscribeSheet = false },
-                    onContinue: { options in
-                        guard models.hasRequiredTranscriptionModels(
-                            languageCode: options.languageCode,
-                            speakerCount: options.speakerCount.count
-                        ) else {
-                            models.presentManager()
-                            return
+                    onContinue: { submission in
+                        if submission.placement.compute == .local {
+                            guard models.hasRequiredTranscriptionModels(
+                                languageCode: submission.options.languageCode,
+                                speakerCount: submission.options.speakerCount.count
+                            ) else {
+                                models.presentManager()
+                                return
+                            }
                         }
                         showRetranscribeSheet = false
-                        store.retranscribe(transcriptionID, options: options)
+                        store.retranscribe(transcriptionID, submission: submission)
                     }
                 )
             }
@@ -541,12 +547,24 @@ struct WorkbenchSessionDetailView: View {
                     if let duration = session.duration {
                         Label(formatTime(duration), systemImage: "clock")
                     }
-                    Label(session.createdAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                    Label {
+                        Text(session.createdAt.formatted(date: .numeric, time: .shortened))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    } icon: {
+                        Image(systemName: "calendar")
+                    }
+                    .layoutPriority(1)
                     if let filename = session.originalFilename {
                         Label(filename, systemImage: "doc")
                             .lineLimit(1)
                     }
-                    Label("Stored on this Mac", systemImage: "lock.shield")
+                    Image(systemName: session.storage == .local ? "internaldrive" : "icloud")
+                        .accessibilityLabel(TaskPlacementCopy.storageTooltip(for: session.storage))
+                        .help(TaskPlacementCopy.storageTooltip(for: session.storage))
+                    Image(systemName: session.compute == .local ? "laptopcomputer" : "cloud")
+                        .accessibilityLabel(TaskPlacementCopy.computeTooltip(for: session.compute))
+                        .help(TaskPlacementCopy.computeTooltip(for: session.compute))
                 }
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)

@@ -185,6 +185,18 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var diarizationDiagnostics: DiarizationDiagnostics?
     var transcriptionAlignmentDiagnostics: TranscriptionAlignmentDiagnostics?
     var errorMessage: String?
+    var storage: TaskStorageDestination = .local
+    var compute: TaskComputeDestination = .local
+    var remoteSessionID: UUID?
+    var localCachePath: String?
+
+    var placement: TranscriptionPlacement {
+        get { TranscriptionPlacement(storage: storage, compute: compute) }
+        set {
+            storage = newValue.storage
+            compute = newValue.compute
+        }
+    }
 
     var sourceURL: URL { URL(fileURLWithPath: sourcePath) }
     var originalFilename: String { sourceURL.lastPathComponent }
@@ -303,6 +315,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         case progress, progressMessage, progressStage, flowProgressStage
         case progressStep, progressCompleted, progressTotal
         case diarizationDiagnostics, transcriptionAlignmentDiagnostics, errorMessage
+        case storage, compute, remoteSessionID, localCachePath
     }
 
     init(
@@ -341,7 +354,11 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         progressTotal: Int? = nil,
         diarizationDiagnostics: DiarizationDiagnostics? = nil,
         transcriptionAlignmentDiagnostics: TranscriptionAlignmentDiagnostics? = nil,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        storage: TaskStorageDestination = .local,
+        compute: TaskComputeDestination = .local,
+        remoteSessionID: UUID? = nil,
+        localCachePath: String? = nil
     ) {
         self.id = id
         self.sourcePath = sourcePath
@@ -379,6 +396,10 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         self.diarizationDiagnostics = diarizationDiagnostics
         self.transcriptionAlignmentDiagnostics = transcriptionAlignmentDiagnostics
         self.errorMessage = errorMessage
+        self.storage = storage
+        self.compute = compute
+        self.remoteSessionID = remoteSessionID
+        self.localCachePath = localCachePath
     }
 
     init(from decoder: Decoder) throws {
@@ -443,6 +464,10 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
             forKey: .transcriptionAlignmentDiagnostics
         )
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        storage = try container.decodeIfPresent(TaskStorageDestination.self, forKey: .storage) ?? .local
+        compute = try container.decodeIfPresent(TaskComputeDestination.self, forKey: .compute) ?? .local
+        remoteSessionID = try container.decodeIfPresent(UUID.self, forKey: .remoteSessionID)
+        localCachePath = try container.decodeIfPresent(String.self, forKey: .localCachePath)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -487,6 +512,10 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
             forKey: .transcriptionAlignmentDiagnostics
         )
         try container.encodeIfPresent(errorMessage, forKey: .errorMessage)
+        try container.encode(storage, forKey: .storage)
+        try container.encode(compute, forKey: .compute)
+        try container.encodeIfPresent(remoteSessionID, forKey: .remoteSessionID)
+        try container.encodeIfPresent(localCachePath, forKey: .localCachePath)
     }
 }
 
@@ -609,6 +638,9 @@ struct WorkbenchSession: Identifiable, Sendable {
     var dubTranscript: TranscriptionResult?
     var dubSubtitleTrack: SubtitleTrack?
     var dubSegments: [DubRenderedSegment]
+    var storage: TaskStorageDestination = .local
+    var compute: TaskComputeDestination = .local
+    var remoteSessionID: UUID?
 
     var originalFilename: String? {
         sourceURL?.lastPathComponent
@@ -634,7 +666,7 @@ struct WorkbenchSession: Identifiable, Sendable {
 }
 
 private struct WorkbenchSnapshot: Codable, Sendable {
-    var schemaVersion: Int? = 5
+    var schemaVersion: Int? = 6
     var transcriptions: [WorkbenchTranscriptionJob]
     var dubs: [WorkbenchDubJob]
 }
@@ -653,11 +685,7 @@ enum WorkbenchMediaFlowPlanner {
         ]
         let targetLanguage = job.normalizedTargetLanguageCode
         if job.shouldProcessSubtitles(hasAPIKey: hasAPIKey) || targetLanguage != nil {
-            steps.append(.prepareSubtitles(SubtitleProcessingPayload(
-                invalidOutputFallback: targetLanguage == nil
-                    ? .preserveTimedTranscript
-                    : .failFlow
-            )))
+            steps.append(.prepareSubtitles(SubtitleProcessingPayload()))
         }
         if let targetLanguage {
             steps.append(.translate(TranslationFlowPayload(targetLanguage: targetLanguage)))
@@ -672,9 +700,7 @@ enum WorkbenchMediaFlowPlanner {
             for: job.result ?? TranscriptionResult(text: "", language: job.languageCode, words: [], segments: [])
         ) ?? true
         if needsPreparation {
-            steps.append(.prepareSubtitles(SubtitleProcessingPayload(
-                invalidOutputFallback: .failFlow
-            )))
+            steps.append(.prepareSubtitles(SubtitleProcessingPayload()))
         }
         steps.append(.translate(TranslationFlowPayload(targetLanguage: targetLanguage)))
         return steps
@@ -690,9 +716,7 @@ enum WorkbenchMediaFlowPlanner {
             )),
         ]
         if hasAPIKey {
-            steps.append(.prepareSubtitles(SubtitleProcessingPayload(
-                invalidOutputFallback: .preserveTimedTranscript
-            )))
+            steps.append(.prepareSubtitles(SubtitleProcessingPayload()))
         }
         return steps
     }
@@ -733,6 +757,7 @@ final class WorkbenchStore {
     static let shared = WorkbenchStore()
 
     private static let routeDefaultsKey = "voxella.workbench.route"
+    private let taskAccess: any TranscriptionTaskAccessing
 
     private struct StagedTranscriptionArtifacts {
         var rawResult: TranscriptionResult?
@@ -800,7 +825,8 @@ final class WorkbenchStore {
     private var saveRequestedBeforeHydration = false
     private var saveRevision = 0
 
-    private init() {
+    private init(taskAccess: any TranscriptionTaskAccessing = RoutedTranscriptionTaskAccess()) {
+        self.taskAccess = taskAccess
         let storedRoute = UserDefaults.standard.string(forKey: Self.routeDefaultsKey)
             .flatMap(WorkbenchRoute.init(rawValue:))
         // Session detail requires an in-memory selection. Restore Recent when none exists.
@@ -848,7 +874,10 @@ final class WorkbenchStore {
                 sessionTag: job.sessionTag,
                 dubTranscript: dub?.alignedTranscript,
                 dubSubtitleTrack: dub?.renderedSubtitleTrack,
-                dubSegments: dub?.renderedSegments ?? []
+                dubSegments: dub?.renderedSegments ?? [],
+                storage: job.storage,
+                compute: job.compute,
+                remoteSessionID: job.remoteSessionID
             )
         }
         let standaloneDubs = dubs.filter { job in
@@ -997,13 +1026,6 @@ final class WorkbenchStore {
 
     func stageMediaImport(_ urls: [URL]) {
         transcriptionAdmissionError = nil
-        do {
-            try LocalTranscriptionResourcePolicy.admit(urls)
-        } catch {
-            transcriptionAdmissionError = error.localizedDescription
-            pendingMediaImportURLs = []
-            return
-        }
         pendingMediaImportURLs = urls
         selectedTranscriptionID = nil
         route = .transcribe
@@ -1026,12 +1048,27 @@ final class WorkbenchStore {
         options: LocalProcessingOptions,
         openSessionWhenDone: Bool = true
     ) -> UUID? {
+        beginTranscriptions(
+            sourceURLs: sourceURLs,
+            submission: TranscriptionSubmission(options: options, placement: .localDefault),
+            openSessionWhenDone: openSessionWhenDone
+        )
+    }
+
+    @discardableResult
+    func beginTranscriptions(
+        sourceURLs: [URL],
+        submission: TranscriptionSubmission,
+        openSessionWhenDone: Bool = true
+    ) -> UUID? {
         transcriptionAdmissionError = nil
-        do {
-            try LocalTranscriptionResourcePolicy.admit(sourceURLs)
-        } catch {
-            transcriptionAdmissionError = error.localizedDescription
-            return nil
+        if submission.placement.compute == .local {
+            do {
+                try LocalTranscriptionResourcePolicy.admit(sourceURLs)
+            } catch {
+                transcriptionAdmissionError = error.localizedDescription
+                return nil
+            }
         }
 
         let batchID = UUID()
@@ -1039,17 +1076,20 @@ final class WorkbenchStore {
         created.reserveCapacity(sourceURLs.count)
         for url in sourceURLs {
             var job = WorkbenchTranscriptionJob(sourcePath: url.path)
-            job.languageCode = options.languageCode
-            job.speakerCount = options.speakerCount
-            job.clipStartMs = sourceURLs.count == 1 ? options.clipStartMs : nil
-            job.clipEndMs = sourceURLs.count == 1 ? options.clipEndMs : nil
-            job.useLLMSubtitleProcessing = options.useLLMSubtitleProcessing
-            job.targetLanguageCode = options.normalizedTargetLanguageCode
+            job.languageCode = submission.options.languageCode
+            job.speakerCount = submission.options.speakerCount
+            job.clipStartMs = sourceURLs.count == 1 ? submission.options.clipStartMs : nil
+            job.clipEndMs = sourceURLs.count == 1 ? submission.options.clipEndMs : nil
+            job.useLLMSubtitleProcessing = submission.options.useLLMSubtitleProcessing
+            job.targetLanguageCode = submission.options.normalizedTargetLanguageCode
             if sourceURLs.count == 1 {
-                job.customTitle = SessionTitlePolicy.normalizedUserTitle(options.customTitle)
+                job.customTitle = SessionTitlePolicy.normalizedUserTitle(submission.options.customTitle)
             }
             job.batchID = batchID
-            job.progressMessage = "Queued for local processing"
+            job.placement = submission.placement
+            job.progressMessage = submission.placement.compute == .local
+                ? "Queued"
+                : "Queued for VoxStudio Cloud"
             job.state = .ready
             created.append(job)
         }
@@ -1091,6 +1131,17 @@ final class WorkbenchStore {
 
     private func enqueueTranscription(_ id: UUID, openSessionWhenBatchCompletes: Bool) {
         self.openSessionWhenBatchCompletes = openSessionWhenBatchCompletes
+        guard let job = transcriptions.first(where: { $0.id == id }) else { return }
+        if job.compute == .cloud {
+            selectedTranscriptionID = id
+            updateTranscription(id) {
+                if $0.state == .ready {
+                    $0.progressMessage = "Connecting to VoxStudio Cloud…"
+                }
+            }
+            startTranscriptionPipeline(id)
+            return
+        }
         guard !pendingTranscriptionQueue.contains(id),
               activeQueuedTranscriptionID != id,
               flowTasks[id] == nil else { return }
@@ -1660,7 +1711,9 @@ final class WorkbenchStore {
             updateTranscription(id) {
                 $0.state = .ready
                 $0.progress = 0
-                $0.progressMessage = "Queued for local processing"
+                $0.progressMessage = job.compute == .cloud
+                    ? "Queued for VoxStudio Cloud"
+                    : "Queued"
                 $0.errorMessage = nil
             }
         }
@@ -1669,18 +1722,28 @@ final class WorkbenchStore {
         enqueueTranscription(id, openSessionWhenBatchCompletes: true)
     }
 
+    func prepareCloudAccess(for placement: TranscriptionPlacement) async -> CloudAccessPreparation {
+        guard TranscriptionPlacementRouter.requiresAuthentication(placement) else { return .ready }
+        return await AccountService.shared.ensureCloudAccess()
+    }
+
     /// Applies new processing options and re-runs ASR for an existing transcription job.
     func retranscribe(_ id: UUID, options: LocalProcessingOptions) {
+        retranscribe(id, submission: TranscriptionSubmission(options: options, placement: .localDefault))
+    }
+
+    func retranscribe(_ id: UUID, submission: TranscriptionSubmission) {
         guard let job = transcriptions.first(where: { $0.id == id }) else { return }
         guard job.state != .running, job.state != .cancelling else { return }
         updateTranscription(id) {
-            $0.languageCode = options.languageCode
-            $0.speakerCount = options.speakerCount
-            $0.clipStartMs = options.clipStartMs
-            $0.clipEndMs = options.clipEndMs
-            $0.useLLMSubtitleProcessing = options.useLLMSubtitleProcessing
-            $0.targetLanguageCode = options.normalizedTargetLanguageCode
-            $0.customTitle = SessionTitlePolicy.normalizedUserTitle(options.customTitle)
+            $0.languageCode = submission.options.languageCode
+            $0.speakerCount = submission.options.speakerCount
+            $0.clipStartMs = submission.options.clipStartMs
+            $0.clipEndMs = submission.options.clipEndMs
+            $0.useLLMSubtitleProcessing = submission.options.useLLMSubtitleProcessing
+            $0.targetLanguageCode = submission.options.normalizedTargetLanguageCode
+            $0.customTitle = SessionTitlePolicy.normalizedUserTitle(submission.options.customTitle)
+            $0.placement = submission.placement
         }
         runTranscription(id)
     }
@@ -1693,7 +1756,9 @@ final class WorkbenchStore {
         }
         transcriptions[index].state = .running
         transcriptions[index].progress = 0.02
-        transcriptions[index].progressMessage = "Preparing audio…"
+        transcriptions[index].progressMessage = transcriptions[index].compute == .cloud
+            ? "Connecting to VoxStudio Cloud…"
+            : "Preparing audio…"
         transcriptions[index].progressStage = nil
         transcriptions[index].flowProgressStage = .transcription
         transcriptions[index].progressStep = "flow_started"
@@ -1712,10 +1777,6 @@ final class WorkbenchStore {
                     finishTranscriptionSlot(id)
                 }
             }
-            _ = await LLMSettingsStore.shared.credentialAvailable()
-            let hasSubtitleModel = LLMSettingsStore.shared.hasConfiguredModel(
-                for: .subtitleProcessing
-            )
             if Task.isCancelled {
                 updateTranscription(id) {
                     $0.state = .cancelled
@@ -1758,15 +1819,39 @@ final class WorkbenchStore {
                 flowJob.clipStartMs = nil
                 flowJob.clipEndMs = nil
             }
-            let request = MediaFlowRequest(
-                id: id,
-                input: .media(input.sourceURL),
-                steps: WorkbenchMediaFlowPlanner.transcriptionSteps(
-                    for: flowJob,
-                    hasAPIKey: hasSubtitleModel
-                )
+            let isCloud = flowJob.compute == .cloud
+            if !isCloud {
+                _ = await LLMSettingsStore.shared.credentialAvailable()
+            }
+            let hasSubtitleModel = !isCloud && LLMSettingsStore.shared.hasConfiguredModel(
+                for: .subtitleProcessing
             )
-            for await event in MediaFlowExecutor.shared.events(for: request) {
+            let request = TranscriptionTaskRequest(
+                jobID: id,
+                sourceURL: input.sourceURL,
+                originalFilename: flowJob.originalFilename,
+                mimeType: Self.mimeType(for: input.sourceURL),
+                sizeBytes: (try? input.sourceURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init),
+                durationHintSec: flowJob.clipRangeSeconds.map { $0.upperBound - $0.lowerBound },
+                options: flowJob.processingOptions,
+                placement: flowJob.placement,
+                flowRequest: MediaFlowRequest(
+                    id: id,
+                    input: .media(input.sourceURL),
+                    steps: flowJob.compute == .cloud
+                        ? []
+                        : WorkbenchMediaFlowPlanner.transcriptionSteps(
+                            for: flowJob,
+                            hasAPIKey: hasSubtitleModel
+                        )
+                ),
+                remoteSessionID: flowJob.remoteSessionID,
+                shouldReuseRemoteSession: input.usesExtractedClip == false
+                    && flowJob.remoteSessionID != nil
+                    && flowJob.placement.storage == .cloud
+                    && flowJob.placement.compute == .cloud
+            )
+            for await event in taskAccess.events(for: request) {
                 if Task.isCancelled {
                     break
                 }
@@ -1789,6 +1874,35 @@ final class WorkbenchStore {
             }
             guard let completed = transcriptions.first(where: { $0.id == id }),
                   completed.state == .completed else { return }
+
+            if TranscriptionPlacementRouter.shouldSyncLocalResults(completed.placement),
+               let result = completed.result {
+                do {
+                    let remoteID = try await taskAccess.persistCloudCopyIfNeeded(
+                        TranscriptionResultSyncRequest(
+                            jobID: id,
+                            remoteSessionID: completed.remoteSessionID,
+                            sourceURL: input.sourceURL,
+                            originalFilename: completed.originalFilename,
+                            mimeType: Self.mimeType(for: input.sourceURL),
+                            sizeBytes: (try? input.sourceURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init),
+                            options: completed.processingOptions,
+                            placement: completed.placement,
+                            result: result,
+                            subtitleTrack: completed.subtitleTrack,
+                            translationTracks: completed.translationTracks
+                        )
+                    )
+                    if let remoteID {
+                        updateTranscription(id) { $0.remoteSessionID = remoteID }
+                    }
+                } catch {
+                    updateTranscription(id) {
+                        $0.progressMessage = "Transcript ready · cloud copy failed"
+                        $0.errorMessage = error.localizedDescription
+                    }
+                }
+            }
 
             // Free the local ASR slot before title/summary LLM enrichment.
             flowTasks[id] = nil
@@ -1838,6 +1952,12 @@ final class WorkbenchStore {
     }
 
     func cancelTranscription(_ id: UUID) {
+        let shouldReturnToSession = transcriptions.first(where: { $0.id == id }).map {
+            TranscriptionPlacementRouter.shouldReturnToSessionAfterCancellation(
+                $0.placement,
+                hasRemoteSession: $0.remoteSessionID != nil
+            )
+        } ?? false
         pendingTranscriptionQueue.removeAll { $0 == id }
         if let batch = activeTranscriptionBatch, batch.jobIDs.contains(id) {
             for queued in batch.jobIDs where queued != id && pendingTranscriptionQueue.contains(queued) {
@@ -1859,11 +1979,38 @@ final class WorkbenchStore {
             finishTranscriptionSlot(id)
             return
         }
-        flowTasks[id]?.cancel()
         updateTranscription(id) {
             $0.state = .cancelling
             $0.errorMessage = nil
-            $0.progressMessage = "Cancelling media flow…"
+            $0.progressMessage = $0.compute == .cloud
+                ? "Cancelling VoxStudio Cloud…"
+                : "Cancelling media flow…"
+        }
+        Task { [weak self] in
+            do {
+                try await self?.taskAccess.cancel(id)
+                if shouldReturnToSession, let self {
+                    self.activeTranscriptionBatch = nil
+                    self.selectedTranscriptionID = nil
+                    self.selectedDubID = nil
+                    self.selectedSessionID = id
+                    self.route = .session
+                }
+                // Let the remote workflow acknowledge cancellation before stopping its event consumer.
+                self?.flowTasks[id]?.cancel()
+            } catch {
+                guard let self,
+                      self.transcriptions.first(where: { $0.id == id })?.state == .cancelling
+                else {
+                    return
+                }
+                self.updateTranscription(id) {
+                    $0.state = .failed
+                    $0.progressMessage = "Could not cancel VoxStudio Cloud"
+                    $0.errorMessage = error.localizedDescription
+                }
+                self.flowTasks[id]?.cancel()
+            }
         }
     }
 
@@ -2155,6 +2302,11 @@ final class WorkbenchStore {
                 job.progressCompleted = progress.current
                 job.progressTotal = progress.total
                 job.progressMessage = progress.message
+                if progress.step == "bind_remote_session",
+                   let remoteToken = progress.message.split(whereSeparator: \.isWhitespace).last,
+                   let remote = UUID(uuidString: String(remoteToken)) {
+                    job.remoteSessionID = remote
+                }
                 if progress.status == .started || progress.status == .processing {
                     job.state = .running
                     job.progress = max(job.progress, progress.progress)
@@ -2167,6 +2319,7 @@ final class WorkbenchStore {
                     }
                     job.state = .completed
                     job.progress = 1
+                    job.localCachePath = sourceURL.path
                     if let detail = job.transcriptionAlignmentDiagnostics?.completionDetail {
                         job.progressMessage = "Transcript ready · \(detail)"
                     } else if job.translationTrack != nil {
@@ -2743,6 +2896,20 @@ final class WorkbenchStore {
     nonisolated private static var dataDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Voxella Studio", isDirectory: true)
+    }
+
+    private static func mimeType(for url: URL) -> String {
+        let ext = url.pathExtension.lowercased()
+        if ClipType(fileExtension: ext) == .video {
+            return ext == "mov" ? "video/quicktime" : "video/mp4"
+        }
+        switch ext {
+        case "wav": return "audio/wav"
+        case "mp3": return "audio/mpeg"
+        case "m4a", "aac": return "audio/mp4"
+        case "flac": return "audio/flac"
+        default: return "application/octet-stream"
+        }
     }
 
     nonisolated private static var clipsDirectory: URL {

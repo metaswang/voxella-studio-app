@@ -10,9 +10,9 @@ struct WorkbenchLibraryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("Create locally. Keep your media private.")
+                    Text("Create")
                         .font(.system(size: 28, weight: .light))
-                    Text("Transcribe, dub, and edit video entirely on this Apple silicon Mac.")
+                    Text("Transcribe, dub, and edit video.")
                         .font(.system(size: AppTheme.FontSize.md))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
@@ -177,7 +177,7 @@ enum WorkbenchFilePicker {
     static func pickMediaFiles() async -> [URL] {
         let panel = NSOpenPanel()
         panel.title = "Choose audio or video"
-        panel.message = "Select one or more files. Local transcription processes them one at a time."
+        panel.message = "Select one or more files. Processing runs one file at a time."
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.audio, .movie, .mpeg4Movie, .quickTimeMovie]

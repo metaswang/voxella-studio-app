@@ -4,8 +4,9 @@ set -euo pipefail
 # Usage:
 #   scripts/bundle.sh [release|debug]           # ad-hoc signed dev build
 #   scripts/bundle.sh debug --fast              # fastest: skip dSYM + deep sign
-#   scripts/bundle.sh release --sign            # build + Developer ID codesign
-#   scripts/bundle.sh release --dist            # build + sign + notarize + staple + DMG
+#   scripts/bundle.sh debug --sign              # Apple Development + profile (native SIWA)
+#   scripts/bundle.sh release --sign            # codesign with SIGNING_IDENTITY + profile
+#   scripts/bundle.sh release --dist            # Developer ID + notarize + staple + DMG
 
 CONFIG="release"
 MODE="dev"
@@ -63,9 +64,15 @@ inject_plist() {
 }
 
 echo "==> Injecting backend config into Info.plist"
-inject_plist PalmierClerkPublishableKey "${CLERK_PUBLISHABLE_KEY:-}"
 inject_plist PalmierConvexDeploymentURL "${CONVEX_DEPLOYMENT_URL:-}"
 inject_plist PalmierConvexHttpURL "${CONVEX_HTTP_URL:-}"
+inject_plist GIDClientID "${GOOGLE_MAC_CLIENT_ID:-}"
+inject_plist GIDServerClientID "${GOOGLE_SERVER_CLIENT_ID:-}"
+if [ -n "${GOOGLE_MAC_REVERSED_CLIENT_ID:-}" ]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:1:CFBundleURLSchemes:0 ${GOOGLE_MAC_REVERSED_CLIENT_ID}" "$APP/Contents/Info.plist"
+else
+  echo "!! GOOGLE_MAC_REVERSED_CLIENT_ID not set in $ENV_FILE — Google Sign-In callback will be unavailable" >&2
+fi
 
 cp "$RESOURCES/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
@@ -154,33 +161,99 @@ if [ -z "$SIGNING_IDENTITY" ]; then
   exit 1
 fi
 
-TEAM_IDENTIFIER="${TEAM_IDENTIFIER:-}"
-if [ -z "$TEAM_IDENTIFIER" ]; then
-  TEAM_IDENTIFIER="$(
-    security find-certificate -p -c "$SIGNING_IDENTITY" |
-      openssl x509 -noout -subject |
-      awk -F 'OU=' 'NF > 1 { split($2, parts, ","); print parts[1]; exit }'
-  )"
-fi
-if [[ ! "$TEAM_IDENTIFIER" =~ ^[A-Za-z0-9]{10}$ ]]; then
-  echo "!! Could not resolve a valid Team ID from SIGNING_IDENTITY" >&2
+if [ "$MODE" = "dist" ] && [[ "$SIGNING_IDENTITY" != Developer\ ID\ Application:* ]]; then
+  echo "!! --dist requires a Developer ID Application identity; got: $SIGNING_IDENTITY" >&2
   exit 1
 fi
 
+cert_ou="$(
+  security find-certificate -p -c "$SIGNING_IDENTITY" |
+    openssl x509 -noout -subject |
+    sed -n 's/.*OU=\([A-Za-z0-9]\{10\}\).*/\1/p'
+)"
+if [[ ! "$cert_ou" =~ ^[A-Za-z0-9]{10}$ ]]; then
+  echo "!! Could not read Team ID (OU) from SIGNING_IDENTITY: $SIGNING_IDENTITY" >&2
+  exit 1
+fi
+
+TEAM_IDENTIFIER="${TEAM_IDENTIFIER:-$cert_ou}"
+if [[ ! "$TEAM_IDENTIFIER" =~ ^[A-Za-z0-9]{10}$ ]]; then
+  echo "!! TEAM_IDENTIFIER is not a valid 10-character Team ID" >&2
+  exit 1
+fi
+if [ "$TEAM_IDENTIFIER" != "$cert_ou" ]; then
+  echo "!! TEAM_IDENTIFIER=$TEAM_IDENTIFIER does not match certificate OU=$cert_ou" >&2
+  echo "!! Native Sign in with Apple requires the paid team that owns com.voxella.studio" >&2
+  exit 1
+fi
+
+PROVISIONING_PROFILE="${PROVISIONING_PROFILE:-}"
+PROVISIONING_PROFILE="${PROVISIONING_PROFILE/#\~/$HOME}"
+if [ -z "$PROVISIONING_PROFILE" ]; then
+  echo "!! PROVISIONING_PROFILE is required for --sign or --dist (restricted entitlements)" >&2
+  exit 1
+fi
+if [ ! -f "$PROVISIONING_PROFILE" ]; then
+  echo "!! provisioning profile not found: $PROVISIONING_PROFILE" >&2
+  exit 1
+fi
+
+PROFILE_PLIST="$(mktemp -t palmierpro-profile)"
 SIGNING_ENTITLEMENTS="$(mktemp -t palmierpro-entitlements)"
-trap 'rm -f "$SIGNING_ENTITLEMENTS"' EXIT
+trap 'rm -f "$PROFILE_PLIST" "$SIGNING_ENTITLEMENTS"' EXIT
+security cms -D -i "$PROVISIONING_PROFILE" > "$PROFILE_PLIST"
+profile_team="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$PROFILE_PLIST")"
+profile_app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$PROFILE_PLIST")"
+if [ "$profile_team" != "$TEAM_IDENTIFIER" ]; then
+  echo "!! provisioning profile team $profile_team does not match $TEAM_IDENTIFIER" >&2
+  exit 1
+fi
+if [ "$profile_app_id" != "$TEAM_IDENTIFIER.com.voxella.studio" ]; then
+  echo "!! provisioning profile application-identifier is $profile_app_id" >&2
+  exit 1
+fi
+if ! /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.applesignin:0' "$PROFILE_PLIST" >/dev/null 2>&1; then
+  echo "!! provisioning profile is missing com.apple.developer.applesignin" >&2
+  exit 1
+fi
+
+host_udid="$(system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Provisioning UDID/{print $2; exit}')"
+if [ -n "$host_udid" ]; then
+  if ! /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$PROFILE_PLIST" | grep -q "$host_udid"; then
+    echo "!! provisioning profile does not include this Mac's Provisioning UDID ($host_udid)" >&2
+    echo "!! Apple Silicon uses Provisioning UDID, not Hardware UUID" >&2
+    exit 1
+  fi
+fi
+
+echo "==> Embedding provisioning profile"
+cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
+
 sed "s/__TEAM_IDENTIFIER__/$TEAM_IDENTIFIER/g" \
   "$ENTITLEMENTS_TEMPLATE" > "$SIGNING_ENTITLEMENTS"
 
-echo "==> Codesigning main app"
-codesign --force --options runtime --timestamp \
-  --entitlements "$SIGNING_ENTITLEMENTS" \
-  --sign "$SIGNING_IDENTITY" \
-  "$APP"
+echo "==> Codesigning main app ($SIGNING_IDENTITY / $TEAM_IDENTIFIER)"
+CODESIGN_ARGS=(--force --options runtime --entitlements "$SIGNING_ENTITLEMENTS" --sign "$SIGNING_IDENTITY")
+if [ "$MODE" = "dist" ]; then
+  CODESIGN_ARGS+=(--timestamp)
+else
+  CODESIGN_ARGS+=(--timestamp=none)
+fi
+codesign "${CODESIGN_ARGS[@]}" "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 
+signed_team="$(codesign -dv --verbose=4 "$APP" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
+if [ "$signed_team" != "$TEAM_IDENTIFIER" ]; then
+  echo "!! signed TeamIdentifier=$signed_team, expected $TEAM_IDENTIFIER" >&2
+  exit 1
+fi
+if ! codesign -d --entitlements - "$APP" 2>/dev/null | grep -q 'com.apple.developer.applesignin'; then
+  echo "!! signed app is missing com.apple.developer.applesignin" >&2
+  exit 1
+fi
+
 if [ "$MODE" = "sign" ]; then
-  echo "==> Done: $APP (signed, not notarized)"
+  echo "==> Done: $APP (signed, not notarized; native Sign in with Apple enabled)"
   exit 0
 fi
 

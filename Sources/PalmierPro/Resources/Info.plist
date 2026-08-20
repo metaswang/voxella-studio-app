@@ -61,10 +61,22 @@
 			<string>com.voxella.studio</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>palmier</string>
+				<string>voxella-studio</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Google Sign In</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>CONFIGURE_GOOGLE_MAC_REVERSED_CLIENT_ID</string>
 			</array>
 		</dict>
 	</array>
+	<key>GIDClientID</key>
+	<string>CONFIGURE_GOOGLE_MAC_CLIENT_ID</string>
+	<key>GIDServerClientID</key>
+	<string>CONFIGURE_GOOGLE_SERVER_CLIENT_ID</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
