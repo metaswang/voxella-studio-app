@@ -408,6 +408,22 @@ enum AppTheme {
         static let speakerEditorWidth: CGFloat = 320
     }
 
+    enum VideoEditorHome {
+        static let posterMinWidth: CGFloat = 248
+        static let posterAspect: CGFloat = 16.0 / 9.0
+        static let posterThumbnailMaxPixelSize: Int = 960
+        static let listPosterWidth: CGFloat = 112
+        static var listPosterHeight: CGFloat { listPosterWidth / posterAspect }
+        static let listOpenedColumnWidth: CGFloat = 160
+        static let listRowMinHeight: CGFloat = 76
+        static let resumePosterWidth: CGFloat = 168
+        static let searchWidth: CGFloat = 240
+        static let layoutPickerWidth: CGFloat = 88
+        static let newBadgeSize: CGFloat = 44
+        static let hoverOpenOverlay: Double = Opacity.strong
+        static let posterDash: [CGFloat] = [Spacing.md, Spacing.sm]
+    }
+
     enum Settings {
         static let sidebarWidth: CGFloat = 220
         static let contentMaxWidth: CGFloat = 640

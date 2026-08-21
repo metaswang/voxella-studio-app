@@ -10,51 +10,41 @@ struct ProjectCard: View {
     let onDelete: () -> Void
 
     @State private var isHovered = false
-    @State private var thumbnail: NSImage?
 
     private let cardRadius: CGFloat = AppTheme.Radius.mdLg
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            // Thumbnail
-            AppTheme.Background.placeholderColor
-                .aspectRatio(5.0/4.0, contentMode: .fit)
-                .overlay {
-                    if let thumbnail {
-                        Image(nsImage: thumbnail)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } else {
-                        Image(systemName: "film")
-                            .font(.system(size: AppTheme.FontSize.title2, weight: .light))
-                            .foregroundStyle(AppTheme.Text.mutedColor)
-                    }
-                }
-                .overlay {
-                    if !entry.isAccessible {
-                        Color.black.opacity(0.6)
+            ProjectPackageThumbnail(
+                url: entry.url,
+                freshness: entry.lastOpenedDate,
+                placeholderSize: AppTheme.FontSize.title2
+            )
+            .aspectRatio(5.0 / 4.0, contentMode: .fit)
+            .overlay {
+                if !entry.isAccessible {
+                    Color.black.opacity(AppTheme.Opacity.high)
 
-                        VStack(spacing: AppTheme.Spacing.xs) {
-                            Image(systemName: "questionmark.folder")
-                                .font(.system(size: AppTheme.FontSize.title1))
-                            Text("File missing")
-                                .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
-                        }
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    VStack(spacing: AppTheme.Spacing.xs) {
+                        Image(systemName: "questionmark.folder")
+                            .font(.system(size: AppTheme.FontSize.title1))
+                        Text("File missing")
+                            .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                     }
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
-                .clipped()
+            }
+            .clipped()
 
-            // Bottom gradient + label overlay
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: .black.opacity(0.7), location: 1),
+                    .init(color: .black.opacity(AppTheme.Opacity.high), location: 1),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 60)
+            .frame(height: AppTheme.ComponentSize.projectCardHeight / 2)
             .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
@@ -63,7 +53,7 @@ struct ProjectCard: View {
                     .foregroundStyle(entry.isAccessible ? .white : AppTheme.Text.mutedColor)
                     .lineLimit(1)
 
-                Text(Self.relativeString(for: entry.createdDate))
+                Text(ProjectRecency.string(for: entry.lastOpenedDate))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(.white.opacity(AppTheme.Opacity.medium))
             }
@@ -78,7 +68,7 @@ struct ProjectCard: View {
                 onOpen(entry.url)
             }
         }
-        .opacity(entry.isAccessible ? 1.0 : 0.6)
+        .opacity(entry.isAccessible ? 1.0 : AppTheme.Opacity.strong)
         .overlay(alignment: .topTrailing) {
             if isSelecting {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -115,36 +105,90 @@ struct ProjectCard: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
         .onHover { isHovered = $0 }
         .contextMenu {
-            if entry.isAccessible {
-                Button("Open") { onOpen(entry.url) }
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.selectFile(entry.url.path, inFileViewerRootedAtPath: entry.url.deletingLastPathComponent().path)
-                }
-                Divider()
-            }
-            Button("Remove from Recents") { onRemove(entry.url) }
-            Button("Delete Project", role: .destructive, action: onDelete)
+            ProjectEntryContextActions(
+                entry: entry,
+                onOpen: onOpen,
+                onRemove: onRemove,
+                onDelete: onDelete
+            )
         }
-        .task(id: entry.lastOpenedDate) { await loadThumbnail(for: entry.url) }
+    }
+}
+
+struct ProjectPackageThumbnail: View {
+    let url: URL
+    var freshness: Date
+    var maxPixelSize: Int = 640
+    var placeholderSymbol: String = "film"
+    var placeholderSize: CGFloat = AppTheme.FontSize.title1
+
+    @State private var image: NSImage?
+
+    var body: some View {
+        AppTheme.Background.placeholderColor
+            .overlay {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Image(systemName: placeholderSymbol)
+                        .font(.system(size: placeholderSize, weight: AppTheme.FontWeight.light))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                }
+            }
+            .clipped()
+            .task(id: taskID) { await load() }
     }
 
-    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f
+    private var taskID: String {
+        "\(url.standardizedFileURL.path)|\(freshness.timeIntervalSinceReferenceDate)|\(maxPixelSize)"
+    }
+
+    private func load() async {
+        image = nil
+        let packageURL = url
+        let pixelSize = maxPixelSize
+        let cgImage = await Task.detached(priority: .utility) {
+            let thumbURL = packageURL.appendingPathComponent(Project.thumbnailFilename, isDirectory: false)
+            return ImageEncoder.thumbnail(url: thumbURL, maxPixelSize: pixelSize)
+        }.value
+        guard let cgImage, !Task.isCancelled else { return }
+        image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+}
+
+@MainActor
+enum ProjectRecency {
+    private static let formatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
     }()
 
-    private static func relativeString(for date: Date) -> String {
-        relativeDateFormatter.localizedString(for: date, relativeTo: Date())
+    static func string(for date: Date) -> String {
+        formatter.localizedString(for: date, relativeTo: Date())
     }
+}
 
-    private func loadThumbnail(for projectURL: URL) async {
-        thumbnail = nil
-        let image = await Task.detached(priority: .utility) {
-            let thumbURL = projectURL.appendingPathComponent(Project.thumbnailFilename, isDirectory: false)
-            return ImageEncoder.thumbnail(url: thumbURL, maxPixelSize: 640)
-        }.value
-        guard let image, !Task.isCancelled else { return }
-        thumbnail = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+struct ProjectEntryContextActions: View {
+    let entry: ProjectEntry
+    let onOpen: (URL) -> Void
+    let onRemove: (URL) -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        if entry.isAccessible {
+            Button("Open") { onOpen(entry.url) }
+            Button("Reveal in Finder") {
+                NSWorkspace.shared.selectFile(
+                    entry.url.path,
+                    inFileViewerRootedAtPath: entry.url.deletingLastPathComponent().path
+                )
+            }
+            Divider()
+        }
+        Button("Remove from Recents") { onRemove(entry.url) }
+        Button("Delete Project", role: .destructive, action: onDelete)
     }
 }

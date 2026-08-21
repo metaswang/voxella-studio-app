@@ -178,7 +178,7 @@ struct HomeView: View {
         case .voiceLibrary:
             VoiceLibraryView()
         case .videoEditor:
-            VideoEditorLauncherView()
+            VideoEditorHomeView()
         case .session:
             if store.selectedSession != nil {
                 WorkbenchSessionDetailView()
@@ -343,12 +343,8 @@ private struct WorkbenchSidebar: View {
 
     private func select(_ route: WorkbenchRoute) {
         if route == .videoEditor {
-            if appState.activeProject != nil {
-                appState.resumeEditor()
-                return
-            }
             if appState.editorPresentation == .active {
-                appState.suspendEditor()
+                return
             }
             store.route = .videoEditor
             return
