@@ -76,14 +76,9 @@ enum KeychainStore {
         }
         do {
             try upsert(data, account: account, backend: .dataProtection)
-            // A development build may previously have stored the same credential
-            // in the login keychain. Once a provisioned build can use the data
-            // protection keychain, keep only the stronger copy.
-            try? deleteItem(account: account, backend: .login)
+            // Keep a login-keychain copy so signed debug builds share credentials across rebuilds.
+            try upsert(data, account: account, backend: .login)
         } catch let error as KeychainStoreError where error.isMissingEntitlement {
-            // Ad-hoc macOS builds have no provisioning-profile-authorized keychain
-            // access group. The login keychain remains encrypted and is the only
-            // entitlement-free Keychain Services implementation available to them.
             try upsert(data, account: account, backend: .login)
         }
     }

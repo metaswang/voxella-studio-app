@@ -124,6 +124,11 @@ private struct SessionListRow: View {
                     .foregroundStyle(AppTheme.Text.mutedColor)
                 }
                 Spacer(minLength: AppTheme.Spacing.zero)
+                SessionPlacementIndicators(
+                    storage: session.storage,
+                    compute: session.compute,
+                    showsLabel: true
+                )
                 SessionStatusBadge(state: session.state)
                 Color.clear
                     .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
@@ -192,9 +197,82 @@ private struct SessionListRow: View {
     }
 }
 
+private struct SessionPlacementIndicators: View {
+    let storage: TaskStorageDestination
+    let compute: TaskComputeDestination
+    var showsLabel = false
+
+    private var hasCloudPlacement: Bool {
+        storage == .cloud || compute == .cloud
+    }
+
+    private var placementLabel: String {
+        switch (storage, compute) {
+        case (.local, .local):
+            TaskPlacementCopy.thisMac
+        case (.cloud, .cloud):
+            TaskPlacementCopy.voxStudioCloud
+        case (.cloud, .local):
+            "Cloud session"
+        case (.local, .cloud):
+            "Cloud processing"
+        }
+    }
+
+    private var placementHelp: String {
+        "\(TaskPlacementCopy.storageTooltip(for: storage)) · \(TaskPlacementCopy.computeTooltip(for: compute))"
+    }
+
+    var body: some View {
+        HStack(spacing: showsLabel ? AppTheme.Spacing.xs : AppTheme.Spacing.md) {
+            Image(systemName: storage == .local ? "internaldrive" : "icloud")
+                .accessibilityLabel(TaskPlacementCopy.storageTooltip(for: storage))
+                .help(TaskPlacementCopy.storageTooltip(for: storage))
+            Image(systemName: compute == .local ? "laptopcomputer" : "cloud")
+                .accessibilityLabel(TaskPlacementCopy.computeTooltip(for: compute))
+                .help(TaskPlacementCopy.computeTooltip(for: compute))
+            if showsLabel {
+                Text(placementLabel)
+                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                    .lineLimit(1)
+            }
+        }
+        .font(.system(size: AppTheme.FontSize.sm))
+        .foregroundStyle(
+            hasCloudPlacement
+                ? AppTheme.Accent.link
+                : AppTheme.Text.tertiaryColor
+        )
+        .padding(.horizontal, showsLabel ? AppTheme.Spacing.smMd : AppTheme.Spacing.zero)
+        .padding(.vertical, showsLabel ? AppTheme.Spacing.xs : AppTheme.Spacing.zero)
+        .background(
+            showsLabel
+                ? (hasCloudPlacement
+                    ? AppTheme.Accent.link.opacity(AppTheme.Opacity.soft)
+                    : AppTheme.Background.raisedColor)
+                : Color.clear,
+            in: Capsule()
+        )
+        .overlay {
+            if showsLabel {
+                Capsule()
+                    .strokeBorder(
+                        hasCloudPlacement
+                            ? AppTheme.Accent.link.opacity(AppTheme.Opacity.moderate)
+                            : AppTheme.Border.subtleColor,
+                        lineWidth: AppTheme.BorderWidth.thin
+                    )
+            }
+        }
+        .help(showsLabel ? placementHelp : "")
+        .accessibilityElement(children: .contain)
+    }
+}
+
 struct WorkbenchSessionDetailView: View {
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var models = LocalModelManager.shared
+    @Bindable private var account = AccountService.shared
     @State private var selectedTrack = SessionPlaybackTrack.original
     @State private var selectedTab = SessionDetailTab.transcript
     /// `nil` means Original; otherwise a translation language code.
@@ -206,6 +284,7 @@ struct WorkbenchSessionDetailView: View {
     @State private var showDubOptionsSheet = false
     @State private var showRetranscribeSheet = false
     @State private var showTemplateLoginAlert = false
+    @State private var showTemplateSheet = false
     @State private var showSummaryRefinementSheet = false
     @State private var sessionPendingDeletion: WorkbenchSession?
     @State private var isOpeningClip = false
@@ -300,6 +379,18 @@ struct WorkbenchSessionDetailView: View {
                 )
             }
         }
+        .sheet(isPresented: $showTemplateSheet) {
+            if let session = store.selectedSession {
+                SessionSummaryTemplateSheet(
+                    currentTemplateID: session.summaryTemplateID,
+                    onCancel: { showTemplateSheet = false },
+                    onApply: { template in
+                        showTemplateSheet = false
+                        store.applySummaryTemplate(template, to: session)
+                    }
+                )
+            }
+        }
         .sheet(isPresented: $showRetranscribeSheet) {
             if let session = store.selectedSession,
                let transcriptionID = session.transcriptionID,
@@ -337,7 +428,7 @@ struct WorkbenchSessionDetailView: View {
             }
             Button("OK", role: .cancel) {}
         } message: {
-            Text("Sign in at voxstudio.me to use custom summary templates. Local Studio does not support custom templates yet.")
+            Text("Sign in at voxstudio.me to choose and edit summary templates.")
         }
         .alert(item: $sessionPendingDeletion) { session in
             Alert(
@@ -407,7 +498,7 @@ struct WorkbenchSessionDetailView: View {
                         SessionSummaryPanel(
                             session: session,
                             onOpenTemplate: {
-                                presentTemplateLoginPrompt()
+                                presentTemplatePicker()
                             },
                             onRequestRefinement: { showSummaryRefinementSheet = true }
                         )
@@ -559,12 +650,10 @@ struct WorkbenchSessionDetailView: View {
                         Label(filename, systemImage: "doc")
                             .lineLimit(1)
                     }
-                    Image(systemName: session.storage == .local ? "internaldrive" : "icloud")
-                        .accessibilityLabel(TaskPlacementCopy.storageTooltip(for: session.storage))
-                        .help(TaskPlacementCopy.storageTooltip(for: session.storage))
-                    Image(systemName: session.compute == .local ? "laptopcomputer" : "cloud")
-                        .accessibilityLabel(TaskPlacementCopy.computeTooltip(for: session.compute))
-                        .help(TaskPlacementCopy.computeTooltip(for: session.compute))
+                    SessionPlacementIndicators(
+                        storage: session.storage,
+                        compute: session.compute
+                    )
                 }
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -1018,9 +1107,12 @@ struct WorkbenchSessionDetailView: View {
         }
     }
 
-    private func presentTemplateLoginPrompt() {
-        // Temporarily shield the template picker sheet; require voxstudio.me login messaging only.
-        showTemplateLoginAlert = true
+    private func presentTemplatePicker() {
+        if account.isSignedIn {
+            showTemplateSheet = true
+        } else {
+            showTemplateLoginAlert = true
+        }
     }
 
     private func createClip(from session: WorkbenchSession) {
@@ -1629,6 +1721,13 @@ private struct SessionSummaryPanel: View {
                 }
                 Button("My Template", systemImage: "doc.text", action: onOpenTemplate)
                     .buttonStyle(.bordered)
+                    .disabled(session.summaryState == .running)
+                    .help(
+                        session.summaryState == .running
+                            ? "Wait for the current summary to finish"
+                            : session.summaryTemplateName.map { "Template: \($0)" }
+                                ?? "Choose a summary template"
+                    )
             }
 
             if session.summaryState == .running {

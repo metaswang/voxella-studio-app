@@ -1,7 +1,7 @@
 import Foundation
 
 /// Summary template definitions for local Studio postprocess.
-/// Auto-summary uses a general adaptive template (not domain-specific Interview Notes).
+/// Auto-summary uses a general adaptive template until the user applies a catalog template.
 
 struct SummaryTemplateDefinition: Identifiable, Codable, Equatable, Sendable {
     var id: String
@@ -10,6 +10,11 @@ struct SummaryTemplateDefinition: Identifiable, Codable, Equatable, Sendable {
     var userEdition: String
     var isFallback: Bool
     var categoryCode: String?
+    var scope: String
+    var sourceTemplateID: String?
+    var emojiIcon: String?
+
+    var isPrivate: Bool { scope == "private" }
 
     /// Catalog `is_fallback` Interview Notes id — kept for remote template identity only.
     static let interviewNotesFallbackID = "66666666-6666-6666-6666-666666666666"
@@ -49,12 +54,47 @@ struct SummaryTemplateDefinition: Identifiable, Codable, Equatable, Sendable {
         Choose optional sections dynamically so a meeting, a class lecture, and a short promo each feel correctly summarized — not forced into an interview template. Always finish required sections that have source support.
         """,
         isFallback: true,
-        categoryCode: "general"
+        categoryCode: "general",
+        scope: "local",
+        sourceTemplateID: nil,
+        emojiIcon: "📝"
     )
 
-    /// Local Studio temporarily supports only the general adaptive template.
+    /// Local Studio fallback when the user is signed out or the catalog is unavailable.
     static var locallySupported: [SummaryTemplateDefinition] {
         [generalSummary]
+    }
+}
+
+struct SummaryTemplateTree: Sendable, Equatable {
+    struct Category: Identifiable, Sendable, Equatable {
+        var id: String { code }
+        var code: String
+        var name: String
+        var children: [Subcategory]
+    }
+
+    struct Subcategory: Identifiable, Sendable, Equatable {
+        var id: String { code }
+        var code: String
+        var name: String
+        var templates: [SummaryTemplateDefinition]
+    }
+
+    var locale: String
+    var categories: [Category]
+    var templates: [SummaryTemplateDefinition]
+
+    func template(id: String?) -> SummaryTemplateDefinition? {
+        guard let id, !id.isEmpty else { return nil }
+        return templates.first { $0.id.caseInsensitiveCompare(id) == .orderedSame }
+    }
+
+    func privateCopy(ofPublicTemplateID publicID: String) -> SummaryTemplateDefinition? {
+        templates.first {
+            $0.isPrivate
+                && $0.sourceTemplateID?.caseInsensitiveCompare(publicID) == .orderedSame
+        }
     }
 }
 
@@ -63,6 +103,8 @@ enum SummaryTemplateCatalogError: LocalizedError {
     case networkUnavailable
     case emptyCatalog
     case decodeFailed
+    case templateNotFound
+    case prepareFailed
 
     var errorDescription: String? {
         switch self {
@@ -74,174 +116,281 @@ enum SummaryTemplateCatalogError: LocalizedError {
             return "No summary templates were returned."
         case .decodeFailed:
             return "Could not read the summary template catalog."
+        case .templateNotFound:
+            return "The selected summary template could not be loaded."
+        case .prepareFailed:
+            return "Failed to prepare the summary template."
         }
+    }
+}
+
+enum SummaryTemplateLocale {
+    static let supported = ["en", "de", "nl", "pl", "zh-CN", "ja", "zh-TW", "es", "it"]
+
+    static func resolve(_ raw: String?) -> String {
+        let value = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if supported.contains(value) { return value }
+
+        let lowered = value.lowercased().replacingOccurrences(of: "_", with: "-")
+        if lowered.isEmpty { return "en" }
+        if ["zh-tw", "zh-hk", "zh-mo", "zh-hant"].contains(lowered) { return "zh-TW" }
+        if ["zh-cn", "zh-sg", "zh-my", "zh-hans"].contains(lowered) { return "zh-CN" }
+        if supported.contains(where: { $0.lowercased() == lowered }) {
+            return supported.first { $0.lowercased() == lowered } ?? "en"
+        }
+        let primary = lowered.split(separator: "-", maxSplits: 1).first.map(String.init) ?? lowered
+        if let match = supported.first(where: { $0.lowercased() == primary }) {
+            return match
+        }
+        return "en"
     }
 }
 
 actor SummaryTemplateCatalog {
     static let shared = SummaryTemplateCatalog()
 
-    /// Production API host from voxella-docker-deploy `.env.prod.myvps2` (`INTERNAL_API__BASE_URL`).
-    static let productionAPIBaseURL = URL(string: "https://voxstudio.me")!
-
-    private var cachedRemote: [SummaryTemplateDefinition]?
+    private let client: VoxellaAPIClient
+    private var cachedTree: SummaryTemplateTree?
     private var cachedAt: Date?
+    private var templatesByID: [String: SummaryTemplateDefinition] = [:]
+
+    init(client: VoxellaAPIClient = .shared) {
+        self.client = client
+    }
 
     func locallySupportedTemplate() -> SummaryTemplateDefinition {
         .generalSummary
     }
 
     func template(forID id: String?) -> SummaryTemplateDefinition {
-        guard let id, !id.isEmpty else {
-            return .generalSummary
-        }
+        guard let id, !id.isEmpty else { return .generalSummary }
         if let local = SummaryTemplateDefinition.locallySupported.first(where: { $0.id == id }) {
             return local
         }
-        if let remote = cachedRemote?.first(where: { $0.id == id }) {
-            return remote
+        if let remembered = templatesByID[id.lowercased()] {
+            return remembered
+        }
+        if let cached = cachedTree?.template(id: id) {
+            return cached
         }
         return .generalSummary
     }
 
-    /// Requires network + sign-in. Local Studio currently does not apply remote custom templates.
-    func fetchSupportedTemplates(
-        isSignedIn: Bool,
-        authToken: String?
-    ) async throws -> [SummaryTemplateDefinition] {
-        guard isSignedIn else { throw SummaryTemplateCatalogError.signInRequired }
-        if let cachedRemote, let cachedAt, Date().timeIntervalSince(cachedAt) < 3600 {
-            return filterLocallySupported(cachedRemote)
+    func template(
+        forID id: String?,
+        name: String?,
+        userEdition: String?
+    ) -> SummaryTemplateDefinition {
+        var template = template(forID: id)
+        if let name {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { template.name = trimmed }
         }
+        if let userEdition {
+            let trimmed = userEdition.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { template.userEdition = trimmed }
+        }
+        return template
+    }
 
+    func fetchTree(
+        locale: String,
+        forceRefresh: Bool = false
+    ) async throws -> SummaryTemplateTree {
+        if !forceRefresh,
+           let cachedTree,
+           let cachedAt,
+           Date().timeIntervalSince(cachedAt) < 60 {
+            return cachedTree
+        }
         do {
-            let remote = try await fetchRemoteTree(authToken: authToken)
-            cachedRemote = remote
-            cachedAt = Date()
-            let filtered = filterLocallySupported(remote)
-            return filtered.isEmpty ? SummaryTemplateDefinition.locallySupported : filtered
-        } catch SummaryTemplateCatalogError.signInRequired {
-            throw SummaryTemplateCatalogError.signInRequired
-        } catch {
-            Log.project.warning(
-                "summary template fetch failed: \(error.localizedDescription); using bundled general template"
+            let remote = try await client.summaryTemplateTree(
+                scope: "all",
+                locale: SummaryTemplateLocale.resolve(locale)
             )
-            return SummaryTemplateDefinition.locallySupported
-        }
-    }
-
-    private func filterLocallySupported(
-        _ templates: [SummaryTemplateDefinition]
-    ) -> [SummaryTemplateDefinition] {
-        // Prefer local general template; remote catalog is informational until custom templates ship.
-        _ = templates
-        return SummaryTemplateDefinition.locallySupported
-    }
-
-    private func fetchRemoteTree(authToken: String?) async throws -> [SummaryTemplateDefinition] {
-        var components = URLComponents(
-            url: Self.productionAPIBaseURL.appendingPathComponent("api/v1/summary-templates/tree"),
-            resolvingAgainstBaseURL: false
-        )!
-        components.queryItems = [URLQueryItem(name: "locale", value: "en")]
-        guard let url = components.url else { throw SummaryTemplateCatalogError.networkUnavailable }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let authToken, !authToken.isEmpty {
-            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
-        } else {
-            throw SummaryTemplateCatalogError.signInRequired
-        }
-
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            throw SummaryTemplateCatalogError.networkUnavailable
-        }
-        guard let http = response as? HTTPURLResponse else {
-            throw SummaryTemplateCatalogError.networkUnavailable
-        }
-        if http.statusCode == 401 || http.statusCode == 403 {
-            throw SummaryTemplateCatalogError.signInRequired
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            throw SummaryTemplateCatalogError.networkUnavailable
-        }
-
-        return try decodeTree(data)
-    }
-
-    private func decodeTree(_ data: Data) throws -> [SummaryTemplateDefinition] {
-        struct TreeResponse: Decodable {
-            struct Node: Decodable {
-                let templates: [RemoteTemplate]?
-                let children: [Node]?
+            let tree = Self.decodeTree(remote)
+            guard !tree.templates.isEmpty else { throw SummaryTemplateCatalogError.emptyCatalog }
+            cachedTree = tree
+            cachedAt = Date()
+            for template in tree.templates {
+                remember(template, overwriteEdition: false)
             }
-            struct RemoteTemplate: Decodable {
-                let id: String
-                let name: String?
-                let description: String?
-                let userEdition: String?
-                let isFallback: Bool?
-                let categoryCode: String?
-
-                enum CodingKeys: String, CodingKey {
-                    case id, name, description
-                    case userEdition = "user_edition"
-                    case isFallback = "is_fallback"
-                    case categoryCode = "category_code"
-                }
-            }
-
-            let categories: [Node]?
-            let templates: [RemoteTemplate]?
-        }
-
-        let decoded: TreeResponse
-        do {
-            decoded = try JSONDecoder().decode(TreeResponse.self, from: data)
-        } catch {
+            return tree
+        } catch let error as SummaryTemplateCatalogError {
+            throw error
+        } catch VoxellaAPIError.unauthorized {
+            throw SummaryTemplateCatalogError.signInRequired
+        } catch VoxellaAPIError.decoding {
             throw SummaryTemplateCatalogError.decodeFailed
+        } catch {
+            throw SummaryTemplateCatalogError.networkUnavailable
+        }
+    }
+
+    func loadTemplate(id: String, locale: String) async throws -> SummaryTemplateDefinition {
+        do {
+            let remote = try await client.summaryTemplate(
+                id: id,
+                locale: SummaryTemplateLocale.resolve(locale)
+            )
+            let template = Self.definition(from: remote)
+            remember(template, overwriteEdition: true)
+            return template
+        } catch let error as SummaryTemplateCatalogError {
+            throw error
+        } catch VoxellaAPIError.unauthorized {
+            throw SummaryTemplateCatalogError.signInRequired
+        } catch VoxellaAPIError.http(404, _) {
+            throw SummaryTemplateCatalogError.templateNotFound
+        } catch VoxellaAPIError.decoding {
+            throw SummaryTemplateCatalogError.decodeFailed
+        } catch {
+            throw SummaryTemplateCatalogError.networkUnavailable
+        }
+    }
+
+    func assistEdit(
+        templateID: String,
+        instruction: String,
+        currentUserEdition: String
+    ) async throws -> String {
+        let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        do {
+            let response = try await client.assistSummaryTemplate(
+                id: templateID,
+                instruction: trimmed,
+                currentUserEdition: currentUserEdition
+            )
+            return response.candidateUserEdition.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch VoxellaAPIError.unauthorized {
+            throw SummaryTemplateCatalogError.signInRequired
+        } catch {
+            throw SummaryTemplateCatalogError.networkUnavailable
+        }
+    }
+
+    /// Copies a public template to a private user edition, then patches any draft changes.
+    func persistDraft(
+        templateID: String,
+        name: String,
+        description: String,
+        userEdition: String
+    ) async throws -> SummaryTemplateDefinition {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedEdition = userEdition.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty, !trimmedEdition.isEmpty else {
+            throw SummaryTemplateCatalogError.prepareFailed
         }
 
-        var collected: [SummaryTemplateDefinition] = []
-        func walk(_ nodes: [TreeResponse.Node]?) {
-            guard let nodes else { return }
-            for node in nodes {
-                for template in node.templates ?? [] {
-                    collected.append(
-                        SummaryTemplateDefinition(
-                            id: template.id,
-                            name: template.name ?? "Template",
-                            description: template.description ?? "",
-                            userEdition: template.userEdition
-                                ?? SummaryTemplateDefinition.generalSummary.userEdition,
-                            isFallback: template.isFallback ?? false,
-                            categoryCode: template.categoryCode
-                        )
+        let copied: VoxellaSummaryTemplate
+        do {
+            copied = try await client.copySummaryTemplateForEdit(id: templateID, reuseExisting: true)
+        } catch VoxellaAPIError.unauthorized {
+            throw SummaryTemplateCatalogError.signInRequired
+        } catch {
+            throw SummaryTemplateCatalogError.prepareFailed
+        }
+
+        let copiedDefinition = Self.definition(from: copied)
+        var nameUpdate: String?
+        var descriptionUpdate: String?
+        var editionUpdate: String?
+        if trimmedName != copiedDefinition.name { nameUpdate = trimmedName }
+        if !trimmedDescription.isEmpty, trimmedDescription != copiedDefinition.description {
+            descriptionUpdate = trimmedDescription
+        }
+        if trimmedEdition != copiedDefinition.userEdition { editionUpdate = trimmedEdition }
+
+        var resolved = copiedDefinition
+        if nameUpdate != nil || descriptionUpdate != nil || editionUpdate != nil {
+            do {
+                let updated = try await client.updateSummaryTemplate(
+                    id: copiedDefinition.id,
+                    name: nameUpdate,
+                    description: descriptionUpdate,
+                    userEdition: editionUpdate
+                )
+                resolved = Self.definition(from: updated.template)
+            } catch VoxellaAPIError.unauthorized {
+                throw SummaryTemplateCatalogError.signInRequired
+            } catch {
+                throw SummaryTemplateCatalogError.prepareFailed
+            }
+        }
+
+        resolved.name = trimmedName
+        resolved.description = trimmedDescription.isEmpty ? resolved.description : trimmedDescription
+        resolved.userEdition = trimmedEdition
+        remember(resolved, overwriteEdition: true)
+        cachedTree = nil
+        cachedAt = nil
+        return resolved
+    }
+
+    private func remember(_ template: SummaryTemplateDefinition, overwriteEdition: Bool) {
+        let key = template.id.lowercased()
+        if !overwriteEdition, let existing = templatesByID[key], !existing.userEdition.isEmpty {
+            var merged = template
+            if template.userEdition.isEmpty {
+                merged.userEdition = existing.userEdition
+            }
+            templatesByID[key] = merged
+            return
+        }
+        templatesByID[key] = template
+    }
+
+    private static func decodeTree(_ remote: VoxellaSummaryTemplateTreeResponse) -> SummaryTemplateTree {
+        let categories = remote.categories.map { category in
+            SummaryTemplateTree.Category(
+                code: category.code,
+                name: category.name,
+                children: category.children.map { subcategory in
+                    var templates = subcategory.templates.map { definition(from: $0, categoryCode: category.code) }
+                    templates.sort(by: preferredOrder)
+                    return SummaryTemplateTree.Subcategory(
+                        code: subcategory.code,
+                        name: subcategory.name,
+                        templates: templates
                     )
                 }
-                walk(node.children)
-            }
-        }
-        walk(decoded.categories)
-        for template in decoded.templates ?? [] {
-            collected.append(
-                SummaryTemplateDefinition(
-                    id: template.id,
-                    name: template.name ?? "Template",
-                    description: template.description ?? "",
-                    userEdition: template.userEdition
-                        ?? SummaryTemplateDefinition.generalSummary.userEdition,
-                    isFallback: template.isFallback ?? false,
-                    categoryCode: template.categoryCode
-                )
             )
         }
-        guard !collected.isEmpty else { throw SummaryTemplateCatalogError.emptyCatalog }
-        return collected
+        var flat: [SummaryTemplateDefinition] = []
+        for category in categories {
+            for subcategory in category.children {
+                flat.append(contentsOf: subcategory.templates)
+            }
+        }
+        for template in remote.templates.map({ definition(from: $0) }) where !flat.contains(where: { $0.id == template.id }) {
+            flat.append(template)
+        }
+        flat.sort(by: preferredOrder)
+        return SummaryTemplateTree(locale: remote.locale, categories: categories, templates: flat)
+    }
+
+    private static func preferredOrder(lhs: SummaryTemplateDefinition, rhs: SummaryTemplateDefinition) -> Bool {
+        if lhs.isPrivate != rhs.isPrivate { return lhs.isPrivate }
+        return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+    }
+
+    private static func definition(
+        from remote: VoxellaSummaryTemplate,
+        categoryCode: String? = nil
+    ) -> SummaryTemplateDefinition {
+        let edition = (remote.userEdition ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return SummaryTemplateDefinition(
+            id: remote.id,
+            name: remote.name,
+            description: remote.description,
+            userEdition: edition,
+            isFallback: remote.isFallback,
+            categoryCode: categoryCode,
+            scope: remote.scope,
+            sourceTemplateID: remote.sourceTemplateID,
+            emojiIcon: remote.emojiIcon
+        )
     }
 }

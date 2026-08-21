@@ -43,11 +43,21 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
                     for: detail.options?.clientCompute
                 ) == .updateExisting {
                     try Task.checkCancellation()
+                    if detail.isClientResultMediaPipeline, !detail.mediaReady {
+                        try await Self.waitForMediaPreparation(
+                            client: client,
+                            sessionID: remoteSessionID
+                        )
+                    }
+                    try Task.checkCancellation()
                     try await client.submitLocalResults(
                         sessionID: remoteSessionID,
                         result: request.result,
                         subtitleTrack: request.subtitleTrack,
-                        translationTracks: request.translationTracks
+                        translationTracks: request.translationTracks,
+                        title: request.title,
+                        summary: request.summary,
+                        sessionTag: request.sessionTag
                     )
                     return remoteSessionID
                 }
@@ -65,6 +75,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
             placement: request.placement,
             remoteSessionID: request.remoteSessionID,
             startPipeline: false,
+            prepareMedia: true,
             clientRequestID: "desktop-local-results-\(request.jobID.uuidString.lowercased())",
             onSessionCreated: { remoteID in
                 let cancellationRequested = await Self.remoteIDs.set(
@@ -83,11 +94,19 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
         )
         do {
             try Task.checkCancellation()
+            try await Self.waitForMediaPreparation(
+                client: client,
+                sessionID: created.sessionID
+            )
+            try Task.checkCancellation()
             try await client.submitLocalResults(
                 sessionID: created.sessionID,
                 result: request.result,
                 subtitleTrack: request.subtitleTrack,
-                translationTracks: request.translationTracks
+                translationTracks: request.translationTracks,
+                title: request.title,
+                summary: request.summary,
+                sessionTag: request.sessionTag
             )
             await Self.remoteIDs.remove(request.jobID)
             return created.sessionID
@@ -193,6 +212,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
                     placement: request.placement,
                     remoteSessionID: request.remoteSessionID,
                     startPipeline: true,
+                    prepareMedia: false,
                     client: client,
                     clientRequestID: request.jobID.uuidString.lowercased(),
                     onSessionCreated: { remoteID in
@@ -332,6 +352,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
         placement: TranscriptionPlacement,
         remoteSessionID: UUID?,
         startPipeline: Bool,
+        prepareMedia: Bool = false,
         clientRequestID: String,
         onSessionCreated: @escaping @Sendable (UUID) async throws -> Void,
         onProgress: @escaping @Sendable (Double, String) -> Void
@@ -347,6 +368,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
             placement: placement,
             remoteSessionID: remoteSessionID,
             startPipeline: startPipeline,
+            prepareMedia: prepareMedia,
             client: client,
             clientRequestID: clientRequestID,
             onSessionCreated: onSessionCreated,
@@ -365,6 +387,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
         placement: TranscriptionPlacement,
         remoteSessionID: UUID?,
         startPipeline: Bool,
+        prepareMedia: Bool,
         client: VoxellaAPIClient,
         clientRequestID: String,
         onSessionCreated: @escaping @Sendable (UUID) async throws -> Void,
@@ -470,7 +493,8 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
             sizeBytes: actualSize,
             mimeType: mimeType,
             filename: originalFilename,
-            startPipeline: startPipeline
+            startPipeline: startPipeline,
+            prepareMedia: prepareMedia
         )
         if startPipeline {
             try await confirmPipelineStarted(
@@ -484,6 +508,30 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
             sessionID: created.sessionID,
             workflowRunID: completed.queuedJobID
         )
+    }
+
+    private static func waitForMediaPreparation(
+        client: VoxellaAPIClient,
+        sessionID: UUID,
+        timeout: Duration = .seconds(600)
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            let detail = try await client.sessionDetail(sessionID)
+            let status = (detail.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if detail.mediaReady || (detail.resultReady == true && status == "completed") {
+                return
+            }
+            if status == "failed" || status == "stopped" {
+                throw VoxellaAPIError.http(
+                    409,
+                    detail.message ?? "VoxStudio could not prepare the uploaded media."
+                )
+            }
+            try await Task.sleep(for: .seconds(1))
+        }
+        throw VoxellaAPIError.http(408, "VoxStudio media preparation timed out.")
     }
 
     private static func fileSize(_ sourceURL: URL) async throws -> Int64 {

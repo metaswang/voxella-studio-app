@@ -488,6 +488,10 @@ enum AppTheme {
         static let compactPanelWidth: CGFloat = 420
         static let summaryRefinementSheetWidth: CGFloat = 520
         static let summaryRefinementEditorHeight: CGFloat = 140
+        static let summaryTemplateSheetWidth: CGFloat = 920
+        static let summaryTemplateSheetHeight: CGFloat = 640
+        static let summaryTemplateSidebarWidth: CGFloat = 280
+        static let summaryTemplateEditorMinHeight: CGFloat = 280
         static let exportSheetWidth: CGFloat = 920
         static let exportSheetHeight: CGFloat = 720
         static let exportSummaryWidth: CGFloat = 280

@@ -7,7 +7,6 @@ struct AISettingsPane: View {
     @State private var routeDrafts: [LLMUseCase: LLMModelRoute] = [:]
     @State private var APIKeyDraft = ""
     @State private var isSavingCredential = false
-    @State private var credentialAutosaveTask: Task<Void, Never>?
     @State private var providerPendingRemoval: LLMProviderProfile?
     @State private var statusMessage: String?
     @State private var statusIsError = false
@@ -38,8 +37,7 @@ struct AISettingsPane: View {
             settings.refreshCredentialStatus()
         }
         .onDisappear {
-            credentialAutosaveTask?.cancel()
-            persistCredentialIfReady()
+            persistDrafts()
         }
         .confirmationDialog(
             "Remove \(providerPendingRemoval?.displayName ?? "provider")?",
@@ -77,6 +75,13 @@ struct AISettingsPane: View {
                             ? AppTheme.Status.errorColor
                             : AppTheme.Status.successColor
                     )
+            }
+
+            if let configurationError = settings.configurationError {
+                Label(configurationError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Status.errorColor)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Label(
@@ -225,7 +230,7 @@ struct AISettingsPane: View {
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: AppTheme.FontSize.sm, design: .monospaced))
                     .focused($focusedField, equals: .APIKey)
-                    .onSubmit { persistCredentialIfReady() }
+                    .onSubmit { flushCredentialIfReady() }
                     .onChange(of: APIKeyDraft) { _, _ in
                         scheduleCredentialAutosave()
                     }
@@ -248,7 +253,7 @@ struct AISettingsPane: View {
         }
         .onChange(of: focusedField) { _, field in
             if field != .APIKey {
-                persistCredentialIfReady()
+                flushCredentialIfReady()
             }
         }
     }
@@ -375,7 +380,9 @@ struct AISettingsPane: View {
     }
 
     private func selectProvider(_ id: UUID) {
-        credentialAutosaveTask?.cancel()
+        if selectedProviderID != nil, selectedProviderID != id {
+            flushCredentialIfReady()
+        }
         guard let provider = settings.provider(id: id) else { return }
         selectedProviderID = id
         providerDraft = provider
@@ -402,42 +409,37 @@ struct AISettingsPane: View {
     }
 
     private func scheduleCredentialAutosave() {
-        credentialAutosaveTask?.cancel()
+        guard let providerID = selectedProviderID else { return }
         let snapshot = APIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !snapshot.isEmpty else { return }
-        credentialAutosaveTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(450))
-            guard !Task.isCancelled else { return }
-            guard APIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines) == snapshot else { return }
-            persistCredentialIfReady()
+        guard !snapshot.isEmpty else {
+            settings.cancelPendingAPIKeySave(for: providerID)
+            return
         }
+        settings.scheduleAPIKeySave(snapshot, providerID: providerID)
     }
 
-    private func persistCredentialIfReady() {
+    private func flushCredentialIfReady() {
         guard let providerID = selectedProviderID else { return }
-        guard !isSavingCredential else { return }
         persistProviderIfValid()
         if providerValidationMessage != nil { return }
         let key = APIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { return }
-        APIKeyDraft = ""
-        isSavingCredential = true
-        Task {
-            defer { isSavingCredential = false }
-            do {
-                try await settings.saveAPIKey(key, providerID: providerID)
-                statusIsError = false
-                statusMessage = "API key saved securely."
-            } catch {
-                statusIsError = true
-                statusMessage = error.localizedDescription
-            }
+        if !key.isEmpty {
+            settings.scheduleAPIKeySave(key, providerID: providerID)
+            APIKeyDraft = ""
+        }
+        settings.flushAPIKeySave(for: providerID)
+    }
+
+    private func persistDrafts() {
+        flushCredentialIfReady()
+        for useCase in LLMUseCase.allCases {
+            persistRouteIfValid(useCase)
         }
     }
 
     private func deleteCredential() {
         guard let providerID = selectedProviderID else { return }
-        credentialAutosaveTask?.cancel()
+        settings.cancelPendingAPIKeySave(for: providerID)
         APIKeyDraft = ""
         isSavingCredential = true
         Task {
@@ -456,6 +458,7 @@ struct AISettingsPane: View {
     private func removePendingProvider() {
         guard let provider = providerPendingRemoval else { return }
         providerPendingRemoval = nil
+        settings.cancelPendingAPIKeySave(for: provider.id)
         Task {
             do {
                 try await settings.removeProvider(id: provider.id)

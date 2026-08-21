@@ -670,12 +670,10 @@ struct SubtitlePostprocessPipeline: Sendable {
         }) {
             return "overlong_subtitle_line"
         }
-        if let reason = punctuationFailureReason(
-            subtitles: subtitles,
-            isCJK: isCJK,
-            limits: limits
-        ) {
-            return reason
+        if subtitles.contains(where: {
+            SubtitleReadabilityPolicy.containsForeignPunctuation($0, denseScript: isCJK)
+        }) {
+            return "wrong_script_punctuation"
         }
         return nil
     }

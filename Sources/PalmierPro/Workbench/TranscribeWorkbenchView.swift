@@ -379,6 +379,25 @@ struct TranscribeWorkbenchView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(AppTheme.Status.errorColor.opacity(0.10), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
         }
+
+        if job.state == .completed,
+           job.resolvedCloudSyncState == .pending {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                Label(
+                    job.pendingCloudSyncError ?? "The local result has not been saved to VoxStudio Cloud.",
+                    systemImage: "icloud.and.arrow.up"
+                )
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Status.warningColor)
+                Button("Retry cloud sync") {
+                    store.retryTranscriptionCloudSync(job.id)
+                }
+                .buttonStyle(.borderless)
+            }
+            .padding(AppTheme.Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.Status.warningColor.opacity(0.10), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        }
     }
 
     private func transcriptEditor(_ job: WorkbenchTranscriptionJob) -> some View {

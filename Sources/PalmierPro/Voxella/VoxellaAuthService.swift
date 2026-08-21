@@ -203,6 +203,13 @@ struct VoxellaAppleAuthorization: Sendable {
     let nonce: String
 }
 
+enum VoxellaAppleNonce {
+    /// Apple copies this value into the identity token nonce claim.
+    static func requestNonce(from raw: String) -> String {
+        SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
 @MainActor
 final class VoxellaAppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
     private var controller: ASAuthorizationController?
@@ -221,7 +228,7 @@ final class VoxellaAppleSignInCoordinator: NSObject, ASAuthorizationControllerDe
 
             let request = ASAuthorizationAppleIDProvider().createRequest()
             request.requestedScopes = [.fullName, .email]
-            request.nonce = Self.sha256(nonce)
+            request.nonce = VoxellaAppleNonce.requestNonce(from: nonce)
 
             let controller = ASAuthorizationController(authorizationRequests: [request])
             controller.delegate = self
@@ -295,10 +302,6 @@ final class VoxellaAppleSignInCoordinator: NSObject, ASAuthorizationControllerDe
 
     private static func randomNonce() -> String {
         UUID().uuidString + UUID().uuidString
-    }
-
-    private static func sha256(_ value: String) -> String {
-        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -464,6 +467,7 @@ actor VoxellaAuthService {
         let idToken = try await VoxellaGoogleSignInCoordinator.signIn()
         let pair = try await tokens.exchangeGoogleIdentityToken(idToken: idToken)
         try store(pair)
+        Log.account.notice("voxstudio sign-in completed", telemetry: "VoxStudio sign-in completed", data: ["provider": "google"])
         return pair.accessToken
     }
 
@@ -476,6 +480,7 @@ actor VoxellaAuthService {
             nonce: authorization.nonce
         )
         try store(pair)
+        Log.account.notice("voxstudio sign-in completed", telemetry: "VoxStudio sign-in completed", data: ["provider": "apple"])
         return pair.accessToken
     }
 
@@ -679,7 +684,7 @@ struct VoxellaAuthTokenClient: VoxellaAuthTokenExchanging {
             refreshToken: refreshToken,
             clientID: VoxellaAuthService.clientID
         ))
-        return try await decodeTokenResponse(request)
+        return try await decodeTokenResponse(request, invalidSession: true)
     }
 
     func revoke(refreshToken: String) async throws {
@@ -693,21 +698,25 @@ struct VoxellaAuthTokenClient: VoxellaAuthTokenExchanging {
         }
     }
 
-    private func decodeTokenResponse(_ request: URLRequest) async throws -> VoxellaAuthTokens {
+    private func decodeTokenResponse(
+        _ request: URLRequest,
+        invalidSession: Bool = false
+    ) async throws -> VoxellaAuthTokens {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw VoxellaAuthError.tokenExchangeFailed("The VoxStudio token endpoint did not respond.")
         }
-        if http.statusCode == 401 {
+        if http.statusCode == 401, invalidSession {
             throw VoxellaAuthError.unauthorized
         }
         guard (200..<300).contains(http.statusCode) else {
+            let message = Self.tokenEndpointMessage(status: http.statusCode, data: data)
             Log.account.warning(
                 "token exchange failed status=\(http.statusCode)",
                 telemetry: "Token exchange failed",
-                data: ["status": http.statusCode]
+                data: ["status": http.statusCode, "message": message]
             )
-            throw VoxellaAuthError.tokenExchangeFailed("VoxStudio sign-in failed (\(http.statusCode)).")
+            throw VoxellaAuthError.tokenExchangeFailed(message)
         }
         let payload = try JSONDecoder().decode(TokenPayload.self, from: data)
         guard !payload.accessToken.isEmpty else {
@@ -720,6 +729,48 @@ struct VoxellaAuthTokenClient: VoxellaAuthTokenExchanging {
             expiresAt: expires,
             userID: payload.user?.id
         )
+    }
+
+    private static func tokenEndpointMessage(status: Int, data: Data) -> String {
+        if let detail = tokenEndpointDetail(data), !detail.isEmpty {
+            return detail
+        }
+        if status == 401 {
+            return "VoxStudio could not verify this sign-in."
+        }
+        return "VoxStudio sign-in failed (\(status))."
+    }
+
+    private static func tokenEndpointDetail(_ data: Data) -> String? {
+        struct DetailPayload: Decodable {
+            var detail: DetailValue?
+
+            enum DetailValue: Decodable {
+                case text(String)
+                case items([[String: String]])
+
+                init(from decoder: Decoder) throws {
+                    let container = try decoder.singleValueContainer()
+                    if let text = try? container.decode(String.self) {
+                        self = .text(text)
+                        return
+                    }
+                    self = .items((try? container.decode([[String: String]].self)) ?? [])
+                }
+            }
+        }
+        guard let payload = try? JSONDecoder().decode(DetailPayload.self, from: data) else {
+            return nil
+        }
+        switch payload.detail {
+        case .text(let text):
+            return text
+        case .items(let items):
+            let messages = items.compactMap { $0["msg"] ?? $0["message"] }.filter { !$0.isEmpty }
+            return messages.isEmpty ? nil : messages.joined(separator: " ")
+        case nil:
+            return nil
+        }
     }
 
     private struct RefreshBody: Encodable {

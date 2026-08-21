@@ -572,6 +572,40 @@ struct MediaFlowTests {
         #expect(requests[2].user.contains("speaker: Speaker 2"))
     }
 
+    @Test func subtitleProcessorAllowsContinuationLinesWithoutPunctuation() async throws {
+        let source = "这是一个没有标点的行然后结束。"
+        let sourceWords = Array(source).enumerated().map { index, character in
+            TranscriptionWord(
+                text: String(character),
+                start: Double(index) * 0.2,
+                end: Double(index) * 0.2 + 0.16,
+                speaker: "Speaker 1"
+            )
+        }
+        let client = StubLLMClient(responses: [
+            #"{"text":"这是一个没有标点的行然后结束。"}"#,
+            #"{"lines":["这是一个没有标点的行","然后结束。"]}"#,
+        ])
+
+        let output = try await SubtitlePostprocessPipeline(client: client).process(
+            transcript: .init(
+                text: source,
+                language: "zh",
+                words: sourceWords,
+                segments: []
+            ),
+            options: .init(maximumConcurrentBatches: 1, maximumAttempts: 1),
+            progress: { _, _, _, _ in }
+        )
+
+        #expect(await client.requestCount == 2)
+        #expect(output.track.cues.map(\.text) == [
+            "这是一个没有标点的行",
+            "然后结束。",
+        ])
+        try assertContinuousCueCoverage(output.track, sourceWords: sourceWords)
+    }
+
     @Test func subtitleProcessorRetriesWhenPunctuationStrandsABoundParticle() async throws {
         let source = "我的颈椎痛的我时常都去治疗那些手法呢"
         let sourceWords = Array(source).enumerated().map { index, character in
@@ -1387,6 +1421,19 @@ struct MediaFlowTests {
         #expect(job.sessionTitle == "Customer Interview")
     }
 
+    @Test func localCloudSyncStateSurvivesPersistence() throws {
+        var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/interview.mov")
+        job.cloudSyncState = .pending
+        job.pendingCloudSyncError = "Cloud session is not reachable."
+
+        let restored = try JSONDecoder().decode(
+            WorkbenchTranscriptionJob.self,
+            from: JSONEncoder().encode(job)
+        )
+        #expect(restored.cloudSyncState == .pending)
+        #expect(restored.pendingCloudSyncError == "Cloud session is not reachable.")
+    }
+
     @Test func transcriptionAlignmentDiagnosticsPersistWithoutBreakingLegacyJobs() throws {
         var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/interview.mov")
         job.transcriptionAlignmentDiagnostics = .init(
@@ -1536,5 +1583,34 @@ struct MediaFlowTests {
         #expect(edition.contains("Details & Facts"))
         #expect(edition.contains("Interviews, lectures, and long sessions must include this"))
         #expect(!edition.contains("Details & Facts** (optional"))
+    }
+
+    @Test func templateSummaryPassesTemplateRequirementsToTheLocalModel() async throws {
+        let client = StubLLMClient(responses: ["## Overview\nA grounded summary."])
+        let template = SummaryTemplateDefinition(
+            id: "private-template",
+            name: "Decision Notes",
+            description: "Capture decisions and ownership.",
+            userEdition: "List decisions, owners, and due dates from the transcript.",
+            isFallback: false,
+            categoryCode: "work",
+            scope: "private",
+            sourceTemplateID: nil,
+            emojiIcon: nil
+        )
+
+        _ = try await TemplateSummaryLLMProcessor(client: client).synthesize(
+            template: template,
+            transcriptLines: "A decision was made to ship Friday.",
+            title: "Release planning",
+            tagText: "meeting",
+            sourceLanguage: "en",
+            internalSummary: "Release planning discussion."
+        )
+
+        let request = try #require(await client.requests.first)
+        #expect(request.user.contains("<template_requirements>"))
+        #expect(request.user.contains("List decisions, owners, and due dates"))
+        #expect(request.user.contains("</template_requirements>"))
     }
 }

@@ -1,4 +1,5 @@
 import AuthenticationServices
+import CryptoKit
 import Foundation
 import Testing
 @testable import PalmierPro
@@ -145,6 +146,43 @@ struct VoxellaAuthServiceTests {
         #expect(access == "apple-access")
         #expect(store.value == "apple-refresh")
         #expect(await auth.currentAccessToken() == "apple-access")
+    }
+
+    @Test func nativeAppleRequestNonceIsSHA256HexOfTheRawValue() {
+        let digest = SHA256.hash(data: Data("raw-apple-nonce".utf8))
+        let expected = digest.map { String(format: "%02x", $0) }.joined()
+        #expect(VoxellaAppleNonce.requestNonce(from: "raw-apple-nonce") == expected)
+    }
+
+    @Test func nativeApplePassesTheRawNonceThroughToTokenExchange() async throws {
+        let apple = MockAppleSignIn {
+            VoxellaAppleAuthorization(
+                identityToken: "identity-token",
+                authorizationCode: "auth-code",
+                name: nil,
+                nonce: "raw-apple-nonce"
+            )
+        }
+        let tokens = MockTokenClient(
+            onApple: { _, _, _, nonce in
+                #expect(nonce == "raw-apple-nonce")
+                return VoxellaAuthTokens(
+                    accessToken: "apple-access",
+                    refreshToken: "apple-refresh",
+                    expiresAt: Date().addingTimeInterval(3600),
+                    userID: UUID()
+                )
+            }
+        )
+        let auth = VoxellaAuthService(
+            browser: MockAuthBrowser { _ in throw VoxellaAuthError.browserUnavailable },
+            apple: apple,
+            tokens: tokens,
+            loadRefresh: { nil },
+            saveRefresh: { _ in },
+            deleteRefresh: {}
+        )
+        _ = try await auth.signInWithApple()
     }
 
     @Test func ensureSignedInFallsBackToVoxStudioWhenNativeAppleIsUnavailable() async throws {

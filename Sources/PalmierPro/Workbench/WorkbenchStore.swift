@@ -171,6 +171,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var summaryMarkdown: String?
     var summaryTemplateID: String?
     var summaryTemplateName: String?
+    var summaryTemplateUserEdition: String?
     var sessionTag: String?
     var internalSummary: String?
     var summaryState: WorkbenchJobState?
@@ -189,6 +190,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var compute: TaskComputeDestination = .local
     var remoteSessionID: UUID?
     var localCachePath: String?
+    var cloudSyncState: DubCloudSyncState?
+    var pendingCloudSyncError: String?
 
     var placement: TranscriptionPlacement {
         get { TranscriptionPlacement(storage: storage, compute: compute) }
@@ -219,6 +222,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         let trimmed = targetLanguageCode?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
     }
+
+    var resolvedCloudSyncState: DubCloudSyncState { cloudSyncState ?? .none }
 
     var processingOptions: LocalProcessingOptions {
         LocalProcessingOptions(
@@ -310,12 +315,13 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         case result, editedText, useLLMSubtitleProcessing, targetLanguageCode
         case subtitleTrack, translationTrack, translationTracks
         case selectedTranslationLanguageCode, selectedTrack
-        case summaryMarkdown, summaryTemplateID, summaryTemplateName
+        case summaryMarkdown, summaryTemplateID, summaryTemplateName, summaryTemplateUserEdition
         case sessionTag, internalSummary, summaryState, summaryErrorMessage
         case progress, progressMessage, progressStage, flowProgressStage
         case progressStep, progressCompleted, progressTotal
         case diarizationDiagnostics, transcriptionAlignmentDiagnostics, errorMessage
         case storage, compute, remoteSessionID, localCachePath
+        case cloudSyncState, pendingCloudSyncError
     }
 
     init(
@@ -341,6 +347,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         summaryMarkdown: String? = nil,
         summaryTemplateID: String? = nil,
         summaryTemplateName: String? = nil,
+        summaryTemplateUserEdition: String? = nil,
         sessionTag: String? = nil,
         internalSummary: String? = nil,
         summaryState: WorkbenchJobState? = nil,
@@ -358,7 +365,9 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         storage: TaskStorageDestination = .local,
         compute: TaskComputeDestination = .local,
         remoteSessionID: UUID? = nil,
-        localCachePath: String? = nil
+        localCachePath: String? = nil,
+        cloudSyncState: DubCloudSyncState? = nil,
+        pendingCloudSyncError: String? = nil
     ) {
         self.id = id
         self.sourcePath = sourcePath
@@ -382,6 +391,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         self.summaryMarkdown = summaryMarkdown
         self.summaryTemplateID = summaryTemplateID
         self.summaryTemplateName = summaryTemplateName
+        self.summaryTemplateUserEdition = summaryTemplateUserEdition
         self.sessionTag = sessionTag
         self.internalSummary = internalSummary
         self.summaryState = summaryState
@@ -400,6 +410,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         self.compute = compute
         self.remoteSessionID = remoteSessionID
         self.localCachePath = localCachePath
+        self.cloudSyncState = cloudSyncState
+        self.pendingCloudSyncError = pendingCloudSyncError
     }
 
     init(from decoder: Decoder) throws {
@@ -443,6 +455,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         summaryMarkdown = try container.decodeIfPresent(String.self, forKey: .summaryMarkdown)
         summaryTemplateID = try container.decodeIfPresent(String.self, forKey: .summaryTemplateID)
         summaryTemplateName = try container.decodeIfPresent(String.self, forKey: .summaryTemplateName)
+        summaryTemplateUserEdition = try container.decodeIfPresent(String.self, forKey: .summaryTemplateUserEdition)
         sessionTag = try container.decodeIfPresent(String.self, forKey: .sessionTag)
         internalSummary = try container.decodeIfPresent(String.self, forKey: .internalSummary)
         summaryState = try container.decodeIfPresent(WorkbenchJobState.self, forKey: .summaryState)
@@ -468,6 +481,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         compute = try container.decodeIfPresent(TaskComputeDestination.self, forKey: .compute) ?? .local
         remoteSessionID = try container.decodeIfPresent(UUID.self, forKey: .remoteSessionID)
         localCachePath = try container.decodeIfPresent(String.self, forKey: .localCachePath)
+        cloudSyncState = try container.decodeIfPresent(DubCloudSyncState.self, forKey: .cloudSyncState)
+        pendingCloudSyncError = try container.decodeIfPresent(String.self, forKey: .pendingCloudSyncError)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -495,6 +510,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(summaryMarkdown, forKey: .summaryMarkdown)
         try container.encodeIfPresent(summaryTemplateID, forKey: .summaryTemplateID)
         try container.encodeIfPresent(summaryTemplateName, forKey: .summaryTemplateName)
+        try container.encodeIfPresent(summaryTemplateUserEdition, forKey: .summaryTemplateUserEdition)
         try container.encodeIfPresent(sessionTag, forKey: .sessionTag)
         try container.encodeIfPresent(internalSummary, forKey: .internalSummary)
         try container.encodeIfPresent(summaryState, forKey: .summaryState)
@@ -516,6 +532,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         try container.encode(compute, forKey: .compute)
         try container.encodeIfPresent(remoteSessionID, forKey: .remoteSessionID)
         try container.encodeIfPresent(localCachePath, forKey: .localCachePath)
+        try container.encodeIfPresent(cloudSyncState, forKey: .cloudSyncState)
+        try container.encodeIfPresent(pendingCloudSyncError, forKey: .pendingCloudSyncError)
     }
 }
 
@@ -565,6 +583,7 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     var summaryMarkdown: String?
     var summaryTemplateID: String?
     var summaryTemplateName: String?
+    var summaryTemplateUserEdition: String?
     var sessionTag: String?
     var internalSummary: String?
     var summaryState: WorkbenchJobState?
@@ -665,6 +684,7 @@ struct WorkbenchSession: Identifiable, Sendable {
     var translationTracks: [WorkbenchTranslationTrack]
     var selectedTranslationLanguageCode: String?
     var summaryMarkdown: String?
+    var summaryTemplateID: String?
     var summaryTemplateName: String?
     var summaryState: WorkbenchJobState?
     var summaryErrorMessage: String?
@@ -907,6 +927,7 @@ final class WorkbenchStore {
                 translationTracks: job.translationTracks,
                 selectedTranslationLanguageCode: job.selectedTranslationLanguageCode,
                 summaryMarkdown: job.summaryMarkdown,
+                summaryTemplateID: job.summaryTemplateID,
                 summaryTemplateName: job.summaryTemplateName,
                 summaryState: job.summaryState,
                 summaryErrorMessage: job.summaryErrorMessage,
@@ -939,6 +960,7 @@ final class WorkbenchStore {
                 translationTracks: [],
                 selectedTranslationLanguageCode: nil,
                 summaryMarkdown: job.summaryMarkdown,
+                summaryTemplateID: job.summaryTemplateID,
                 summaryTemplateName: job.summaryTemplateName,
                 summaryState: job.summaryState,
                 summaryErrorMessage: job.summaryErrorMessage,
@@ -1749,7 +1771,9 @@ final class WorkbenchStore {
 
     func runTranscription(_ id: UUID) {
         guard let job = transcriptions.first(where: { $0.id == id }) else { return }
-        guard job.state != .running, job.state != .cancelling else { return }
+        guard flowTasks[id] == nil,
+              job.state != .running,
+              job.state != .cancelling else { return }
         if job.state == .completed || job.state == .cancelled || job.state == .failed {
             updateTranscription(id) {
                 $0.state = .ready
@@ -1808,6 +1832,8 @@ final class WorkbenchStore {
         transcriptions[index].progressCompleted = nil
         transcriptions[index].progressTotal = nil
         transcriptions[index].errorMessage = nil
+        transcriptions[index].cloudSyncState = DubCloudSyncState.none
+        transcriptions[index].pendingCloudSyncError = nil
         stagedTranscriptions[id] = .init()
         save()
 
@@ -1918,40 +1944,101 @@ final class WorkbenchStore {
             guard let completed = transcriptions.first(where: { $0.id == id }),
                   completed.state == .completed else { return }
 
-            if TranscriptionPlacementRouter.shouldSyncLocalResults(completed.placement),
-               let result = completed.result {
-                do {
-                    let remoteID = try await taskAccess.persistCloudCopyIfNeeded(
-                        TranscriptionResultSyncRequest(
-                            jobID: id,
-                            remoteSessionID: completed.remoteSessionID,
-                            sourceURL: input.sourceURL,
-                            originalFilename: completed.originalFilename,
-                            mimeType: Self.mimeType(for: input.sourceURL),
-                            sizeBytes: (try? input.sourceURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init),
-                            options: completed.processingOptions,
-                            placement: completed.placement,
-                            result: result,
-                            subtitleTrack: completed.subtitleTrack,
-                            translationTracks: completed.translationTracks
-                        )
-                    )
-                    if let remoteID {
-                        updateTranscription(id) { $0.remoteSessionID = remoteID }
-                    }
-                } catch {
-                    updateTranscription(id) {
-                        $0.progressMessage = "Transcript ready · cloud copy failed"
-                        $0.errorMessage = error.localizedDescription
-                    }
+            if TranscriptionPlacementRouter.shouldSyncLocalResults(completed.placement) {
+                updateTranscription(id) {
+                    $0.cloudSyncState = .pending
+                    $0.pendingCloudSyncError = nil
+                    $0.progressMessage = "Completed locally · preparing cloud sync…"
                 }
             }
 
             // Free the local ASR slot before title/summary LLM enrichment.
-            flowTasks[id] = nil
             finishTranscriptionSlot(id)
             releasedSlot = true
             await enrichCompletedTranscription(id)
+            await syncCompletedTranscriptionToCloud(id, sourceURL: input.sourceURL)
+        }
+        flowTasks[id] = task
+    }
+
+    private func syncCompletedTranscriptionToCloud(_ id: UUID, sourceURL: URL) async {
+        guard let current = transcriptions.first(where: { $0.id == id }),
+              TranscriptionPlacementRouter.shouldSyncLocalResults(current.placement),
+              current.state == .completed,
+              let result = current.result else {
+            return
+        }
+
+        updateTranscription(id) {
+            $0.cloudSyncState = .pending
+            $0.pendingCloudSyncError = nil
+            $0.errorMessage = nil
+            $0.progressMessage = "Completed locally · syncing to VoxStudio Cloud…"
+        }
+        guard let snapshot = transcriptions.first(where: { $0.id == id }) else { return }
+
+        do {
+            let remoteID = try await taskAccess.persistCloudCopyIfNeeded(
+                TranscriptionResultSyncRequest(
+                    jobID: id,
+                    remoteSessionID: snapshot.remoteSessionID,
+                    sourceURL: sourceURL,
+                    originalFilename: snapshot.originalFilename,
+                    mimeType: Self.mimeType(for: sourceURL),
+                    sizeBytes: nil,
+                    options: snapshot.processingOptions,
+                    placement: snapshot.placement,
+                    result: result,
+                    subtitleTrack: snapshot.subtitleTrack,
+                    translationTracks: snapshot.translationTracks,
+                    title: snapshot.sessionTitle,
+                    summary: snapshot.summaryMarkdown,
+                    sessionTag: snapshot.sessionTag
+                )
+            )
+            updateTranscription(id) {
+                $0.remoteSessionID = remoteID ?? $0.remoteSessionID
+                $0.cloudSyncState = .completed
+                $0.pendingCloudSyncError = nil
+                $0.errorMessage = nil
+                $0.progressMessage = $0.summaryMarkdown == nil
+                    ? "Transcript ready · saved to VoxStudio Cloud"
+                    : "Transcript and summary ready · saved to VoxStudio Cloud"
+            }
+        } catch is CancellationError {
+            updateTranscription(id) {
+                $0.cloudSyncState = .pending
+                $0.pendingCloudSyncError = "Cloud sync was cancelled."
+                $0.progressMessage = "Completed locally · cloud sync pending"
+            }
+        } catch {
+            updateTranscription(id) {
+                $0.cloudSyncState = .pending
+                $0.pendingCloudSyncError = error.localizedDescription
+                $0.progressMessage = "Completed locally · cloud sync pending"
+            }
+        }
+    }
+
+    func retryTranscriptionCloudSync(_ id: UUID) {
+        guard flowTasks[id] == nil,
+              let job = transcriptions.first(where: { $0.id == id }),
+              job.state == .completed,
+              job.placement == TaskPlacement(storage: .cloud, compute: .local),
+              job.resolvedCloudSyncState == .pending,
+              job.result != nil else {
+            return
+        }
+        let sourceURL = job.sourceURL
+        updateTranscription(id) {
+            $0.progressMessage = "Retrying cloud sync…"
+            $0.pendingCloudSyncError = nil
+            $0.errorMessage = nil
+        }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.syncCompletedTranscriptionToCloud(id, sourceURL: sourceURL)
+            self.flowTasks[id] = nil
         }
         flowTasks[id] = task
     }
@@ -2172,6 +2259,7 @@ final class WorkbenchStore {
         dubs[index].summaryMarkdown = nil
         dubs[index].summaryTemplateID = nil
         dubs[index].summaryTemplateName = nil
+        dubs[index].summaryTemplateUserEdition = nil
         dubs[index].sessionTag = nil
         dubs[index].internalSummary = nil
         dubs[index].summaryState = nil
@@ -2725,37 +2813,51 @@ final class WorkbenchStore {
     }
 
     /// Auto title + template summary after transcription, aligned with postprocess finalize → digest → template summary.
+    @discardableResult
     private func enrichCompletedTranscription(
         _ id: UUID,
-        userInstruction: String? = nil
-    ) async {
-        guard summaryTaskIDs.insert(id).inserted else { return }
-        defer { summaryTaskIDs.remove(id) }
+        userInstruction: String? = nil,
+        regenerateMetadata: Bool? = nil,
+        taskAlreadyRegistered: Bool = false,
+        requireConfiguredModel: Bool = true,
+        reportFailure: Bool = true
+    ) async -> Bool {
+        if !taskAlreadyRegistered {
+            guard summaryTaskIDs.insert(id).inserted else { return false }
+        }
+        defer {
+            if !taskAlreadyRegistered {
+                summaryTaskIDs.remove(id)
+            }
+        }
 
-        guard LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing) else {
+        guard !requireConfiguredModel || LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing) else {
             updateTranscription(id) {
                 $0.summaryState = nil
                 $0.summaryErrorMessage = nil
             }
-            WorkbenchTipCenter.shared.show(
-                LLMConfigurationError.noConfiguredModel(.subtitleProcessing).localizedDescription,
-                kind: .error,
-                id: "summary.missing-llm",
-                actionLabel: "Open AI Settings",
-                action: .openAISettings
-            )
-            return
+            if reportFailure {
+                WorkbenchTipCenter.shared.show(
+                    LLMConfigurationError.noConfiguredModel(.subtitleProcessing).localizedDescription,
+                    kind: .error,
+                    id: "summary.missing-llm",
+                    actionLabel: "Open AI Settings",
+                    action: .openAISettings
+                )
+            }
+            return false
         }
         guard let job = transcriptions.first(where: { $0.id == id }),
-              let transcript = job.result ?? job.sourceTimedResult else { return }
+              let transcript = job.result ?? job.sourceTimedResult else { return false }
         let transcriptText = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !transcriptText.isEmpty else { return }
+        guard !transcriptText.isEmpty else { return false }
         let isRefinement = !(userInstruction?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+        let shouldRegenerateMetadata = regenerateMetadata ?? !isRefinement
 
         updateTranscription(id) {
             $0.summaryState = .running
             $0.summaryErrorMessage = nil
-            $0.progressMessage = isRefinement
+            $0.progressMessage = isRefinement || !shouldRegenerateMetadata
                 ? "Regenerating summary…"
                 : "Generating title and summary…"
         }
@@ -2766,7 +2868,7 @@ final class WorkbenchStore {
             var title = job.sessionTitle
             var tagText = job.sessionTag ?? "general"
             var internalSummary = job.internalSummary ?? ""
-            if !isRefinement {
+            if shouldRegenerateMetadata {
                 let metadata = try await SessionTitleLLMProcessor(client: client).generate(
                     transcriptText: transcriptText,
                     sourceLanguage: transcript.language ?? job.languageCode,
@@ -2785,7 +2887,12 @@ final class WorkbenchStore {
                 internalSummary = metadata.internalSummary
             }
 
-            let template = await SummaryTemplateCatalog.shared.template(forID: job.summaryTemplateID)
+            let templateJob = transcriptions.first(where: { $0.id == id }) ?? job
+            let template = await SummaryTemplateCatalog.shared.template(
+                forID: templateJob.summaryTemplateID,
+                name: templateJob.summaryTemplateName,
+                userEdition: templateJob.summaryTemplateUserEdition
+            )
             let lines = TemplateSummaryLLMProcessor.transcriptLines(
                 from: job.subtitleTrack?
                     .asTranscriptionResult(preservingWords: transcript.words)
@@ -2801,16 +2908,20 @@ final class WorkbenchStore {
                 internalSummary: internalSummary,
                 userInstruction: userInstruction
             )
+            try Task.checkCancellation()
+            guard isCurrentSummaryTemplate(template.id, forTranscription: id) else { return false }
             updateTranscription(id) {
                 $0.summaryMarkdown = markdown
                 $0.summaryTemplateID = template.id
                 $0.summaryTemplateName = template.name
+                $0.summaryTemplateUserEdition = template.userEdition
                 $0.summaryState = .completed
                 $0.summaryErrorMessage = nil
                 $0.progressMessage = $0.translationTracks.isEmpty
                     ? "Transcript and summary ready"
                     : "Transcript, translation, and summary ready"
             }
+            return true
         } catch {
             updateTranscription(id) {
                 $0.summaryState = .failed
@@ -2819,12 +2930,15 @@ final class WorkbenchStore {
                     ? "Summary regeneration failed"
                     : "Transcript ready — summary unavailable"
             }
-            WorkbenchTipCenter.shared.show(
-                error.localizedDescription,
-                kind: .error,
-                id: "summary.failed.\(id.uuidString)"
-            )
+            if reportFailure {
+                WorkbenchTipCenter.shared.show(
+                    error.localizedDescription,
+                    kind: .error,
+                    id: "summary.failed.\(id.uuidString)"
+                )
+            }
             Log.project.warning("session enrichment failed: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -2838,7 +2952,11 @@ final class WorkbenchStore {
         }
     }
 
-    func regenerateSummary(forTranscription id: UUID, userPrompt: String? = nil) {
+    func regenerateSummary(
+        forTranscription id: UUID,
+        userPrompt: String? = nil,
+        regenerateMetadata: Bool? = nil
+    ) {
         let prompt = userPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard userPrompt == nil || !(prompt?.isEmpty ?? true),
               !summaryTaskIDs.contains(id) else {
@@ -2862,10 +2980,20 @@ final class WorkbenchStore {
             kind: .info,
             id: "summary.processing.\(id.uuidString)"
         )
-        Task { await enrichCompletedTranscription(id, userInstruction: prompt) }
+        Task {
+            await enrichCompletedTranscription(
+                id,
+                userInstruction: prompt,
+                regenerateMetadata: regenerateMetadata
+            )
+        }
     }
 
-    func regenerateSummary(forDub id: UUID, userPrompt: String? = nil) {
+    func regenerateSummary(
+        forDub id: UUID,
+        userPrompt: String? = nil,
+        regenerateMetadata: Bool? = nil
+    ) {
         let prompt = userPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard userPrompt == nil || !(prompt?.isEmpty ?? true),
               !summaryTaskIDs.contains(id) else {
@@ -2889,41 +3017,405 @@ final class WorkbenchStore {
             kind: .info,
             id: "summary.processing.\(id.uuidString)"
         )
-        Task { await enrichCompletedDub(id, userInstruction: prompt) }
+        Task {
+            await enrichCompletedDub(
+                id,
+                userInstruction: prompt,
+                regenerateMetadata: regenerateMetadata
+            )
+        }
     }
 
-    /// Auto title + template summary after standalone dub, mirrored from transcription enrichment.
-    private func enrichCompletedDub(
-        _ id: UUID,
-        userInstruction: String? = nil
+    func applySummaryTemplate(_ template: SummaryTemplateDefinition, to session: WorkbenchSession) {
+        if let transcriptionID = session.transcriptionID {
+            updateTranscription(transcriptionID) {
+                $0.summaryTemplateID = template.id
+                $0.summaryTemplateName = template.name
+                $0.summaryTemplateUserEdition = template.userEdition
+            }
+            Task { [weak self] in
+                guard let self else { return }
+                await self.applySummaryTemplateToTranscription(template, id: transcriptionID)
+            }
+            return
+        }
+        if let dubID = session.dubID {
+            updateDub(dubID) {
+                $0.summaryTemplateID = template.id
+                $0.summaryTemplateName = template.name
+                $0.summaryTemplateUserEdition = template.userEdition
+            }
+            Task { [weak self] in
+                guard let self else { return }
+                await self.applySummaryTemplateToDub(template, id: dubID)
+            }
+        }
+    }
+
+    private func applySummaryTemplateToTranscription(
+        _ template: SummaryTemplateDefinition,
+        id: UUID
     ) async {
         guard summaryTaskIDs.insert(id).inserted else { return }
         defer { summaryTaskIDs.remove(id) }
 
-        guard LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing) else {
-            updateDub(id) {
-                $0.summaryState = nil
-                $0.summaryErrorMessage = nil
-            }
-            WorkbenchTipCenter.shared.show(
-                LLMConfigurationError.noConfiguredModel(.subtitleProcessing).localizedDescription,
-                kind: .error,
-                id: "summary.missing-llm",
-                actionLabel: "Open AI Settings",
-                action: .openAISettings
-            )
+        let localRouteAvailable = (try? await LLMSettingsStore.shared.runtimeRoute(
+            for: .subtitleProcessing
+        )) != nil
+        if localRouteAvailable,
+           await enrichCompletedTranscription(
+               id,
+               regenerateMetadata: false,
+               taskAlreadyRegistered: true,
+               requireConfiguredModel: false,
+               reportFailure: false
+           ) {
+            await syncSummaryToCloud(forTranscription: id)
             return
         }
-        guard let job = dubs.first(where: { $0.id == id }),
-              let transcript = dubTranscriptForEnrichment(job) else { return }
-        let transcriptText = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !transcriptText.isEmpty else { return }
-        let isRefinement = !(userInstruction?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+
+        updateTranscription(id) {
+            $0.summaryState = .running
+            $0.summaryErrorMessage = nil
+            $0.progressMessage = "Generating summary in VoxStudio Cloud…"
+        }
+        do {
+            let response = try await requestCloudSummary(
+                template: template,
+                sessionID: try cloudSessionID(forTranscription: id),
+                hasExistingSummary: hasSummary(forTranscription: id)
+            )
+            try Task.checkCancellation()
+            guard let summary = response.summary,
+                  !summary.outputMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  isCurrentSummaryTemplate(template.id, forTranscription: id) else {
+                return
+            }
+            let remoteTemplate = response.template
+            updateTranscription(id) {
+                $0.summaryMarkdown = summary.outputMarkdown
+                $0.summaryTemplateID = summary.templateID ?? remoteTemplate?.id ?? template.id
+                $0.summaryTemplateName = remoteTemplate?.name ?? template.name
+                $0.summaryTemplateUserEdition = remoteTemplate?.userEdition ?? template.userEdition
+                $0.summaryState = .completed
+                $0.summaryErrorMessage = nil
+                $0.progressMessage = $0.translationTracks.isEmpty
+                    ? "Transcript and summary ready"
+                    : "Transcript, translation, and summary ready"
+            }
+        } catch is CancellationError {
+            markCloudSummaryFailure(
+                forTranscription: id,
+                message: "Cloud summary generation was cancelled."
+            )
+        } catch {
+            markCloudSummaryFailure(forTranscription: id, message: error.localizedDescription)
+        }
+    }
+
+    private func applySummaryTemplateToDub(
+        _ template: SummaryTemplateDefinition,
+        id: UUID
+    ) async {
+        guard summaryTaskIDs.insert(id).inserted else { return }
+        defer { summaryTaskIDs.remove(id) }
+
+        let localRouteAvailable = (try? await LLMSettingsStore.shared.runtimeRoute(
+            for: .subtitleProcessing
+        )) != nil
+        if localRouteAvailable,
+           await enrichCompletedDub(
+               id,
+               regenerateMetadata: false,
+               taskAlreadyRegistered: true,
+               requireConfiguredModel: false,
+               reportFailure: false
+           ) {
+            await syncSummaryToCloud(forDub: id)
+            return
+        }
 
         updateDub(id) {
             $0.summaryState = .running
             $0.summaryErrorMessage = nil
-            $0.progressMessage = isRefinement
+            $0.progressMessage = "Generating summary in VoxStudio Cloud…"
+        }
+        do {
+            let response = try await requestCloudSummary(
+                template: template,
+                sessionID: try cloudSessionID(forDub: id),
+                hasExistingSummary: hasSummary(forDub: id)
+            )
+            try Task.checkCancellation()
+            guard let summary = response.summary,
+                  !summary.outputMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  isCurrentSummaryTemplate(template.id, forDub: id) else {
+                return
+            }
+            let remoteTemplate = response.template
+            updateDub(id) {
+                $0.summaryMarkdown = summary.outputMarkdown
+                $0.summaryTemplateID = summary.templateID ?? remoteTemplate?.id ?? template.id
+                $0.summaryTemplateName = remoteTemplate?.name ?? template.name
+                $0.summaryTemplateUserEdition = remoteTemplate?.userEdition ?? template.userEdition
+                $0.summaryState = .completed
+                $0.summaryErrorMessage = nil
+                $0.progressMessage = $0.subtitleTrack == nil
+                    ? "Dub and summary ready"
+                    : "Dub, subtitles, and summary ready"
+            }
+        } catch is CancellationError {
+            markCloudSummaryFailure(forDub: id, message: "Cloud summary generation was cancelled.")
+        } catch {
+            markCloudSummaryFailure(forDub: id, message: error.localizedDescription)
+        }
+    }
+
+    private func requestCloudSummary(
+        template: SummaryTemplateDefinition,
+        sessionID: UUID,
+        hasExistingSummary: Bool
+    ) async throws -> VoxellaSessionSummaryResponse {
+        guard UUID(uuidString: template.id) != nil else {
+            throw VoxellaAPIError.http(422, "The selected summary template is not available in VoxStudio Cloud.")
+        }
+        try await ensureCloudAccessForSummary()
+
+        let update = VoxellaSummaryTemplateUpdatePayload(
+            name: nonEmpty(template.name),
+            description: nonEmpty(template.description),
+            userEdition: nonEmpty(template.userEdition)
+        )
+        let client = VoxellaAPIClient.shared
+        if hasExistingSummary {
+            _ = try await client.regenerateSessionSummary(
+                sessionID: sessionID,
+                templateID: template.id,
+                templateUpdate: update
+            )
+        } else {
+            _ = try await client.generateSessionSummary(
+                sessionID: sessionID,
+                templateID: template.id,
+                templateUpdate: update
+            )
+        }
+        return try await waitForCloudSummary(
+            sessionID: sessionID,
+            expectedTemplateID: template.id,
+            locale: SummaryTemplateLocale.resolve(AppLocalization.shared.activeIdentifier)
+        )
+    }
+
+    private func waitForCloudSummary(
+        sessionID: UUID,
+        expectedTemplateID: String,
+        locale: String
+    ) async throws -> VoxellaSessionSummaryResponse {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(600))
+        while ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            let response = try await VoxellaAPIClient.shared.sessionSummary(
+                sessionID: sessionID,
+                locale: locale
+            )
+            if let summary = response.summary {
+                let returnedTemplateID = summary.templateID ?? response.template?.id
+                guard let returnedTemplateID,
+                      returnedTemplateID.caseInsensitiveCompare(expectedTemplateID) == .orderedSame else {
+                    try await Task.sleep(for: .seconds(2))
+                    continue
+                }
+                switch summary.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                case "failed":
+                    let message = summary.errorMessage?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    throw VoxellaAPIError.http(
+                        422,
+                        message.isEmpty ? "Cloud summary generation failed." : message
+                    )
+                case "completed":
+                    if !summary.outputMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        return response
+                    }
+                default:
+                    break
+                }
+            }
+            try await Task.sleep(for: .seconds(2))
+        }
+        throw VoxellaAPIError.http(408, "Cloud summary generation timed out.")
+    }
+
+    private func ensureCloudAccessForSummary() async throws {
+        switch await AccountService.shared.ensureCloudAccess() {
+        case .ready:
+            return
+        case .cancelled:
+            throw VoxellaAPIError.cancelled
+        case .failed(let message):
+            throw VoxellaAPIError.http(0, message)
+        }
+    }
+
+    private func cloudSessionID(forTranscription id: UUID) throws -> UUID {
+        guard let remoteSessionID = transcriptions.first(where: { $0.id == id })?.remoteSessionID else {
+            throw VoxellaAPIError.http(0, "This session has no cloud copy for summary generation.")
+        }
+        return remoteSessionID
+    }
+
+    private func cloudSessionID(forDub id: UUID) throws -> UUID {
+        guard let remoteSessionID = dubs.first(where: { $0.id == id })?.remoteSessionID else {
+            throw VoxellaAPIError.http(0, "This session has no cloud copy for summary generation.")
+        }
+        return remoteSessionID
+    }
+
+    private func hasSummary(forTranscription id: UUID) -> Bool {
+        guard let summary = transcriptions.first(where: { $0.id == id })?.summaryMarkdown else { return false }
+        return !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func hasSummary(forDub id: UUID) -> Bool {
+        guard let summary = dubs.first(where: { $0.id == id })?.summaryMarkdown else { return false }
+        return !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func isCurrentSummaryTemplate(_ templateID: String, forTranscription id: UUID) -> Bool {
+        transcriptions.first(where: { $0.id == id })?.summaryTemplateID?
+            .caseInsensitiveCompare(templateID) == .orderedSame
+    }
+
+    private func isCurrentSummaryTemplate(_ templateID: String, forDub id: UUID) -> Bool {
+        dubs.first(where: { $0.id == id })?.summaryTemplateID?
+            .caseInsensitiveCompare(templateID) == .orderedSame
+    }
+
+    private func syncSummaryToCloud(forTranscription id: UUID) async {
+        guard let snapshot = transcriptions.first(where: { $0.id == id }),
+              let remoteSessionID = snapshot.remoteSessionID,
+              let summary = snapshot.summaryMarkdown,
+              !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        do {
+            try await ensureCloudAccessForSummary()
+            _ = try await VoxellaAPIClient.shared.updateSessionSummary(
+                sessionID: remoteSessionID,
+                markdown: summary
+            )
+        } catch {
+            WorkbenchTipCenter.shared.show(
+                "Summary saved locally, but the cloud update failed: \(error.localizedDescription)",
+                kind: .error,
+                id: "summary.cloud-sync.\(id.uuidString)"
+            )
+            Log.project.warning("summary cloud sync failed id=\(id.uuidString) error=\(error.localizedDescription)")
+        }
+    }
+
+    private func syncSummaryToCloud(forDub id: UUID) async {
+        guard let snapshot = dubs.first(where: { $0.id == id }),
+              let remoteSessionID = snapshot.remoteSessionID,
+              let summary = snapshot.summaryMarkdown,
+              !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        do {
+            try await ensureCloudAccessForSummary()
+            _ = try await VoxellaAPIClient.shared.updateSessionSummary(
+                sessionID: remoteSessionID,
+                markdown: summary
+            )
+        } catch {
+            WorkbenchTipCenter.shared.show(
+                "Summary saved locally, but the cloud update failed: \(error.localizedDescription)",
+                kind: .error,
+                id: "summary.cloud-sync.\(id.uuidString)"
+            )
+            Log.project.warning("summary cloud sync failed id=\(id.uuidString) error=\(error.localizedDescription)")
+        }
+    }
+
+    private func markCloudSummaryFailure(forTranscription id: UUID, message: String) {
+        updateTranscription(id) {
+            $0.summaryState = .failed
+            $0.summaryErrorMessage = message
+            $0.progressMessage = "Transcript ready — summary unavailable"
+        }
+        WorkbenchTipCenter.shared.show(
+            message,
+            kind: .error,
+            id: "summary.failed.\(id.uuidString)"
+        )
+        Log.project.warning("cloud summary failed id=\(id.uuidString) error=\(message)")
+    }
+
+    private func markCloudSummaryFailure(forDub id: UUID, message: String) {
+        updateDub(id) {
+            $0.summaryState = .failed
+            $0.summaryErrorMessage = message
+            $0.progressMessage = "Dub ready — summary unavailable"
+        }
+        WorkbenchTipCenter.shared.show(
+            message,
+            kind: .error,
+            id: "summary.failed.\(id.uuidString)"
+        )
+        Log.project.warning("cloud summary failed id=\(id.uuidString) error=\(message)")
+    }
+
+    private func nonEmpty(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Auto title + template summary after standalone dub, mirrored from transcription enrichment.
+    @discardableResult
+    private func enrichCompletedDub(
+        _ id: UUID,
+        userInstruction: String? = nil,
+        regenerateMetadata: Bool? = nil,
+        taskAlreadyRegistered: Bool = false,
+        requireConfiguredModel: Bool = true,
+        reportFailure: Bool = true
+    ) async -> Bool {
+        if !taskAlreadyRegistered {
+            guard summaryTaskIDs.insert(id).inserted else { return false }
+        }
+        defer {
+            if !taskAlreadyRegistered {
+                summaryTaskIDs.remove(id)
+            }
+        }
+
+        guard !requireConfiguredModel || LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing) else {
+            updateDub(id) {
+                $0.summaryState = nil
+                $0.summaryErrorMessage = nil
+            }
+            if reportFailure {
+                WorkbenchTipCenter.shared.show(
+                    LLMConfigurationError.noConfiguredModel(.subtitleProcessing).localizedDescription,
+                    kind: .error,
+                    id: "summary.missing-llm",
+                    actionLabel: "Open AI Settings",
+                    action: .openAISettings
+                )
+            }
+            return false
+        }
+        guard let job = dubs.first(where: { $0.id == id }),
+              let transcript = dubTranscriptForEnrichment(job) else { return false }
+        let transcriptText = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcriptText.isEmpty else { return false }
+        let isRefinement = !(userInstruction?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+        let shouldRegenerateMetadata = regenerateMetadata ?? !isRefinement
+
+        updateDub(id) {
+            $0.summaryState = .running
+            $0.summaryErrorMessage = nil
+            $0.progressMessage = isRefinement || !shouldRegenerateMetadata
                 ? "Regenerating summary…"
                 : "Generating title and summary…"
         }
@@ -2934,7 +3426,7 @@ final class WorkbenchStore {
             var title = job.displayTitle
             var tagText = job.sessionTag ?? "general"
             var internalSummary = job.internalSummary ?? ""
-            if !isRefinement {
+            if shouldRegenerateMetadata {
                 let shouldApplyTitle = !SessionTitlePolicy.isUserProvided(job.title)
                 let metadata = try await SessionTitleLLMProcessor(client: client).generate(
                     transcriptText: transcriptText,
@@ -2961,7 +3453,12 @@ final class WorkbenchStore {
                 internalSummary = metadata.internalSummary
             }
 
-            let template = await SummaryTemplateCatalog.shared.template(forID: job.summaryTemplateID)
+            let templateJob = dubs.first(where: { $0.id == id }) ?? job
+            let template = await SummaryTemplateCatalog.shared.template(
+                forID: templateJob.summaryTemplateID,
+                name: templateJob.summaryTemplateName,
+                userEdition: templateJob.summaryTemplateUserEdition
+            )
             let lines = TemplateSummaryLLMProcessor.transcriptLines(from: transcript)
             let markdown = try await TemplateSummaryLLMProcessor(client: client).synthesize(
                 template: template,
@@ -2972,16 +3469,20 @@ final class WorkbenchStore {
                 internalSummary: internalSummary,
                 userInstruction: userInstruction
             )
+            try Task.checkCancellation()
+            guard isCurrentSummaryTemplate(template.id, forDub: id) else { return false }
             updateDub(id) {
                 $0.summaryMarkdown = markdown
                 $0.summaryTemplateID = template.id
                 $0.summaryTemplateName = template.name
+                $0.summaryTemplateUserEdition = template.userEdition
                 $0.summaryState = .completed
                 $0.summaryErrorMessage = nil
                 $0.progressMessage = $0.subtitleTrack == nil
                     ? "Dub and summary ready"
                     : "Dub, subtitles, and summary ready"
             }
+            return true
         } catch {
             updateDub(id) {
                 $0.summaryState = .failed
@@ -2990,12 +3491,15 @@ final class WorkbenchStore {
                     ? "Summary regeneration failed"
                     : "Dub ready — summary unavailable"
             }
-            WorkbenchTipCenter.shared.show(
-                error.localizedDescription,
-                kind: .error,
-                id: "summary.failed.\(id.uuidString)"
-            )
+            if reportFailure {
+                WorkbenchTipCenter.shared.show(
+                    error.localizedDescription,
+                    kind: .error,
+                    id: "summary.failed.\(id.uuidString)"
+                )
+            }
             Log.project.warning("dub session enrichment failed: \(error.localizedDescription)")
+            return false
         }
     }
 

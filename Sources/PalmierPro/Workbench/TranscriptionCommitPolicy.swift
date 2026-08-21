@@ -27,6 +27,7 @@ struct CompletedTranscriptionArtifacts: Sendable {
         job.summaryMarkdown = nil
         job.summaryTemplateID = nil
         job.summaryTemplateName = nil
+        job.summaryTemplateUserEdition = nil
         job.sessionTag = nil
         job.internalSummary = nil
         job.summaryState = nil

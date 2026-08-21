@@ -429,49 +429,99 @@ enum LLMConfigurationError: LocalizedError {
 final class LLMSettingsStore {
     static let shared = LLMSettingsStore()
 
-    private struct PersistedConfiguration: Codable {
+    struct PersistedConfiguration: Codable {
         var providers: [LLMProviderProfile]
         var routes: [LLMUseCase: LLMModelRoute]
     }
 
+    private enum ConfigurationLoad {
+        case missing
+        case valid(PersistedConfiguration)
+        case invalid
+    }
+
+    private static let applicationDefaultsSuiteName = "com.voxella.studio"
+    private static let legacyDefaultsSuiteNames = [
+        "VoxellaStudio",
+        "PalmierPro",
+        "io.palmier.pro"
+    ]
     private static let configurationDefaultsKey = "voxella.llm.configuration.v2"
     private static let legacyProfileDefaultsKey = "voxella.llm.provider-profile.v1"
+    private static let subtitleRouteMigrationKey = "voxella.llm.migration.subtitle-route.v1"
 
     private(set) var providers: [LLMProviderProfile]
     private(set) var routes: [LLMUseCase: LLMModelRoute]
     private(set) var credentialAvailability: [UUID: Bool] = [:]
     private(set) var credentialError: String?
+    private(set) var configurationError: String?
 
     var hasAPIKey: Bool {
         credentialAvailability.values.contains(true)
     }
 
     private let defaults: UserDefaults
+    private let credentialSaver: @Sendable (String, LLMProviderProfile) async throws -> Void
     private var credentialGeneration = 0
+    private var pendingCredentialValues: [UUID: String] = [:]
+    private var pendingCredentialTasks: [UUID: Task<Void, Never>] = [:]
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults? = nil,
+        legacyDefaults: [UserDefaults]? = nil,
+        credentialSaver: (@Sendable (String, LLMProviderProfile) async throws -> Void)? = nil
+    ) {
+        let usesApplicationDefaults = defaults == nil
+        let defaults = defaults ?? Self.applicationDefaults
+        let historicalDefaults = legacyDefaults
+            ?? (usesApplicationDefaults ? Self.legacyDefaults : [])
         self.defaults = defaults
-        if let data = defaults.data(forKey: Self.configurationDefaultsKey),
-           let saved = try? JSONDecoder().decode(PersistedConfiguration.self, from: data),
-           !saved.providers.isEmpty {
+        self.credentialSaver = credentialSaver ?? Self.persistCredentialToKeychain
+        var shouldPersist = false
+
+        switch Self.loadConfiguration(from: defaults) {
+        case .valid(let saved):
             providers = saved.providers
             routes = saved.routes
-        } else if let data = defaults.data(forKey: Self.legacyProfileDefaultsKey),
-                  let legacy = try? JSONDecoder().decode(LLMProviderProfile.self, from: data) {
-            let migratedProviders = Self.migratedProviders(from: legacy)
-            providers = migratedProviders
-            routes = Self.migratedRoutes(from: legacy, providers: migratedProviders)
-        } else {
+        case .invalid:
             providers = [.defaultOpenAI, .defaultMiniMax]
-            routes = Dictionary(uniqueKeysWithValues: LLMUseCase.allCases.map {
-                ($0, LLMModelRoute.default(for: $0))
-            })
+            routes = Self.defaultRoutes
+            configurationError = "Saved AI settings could not be read. They were left unchanged."
+        case .missing:
+            if let data = defaults.data(forKey: Self.legacyProfileDefaultsKey),
+               let legacy = try? JSONDecoder().decode(LLMProviderProfile.self, from: data) {
+                let migratedProviders = Self.migratedProviders(from: legacy)
+                providers = migratedProviders
+                routes = Self.migratedRoutes(from: legacy, providers: migratedProviders)
+                shouldPersist = true
+            } else if let legacy = Self.loadLegacyProfile(from: historicalDefaults) {
+                let migratedProviders = Self.migratedProviders(from: legacy)
+                providers = migratedProviders
+                routes = Self.migratedRoutes(from: legacy, providers: migratedProviders)
+                shouldPersist = true
+            } else if let migrated = Self.loadConfiguration(
+                from: historicalDefaults
+            ) {
+                providers = migrated.providers
+                routes = migrated.routes
+                shouldPersist = true
+            } else {
+                providers = [.defaultOpenAI, .defaultMiniMax]
+                routes = Self.defaultRoutes
+                shouldPersist = true
+            }
         }
+
         for useCase in LLMUseCase.allCases where routes[useCase] == nil {
             routes[useCase] = .default(for: useCase)
+            shouldPersist = true
         }
-        migrateLegacySubtitleRouteIfNeeded()
-        persist()
+        if migrateLegacySubtitleRouteIfNeeded() {
+            shouldPersist = true
+        }
+        if shouldPersist, configurationError == nil {
+            persist()
+        }
         refreshCredentialStatus()
     }
 
@@ -584,6 +634,53 @@ final class LLMSettingsStore {
         }
     }
 
+    func scheduleAPIKeySave(_ value: String, providerID: UUID) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, provider(id: providerID) != nil else { return }
+
+        pendingCredentialTasks[providerID]?.cancel()
+        pendingCredentialValues[providerID] = trimmed
+        pendingCredentialTasks[providerID] = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(450))
+            } catch {
+                return
+            }
+            guard let self,
+                  self.pendingCredentialValues[providerID] == trimmed else { return }
+            self.pendingCredentialValues[providerID] = nil
+            self.pendingCredentialTasks[providerID] = nil
+            do {
+                try await self.saveAPIKeyImmediately(trimmed, providerID: providerID)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.credentialError = error.localizedDescription
+            }
+        }
+    }
+
+    func flushAPIKeySave(for providerID: UUID) {
+        guard let value = pendingCredentialValues[providerID] else { return }
+        pendingCredentialTasks[providerID]?.cancel()
+        pendingCredentialTasks[providerID] = nil
+        pendingCredentialValues[providerID] = nil
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await self.saveAPIKeyImmediately(value, providerID: providerID)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.credentialError = error.localizedDescription
+            }
+        }
+    }
+
+    func cancelPendingAPIKeySave(for providerID: UUID) {
+        pendingCredentialTasks[providerID]?.cancel()
+        pendingCredentialTasks[providerID] = nil
+        pendingCredentialValues[providerID] = nil
+    }
+
     func credentialAvailable() async -> Bool {
         credentialGeneration += 1
         let generation = credentialGeneration
@@ -605,14 +702,16 @@ final class LLMSettingsStore {
     }
 
     func saveAPIKey(_ value: String, providerID: UUID) async throws {
+        cancelPendingAPIKeySave(for: providerID)
+        try await saveAPIKeyImmediately(value, providerID: providerID)
+    }
+
+    private func saveAPIKeyImmediately(_ value: String, providerID: UUID) async throws {
         guard let profile = provider(id: providerID) else {
             throw LLMConfigurationError.missingProvider("")
         }
         credentialGeneration += 1
-        try await Task.detached(priority: .userInitiated) {
-            try KeychainStore.saveProtected(value, account: profile.credentialAccount)
-            try? KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
-        }.value
+        try await credentialSaver(value, profile)
         guard provider(id: providerID)?.credentialAccount == profile.credentialAccount else { return }
         credentialAvailability[providerID] = true
         credentialError = nil
@@ -759,13 +858,73 @@ final class LLMSettingsStore {
         return result
     }
 
-    private func migrateLegacySubtitleRouteIfNeeded() {
+    @discardableResult
+    private func migrateLegacySubtitleRouteIfNeeded() -> Bool {
+        guard !defaults.bool(forKey: Self.subtitleRouteMigrationKey) else { return false }
+        defaults.set(true, forKey: Self.subtitleRouteMigrationKey)
         let legacyDefault = LLMModelRoute(
             primaryModel: "openai/gpt-5.4-nano",
             fallbackModels: ["minimax/MiniMax-M3"],
             policy: .default(for: .subtitleProcessing)
         )
-        guard routes[.subtitleProcessing] == legacyDefault else { return }
+        guard routes[.subtitleProcessing] == legacyDefault else { return false }
         routes[.subtitleProcessing] = .default(for: .subtitleProcessing)
+        return true
+    }
+
+    private static var applicationDefaults: UserDefaults {
+        UserDefaults(suiteName: applicationDefaultsSuiteName) ?? .standard
+    }
+
+    private static var legacyDefaults: [UserDefaults] {
+        legacyDefaultsSuiteNames.compactMap(UserDefaults.init(suiteName:))
+    }
+
+    private static var defaultRoutes: [LLMUseCase: LLMModelRoute] {
+        Dictionary(uniqueKeysWithValues: LLMUseCase.allCases.map {
+            ($0, LLMModelRoute.default(for: $0))
+        })
+    }
+
+    private static func loadConfiguration(from defaults: UserDefaults) -> ConfigurationLoad {
+        guard let data = defaults.data(forKey: configurationDefaultsKey) else {
+            return .missing
+        }
+        guard let saved = try? JSONDecoder().decode(PersistedConfiguration.self, from: data),
+              !saved.providers.isEmpty else {
+            return .invalid
+        }
+        return .valid(saved)
+    }
+
+    private static func loadConfiguration(from defaults: [UserDefaults]) -> PersistedConfiguration? {
+        for defaults in defaults {
+            switch loadConfiguration(from: defaults) {
+            case .valid(let saved): return saved
+            case .invalid: continue
+            case .missing: continue
+            }
+        }
+        return nil
+    }
+
+    private static func loadLegacyProfile(from defaults: [UserDefaults]) -> LLMProviderProfile? {
+        for defaults in defaults {
+            guard let data = defaults.data(forKey: legacyProfileDefaultsKey),
+                  let legacy = try? JSONDecoder().decode(LLMProviderProfile.self, from: data)
+            else { continue }
+            return legacy
+        }
+        return nil
+    }
+
+    private static func persistCredentialToKeychain(
+        _ value: String,
+        _ profile: LLMProviderProfile
+    ) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try KeychainStore.saveProtected(value, account: profile.credentialAccount)
+            try? KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
+        }.value
     }
 }

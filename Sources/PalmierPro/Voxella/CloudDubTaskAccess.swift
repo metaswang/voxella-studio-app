@@ -550,6 +550,12 @@ struct CloudDubTaskAccess: DubTaskAccessing {
                                 includeDubSegments: true
                             )
                             try throwIfTerminal(snapshot)
+                            if let progress = progressEvent(
+                                event: snapshotEvent(from: snapshot),
+                                request: request
+                            ) {
+                                continuation.yield(.media(.progress(progress)))
+                            }
                             if isReady(snapshot) { return snapshot }
                         }
                     }
@@ -629,6 +635,14 @@ struct CloudDubTaskAccess: DubTaskAccessing {
         if let status = detail.status { data["status"] = .string(status) }
         if let resultReady = detail.resultReady { data["result_ready"] = .bool(resultReady) }
         if let message = detail.message { data["message"] = .string(message) }
+        for (key, value) in detail.dubProgressSnapshot {
+            if data[key] == nil {
+                data[key] = value
+            }
+        }
+        if let dubEvent = detail.dubProgressSnapshot["event"] {
+            data["dub_event"] = dubEvent
+        }
         return VoxellaSSEEvent(event: "session_state", data: data)
     }
 
@@ -670,47 +684,43 @@ struct CloudDubTaskAccess: DubTaskAccessing {
         event: VoxellaSSEEvent,
         request: DubTaskRequest
     ) -> MediaJobProgressEvent? {
-        let name = event.eventName.lowercased()
+        let name = resolvedDubEventName(event)
         guard !event.isInternalConnectionEvent || name == "balance_update" else { return nil }
         if name == "balance_update" { return nil }
-        let status: MediaJobStatus = switch name {
-        case "dub_failed": .failed
-        case "session_cancelled": .cancelled
-        default: .processing
+        let normalizedEventStatus = (event.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let status: MediaJobStatus
+        if name == "dub_failed" || normalizedEventStatus == "failed" || normalizedEventStatus == "error" {
+            status = .failed
+        } else if name == "session_cancelled"
+                    || normalizedEventStatus == "stopped"
+                    || normalizedEventStatus == "cancelled"
+                    || normalizedEventStatus == "canceled" {
+            status = .cancelled
+        } else {
+            status = .processing
         }
         let stage: MediaFlowStage
         let step: String
         let message: String
+        let current = event.scriptIndex.map { $0 + 1 }
+        let total = event.scriptTotal
         switch name {
-        case "session_state":
-            stage = .dubPreprocessing
-            step = event.step ?? event.stage ?? "queued"
-            message = event.message ?? "Queued"
-        case "dub_started", "dub_script_started", "dub_script_completed", "dub_reference_ready":
+        case "dub_started", "dub_preparing", "dub_script_started", "dub_script_progress",
+             "dub_script_completed", "dub_reference_ready":
             stage = .dubSynthesis
             step = event.step ?? name
-            let current = event.scriptIndex.map { $0 + 1 }
-            let total = event.scriptTotal
             if let current, let total, total > 0 {
-                message = "Synthesizing \(current)/\(total)"
+                message = "Synthesizing \(min(current, total))/\(total)"
+            } else if name == "dub_preparing" {
+                message = "Preparing voice model"
             } else {
                 message = event.message ?? "Synthesizing"
             }
-            return Self.progress(
-                request: request,
-                stage: stage,
-                status: status,
-                step: step,
-                progress: normalizedProgress(event.progress),
-                stageProgress: normalizedProgress(event.stageProgress ?? event.progress),
-                current: current,
-                total: total,
-                message: message
-            )
-        case "dub_alignment_started", "dub_alignment_completed", "alignment_started", "alignment_completed":
-            stage = .alignment
+        case "dub_merge_completed", "dub_alignment_started", "dub_alignment_completed",
+             "alignment_started", "alignment_completed":
+            stage = name.contains("merge") ? .dubAssembly : .alignment
             step = event.step ?? name
-            message = event.message ?? "Aligning audio"
+            message = event.message ?? (name.contains("merge") ? "Generating final audio" : "Aligning audio")
         case "dub_upload_started", "dub_upload_completed":
             stage = .dubAssembly
             step = event.step ?? name
@@ -727,20 +737,64 @@ struct CloudDubTaskAccess: DubTaskAccessing {
             stage = .dubAssembly
             step = "cancelled"
             message = event.message ?? "Cancelled — ready to retry"
+        case "session_state":
+            if normalizedEventStatus == "failed" || normalizedEventStatus == "error" {
+                stage = .dubAssembly
+                step = event.step ?? "failed"
+                message = event.message ?? event.failureReason ?? "Cloud dubbing failed."
+            } else if let progress = event.progress, normalizedProgress(progress) >= 0.1 {
+                stage = .dubSynthesis
+                step = event.step ?? event.stage ?? "synthesizing"
+                message = event.message ?? "Synthesizing"
+            } else {
+                stage = .dubPreprocessing
+                step = event.step ?? event.stage ?? "queued"
+                message = event.message ?? "Queued"
+            }
         default:
-            stage = .dubPreprocessing
+            stage = event.progress == nil ? .dubPreprocessing : .dubSynthesis
             step = event.step ?? event.stage ?? name
             message = event.message ?? "Preparing"
+        }
+        guard let resolved = resolvedProgress(event, current: current, total: total) else {
+            return nil
         }
         return Self.progress(
             request: request,
             stage: stage,
             status: status,
             step: step,
-            progress: normalizedProgress(event.progress),
+            progress: resolved,
             stageProgress: normalizedProgress(event.stageProgress ?? event.progress),
+            current: current,
+            total: total,
             message: message
         )
+    }
+
+    private static func resolvedDubEventName(_ event: VoxellaSSEEvent) -> String {
+        let name = event.eventName.lowercased()
+        if name == "session_state",
+           let dubEvent = event.data["dub_event"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !dubEvent.isEmpty {
+            return dubEvent.lowercased()
+        }
+        return name
+    }
+
+    private static func resolvedProgress(
+        _ event: VoxellaSSEEvent,
+        current: Int?,
+        total: Int?
+    ) -> Double? {
+        if let progress = event.progress {
+            return normalizedProgress(progress)
+        }
+        if let current, let total, total > 0 {
+            let completed = max(0, current - 1)
+            return min(0.70, 0.10 + 0.60 * Double(completed) / Double(total))
+        }
+        return nil
     }
 
     private static func downloadDubResult(

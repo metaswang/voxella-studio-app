@@ -26,6 +26,9 @@ struct TranscriptionResultSyncRequest: Sendable {
     var result: TranscriptionResult
     var subtitleTrack: SubtitleTrack?
     var translationTracks: [WorkbenchTranslationTrack]
+    var title: String? = nil
+    var summary: String? = nil
+    var sessionTag: String? = nil
 }
 
 protocol TranscriptionTaskAccessing: Sendable {

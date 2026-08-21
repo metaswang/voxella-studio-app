@@ -130,6 +130,18 @@ struct VoxellaSessionDetail: Decodable, Sendable {
         artifacts?["active_workflow_run_id"]?.stringValue
     }
 
+    var dubProgressSnapshot: [String: VoxellaJSONValue] {
+        artifacts?["dub_progress"]?.objectValue ?? [:]
+    }
+
+    var mediaReady: Bool {
+        artifacts?["media_ready"]?.boolValue == true
+    }
+
+    var isClientResultMediaPipeline: Bool {
+        artifacts?["media_pipeline_mode"]?.stringValue == "client_results"
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case sessionID = "session_id"
@@ -397,6 +409,12 @@ enum VoxellaJSONValue: Decodable, Sendable {
         if case .number(let value) = self { return value }
         return nil
     }
+
+    var objectValue: [String: VoxellaJSONValue]? {
+        if case .object(let value) = self { return value }
+        return nil
+    }
+
 }
 
 struct VoxellaTranscriptSegment: Decodable, Sendable {
@@ -631,6 +649,145 @@ actor VoxellaAPIClient {
             url: VoxellaAPIConfiguration.apiURL("api/v1/billing/balance"),
             method: "GET",
             as: VoxellaBillingBalance.self
+        )
+    }
+
+    func summaryTemplateTree(
+        scope: String = "all",
+        locale: String
+    ) async throws -> VoxellaSummaryTemplateTreeResponse {
+        var components = URLComponents(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/summary-templates/tree"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [
+            URLQueryItem(name: "scope", value: scope),
+            URLQueryItem(name: "locale", value: locale),
+        ]
+        guard let url = components.url else { throw VoxellaAPIError.decoding }
+        return try await request(url: url, method: "GET", as: VoxellaSummaryTemplateTreeResponse.self)
+    }
+
+    func summaryTemplate(id: String, locale: String) async throws -> VoxellaSummaryTemplate {
+        var components = URLComponents(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/summary-templates/\(id)"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [URLQueryItem(name: "locale", value: locale)]
+        guard let url = components.url else { throw VoxellaAPIError.decoding }
+        return try await request(url: url, method: "GET", as: VoxellaSummaryTemplate.self)
+    }
+
+    func copySummaryTemplateForEdit(
+        id: String,
+        reuseExisting: Bool = true
+    ) async throws -> VoxellaSummaryTemplate {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/summary-templates/\(id)/copy-for-edit"),
+            method: "POST",
+            json: ["reuse_existing": reuseExisting],
+            as: VoxellaSummaryTemplate.self
+        )
+    }
+
+    func updateSummaryTemplate(
+        id: String,
+        name: String?,
+        description: String?,
+        userEdition: String?
+    ) async throws -> VoxellaSummaryTemplateUpdateResponse {
+        var body: [String: Any] = [:]
+        if let name { body["name"] = name }
+        if let description { body["description"] = description }
+        if let userEdition { body["user_edition"] = userEdition }
+        return try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/summary-templates/\(id)"),
+            method: "PATCH",
+            json: body,
+            as: VoxellaSummaryTemplateUpdateResponse.self
+        )
+    }
+
+    func assistSummaryTemplate(
+        id: String,
+        instruction: String,
+        currentUserEdition: String?
+    ) async throws -> VoxellaSummaryTemplateAiEditResponse {
+        var body: [String: Any] = ["instruction": instruction]
+        if let currentUserEdition { body["current_user_edition"] = currentUserEdition }
+        return try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/summary-templates/\(id)/ai-edit"),
+            method: "POST",
+            json: body,
+            as: VoxellaSummaryTemplateAiEditResponse.self
+        )
+    }
+
+    func generateSessionSummary(
+        sessionID: UUID,
+        templateID: String?,
+        templateUpdate: VoxellaSummaryTemplateUpdatePayload? = nil
+    ) async throws -> VoxellaSummaryEnqueueResponse {
+        try await request(
+            url: VoxellaAPIConfiguration.sessionURL(sessionID).appending(path: "summary/generate"),
+            method: "POST",
+            json: summaryGenerationBody(templateID: templateID, templateUpdate: templateUpdate),
+            as: VoxellaSummaryEnqueueResponse.self
+        )
+    }
+
+    func regenerateSessionSummary(
+        sessionID: UUID,
+        templateID: String,
+        templateUpdate: VoxellaSummaryTemplateUpdatePayload? = nil
+    ) async throws -> VoxellaSummaryEnqueueResponse {
+        let normalizedTemplateID = templateID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedTemplateID.isEmpty else {
+            throw VoxellaAPIError.http(422, "A summary template is required.")
+        }
+        guard let templateUUID = UUID(uuidString: normalizedTemplateID) else {
+            throw VoxellaAPIError.http(422, "The summary template identifier is invalid.")
+        }
+        let body = summaryGenerationBody(
+            templateID: templateUUID.uuidString.lowercased(),
+            templateUpdate: templateUpdate
+        )
+        return try await request(
+            url: VoxellaAPIConfiguration.sessionURL(sessionID).appending(path: "summary/regenerate"),
+            method: "POST",
+            json: body,
+            as: VoxellaSummaryEnqueueResponse.self
+        )
+    }
+
+    func sessionSummary(
+        sessionID: UUID,
+        locale: String? = nil
+    ) async throws -> VoxellaSessionSummaryResponse {
+        var components = URLComponents(
+            url: VoxellaAPIConfiguration.sessionURL(sessionID).appending(path: "summary"),
+            resolvingAgainstBaseURL: false
+        )!
+        if let locale, !locale.isEmpty {
+            components.queryItems = [URLQueryItem(name: "locale", value: locale)]
+        }
+        guard let url = components.url else { throw VoxellaAPIError.decoding }
+        return try await request(url: url, method: "GET", as: VoxellaSessionSummaryResponse.self)
+    }
+
+    func updateSessionSummary(
+        sessionID: UUID,
+        markdown: String
+    ) async throws -> VoxellaSessionSummaryUpdateResponse {
+        let normalizedMarkdown = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedMarkdown.isEmpty else {
+            throw VoxellaAPIError.http(422, "A summary is required.")
+        }
+        return try await request(
+            url: VoxellaAPIConfiguration.sessionURL(sessionID).appending(path: "summary"),
+            method: "PUT",
+            json: ["summary_markdown": normalizedMarkdown],
+            as: VoxellaSessionSummaryUpdateResponse.self
         )
     }
 
@@ -908,11 +1065,15 @@ actor VoxellaAPIClient {
         sizeBytes: Int64?,
         mimeType: String,
         filename: String,
-        startPipeline: Bool
+        startPipeline: Bool,
+        prepareMedia: Bool = false
     ) async throws -> VoxellaUploadCompleteResponse {
         var body: [String: Any] = [
             "start_pipeline": startPipeline,
         ]
+        if prepareMedia {
+            body["prepare_media"] = true
+        }
         if let sizeBytes { body["size_bytes"] = sizeBytes }
         var optionsOverride = sessionMediaOptions(mimeType: mimeType, filename: filename)
         if let durationSec, durationSec.isFinite, durationSec > 0 {
@@ -1028,14 +1189,18 @@ actor VoxellaAPIClient {
         sessionID: UUID,
         result: TranscriptionResult,
         subtitleTrack: SubtitleTrack?,
-        translationTracks: [WorkbenchTranslationTrack]
+        translationTracks: [WorkbenchTranslationTrack],
+        title: String? = nil,
+        summary: String? = nil,
+        sessionTag: String? = nil
     ) async throws {
         struct Empty: Decodable {}
-        let body: [String: Any] = [
-            "source_language": result.language as Any,
-            "transcript_text": result.text,
-            "segments": result.segments.map(Self.encodeSegment),
-            "words": result.words.map(Self.encodeWord),
+        let canonicalResult = result.aggregatingSegments()
+        var body: [String: Any] = [
+            "source_language": canonicalResult.language as Any,
+            "transcript_text": canonicalResult.text,
+            "segments": canonicalResult.segments.map(Self.encodeSegment),
+            "words": canonicalResult.words.map(Self.encodeWord),
             "subtitles": (subtitleTrack?.cues ?? []).map(Self.encodeCue),
             "translations": translationTracks.map { track in
                 [
@@ -1044,6 +1209,15 @@ actor VoxellaAPIClient {
                 ] as [String: Any]
             },
         ]
+        if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            body["title"] = title
+        }
+        if let summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            body["summary"] = summary
+        }
+        if let sessionTag, !sessionTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            body["session_tag"] = sessionTag
+        }
         _ = try await request(
             url: VoxellaAPIConfiguration.sessionURL(sessionID).appending(path: "client-results"),
             method: "POST",
@@ -1283,6 +1457,20 @@ actor VoxellaAPIClient {
         if let start = options.clipStartMs { payload["clip_start_ms"] = start }
         if let end = options.clipEndMs { payload["clip_end_ms"] = end }
         return payload
+    }
+
+    private func summaryGenerationBody(
+        templateID: String?,
+        templateUpdate: VoxellaSummaryTemplateUpdatePayload?
+    ) -> [String: Any] {
+        var body: [String: Any] = [:]
+        if let templateID, !templateID.isEmpty {
+            body["template_id"] = templateID
+        }
+        if let templateUpdate {
+            body["template_update"] = templateUpdate.jsonObject()
+        }
+        return body
     }
 
     private func sessionMediaOptions(mimeType: String, filename: String) -> [String: Any] {

@@ -10,7 +10,7 @@ struct VoxellaConvexAuthProvider: AuthProvider {
     }
 
     func logout() async throws {
-        await VoxellaAuthService.shared.signOut()
+        // VoxStudio tokens are owned by AccountService. Convex must not clear them.
     }
 
     func loginFromCache(onIdToken: @Sendable @escaping (String?) -> Void) async throws -> String {
