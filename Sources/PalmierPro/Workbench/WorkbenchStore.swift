@@ -190,6 +190,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var compute: TaskComputeDestination = .local
     var remoteSessionID: UUID?
     var localCachePath: String?
+    var cloudSyncRevision = 0
     var cloudSyncState: DubCloudSyncState?
     var pendingCloudSyncError: String?
 
@@ -321,7 +322,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         case progressStep, progressCompleted, progressTotal
         case diarizationDiagnostics, transcriptionAlignmentDiagnostics, errorMessage
         case storage, compute, remoteSessionID, localCachePath
-        case cloudSyncState, pendingCloudSyncError
+        case cloudSyncRevision, cloudSyncState, pendingCloudSyncError
     }
 
     init(
@@ -366,6 +367,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         compute: TaskComputeDestination = .local,
         remoteSessionID: UUID? = nil,
         localCachePath: String? = nil,
+        cloudSyncRevision: Int = 0,
         cloudSyncState: DubCloudSyncState? = nil,
         pendingCloudSyncError: String? = nil
     ) {
@@ -410,6 +412,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         self.compute = compute
         self.remoteSessionID = remoteSessionID
         self.localCachePath = localCachePath
+        self.cloudSyncRevision = cloudSyncRevision
         self.cloudSyncState = cloudSyncState
         self.pendingCloudSyncError = pendingCloudSyncError
     }
@@ -481,6 +484,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         compute = try container.decodeIfPresent(TaskComputeDestination.self, forKey: .compute) ?? .local
         remoteSessionID = try container.decodeIfPresent(UUID.self, forKey: .remoteSessionID)
         localCachePath = try container.decodeIfPresent(String.self, forKey: .localCachePath)
+        cloudSyncRevision = try container.decodeIfPresent(Int.self, forKey: .cloudSyncRevision) ?? 0
         cloudSyncState = try container.decodeIfPresent(DubCloudSyncState.self, forKey: .cloudSyncState)
         pendingCloudSyncError = try container.decodeIfPresent(String.self, forKey: .pendingCloudSyncError)
     }
@@ -532,6 +536,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         try container.encode(compute, forKey: .compute)
         try container.encodeIfPresent(remoteSessionID, forKey: .remoteSessionID)
         try container.encodeIfPresent(localCachePath, forKey: .localCachePath)
+        try container.encode(cloudSyncRevision, forKey: .cloudSyncRevision)
         try container.encodeIfPresent(cloudSyncState, forKey: .cloudSyncState)
         try container.encodeIfPresent(pendingCloudSyncError, forKey: .pendingCloudSyncError)
     }
@@ -602,6 +607,7 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     var remoteGenerationID: String?
     var clientRequestID: String?
     var localCachePath: String?
+    var cloudSyncRevision = 0
     var cloudSyncState: DubCloudSyncState?
     var remoteResultVersion: String?
     var pendingCloudSyncError: String?
@@ -695,6 +701,8 @@ struct WorkbenchSession: Identifiable, Sendable {
     var storage: TaskStorageDestination = .local
     var compute: TaskComputeDestination = .local
     var remoteSessionID: UUID?
+    var cloudSyncState: DubCloudSyncState = .none
+    var cloudSyncError: String?
 
     var originalFilename: String? {
         sourceURL?.lastPathComponent
@@ -723,6 +731,60 @@ private struct WorkbenchSnapshot: Codable, Sendable {
     var schemaVersion: Int? = 6
     var transcriptions: [WorkbenchTranscriptionJob]
     var dubs: [WorkbenchDubJob]
+}
+
+private struct TranscriptionCloudEditableProjection: Equatable {
+    var result: TranscriptionResult?
+    var editedText: String
+    var subtitleTrack: SubtitleTrack?
+    var translationTracks: [WorkbenchTranslationTrack]
+    var customTitle: String?
+    var summaryMarkdown: String?
+    var summaryTemplateID: String?
+    var summaryTemplateName: String?
+    var summaryTemplateUserEdition: String?
+    var sessionTag: String?
+
+    init(_ job: WorkbenchTranscriptionJob) {
+        result = job.result
+        editedText = job.editedText
+        subtitleTrack = job.subtitleTrack
+        translationTracks = job.translationTracks
+        customTitle = job.customTitle
+        summaryMarkdown = job.summaryMarkdown
+        summaryTemplateID = job.summaryTemplateID
+        summaryTemplateName = job.summaryTemplateName
+        summaryTemplateUserEdition = job.summaryTemplateUserEdition
+        sessionTag = job.sessionTag
+    }
+}
+
+private struct DubCloudEditableProjection: Equatable {
+    var script: String
+    var segments: [DubSegmentPayload]?
+    var renderedSegments: [DubRenderedSegment]?
+    var alignedTranscript: TranscriptionResult?
+    var subtitleTrack: SubtitleTrack?
+    var title: String
+    var summaryMarkdown: String?
+    var summaryTemplateID: String?
+    var summaryTemplateName: String?
+    var summaryTemplateUserEdition: String?
+    var sessionTag: String?
+
+    init(_ job: WorkbenchDubJob) {
+        script = job.script
+        segments = job.segments
+        renderedSegments = job.renderedSegments
+        alignedTranscript = job.alignedTranscript
+        subtitleTrack = job.subtitleTrack
+        title = job.title
+        summaryMarkdown = job.summaryMarkdown
+        summaryTemplateID = job.summaryTemplateID
+        summaryTemplateName = job.summaryTemplateName
+        summaryTemplateUserEdition = job.summaryTemplateUserEdition
+        sessionTag = job.sessionTag
+    }
 }
 
 enum WorkbenchMediaFlowPlanner {
@@ -813,6 +875,7 @@ final class WorkbenchStore {
     private static let routeDefaultsKey = "voxella.workbench.route"
     private let taskAccess: any TranscriptionTaskAccessing
     private let dubTaskAccess: any DubTaskAccessing
+    private let cloudSessionSync: any CloudSessionSyncing
 
     private struct StagedTranscriptionArtifacts {
         var rawResult: TranscriptionResult?
@@ -871,6 +934,9 @@ final class WorkbenchStore {
     private var flowTasks: [UUID: Task<Void, Never>] = [:]
     private var stagedTranscriptions: [UUID: StagedTranscriptionArtifacts] = [:]
     private var summaryTaskIDs: Set<UUID> = []
+    private var cloudSyncTasks: [UUID: Task<Void, Never>] = [:]
+    private var cloudSyncGenerations: [UUID: Int] = [:]
+    private var deletingSessionIDs: Set<UUID> = []
     /// FIFO of transcription job IDs waiting for the single local ASR slot.
     private var pendingTranscriptionQueue: [UUID] = []
     private var activeQueuedTranscriptionID: UUID?
@@ -880,12 +946,14 @@ final class WorkbenchStore {
     private var saveRequestedBeforeHydration = false
     private var saveRevision = 0
 
-    private init(
+    init(
         taskAccess: any TranscriptionTaskAccessing = RoutedTranscriptionTaskAccess(),
-        dubTaskAccess: any DubTaskAccessing = RoutedDubTaskAccess()
+        dubTaskAccess: any DubTaskAccessing = RoutedDubTaskAccess(),
+        cloudSessionSync: any CloudSessionSyncing = VoxellaCloudSessionSync()
     ) {
         self.taskAccess = taskAccess
         self.dubTaskAccess = dubTaskAccess
+        self.cloudSessionSync = cloudSessionSync
         let storedRoute = UserDefaults.standard.string(forKey: Self.routeDefaultsKey)
             .flatMap(WorkbenchRoute.init(rawValue:))
         // Session detail requires an in-memory selection. Restore Recent when none exists.
@@ -937,7 +1005,12 @@ final class WorkbenchStore {
                 dubSegments: dub?.renderedSegments ?? [],
                 storage: dub?.resolvedStorage ?? job.storage,
                 compute: dub?.resolvedCompute ?? job.compute,
-                remoteSessionID: dub?.remoteSessionID ?? job.remoteSessionID
+                remoteSessionID: dub?.remoteSessionID ?? job.remoteSessionID,
+                cloudSyncState: Self.combinedCloudSyncState(
+                    primary: job.resolvedCloudSyncState,
+                    secondary: dub?.resolvedCloudSyncState
+                ),
+                cloudSyncError: dub?.pendingCloudSyncError ?? job.pendingCloudSyncError
             )
         }
         let standaloneDubs = dubs.filter { job in
@@ -970,7 +1043,9 @@ final class WorkbenchStore {
                 dubSegments: job.renderedSegments ?? Self.fallbackDubSegments(for: job),
                 storage: job.resolvedStorage,
                 compute: job.resolvedCompute,
-                remoteSessionID: job.remoteSessionID
+                remoteSessionID: job.remoteSessionID,
+                cloudSyncState: job.resolvedCloudSyncState,
+                cloudSyncError: job.pendingCloudSyncError
             )
         }
         return (transcriptSessions + standaloneDubs).sorted { $0.modifiedAt > $1.modifiedAt }
@@ -1056,18 +1131,16 @@ final class WorkbenchStore {
     func renameSession(_ id: UUID, to title: String) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        if let index = transcriptions.firstIndex(where: { $0.id == id }) {
-            transcriptions[index].customTitle = trimmed == transcriptions[index].displayName
-                ? nil
-                : trimmed
-            transcriptions[index].modifiedAt = Date()
-            save()
+        if transcriptions.contains(where: { $0.id == id }) {
+            updateTranscription(id) { job in
+                job.customTitle = trimmed == job.displayName ? nil : trimmed
+            }
             return
         }
-        if let index = dubs.firstIndex(where: { $0.id == id }) {
-            dubs[index].title = SessionTitlePolicy.normalizedUserTitle(trimmed) ?? ""
-            dubs[index].modifiedAt = Date()
-            save()
+        if dubs.contains(where: { $0.id == id }) {
+            updateDub(id) { job in
+                job.title = SessionTitlePolicy.normalizedUserTitle(trimmed) ?? ""
+            }
         }
     }
 
@@ -1460,30 +1533,21 @@ final class WorkbenchStore {
     }
 
     func deleteTranscription(_ id: UUID) {
-        pendingTranscriptionQueue.removeAll { $0 == id }
-        if activeQueuedTranscriptionID == id { activeQueuedTranscriptionID = nil }
-        flowTasks[id]?.cancel()
-        flowTasks[id] = nil
-        discardStagedTranscription(id)
-        if let job = transcriptions.first(where: { $0.id == id }) {
-            Self.removeManagedClipMediaIfNeeded(job.sourceURL)
-        }
-        transcriptions.removeAll { $0.id == id }
-        if selectedTranscriptionID == id { selectedTranscriptionID = transcriptions.first?.id }
-        if var batch = activeTranscriptionBatch {
-            batch.jobIDs.removeAll { $0 == id }
-            activeTranscriptionBatch = batch.jobIDs.isEmpty ? nil : batch
-        }
-        save()
-        drainTranscriptionQueue()
+        guard transcriptions.contains(where: { $0.id == id }) else { return }
+        beginRemoteFirstDeletion(
+            transcriptionIDs: [id],
+            dubIDs: [],
+            selectedSessionID: selectedSessionID == id ? id : nil
+        )
     }
 
     func deleteDub(_ id: UUID) {
-        flowTasks[id]?.cancel()
-        flowTasks[id] = nil
-        dubs.removeAll { $0.id == id }
-        if selectedDubID == id { selectedDubID = dubs.first?.id }
-        save()
+        guard dubs.contains(where: { $0.id == id }) else { return }
+        beginRemoteFirstDeletion(
+            transcriptionIDs: [],
+            dubIDs: [id],
+            selectedSessionID: selectedSessionID == id ? id : nil
+        )
     }
 
     func deleteSession(_ id: UUID) {
@@ -1499,24 +1563,139 @@ final class WorkbenchStore {
             relatedDubIDs = []
         }
 
-        if selectedSessionID == id {
-            selectedSessionID = nil
-            if route == .session { route = .recent }
+        beginRemoteFirstDeletion(
+            transcriptionIDs: session.transcriptionID.map { [$0] } ?? [],
+            dubIDs: relatedDubIDs,
+            selectedSessionID: id
+        )
+    }
+
+    private func beginRemoteFirstDeletion(
+        transcriptionIDs: [UUID],
+        dubIDs: [UUID],
+        selectedSessionID: UUID? = nil
+    ) {
+        let transcriptionIDs = Array(Set(transcriptionIDs))
+        let dubIDs = Array(Set(dubIDs))
+        let localIDs = Set(transcriptionIDs).union(dubIDs)
+        guard !localIDs.isEmpty,
+              localIDs.isDisjoint(with: deletingSessionIDs) else { return }
+
+        deletingSessionIDs.formUnion(localIDs)
+        let flowIDs = localIDs.filter { flowTasks[$0] != nil }
+        for id in flowIDs {
+            flowTasks[id]?.cancel()
         }
 
-        if let transcriptionID = session.transcriptionID {
-            deleteTranscription(transcriptionID)
+        Task { [weak self] in
+            guard let self else { return }
+            for id in flowIDs {
+                if let flowTask = flowTasks[id] {
+                    await flowTask.value
+                }
+            }
+
+            let remoteIDs = remoteSessionIDs(
+                transcriptionIDs: transcriptionIDs,
+                dubIDs: dubIDs
+            )
+            do {
+                for remoteID in remoteIDs {
+                    try await cloudSessionSync.delete(remoteSessionID: remoteID)
+                }
+            } catch {
+                deletingSessionIDs.subtract(localIDs)
+                WorkbenchTipCenter.shared.show(
+                    "Cloud deletion failed. The local session was kept so you can retry: \(error.localizedDescription)",
+                    kind: .error,
+                    id: "session.delete.cloud.\(selectedSessionID?.uuidString ?? localIDs.first!.uuidString)"
+                )
+                Log.project.warning(
+                    "cloud session deletion failed ids=\(remoteIDs.map(\.uuidString).joined(separator: ",")) "
+                        + "error=\(error.localizedDescription)"
+                )
+                return
+            }
+
+            for id in transcriptionIDs {
+                removeTranscriptionLocally(id)
+            }
+            for id in dubIDs {
+                removeDubLocally(id)
+            }
+            deletingSessionIDs.subtract(localIDs)
+            if let selectedSessionID,
+               self.selectedSessionID == selectedSessionID {
+                self.selectedSessionID = nil
+                if self.route == .session { self.route = .recent }
+            }
         }
-        for dubID in relatedDubIDs {
-            deleteDub(dubID)
+    }
+
+    private func remoteSessionIDs(
+        transcriptionIDs: [UUID],
+        dubIDs: [UUID]
+    ) -> [UUID] {
+        var result: Set<UUID> = []
+        for id in transcriptionIDs {
+            guard let job = transcriptions.first(where: { $0.id == id }),
+                  job.placement.storage == .cloud,
+                  let remoteSessionID = job.remoteSessionID else { continue }
+            result.insert(remoteSessionID)
         }
+        for id in dubIDs {
+            guard let job = dubs.first(where: { $0.id == id }),
+                  job.placement.storage == .cloud,
+                  let remoteSessionID = job.remoteSessionID else { continue }
+            result.insert(remoteSessionID)
+        }
+        return result.sorted { $0.uuidString < $1.uuidString }
+    }
+
+    private func removeTranscriptionLocally(_ id: UUID) {
+        pendingTranscriptionQueue.removeAll { $0 == id }
+        if activeQueuedTranscriptionID == id { activeQueuedTranscriptionID = nil }
+        cloudSyncTasks[id]?.cancel()
+        cloudSyncTasks[id] = nil
+        cloudSyncGenerations[id, default: 0] += 1
+        discardStagedTranscription(id)
+        if let job = transcriptions.first(where: { $0.id == id }) {
+            Self.removeManagedClipMediaIfNeeded(job.sourceURL)
+        }
+        transcriptions.removeAll { $0.id == id }
+        if selectedTranscriptionID == id { selectedTranscriptionID = transcriptions.first?.id }
+        if var batch = activeTranscriptionBatch {
+            batch.jobIDs.removeAll { $0 == id }
+            activeTranscriptionBatch = batch.jobIDs.isEmpty ? nil : batch
+        }
+        save()
+        drainTranscriptionQueue()
+    }
+
+    private func removeDubLocally(_ id: UUID) {
+        cloudSyncTasks[id]?.cancel()
+        cloudSyncTasks[id] = nil
+        cloudSyncGenerations[id, default: 0] += 1
+        dubs.removeAll { $0.id == id }
+        if selectedDubID == id { selectedDubID = dubs.first?.id }
+        save()
     }
 
     func updateTranscription(_ id: UUID, _ mutate: (inout WorkbenchTranscriptionJob) -> Void) {
         guard let index = transcriptions.firstIndex(where: { $0.id == id }) else { return }
+        let before = TranscriptionCloudEditableProjection(transcriptions[index])
         mutate(&transcriptions[index])
         transcriptions[index].modifiedAt = Date()
+        let changed = before != TranscriptionCloudEditableProjection(transcriptions[index])
+        if changed {
+            transcriptions[index].cloudSyncRevision = Self.nextCloudSyncRevision(
+                transcriptions[index].cloudSyncRevision
+            )
+        }
         save()
+        if changed {
+            scheduleCloudSync(forTranscription: id)
+        }
     }
 
     func assignSpeaker(
@@ -1764,9 +1943,321 @@ final class WorkbenchStore {
 
     func updateDub(_ id: UUID, _ mutate: (inout WorkbenchDubJob) -> Void) {
         guard let index = dubs.firstIndex(where: { $0.id == id }) else { return }
+        let before = DubCloudEditableProjection(dubs[index])
         mutate(&dubs[index])
         dubs[index].modifiedAt = Date()
+        let changed = before != DubCloudEditableProjection(dubs[index])
+        if changed {
+            dubs[index].cloudSyncRevision = Self.nextCloudSyncRevision(dubs[index].cloudSyncRevision)
+        }
         save()
+        if changed {
+            scheduleCloudSync(forDub: id)
+        }
+    }
+
+    func retryCloudSessionSync(_ sessionID: UUID) {
+        var transcriptionIDs: Set<UUID> = []
+        var dubIDs: Set<UUID> = []
+        if let transcriptionID = transcriptions.first(where: { $0.id == sessionID })?.id {
+            transcriptionIDs.insert(transcriptionID)
+        }
+        if let dubID = dubs.first(where: { $0.id == sessionID })?.id {
+            dubIDs.insert(dubID)
+        }
+        if let session = sessions.first(where: { $0.id == sessionID }) {
+            if let transcriptionID = session.transcriptionID {
+                transcriptionIDs.insert(transcriptionID)
+            }
+            if let dubID = session.dubID {
+                dubIDs.insert(dubID)
+            }
+        }
+        for transcriptionID in transcriptionIDs {
+            scheduleCloudSync(forTranscription: transcriptionID)
+        }
+        for dubID in dubIDs {
+            scheduleCloudSync(forDub: dubID)
+        }
+    }
+
+    private func scheduleCloudSync(forTranscription id: UUID) {
+        guard hasHydrated,
+              let job = transcriptions.first(where: { $0.id == id }),
+              TranscriptionPlacementRouter.shouldSyncCloudEdits(job.placement),
+              job.state == .completed,
+              job.remoteSessionID != nil,
+              job.result != nil else {
+            return
+        }
+
+        let generation = cloudSyncGenerations[id, default: 0] + 1
+        cloudSyncGenerations[id] = generation
+        cloudSyncTasks[id]?.cancel()
+        if let index = transcriptions.firstIndex(where: { $0.id == id }) {
+            transcriptions[index].cloudSyncState = .pending
+            transcriptions[index].pendingCloudSyncError = nil
+            transcriptions[index].progressMessage = "Saving changes to VoxStudio Cloud…"
+            save()
+        }
+
+        let task = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(350))
+                try Task.checkCancellation()
+                guard let self,
+                      self.cloudSyncGenerations[id] == generation,
+                      let snapshot = self.transcriptionCloudSnapshot(id) else {
+                    return
+                }
+                try await self.cloudSessionSync.sync(snapshot)
+                try Task.checkCancellation()
+                guard self.cloudSyncGenerations[id] == generation,
+                      self.transcriptions.contains(where: { $0.id == id }) else {
+                    return
+                }
+                self.updateTranscription(id) { job in
+                    job.cloudSyncState = .completed
+                    job.pendingCloudSyncError = nil
+                    job.progressMessage = "Changes saved to VoxStudio Cloud"
+                }
+                self.cloudSyncTasks[id] = nil
+            } catch is CancellationError {
+                // A newer edit owns the next sync attempt.
+            } catch {
+                guard let self,
+                      self.cloudSyncGenerations[id] == generation,
+                      self.transcriptions.contains(where: { $0.id == id }) else {
+                    return
+                }
+                self.updateTranscription(id) { job in
+                    job.cloudSyncState = .pending
+                    job.pendingCloudSyncError = error.localizedDescription
+                    job.progressMessage = "Changes saved locally · cloud sync pending"
+                }
+                self.cloudSyncTasks[id] = nil
+                WorkbenchTipCenter.shared.show(
+                    "Changes saved locally, but the cloud update failed: \(error.localizedDescription)",
+                    kind: .error,
+                    id: "session.cloud-sync.\(id.uuidString)"
+                )
+                Log.project.warning(
+                    "transcription cloud edit sync failed id=\(id.uuidString) error=\(error.localizedDescription)"
+                )
+            }
+        }
+        cloudSyncTasks[id] = task
+    }
+
+    private func scheduleCloudSync(forDub id: UUID) {
+        guard hasHydrated,
+              let job = dubs.first(where: { $0.id == id }),
+              TranscriptionPlacementRouter.shouldSyncCloudEdits(job.placement),
+              job.state == .completed,
+              job.remoteSessionID != nil,
+              dubTranscriptForCloudSync(job) != nil else {
+            return
+        }
+
+        let generation = cloudSyncGenerations[id, default: 0] + 1
+        cloudSyncGenerations[id] = generation
+        cloudSyncTasks[id]?.cancel()
+        if let index = dubs.firstIndex(where: { $0.id == id }) {
+            dubs[index].cloudSyncState = .pending
+            dubs[index].pendingCloudSyncError = nil
+            dubs[index].progressMessage = "Saving changes to VoxStudio Cloud…"
+            save()
+        }
+
+        let task = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(350))
+                try Task.checkCancellation()
+                guard let self,
+                      self.cloudSyncGenerations[id] == generation,
+                      let snapshot = self.dubCloudSnapshot(id) else {
+                    return
+                }
+                try await self.cloudSessionSync.sync(snapshot)
+                try Task.checkCancellation()
+                guard self.cloudSyncGenerations[id] == generation,
+                      self.dubs.contains(where: { $0.id == id }) else {
+                    return
+                }
+                self.updateDub(id) { job in
+                    job.cloudSyncState = .completed
+                    job.pendingCloudSyncError = nil
+                    job.progressMessage = "Changes saved to VoxStudio Cloud"
+                }
+                self.cloudSyncTasks[id] = nil
+            } catch is CancellationError {
+                // A newer edit owns the next sync attempt.
+            } catch {
+                guard let self,
+                      self.cloudSyncGenerations[id] == generation,
+                      self.dubs.contains(where: { $0.id == id }) else {
+                    return
+                }
+                self.updateDub(id) { job in
+                    job.cloudSyncState = .pending
+                    job.pendingCloudSyncError = error.localizedDescription
+                    job.progressMessage = "Changes saved locally · cloud sync pending"
+                }
+                self.cloudSyncTasks[id] = nil
+                WorkbenchTipCenter.shared.show(
+                    "Changes saved locally, but the cloud update failed: \(error.localizedDescription)",
+                    kind: .error,
+                    id: "session.cloud-sync.\(id.uuidString)"
+                )
+                Log.project.warning(
+                    "dub cloud edit sync failed id=\(id.uuidString) error=\(error.localizedDescription)"
+                )
+            }
+        }
+        cloudSyncTasks[id] = task
+    }
+
+    private func transcriptionCloudSnapshot(_ id: UUID) -> CloudSessionSyncSnapshot? {
+        guard let job = transcriptions.first(where: { $0.id == id }),
+              let remoteSessionID = job.remoteSessionID,
+              let sourceResult = job.result else {
+            return nil
+        }
+        var result = sourceResult
+        if job.editedText != sourceResult.text {
+            result = TranscriptionResult(
+                text: job.editedText,
+                language: sourceResult.language,
+                words: job.editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? []
+                    : sourceResult.words,
+                segments: job.editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? []
+                    : sourceResult.segments
+            )
+        }
+        return CloudSessionSyncSnapshot(
+            jobID: job.id,
+            remoteSessionID: remoteSessionID,
+            contentKind: .transcription,
+            revision: job.cloudSyncRevision,
+            sourceLanguage: result.language ?? job.languageCode,
+            result: result,
+            subtitleTrack: job.subtitleTrack ?? SubtitleTrack.fromTranscript(result),
+            translationTracks: job.translationTracks,
+            dubSegments: [],
+            title: job.sessionTitle,
+            summary: job.summaryMarkdown,
+            summaryTemplateID: job.summaryTemplateID,
+            summaryTemplateName: job.summaryTemplateName,
+            summaryTemplateUserEdition: job.summaryTemplateUserEdition,
+            sessionTag: job.sessionTag
+        )
+    }
+
+    private func dubCloudSnapshot(_ id: UUID) -> CloudSessionSyncSnapshot? {
+        guard let job = dubs.first(where: { $0.id == id }),
+              let remoteSessionID = job.remoteSessionID,
+              let result = dubTranscriptForCloudSync(job) else {
+            return nil
+        }
+        return CloudSessionSyncSnapshot(
+            jobID: job.id,
+            remoteSessionID: remoteSessionID,
+            contentKind: .dub,
+            revision: job.cloudSyncRevision,
+            sourceLanguage: result.language ?? (job.language == "auto" ? nil : job.language),
+            result: result,
+            subtitleTrack: job.subtitleTrack ?? job.renderedSubtitleTrack,
+            translationTracks: [],
+            dubSegments: cloudDubSegments(for: job),
+            title: SessionTitlePolicy.normalizedUserTitle(job.title),
+            summary: job.summaryMarkdown,
+            summaryTemplateID: job.summaryTemplateID,
+            summaryTemplateName: job.summaryTemplateName,
+            summaryTemplateUserEdition: job.summaryTemplateUserEdition,
+            sessionTag: job.sessionTag
+        )
+    }
+
+    private func dubTranscriptForCloudSync(_ job: WorkbenchDubJob) -> TranscriptionResult? {
+        let editableSegments = cloudDubSegments(for: job).compactMap { segment -> TranscriptionSegment? in
+            guard let start = segment.start, let end = segment.end,
+                  start.isFinite, end.isFinite, end > start else { return nil }
+            return TranscriptionSegment(
+                text: segment.text,
+                start: start,
+                end: end,
+                speaker: segment.speaker
+            )
+        }
+        if !editableSegments.isEmpty {
+            return TranscriptionResult(
+                text: job.script,
+                language: job.language == "auto" ? nil : job.language,
+                words: job.alignedTranscript?.words ?? [],
+                segments: editableSegments
+            ).aggregatingSegments()
+        }
+        if let aligned = job.alignedTranscript {
+            return aligned.aggregatingSegments()
+        }
+        if let track = job.subtitleTrack ?? job.renderedSubtitleTrack {
+            return track.asTranscriptionResult().aggregatingSegments()
+        }
+        let segments = cloudDubSegments(for: job).compactMap { segment -> TranscriptionSegment? in
+            guard let start = segment.start, let end = segment.end,
+                  start.isFinite, end.isFinite, end > start else { return nil }
+            return TranscriptionSegment(
+                text: segment.text,
+                start: start,
+                end: end,
+                speaker: segment.speaker
+            )
+        }
+        guard !segments.isEmpty || !job.script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return TranscriptionResult(
+            text: job.script,
+            language: job.language == "auto" ? nil : job.language,
+            words: [],
+            segments: segments
+        ).aggregatingSegments()
+    }
+
+    private func cloudDubSegments(for job: WorkbenchDubJob) -> [DubSegmentPayload] {
+        if let segments = job.segments {
+            guard !segments.isEmpty else { return [] }
+            if let renderedSegments = job.renderedSegments, !renderedSegments.isEmpty {
+                let renderedByIndex = Dictionary(
+                    renderedSegments.map { ($0.index, $0) },
+                    uniquingKeysWith: { current, _ in current }
+                )
+                return segments.map { segment in
+                    guard let rendered = renderedByIndex[segment.index] else { return segment }
+                    var enriched = segment
+                    enriched.start = segment.start ?? rendered.start
+                    enriched.end = segment.end ?? rendered.end
+                    return enriched
+                }
+            }
+            return segments
+        }
+        if let renderedSegments = job.renderedSegments, !renderedSegments.isEmpty {
+            return renderedSegments.map {
+                DubSegmentPayload(
+                    index: $0.index,
+                    text: $0.text,
+                    start: $0.start,
+                    end: $0.end,
+                    speaker: $0.speaker,
+                    sourceSubtitleID: $0.sourceSubtitleID
+                )
+            }
+        }
+        let text = job.script.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? [] : [DubSegmentPayload(index: 0, text: text)]
     }
 
     func runTranscription(_ id: UUID) {
@@ -2005,6 +2496,7 @@ final class WorkbenchStore {
                     ? "Transcript ready · saved to VoxStudio Cloud"
                     : "Transcript and summary ready · saved to VoxStudio Cloud"
             }
+            scheduleCloudSync(forTranscription: id)
         } catch is CancellationError {
             updateTranscription(id) {
                 $0.cloudSyncState = .pending
@@ -2024,11 +2516,16 @@ final class WorkbenchStore {
         guard flowTasks[id] == nil,
               let job = transcriptions.first(where: { $0.id == id }),
               job.state == .completed,
-              job.placement == TaskPlacement(storage: .cloud, compute: .local),
-              job.resolvedCloudSyncState == .pending,
+              TranscriptionPlacementRouter.shouldSyncCloudEdits(job.placement),
               job.result != nil else {
             return
         }
+        if job.remoteSessionID != nil {
+            scheduleCloudSync(forTranscription: id)
+            return
+        }
+        guard TranscriptionPlacementRouter.shouldSyncLocalResults(job.placement),
+              job.resolvedCloudSyncState == .pending else { return }
         let sourceURL = job.sourceURL
         updateTranscription(id) {
             $0.progressMessage = "Retrying cloud sync…"
@@ -2460,77 +2957,11 @@ final class WorkbenchStore {
 
     func retryDubCloudSync(_ id: UUID) {
         guard flowTasks[id] == nil,
-              let index = dubs.firstIndex(where: { $0.id == id }),
-              let remoteSessionID = dubs[index].remoteSessionID,
-              let generationID = dubs[index].remoteGenerationID,
-              let clientRequestID = dubs[index].clientRequestID,
-              dubs[index].placement == TaskPlacement(storage: .cloud, compute: .local),
-              dubs[index].resolvedCloudSyncState == .pending,
-              let cachePath = dubs[index].localCachePath else { return }
-        let snapshot = dubs[index]
-        let syncSegments = (snapshot.renderedSegments ?? []).map { rendered in
-            DubSegmentPayload(
-                index: rendered.index,
-                text: rendered.text,
-                start: rendered.start,
-                end: rendered.end,
-                speaker: rendered.speaker,
-                sourceSubtitleID: rendered.sourceSubtitleID
-            )
-        }
-        let request = DubTaskRequest(
-            jobID: id,
-            script: snapshot.script,
-            segments: syncSegments.isEmpty ? (snapshot.segments ?? []) : syncSegments,
-            language: snapshot.language,
-            model: snapshot.model,
-            referenceVoiceID: snapshot.referenceVoiceID,
-            reference: nil,
-            speakerReferences: [:],
-            segmentReferences: [:],
-            referenceAudioID: nil,
-            referenceAudioR2Key: nil,
-            referenceText: snapshot.referenceText,
-            placement: snapshot.placement,
-            remoteSessionID: remoteSessionID,
-            generationID: generationID,
-            clientRequestID: clientRequestID,
-            title: snapshot.title.isEmpty ? nil : snapshot.title,
-            cacheURL: URL(fileURLWithPath: cachePath),
-            hasSubtitleModel: false,
-            syncCloudResultOnly: true
-        )
-        dubs[index].state = .running
-        dubs[index].progress = max(dubs[index].progress, 0.84)
-        dubs[index].flowProgressStage = .dubAssembly
-        dubs[index].progressStep = "sync_retry"
-        dubs[index].progressMessage = "Retrying cloud sync…"
-        dubs[index].pendingCloudSyncError = nil
-        dubs[index].errorMessage = nil
-        save()
-
-        let task = Task { [weak self] in
-            guard let self else { return }
-            defer { flowTasks[id] = nil }
-            for await event in dubTaskAccess.events(for: request) {
-                if Task.isCancelled { break }
-                consumeDubTaskEvent(
-                    event,
-                    jobID: id,
-                    resolvedReferenceVoiceID: snapshot.referenceVoiceID,
-                    generationID: generationID
-                )
-            }
-            if Task.isCancelled {
-                updateDub(id) {
-                    guard $0.remoteGenerationID == generationID else { return }
-                    $0.state = .completed
-                    $0.cloudSyncState = .pending
-                    $0.progressMessage = "Completed locally · cloud sync pending"
-                }
-            }
-        }
-        flowTasks[id] = task
+              let job = dubs.first(where: { $0.id == id }),
+              job.state == .completed,
+              TranscriptionPlacementRouter.shouldSyncCloudEdits(job.placement),
+              job.remoteSessionID != nil else { return }
+        scheduleCloudSync(forDub: id)
     }
 
     func useTranscript(_ transcriptID: UUID, forDub dubID: UUID, track: WorkbenchTranscriptTrack) {
@@ -3292,49 +3723,11 @@ final class WorkbenchStore {
     }
 
     private func syncSummaryToCloud(forTranscription id: UUID) async {
-        guard let snapshot = transcriptions.first(where: { $0.id == id }),
-              let remoteSessionID = snapshot.remoteSessionID,
-              let summary = snapshot.summaryMarkdown,
-              !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
-        }
-        do {
-            try await ensureCloudAccessForSummary()
-            _ = try await VoxellaAPIClient.shared.updateSessionSummary(
-                sessionID: remoteSessionID,
-                markdown: summary
-            )
-        } catch {
-            WorkbenchTipCenter.shared.show(
-                "Summary saved locally, but the cloud update failed: \(error.localizedDescription)",
-                kind: .error,
-                id: "summary.cloud-sync.\(id.uuidString)"
-            )
-            Log.project.warning("summary cloud sync failed id=\(id.uuidString) error=\(error.localizedDescription)")
-        }
+        scheduleCloudSync(forTranscription: id)
     }
 
     private func syncSummaryToCloud(forDub id: UUID) async {
-        guard let snapshot = dubs.first(where: { $0.id == id }),
-              let remoteSessionID = snapshot.remoteSessionID,
-              let summary = snapshot.summaryMarkdown,
-              !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
-        }
-        do {
-            try await ensureCloudAccessForSummary()
-            _ = try await VoxellaAPIClient.shared.updateSessionSummary(
-                sessionID: remoteSessionID,
-                markdown: summary
-            )
-        } catch {
-            WorkbenchTipCenter.shared.show(
-                "Summary saved locally, but the cloud update failed: \(error.localizedDescription)",
-                kind: .error,
-                id: "summary.cloud-sync.\(id.uuidString)"
-            )
-            Log.project.warning("summary cloud sync failed id=\(id.uuidString) error=\(error.localizedDescription)")
-        }
+        scheduleCloudSync(forDub: id)
     }
 
     private func markCloudSummaryFailure(forTranscription id: UUID, message: String) {
@@ -3745,6 +4138,7 @@ final class WorkbenchStore {
             dubs.append(contentsOf: persistedDubs)
         }
         hasHydrated = true
+        schedulePersistedCloudSyncs()
         if pendingNewDubDraft {
             pendingNewDubDraft = false
             startNewDubDraft()
@@ -3758,6 +4152,31 @@ final class WorkbenchStore {
         }
         for job in resumableCloudDubs {
             resumePersistedCloudDub(job)
+        }
+    }
+
+    private func schedulePersistedCloudSyncs() {
+        let transcriptionIDs = transcriptions.compactMap { job -> UUID? in
+            guard TranscriptionPlacementRouter.shouldSyncCloudEdits(job.placement),
+                  job.state == .completed,
+                  job.remoteSessionID != nil,
+                  job.result != nil,
+                  job.resolvedCloudSyncState != .completed else { return nil }
+            return job.id
+        }
+        let dubIDs = dubs.compactMap { job -> UUID? in
+            guard TranscriptionPlacementRouter.shouldSyncCloudEdits(job.placement),
+                  job.state == .completed,
+                  job.remoteSessionID != nil,
+                  dubTranscriptForCloudSync(job) != nil,
+                  job.resolvedCloudSyncState != .completed else { return nil }
+            return job.id
+        }
+        for id in transcriptionIDs {
+            scheduleCloudSync(forTranscription: id)
+        }
+        for id in dubIDs {
+            scheduleCloudSync(forDub: id)
         }
     }
 
@@ -3883,6 +4302,17 @@ final class WorkbenchStore {
         return (priority[secondary] ?? 0) > (priority[primary] ?? 0) ? secondary : primary
     }
 
+    private nonisolated static func combinedCloudSyncState(
+        primary: DubCloudSyncState,
+        secondary: DubCloudSyncState?
+    ) -> DubCloudSyncState {
+        let states = [primary, secondary].compactMap { $0 }
+        if states.contains(.pending) { return .pending }
+        if states.contains(.failed) { return .failed }
+        if states.contains(.completed) { return .completed }
+        return .none
+    }
+
     private nonisolated static func fallbackDubSegments(
         for job: WorkbenchDubJob
     ) -> [DubRenderedSegment] {
@@ -3901,6 +4331,11 @@ final class WorkbenchStore {
         let text = job.script.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return [] }
         return [DubRenderedSegment(index: 0, text: text, start: 0, end: 0)]
+    }
+
+    private static func nextCloudSyncRevision(_ revision: Int) -> Int {
+        guard revision >= 0 else { return 1 }
+        return revision == Int.max ? 1 : revision + 1
     }
 
     private func save() {

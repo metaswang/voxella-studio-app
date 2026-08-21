@@ -39,6 +39,18 @@ struct VoxellaSessionCreateResponse: Decodable, Sendable {
     }
 }
 
+struct VoxellaDesktopSessionSyncResponse: Decodable, Sendable {
+    var sessionID: UUID?
+    var revision: Int?
+    var applied: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case revision
+        case applied
+    }
+}
+
 struct VoxellaSignedUpload: Decodable, Sendable {
     var signedURL: String
     var method: String?
@@ -1226,6 +1238,42 @@ actor VoxellaAPIClient {
         )
     }
 
+    func syncDesktopSession(
+        _ snapshot: CloudSessionSyncSnapshot
+    ) async throws -> VoxellaDesktopSessionSyncResponse {
+        let canonicalResult = snapshot.result.aggregatingSegments()
+        let sourceLanguage = canonicalResult.language ?? snapshot.sourceLanguage
+        let body: [String: Any] = [
+            "content_kind": snapshot.contentKind.rawValue,
+            "client_revision": snapshot.revision,
+            "source_language": sourceLanguage ?? NSNull(),
+            "transcript_text": canonicalResult.text,
+            "segments": canonicalResult.segments.map(Self.encodeSegment),
+            "words": canonicalResult.words.map(Self.encodeWord),
+            "subtitles": (snapshot.subtitleTrack?.cues ?? []).map(Self.encodeCue),
+            "translations": snapshot.translationTracks.map { track in
+                [
+                    "language": track.languageCode,
+                    "cues": track.track.cues.map(Self.encodeCue),
+                ] as [String: Any]
+            },
+            "dub_segments": snapshot.dubSegments.map(Self.encodeDubSegment),
+            "title": Self.optionalTextValue(snapshot.title),
+            "summary": Self.optionalTextValue(snapshot.summary),
+            "summary_template_id": Self.optionalTextValue(snapshot.summaryTemplateID),
+            "summary_template_name": Self.optionalTextValue(snapshot.summaryTemplateName),
+            "summary_template_user_edition": Self.optionalTextValue(snapshot.summaryTemplateUserEdition),
+            "session_tag": Self.optionalTextValue(snapshot.sessionTag),
+        ]
+        return try await request(
+            url: VoxellaAPIConfiguration.sessionURL(snapshot.remoteSessionID)
+                .appending(path: "desktop-sync"),
+            method: "PUT",
+            json: body,
+            as: VoxellaDesktopSessionSyncResponse.self
+        )
+    }
+
     func confirmEphemeralCompletion(sessionID: UUID) async throws {
         struct Empty: Decodable {}
         _ = try await request(
@@ -1622,16 +1670,16 @@ actor VoxellaAPIClient {
             "start": segment.start,
             "end": segment.end,
             "text": segment.text,
-            "speaker": segment.speaker as Any,
+            "speaker": segment.speaker ?? NSNull(),
         ]
     }
 
     private static func encodeWord(_ word: TranscriptionWord) -> [String: Any] {
         [
             "word": word.text,
-            "start": word.start as Any,
-            "end": word.end as Any,
-            "speaker": word.speaker as Any,
+            "start": word.start ?? NSNull(),
+            "end": word.end ?? NSNull(),
+            "speaker": word.speaker ?? NSNull(),
         ]
     }
 
@@ -1640,8 +1688,13 @@ actor VoxellaAPIClient {
             "start": cue.start,
             "end": cue.end,
             "text": cue.text,
-            "speaker": cue.speaker as Any,
+            "speaker": cue.speaker ?? NSNull(),
         ]
+    }
+
+    private static func optionalTextValue(_ value: String?) -> Any {
+        let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return normalized.isEmpty ? NSNull() : normalized
     }
 
     private static func encodeDubSegment(_ segment: DubSegmentPayload) -> [String: Any] {

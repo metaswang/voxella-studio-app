@@ -657,6 +657,7 @@ struct WorkbenchSessionDetailView: View {
                 }
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
+                cloudSyncStatus(session)
             }
             Spacer()
             SessionStatusBadge(state: session.state)
@@ -701,6 +702,45 @@ struct WorkbenchSessionDetailView: View {
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
                 .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+        }
+    }
+
+    @ViewBuilder
+    private func cloudSyncStatus(_ session: WorkbenchSession) -> some View {
+        if session.storage == .cloud {
+            switch session.cloudSyncState {
+            case .pending, .failed:
+                HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                    if session.cloudSyncError == nil {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(AppTheme.Status.warningColor)
+                    }
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                        Text(
+                            session.cloudSyncError
+                                ?? "Saving changes to VoxStudio Cloud…"
+                        )
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(
+                            session.cloudSyncError == nil
+                                ? AppTheme.Text.tertiaryColor
+                                : AppTheme.Status.warningColor
+                        )
+                        if session.cloudSyncError != nil {
+                            Button("Retry cloud sync") {
+                                store.retryCloudSessionSync(session.id)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+                .padding(.top, AppTheme.Spacing.xs)
+            case .none, .completed:
+                EmptyView()
+            }
         }
     }
 

@@ -14,13 +14,13 @@ enum TranscriptionProvider: String, CaseIterable, Sendable, Codable {
     }
 }
 
-enum SpeakerBoundary: String, Sendable, Codable {
+enum SpeakerBoundary: String, Sendable, Codable, Equatable {
     case none
     case soft
     case hard
 }
 
-struct TranscriptionWord: Sendable, Codable {
+struct TranscriptionWord: Sendable, Codable, Equatable {
     let text: String
     let start: Double?
     let end: Double?
@@ -74,7 +74,7 @@ struct TranscriptionWord: Sendable, Codable {
     }
 }
 
-struct TranscriptionSegment: Sendable, Codable {
+struct TranscriptionSegment: Sendable, Codable, Equatable {
     let text: String
     let start: Double
     let end: Double
@@ -122,7 +122,7 @@ struct TranscriptionSegment: Sendable, Codable {
     }
 }
 
-struct TranscriptionResult: Sendable, Codable {
+struct TranscriptionResult: Sendable, Codable, Equatable {
     let text: String
     let language: String?
     let words: [TranscriptionWord]

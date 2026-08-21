@@ -139,6 +139,10 @@ enum TranscriptionPlacementRouter {
         placement.storage == .cloud && placement.compute == .local
     }
 
+    static func shouldSyncCloudEdits(_ placement: TranscriptionPlacement) -> Bool {
+        placement.storage == .cloud
+    }
+
     static func shouldConfirmEphemeralDelete(_ placement: TranscriptionPlacement) -> Bool {
         placement.storage == .local && placement.compute == .cloud
     }
