@@ -301,6 +301,27 @@ struct CompositionBuildAudioTrackTests {
         #expect(audioMappings.first.flatMap(clipIds) == ["a1", "a2"])
     }
 
+    @Test func dubTrackUsesAudioCompositionLane() async throws {
+        let audioURL = try makeSilentWav(durationSeconds: 3)
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+
+        let clip = Fixtures.clip(id: "dub-audio", mediaRef: "dub", mediaType: .audio, start: 0, duration: 24)
+        let timeline = Fixtures.timeline(fps: 24, tracks: [
+            Track(type: .dub, role: .dub, clips: [clip]),
+        ])
+
+        let result = try await CompositionBuilder.build(
+            timeline: timeline,
+            resolveURL: { _ in audioURL },
+            renderSize: CGSize(width: 320, height: 180)
+        )
+
+        #expect(result.offlineMediaRefs.isEmpty)
+        let audioMappings = result.trackMappings.filter { !$0.isVideo }
+        #expect(audioMappings.count == 1)
+        #expect(audioMappings.first.flatMap(clipIds) == Set(["dub-audio"]))
+    }
+
     @Test func unityAudioClipResetsVolumeAfterMutedClipOnSharedCompositionTrack() async throws {
         let audioURL = try makeSilentWav(durationSeconds: 3)
         defer { try? FileManager.default.removeItem(at: audioURL) }

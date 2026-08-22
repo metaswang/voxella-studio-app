@@ -650,6 +650,133 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     var resolvedStorage: TaskStorageDestination { storage ?? .local }
     var resolvedCompute: TaskComputeDestination { compute ?? .local }
     var resolvedCloudSyncState: DubCloudSyncState { cloudSyncState ?? .none }
+
+    init() {}
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, createdAt, modifiedAt, state, script, language, model
+        case referenceAudioPath, referenceText, referenceVoiceID
+        case speakerVoiceIDs, segmentVoiceIDs, sourceTranscriptionID, outputPath
+        case segments, renderedSegments, alignedTranscript, subtitleTrack
+        case alignmentDiagnostics, revisions, activeRevisionID
+        case summaryMarkdown, summaryTemplateID, summaryTemplateName, summaryTemplateUserEdition
+        case sessionTag, internalSummary, summaryState, summaryErrorMessage
+        case progress, progressMessage, flowProgressStage, progressStep
+        case progressCompleted, progressTotal, errorMessage
+        case storage, compute, remoteSessionID, remoteGenerationID, clientRequestID
+        case localCachePath, cloudSyncRevision, cloudSyncState, remoteResultVersion
+        case pendingCloudSyncError
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? Date()
+        state = try container.decodeIfPresent(WorkbenchJobState.self, forKey: .state) ?? .ready
+        script = try container.decodeIfPresent(String.self, forKey: .script) ?? ""
+        language = try container.decodeIfPresent(String.self, forKey: .language) ?? "auto"
+        model = try container.decodeIfPresent(DubModelChoice.self, forKey: .model) ?? .medium
+        referenceAudioPath = try container.decodeIfPresent(String.self, forKey: .referenceAudioPath)
+        referenceText = try container.decodeIfPresent(String.self, forKey: .referenceText) ?? ""
+        referenceVoiceID = try container.decodeIfPresent(UUID.self, forKey: .referenceVoiceID)
+        speakerVoiceIDs = try container.decodeIfPresent([String: UUID].self, forKey: .speakerVoiceIDs)
+        segmentVoiceIDs = try container.decodeIfPresent([Int: UUID].self, forKey: .segmentVoiceIDs)
+        sourceTranscriptionID = try container.decodeIfPresent(UUID.self, forKey: .sourceTranscriptionID)
+        outputPath = try container.decodeIfPresent(String.self, forKey: .outputPath)
+        segments = try container.decodeIfPresent([DubSegmentPayload].self, forKey: .segments)
+        renderedSegments = try container.decodeIfPresent([DubRenderedSegment].self, forKey: .renderedSegments)
+        alignedTranscript = try container.decodeIfPresent(TranscriptionResult.self, forKey: .alignedTranscript)
+        subtitleTrack = try container.decodeIfPresent(SubtitleTrack.self, forKey: .subtitleTrack)
+        alignmentDiagnostics = try container.decodeIfPresent(
+            KnownTextAlignmentDiagnostics.self,
+            forKey: .alignmentDiagnostics
+        )
+        revisions = try container.decodeIfPresent([WorkbenchDubRevision].self, forKey: .revisions)
+        activeRevisionID = try container.decodeIfPresent(UUID.self, forKey: .activeRevisionID)
+        summaryMarkdown = try container.decodeIfPresent(String.self, forKey: .summaryMarkdown)
+        summaryTemplateID = try container.decodeIfPresent(String.self, forKey: .summaryTemplateID)
+        summaryTemplateName = try container.decodeIfPresent(String.self, forKey: .summaryTemplateName)
+        summaryTemplateUserEdition = try container.decodeIfPresent(
+            String.self,
+            forKey: .summaryTemplateUserEdition
+        )
+        sessionTag = try container.decodeIfPresent(String.self, forKey: .sessionTag)
+        internalSummary = try container.decodeIfPresent(String.self, forKey: .internalSummary)
+        summaryState = try container.decodeIfPresent(WorkbenchJobState.self, forKey: .summaryState)
+        summaryErrorMessage = try container.decodeIfPresent(String.self, forKey: .summaryErrorMessage)
+        progress = try container.decodeIfPresent(Double.self, forKey: .progress) ?? 0
+        progressMessage = try container.decodeIfPresent(String.self, forKey: .progressMessage)
+            ?? "Ready to synthesize"
+        flowProgressStage = try container.decodeIfPresent(MediaFlowStage.self, forKey: .flowProgressStage)
+        progressStep = try container.decodeIfPresent(String.self, forKey: .progressStep)
+        progressCompleted = try container.decodeIfPresent(Int.self, forKey: .progressCompleted)
+        progressTotal = try container.decodeIfPresent(Int.self, forKey: .progressTotal)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        storage = try container.decodeIfPresent(TaskStorageDestination.self, forKey: .storage)
+        compute = try container.decodeIfPresent(TaskComputeDestination.self, forKey: .compute)
+        remoteSessionID = try container.decodeIfPresent(UUID.self, forKey: .remoteSessionID)
+        remoteGenerationID = try container.decodeIfPresent(String.self, forKey: .remoteGenerationID)
+        clientRequestID = try container.decodeIfPresent(String.self, forKey: .clientRequestID)
+        localCachePath = try container.decodeIfPresent(String.self, forKey: .localCachePath)
+        // Older snapshots omit this key; default keeps cloud-edit sync monotonic.
+        cloudSyncRevision = try container.decodeIfPresent(Int.self, forKey: .cloudSyncRevision) ?? 0
+        cloudSyncState = try container.decodeIfPresent(DubCloudSyncState.self, forKey: .cloudSyncState)
+        remoteResultVersion = try container.decodeIfPresent(String.self, forKey: .remoteResultVersion)
+        pendingCloudSyncError = try container.decodeIfPresent(String.self, forKey: .pendingCloudSyncError)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(modifiedAt, forKey: .modifiedAt)
+        try container.encode(state, forKey: .state)
+        try container.encode(script, forKey: .script)
+        try container.encode(language, forKey: .language)
+        try container.encode(model, forKey: .model)
+        try container.encodeIfPresent(referenceAudioPath, forKey: .referenceAudioPath)
+        try container.encode(referenceText, forKey: .referenceText)
+        try container.encodeIfPresent(referenceVoiceID, forKey: .referenceVoiceID)
+        try container.encodeIfPresent(speakerVoiceIDs, forKey: .speakerVoiceIDs)
+        try container.encodeIfPresent(segmentVoiceIDs, forKey: .segmentVoiceIDs)
+        try container.encodeIfPresent(sourceTranscriptionID, forKey: .sourceTranscriptionID)
+        try container.encodeIfPresent(outputPath, forKey: .outputPath)
+        try container.encodeIfPresent(segments, forKey: .segments)
+        try container.encodeIfPresent(renderedSegments, forKey: .renderedSegments)
+        try container.encodeIfPresent(alignedTranscript, forKey: .alignedTranscript)
+        try container.encodeIfPresent(subtitleTrack, forKey: .subtitleTrack)
+        try container.encodeIfPresent(alignmentDiagnostics, forKey: .alignmentDiagnostics)
+        try container.encodeIfPresent(revisions, forKey: .revisions)
+        try container.encodeIfPresent(activeRevisionID, forKey: .activeRevisionID)
+        try container.encodeIfPresent(summaryMarkdown, forKey: .summaryMarkdown)
+        try container.encodeIfPresent(summaryTemplateID, forKey: .summaryTemplateID)
+        try container.encodeIfPresent(summaryTemplateName, forKey: .summaryTemplateName)
+        try container.encodeIfPresent(summaryTemplateUserEdition, forKey: .summaryTemplateUserEdition)
+        try container.encodeIfPresent(sessionTag, forKey: .sessionTag)
+        try container.encodeIfPresent(internalSummary, forKey: .internalSummary)
+        try container.encodeIfPresent(summaryState, forKey: .summaryState)
+        try container.encodeIfPresent(summaryErrorMessage, forKey: .summaryErrorMessage)
+        try container.encode(progress, forKey: .progress)
+        try container.encode(progressMessage, forKey: .progressMessage)
+        try container.encodeIfPresent(flowProgressStage, forKey: .flowProgressStage)
+        try container.encodeIfPresent(progressStep, forKey: .progressStep)
+        try container.encodeIfPresent(progressCompleted, forKey: .progressCompleted)
+        try container.encodeIfPresent(progressTotal, forKey: .progressTotal)
+        try container.encodeIfPresent(errorMessage, forKey: .errorMessage)
+        try container.encodeIfPresent(storage, forKey: .storage)
+        try container.encodeIfPresent(compute, forKey: .compute)
+        try container.encodeIfPresent(remoteSessionID, forKey: .remoteSessionID)
+        try container.encodeIfPresent(remoteGenerationID, forKey: .remoteGenerationID)
+        try container.encodeIfPresent(clientRequestID, forKey: .clientRequestID)
+        try container.encodeIfPresent(localCachePath, forKey: .localCachePath)
+        try container.encode(cloudSyncRevision, forKey: .cloudSyncRevision)
+        try container.encodeIfPresent(cloudSyncState, forKey: .cloudSyncState)
+        try container.encodeIfPresent(remoteResultVersion, forKey: .remoteResultVersion)
+        try container.encodeIfPresent(pendingCloudSyncError, forKey: .pendingCloudSyncError)
+    }
 }
 
 struct WorkbenchDubRevision: Codable, Identifiable, Sendable {
@@ -848,7 +975,12 @@ private actor WorkbenchPersistence {
 
     func load() -> WorkbenchSnapshot? {
         guard let data = try? Data(contentsOf: URL) else { return nil }
-        return try? JSONDecoder().decode(WorkbenchSnapshot.self, from: data)
+        do {
+            return try JSONDecoder().decode(WorkbenchSnapshot.self, from: data)
+        } catch {
+            Log.project.error("workbench load failed: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     func save(_ snapshot: WorkbenchSnapshot, revision: Int) {

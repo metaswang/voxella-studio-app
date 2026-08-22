@@ -264,6 +264,7 @@ struct TaskPlacementTests {
             "remoteGenerationID",
             "clientRequestID",
             "localCachePath",
+            "cloudSyncRevision",
             "cloudSyncState",
             "remoteResultVersion",
             "pendingCloudSyncError",
@@ -272,6 +273,7 @@ struct TaskPlacementTests {
         let decoded = try JSONDecoder().decode(WorkbenchDubJob.self, from: legacyData)
         #expect(decoded.placement == .localDefault)
         #expect(decoded.resolvedCloudSyncState == .none)
+        #expect(decoded.cloudSyncRevision == 0)
     }
 
     @Test func dubSubmissionCarriesTheSelectedPlacement() {
