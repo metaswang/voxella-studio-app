@@ -7,6 +7,7 @@ struct VideoEditorHomeView: View {
     @AppStorage("voxella.videoEditor.libraryLayout") private var layoutRaw = LibraryLayout.grid.rawValue
     @State private var searchQuery = ""
     @State private var projectPendingDeletion: ProjectEntry?
+    @State private var deletingProjectIDs: Set<UUID> = []
     @State private var deletionMessage: String?
     @FocusState private var isSearchFocused: Bool
 
@@ -52,7 +53,7 @@ struct VideoEditorHomeView: View {
             Button("Cancel", role: .cancel) { projectPendingDeletion = nil }
             Button("Delete", role: .destructive) { deletePendingProject() }
         } message: {
-            Text("The project will be moved to the Trash.")
+            Text("“\(projectPendingDeletion?.name ?? "This project")” will be moved to the Trash. You can restore it from Finder.")
         }
         .alert("Project Couldn’t Be Deleted", isPresented: Binding(
             get: { deletionMessage != nil },
@@ -182,6 +183,7 @@ struct VideoEditorHomeView: View {
                 VideoProjectPoster(
                     entry: entry,
                     isInProgress: isSuspended(entry),
+                    isDeleting: deletingProjectIDs.contains(entry.id),
                     onOpen: open,
                     onRemove: remove,
                     onDelete: { requestDeletion(entry) }
@@ -222,6 +224,7 @@ struct VideoEditorHomeView: View {
                     VideoProjectListRow(
                         entry: entry,
                         isInProgress: isSuspended(entry),
+                        isDeleting: deletingProjectIDs.contains(entry.id),
                         onOpen: open,
                         onRemove: remove,
                         onDelete: { requestDeletion(entry) }
@@ -389,11 +392,15 @@ struct VideoEditorHomeView: View {
     private func deletePendingProject() {
         guard let entry = projectPendingDeletion else { return }
         projectPendingDeletion = nil
-        Task {
+        deletingProjectIDs.insert(entry.id)
+        Task { @MainActor in
+            defer { deletingProjectIDs.remove(entry.id) }
             do {
                 let result = try await AppState.shared.deleteProjects(withIDs: [entry.id])
                 if let failed = result.failedNames.first {
                     deletionMessage = "Couldn’t move \(failed) to the Trash."
+                } else if result.deletedIDs.isEmpty {
+                    deletionMessage = "“\(entry.name)” is no longer in Recent Projects."
                 }
             } catch {
                 deletionMessage = error.localizedDescription
@@ -477,6 +484,7 @@ private struct NewTimelinePoster: View {
 private struct VideoProjectPoster: View {
     let entry: ProjectEntry
     let isInProgress: Bool
+    let isDeleting: Bool
     let onOpen: (URL) -> Void
     let onRemove: (URL) -> Void
     let onDelete: () -> Void
@@ -485,7 +493,7 @@ private struct VideoProjectPoster: View {
 
     var body: some View {
         Button {
-            guard entry.isAccessible else { return }
+            guard entry.isAccessible, !isDeleting else { return }
             onOpen(entry.url)
         } label: {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
@@ -556,6 +564,16 @@ private struct VideoProjectPoster: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .topTrailing) {
+            if isHovered || isDeleting {
+                VideoProjectDeleteButton(
+                    projectName: entry.name,
+                    isDeleting: isDeleting,
+                    action: onDelete
+                )
+                .padding(AppTheme.Spacing.smMd)
+            }
+        }
         .opacity(entry.isAccessible ? 1 : AppTheme.Opacity.strong)
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: AppTheme.Anim.hover), value: isHovered)
@@ -632,6 +650,7 @@ private struct NewTimelineListRow: View {
 private struct VideoProjectListRow: View {
     let entry: ProjectEntry
     let isInProgress: Bool
+    let isDeleting: Bool
     let onOpen: (URL) -> Void
     let onRemove: (URL) -> Void
     let onDelete: () -> Void
@@ -640,7 +659,7 @@ private struct VideoProjectListRow: View {
 
     var body: some View {
         Button {
-            guard entry.isAccessible else { return }
+            guard entry.isAccessible, !isDeleting else { return }
             onOpen(entry.url)
         } label: {
             HStack(spacing: AppTheme.Spacing.md) {
@@ -705,6 +724,16 @@ private struct VideoProjectListRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .trailing) {
+            if isHovered || isDeleting {
+                VideoProjectDeleteButton(
+                    projectName: entry.name,
+                    isDeleting: isDeleting,
+                    action: onDelete
+                )
+                .padding(.trailing, AppTheme.Spacing.smMd)
+            }
+        }
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: AppTheme.Anim.hover), value: isHovered)
         .contextMenu {
@@ -721,5 +750,39 @@ private struct VideoProjectListRow: View {
 
     private var locationLabel: String {
         entry.url.deletingLastPathComponent().path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+    }
+}
+
+private struct VideoProjectDeleteButton: View {
+    let projectName: String
+    let isDeleting: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            if isDeleting {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: "trash")
+                    .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.semibold))
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(AppTheme.Status.errorColor)
+        .frame(width: AppTheme.IconSize.lgXl, height: AppTheme.IconSize.lgXl)
+        .background(AppTheme.Background.prominentColor, in: Circle())
+        .overlay {
+            Circle()
+                .strokeBorder(AppTheme.Border.primaryColor, lineWidth: AppTheme.BorderWidth.thin)
+        }
+        .shadow(AppTheme.Shadow.md)
+        .disabled(isDeleting)
+        .help("Move \(projectName) to the Trash")
+        .accessibilityLabel(
+            isDeleting
+                ? "Moving \(projectName) to the Trash"
+                : "Move \(projectName) to the Trash"
+        )
     }
 }
