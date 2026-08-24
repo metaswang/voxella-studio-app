@@ -6,6 +6,7 @@ enum WorkbenchRoute: String, Codable, CaseIterable, Identifiable {
     case recent
     case dashboard
     case transcribe
+    case meetBot
     case dub
     case voiceLibrary
     case videoEditor
@@ -18,6 +19,7 @@ enum WorkbenchRoute: String, Codable, CaseIterable, Identifiable {
         case .recent: "Recent"
         case .dashboard: "Dashboard"
         case .transcribe: "Transcribe"
+        case .meetBot: "Meet Bot"
         case .dub: "Dub"
         case .voiceLibrary: "Voice Library"
         case .videoEditor: "Video Editor"
@@ -30,6 +32,7 @@ enum WorkbenchRoute: String, Codable, CaseIterable, Identifiable {
         case .recent: "clock"
         case .dashboard: "square.grid.2x2"
         case .transcribe: "text.bubble"
+        case .meetBot: "calendar.badge.clock"
         case .dub: "waveform.and.mic"
         case .voiceLibrary: "waveform.badge.magnifyingglass"
         case .videoEditor: "timeline.selection"
@@ -41,13 +44,14 @@ enum WorkbenchRoute: String, Codable, CaseIterable, Identifiable {
     var navGlyph: WorkbenchNavGlyph {
         switch self {
         case .transcribe: .transcription
+        case .meetBot: .meetBot
         case .dub: .voiceover
         default: .system(systemImage)
         }
     }
 
     static let sidebarRoutes: [WorkbenchRoute] = [
-        .recent, .dashboard, .transcribe, .dub, .voiceLibrary, .videoEditor,
+        .recent, .dashboard, .transcribe, .meetBot, .dub, .voiceLibrary, .videoEditor,
     ]
 }
 
@@ -150,6 +154,9 @@ enum WorkbenchLanguageLabel {
 struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var id = UUID()
     var sourcePath: String
+    var netVideoSourceURL: String?
+    var netVideoVideoID: String?
+    var netVideoPlatform: String?
     var customTitle: String?
     var createdAt = Date()
     var modifiedAt = Date()
@@ -311,7 +318,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, sourcePath, customTitle, createdAt, modifiedAt, state
+        case id, sourcePath, netVideoSourceURL, netVideoVideoID, netVideoPlatform, customTitle, createdAt, modifiedAt, state
         case languageCode, speakerCount, clipStartMs, clipEndMs, batchID
         case result, editedText, useLLMSubtitleProcessing, targetLanguageCode
         case subtitleTrack, translationTrack, translationTracks
@@ -328,6 +335,9 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     init(
         id: UUID = UUID(),
         sourcePath: String,
+        netVideoSourceURL: String? = nil,
+        netVideoVideoID: String? = nil,
+        netVideoPlatform: String? = nil,
         customTitle: String? = nil,
         createdAt: Date = Date(),
         modifiedAt: Date = Date(),
@@ -373,6 +383,9 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     ) {
         self.id = id
         self.sourcePath = sourcePath
+        self.netVideoSourceURL = netVideoSourceURL
+        self.netVideoVideoID = netVideoVideoID
+        self.netVideoPlatform = netVideoPlatform
         self.customTitle = customTitle
         self.createdAt = createdAt
         self.modifiedAt = modifiedAt
@@ -421,6 +434,9 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         sourcePath = try container.decode(String.self, forKey: .sourcePath)
+        netVideoSourceURL = try container.decodeIfPresent(String.self, forKey: .netVideoSourceURL)
+        netVideoVideoID = try container.decodeIfPresent(String.self, forKey: .netVideoVideoID)
+        netVideoPlatform = try container.decodeIfPresent(String.self, forKey: .netVideoPlatform)
         customTitle = try container.decodeIfPresent(String.self, forKey: .customTitle)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? Date()
@@ -493,6 +509,9 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(sourcePath, forKey: .sourcePath)
+        try container.encodeIfPresent(netVideoSourceURL, forKey: .netVideoSourceURL)
+        try container.encodeIfPresent(netVideoVideoID, forKey: .netVideoVideoID)
+        try container.encodeIfPresent(netVideoPlatform, forKey: .netVideoPlatform)
         try container.encodeIfPresent(customTitle, forKey: .customTitle)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(modifiedAt, forKey: .modifiedAt)
@@ -801,6 +820,22 @@ enum WorkbenchSessionSource: String, Sendable {
     case standaloneDub
 }
 
+enum WorkbenchNetVideoPlatform: String, Sendable {
+    case youtube
+    case gettr
+    case ganjingworld
+    case x
+    case unknown
+}
+
+struct WorkbenchNetVideoSource: Sendable, Equatable {
+    let sourceURL: URL
+    let embedURL: URL?
+    let playbackURL: URL?
+    let platform: WorkbenchNetVideoPlatform
+    let title: String?
+}
+
 struct WorkbenchSession: Identifiable, Sendable {
     var id: UUID
     var title: String
@@ -812,6 +847,7 @@ struct WorkbenchSession: Identifiable, Sendable {
     var dubID: UUID?
     var sourceURL: URL?
     var outputURL: URL?
+    var durationHint: Double? = nil
     var transcript: TranscriptionResult?
     var subtitleTrack: SubtitleTrack?
     var translationTracks: [WorkbenchTranslationTrack]
@@ -830,6 +866,14 @@ struct WorkbenchSession: Identifiable, Sendable {
     var remoteSessionID: UUID?
     var cloudSyncState: DubCloudSyncState = .none
     var cloudSyncError: String?
+    var remoteSourcePlaybackURL: URL? = nil
+    var remoteSourceHasVideo: Bool? = nil
+    var remoteSourcePosterURL: URL? = nil
+    var netVideoSource: WorkbenchNetVideoSource? = nil
+
+    var isRemoteOnly: Bool {
+        transcriptionID == nil && dubID == nil && remoteSessionID != nil
+    }
 
     var originalFilename: String? {
         sourceURL?.lastPathComponent
@@ -848,10 +892,10 @@ struct WorkbenchSession: Identifiable, Sendable {
     var duration: Double? {
         let transcriptEnd = transcript?.segments.map(\.end).max()
         let dubEnd = dubSegments.map(\.end).max()
-        return [transcriptEnd, dubEnd].compactMap { $0 }.max()
+        return [durationHint, transcriptEnd, dubEnd].compactMap { $0 }.max()
     }
 
-    var hasDub: Bool { outputURL != nil }
+    var hasDub: Bool { outputURL != nil || source == .standaloneDub || !dubSegments.isEmpty }
 }
 
 private struct WorkbenchSnapshot: Codable, Sendable {
@@ -1008,6 +1052,7 @@ final class WorkbenchStore {
     private let taskAccess: any TranscriptionTaskAccessing
     private let dubTaskAccess: any DubTaskAccessing
     private let cloudSessionSync: any CloudSessionSyncing
+    private let voxellaAPI: VoxellaAPIClient
 
     private struct StagedTranscriptionArtifacts {
         var rawResult: TranscriptionResult?
@@ -1077,15 +1122,23 @@ final class WorkbenchStore {
     private var pendingNewDubDraft = false
     private var saveRequestedBeforeHydration = false
     private var saveRevision = 0
+    private(set) var remoteSessions: [UUID: WorkbenchSession] = [:]
+    private(set) var isLoadingRemoteSessions = false
+    private(set) var remoteSessionsError: String?
+    private(set) var remoteSessionLoadingID: UUID?
+    private var remoteSessionLoadTask: Task<Void, Never>?
+    private var remoteSessionsLoadGeneration = UUID()
 
     init(
         taskAccess: any TranscriptionTaskAccessing = RoutedTranscriptionTaskAccess(),
         dubTaskAccess: any DubTaskAccessing = RoutedDubTaskAccess(),
-        cloudSessionSync: any CloudSessionSyncing = VoxellaCloudSessionSync()
+        cloudSessionSync: any CloudSessionSyncing = VoxellaCloudSessionSync(),
+        voxellaAPI: VoxellaAPIClient = .shared
     ) {
         self.taskAccess = taskAccess
         self.dubTaskAccess = dubTaskAccess
         self.cloudSessionSync = cloudSessionSync
+        self.voxellaAPI = voxellaAPI
         let storedRoute = UserDefaults.standard.string(forKey: Self.routeDefaultsKey)
             .flatMap(WorkbenchRoute.init(rawValue:))
         // Session detail requires an in-memory selection. Restore Recent when none exists.
@@ -1142,7 +1195,8 @@ final class WorkbenchStore {
                     primary: job.resolvedCloudSyncState,
                     secondary: dub?.resolvedCloudSyncState
                 ),
-                cloudSyncError: dub?.pendingCloudSyncError ?? job.pendingCloudSyncError
+                cloudSyncError: dub?.pendingCloudSyncError ?? job.pendingCloudSyncError,
+                netVideoSource: Self.localNetVideoSource(from: job)
             )
         }
         let standaloneDubs = dubs.filter { job in
@@ -1180,7 +1234,12 @@ final class WorkbenchStore {
                 cloudSyncError: job.pendingCloudSyncError
             )
         }
-        return (transcriptSessions + standaloneDubs).sorted { $0.modifiedAt > $1.modifiedAt }
+        let localSessions = transcriptSessions + standaloneDubs
+        let localRemoteIDs = Set(localSessions.compactMap(\.remoteSessionID))
+        let cloudSessions = AccountService.shared.isSignedIn
+            ? remoteSessions.values.filter { !localRemoteIDs.contains($0.id) }
+            : []
+        return (localSessions + cloudSessions).sorted { $0.modifiedAt > $1.modifiedAt }
     }
 
     var selectedSession: WorkbenchSession? {
@@ -1190,7 +1249,16 @@ final class WorkbenchStore {
 
     func openSession(_ id: UUID) {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
+        remoteSessionLoadTask?.cancel()
+        remoteSessionLoadTask = nil
+        remoteSessionLoadingID = nil
         selectedSessionID = id
+
+        if session.isRemoteOnly {
+            route = .session
+            loadRemoteSession(id)
+            return
+        }
 
         if let transcriptionID = session.transcriptionID,
            shouldPresentTranscriptionProcessing(for: transcriptionID) {
@@ -1230,11 +1298,117 @@ final class WorkbenchStore {
         Task { await ensureSessionSummary(for: id) }
     }
 
+    func refreshRemoteSessions() async {
+        guard AccountService.shared.isSignedIn else {
+            remoteSessions = [:]
+            remoteSessionsError = nil
+            return
+        }
+
+        remoteSessionsLoadGeneration = UUID()
+        let generation = remoteSessionsLoadGeneration
+        isLoadingRemoteSessions = true
+        remoteSessionsError = nil
+        defer {
+            if remoteSessionsLoadGeneration == generation {
+                isLoadingRemoteSessions = false
+            }
+        }
+
+        do {
+            var summaries: [VoxellaSessionDetail] = []
+            var cursor: String?
+            var seenCursors: Set<String> = []
+            repeat {
+                try Task.checkCancellation()
+                let page = try await voxellaAPI.listSessions(cursor: cursor)
+                summaries.append(contentsOf: page.items)
+                guard let next = page.nextCursor,
+                      !next.isEmpty,
+                      next != cursor,
+                      seenCursors.insert(next).inserted else {
+                    cursor = nil
+                    break
+                }
+                cursor = next
+            } while cursor != nil
+
+            guard remoteSessionsLoadGeneration == generation, !Task.isCancelled else { return }
+            let localRemoteIDs = Set(
+                transcriptions.compactMap(\.remoteSessionID)
+                    + dubs.compactMap(\.remoteSessionID)
+            )
+            remoteSessions = Dictionary(
+                uniqueKeysWithValues: summaries
+                    .filter { !localRemoteIDs.contains($0.id) }
+                    .map { ($0.id, Self.remoteSession(from: $0)) }
+            )
+        } catch is CancellationError {
+        } catch VoxellaAPIError.cancelled {
+        } catch {
+            guard remoteSessionsLoadGeneration == generation, !Task.isCancelled else { return }
+            remoteSessionsError = error.localizedDescription
+            Log.account.warning(
+                "remote recent sessions load failed error=\(error.localizedDescription)",
+                telemetry: "Remote recent sessions load failed"
+            )
+        }
+    }
+
+    func clearRemoteSessions() {
+        remoteSessionsLoadGeneration = UUID()
+        remoteSessionLoadTask?.cancel()
+        remoteSessionLoadTask = nil
+        remoteSessions = [:]
+        remoteSessionsError = nil
+        isLoadingRemoteSessions = false
+        remoteSessionLoadingID = nil
+    }
+
+    private func loadRemoteSession(_ id: UUID) {
+        remoteSessionLoadTask?.cancel()
+        remoteSessionLoadingID = id
+        remoteSessionLoadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let rendering = try await self.voxellaAPI.sessionRenderingData(id)
+                try Task.checkCancellation()
+                guard self.selectedSessionID == id else { return }
+                self.remoteSessions[id] = Self.remoteSession(
+                    from: rendering.detail,
+                    transcriptSegments: rendering.transcriptSegments,
+                    subtitleCues: rendering.subtitleCues,
+                    mediaPlaybackURL: rendering.mediaPlaybackURL,
+                    mediaHasVideo: rendering.mediaHasVideo
+                )
+                self.remoteSessionLoadingID = nil
+            } catch is CancellationError {
+            } catch VoxellaAPIError.cancelled {
+            } catch {
+                guard self.selectedSessionID == id else { return }
+                self.remoteSessionLoadingID = nil
+                self.remoteSessionsError = error.localizedDescription
+                WorkbenchTipCenter.shared.show(
+                    "Could not open the VoxStudio session: \(error.localizedDescription)",
+                    kind: .error,
+                    id: "remote-session.open.failed.\(id.uuidString)"
+                )
+            }
+        }
+    }
+
     private func needsSummary(
         markdown: String?,
         state: WorkbenchJobState?
     ) -> Bool {
-        guard state != .running, state != .completed else { return false }
+        Self.summaryNeedsGeneration(markdown: markdown, state: state)
+    }
+
+    nonisolated static func summaryNeedsGeneration(
+        markdown: String?,
+        state: WorkbenchJobState?
+    ) -> Bool {
+        guard state != .completed else { return false }
         let trimmed = markdown?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty
     }
@@ -1256,6 +1430,9 @@ final class WorkbenchStore {
     }
 
     func showRecentSessions() {
+        remoteSessionLoadTask?.cancel()
+        remoteSessionLoadTask = nil
+        remoteSessionLoadingID = nil
         selectedSessionID = nil
         route = .recent
     }
@@ -1292,16 +1469,64 @@ final class WorkbenchStore {
 
     /// Media URLs waiting for the Processing options sheet (web upload flow).
     var pendingMediaImportURLs: [URL] = []
+    var pendingNetVideoSource: WorkbenchNetVideoSource?
+    /// Open the transcribe empty state on the Net Video entry instead of file import.
+    var preferNetVideoEntry = false
 
     func stageMediaImport(_ urls: [URL]) {
         transcriptionAdmissionError = nil
+        pendingNetVideoSource = nil
         pendingMediaImportURLs = urls
+        selectedTranscriptionID = nil
+        route = .transcribe
+    }
+
+    func stageNetVideoImport(
+        mediaURL: URL,
+        sourceURL: URL,
+        videoID: String,
+        title: String?
+    ) {
+        transcriptionAdmissionError = nil
+        pendingNetVideoSource = WorkbenchNetVideoSource(
+            sourceURL: sourceURL,
+            embedURL: Self.youtubeEmbedURL(for: sourceURL),
+            playbackURL: nil,
+            platform: .youtube,
+            title: title
+        )
+        pendingMediaImportURLs = [mediaURL]
         selectedTranscriptionID = nil
         route = .transcribe
     }
 
     func clearPendingMediaImport() {
         pendingMediaImportURLs = []
+        pendingNetVideoSource = nil
+    }
+
+    func discardPendingMediaImport() {
+        for url in pendingMediaImportURLs {
+            Self.removeManagedClipMediaIfNeeded(url)
+        }
+        pendingMediaImportURLs = []
+        pendingNetVideoSource = nil
+    }
+
+    func showNetVideoImport() {
+        transcriptionAdmissionError = nil
+        preferNetVideoEntry = true
+        selectedTranscriptionID = nil
+        route = .transcribe
+    }
+
+    func consumeNetVideoEntryPreference() -> Bool {
+        defer { preferNetVideoEntry = false }
+        return preferNetVideoEntry
+    }
+
+    nonisolated static var netVideoMediaDirectory: URL {
+        dataDirectory.appendingPathComponent("NetVideo", isDirectory: true)
     }
 
     @discardableResult
@@ -1315,12 +1540,14 @@ final class WorkbenchStore {
     func beginTranscriptions(
         sourceURLs: [URL],
         options: LocalProcessingOptions,
-        openSessionWhenDone: Bool = true
+        openSessionWhenDone: Bool = true,
+        netVideoSource: WorkbenchNetVideoSource? = nil
     ) -> UUID? {
         beginTranscriptions(
             sourceURLs: sourceURLs,
             submission: TranscriptionSubmission(options: options, placement: .localDefault),
-            openSessionWhenDone: openSessionWhenDone
+            openSessionWhenDone: openSessionWhenDone,
+            netVideoSource: netVideoSource
         )
     }
 
@@ -1328,7 +1555,8 @@ final class WorkbenchStore {
     func beginTranscriptions(
         sourceURLs: [URL],
         submission: TranscriptionSubmission,
-        openSessionWhenDone: Bool = true
+        openSessionWhenDone: Bool = true,
+        netVideoSource: WorkbenchNetVideoSource? = nil
     ) -> UUID? {
         transcriptionAdmissionError = nil
         if submission.placement.compute == .local {
@@ -1345,6 +1573,11 @@ final class WorkbenchStore {
         created.reserveCapacity(sourceURLs.count)
         for url in sourceURLs {
             var job = WorkbenchTranscriptionJob(sourcePath: url.path)
+            if sourceURLs.count == 1, let netVideoSource, netVideoSource.platform == .youtube {
+                job.netVideoSourceURL = netVideoSource.sourceURL.absoluteString
+                job.netVideoVideoID = Self.youtubeVideoID(for: netVideoSource.sourceURL)
+                job.netVideoPlatform = netVideoSource.platform.rawValue
+            }
             job.languageCode = submission.options.languageCode
             job.speakerCount = submission.options.speakerCount
             job.clipStartMs = sourceURLs.count == 1 ? submission.options.clipStartMs : nil
@@ -2541,7 +2774,8 @@ final class WorkbenchStore {
                 shouldReuseRemoteSession: input.usesExtractedClip == false
                     && flowJob.remoteSessionID != nil
                     && flowJob.placement.storage == .cloud
-                    && flowJob.placement.compute == .cloud
+                    && flowJob.placement.compute == .cloud,
+                sourcePreview: Self.sourcePreview(for: flowJob)
             )
             for await event in taskAccess.events(for: request) {
                 if Task.isCancelled {
@@ -2616,7 +2850,8 @@ final class WorkbenchStore {
                     translationTracks: snapshot.translationTracks,
                     title: snapshot.sessionTitle,
                     summary: snapshot.summaryMarkdown,
-                    sessionTag: snapshot.sessionTag
+                    sessionTag: snapshot.sessionTag,
+                    sourcePreview: Self.sourcePreview(for: snapshot)
                 )
             )
             updateTranscription(id) {
@@ -3451,6 +3686,9 @@ final class WorkbenchStore {
             }
 
             let templateJob = transcriptions.first(where: { $0.id == id }) ?? job
+            let templateWasUnassigned = templateJob.summaryTemplateID?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty ?? true
             let template = await SummaryTemplateCatalog.shared.template(
                 forID: templateJob.summaryTemplateID,
                 name: templateJob.summaryTemplateName,
@@ -3472,7 +3710,11 @@ final class WorkbenchStore {
                 userInstruction: userInstruction
             )
             try Task.checkCancellation()
-            guard isCurrentSummaryTemplate(template.id, forTranscription: id) else { return false }
+            guard isCurrentSummaryTemplate(
+                template.id,
+                forTranscription: id,
+                allowUnassignedDefault: templateWasUnassigned
+            ) else { return false }
             updateTranscription(id) {
                 $0.summaryMarkdown = markdown
                 $0.summaryTemplateID = template.id
@@ -3844,14 +4086,44 @@ final class WorkbenchStore {
         return !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private func isCurrentSummaryTemplate(_ templateID: String, forTranscription id: UUID) -> Bool {
-        transcriptions.first(where: { $0.id == id })?.summaryTemplateID?
-            .caseInsensitiveCompare(templateID) == .orderedSame
+    private func isCurrentSummaryTemplate(
+        _ templateID: String,
+        forTranscription id: UUID,
+        allowUnassignedDefault: Bool = false
+    ) -> Bool {
+        Self.summaryTemplateMatches(
+            requestedTemplateID: templateID,
+            currentTemplateID: transcriptions.first(where: { $0.id == id })?.summaryTemplateID,
+            allowUnassignedDefault: allowUnassignedDefault
+        )
     }
 
-    private func isCurrentSummaryTemplate(_ templateID: String, forDub id: UUID) -> Bool {
-        dubs.first(where: { $0.id == id })?.summaryTemplateID?
-            .caseInsensitiveCompare(templateID) == .orderedSame
+    private func isCurrentSummaryTemplate(
+        _ templateID: String,
+        forDub id: UUID,
+        allowUnassignedDefault: Bool = false
+    ) -> Bool {
+        Self.summaryTemplateMatches(
+            requestedTemplateID: templateID,
+            currentTemplateID: dubs.first(where: { $0.id == id })?.summaryTemplateID,
+            allowUnassignedDefault: allowUnassignedDefault
+        )
+    }
+
+    nonisolated static func summaryTemplateMatches(
+        requestedTemplateID: String,
+        currentTemplateID: String?,
+        allowUnassignedDefault: Bool = false
+    ) -> Bool {
+        guard let currentTemplateID = currentTemplateID?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !currentTemplateID.isEmpty else {
+            return allowUnassignedDefault
+                && requestedTemplateID.caseInsensitiveCompare(
+                    SummaryTemplateDefinition.generalSummaryID
+                ) == .orderedSame
+        }
+        return currentTemplateID.caseInsensitiveCompare(requestedTemplateID) == .orderedSame
     }
 
     private func syncSummaryToCloud(forTranscription id: UUID) async {
@@ -3979,6 +4251,9 @@ final class WorkbenchStore {
             }
 
             let templateJob = dubs.first(where: { $0.id == id }) ?? job
+            let templateWasUnassigned = templateJob.summaryTemplateID?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty ?? true
             let template = await SummaryTemplateCatalog.shared.template(
                 forID: templateJob.summaryTemplateID,
                 name: templateJob.summaryTemplateName,
@@ -3995,7 +4270,11 @@ final class WorkbenchStore {
                 userInstruction: userInstruction
             )
             try Task.checkCancellation()
-            guard isCurrentSummaryTemplate(template.id, forDub: id) else { return false }
+            guard isCurrentSummaryTemplate(
+                template.id,
+                forDub: id,
+                allowUnassignedDefault: templateWasUnassigned
+            ) else { return false }
             updateDub(id) {
                 $0.summaryMarkdown = markdown
                 $0.summaryTemplateID = template.id
@@ -4243,9 +4522,12 @@ final class WorkbenchStore {
     }
 
     nonisolated private static func removeManagedClipMediaIfNeeded(_ url: URL) {
-        let clipsRoot = Self.clipsDirectory.resolvingSymlinksInPath().path
+        let roots = [
+            clipsDirectory.resolvingSymlinksInPath().path,
+            netVideoMediaDirectory.resolvingSymlinksInPath().path,
+        ]
         let candidate = url.resolvingSymlinksInPath().path
-        guard candidate.hasPrefix(clipsRoot + "/") else { return }
+        guard roots.contains(where: { candidate.hasPrefix($0 + "/") }) else { return }
         try? FileManager.default.removeItem(at: url)
     }
 
@@ -4386,40 +4668,98 @@ final class WorkbenchStore {
     ) -> WorkbenchTranscriptionJob {
         guard needsLaunchRecovery(job) else { return job }
         var repaired = job
-        repaired.state = .ready
-        repaired.progress = 0
-        repaired.progressMessage = "Interrupted — ready to retry"
-        repaired.progressStage = nil
-        repaired.flowProgressStage = nil
-        repaired.progressStep = nil
-        repaired.progressCompleted = nil
-        repaired.progressTotal = nil
-        repaired.errorMessage = nil
+        let recoverFlow = needsFlowLaunchRecovery(job)
+        if recoverFlow {
+            repaired.state = .ready
+            repaired.progress = 0
+            repaired.progressMessage = "Interrupted — ready to retry"
+            repaired.progressStage = nil
+            repaired.flowProgressStage = nil
+            repaired.progressStep = nil
+            repaired.progressCompleted = nil
+            repaired.progressTotal = nil
+            repaired.errorMessage = nil
+        }
+        if job.summaryState == .running {
+            let summary = recoveredSummaryState(
+                markdown: job.summaryMarkdown,
+                state: job.summaryState,
+                errorMessage: job.summaryErrorMessage
+            )
+            repaired.summaryState = summary.state
+            repaired.summaryErrorMessage = summary.errorMessage
+            if !recoverFlow, repaired.state == .completed {
+                repaired.progressMessage = summary.state == .completed
+                    ? (repaired.translationTracks.isEmpty
+                        ? "Transcript and summary ready"
+                        : "Transcript, translation, and summary ready")
+                    : "Transcript ready — summary will retry"
+            }
+        }
         return repaired
     }
 
     nonisolated static func recoveredForLaunch(_ job: WorkbenchDubJob) -> WorkbenchDubJob {
         guard needsLaunchRecovery(job) else { return job }
         var repaired = job
-        repaired.state = .ready
-        repaired.progress = 0
-        repaired.progressMessage = "Interrupted — ready to retry"
-        repaired.flowProgressStage = nil
-        repaired.progressStep = nil
-        repaired.progressCompleted = nil
-        repaired.progressTotal = nil
-        repaired.errorMessage = nil
+        let recoverFlow = needsFlowLaunchRecovery(job)
+        if recoverFlow {
+            repaired.state = .ready
+            repaired.progress = 0
+            repaired.progressMessage = "Interrupted — ready to retry"
+            repaired.flowProgressStage = nil
+            repaired.progressStep = nil
+            repaired.progressCompleted = nil
+            repaired.progressTotal = nil
+            repaired.errorMessage = nil
+        }
+        if job.summaryState == .running {
+            let summary = recoveredSummaryState(
+                markdown: job.summaryMarkdown,
+                state: job.summaryState,
+                errorMessage: job.summaryErrorMessage
+            )
+            repaired.summaryState = summary.state
+            repaired.summaryErrorMessage = summary.errorMessage
+            if !recoverFlow, repaired.state == .completed {
+                repaired.progressMessage = summary.state == .completed
+                    ? (repaired.subtitleTrack == nil
+                        ? "Dub and summary ready"
+                        : "Dub, subtitles, and summary ready")
+                    : "Dub ready — summary will retry"
+            }
+        }
         return repaired
     }
 
     private nonisolated static func needsLaunchRecovery(_ job: WorkbenchTranscriptionJob) -> Bool {
+        needsFlowLaunchRecovery(job) || job.summaryState == .running
+    }
+
+    private nonisolated static func needsLaunchRecovery(_ job: WorkbenchDubJob) -> Bool {
+        needsFlowLaunchRecovery(job) || job.summaryState == .running
+    }
+
+    private nonisolated static func needsFlowLaunchRecovery(
+        _ job: WorkbenchTranscriptionJob
+    ) -> Bool {
         job.state == .running || job.state == .cancelling
             || (job.state == .ready && job.result == nil && job.progress > 0)
     }
 
-    private nonisolated static func needsLaunchRecovery(_ job: WorkbenchDubJob) -> Bool {
+    private nonisolated static func needsFlowLaunchRecovery(_ job: WorkbenchDubJob) -> Bool {
         job.state == .running || job.state == .cancelling
             || (job.state == .ready && job.outputPath == nil && job.progress > 0)
+    }
+
+    private nonisolated static func recoveredSummaryState(
+        markdown: String?,
+        state: WorkbenchJobState?,
+        errorMessage: String?
+    ) -> (state: WorkbenchJobState?, errorMessage: String?) {
+        guard state == .running else { return (state, errorMessage) }
+        let hasSummary = !(markdown?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        return (hasSummary ? .completed : nil, nil)
     }
 
     private nonisolated static func combinedState(
@@ -4432,6 +4772,356 @@ final class WorkbenchStore {
             .cancelled: 2, .completed: 1,
         ]
         return (priority[secondary] ?? 0) > (priority[primary] ?? 0) ? secondary : primary
+    }
+
+    private nonisolated static func remoteSession(
+        from detail: VoxellaSessionDetail,
+        transcriptSegments: [VoxellaTranscriptSegment] = [],
+        subtitleCues: [VoxellaSubtitleCue] = [],
+        mediaPlaybackURL: URL? = nil,
+        mediaHasVideo: Bool = false
+    ) -> WorkbenchSession {
+        let resolvedMediaHasVideo = mediaHasVideo
+            || detail.hasVideo == true
+            || detail.mediaType?.lowercased() == "video"
+        let transcript = Self.remoteTranscript(
+            segments: transcriptSegments,
+            language: detail.sourceLanguage
+        )
+        let subtitleTrack = Self.remoteSubtitleTrack(
+            cues: subtitleCues,
+            language: detail.sourceLanguage
+        )
+        let dubSegments = detail.dubSegments.compactMap { segment -> DubRenderedSegment? in
+            guard segment.startS.isFinite, segment.endS.isFinite, segment.endS >= segment.startS else {
+                return nil
+            }
+            return DubRenderedSegment(
+                index: segment.index,
+                text: segment.text,
+                start: segment.startS,
+                end: segment.endS,
+                speaker: segment.speakerLabel,
+                sourceSubtitleID: segment.sourceSubtitleID
+            )
+        }
+        let dubTranscript = Self.remoteTranscript(
+            segments: detail.dubSegments.map {
+                VoxellaTranscriptSegment(
+                    startS: $0.startS,
+                    endS: $0.endS,
+                    text: $0.text,
+                    speakerLabel: $0.speakerLabel,
+                    words: []
+                )
+            },
+            language: detail.sourceLanguage
+        )
+        let summary = detail.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isDub = detail.sourceType == "dub"
+            || !detail.dubSegments.isEmpty
+        let netVideoSource = Self.remoteNetVideoSource(from: detail)
+        let title = detail.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? detail.originalFilename?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? "Untitled session"
+        return WorkbenchSession(
+            id: detail.id,
+            title: title.isEmpty ? "Untitled session" : title,
+            createdAt: detail.createdAt ?? Date(),
+            modifiedAt: detail.updatedAt ?? detail.createdAt ?? Date(),
+            state: Self.remoteState(status: detail.status, resultReady: detail.resultReady),
+            source: isDub ? .standaloneDub : .media,
+            transcriptionID: nil,
+            dubID: nil,
+            sourceURL: nil,
+            outputURL: nil,
+            durationHint: detail.durationSec,
+            transcript: transcript,
+            subtitleTrack: subtitleTrack,
+            translationTracks: [],
+            selectedTranslationLanguageCode: nil,
+            summaryMarkdown: summary,
+            summaryTemplateID: nil,
+            summaryTemplateName: nil,
+            summaryState: summary == nil ? nil : .completed,
+            summaryErrorMessage: nil,
+            sessionTag: nil,
+            dubTranscript: dubTranscript,
+            dubSubtitleTrack: nil,
+            dubSegments: dubSegments,
+            storage: .cloud,
+            compute: detail.options?.clientCompute == .local ? .local : .cloud,
+            remoteSessionID: detail.id,
+            cloudSyncState: .completed,
+            cloudSyncError: nil,
+            remoteSourcePlaybackURL: mediaPlaybackURL,
+            remoteSourceHasVideo: resolvedMediaHasVideo,
+            remoteSourcePosterURL: remoteMediaURL(detail.posterURL),
+            netVideoSource: netVideoSource
+        )
+    }
+
+    private nonisolated static func localNetVideoSource(
+        from job: WorkbenchTranscriptionJob
+    ) -> WorkbenchNetVideoSource? {
+        guard let source = localYouTubeSource(from: job) else {
+            return nil
+        }
+        return WorkbenchNetVideoSource(
+            sourceURL: source.url,
+            embedURL: youtubeEmbedURL(for: source.url),
+            playbackURL: nil,
+            platform: .youtube,
+            title: job.sessionTitle
+        )
+    }
+
+    private nonisolated static func sourcePreview(
+        for job: WorkbenchTranscriptionJob
+    ) -> TranscriptionSourcePreview? {
+        guard let source = localYouTubeSource(from: job) else {
+            return nil
+        }
+        return TranscriptionSourcePreview(
+            type: "net_video",
+            platform: "youtube",
+            sourceURL: source.url,
+            videoID: source.videoID
+        )
+    }
+
+    private nonisolated static func localYouTubeSource(
+        from job: WorkbenchTranscriptionJob
+    ) -> (url: URL, videoID: String)? {
+        if job.netVideoPlatform?.lowercased() == "youtube",
+           let sourceString = job.netVideoSourceURL,
+           let sourceURL = remoteHTTPURL(sourceString),
+           let videoID = job.netVideoVideoID ?? YouTubeURL.videoID(from: sourceString) {
+            return (sourceURL, videoID)
+        }
+
+        let sourceURL = URL(fileURLWithPath: job.sourcePath)
+            .resolvingSymlinksInPath()
+        let netVideoRoot = netVideoMediaDirectory
+            .resolvingSymlinksInPath()
+            .path
+        guard sourceURL.path.hasPrefix(netVideoRoot + "/") else { return nil }
+
+        let filenameStem = sourceURL.deletingPathExtension().lastPathComponent
+        let candidateID = filenameStem.split(separator: "-", maxSplits: 1).first.map(String.init)
+        guard let videoID = candidateID.flatMap(YouTubeURL.videoID(from:)) else { return nil }
+        let components = URLComponents(string: "https://www.youtube.com/watch")
+        guard var components else { return nil }
+        components.queryItems = [URLQueryItem(name: "v", value: videoID)]
+        guard let canonicalURL = components.url else { return nil }
+        return (canonicalURL, videoID)
+    }
+
+    private nonisolated static func remoteNetVideoSource(
+        from detail: VoxellaSessionDetail
+    ) -> WorkbenchNetVideoSource? {
+        let preview = detail.artifacts?["source_preview"]?.objectValue
+        let sourceString = preview?["source_url"]?.stringValue
+            ?? detail.artifacts?["net_video_source_url"]?.stringValue
+            ?? detail.originalFilename
+        guard (detail.sourceType?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "net_video"
+            || preview != nil),
+              let sourceString,
+              let sourceURL = remoteHTTPURL(sourceString) else {
+            return nil
+        }
+        let platform = netVideoPlatform(
+            detail.artifacts?["net_video_platform"]?.stringValue,
+            sourceURL: sourceURL
+        )
+        let embedURL = remoteHTTPURL(detail.artifacts?["net_video_embed_url"]?.stringValue)
+            ?? (platform == .youtube ? youtubeEmbedURL(for: sourceURL) : nil)
+            ?? (platform == .ganjingworld ? ganjingWorldEmbedURL(for: sourceURL) : nil)
+        let playbackURL = remoteHTTPURL(detail.artifacts?["net_video_playback_url"]?.stringValue)
+        let title = detail.artifacts?["net_video_embed_probe_title"]?.stringValue
+            ?? detail.title
+        return WorkbenchNetVideoSource(
+            sourceURL: sourceURL,
+            embedURL: embedURL,
+            playbackURL: playbackURL,
+            platform: platform,
+            title: title
+        )
+    }
+
+    private nonisolated static func remoteHTTPURL(_ value: String?) -> URL? {
+        guard let value,
+              let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+              url.scheme == "http" || url.scheme == "https" else {
+            return nil
+        }
+        return url
+    }
+
+    private nonisolated static func remoteMediaURL(_ value: String?) -> URL? {
+        if let absolute = remoteHTTPURL(value) { return absolute }
+        guard let value, value.hasPrefix("/") else { return nil }
+        return VoxellaAPIConfiguration.baseURL.appending(path: value)
+    }
+
+    private nonisolated static func netVideoPlatform(
+        _ rawValue: String?,
+        sourceURL: URL
+    ) -> WorkbenchNetVideoPlatform {
+        if let rawValue {
+            switch rawValue.lowercased() {
+            case "youtube": return .youtube
+            case "gettr": return .gettr
+            case "ganjingworld": return .ganjingworld
+            case "x", "twitter": return .x
+            default: break
+            }
+        }
+        switch sourceURL.host?.lowercased() {
+        case "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be":
+            return .youtube
+        case "gettr.com", "www.gettr.com": return .gettr
+        case "ganjingworld.com", "www.ganjingworld.com": return .ganjingworld
+        case "x.com", "www.x.com", "twitter.com", "www.twitter.com": return .x
+        default: return .unknown
+        }
+    }
+
+    private nonisolated static func ganjingWorldEmbedURL(for sourceURL: URL) -> URL? {
+        guard let host = sourceURL.host?.lowercased(),
+              host == "ganjingworld.com" || host == "www.ganjingworld.com" else {
+            return nil
+        }
+        let parts = sourceURL.path.split(separator: "/").map(String.init)
+        guard let last = parts.last, !last.isEmpty else { return nil }
+        let hasLocale = parts.first.map {
+            $0.range(of: "^[a-z]{2}-[A-Z]{2}$", options: .regularExpression) != nil
+        } ?? false
+        let locale = hasLocale
+            ? parts[0]
+            : "zh-CN"
+        return URL(string: "https://www.ganjingworld.com/\(locale)/embed/\(last.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? last)")
+    }
+
+    private nonisolated static func youtubeEmbedURL(for sourceURL: URL) -> URL? {
+        guard let host = sourceURL.host?.lowercased(),
+              ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be"].contains(host) else {
+            return nil
+        }
+        let components = URLComponents(url: sourceURL, resolvingAgainstBaseURL: false)
+        let videoID: String?
+        if host == "youtu.be" || host == "www.youtu.be" {
+            videoID = sourceURL.path.split(separator: "/").first.map(String.init)
+        } else if components?.path == "/watch" {
+            videoID = components?.queryItems?.first(where: { $0.name == "v" })?.value
+        } else {
+            let parts = sourceURL.path.split(separator: "/").map(String.init)
+            videoID = parts.count >= 2 && ["embed", "shorts", "live"].contains(parts[0]) ? parts[1] : nil
+        }
+        guard let videoID, !videoID.isEmpty,
+              let escaped = videoID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return nil
+        }
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.voxella.studio"
+        let appOrigin = "https://\(bundleID)".lowercased()
+        var embedComponents = URLComponents(string: "https://www.youtube.com/embed/\(escaped)")
+        embedComponents?.queryItems = [
+            URLQueryItem(name: "autoplay", value: "0"),
+            URLQueryItem(name: "enablejsapi", value: "1"),
+            URLQueryItem(name: "modestbranding", value: "1"),
+            URLQueryItem(name: "origin", value: appOrigin),
+            URLQueryItem(name: "playsinline", value: "1"),
+            URLQueryItem(name: "rel", value: "0"),
+        ]
+        return embedComponents?.url
+    }
+
+    private nonisolated static func youtubeVideoID(for sourceURL: URL) -> String? {
+        guard let host = sourceURL.host?.lowercased(),
+              ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be"].contains(host) else {
+            return nil
+        }
+        if host == "youtu.be" || host == "www.youtu.be" {
+            return sourceURL.path.split(separator: "/").first.map(String.init)
+        }
+        let components = URLComponents(url: sourceURL, resolvingAgainstBaseURL: false)
+        if components?.path == "/watch" {
+            return components?.queryItems?.first(where: { $0.name == "v" })?.value
+        }
+        let parts = sourceURL.path.split(separator: "/").map(String.init)
+        return parts.count >= 2 && ["embed", "shorts", "live"].contains(parts[0]) ? parts[1] : nil
+    }
+
+    private nonisolated static func remoteState(
+        status: String?,
+        resultReady: Bool?
+    ) -> WorkbenchJobState {
+        switch (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "failed", "error": .failed
+        case "cancelled", "canceled", "stopped": .cancelled
+        case "completed": resultReady == false ? .running : .completed
+        case "queued", "processing", "running", "pending": .running
+        default: .ready
+        }
+    }
+
+    private nonisolated static func remoteTranscript(
+        segments: [VoxellaTranscriptSegment],
+        language: String?
+    ) -> TranscriptionResult? {
+        let validSegments = segments.enumerated().compactMap { _, segment -> TranscriptionSegment? in
+            guard segment.startS.isFinite,
+                  segment.endS.isFinite,
+                  segment.startS >= 0,
+                  segment.endS > segment.startS else { return nil }
+            return TranscriptionSegment(
+                text: segment.text,
+                start: segment.startS,
+                end: segment.endS,
+                speaker: segment.speakerLabel
+            )
+        }
+        guard !validSegments.isEmpty else { return nil }
+        let words = segments.flatMap(\.words).map { word in
+            TranscriptionWord(
+                text: word.word,
+                start: word.startS.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil },
+                end: word.endS.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil },
+                speaker: word.speaker
+            )
+        }
+        return TranscriptionResult(
+            text: validSegments.map(\.text).joined(separator: " "),
+            language: language,
+            words: words,
+            segments: validSegments
+        )
+    }
+
+    private nonisolated static func remoteSubtitleTrack(
+        cues: [VoxellaSubtitleCue],
+        language: String?
+    ) -> SubtitleTrack? {
+        let validCues = cues.enumerated().compactMap { index, cue -> SubtitleCue? in
+            guard cue.startS.isFinite,
+                  cue.endS.isFinite,
+                  cue.startS >= 0,
+                  cue.endS > cue.startS else { return nil }
+            return SubtitleCue(
+                id: index,
+                sourceIDs: [index],
+                text: cue.text,
+                start: cue.startS,
+                end: cue.endS,
+                speaker: cue.speakerLabel
+            )
+        }
+        guard !validCues.isEmpty else { return nil }
+        return SubtitleTrack(
+            sourceLanguage: language,
+            language: language,
+            cues: validCues
+        )
     }
 
     private nonisolated static func combinedCloudSyncState(

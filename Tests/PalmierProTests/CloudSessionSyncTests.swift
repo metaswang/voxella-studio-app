@@ -64,4 +64,28 @@ struct CloudSessionSyncTests {
         #expect(snapshot.dubSegments == [segment])
         #expect(snapshot.summary == nil)
     }
+
+    @Test func invalidWordTimingsBecomeUntimedPairsForCloudSync() {
+        let result = TranscriptionResult(
+            text: "one two three four five",
+            language: "en",
+            words: [
+                .init(text: "one", start: 0.1, end: 0.2, speaker: "Speaker 1"),
+                .init(text: "two", start: 0.3, end: 0.3),
+                .init(text: "three", start: 0.5, end: 0.4),
+                .init(text: "four", start: -0.1, end: 0.2),
+                .init(text: "five", start: 0.6, end: nil),
+            ],
+            segments: [
+                .init(text: "one two three four five", start: 0, end: 1)
+            ]
+        )
+
+        let normalized = result.clearingInvalidWordTimings()
+
+        #expect(normalized.words[0] == result.words[0])
+        #expect(normalized.words.dropFirst().allSatisfy { $0.start == nil && $0.end == nil })
+        #expect(normalized.words.map(\.text) == result.words.map(\.text))
+        #expect(normalized.segments == result.segments)
+    }
 }

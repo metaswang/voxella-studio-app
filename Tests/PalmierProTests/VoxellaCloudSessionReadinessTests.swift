@@ -4,6 +4,34 @@ import Testing
 
 @Suite("Voxella cloud session readiness")
 struct VoxellaCloudSessionReadinessTests {
+    @Test func sessionListDecodesWebMetadataAndPagination() throws {
+        let response = try JSONDecoder().decode(VoxellaSessionListResponse.self, from: Data("""
+        {
+          "items": [{
+            "session_id": "01a01c85-35aa-700b-85fd-31ba1e92fa20",
+            "source_type": "upload",
+            "status": "completed",
+            "result_ready": true,
+            "title": "Interview",
+            "summary": "A summary",
+            "source_language": "en",
+            "duration_sec": 12.5,
+            "created_at": "2026-08-24T03:04:05.123Z",
+            "updated_at": "2026-08-24T03:05:05.123Z",
+            "options": {"client_compute": "cloud"}
+          }],
+          "next_cursor": "cursor-2"
+        }
+        """.utf8))
+
+        #expect(response.items.count == 1)
+        #expect(response.items[0].sourceType == "upload")
+        #expect(response.items[0].title == "Interview")
+        #expect(response.items[0].durationSec == 12.5)
+        #expect(response.items[0].createdAt != nil)
+        #expect(response.nextCursor == "cursor-2")
+    }
+
     @Test func sessionDetailDecodesTheWebResultReadinessFlag() throws {
         let detail = try JSONDecoder().decode(VoxellaSessionDetail.self, from: Data("""
         {
@@ -15,6 +43,24 @@ struct VoxellaCloudSessionReadinessTests {
         """.utf8))
 
         #expect(detail.resultReady == false)
+    }
+
+    @Test func sessionDetailDecodesVideoAndNetVideoArtifacts() throws {
+        let detail = try JSONDecoder().decode(VoxellaSessionDetail.self, from: Data("""
+        {
+          "session_id": "01a01c85-35aa-700b-85fd-31ba1e92fa20",
+          "source_type": "meeting_record",
+          "options": {"record_has_video": true},
+          "artifacts": {
+            "net_video_source_url": "https://www.ganjingworld.com/video/abc",
+            "net_video_embed_url": "https://www.ganjingworld.com/zh-CN/embed/abc"
+          }
+        }
+        """.utf8))
+
+        #expect(detail.options?.recordHasVideo == true)
+        #expect(detail.artifacts?["net_video_source_url"]?.stringValue == "https://www.ganjingworld.com/video/abc")
+        #expect(detail.artifacts?["net_video_embed_url"]?.stringValue == "https://www.ganjingworld.com/zh-CN/embed/abc")
     }
 
     @Test func completedSessionWaitsUntilTheBackendMarksResultsReady() {

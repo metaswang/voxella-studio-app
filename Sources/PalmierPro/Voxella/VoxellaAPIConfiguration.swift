@@ -5,6 +5,9 @@ enum VoxellaAPIConfiguration {
     static let developmentBaseURL = URL(string: "http://localhost:5173")!
     static let clientID = VoxellaAuthService.clientID
     static let redirectURI = VoxellaAuthService.redirectURI
+    static let googleCalendarRedirectURI =
+        "https://voxstudio.me/api/v1/integrations/google-calendar/mobile-callback"
+    static let googleCalendarCallbackScheme = "voxstudio"
     static let baseURLOverrideEnvironmentKey = "VOXELLA_API_BASE_URL"
 
     static var baseURL: URL {

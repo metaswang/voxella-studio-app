@@ -173,6 +173,8 @@ struct HomeView: View {
             WorkbenchLibraryView()
         case .transcribe:
             TranscribeWorkbenchView()
+        case .meetBot:
+            MeetBotView()
         case .dub:
             DubWorkbenchView()
         case .voiceLibrary:

@@ -39,6 +39,7 @@ enum WorkbenchBrandIcon {
 /// (`transcriptionIcon` / `voiceoverIcon`).
 enum WorkbenchNavGlyph: Hashable {
     case transcription
+    case meetBot
     case voiceover
     case system(String)
 
@@ -48,6 +49,9 @@ enum WorkbenchNavGlyph: Hashable {
         case .transcription:
             TranscriptionNavIcon()
                 .frame(width: size, height: size)
+        case .meetBot:
+            MeetingNavIcon()
+                .frame(width: size, height: size)
         case .voiceover:
             VoiceoverNavIcon()
                 .frame(width: size, height: size)
@@ -56,6 +60,79 @@ enum WorkbenchNavGlyph: Hashable {
                 .font(.system(size: size * 0.85, weight: .medium))
                 .frame(width: size, height: size)
         }
+    }
+}
+
+/// Calendar with a bot badge — ported from web `MeetingIcon.tsx`.
+private struct MeetingNavIcon: View {
+    var body: some View {
+        GeometryReader { geo in
+            let scale = min(geo.size.width, geo.size.height) / 24
+            Canvas { context, _ in
+                let stroke = StrokeStyle(lineWidth: 1.0 * scale, lineCap: .round, lineJoin: .round)
+                let calendar = CGRect(x: 2.6 * scale, y: 3.4 * scale, width: 15 * scale, height: 15 * scale)
+                let header = CGRect(x: 2.6 * scale, y: 3.4 * scale, width: 15 * scale, height: 3.4 * scale)
+
+                context.fill(
+                    Path(roundedRect: calendar, cornerSize: CGSize(width: 1.8 * scale, height: 1.8 * scale)),
+                    with: .color(AppTheme.Background.surfaceColor)
+                )
+                context.fill(
+                    Path(roundedRect: header, cornerSize: CGSize(width: 1.8 * scale, height: 1.8 * scale)),
+                    with: .color(AppTheme.Background.raisedColor)
+                )
+                context.stroke(
+                    Path(roundedRect: calendar, cornerSize: CGSize(width: 1.8 * scale, height: 1.8 * scale)),
+                    with: .foreground,
+                    style: stroke
+                )
+
+                var binding = Path()
+                binding.move(to: CGPoint(x: 6.4 * scale, y: 2.3 * scale))
+                binding.addLine(to: CGPoint(x: 6.4 * scale, y: 5.3 * scale))
+                binding.move(to: CGPoint(x: 13.9 * scale, y: 2.3 * scale))
+                binding.addLine(to: CGPoint(x: 13.9 * scale, y: 5.3 * scale))
+                context.stroke(binding, with: .foreground, style: StrokeStyle(lineWidth: 1.1 * scale, lineCap: .round))
+
+                var cells = Path()
+                for row in 0..<2 {
+                    for column in 0..<3 {
+                        let x = (5.2 + Double(column) * 3.2) * scale
+                        let y = (8.2 + Double(row) * 3.2) * scale
+                        cells.addRoundedRect(
+                            in: CGRect(x: x, y: y, width: 1.2 * scale, height: 1.2 * scale),
+                            cornerSize: CGSize(width: 0.3 * scale, height: 0.3 * scale)
+                        )
+                    }
+                }
+                context.fill(cells, with: .foreground)
+
+                let badge = CGRect(x: 9.3 * scale, y: 9.0 * scale, width: 6.1 * scale, height: 4.7 * scale)
+                context.fill(
+                    Path(roundedRect: badge, cornerSize: CGSize(width: 1.0 * scale, height: 1.0 * scale)),
+                    with: .color(AppTheme.Accent.meetingBotBadge)
+                )
+                context.stroke(
+                    Path(roundedRect: badge, cornerSize: CGSize(width: 1.0 * scale, height: 1.0 * scale)),
+                    with: .foreground,
+                    style: StrokeStyle(lineWidth: 0.8 * scale, lineCap: .round, lineJoin: .round)
+                )
+
+                var bot = Path()
+                bot.move(to: CGPoint(x: 12.35 * scale, y: 8.8 * scale))
+                bot.addLine(to: CGPoint(x: 12.35 * scale, y: 9.5 * scale))
+                bot.move(to: CGPoint(x: 11.0 * scale, y: 11.0 * scale))
+                bot.addLine(to: CGPoint(x: 11.0 * scale, y: 12.0 * scale))
+                bot.move(to: CGPoint(x: 13.7 * scale, y: 11.0 * scale))
+                bot.addLine(to: CGPoint(x: 13.7 * scale, y: 12.0 * scale))
+                bot.move(to: CGPoint(x: 8.9 * scale, y: 11.4 * scale))
+                bot.addLine(to: CGPoint(x: 9.3 * scale, y: 11.4 * scale))
+                bot.move(to: CGPoint(x: 15.4 * scale, y: 11.4 * scale))
+                bot.addLine(to: CGPoint(x: 15.8 * scale, y: 11.4 * scale))
+                context.stroke(bot, with: .foreground, style: StrokeStyle(lineWidth: 0.7 * scale, lineCap: .round, lineJoin: .round))
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

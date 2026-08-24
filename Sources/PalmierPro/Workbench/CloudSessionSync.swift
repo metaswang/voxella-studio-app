@@ -50,3 +50,33 @@ struct VoxellaCloudSessionSync: CloudSessionSyncing {
         }
     }
 }
+
+extension TranscriptionResult {
+    /// The cloud contract accepts either a complete valid timing pair or no timing.
+    func clearingInvalidWordTimings() -> TranscriptionResult {
+        let normalizedWords = words.map { word in
+            guard let start = word.start,
+                  let end = word.end,
+                  start.isFinite,
+                  end.isFinite,
+                  start >= 0,
+                  end > start else {
+                return TranscriptionWord(
+                    text: word.text,
+                    start: nil,
+                    end: nil,
+                    speaker: word.speaker,
+                    speakerConfidence: word.speakerConfidence,
+                    speakerBoundary: word.speakerBoundary
+                )
+            }
+            return word
+        }
+        return TranscriptionResult(
+            text: text,
+            language: language,
+            words: normalizedWords,
+            segments: segments
+        )
+    }
+}

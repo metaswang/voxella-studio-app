@@ -195,7 +195,7 @@ struct WorkbenchRecentDubSessionsSection: View {
             } label: {
                 HStack(alignment: .center, spacing: AppTheme.Spacing.zero) {
                     HStack(alignment: .center, spacing: AppTheme.Spacing.lg) {
-                        sourceBadge
+                        WorkbenchSessionThumbnail(session: session)
                         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                             Text(session.title)
                                 .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.bold))
@@ -276,20 +276,6 @@ struct WorkbenchRecentDubSessionsSection: View {
                 store.deleteDub(dubID)
             }
         }
-    }
-
-    private var sourceBadge: some View {
-        Image(systemName: "waveform.and.mic")
-            .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
-            .foregroundStyle(AppTheme.Accent.link)
-            .frame(
-                width: AppTheme.Workbench.sessionIconSize,
-                height: AppTheme.Workbench.sessionIconSize
-            )
-            .background(
-                AppTheme.Accent.link.opacity(AppTheme.Opacity.soft),
-                in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)
-            )
     }
 
     private var metaDot: some View {

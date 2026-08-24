@@ -424,6 +424,13 @@ enum LLMConfigurationError: LocalizedError {
     }
 }
 
+enum LLMAPIKeySaveState: Equatable, Sendable {
+    case idle
+    case saving
+    case saved
+    case failed(String)
+}
+
 @Observable
 @MainActor
 final class LLMSettingsStore {
@@ -453,6 +460,7 @@ final class LLMSettingsStore {
     private(set) var providers: [LLMProviderProfile]
     private(set) var routes: [LLMUseCase: LLMModelRoute]
     private(set) var credentialAvailability: [UUID: Bool] = [:]
+    private(set) var credentialSaveStates: [UUID: LLMAPIKeySaveState] = [:]
     private(set) var credentialError: String?
     private(set) var configurationError: String?
 
@@ -465,6 +473,7 @@ final class LLMSettingsStore {
     private var credentialGeneration = 0
     private var pendingCredentialValues: [UUID: String] = [:]
     private var pendingCredentialTasks: [UUID: Task<Void, Never>] = [:]
+    private var credentialSaveGeneration: [UUID: Int] = [:]
 
     init(
         defaults: UserDefaults? = nil,
@@ -537,6 +546,10 @@ final class LLMSettingsStore {
         credentialAvailability[providerID] == true
     }
 
+    func apiKeySaveState(for providerID: UUID) -> LLMAPIKeySaveState {
+        credentialSaveStates[providerID] ?? .idle
+    }
+
     func hasConfiguredModel(for useCase: LLMUseCase) -> Bool {
         route(for: useCase).modelChain.contains { reference in
             guard let parsed = try? Self.parseModelReference(reference),
@@ -590,6 +603,8 @@ final class LLMSettingsStore {
         }.value
         providers.removeAll { $0.id == id }
         credentialAvailability[id] = nil
+        credentialSaveStates[id] = nil
+        credentialSaveGeneration[id] = nil
         persist()
     }
 
@@ -638,8 +653,11 @@ final class LLMSettingsStore {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, provider(id: providerID) != nil else { return }
 
+        let generation = nextCredentialSaveGeneration(for: providerID)
         pendingCredentialTasks[providerID]?.cancel()
         pendingCredentialValues[providerID] = trimmed
+        credentialSaveStates[providerID] = .saving
+        credentialError = nil
         pendingCredentialTasks[providerID] = Task { @MainActor [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(450))
@@ -647,38 +665,32 @@ final class LLMSettingsStore {
                 return
             }
             guard let self,
-                  self.pendingCredentialValues[providerID] == trimmed else { return }
+                  self.pendingCredentialValues[providerID] == trimmed,
+                  self.credentialSaveGeneration[providerID] == generation else { return }
             self.pendingCredentialValues[providerID] = nil
             self.pendingCredentialTasks[providerID] = nil
-            do {
-                try await self.saveAPIKeyImmediately(trimmed, providerID: providerID)
-            } catch {
-                guard !Task.isCancelled else { return }
-                self.credentialError = error.localizedDescription
-            }
+            await self.persistAPIKey(trimmed, providerID: providerID, generation: generation)
         }
     }
 
     func flushAPIKeySave(for providerID: UUID) {
         guard let value = pendingCredentialValues[providerID] else { return }
+        let generation = nextCredentialSaveGeneration(for: providerID)
         pendingCredentialTasks[providerID]?.cancel()
         pendingCredentialTasks[providerID] = nil
         pendingCredentialValues[providerID] = nil
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await self.saveAPIKeyImmediately(value, providerID: providerID)
-            } catch {
-                guard !Task.isCancelled else { return }
-                self.credentialError = error.localizedDescription
-            }
-        }
+        credentialSaveStates[providerID] = .saving
+        startPersistingAPIKey(value, providerID: providerID, generation: generation)
     }
 
     func cancelPendingAPIKeySave(for providerID: UUID) {
+        let hadPendingValue = pendingCredentialValues[providerID] != nil
         pendingCredentialTasks[providerID]?.cancel()
         pendingCredentialTasks[providerID] = nil
         pendingCredentialValues[providerID] = nil
+        guard hadPendingValue else { return }
+        _ = nextCredentialSaveGeneration(for: providerID)
+        credentialSaveStates[providerID] = hasAPIKey(for: providerID) ? .saved : .idle
     }
 
     func credentialAvailable() async -> Bool {
@@ -703,7 +715,67 @@ final class LLMSettingsStore {
 
     func saveAPIKey(_ value: String, providerID: UUID) async throws {
         cancelPendingAPIKeySave(for: providerID)
-        try await saveAPIKeyImmediately(value, providerID: providerID)
+        let generation = nextCredentialSaveGeneration(for: providerID)
+        credentialSaveStates[providerID] = .saving
+        do {
+            try await saveAPIKeyImmediately(value, providerID: providerID)
+            guard isCurrentCredentialSave(generation, for: providerID) else { return }
+            credentialSaveStates[providerID] = .saved
+        } catch {
+            if isCurrentCredentialSave(generation, for: providerID) {
+                let message = error.localizedDescription
+                credentialSaveStates[providerID] = .failed(message)
+                credentialError = message
+            }
+            throw error
+        }
+    }
+
+    func loadAPIKey(for providerID: UUID) async throws -> String? {
+        guard let profile = provider(id: providerID) else {
+            throw LLMConfigurationError.missingProvider("")
+        }
+        return try await loadCredential(for: profile)
+    }
+
+    private func startPersistingAPIKey(
+        _ value: String,
+        providerID: UUID,
+        generation: Int
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.persistAPIKey(value, providerID: providerID, generation: generation)
+        }
+    }
+
+    private func persistAPIKey(
+        _ value: String,
+        providerID: UUID,
+        generation: Int
+    ) async {
+        do {
+            try await saveAPIKeyImmediately(value, providerID: providerID)
+            guard isCurrentCredentialSave(generation, for: providerID) else { return }
+            credentialSaveStates[providerID] = .saved
+        } catch {
+            guard !Task.isCancelled, isCurrentCredentialSave(generation, for: providerID) else {
+                return
+            }
+            let message = error.localizedDescription
+            credentialSaveStates[providerID] = .failed(message)
+            credentialError = message
+        }
+    }
+
+    private func nextCredentialSaveGeneration(for providerID: UUID) -> Int {
+        let generation = (credentialSaveGeneration[providerID] ?? 0) + 1
+        credentialSaveGeneration[providerID] = generation
+        return generation
+    }
+
+    private func isCurrentCredentialSave(_ generation: Int, for providerID: UUID) -> Bool {
+        credentialSaveGeneration[providerID] == generation
     }
 
     private func saveAPIKeyImmediately(_ value: String, providerID: UUID) async throws {
@@ -728,6 +800,7 @@ final class LLMSettingsStore {
         }.value
         guard provider(id: providerID)?.credentialAccount == profile.credentialAccount else { return }
         credentialAvailability[providerID] = false
+        credentialSaveStates[providerID] = .idle
         credentialError = nil
     }
 

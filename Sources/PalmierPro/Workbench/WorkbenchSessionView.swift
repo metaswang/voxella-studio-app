@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct RecentSessionsView: View {
     @Bindable private var store = WorkbenchStore.shared
+    @Bindable private var account = AccountService.shared
     @State private var searchText = ""
     @State private var sessionPendingDeletion: WorkbenchSession?
 
@@ -34,7 +35,16 @@ struct RecentSessionsView: View {
                         .frame(width: AppTheme.Workbench.searchWidth)
                 }
 
-                if filteredSessions.isEmpty {
+                if filteredSessions.isEmpty && store.isLoadingRemoteSessions {
+                    VStack(spacing: AppTheme.Spacing.md) {
+                        ProgressView()
+                        Text("Loading VoxStudio Cloud sessions…")
+                            .font(.system(size: AppTheme.FontSize.sm))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.emptyStateMinHeight)
+                    .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+                } else if filteredSessions.isEmpty {
                     ContentUnavailableView(
                         searchText.isEmpty ? "No sessions yet" : "No matching sessions",
                         systemImage: "clock",
@@ -50,7 +60,8 @@ struct RecentSessionsView: View {
                             SessionListRow(
                                 session: session,
                                 onOpen: { store.openSession(session.id) },
-                                onDelete: { sessionPendingDeletion = session }
+                                onDelete: { sessionPendingDeletion = session },
+                                allowsDelete: !session.isRemoteOnly
                             )
                             .contextMenu {
                                 if let sourceURL = session.sourceURL {
@@ -67,6 +78,7 @@ struct RecentSessionsView: View {
                                 Button("Delete", role: .destructive) {
                                     sessionPendingDeletion = session
                                 }
+                                .disabled(session.isRemoteOnly)
                             }
                         }
                     }
@@ -87,6 +99,13 @@ struct RecentSessionsView: View {
                 secondaryButton: .cancel()
             )
         }
+        .task(id: account.isSignedIn) {
+            if account.isSignedIn {
+                await store.refreshRemoteSessions()
+            } else {
+                store.clearRemoteSessions()
+            }
+        }
     }
 }
 
@@ -94,20 +113,14 @@ private struct SessionListRow: View {
     let session: WorkbenchSession
     let onOpen: () -> Void
     let onDelete: () -> Void
+    let allowsDelete: Bool
 
     @State private var isHovered = false
 
     var body: some View {
         Button(action: onOpen) {
             HStack(spacing: AppTheme.Spacing.lgXl) {
-                Image(systemName: session.hasDub ? "waveform.and.mic" : "text.bubble")
-                    .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.medium))
-                    .foregroundStyle(session.hasDub ? Color.purple : Color.blue)
-                    .frame(width: AppTheme.Workbench.sessionIconSize, height: AppTheme.Workbench.sessionIconSize)
-                    .background(
-                        (session.hasDub ? Color.purple : Color.blue).opacity(AppTheme.Opacity.soft),
-                        in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)
-                    )
+                WorkbenchSessionThumbnail(session: session)
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                     Text(session.title)
                         .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
@@ -178,9 +191,10 @@ private struct SessionListRow: View {
                 }
                 .buttonStyle(.plain)
                 .help("Delete session")
+                .disabled(!allowsDelete)
                 .opacity(isHovered ? AppTheme.Opacity.opaque : AppTheme.Opacity.zero)
                 .scaleEffect(isHovered ? 1 : 0.75)
-                .allowsHitTesting(isHovered)
+                .allowsHitTesting(isHovered && allowsDelete)
             }
             .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
             .padding(.trailing, AppTheme.Spacing.lgXl)
@@ -296,8 +310,25 @@ struct WorkbenchSessionDetailView: View {
     var body: some View {
         Group {
             if let session = store.selectedSession {
-                sessionView(session)
-                    .id(session.id)
+                if session.isRemoteOnly && store.remoteSessionLoadingID == session.id {
+                    VStack(spacing: AppTheme.Spacing.md) {
+                        ProgressView()
+                        Text("Loading session data from VoxStudio Cloud…")
+                            .font(.system(size: AppTheme.FontSize.sm))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ZStack(alignment: .bottomTrailing) {
+                        sessionView(session)
+                        if let source = session.netVideoSource {
+                            NetVideoFloatingPlayer(source: source)
+                                .padding(AppTheme.Spacing.xl)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .id(session.id)
+                }
             } else {
                 ContentUnavailableView(
                     "Session unavailable",
@@ -444,12 +475,17 @@ struct WorkbenchSessionDetailView: View {
 
     @ViewBuilder
     private func sessionView(_ session: WorkbenchSession) -> some View {
-        let mediaURL = selectedTrack == .dub ? session.outputURL : session.sourceURL
+        let originalMediaURL = session.sourceURL ?? session.remoteSourcePlaybackURL
+        let dubbedMediaURL = session.outputURL
+        let mediaURL = selectedTrack == .dub ? dubbedMediaURL : originalMediaURL
         let playbackCueScope = cueScope(for: session)
         let playbackCues = editableCues(for: session, scope: playbackCueScope)
-        let hasVideo = probedMediaURL == mediaURL
+        let hasRemoteVideo = selectedTrack == .dub
+            ? false
+            : session.remoteSourceHasVideo == true
+        let hasVideo = hasRemoteVideo || (probedMediaURL == mediaURL
             ? probedMediaHasVideo
-            : mediaURL?.isMovie == true
+            : mediaURL?.isMovie == true)
 
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
             sessionHeader(session)
@@ -480,7 +516,7 @@ struct WorkbenchSessionDetailView: View {
                         SessionMediaPlayer(
                             URL: mediaURL,
                             track: selectedTrack,
-                            allowsTrackSelection: session.sourceURL != nil && session.outputURL != nil,
+                            allowsTrackSelection: originalMediaURL != nil && dubbedMediaURL != nil,
                             showsFilename: false,
                             prefersVideoCanvas: hasVideo,
                             subtitleTrack: hasVideo
@@ -646,7 +682,22 @@ struct WorkbenchSessionDetailView: View {
                         Image(systemName: "calendar")
                     }
                     .layoutPriority(1)
-                    if let filename = session.originalFilename {
+                    if let netVideoSource = session.netVideoSource {
+                        Button {
+                            NSWorkspace.shared.open(netVideoSource.sourceURL)
+                        } label: {
+                            Label {
+                                Text(netVideoSource.sourceURL.absoluteString)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            } icon: {
+                                Image(systemName: "link")
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(AppTheme.Status.warningColor)
+                        .help("Open source page")
+                    } else if let filename = session.originalFilename {
                         Label(filename, systemImage: "doc")
                             .lineLimit(1)
                     }
@@ -773,7 +824,7 @@ struct WorkbenchSessionDetailView: View {
             Button("Delete", role: .destructive) {
                 sessionPendingDeletion = session
             }
-            .disabled(isProcessing)
+            .disabled(isProcessing || session.isRemoteOnly)
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
@@ -924,9 +975,9 @@ struct WorkbenchSessionDetailView: View {
     private func sessionContent(_ session: WorkbenchSession, activeCueID: Int?) -> some View {
         let scope = cueScope(for: session)
         let cues = editableCues(for: session, scope: scope)
-        let allowsEditing = selectedTab == .subtitles
+        let allowsEditing = !session.isRemoteOnly && (selectedTab == .subtitles
             || scope == .transcript
-            || !hasFineGrainedSubtitleTrack(session, scope: scope)
+            || !hasFineGrainedSubtitleTrack(session, scope: scope))
         SessionSegmentEditor(
             sessionID: session.id,
             contentKey: "\(session.id.uuidString)-\(selectedTab.rawValue)-\(scope.contentKey)-\(allowsEditing)",

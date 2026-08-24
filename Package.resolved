@@ -1,5 +1,5 @@
 {
-  "originHash" : "1280cf5682893eaba756e18d6013a0a4c9a897634aa9875edd71d8e2cdab718b",
+  "originHash" : "4e15e152f763ac570f645c4b5bab875924ed341caf876ec809ee3741c5ba68eb",
   "pins" : [
     {
       "identity" : "app-check",
@@ -130,7 +130,7 @@
     {
       "identity" : "mlx-swift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ml-explore/mlx-swift",
+      "location" : "https://github.com/ml-explore/mlx-swift.git",
       "state" : {
         "revision" : "eb889e01b7267bc6d9c01fde91bc517b09506c2d",
         "version" : "0.31.5"
@@ -458,6 +458,15 @@
       "state" : {
         "revision" : "1e2a163736dfa5a198e637ae44c114e1c6d5cc2d",
         "version" : "1.1.0"
+      }
+    },
+    {
+      "identity" : "youtubekit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/alexeichhorn/YouTubeKit.git",
+      "state" : {
+        "revision" : "e5b7d0396ce12bf3444f0d209e8436c83373b7af",
+        "version" : "0.4.9"
       }
     },
     {

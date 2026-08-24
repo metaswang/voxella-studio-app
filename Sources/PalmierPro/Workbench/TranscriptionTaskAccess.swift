@@ -1,5 +1,21 @@
 import Foundation
 
+struct TranscriptionSourcePreview: Sendable, Equatable {
+    let type: String
+    let platform: String
+    let sourceURL: URL
+    let videoID: String
+
+    var payload: [String: String] {
+        [
+            "type": type,
+            "platform": platform,
+            "source_url": sourceURL.absoluteString,
+            "video_id": videoID,
+        ]
+    }
+}
+
 struct TranscriptionTaskRequest: Sendable {
     var jobID: UUID
     var sourceURL: URL
@@ -12,6 +28,7 @@ struct TranscriptionTaskRequest: Sendable {
     var flowRequest: MediaFlowRequest
     var remoteSessionID: UUID?
     var shouldReuseRemoteSession: Bool
+    var sourcePreview: TranscriptionSourcePreview?
 }
 
 struct TranscriptionResultSyncRequest: Sendable {
@@ -29,6 +46,7 @@ struct TranscriptionResultSyncRequest: Sendable {
     var title: String? = nil
     var summary: String? = nil
     var sessionTag: String? = nil
+    var sourcePreview: TranscriptionSourcePreview? = nil
 }
 
 protocol TranscriptionTaskAccessing: Sendable {

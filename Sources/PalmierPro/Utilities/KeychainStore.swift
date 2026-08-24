@@ -125,10 +125,16 @@ enum KeychainStore {
             throw KeychainStoreError.invalidValue
         }
         do {
-            try upsertThisDeviceOnly(data, account: account, backend: .dataProtection)
-            try? deleteItem(account: account, backend: .login)
+            try upsert(
+                data,
+                account: account,
+                backend: .dataProtection,
+                accessibility: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            )
+            // Keep a fallback for ad-hoc builds without data-protection entitlements.
+            try? upsert(data, account: account, backend: .login)
         } catch let error as KeychainStoreError where error.isMissingEntitlement {
-            try upsertThisDeviceOnly(data, account: account, backend: .login)
+            try upsert(data, account: account, backend: .login)
         }
     }
 
@@ -140,38 +146,21 @@ enum KeychainStore {
         try deleteProtected(account: account)
     }
 
-    private static func upsertThisDeviceOnly(_ data: Data, account: String, backend: Backend) throws {
-        let query = protectedQuery(account: account, backend: backend)
-        var attributes: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        ]
-        if backend == .dataProtection {
-            attributes[kSecAttrSynchronizable as String] = false
-        }
-        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if updateStatus == errSecSuccess { return }
-        guard updateStatus == errSecItemNotFound else {
-            throw KeychainStoreError.status(updateStatus)
-        }
-        var insert = query
-        insert.merge(attributes) { _, new in new }
-        let insertStatus = SecItemAdd(insert as CFDictionary, nil)
-        guard insertStatus == errSecSuccess else {
-            throw KeychainStoreError.status(insertStatus)
-        }
-    }
-
     private enum Backend {
         case dataProtection
         case login
     }
 
-    private static func upsert(_ data: Data, account: String, backend: Backend) throws {
+    private static func upsert(
+        _ data: Data,
+        account: String,
+        backend: Backend,
+        accessibility: CFString = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+    ) throws {
         let query = protectedQuery(account: account, backend: backend)
         var attributes: [String: Any] = [kSecValueData as String: data]
         if backend == .dataProtection {
-            attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            attributes[kSecAttrAccessible as String] = accessibility
         }
 
         let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)

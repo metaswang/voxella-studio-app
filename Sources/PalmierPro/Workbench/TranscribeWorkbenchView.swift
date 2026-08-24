@@ -7,6 +7,11 @@ struct TranscribeWorkbenchView: View {
     @State private var openingInEditorID: UUID?
     @State private var speakerEditRequest: SpeakerEditRequest?
     @State private var showProcessingOptions = false
+    @State private var entryMode: TranscriptionEntryMode = .importFiles
+    @State private var netVideoURL = ""
+    @State private var netVideoPhase: NetVideoImportPhase = .idle
+    @State private var pendingNetVideoTitle: String?
+    @State private var netVideoTask: Task<Void, Never>?
 
     var body: some View {
         Group {
@@ -25,6 +30,15 @@ struct TranscribeWorkbenchView: View {
         .onAppear {
             llmSettings.refreshCredentialStatus()
             presentOptionsIfNeeded()
+            applyPreferredEntryMode()
+        }
+        .onDisappear {
+            netVideoTask?.cancel()
+        }
+        .onChange(of: store.preferNetVideoEntry) { _, prefersNetVideo in
+            if prefersNetVideo {
+                applyPreferredEntryMode()
+            }
         }
         .onChange(of: store.pendingMediaImportURLs) { _, urls in
             showProcessingOptions = !urls.isEmpty
@@ -35,16 +49,19 @@ struct TranscribeWorkbenchView: View {
         }
         .sheet(isPresented: $showProcessingOptions, onDismiss: {
             if !store.pendingMediaImportURLs.isEmpty {
-                store.clearPendingMediaImport()
+                store.discardPendingMediaImport()
             }
+            pendingNetVideoTitle = nil
         }) {
             ProcessingOptionsSheet(
                 mediaURLs: store.pendingMediaImportURLs,
+                initialOptions: pendingNetVideoTitle.map { LocalProcessingOptions(customTitle: $0) },
                 onPrepareCloud: { placement in
                     await store.prepareCloudAccess(for: placement)
                 },
                 onCancel: {
-                    store.clearPendingMediaImport()
+                    store.discardPendingMediaImport()
+                    pendingNetVideoTitle = nil
                     showProcessingOptions = false
                 },
                 onContinue: { submission in
@@ -62,9 +79,15 @@ struct TranscribeWorkbenchView: View {
                             return
                         }
                     }
+                    let netVideoSource = store.pendingNetVideoSource
                     store.clearPendingMediaImport()
+                    pendingNetVideoTitle = nil
                     showProcessingOptions = false
-                    _ = store.beginTranscriptions(sourceURLs: urls, submission: submission)
+                    _ = store.beginTranscriptions(
+                        sourceURLs: urls,
+                        submission: submission,
+                        netVideoSource: netVideoSource
+                    )
                 }
             )
         }
@@ -77,6 +100,12 @@ struct TranscribeWorkbenchView: View {
 
     private func presentOptionsIfNeeded() {
         showProcessingOptions = !store.pendingMediaImportURLs.isEmpty
+    }
+
+    private func applyPreferredEntryMode() {
+        if store.consumeNetVideoEntryPreference() {
+            entryMode = .netVideo
+        }
     }
 
     private func detail(index: Int) -> some View {
@@ -608,29 +637,8 @@ struct TranscribeWorkbenchView: View {
                 }
                 transcriptionEntryBar
                 HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-                        Label("BEST FOR MEETINGS AND INTERVIEWS", systemImage: "sparkles")
-                            .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
-                            .foregroundStyle(AppTheme.Accent.link)
-                            .padding(.horizontal, AppTheme.Spacing.md)
-                            .padding(.vertical, AppTheme.Spacing.sm)
-                            .background(AppTheme.Accent.link.opacity(AppTheme.Opacity.soft), in: Capsule())
-                        Text("Import audio or video and turn it into a searchable transcript workspace.")
-                            .font(.system(size: AppTheme.FontSize.title2, weight: AppTheme.FontWeight.semibold))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("Choose files, confirm processing options, then watch local progress before the session workspace opens.")
-                            .font(.system(size: AppTheme.FontSize.md))
-                            .foregroundStyle(AppTheme.Text.tertiaryColor)
-                            .fixedSize(horizontal: false, vertical: true)
-                        HStack(alignment: .center, spacing: AppTheme.Spacing.mdLg) {
-                            Button("Choose media") { importMedia() }
-                                .buttonStyle(.borderedProminent)
-                            Text("Supports multiple audio and video files · processed one at a time")
-                                .font(.system(size: AppTheme.FontSize.xs))
-                                .foregroundStyle(AppTheme.Text.mutedColor)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    entryHero
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     quickStartCard
                         .frame(width: 300)
@@ -650,23 +658,38 @@ struct TranscribeWorkbenchView: View {
                 }
 
                 HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
-                    guidanceCard(
-                        eyebrow: "BEST FIT",
-                        title: "When import is the best choice",
-                        detail: "You already have a local source file and want the shortest path to transcript, translation, or export.",
-                        systemImage: "wand.and.stars"
-                    )
-                    guidanceCard(
-                        eyebrow: "AFTER START",
-                        title: "Keep the workflow moving",
-                        detail: "Once a session is created, edit, translate, export, and prepare a dub without leaving this workspace.",
-                        systemImage: "arrow.up.circle"
-                    )
+                    if entryMode == .netVideo {
+                        guidanceCard(
+                            eyebrow: "BEST FIT",
+                            title: "When net video is the best choice",
+                            detail: "The talk is already public on YouTube and you want audio extracted on this Mac, without a separate download.",
+                            systemImage: "link"
+                        )
+                        guidanceCard(
+                            eyebrow: "AFTER EXTRACT",
+                            title: "Same workspace from here",
+                            detail: "After the audio file is local, processing options, transcription, translation, and export follow the existing session flow.",
+                            systemImage: "arrow.up.circle"
+                        )
+                    } else {
+                        guidanceCard(
+                            eyebrow: "BEST FIT",
+                            title: "When import is the best choice",
+                            detail: "You already have a local source file and want the shortest path to transcript, translation, or export.",
+                            systemImage: "wand.and.stars"
+                        )
+                        guidanceCard(
+                            eyebrow: "AFTER START",
+                            title: "Keep the workflow moving",
+                            detail: "Once a session is created, edit, translate, export, and prepare a dub without leaving this workspace.",
+                            systemImage: "arrow.up.circle"
+                        )
+                    }
                 }
 
                 WorkbenchRecentTranscriptSessionsSection(
-                    modeTitle: "Import Files",
-                    onChooseMedia: { importMedia() }
+                    modeTitle: entryMode == .netVideo ? "Net Video" : "Import Files",
+                    onChooseMedia: entryMode == .netVideo ? nil : { importMedia() }
                 )
             }
             .padding(AppTheme.Spacing.xxl)
@@ -680,12 +703,20 @@ struct TranscribeWorkbenchView: View {
             Text("TRANSCRIPTION ENTRY")
                 .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                 .foregroundStyle(AppTheme.Text.mutedColor)
-            entryModeButton("Import files", systemImage: "square.and.arrow.down", active: true) { importMedia() }
-            entryModeButton("Net video", systemImage: "video", active: false, action: {})
-            entryModeButton("Record", systemImage: "video.circle", active: false, action: {})
-            entryModeButton("Live", systemImage: "dot.radiowaves.left.and.right", active: false, action: {})
+            entryModeButton("Import files", systemImage: "square.and.arrow.down", active: entryMode == .importFiles) {
+                entryMode = .importFiles
+            }
+            entryModeButton("Net video", systemImage: "video", active: entryMode == .netVideo) {
+                entryMode = .netVideo
+            }
+            entryModeButton("Record", systemImage: "video.circle", active: false, disabled: true, action: {})
+            entryModeButton("Live", systemImage: "dot.radiowaves.left.and.right", active: false, disabled: true, action: {})
             Spacer(minLength: AppTheme.Spacing.md)
-            Text("Fastest path from local files to a structured transcript workspace")
+            Text(
+                entryMode == .netVideo
+                    ? "Paste a YouTube link, extract audio on this Mac, then transcribe"
+                    : "Fastest path from local files to a structured transcript workspace"
+            )
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .lineLimit(1)
@@ -704,6 +735,7 @@ struct TranscribeWorkbenchView: View {
         _ title: String,
         systemImage: String,
         active: Bool,
+        disabled: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         if active {
@@ -711,12 +743,13 @@ struct TranscribeWorkbenchView: View {
                 entryModeLabel(title, systemImage: systemImage)
             }
             .buttonStyle(.borderedProminent)
+            .disabled(disabled)
         } else {
             Button(action: action) {
                 entryModeLabel(title, systemImage: systemImage)
             }
             .buttonStyle(.bordered)
-            .disabled(true)
+            .disabled(disabled)
         }
     }
 
@@ -727,14 +760,138 @@ struct TranscribeWorkbenchView: View {
             .padding(.vertical, AppTheme.Spacing.sm)
     }
 
-    private var quickStartCard: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
-            Label("QUICK START", systemImage: "square.and.arrow.down")
+    @ViewBuilder
+    private var entryHero: some View {
+        if entryMode == .netVideo {
+            netVideoHero
+        } else {
+            importFilesHero
+        }
+    }
+
+    private var importFilesHero: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            Label("BEST FOR MEETINGS AND INTERVIEWS", systemImage: "sparkles")
                 .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                 .foregroundStyle(AppTheme.Accent.link)
-            Text("Import files")
+                .padding(.horizontal, AppTheme.Spacing.md)
+                .padding(.vertical, AppTheme.Spacing.sm)
+                .background(AppTheme.Accent.link.opacity(AppTheme.Opacity.soft), in: Capsule())
+            Text("Import audio or video and turn it into a searchable transcript workspace.")
+                .font(.system(size: AppTheme.FontSize.title2, weight: AppTheme.FontWeight.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Choose files, confirm processing options, then watch local progress before the session workspace opens.")
+                .font(.system(size: AppTheme.FontSize.md))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .center, spacing: AppTheme.Spacing.mdLg) {
+                Button("Choose media") { importMedia() }
+                    .buttonStyle(.borderedProminent)
+                Text("Supports multiple audio and video files · processed one at a time")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
+            }
+        }
+    }
+
+    private var netVideoHero: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            Label("BEST FOR PUBLIC TALKS, INTERVIEWS, AND PUBLISHED VIDEO", systemImage: "sparkles")
+                .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
+                .foregroundStyle(AppTheme.Accent.link)
+                .padding(.horizontal, AppTheme.Spacing.md)
+                .padding(.vertical, AppTheme.Spacing.sm)
+                .background(AppTheme.Accent.link.opacity(AppTheme.Opacity.soft), in: Capsule())
+            Text("Paste a public YouTube link and turn published content into editable text.")
+                .font(.system(size: AppTheme.FontSize.title2, weight: AppTheme.FontWeight.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Audio is extracted on this Mac. Local YouTubeKit runs first; the author's remote server is only used if local extraction fails. Video is not downloaded.")
+                .font(.system(size: AppTheme.FontSize.md))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                Text("Paste a public YouTube URL")
+                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                TextField("https://www.youtube.com/watch?v=…", text: $netVideoURL)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: AppTheme.FontSize.md))
+                    .padding(.horizontal, AppTheme.Spacing.mdLg)
+                    .frame(height: 44)
+                    .background(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.soft), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+                            .strokeBorder(
+                                netVideoURLIsInvalid ? AppTheme.Status.errorColor : AppTheme.Border.subtleColor,
+                                lineWidth: AppTheme.BorderWidth.thin
+                            )
+                    }
+                    .disabled(netVideoPhase.isInProgress)
+                    .onSubmit { extractNetVideo() }
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    Text("YouTube")
+                        .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                        .padding(.horizontal, AppTheme.Spacing.md)
+                        .padding(.vertical, AppTheme.Spacing.xs)
+                        .background(AppTheme.Background.raisedColor, in: Capsule())
+                        .overlay {
+                            Capsule().strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+                        }
+                    Spacer()
+                }
+                if netVideoURLIsInvalid {
+                    Text("Paste a public YouTube watch, Shorts, or youtu.be URL.")
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Status.errorColor)
+                }
+            }
+
+            HStack(alignment: .center, spacing: AppTheme.Spacing.mdLg) {
+                Button("Extract audio") { extractNetVideo() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canExtractNetVideo)
+                if netVideoPhase.isInProgress {
+                    Button("Cancel", role: .cancel) {
+                        netVideoTask?.cancel()
+                        netVideoTask = nil
+                        netVideoPhase = .idle
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+
+            if case .failed(let message) = netVideoPhase {
+                Text(message)
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Status.errorColor)
+            }
+            if netVideoPhase.isInProgress {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                    Text(netVideoPhase.statusText)
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                    if let fraction = netVideoPhase.downloadFraction {
+                        ProgressView(value: fraction)
+                    } else {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+            }
+        }
+    }
+
+    private var quickStartCard: some View {
+        let steps = entryMode == .netVideo
+            ? ["Paste a public YouTube link", "Extract audio on this Mac", "Confirm processing options"]
+            : ["Choose one or more local files", "Confirm processing options", "Continue editing in the workspace"]
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
+            Label("QUICK START", systemImage: entryMode == .netVideo ? "link" : "square.and.arrow.down")
+                .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
+                .foregroundStyle(AppTheme.Accent.link)
+            Text(entryMode == .netVideo ? "Net video" : "Import files")
                 .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
-            ForEach(Array(["Choose one or more local files", "Confirm processing options", "Continue editing in the workspace"].enumerated()), id: \.offset) { index, title in
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, title in
                 HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
                     Text("\(index + 1)")
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.bold))
@@ -784,11 +941,67 @@ struct TranscribeWorkbenchView: View {
         }
     }
 
+    private var netVideoURLIsInvalid: Bool {
+        let trimmed = netVideoURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && !YouTubeURL.isSupported(trimmed)
+    }
+
+    private var canExtractNetVideo: Bool {
+        YouTubeURL.isSupported(netVideoURL) && !netVideoPhase.isInProgress
+    }
+
     private func importMedia() {
+        pendingNetVideoTitle = nil
         Task {
             let urls = await WorkbenchFilePicker.pickMediaFiles()
             if !urls.isEmpty {
                 store.stageMediaImport(urls)
+            }
+        }
+    }
+
+    private func extractNetVideo() {
+        let raw = netVideoURL
+        guard YouTubeURL.isSupported(raw) else {
+            netVideoPhase = .failed("Paste a public YouTube watch, Shorts, or youtu.be URL.")
+            return
+        }
+        netVideoTask?.cancel()
+        netVideoTask = Task {
+            netVideoPhase = .extractingLocal
+            do {
+                let result = try await YouTubeAudioImporter.importAudio(
+                    from: raw,
+                    into: WorkbenchStore.netVideoMediaDirectory
+                ) { progress in
+                    Task { @MainActor in
+                        switch progress {
+                        case .extractingLocal:
+                            netVideoPhase = .extractingLocal
+                        case .extractingRemote:
+                            netVideoPhase = .extractingRemote
+                        case .downloading(let fraction):
+                            netVideoPhase = .downloading(fraction)
+                        }
+                    }
+                }
+                try Task.checkCancellation()
+                pendingNetVideoTitle = result.title
+                netVideoPhase = .idle
+                guard let sourceURL = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                    netVideoPhase = .failed("The YouTube URL is invalid.")
+                    return
+                }
+                store.stageNetVideoImport(
+                    mediaURL: result.fileURL,
+                    sourceURL: sourceURL,
+                    videoID: result.videoID,
+                    title: result.title
+                )
+            } catch is CancellationError {
+                netVideoPhase = .idle
+            } catch {
+                netVideoPhase = .failed(error.localizedDescription)
             }
         }
     }
@@ -902,6 +1115,44 @@ struct TranscribeWorkbenchView: View {
         let minutes = Int(seconds) / 60
         let remainder = seconds - Double(minutes * 60)
         return String(format: "%02d:%05.2f", minutes, remainder)
+    }
+}
+
+private enum TranscriptionEntryMode {
+    case importFiles
+    case netVideo
+}
+
+private enum NetVideoImportPhase: Equatable {
+    case idle
+    case extractingLocal
+    case extractingRemote
+    case downloading(Double)
+    case failed(String)
+
+    var isInProgress: Bool {
+        switch self {
+        case .extractingLocal, .extractingRemote, .downloading: true
+        case .idle, .failed: false
+        }
+    }
+
+    var downloadFraction: Double? {
+        if case .downloading(let fraction) = self { return fraction }
+        return nil
+    }
+
+    var statusText: String {
+        switch self {
+        case .idle, .failed:
+            ""
+        case .extractingLocal:
+            "Resolving YouTube audio locally…"
+        case .extractingRemote:
+            "Local extraction failed — using the author’s remote fallback…"
+        case .downloading(let fraction):
+            "Downloading audio… \(Int((fraction * 100).rounded()))%"
+        }
     }
 }
 

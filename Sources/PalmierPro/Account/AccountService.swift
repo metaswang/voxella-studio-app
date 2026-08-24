@@ -329,6 +329,25 @@ final class AccountService {
         }
     }
 
+    func refreshAccountForFeatureAccess() async {
+        await waitForSessionRestore()
+        guard isSignedIn else { return }
+
+        let generation = beginSessionOperation()
+        isLoading = true
+        defer {
+            if sessionGeneration == generation {
+                isLoading = false
+            }
+        }
+        do {
+            try await reloadAccount(generation: generation)
+        } catch {
+            guard isCurrentSession(generation) else { return }
+            lastError = error.localizedDescription
+        }
+    }
+
     func ensureCloudAccess() async -> CloudAccessPreparation {
         if let cloudAccessTask {
             return await cloudAccessTask.value
@@ -410,6 +429,10 @@ final class AccountService {
                 return nil
             }
             token = existing
+        } catch VoxellaAuthError.refreshUnavailable {
+            let error = VoxellaAuthError.refreshUnavailable
+            lastError = error.localizedDescription
+            return .failed(error.localizedDescription)
         } catch {
             Log.account.warning(
                 "cloud token restore failed error=\(error.localizedDescription)",
@@ -430,6 +453,10 @@ final class AccountService {
             if let token = try await VoxellaAuthService.shared.validAccessToken() {
                 return await adoptAuthenticatedSession(token, generation: generation)
             }
+        } catch VoxellaAuthError.refreshUnavailable {
+            let error = VoxellaAuthError.refreshUnavailable
+            lastError = error.localizedDescription
+            return .failed(error.localizedDescription)
         } catch {
             guard isCurrentSession(generation) else { return .cancelled }
             Log.account.warning(
@@ -442,6 +469,10 @@ final class AccountService {
             guard isCurrentSession(generation) else { return .cancelled }
             let token = try await VoxellaAuthService.shared.ensureSignedIn()
             return await adoptAuthenticatedSession(token, generation: generation)
+        } catch VoxellaAuthError.refreshUnavailable {
+            let error = VoxellaAuthError.refreshUnavailable
+            lastError = error.localizedDescription
+            return .failed(error.localizedDescription)
         } catch VoxellaAuthError.cancelled {
             Log.account.notice("cloud sign-in cancelled", telemetry: "Cloud sign-in cancelled")
             return .cancelled

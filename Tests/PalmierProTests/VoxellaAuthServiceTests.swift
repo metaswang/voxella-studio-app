@@ -70,6 +70,76 @@ struct VoxellaAuthServiceTests {
         #expect(await auth.currentAccessToken() == "access-memory-only")
     }
 
+    @Test func persistedRefreshTokenRestoresAfterAuthServiceIsRecreated() async throws {
+        let store = MemoryRefreshStore()
+        let firstAuth = VoxellaAuthService(
+            browser: MockAuthBrowser { url in
+                let state = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .queryItems?
+                    .first { $0.name == "state" }?
+                    .value ?? ""
+                return URL(string: "voxella-studio://oauth/callback?code=first-login&state=\(state)")!
+            },
+            tokens: MockTokenClient(
+                onExchange: { _, _, _ in
+                    VoxellaAuthTokens(
+                        accessToken: "first-access",
+                        refreshToken: "persisted-refresh",
+                        expiresAt: Date().addingTimeInterval(3600),
+                        userID: nil
+                    )
+                }
+            ),
+            loadRefresh: { store.value },
+            saveRefresh: { store.value = $0 },
+            deleteRefresh: { store.value = nil }
+        )
+
+        _ = try await firstAuth.signIn()
+        #expect(store.value == "persisted-refresh")
+
+        let browserOpened = Flag()
+        let restoredAuth = VoxellaAuthService(
+            browser: MockAuthBrowser { _ in
+                browserOpened.value = true
+                throw VoxellaAuthError.browserUnavailable
+            },
+            tokens: MockTokenClient(
+                onRefresh: { refreshToken in
+                    #expect(refreshToken == "persisted-refresh")
+                    return VoxellaAuthTokens(
+                        accessToken: "restored-access",
+                        refreshToken: "rotated-refresh",
+                        expiresAt: Date().addingTimeInterval(3600),
+                        userID: nil
+                    )
+                }
+            ),
+            loadRefresh: { store.value },
+            saveRefresh: { store.value = $0 },
+            deleteRefresh: { store.value = nil }
+        )
+
+        let access = try await restoredAuth.ensureSignedIn()
+        #expect(access == "restored-access")
+        #expect(store.value == "rotated-refresh")
+        #expect(browserOpened.value == false)
+    }
+
+    @Test func signOutDeletesPersistedRefreshToken() async {
+        let store = MemoryRefreshStore(value: "persisted-refresh")
+        let auth = VoxellaAuthService(
+            loadRefresh: { store.value },
+            saveRefresh: { store.value = $0 },
+            deleteRefresh: { store.value = nil }
+        )
+
+        await auth.signOut()
+
+        #expect(store.value == nil)
+        #expect(await auth.currentAccessToken() == nil)
+    }
+
     @Test func callbackWithAccessTokenIsRejected() async {
         let browser = MockAuthBrowser { _ in
             URL(string: "voxella-studio://oauth/callback?code=abc&state=x&access_token=stolen")!
@@ -322,6 +392,32 @@ struct VoxellaAuthServiceTests {
         #expect(token == "refreshed")
         #expect(browserOpened.value == false)
         #expect(store.value == "refresh-2")
+    }
+
+    @Test func transientRefreshFailureKeepsPersistedSessionAndDoesNotOpenBrowser() async {
+        let store = MemoryRefreshStore(value: "refresh-1")
+        let browserOpened = Flag()
+        let auth = VoxellaAuthService(
+            browser: MockAuthBrowser { _ in
+                browserOpened.value = true
+                throw VoxellaAuthError.browserUnavailable
+            },
+            tokens: MockTokenClient(
+                onRefresh: { _ in
+                    throw VoxellaAuthError.tokenExchangeFailed("temporarily unavailable")
+                }
+            ),
+            loadRefresh: { store.value },
+            saveRefresh: { store.value = $0 },
+            deleteRefresh: { store.value = nil }
+        )
+
+        await #expect(throws: VoxellaAuthError.refreshUnavailable) {
+            _ = try await auth.ensureSignedIn()
+        }
+
+        #expect(store.value == "refresh-1")
+        #expect(browserOpened.value == false)
     }
 }
 

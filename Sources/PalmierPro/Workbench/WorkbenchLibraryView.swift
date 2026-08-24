@@ -32,6 +32,14 @@ struct WorkbenchLibraryView: View {
                         }
                     }
                     actionCard(
+                        title: "Net video",
+                        detail: "Paste a YouTube link · audio only · then transcribe",
+                        icon: "play.rectangle.fill",
+                        tint: .orange
+                    ) {
+                        store.showNetVideoImport()
+                    }
+                    actionCard(
                         title: "Create a dub",
                         detail: "Qwen3-TTS · voice clone · local WAV",
                         icon: "waveform.and.mic",

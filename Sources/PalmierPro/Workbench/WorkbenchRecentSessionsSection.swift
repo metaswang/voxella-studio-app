@@ -202,7 +202,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
             } label: {
                 HStack(alignment: .center, spacing: 0) {
                     HStack(alignment: .center, spacing: AppTheme.Spacing.lg) {
-                        sourceBadge
+                        WorkbenchSessionThumbnail(session: session)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(session.title)
                                 .font(.system(size: AppTheme.FontSize.md, weight: .bold))
@@ -292,14 +292,6 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
             Divider()
             Button("Delete", role: .destructive) { delete(session) }
         }
-    }
-
-    private var sourceBadge: some View {
-        Image(systemName: "square.and.arrow.down")
-            .font(.system(size: AppTheme.FontSize.lg, weight: .semibold))
-            .foregroundStyle(AppTheme.Accent.link)
-            .frame(width: AppTheme.Workbench.sessionIconSize, height: AppTheme.Workbench.sessionIconSize)
-            .background(AppTheme.Accent.link.opacity(AppTheme.Opacity.soft), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
     }
 
     private var metaDot: some View {

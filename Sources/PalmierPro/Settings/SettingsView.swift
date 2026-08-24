@@ -2,6 +2,7 @@ import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case account
+    case calendar
     case general
     case models
     case ai
@@ -14,6 +15,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .account: return "Account"
+        case .calendar: return "Calendar"
         case .general: return "General"
         case .models: return "Models"
         case .ai: return "AI"
@@ -26,6 +28,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .account: return "person.circle"
+        case .calendar: return "calendar"
         case .general: return "gearshape"
         case .models: return "square.stack.3d.up"
         case .ai: return "sparkles"
@@ -132,6 +135,8 @@ private struct SettingsDetail: View {
                             switch tab {
                             case .account:
                                 AccountPane()
+                            case .calendar:
+                                GoogleCalendarSettingsPane()
                             case .general:
                                 SettingsSection(title: "Notifications") {
                                     NotificationsPane()

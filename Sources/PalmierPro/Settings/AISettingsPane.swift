@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AISettingsPane: View {
     @Bindable private var settings = LLMSettingsStore.shared
@@ -6,6 +8,7 @@ struct AISettingsPane: View {
     @State private var providerDraft = LLMProviderProfile.defaultOpenAI
     @State private var routeDrafts: [LLMUseCase: LLMModelRoute] = [:]
     @State private var APIKeyDraft = ""
+    @State private var maskedAPIKey = ""
     @State private var isSavingCredential = false
     @State private var providerPendingRemoval: LLMProviderProfile?
     @State private var statusMessage: String?
@@ -67,11 +70,11 @@ struct AISettingsPane: View {
 
             credentialEditor
 
-            if let message = statusMessage ?? settings.credentialError {
+            if let message = credentialStatusMessage {
                 Text(message)
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(
-                        statusIsError || settings.credentialError != nil
+                        credentialStatusIsError
                             ? AppTheme.Status.errorColor
                             : AppTheme.Status.successColor
                     )
@@ -211,26 +214,20 @@ struct AISettingsPane: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             Divider()
 
-            Text(
-                selectedProvider.map {
-                    settings.hasAPIKey(for: $0.id)
-                        ? "API key saved for \($0.displayName)"
-                        : "No API key saved for \($0.displayName)"
-                } ?? "Select a provider"
-            )
+            Text(credentialTitle)
             .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
-            .foregroundStyle(
-                selectedProvider.map { settings.hasAPIKey(for: $0.id) } == true
-                    ? AppTheme.Status.successColor
-                    : AppTheme.Text.secondaryColor
-            )
+            .foregroundStyle(credentialTitleColor)
 
             HStack(spacing: AppTheme.Spacing.sm) {
-                SecureField("Paste a new API key", text: $APIKeyDraft)
+                SecureField(
+                    maskedAPIKey.isEmpty ? "Paste a new API key" : maskedAPIKey,
+                    text: $APIKeyDraft
+                )
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: AppTheme.FontSize.sm, design: .monospaced))
                     .focused($focusedField, equals: .APIKey)
                     .onSubmit { flushCredentialIfReady() }
+                    .onPasteCommand(of: [.plainText], perform: pasteCredential)
                     .onChange(of: APIKeyDraft) { _, _ in
                         scheduleCredentialAutosave()
                     }
@@ -255,6 +252,10 @@ struct AISettingsPane: View {
             if field != .APIKey {
                 flushCredentialIfReady()
             }
+        }
+        .onChange(of: selectedCredentialSaveState) { _, state in
+            guard case .saved = state, let providerID = selectedProviderID else { return }
+            loadMaskedAPIKey(for: providerID)
         }
     }
 
@@ -337,6 +338,56 @@ struct AISettingsPane: View {
         selectedProviderID.flatMap(settings.provider(id:))
     }
 
+    private var selectedCredentialSaveState: LLMAPIKeySaveState {
+        guard let providerID = selectedProviderID else { return .idle }
+        return settings.apiKeySaveState(for: providerID)
+    }
+
+    private var credentialTitle: String {
+        guard let provider = selectedProvider else { return "Select a provider" }
+        switch selectedCredentialSaveState {
+        case .saving:
+            return "Saving API key for \(provider.displayName)…"
+        case .failed:
+            return "API key save failed for \(provider.displayName)"
+        case .idle, .saved:
+            return settings.hasAPIKey(for: provider.id)
+                ? "API key saved for \(provider.displayName)"
+                : "No API key saved for \(provider.displayName)"
+        }
+    }
+
+    private var credentialTitleColor: Color {
+        switch selectedCredentialSaveState {
+        case .saving:
+            AppTheme.Status.infoColor
+        case .failed:
+            AppTheme.Status.errorColor
+        case .idle, .saved:
+            selectedProviderID.map { settings.hasAPIKey(for: $0) } == true
+                ? AppTheme.Status.successColor
+                : AppTheme.Text.secondaryColor
+        }
+    }
+
+    private var credentialStatusMessage: String? {
+        switch selectedCredentialSaveState {
+        case .saving:
+            "Saving API key securely…"
+        case .saved:
+            "API key saved securely."
+        case .failed(let message):
+            message
+        case .idle:
+            statusMessage ?? settings.credentialError
+        }
+    }
+
+    private var credentialStatusIsError: Bool {
+        if case .failed = selectedCredentialSaveState { return true }
+        return statusIsError || settings.credentialError != nil
+    }
+
     private var providerHasChanges: Bool {
         selectedProvider != providerDraft
     }
@@ -380,14 +431,16 @@ struct AISettingsPane: View {
     }
 
     private func selectProvider(_ id: UUID) {
-        if selectedProviderID != nil, selectedProviderID != id {
-            flushCredentialIfReady()
-        }
         guard let provider = settings.provider(id: id) else { return }
+        if let previousProviderID = selectedProviderID, previousProviderID != id {
+            flushCredentialIfReady(clearDraft: false)
+        }
         selectedProviderID = id
         providerDraft = provider
         APIKeyDraft = ""
+        maskedAPIKey = ""
         statusMessage = nil
+        loadMaskedAPIKey(for: id)
     }
 
     private func persistProviderIfValid() {
@@ -418,16 +471,44 @@ struct AISettingsPane: View {
         settings.scheduleAPIKeySave(snapshot, providerID: providerID)
     }
 
-    private func flushCredentialIfReady() {
+    private func pasteCredential(_: [NSItemProvider]) {
+        guard let pastedValue = NSPasteboard.general.string(forType: .string) else { return }
+        APIKeyDraft = pastedValue
+        flushCredentialIfReady()
+    }
+
+    private func flushCredentialIfReady(clearDraft: Bool = true) {
         guard let providerID = selectedProviderID else { return }
         persistProviderIfValid()
         if providerValidationMessage != nil { return }
         let key = APIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         if !key.isEmpty {
             settings.scheduleAPIKeySave(key, providerID: providerID)
-            APIKeyDraft = ""
+            if clearDraft {
+                APIKeyDraft = ""
+            }
         }
         settings.flushAPIKeySave(for: providerID)
+    }
+
+    private func loadMaskedAPIKey(for providerID: UUID) {
+        Task { @MainActor in
+            do {
+                let key = try await settings.loadAPIKey(for: providerID)
+                guard selectedProviderID == providerID else { return }
+                maskedAPIKey = Self.maskedAPIKey(key)
+            } catch {
+                guard selectedProviderID == providerID else { return }
+                statusIsError = true
+                statusMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private static func maskedAPIKey(_ key: String?) -> String {
+        guard let key, !key.isEmpty else { return "" }
+        let suffix = key.count > 4 ? String(key.suffix(4)) : ""
+        return String(repeating: "•", count: suffix.isEmpty ? 32 : 36) + suffix
     }
 
     private func persistDrafts() {
@@ -441,6 +522,7 @@ struct AISettingsPane: View {
         guard let providerID = selectedProviderID else { return }
         settings.cancelPendingAPIKeySave(for: providerID)
         APIKeyDraft = ""
+        maskedAPIKey = ""
         isSavingCredential = true
         Task {
             defer { isSavingCredential = false }

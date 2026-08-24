@@ -61,7 +61,7 @@ struct LocalFirstWorkbenchTests {
     @Test func exposesOnlyFirstReleaseRoutes() {
         #expect(
             WorkbenchRoute.allCases
-                == [.recent, .dashboard, .transcribe, .dub, .voiceLibrary, .videoEditor, .session]
+                == [.recent, .dashboard, .transcribe, .meetBot, .dub, .voiceLibrary, .videoEditor, .session]
         )
         #expect(Project.fileExtension == "voxella")
         #expect(Project.legacyFileExtension == "palmier")
@@ -268,6 +268,70 @@ struct LocalFirstWorkbenchTests {
         #expect(recoveredDub.state == .ready)
         #expect(recoveredDub.progress == 0)
         #expect(recoveredDub.progressMessage == "Interrupted — ready to retry")
+    }
+
+    @Test func automaticSummaryAcceptsTheUnassignedGeneralTemplate() {
+        #expect(
+            WorkbenchStore.summaryTemplateMatches(
+                requestedTemplateID: SummaryTemplateDefinition.generalSummaryID,
+                currentTemplateID: nil,
+                allowUnassignedDefault: true
+            )
+        )
+        #expect(
+            !WorkbenchStore.summaryTemplateMatches(
+                requestedTemplateID: SummaryTemplateDefinition.generalSummaryID,
+                currentTemplateID: nil
+            )
+        )
+        #expect(
+            !WorkbenchStore.summaryTemplateMatches(
+                requestedTemplateID: SummaryTemplateDefinition.generalSummaryID,
+                currentTemplateID: "custom-template",
+                allowUnassignedDefault: true
+            )
+        )
+        #expect(
+            WorkbenchStore.summaryTemplateMatches(
+                requestedTemplateID: "custom-template",
+                currentTemplateID: "CUSTOM-TEMPLATE"
+            )
+        )
+    }
+
+    @Test func staleSummaryStateRetriesWhenNoSummaryWasPersisted() {
+        var transcription = WorkbenchTranscriptionJob(sourcePath: "/tmp/stale-summary.wav")
+        transcription.state = .completed
+        transcription.summaryState = .running
+        transcription.summaryErrorMessage = "stale"
+
+        let recovered = WorkbenchStore.recoveredForLaunch(transcription)
+
+        #expect(recovered.state == .completed)
+        #expect(recovered.summaryState == nil)
+        #expect(recovered.summaryErrorMessage == nil)
+        #expect(recovered.progressMessage == "Transcript ready — summary will retry")
+    }
+
+    @Test func staleSummaryStatePreservesTheLastSuccessfulSummary() {
+        var transcription = WorkbenchTranscriptionJob(sourcePath: "/tmp/previous-summary.wav")
+        transcription.state = .completed
+        transcription.summaryMarkdown = "## Previous summary"
+        transcription.summaryState = .running
+        transcription.summaryErrorMessage = "stale"
+
+        let recovered = WorkbenchStore.recoveredForLaunch(transcription)
+
+        #expect(recovered.summaryMarkdown == "## Previous summary")
+        #expect(recovered.summaryState == .completed)
+        #expect(recovered.summaryErrorMessage == nil)
+        #expect(recovered.progressMessage == "Transcript and summary ready")
+    }
+
+    @Test func runningSummaryWithoutOutputNeedsGeneration() {
+        #expect(WorkbenchStore.summaryNeedsGeneration(markdown: nil, state: .running))
+        #expect(!WorkbenchStore.summaryNeedsGeneration(markdown: "## Summary", state: .running))
+        #expect(!WorkbenchStore.summaryNeedsGeneration(markdown: nil, state: .completed))
     }
 
     @Test func newDubDraftRetainsOnlyTheLatestSettingsAndReference() {

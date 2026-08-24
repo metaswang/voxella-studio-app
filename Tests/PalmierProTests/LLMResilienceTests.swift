@@ -179,6 +179,24 @@ struct LLMResilienceTests {
         #expect(await recorder.value(for: providerID) == "temporary-test-key")
     }
 
+    @Test @MainActor
+    func completedAPIKeySaveReportsSavedState() async throws {
+        let suiteName = "LLMCredentialStateTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = LLMSettingsStore(
+            defaults: defaults,
+            legacyDefaults: [],
+            credentialSaver: { _, _ in }
+        )
+        let providerID = try #require(settings.providers.first?.id)
+
+        try await settings.saveAPIKey("saved-test-key", providerID: providerID)
+
+        #expect(settings.apiKeySaveState(for: providerID) == .saved)
+        #expect(settings.hasAPIKey(for: providerID))
+    }
+
     @Test
     func credentialAccountRemainsStableWhenProviderEndpointChanges() {
         var profile = LLMProviderProfile(

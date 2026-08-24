@@ -62,6 +62,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>voxella-studio</string>
+				<string>voxstudio</string>
 			</array>
 		</dict>
 		<dict>

@@ -57,7 +57,8 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
                         translationTracks: request.translationTracks,
                         title: request.title,
                         summary: request.summary,
-                        sessionTag: request.sessionTag
+                        sessionTag: request.sessionTag,
+                        sourcePreview: request.sourcePreview?.payload
                     )
                     return remoteSessionID
                 }
@@ -76,6 +77,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
             remoteSessionID: request.remoteSessionID,
             startPipeline: false,
             prepareMedia: true,
+            sourcePreview: request.sourcePreview,
             clientRequestID: "desktop-local-results-\(request.jobID.uuidString.lowercased())",
             onSessionCreated: { remoteID in
                 let cancellationRequested = await Self.remoteIDs.set(
@@ -106,7 +108,8 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
                 translationTracks: request.translationTracks,
                 title: request.title,
                 summary: request.summary,
-                sessionTag: request.sessionTag
+                sessionTag: request.sessionTag,
+                sourcePreview: request.sourcePreview?.payload
             )
             await Self.remoteIDs.remove(request.jobID)
             return created.sessionID
@@ -213,6 +216,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
                     remoteSessionID: request.remoteSessionID,
                     startPipeline: true,
                     prepareMedia: false,
+                    sourcePreview: request.sourcePreview,
                     client: client,
                     clientRequestID: request.jobID.uuidString.lowercased(),
                     onSessionCreated: { remoteID in
@@ -353,6 +357,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
         remoteSessionID: UUID?,
         startPipeline: Bool,
         prepareMedia: Bool = false,
+        sourcePreview: TranscriptionSourcePreview? = nil,
         clientRequestID: String,
         onSessionCreated: @escaping @Sendable (UUID) async throws -> Void,
         onProgress: @escaping @Sendable (Double, String) -> Void
@@ -369,6 +374,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
             remoteSessionID: remoteSessionID,
             startPipeline: startPipeline,
             prepareMedia: prepareMedia,
+            sourcePreview: sourcePreview,
             client: client,
             clientRequestID: clientRequestID,
             onSessionCreated: onSessionCreated,
@@ -388,6 +394,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
         remoteSessionID: UUID?,
         startPipeline: Bool,
         prepareMedia: Bool,
+        sourcePreview: TranscriptionSourcePreview?,
         client: VoxellaAPIClient,
         clientRequestID: String,
         onSessionCreated: @escaping @Sendable (UUID) async throws -> Void,
@@ -494,7 +501,8 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
             mimeType: mimeType,
             filename: originalFilename,
             startPipeline: startPipeline,
-            prepareMedia: prepareMedia
+            prepareMedia: prepareMedia,
+            sourcePreview: sourcePreview?.payload
         )
         if startPipeline {
             try await confirmPipelineStarted(

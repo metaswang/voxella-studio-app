@@ -123,13 +123,21 @@ struct VoxellaUploadStatus: Decodable, Sendable {
 
 struct VoxellaSessionDetail: Decodable, Sendable {
     var id: UUID
+    var sourceType: String?
     var status: String?
     var currentStage: String?
     var resultReady: Bool?
     var message: String?
     var title: String?
+    var summary: String?
     var sourceLanguage: String?
     var originalFilename: String?
+    var durationSec: Double?
+    var hasVideo: Bool?
+    var mediaType: String?
+    var posterURL: String?
+    var createdAt: Date?
+    var updatedAt: Date?
     var artifacts: [String: VoxellaJSONValue]?
     var options: VoxellaSessionOptions?
     var dubSegments: [VoxellaDubSegment]
@@ -157,13 +165,21 @@ struct VoxellaSessionDetail: Decodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id
         case sessionID = "session_id"
+        case sourceType = "source_type"
         case status
         case currentStage = "current_stage"
         case resultReady = "result_ready"
         case message
         case title
+        case summary
         case sourceLanguage = "source_language"
         case originalFilename = "original_filename"
+        case durationSec = "duration_sec"
+        case hasVideo = "has_video"
+        case mediaType = "media_type"
+        case posterURL = "poster_url"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
         case artifacts
         case options
         case dubSegments = "dub_segments"
@@ -176,17 +192,52 @@ struct VoxellaSessionDetail: Decodable, Sendable {
         } else {
             self.id = try container.decode(UUID.self, forKey: .sessionID)
         }
+        sourceType = try container.decodeIfPresent(String.self, forKey: .sourceType)
         status = try container.decodeIfPresent(String.self, forKey: .status)
         currentStage = try container.decodeIfPresent(String.self, forKey: .currentStage)
         resultReady = try container.decodeIfPresent(Bool.self, forKey: .resultReady)
         message = try container.decodeIfPresent(String.self, forKey: .message)
         title = try container.decodeIfPresent(String.self, forKey: .title)
+        summary = try container.decodeIfPresent(String.self, forKey: .summary)
         sourceLanguage = try container.decodeIfPresent(String.self, forKey: .sourceLanguage)
         originalFilename = try container.decodeIfPresent(String.self, forKey: .originalFilename)
+        durationSec = try container.decodeIfPresent(Double.self, forKey: .durationSec)
+        hasVideo = try container.decodeIfPresent(Bool.self, forKey: .hasVideo)
+        mediaType = try container.decodeIfPresent(String.self, forKey: .mediaType)
+        posterURL = try container.decodeIfPresent(String.self, forKey: .posterURL)
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt).flatMap(Self.parseDate)
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt).flatMap(Self.parseDate)
         artifacts = try container.decodeIfPresent([String: VoxellaJSONValue].self, forKey: .artifacts)
         options = try container.decodeIfPresent(VoxellaSessionOptions.self, forKey: .options)
         dubSegments = try container.decodeIfPresent([VoxellaDubSegment].self, forKey: .dubSegments) ?? []
     }
+
+    private static func parseDate(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: value) ?? {
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter.date(from: value)
+        }()
+    }
+}
+
+struct VoxellaSessionListResponse: Decodable, Sendable {
+    let items: [VoxellaSessionDetail]
+    let nextCursor: String?
+
+    enum CodingKeys: String, CodingKey {
+        case items
+        case nextCursor = "next_cursor"
+    }
+}
+
+struct VoxellaSessionRenderingData: Sendable {
+    let detail: VoxellaSessionDetail
+    let transcriptSegments: [VoxellaTranscriptSegment]
+    let subtitleCues: [VoxellaSubtitleCue]
+    let mediaPlaybackURL: URL?
+    let mediaHasVideo: Bool
 }
 
 struct VoxellaDubSegment: Decodable, Sendable {
@@ -323,6 +374,8 @@ struct VoxellaDubAudioPlayback: Decodable, Sendable {
     }
 }
 
+typealias VoxellaMediaPlayback = VoxellaDubAudioPlayback
+
 struct VoxellaDubReferenceAudio: Decodable, Sendable {
     let id: UUID
     let r2ObjectKey: String
@@ -339,9 +392,13 @@ struct VoxellaDubReferenceAudio: Decodable, Sendable {
 
 struct VoxellaSessionOptions: Decodable, Sendable {
     let clientCompute: RemoteClientCompute?
+    let recordHasVideo: Bool?
+    let uploadHasVideo: Bool?
 
     enum CodingKeys: String, CodingKey {
         case clientCompute = "client_compute"
+        case recordHasVideo = "record_has_video"
+        case uploadHasVideo = "upload_has_video"
     }
 }
 
@@ -435,6 +492,20 @@ struct VoxellaTranscriptSegment: Decodable, Sendable {
     var text: String
     var speakerLabel: String?
     var words: [VoxellaTranscriptWord]
+
+    init(
+        startS: Double,
+        endS: Double,
+        text: String,
+        speakerLabel: String? = nil,
+        words: [VoxellaTranscriptWord] = []
+    ) {
+        self.startS = startS
+        self.endS = endS
+        self.text = text
+        self.speakerLabel = speakerLabel
+        self.words = words
+    }
 
     enum CodingKeys: String, CodingKey {
         case startS = "start_s"
@@ -661,6 +732,125 @@ actor VoxellaAPIClient {
             url: VoxellaAPIConfiguration.apiURL("api/v1/billing/balance"),
             method: "GET",
             as: VoxellaBillingBalance.self
+        )
+    }
+
+    func beginGoogleCalendarConnection(redirectURI: String) async throws -> VoxellaCalendarOAuthStart {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/integrations/google-calendar/connect"),
+            method: "POST",
+            json: ["redirect_uri": redirectURI],
+            as: VoxellaCalendarOAuthStart.self
+        )
+    }
+
+    func finishGoogleCalendarConnection(
+        code: String,
+        state: String,
+        redirectURI: String,
+        codeVerifier: String
+    ) async throws -> VoxellaGoogleCalendarStatus {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/integrations/google-calendar/exchange"),
+            method: "POST",
+            json: [
+                "code": code,
+                "state": state,
+                "redirect_uri": redirectURI,
+                "code_verifier": codeVerifier,
+            ],
+            as: VoxellaGoogleCalendarExchangeResponse.self
+        ).integration
+    }
+
+    func googleCalendarStatus() async throws -> VoxellaGoogleCalendarStatus {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/integrations/google-calendar/status"),
+            method: "GET",
+            as: VoxellaGoogleCalendarStatus.self
+        )
+    }
+
+    func googleCalendarMeetings(search: String? = nil) async throws -> [VoxellaGoogleCalendarMeeting] {
+        var components = URLComponents(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/google-calendar/meetings"),
+            resolvingAgainstBaseURL: false
+        )!
+        if let search = search?.trimmingCharacters(in: .whitespacesAndNewlines), !search.isEmpty {
+            components.queryItems = [URLQueryItem(name: "q", value: search)]
+        }
+        guard let url = components.url else { throw VoxellaAPIError.decoding }
+        let response = try await request(
+            url: url,
+            method: "GET",
+            as: VoxellaGoogleCalendarMeetingListResponse.self
+        )
+        return response.items
+    }
+
+    func setGoogleCalendarMeeting(id: UUID, enabled: Bool) async throws -> VoxellaGoogleCalendarMeetingActionResponse {
+        let action = enabled ? "enable" : "disable"
+        return try await request(
+            url: VoxellaAPIConfiguration.apiURL(
+                "api/v1/google-calendar/meetings/\(VoxellaAPIConfiguration.apiIdentifier(id))/\(action)"
+            ),
+            method: "POST",
+            json: [:],
+            as: VoxellaGoogleCalendarMeetingActionResponse.self
+        )
+    }
+
+    func retryGoogleCalendarMeeting(id: UUID) async throws -> VoxellaGoogleCalendarMeetingActionResponse {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL(
+                "api/v1/google-calendar/meetings/\(VoxellaAPIConfiguration.apiIdentifier(id))/retry"
+            ),
+            method: "POST",
+            json: [:],
+            as: VoxellaGoogleCalendarMeetingActionResponse.self
+        )
+    }
+
+    func updateGoogleCalendarRules(_ rules: VoxellaGoogleCalendarRules) async throws -> VoxellaGoogleCalendarStatus {
+        let data = try JSONEncoder().encode(rules)
+        let object = try JSONSerialization.jsonObject(with: data)
+        guard let json = object as? [String: Any] else { throw VoxellaAPIError.decoding }
+        return try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/integrations/google-calendar/rules"),
+            method: "PUT",
+            json: json,
+            as: VoxellaGoogleCalendarStatus.self
+        )
+    }
+
+    func disconnectGoogleCalendar() async throws {
+        struct Empty: Decodable {}
+        _ = try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/integrations/google-calendar"),
+            method: "DELETE",
+            as: Empty.self
+        )
+    }
+
+    func manualMeetBotJoin(
+        meetingURL: String,
+        title: String?,
+        botName: String,
+        recordScreen: Bool
+    ) async throws -> VoxellaMeetBotJoinResponse {
+        var body: [String: Any] = [
+            "meeting_url": meetingURL,
+            "bot_name": botName,
+            "record_screen": recordScreen,
+        ]
+        if let title, !title.isEmpty {
+            body["title"] = title
+        }
+        return try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/meet-bot/manual-join"),
+            method: "POST",
+            json: body,
+            as: VoxellaMeetBotJoinResponse.self
         )
     }
 
@@ -1078,7 +1268,8 @@ actor VoxellaAPIClient {
         mimeType: String,
         filename: String,
         startPipeline: Bool,
-        prepareMedia: Bool = false
+        prepareMedia: Bool = false,
+        sourcePreview: [String: String]? = nil
     ) async throws -> VoxellaUploadCompleteResponse {
         var body: [String: Any] = [
             "start_pipeline": startPipeline,
@@ -1094,8 +1285,15 @@ actor VoxellaAPIClient {
         if !optionsOverride.isEmpty {
             body["options_override"] = optionsOverride
         }
+        var clientMeta: [String: Any] = [:]
         if optionsOverride["upload_has_video"] as? Bool == true {
-            body["client_meta"] = ["upload_has_video": true]
+            clientMeta["upload_has_video"] = true
+        }
+        if let sourcePreview {
+            clientMeta["source_preview"] = sourcePreview
+        }
+        if !clientMeta.isEmpty {
+            body["client_meta"] = clientMeta
         }
         return try await request(
             url: VoxellaAPIConfiguration.sessionURL(sessionID).appending(path: "upload-complete"),
@@ -1121,6 +1319,89 @@ actor VoxellaAPIClient {
             method: "GET",
             as: VoxellaSessionDetail.self
         )
+    }
+
+    func listSessions(cursor: String? = nil, limit: Int = 100) async throws -> VoxellaSessionListResponse {
+        var components = URLComponents(
+            url: VoxellaAPIConfiguration.sessionsURL,
+            resolvingAgainstBaseURL: false
+        )!
+        var queryItems = [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 100)))]
+        if let cursor, !cursor.isEmpty {
+            queryItems.append(URLQueryItem(name: "cursor", value: cursor))
+        }
+        components.queryItems = queryItems
+        return try await request(
+            url: components.url ?? VoxellaAPIConfiguration.sessionsURL,
+            method: "GET",
+            as: VoxellaSessionListResponse.self
+        )
+    }
+
+    func sessionRenderingData(_ sessionID: UUID) async throws -> VoxellaSessionRenderingData {
+        let detail = try await sessionDetail(sessionID, includeDubSegments: true)
+        let mediaHasVideo = detail.hasVideo == true
+            || detail.options?.recordHasVideo == true
+            || detail.options?.uploadHasVideo == true
+        guard VoxellaSessionReadiness.isResultReady(
+            status: detail.status,
+            currentStage: detail.currentStage,
+            resultReady: detail.resultReady
+        ) else {
+            return VoxellaSessionRenderingData(
+                detail: detail,
+                transcriptSegments: [],
+                subtitleCues: [],
+                mediaPlaybackURL: nil,
+                mediaHasVideo: mediaHasVideo
+            )
+        }
+        async let transcriptSegments = transcriptSegments(sessionID)
+        async let subtitleCues: [VoxellaSubtitleCue] = (try? await subtitleCues(sessionID)) ?? []
+        async let mediaPlaybackURL = try? await mediaPlaybackURL(
+            sessionID: sessionID,
+            media: mediaHasVideo ? "video" : "audio",
+            variant: "original"
+        )
+        return try await VoxellaSessionRenderingData(
+            detail: detail,
+            transcriptSegments: transcriptSegments,
+            subtitleCues: subtitleCues,
+            mediaPlaybackURL: mediaPlaybackURL,
+            mediaHasVideo: mediaHasVideo
+        )
+    }
+
+    func mediaPlaybackURL(
+        sessionID: UUID,
+        media: String,
+        variant: String? = nil
+    ) async throws -> URL {
+        guard media == "audio" || media == "video" else {
+            throw VoxellaAPIError.decoding
+        }
+        var components = URLComponents(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/media/\(media)"),
+            resolvingAgainstBaseURL: false
+        )!
+        var queryItems = [URLQueryItem(
+            name: "session_id",
+            value: sessionID.uuidString
+        )]
+        if let variant, !variant.isEmpty, variant != "current" {
+            queryItems.append(URLQueryItem(name: "variant", value: variant))
+        }
+        components.queryItems = queryItems
+        let response = try await request(
+            url: components.url ?? VoxellaAPIConfiguration.apiURL("api/v1/media/\(media)"),
+            method: "GET",
+            as: VoxellaMediaPlayback.self
+        )
+        guard let url = URL(string: response.url),
+              url.scheme == "http" || url.scheme == "https" else {
+            throw VoxellaAPIError.decoding
+        }
+        return url
     }
 
     func transcriptSegments(_ sessionID: UUID) async throws -> [VoxellaTranscriptSegment] {
@@ -1204,10 +1485,13 @@ actor VoxellaAPIClient {
         translationTracks: [WorkbenchTranslationTrack],
         title: String? = nil,
         summary: String? = nil,
-        sessionTag: String? = nil
+        sessionTag: String? = nil,
+        sourcePreview: [String: String]? = nil
     ) async throws {
         struct Empty: Decodable {}
-        let canonicalResult = result.aggregatingSegments()
+        let canonicalResult = result
+            .aggregatingSegments()
+            .clearingInvalidWordTimings()
         var body: [String: Any] = [
             "source_language": canonicalResult.language as Any,
             "transcript_text": canonicalResult.text,
@@ -1230,6 +1514,9 @@ actor VoxellaAPIClient {
         if let sessionTag, !sessionTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             body["session_tag"] = sessionTag
         }
+        if let sourcePreview {
+            body["client_meta"] = ["source_preview": sourcePreview]
+        }
         _ = try await request(
             url: VoxellaAPIConfiguration.sessionURL(sessionID).appending(path: "client-results"),
             method: "POST",
@@ -1241,7 +1528,9 @@ actor VoxellaAPIClient {
     func syncDesktopSession(
         _ snapshot: CloudSessionSyncSnapshot
     ) async throws -> VoxellaDesktopSessionSyncResponse {
-        let canonicalResult = snapshot.result.aggregatingSegments()
+        let canonicalResult = snapshot.result
+            .aggregatingSegments()
+            .clearingInvalidWordTimings()
         let sourceLanguage = canonicalResult.language ?? snapshot.sourceLanguage
         let body: [String: Any] = [
             "content_kind": snapshot.contentKind.rawValue,

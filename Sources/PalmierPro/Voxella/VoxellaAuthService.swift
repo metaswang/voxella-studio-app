@@ -11,6 +11,7 @@ enum VoxellaAuthError: LocalizedError, Equatable, Sendable {
     case stateMismatch
     case tokenExchangeFailed(String)
     case refreshFailed
+    case refreshUnavailable
     case unauthorized
     case missingRefreshToken
     case browserUnavailable
@@ -30,6 +31,8 @@ enum VoxellaAuthError: LocalizedError, Equatable, Sendable {
             message
         case .refreshFailed:
             "VoxStudio sign-in expired. Sign in again to continue."
+        case .refreshUnavailable:
+            "VoxStudio could not restore your session. Check your connection and try again."
         case .unauthorized:
             "VoxStudio sign-in is required for this task."
         case .missingRefreshToken:
@@ -549,8 +552,13 @@ actor VoxellaAuthService {
                 try? self.deleteRefresh()
                 self.clearMemoryTokens()
                 throw VoxellaAuthError.refreshFailed
-            } catch {
+            } catch VoxellaAuthError.refreshFailed {
+                self.clearMemoryTokens()
                 throw VoxellaAuthError.refreshFailed
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw VoxellaAuthError.refreshUnavailable
             }
         }
         refreshTask = task
@@ -575,11 +583,11 @@ actor VoxellaAuthService {
     }
 
     private func store(_ pair: VoxellaAuthTokens) throws {
-        accessToken = pair.accessToken
-        accessExpiresAt = pair.expiresAt
         if let refresh = pair.refreshToken, !refresh.isEmpty {
             try saveRefresh(refresh)
         }
+        accessToken = pair.accessToken
+        accessExpiresAt = pair.expiresAt
     }
 
     private func clearMemoryTokens() {

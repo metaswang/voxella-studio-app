@@ -89,6 +89,7 @@ enum AppTheme {
         static let primary = Color(primaryNSColor)
 
         static let link = Color(nsColor: .linkColor)
+        static let meetingBotBadge = Color(red: 0.75, green: 0.86, blue: 1.0)
 
         /// Vibrant highlight used by the onboarding tour spotlight.
         static let spotlight = Color(red: 1.0, green: 0.27, blue: 0.27)
@@ -493,6 +494,9 @@ enum AppTheme {
         static let sessionSplitDividerHitWidth: CGFloat = 12
         static let sessionVideoMinHeight: CGFloat = 360
         static let sessionVideoIdealHeight: CGFloat = 480
+        static let netVideoCardWidth: CGFloat = 360
+        static let netVideoCardHeight: CGFloat = 260
+        static let netVideoCardCollapsedHeight: CGFloat = 48
         static let clipPreviewMaxHeight: CGFloat = 220
         static let clipTimelineHeight: CGFloat = 28
         static let clipHandleSize: CGFloat = 14
