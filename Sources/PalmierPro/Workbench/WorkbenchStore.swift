@@ -820,6 +820,53 @@ enum WorkbenchSessionSource: String, Sendable {
     case standaloneDub
 }
 
+enum WorkbenchSessionType: String, Sendable {
+    case upload
+    case netVideo = "net_video"
+    case record
+    case live
+    case meetingRecord = "meeting_record"
+    case googleMeet = "google_meet"
+    case dub
+
+    init(sourceType: String?, isDub: Bool = false) {
+        if isDub {
+            self = .dub
+            return
+        }
+        let normalized = sourceType?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        self = WorkbenchSessionType(rawValue: normalized ?? "") ?? .upload
+    }
+
+    var label: String {
+        switch self {
+        case .upload: "Upload Transcribe"
+        case .netVideo: "Net Video Transcribe"
+        case .record: "Record Transcribe"
+        case .live: "Live Transcribe"
+        case .meetingRecord: "Meeting"
+        case .googleMeet: "Google Meet"
+        case .dub: "AI Voiceover"
+        }
+    }
+
+    var navGlyph: WorkbenchNavGlyph {
+        switch self {
+        case .upload: .captions
+        case .netVideo: .squarePlay
+        case .record: .system("mic")
+        case .live: .system("dot.radiowaves.left.and.right")
+        case .meetingRecord, .googleMeet: .meetBot
+        case .dub: .voiceover
+        }
+    }
+
+    /// Shown in Recent session metadata. Upload omits a type label (icon is enough).
+    var showsRecentListLabel: Bool {
+        self != .upload
+    }
+}
+
 enum WorkbenchNetVideoPlatform: String, Sendable {
     case youtube
     case gettr
@@ -843,6 +890,7 @@ struct WorkbenchSession: Identifiable, Sendable {
     var modifiedAt: Date
     var state: WorkbenchJobState
     var source: WorkbenchSessionSource
+    var sessionType: WorkbenchSessionType
     var transcriptionID: UUID?
     var dubID: UUID?
     var sourceURL: URL?
@@ -1171,6 +1219,7 @@ final class WorkbenchStore {
                 modifiedAt: max(job.modifiedAt, dub?.modifiedAt ?? job.modifiedAt),
                 state: Self.combinedState(primary: job.state, secondary: dub?.state),
                 source: .media,
+                sessionType: job.netVideoSourceURL == nil ? .upload : .netVideo,
                 transcriptionID: job.id,
                 dubID: dub?.id,
                 sourceURL: job.sourceURL,
@@ -1210,6 +1259,7 @@ final class WorkbenchStore {
                 modifiedAt: job.modifiedAt,
                 state: job.state,
                 source: .standaloneDub,
+                sessionType: .dub,
                 transcriptionID: nil,
                 dubID: job.id,
                 sourceURL: nil,
@@ -4781,9 +4831,7 @@ final class WorkbenchStore {
         mediaPlaybackURL: URL? = nil,
         mediaHasVideo: Bool = false
     ) -> WorkbenchSession {
-        let resolvedMediaHasVideo = mediaHasVideo
-            || detail.hasVideo == true
-            || detail.mediaType?.lowercased() == "video"
+        let resolvedMediaHasVideo = mediaHasVideo || Self.remoteSessionHasVideo(detail)
         let transcript = Self.remoteTranscript(
             segments: transcriptSegments,
             language: detail.sourceLanguage
@@ -4831,6 +4879,7 @@ final class WorkbenchStore {
             modifiedAt: detail.updatedAt ?? detail.createdAt ?? Date(),
             state: Self.remoteState(status: detail.status, resultReady: detail.resultReady),
             source: isDub ? .standaloneDub : .media,
+            sessionType: WorkbenchSessionType(sourceType: detail.sourceType, isDub: isDub),
             transcriptionID: nil,
             dubID: nil,
             sourceURL: nil,
@@ -4856,9 +4905,39 @@ final class WorkbenchStore {
             cloudSyncError: nil,
             remoteSourcePlaybackURL: mediaPlaybackURL,
             remoteSourceHasVideo: resolvedMediaHasVideo,
-            remoteSourcePosterURL: remoteMediaURL(detail.posterURL),
+            remoteSourcePosterURL: remotePosterURL(for: detail),
             netVideoSource: netVideoSource
         )
+    }
+
+    private nonisolated static func remoteSessionHasVideo(_ detail: VoxellaSessionDetail) -> Bool {
+        if detail.hasVideo == true || detail.mediaType?.lowercased() == "video" {
+            return true
+        }
+        if detail.sourceType?.lowercased() == WorkbenchSessionType.netVideo.rawValue {
+            return true
+        }
+        if detail.options?.recordHasVideo == true || detail.options?.uploadHasVideo == true {
+            return true
+        }
+        let artifacts = detail.artifacts ?? [:]
+        let videoFlags = [
+            "record_has_video", "upload_has_video", "hls_m3u8", "hls_m3u8_path",
+            "source_video_hls_path", "meeting_bot_recording_video"
+        ]
+        if videoFlags.contains(where: { isTruthy(artifacts[$0]) }) {
+            return true
+        }
+        return artifacts["source_preview"]?.objectValue != nil
+    }
+
+    private nonisolated static func isTruthy(_ value: VoxellaJSONValue?) -> Bool {
+        switch value {
+        case .bool(let value): value
+        case .number(let value): value != 0
+        case .string(let value): ["true", "1"].contains(value.lowercased())
+        default: false
+        }
     }
 
     private nonisolated static func localNetVideoSource(
@@ -4959,9 +5038,37 @@ final class WorkbenchStore {
     }
 
     private nonisolated static func remoteMediaURL(_ value: String?) -> URL? {
-        if let absolute = remoteHTTPURL(value) { return absolute }
-        guard let value, value.hasPrefix("/") else { return nil }
-        return VoxellaAPIConfiguration.baseURL.appending(path: value)
+        guard let value else { return nil }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return nil }
+        if let absolute = remoteHTTPURL(normalized) { return absolute }
+        if normalized.hasPrefix("//") {
+            return remoteHTTPURL("https:\(normalized)")
+        }
+        let path = normalized.hasPrefix("/") ? normalized : "/\(normalized)"
+        if path.hasPrefix("/static/img/") {
+            return URL(string: "https://assets.voxstudio.me")?.appending(path: path)
+        }
+        return VoxellaAPIConfiguration.baseURL.appending(path: path)
+    }
+
+    private nonisolated static func remotePosterURL(for detail: VoxellaSessionDetail) -> URL? {
+        let artifactKeys = [
+            "poster_url", "cover_url", "cover_path", "session_cover_url",
+            "net_video_embed_probe_poster_url"
+        ]
+        let candidates = [detail.posterURL, detail.coverPath]
+            + artifactKeys.map { detail.artifacts?[$0]?.stringValue }
+        for candidate in candidates {
+            if let url = remoteMediaURL(candidate) {
+                return url
+            }
+        }
+
+        guard let uploadPath = detail.uploadPath else { return nil }
+        let components = uploadPath.split(separator: "/").map(String.init)
+        guard components.count >= 3, components[0] == "customer_audio" else { return nil }
+        return remoteMediaURL("/static/img/sessions/\(components[1])/\(detail.id.uuidString.lowercased())/cover.webp")
     }
 
     private nonisolated static func netVideoPlatform(

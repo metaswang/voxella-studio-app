@@ -136,6 +136,8 @@ struct VoxellaSessionDetail: Decodable, Sendable {
     var hasVideo: Bool?
     var mediaType: String?
     var posterURL: String?
+    var coverPath: String?
+    var uploadPath: String?
     var createdAt: Date?
     var updatedAt: Date?
     var artifacts: [String: VoxellaJSONValue]?
@@ -178,6 +180,8 @@ struct VoxellaSessionDetail: Decodable, Sendable {
         case hasVideo = "has_video"
         case mediaType = "media_type"
         case posterURL = "poster_url"
+        case coverPath = "cover_path"
+        case uploadPath = "upload_path"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case artifacts
@@ -205,6 +209,8 @@ struct VoxellaSessionDetail: Decodable, Sendable {
         hasVideo = try container.decodeIfPresent(Bool.self, forKey: .hasVideo)
         mediaType = try container.decodeIfPresent(String.self, forKey: .mediaType)
         posterURL = try container.decodeIfPresent(String.self, forKey: .posterURL)
+        coverPath = try container.decodeIfPresent(String.self, forKey: .coverPath)
+        uploadPath = try container.decodeIfPresent(String.self, forKey: .uploadPath)
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt).flatMap(Self.parseDate)
         updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt).flatMap(Self.parseDate)
         artifacts = try container.decodeIfPresent([String: VoxellaJSONValue].self, forKey: .artifacts)

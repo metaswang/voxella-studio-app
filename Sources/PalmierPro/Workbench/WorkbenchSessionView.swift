@@ -120,14 +120,23 @@ private struct SessionListRow: View {
     var body: some View {
         Button(action: onOpen) {
             HStack(spacing: AppTheme.Spacing.lgXl) {
-                WorkbenchSessionThumbnail(session: session)
+                WorkbenchSessionThumbnail(
+                    session: session,
+                    size: CGSize(
+                        width: AppTheme.Workbench.recentSessionThumbnailWidth,
+                        height: AppTheme.Workbench.recentSessionThumbnailHeight
+                    ),
+                    showsTypeBadge: true
+                )
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                     Text(session.title)
                         .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
                         .foregroundStyle(AppTheme.Text.primaryColor)
                         .lineLimit(1)
                     HStack(spacing: AppTheme.Spacing.smMd) {
-                        Text(sessionKind(session))
+                        if session.sessionType.showsRecentListLabel {
+                            Text(session.sessionType.label)
+                        }
                         if let duration = session.duration {
                             Text(formatTime(duration))
                         }
@@ -205,10 +214,6 @@ private struct SessionListRow: View {
         .animation(.easeInOut(duration: AppTheme.Anim.hover), value: isHovered)
     }
 
-    private func sessionKind(_ session: WorkbenchSession) -> String {
-        if session.source == .standaloneDub { return "Dub" }
-        return session.hasDub ? "Transcript + Dub" : "Transcript"
-    }
 }
 
 private struct SessionPlacementIndicators: View {

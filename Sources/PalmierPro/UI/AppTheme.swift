@@ -519,6 +519,8 @@ enum AppTheme {
         static let searchWidth: CGFloat = 260
         static let revisionPickerWidth: CGFloat = 190
         static let sessionIconSize: CGFloat = 44
+        static let recentSessionThumbnailWidth: CGFloat = 76
+        static let recentSessionThumbnailHeight: CGFloat = 52
         static let fullscreenControlSize: CGFloat = 48
         static let fullscreenChromeIdle: Duration = .seconds(3)
         static let fullscreenSeekStepSeconds: Double = 5

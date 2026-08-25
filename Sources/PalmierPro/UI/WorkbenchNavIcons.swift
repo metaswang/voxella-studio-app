@@ -36,11 +36,13 @@ enum WorkbenchBrandIcon {
 }
 
 /// Custom workbench nav glyphs aligned with `voxella-web` `Sidebar.tsx`
-/// (`transcriptionIcon` / `voiceoverIcon`).
+/// (`transcriptionIcon` / `voiceoverIcon` / `MeetingIcon`) and Lucide session icons.
 enum WorkbenchNavGlyph: Hashable {
     case transcription
     case meetBot
     case voiceover
+    case captions
+    case squarePlay
     case system(String)
 
     @ViewBuilder
@@ -55,6 +57,12 @@ enum WorkbenchNavGlyph: Hashable {
         case .voiceover:
             VoiceoverNavIcon()
                 .frame(width: size, height: size)
+        case .captions:
+            CaptionsNavIcon()
+                .frame(width: size, height: size)
+        case .squarePlay:
+            SquarePlayNavIcon()
+                .frame(width: size, height: size)
         case .system(let name):
             Image(systemName: name)
                 .font(.system(size: size * 0.85, weight: .medium))
@@ -63,73 +71,135 @@ enum WorkbenchNavGlyph: Hashable {
     }
 }
 
-/// Calendar with a bot badge — ported from web `MeetingIcon.tsx`.
+/// Calendar with a bot badge — ported from web `MeetingIcon.tsx` (512 viewBox).
 private struct MeetingNavIcon: View {
     var body: some View {
         GeometryReader { geo in
-            let scale = min(geo.size.width, geo.size.height) / 24
+            // Web SVG is 512×512; normalize to the view's shorter edge.
+            let s = min(geo.size.width, geo.size.height) / 512
             Canvas { context, _ in
-                let stroke = StrokeStyle(lineWidth: 1.0 * scale, lineCap: .round, lineJoin: .round)
-                let calendar = CGRect(x: 2.6 * scale, y: 3.4 * scale, width: 15 * scale, height: 15 * scale)
-                let header = CGRect(x: 2.6 * scale, y: 3.4 * scale, width: 15 * scale, height: 3.4 * scale)
+                let calendarStroke = StrokeStyle(lineWidth: 20 * s, lineCap: .round, lineJoin: .round)
+                let calendar = CGRect(x: 56 * s, y: 72 * s, width: 320 * s, height: 320 * s)
+                let header = CGRect(x: 56 * s, y: 72 * s, width: 320 * s, height: 88 * s)
+                let corner = CGSize(width: 40 * s, height: 40 * s)
 
-                context.fill(
-                    Path(roundedRect: calendar, cornerSize: CGSize(width: 1.8 * scale, height: 1.8 * scale)),
-                    with: .color(AppTheme.Background.surfaceColor)
-                )
-                context.fill(
-                    Path(roundedRect: header, cornerSize: CGSize(width: 1.8 * scale, height: 1.8 * scale)),
-                    with: .color(AppTheme.Background.raisedColor)
-                )
-                context.stroke(
-                    Path(roundedRect: calendar, cornerSize: CGSize(width: 1.8 * scale, height: 1.8 * scale)),
-                    with: .foreground,
-                    style: stroke
-                )
+                context.fill(Path(roundedRect: calendar, cornerSize: corner), with: .color(AppTheme.Background.surfaceColor))
+                context.fill(Path(roundedRect: header, cornerSize: corner), with: .color(AppTheme.Background.raisedColor))
+                context.stroke(Path(roundedRect: calendar, cornerSize: corner), with: .foreground, style: calendarStroke)
 
                 var binding = Path()
-                binding.move(to: CGPoint(x: 6.4 * scale, y: 2.3 * scale))
-                binding.addLine(to: CGPoint(x: 6.4 * scale, y: 5.3 * scale))
-                binding.move(to: CGPoint(x: 13.9 * scale, y: 2.3 * scale))
-                binding.addLine(to: CGPoint(x: 13.9 * scale, y: 5.3 * scale))
-                context.stroke(binding, with: .foreground, style: StrokeStyle(lineWidth: 1.1 * scale, lineCap: .round))
+                binding.move(to: CGPoint(x: 136 * s, y: 48 * s))
+                binding.addLine(to: CGPoint(x: 136 * s, y: 112 * s))
+                binding.move(to: CGPoint(x: 296 * s, y: 48 * s))
+                binding.addLine(to: CGPoint(x: 296 * s, y: 112 * s))
+                context.stroke(binding, with: .foreground, style: StrokeStyle(lineWidth: 24 * s, lineCap: .round))
 
                 var cells = Path()
-                for row in 0..<2 {
-                    for column in 0..<3 {
-                        let x = (5.2 + Double(column) * 3.2) * scale
-                        let y = (8.2 + Double(row) * 3.2) * scale
-                        cells.addRoundedRect(
-                            in: CGRect(x: x, y: y, width: 1.2 * scale, height: 1.2 * scale),
-                            cornerSize: CGSize(width: 0.3 * scale, height: 0.3 * scale)
-                        )
-                    }
+                for (x, y) in [
+                    (104.0, 196.0), (168.0, 196.0), (232.0, 196.0),
+                    (104.0, 260.0), (168.0, 260.0), (232.0, 260.0),
+                ] {
+                    cells.addRoundedRect(
+                        in: CGRect(x: x * s, y: y * s, width: 44 * s, height: 44 * s),
+                        cornerSize: CGSize(width: 10 * s, height: 10 * s)
+                    )
                 }
                 context.fill(cells, with: .foreground)
 
-                let badge = CGRect(x: 9.3 * scale, y: 9.0 * scale, width: 6.1 * scale, height: 4.7 * scale)
+                // Lucide Bot badge: translate(160,152) scale(14.5) in the web SVG.
+                let botScale = 14.5 * s
+                let botOrigin = CGPoint(x: 160 * s, y: 152 * s)
+                func botPoint(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                    CGPoint(x: botOrigin.x + x * botScale, y: botOrigin.y + y * botScale)
+                }
+                let botBody = CGRect(
+                    x: botOrigin.x + 4 * botScale,
+                    y: botOrigin.y + 8 * botScale,
+                    width: 16 * botScale,
+                    height: 12 * botScale
+                )
                 context.fill(
-                    Path(roundedRect: badge, cornerSize: CGSize(width: 1.0 * scale, height: 1.0 * scale)),
+                    Path(roundedRect: botBody, cornerSize: CGSize(width: 2 * botScale, height: 2 * botScale)),
                     with: .color(AppTheme.Accent.meetingBotBadge)
                 )
                 context.stroke(
-                    Path(roundedRect: badge, cornerSize: CGSize(width: 1.0 * scale, height: 1.0 * scale)),
+                    Path(roundedRect: botBody, cornerSize: CGSize(width: 2 * botScale, height: 2 * botScale)),
                     with: .foreground,
-                    style: StrokeStyle(lineWidth: 0.8 * scale, lineCap: .round, lineJoin: .round)
+                    style: StrokeStyle(lineWidth: 2 * botScale, lineCap: .round, lineJoin: .round)
                 )
 
                 var bot = Path()
-                bot.move(to: CGPoint(x: 12.35 * scale, y: 8.8 * scale))
-                bot.addLine(to: CGPoint(x: 12.35 * scale, y: 9.5 * scale))
-                bot.move(to: CGPoint(x: 11.0 * scale, y: 11.0 * scale))
-                bot.addLine(to: CGPoint(x: 11.0 * scale, y: 12.0 * scale))
-                bot.move(to: CGPoint(x: 13.7 * scale, y: 11.0 * scale))
-                bot.addLine(to: CGPoint(x: 13.7 * scale, y: 12.0 * scale))
-                bot.move(to: CGPoint(x: 8.9 * scale, y: 11.4 * scale))
-                bot.addLine(to: CGPoint(x: 9.3 * scale, y: 11.4 * scale))
-                bot.move(to: CGPoint(x: 15.4 * scale, y: 11.4 * scale))
-                bot.addLine(to: CGPoint(x: 15.8 * scale, y: 11.4 * scale))
-                context.stroke(bot, with: .foreground, style: StrokeStyle(lineWidth: 0.7 * scale, lineCap: .round, lineJoin: .round))
+                bot.move(to: botPoint(12, 8))
+                bot.addLine(to: botPoint(12, 4))
+                bot.addLine(to: botPoint(8, 4))
+                bot.move(to: botPoint(2, 14))
+                bot.addLine(to: botPoint(4, 14))
+                bot.move(to: botPoint(20, 14))
+                bot.addLine(to: botPoint(22, 14))
+                bot.move(to: botPoint(15, 13))
+                bot.addLine(to: botPoint(15, 15))
+                bot.move(to: botPoint(9, 13))
+                bot.addLine(to: botPoint(9, 15))
+                context.stroke(
+                    bot,
+                    with: .foreground,
+                    style: StrokeStyle(lineWidth: 2 * botScale, lineCap: .round, lineJoin: .round)
+                )
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// Lucide `Captions` — rectangle with caption bars.
+private struct CaptionsNavIcon: View {
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width, geo.size.height) / 24
+            Canvas { context, _ in
+                let stroke = StrokeStyle(lineWidth: 2 * s, lineCap: .round, lineJoin: .round)
+                context.stroke(
+                    Path(roundedRect: CGRect(x: 3 * s, y: 5 * s, width: 18 * s, height: 14 * s),
+                         cornerSize: CGSize(width: 2 * s, height: 2 * s)),
+                    with: .foreground,
+                    style: stroke
+                )
+                var bars = Path()
+                bars.move(to: CGPoint(x: 7 * s, y: 15 * s))
+                bars.addLine(to: CGPoint(x: 11 * s, y: 15 * s))
+                bars.move(to: CGPoint(x: 15 * s, y: 15 * s))
+                bars.addLine(to: CGPoint(x: 17 * s, y: 15 * s))
+                bars.move(to: CGPoint(x: 7 * s, y: 11 * s))
+                bars.addLine(to: CGPoint(x: 9 * s, y: 11 * s))
+                bars.move(to: CGPoint(x: 13 * s, y: 11 * s))
+                bars.addLine(to: CGPoint(x: 17 * s, y: 11 * s))
+                context.stroke(bars, with: .foreground, style: stroke)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// Lucide `SquarePlay` — rounded square with a play triangle.
+private struct SquarePlayNavIcon: View {
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width, geo.size.height) / 24
+            Canvas { context, _ in
+                let stroke = StrokeStyle(lineWidth: 2 * s, lineCap: .round, lineJoin: .round)
+                context.stroke(
+                    Path(roundedRect: CGRect(x: 3 * s, y: 3 * s, width: 18 * s, height: 18 * s),
+                         cornerSize: CGSize(width: 2 * s, height: 2 * s)),
+                    with: .foreground,
+                    style: stroke
+                )
+                // Lucide play triangle (approximate the rounded tip with a filled path).
+                var play = Path()
+                play.move(to: CGPoint(x: 9 * s, y: 8.5 * s))
+                play.addLine(to: CGPoint(x: 16 * s, y: 12 * s))
+                play.addLine(to: CGPoint(x: 9 * s, y: 15.5 * s))
+                play.closeSubpath()
+                context.fill(play, with: .foreground)
             }
         }
         .accessibilityHidden(true)

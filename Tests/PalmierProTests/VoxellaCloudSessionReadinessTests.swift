@@ -63,6 +63,36 @@ struct VoxellaCloudSessionReadinessTests {
         #expect(detail.artifacts?["net_video_embed_url"]?.stringValue == "https://www.ganjingworld.com/zh-CN/embed/abc")
     }
 
+    @Test(arguments: [
+        ("upload", "Upload Transcribe"),
+        ("net_video", "Net Video Transcribe"),
+        ("record", "Record Transcribe"),
+        ("live", "Live Transcribe"),
+        ("meeting_record", "Meeting"),
+        ("google_meet", "Google Meet"),
+        ("dub", "AI Voiceover"),
+    ])
+    func mapsWebRecentSourceTypesToNativeLabels(sourceType: String, label: String) {
+        #expect(WorkbenchSessionType(sourceType: sourceType).label == label)
+    }
+
+    @Test func sessionDetailDecodesWebPosterFallbackFields() throws {
+        let detail = try JSONDecoder().decode(VoxellaSessionDetail.self, from: Data("""
+        {
+          "session_id": "01a01c85-35aa-700b-85fd-31ba1e92fa20",
+          "source_type": "meeting_record",
+          "has_video": true,
+          "cover_path": "static/img/sessions/user-1/session-1/cover.webp",
+          "upload_path": "customer_audio/user-1/session-1/source.mp4",
+          "artifacts": {"source_preview": {"type": "video"}}
+        }
+        """.utf8))
+
+        #expect(detail.coverPath == "static/img/sessions/user-1/session-1/cover.webp")
+        #expect(detail.uploadPath == "customer_audio/user-1/session-1/source.mp4")
+        #expect(detail.hasVideo == true)
+    }
+
     @Test func completedSessionWaitsUntilTheBackendMarksResultsReady() {
         #expect(!VoxellaSessionReadiness.isResultReady(
             status: "completed",
