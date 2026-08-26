@@ -11,6 +11,7 @@ struct ProcessingOptionsSheet: View {
     var mode: Mode = .upload
     var initialOptions: LocalProcessingOptions?
     var initialPlacement: TranscriptionPlacement = .localDefault
+    var allowsCloudStorage = true
     var onPrepareCloud: ((TranscriptionPlacement) async -> CloudAccessPreparation)?
     let onCancel: () -> Void
     let onContinue: (TranscriptionSubmission) -> Void
@@ -21,6 +22,7 @@ struct ProcessingOptionsSheet: View {
     @State private var speakerCount: SpeakerCountOption = .auto
     @State private var enableClip = false
     @State private var clipRange: ClosedRange<Double> = 0...1
+    @State private var hasExplicitClipRange = false
     @State private var enableTranslation = false
     @State private var targetLanguageCode = ""
     @State private var didApplyInitialOptions = false
@@ -31,6 +33,7 @@ struct ProcessingOptionsSheet: View {
     @State private var mediaDurationSeconds: Double?
     @State private var cloudQuota: CloudTranscriptionQuota?
     @State private var isLoadingCloudQuota = false
+    @State private var highlightCloudClipLimit = false
     @Bindable private var models = LocalModelManager.shared
     @Bindable private var account = AccountService.shared
 
@@ -68,32 +71,46 @@ struct ProcessingOptionsSheet: View {
     }
 
     private var placement: TranscriptionPlacement {
-        TranscriptionPlacement(storage: storageDestination, compute: computeDestination)
+        TranscriptionPlacement(
+            storage: allowsCloudStorage ? storageDestination : .local,
+            compute: computeDestination
+        )
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            ScrollView {
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                    fileSummary
-                    if isSingleFile {
-                        titleField
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                        fileSummary
+                        if isSingleFile {
+                            titleField
+                        }
+                        languageField
+                        advancedToggle
+                        if showAdvanced {
+                            advancedSection
+                        }
+                        placementSection
+                        computeDetail
+                        if let cloudAccessError {
+                            Text(cloudAccessError)
+                                .font(.system(size: AppTheme.FontSize.xs))
+                                .foregroundStyle(AppTheme.Status.errorColor)
+                        }
                     }
-                    languageField
-                    advancedToggle
-                    if showAdvanced {
-                        advancedSection
-                    }
-                    placementSection
-                    computeDetail
-                    if let cloudAccessError {
-                        Text(cloudAccessError)
-                            .font(.system(size: AppTheme.FontSize.xs))
-                            .foregroundStyle(AppTheme.Status.errorColor)
-                    }
+                    .padding(AppTheme.Spacing.xl)
                 }
-                .padding(AppTheme.Spacing.xl)
+                .onChange(of: computeDestination) { _, _ in
+                    applyCloudDurationClipIfNeeded(proxy: proxy)
+                }
+                .onChange(of: mediaDurationSeconds) { _, _ in
+                    applyCloudDurationClipIfNeeded(proxy: proxy)
+                }
+                .onChange(of: clipRange) { _, newValue in
+                    clampCloudClipIfNeeded(newValue)
+                }
             }
             footer
         }
@@ -266,16 +283,27 @@ struct ProcessingOptionsSheet: View {
 
     private var clipSection: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            Toggle(isOn: $enableClip) {
-                Text("Clip (optional)")
-                    .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
+            Toggle(isOn: clipEnabledBinding) {
+                Text(requiresCloudDurationClip ? "Clip (required for cloud)" : "Clip (optional)")
+                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
             }
             .toggleStyle(.checkbox)
+            .disabled(requiresCloudDurationClip)
+            if requiresCloudDurationClip {
+                Text(RecordingDurationLimit.cloudClipNotice(isPaid: account.isPaid))
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Status.warningColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if enableClip {
                 Text("Select a time range. The session keeps only this portion.")
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
-                ClipRangeControl(mediaURL: mediaURLs[0], range: $clipRange)
+                ClipRangeControl(
+                    mediaURL: mediaURLs[0],
+                    range: $clipRange,
+                    expandsPlaceholderRange: !hasExplicitClipRange
+                )
                     .padding(AppTheme.Spacing.md)
                     .background(AppTheme.Background.baseColor.opacity(0.45), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
             }
@@ -284,8 +312,27 @@ struct ProcessingOptionsSheet: View {
         .background(AppTheme.Background.raisedColor.opacity(0.45), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: 1)
+                .strokeBorder(
+                    highlightCloudClipLimit ? AppTheme.Status.warningColor : AppTheme.Border.subtleColor,
+                    lineWidth: highlightCloudClipLimit ? AppTheme.BorderWidth.medium : AppTheme.BorderWidth.thin
+                )
         }
+        .id(AppTheme.Workbench.cloudClipAnchor)
+    }
+
+    private var clipEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { enableClip },
+            set: { newValue in
+                enableClip = requiresCloudDurationClip ? true : newValue
+            }
+        )
+    }
+
+    private var requiresCloudDurationClip: Bool {
+        guard !allowsCloudStorage, computeDestination == .cloud, isSingleFile else { return false }
+        guard let duration = mediaDurationSeconds else { return false }
+        return RecordingDurationLimit.exceedsLimit(duration, isPaid: account.isPaid)
     }
 
     private var translationSection: some View {
@@ -352,11 +399,13 @@ struct ProcessingOptionsSheet: View {
 
     private var placementSection: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-            cloudPlacementToggle(
-                title: TaskPlacementCopy.keepSessionTitle,
-                detail: "Keep an editable cloud session you can reopen on other devices.",
-                isOn: cloudStorageBinding
-            )
+            if allowsCloudStorage {
+                cloudPlacementToggle(
+                    title: TaskPlacementCopy.keepSessionTitle,
+                    detail: "Keep an editable cloud session you can reopen on other devices.",
+                    isOn: cloudStorageBinding
+                )
+            }
             cloudPlacementToggle(
                 title: TaskPlacementCopy.processWithTitle,
                 detail: "Transcribe without downloading models to this Mac.",
@@ -554,11 +603,12 @@ struct ProcessingOptionsSheet: View {
         enableTranslation = initialOptions.enableTranslation
             || !(initialOptions.normalizedTargetLanguageCode ?? "").isEmpty
         targetLanguageCode = initialOptions.normalizedTargetLanguageCode ?? ""
-        storageDestination = initialPlacement.storage
+        storageDestination = allowsCloudStorage ? initialPlacement.storage : .local
         computeDestination = initialPlacement.compute
         if let startMs = initialOptions.clipStartMs, let endMs = initialOptions.clipEndMs, endMs > startMs {
             enableClip = true
             clipRange = Double(startMs) / 1000 ... Double(endMs) / 1000
+            hasExplicitClipRange = true
             showAdvanced = true
         } else if enableTranslation {
             showAdvanced = true
@@ -578,6 +628,46 @@ struct ProcessingOptionsSheet: View {
             options.clipEndMs = Int((clipRange.upperBound * 1000).rounded())
         }
         return TranscriptionSubmission(options: options, placement: placement)
+    }
+
+    private func applyCloudDurationClipIfNeeded(proxy: ScrollViewProxy) {
+        guard requiresCloudDurationClip, let duration = mediaDurationSeconds else {
+            highlightCloudClipLimit = false
+            return
+        }
+        let clamped = RecordingDurationLimit.clampedClipRange(
+            duration: duration,
+            current: enableClip ? clipRange : nil,
+            isPaid: account.isPaid
+        )
+        let alreadyApplied =
+            showAdvanced
+            && enableClip
+            && clipRange == clamped
+            && highlightCloudClipLimit
+        guard !alreadyApplied else { return }
+        withAnimation(.easeInOut(duration: AppTheme.Anim.transition)) {
+            showAdvanced = true
+            enableClip = true
+            clipRange = clamped
+            highlightCloudClipLimit = true
+        } completion: {
+            withAnimation(.easeInOut(duration: AppTheme.Anim.transition)) {
+                proxy.scrollTo(AppTheme.Workbench.cloudClipAnchor, anchor: .center)
+            }
+        }
+    }
+
+    private func clampCloudClipIfNeeded(_ range: ClosedRange<Double>) {
+        guard requiresCloudDurationClip, let duration = mediaDurationSeconds else { return }
+        let clamped = RecordingDurationLimit.clampedClipRange(
+            duration: duration,
+            current: range,
+            isPaid: account.isPaid
+        )
+        if clamped != range {
+            clipRange = clamped
+        }
     }
 
     private var requestedCloudDurationSeconds: Double? {

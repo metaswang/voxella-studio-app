@@ -18,6 +18,7 @@ enum Log {
     static let generation = CategoryLog("generation")
     static let project    = CategoryLog("project")
     static let transcription = CategoryLog("transcription")
+    static let recording = CategoryLog("recording")
     static let llm        = CategoryLog("llm")
     static let search     = CategoryLog("search")
 

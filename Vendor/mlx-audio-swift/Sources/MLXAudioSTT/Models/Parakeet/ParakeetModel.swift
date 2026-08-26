@@ -62,7 +62,7 @@ public final class ParakeetModel: Module, STTGenerationModel {
             topP: 0.95,
             topK: 0,
             verbose: false,
-            language: "en",
+            language: nil,
             chunkDuration: 1200.0,
             minChunkDuration: 1.0
         )
@@ -118,6 +118,18 @@ public final class ParakeetModel: Module, STTGenerationModel {
         audio: MLXArray,
         generationParameters: STTGenerateParameters
     ) -> STTOutput {
+        let result = generateAligned(audio: audio, generationParameters: generationParameters)
+        return STTOutput(
+            text: result.text,
+            segments: result.segments,
+            language: generationParameters.language
+        )
+    }
+
+    public func generateAligned(
+        audio: MLXArray,
+        generationParameters: STTGenerateParameters
+    ) -> ParakeetAlignedResult {
         let audio1D = normalizeAudioToMono(audio)
         let sampleRate = preprocessConfig.sampleRate
         let totalSamples = audio1D.shape[0]
@@ -125,44 +137,37 @@ public final class ParakeetModel: Module, STTGenerationModel {
         let chunkDuration = Double(generationParameters.chunkDuration)
         let overlapDuration = 2.0
 
-        let result: ParakeetAlignedResult
         if chunkDuration <= 0 || audioDuration <= chunkDuration {
-            result = decodeChunk(audio1D)
-        } else {
-            let chunkSamples = max(1, Int(chunkDuration * Double(sampleRate)))
-            let overlapSamples = max(0, min(chunkSamples - 1, Int(overlapDuration * Double(sampleRate))))
-            let stepSamples = max(1, chunkSamples - overlapSamples)
-
-            var allTokens: [ParakeetAlignedToken] = []
-            var start = 0
-            while start < totalSamples {
-                let end = min(start + chunkSamples, totalSamples)
-                let chunkAudio = audio1D[start..<end]
-                let chunkResult = decodeChunk(chunkAudio)
-
-                var chunkTokens = flattenTokens(from: chunkResult)
-                let chunkOffset = Double(start) / Double(sampleRate)
-                for i in chunkTokens.indices {
-                    chunkTokens[i].start += chunkOffset
-                }
-
-                allTokens = mergeTokenSequences(
-                    existing: allTokens,
-                    incoming: chunkTokens,
-                    overlapDuration: overlapDuration
-                )
-
-                start += stepSamples
-            }
-
-            result = ParakeetAlignment.sentencesToResult(ParakeetAlignment.tokensToSentences(allTokens))
+            return decodeChunk(audio1D)
         }
 
-        return STTOutput(
-            text: result.text,
-            segments: result.segments,
-            language: generationParameters.language
-        )
+        let chunkSamples = max(1, Int(chunkDuration * Double(sampleRate)))
+        let overlapSamples = max(0, min(chunkSamples - 1, Int(overlapDuration * Double(sampleRate))))
+        let stepSamples = max(1, chunkSamples - overlapSamples)
+
+        var allTokens: [ParakeetAlignedToken] = []
+        var start = 0
+        while start < totalSamples {
+            let end = min(start + chunkSamples, totalSamples)
+            let chunkAudio = audio1D[start..<end]
+            let chunkResult = decodeChunk(chunkAudio)
+
+            var chunkTokens = flattenTokens(from: chunkResult)
+            let chunkOffset = Double(start) / Double(sampleRate)
+            for i in chunkTokens.indices {
+                chunkTokens[i].start += chunkOffset
+            }
+
+            allTokens = mergeTokenSequences(
+                existing: allTokens,
+                incoming: chunkTokens,
+                overlapDuration: overlapDuration
+            )
+
+            start += stepSamples
+        }
+
+        return ParakeetAlignment.sentencesToResult(ParakeetAlignment.tokensToSentences(allTokens))
     }
 
     public func generateBatch(

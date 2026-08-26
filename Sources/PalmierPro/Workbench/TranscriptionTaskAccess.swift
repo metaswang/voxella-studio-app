@@ -29,6 +29,9 @@ struct TranscriptionTaskRequest: Sendable {
     var remoteSessionID: UUID?
     var shouldReuseRemoteSession: Bool
     var sourcePreview: TranscriptionSourcePreview?
+    var uploadURL: URL?
+
+    var resolvedUploadURL: URL { uploadURL ?? sourceURL }
 }
 
 struct TranscriptionResultSyncRequest: Sendable {

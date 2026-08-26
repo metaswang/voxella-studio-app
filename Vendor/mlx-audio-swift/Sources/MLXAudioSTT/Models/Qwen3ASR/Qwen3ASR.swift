@@ -95,6 +95,20 @@ private let qwen3ASRLanguageAliases: [String: String] = [
     "korean": "Korean",
     "ja": "Japanese",
     "japanese": "Japanese",
+    "th": "Thai",
+    "thai": "Thai",
+    "vi": "Vietnamese",
+    "vietnamese": "Vietnamese",
+    "id": "Indonesian",
+    "indonesian": "Indonesian",
+    "ms": "Malay",
+    "malay": "Malay",
+    "hi": "Hindi",
+    "hindi": "Hindi",
+    "ar": "Arabic",
+    "arabic": "Arabic",
+    "tr": "Turkish",
+    "turkish": "Turkish",
 ]
 
 func getFeatExtractOutputLengths(_ inputLengths: MLXArray) -> MLXArray {

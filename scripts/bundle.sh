@@ -38,6 +38,7 @@ SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 RESOURCES="$ROOT/Sources/PalmierPro/Resources"
 ENTITLEMENTS_TEMPLATE="$ROOT/scripts/PalmierPro.entitlements"
+DEBUG_ENTITLEMENTS="$ROOT/scripts/PalmierPro.debug.entitlements"
 APP="$ROOT/.build/Voxella Studio.app"
 ZIP="$ROOT/.build/Voxella-Studio.zip"
 DMG="$ROOT/.build/Voxella-Studio.dmg"
@@ -136,7 +137,7 @@ touch "$APP"
 if [ "$MODE" = "fast" ]; then
   echo "==> Ad-hoc signing main app (no timestamp, no helpers)"
   echo "!! Ad-hoc builds use the login keychain and may request access after a rebuild." >&2
-  codesign --force --sign - "$APP"
+  codesign --force --options runtime --entitlements "$DEBUG_ENTITLEMENTS" --sign - "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
   echo "==> Done: $APP (fast mode — stable identity, no dSYM)"
   exit 0
@@ -150,7 +151,7 @@ dsymutil "$APP/Contents/MacOS/VoxellaStudio" -o "$DSYM"
 if [ "$MODE" = "dev" ]; then
   echo "==> Ad-hoc signing dev app"
   echo "!! Ad-hoc builds use the login keychain and may request access after a rebuild." >&2
-  codesign --force --deep --sign - "$APP"
+  codesign --force --deep --options runtime --entitlements "$DEBUG_ENTITLEMENTS" --sign - "$APP"
   codesign --verify --strict --verbose=2 "$APP"
   echo "==> Done: $APP (ad-hoc signed)"
   exit 0

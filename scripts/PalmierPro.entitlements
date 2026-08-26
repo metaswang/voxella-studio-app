@@ -14,5 +14,7 @@
 	<string>__TEAM_IDENTIFIER__.com.voxella.studio</string>
 	<key>com.apple.developer.team-identifier</key>
 	<string>__TEAM_IDENTIFIER__</string>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 </dict>
 </plist>

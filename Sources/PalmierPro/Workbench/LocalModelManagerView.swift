@@ -200,7 +200,7 @@ struct LocalModelManagerView: View {
                     Text(model.title)
                         .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
                     if manager.isActiveASRModel(model.id) {
-                        Text("ACTIVE")
+                        Text("FALLBACK")
                             .font(.system(size: AppTheme.FontSize.xxs, weight: .bold))
                             .tracking(AppTheme.Spacing.xxs)
                             .foregroundStyle(AppTheme.Accent.primary)
@@ -262,12 +262,12 @@ struct LocalModelManagerView: View {
         case .installed:
             VStack(alignment: .trailing, spacing: 5) {
                 Label(
-                    manager.isActiveASRModel(model.id) ? "Active" : "Installed",
+                    manager.isActiveASRModel(model.id) ? "Fallback" : "Installed",
                     systemImage: "checkmark.circle.fill"
                 )
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Status.successColor)
-                if model.id.isASRModel, !manager.isActiveASRModel(model.id) {
+                if model.id.isWhisperFallbackModel, !manager.isActiveASRModel(model.id) {
                     Button("Use") { manager.useASRModel(model.id) }
                         .buttonStyle(.borderless)
                         .font(.system(size: AppTheme.FontSize.xs))
@@ -296,7 +296,7 @@ struct LocalModelManagerView: View {
             continueRecommendedDownload = false
             licenseCandidate = model
         } else {
-            if model.id.isASRModel, !manager.isActiveASRModel(model.id) {
+            if model.id.isWhisperFallbackModel, !manager.isActiveASRModel(model.id) {
                 manager.downloadAndUseASRModel(model.id)
             } else {
                 manager.download(model.id)
@@ -305,7 +305,7 @@ struct LocalModelManagerView: View {
     }
 
     private func downloadButtonTitle(for model: LocalModelDescriptor) -> String {
-        model.id.isASRModel && !manager.isActiveASRModel(model.id) ? "Download & Use" : "Download"
+        model.id.isWhisperFallbackModel && !manager.isActiveASRModel(model.id) ? "Download & Use" : "Download"
     }
 
     private func beginRecommendedDownload() {
@@ -321,6 +321,8 @@ struct LocalModelManagerView: View {
 
     private func icon(for id: LocalModelID) -> String {
         switch id {
+        case .qwen3ASR17B8Bit: "globe.asia.australia"
+        case .parakeetTDT06Bv3: "globe.europe.africa"
         case .whisperLargeV3Turbo8Bit, .whisperLargeV3TurboFP16, .whisperSmall:
             "waveform.badge.magnifyingglass"
         case .spokenLanguageID: "character.bubble"

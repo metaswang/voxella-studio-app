@@ -17,7 +17,7 @@ struct LocalTranscriptCacheConfiguration: Codable, Equatable, Sendable {
 /// Disk + memory cache for local and cloud transcripts, keyed by file identity so edits invalidate naturally.
 actor TranscriptCache {
     static let shared = TranscriptCache()
-    static let localPipelineSchemaVersion = 5
+    static let localPipelineSchemaVersion = 6
     static let directory = FileManager.default
         .urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("\(Log.subsystem)/Transcripts", isDirectory: true)
@@ -158,22 +158,22 @@ actor TranscriptCache {
     nonisolated static func localPipelineFingerprint(
         configuration: LocalTranscriptCacheConfiguration
     ) -> String {
-        let activeASRModelID = LocalModelManager.preferredASRModelID()
+        let whisperFallbackModelID = LocalModelManager.preferredWhisperFallbackModelID()
         let relevant: [LocalModelID] = [
-            activeASRModelID,
+            .qwen3ASR17B8Bit,
+            .parakeetTDT06Bv3,
+            whisperFallbackModelID,
             .spokenLanguageID,
             .forcedAligner,
             .sileroVAD,
             .sortformerDiarization,
-            .pyannoteSegmentation,
-            .weSpeaker,
         ]
         let revisions = relevant.compactMap { id in
             LocalModelManager.catalog.first(where: { $0.id == id }).map {
                 "\(id.rawValue)@\($0.revision)"
             }
         }.joined(separator: "|")
-        return "schema=\(localPipelineSchemaVersion)|asr=\(activeASRModelID.rawValue)|\(configuration.identity)|\(revisions)"
+        return "schema=\(localPipelineSchemaVersion)|whisper=\(whisperFallbackModelID.rawValue)|\(configuration.identity)|\(revisions)"
     }
 
     private static func key(for url: URL, variant: CacheVariant) -> String? {

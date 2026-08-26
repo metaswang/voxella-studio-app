@@ -206,7 +206,7 @@ struct CloudTranscriptionTaskAccess: TranscriptionTaskAccessing {
                         : .deleteAfterCancellation
                 let uploaded = try await uploadMedia(
                     jobID: request.jobID,
-                    sourceURL: request.sourceURL,
+                    sourceURL: request.resolvedUploadURL,
                     originalFilename: request.originalFilename,
                     mimeType: request.mimeType,
                     sizeBytes: request.sizeBytes,

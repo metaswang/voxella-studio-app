@@ -9,6 +9,8 @@ import HuggingFace
 #endif
 
 enum LocalModelID: String, Codable, CaseIterable, Identifiable, Sendable {
+    case qwen3ASR17B8Bit
+    case parakeetTDT06Bv3
     case whisperLargeV3Turbo8Bit
     case whisperLargeV3TurboFP16
     case whisperSmall
@@ -24,9 +26,22 @@ enum LocalModelID: String, Codable, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 
     var isASRModel: Bool {
+        asrEngine != nil
+    }
+
+    var isWhisperFallbackModel: Bool {
         switch self {
         case .whisperLargeV3Turbo8Bit, .whisperLargeV3TurboFP16: true
         default: false
+        }
+    }
+
+    var asrEngine: ASREngine? {
+        switch self {
+        case .qwen3ASR17B8Bit: .qwen
+        case .parakeetTDT06Bv3: .parakeet
+        case .whisperLargeV3Turbo8Bit, .whisperLargeV3TurboFP16: .whisper
+        default: nil
         }
     }
 }
@@ -156,6 +171,8 @@ final class LocalModelManager {
     static let shared = LocalModelManager()
 
     nonisolated static let defaultASRModelID: LocalModelID = .whisperLargeV3Turbo8Bit
+    nonisolated static let defaultQwenASRModelID: LocalModelID = .qwen3ASR17B8Bit
+    nonisolated static let defaultParakeetASRModelID: LocalModelID = .parakeetTDT06Bv3
     private nonisolated static let activeASRDefaultsKey = "voxella.local-model.active-asr"
 
     nonisolated static let ttsTokenizerRepository = "Qwen/Qwen3-TTS-Tokenizer-12Hz"
@@ -180,9 +197,54 @@ final class LocalModelManager {
 
     nonisolated static let catalog: [LocalModelDescriptor] = [
         .init(
+            id: .qwen3ASR17B8Bit,
+            title: "Qwen3-ASR 1.7B 8-bit",
+            purpose: "East and Southeast Asian speech recognition, including Cantonese",
+            repository: "mlx-community/Qwen3-ASR-1.7B-8bit",
+            revision: "a8379a2e2f9e313c9292cdf1af4055ab56d50d55",
+            weightByteSize: 2_463_307_541,
+            weightSHA256: "bf304b009cc7eca79283056f787b44c952d24ac22cec787b39732bba3c23c13c",
+            byteSize: 2_467_856_503,
+            sizeLabel: "~ 2.47 GB",
+            license: "Apache-2.0",
+            licenseURL: URL(string: "https://huggingface.co/Qwen/Qwen3-ASR-1.7B"),
+            requiredFor: [.transcribe],
+            isRecommended: true,
+            requiredArtifacts: [
+                .init(filename: "chat_template.json", byteSize: 1_161, sha256: "75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff"),
+                .init(filename: "config.json", byteSize: 7_188, sha256: "1b76b3b6c655fc54595da025f7a96474ad9fa86363303fbdd61a7d8483ccfaf7"),
+                .init(filename: "generation_config.json", byteSize: 142, sha256: "1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c"),
+                .init(filename: "merges.txt", byteSize: 1_671_853, sha256: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"),
+                .init(filename: "model.safetensors.index.json", byteSize: 78_968, sha256: "0a5d0ec11188602242ff81a9969883d0fdeb98cd5d85cd1413089d897c201af5"),
+                .init(filename: "preprocessor_config.json", byteSize: 330, sha256: "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d"),
+                .init(filename: "tokenizer_config.json", byteSize: 12_487, sha256: "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c"),
+                .init(filename: "vocab.json", byteSize: 2_776_833, sha256: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"),
+            ]
+        ),
+        .init(
+            id: .parakeetTDT06Bv3,
+            title: "Parakeet TDT 0.6B v3 INT8",
+            purpose: "English and European speech recognition with native timestamps",
+            repository: "sonic-speech/parakeet-tdt-0.6b-v3-int8",
+            revision: "6d2686d9f29d98baa1e4c65a8701516e8e34919d",
+            weightByteSize: 754_851_107,
+            weightSHA256: "e3745e51e513494c60494ce2ff61d49961823b3ce0333ff983bc6f83ddbbca45",
+            byteSize: 755_530_800,
+            sizeLabel: "~ 756 MB",
+            license: "CC-BY-4.0",
+            licenseURL: URL(string: "https://huggingface.co/sonic-speech/parakeet-tdt-0.6b-v3-int8"),
+            requiredFor: [.transcribe],
+            isRecommended: true,
+            requiredArtifacts: [
+                .init(filename: "config.json", byteSize: 318_613, sha256: "9933d6badd8335b1524e9f4a515aa4ab89b4e8bf94dd8b60aa95c949e735d6ea"),
+                .init(filename: "quantization_config.json", byteSize: 164, sha256: "17145c6de4aecdf2b2d57507e2101e7848b533fc3f008314b821a3f45d804282"),
+                .init(filename: "tokenizer.model", byteSize: 360_916, sha256: "eacec2b0a77f336d4a2ca4a25a7047575d3c2b74de47e997f4c205126ed3135e"),
+            ]
+        ),
+        .init(
             id: .whisperLargeV3Turbo8Bit,
             title: "Whisper Large v3 Turbo 8-bit",
-            purpose: "Recommended multilingual speech recognition",
+            purpose: "Multilingual fallback speech recognition",
             repository: "mlx-community/whisper-large-v3-turbo-asr-8bit",
             revision: "f0fca477e0a885ef4a61088d6cbbc8fc25e53268",
             weightByteSize: 863_658_987,
@@ -213,7 +275,7 @@ final class LocalModelManager {
         .init(
             id: .whisperLargeV3TurboFP16,
             title: "Whisper Large v3 Turbo FP16",
-            purpose: "Maximum-quality multilingual speech recognition",
+            purpose: "Maximum-quality multilingual fallback speech recognition",
             repository: "mlx-community/whisper-large-v3-turbo-asr-fp16",
             revision: "624c19c9af5603fa73b83bce14d4aeea96156d18",
             weightByteSize: 1_613_977_443,
@@ -407,16 +469,25 @@ final class LocalModelManager {
         Self.catalog.filter { $0.isLegacy && state(for: $0.id).isInstalled }
     }
 
-    nonisolated static func preferredASRModelID() -> LocalModelID {
+    nonisolated static func preferredWhisperFallbackModelID() -> LocalModelID {
         guard let rawValue = UserDefaults.standard.string(forKey: activeASRDefaultsKey),
               let id = LocalModelID(rawValue: rawValue),
-              id.isASRModel else { return defaultASRModelID }
+              id.isWhisperFallbackModel else { return defaultASRModelID }
         return id
+    }
+
+    nonisolated static func preferredASRModelID() -> LocalModelID {
+        preferredWhisperFallbackModelID()
+    }
+
+    nonisolated static func modelID(for engine: ASREngine) -> LocalModelID {
+        ASREngineLanguagePolicy.modelID(for: engine, whisperFallback: preferredWhisperFallbackModelID())
     }
 
     @discardableResult
     func useASRModel(_ id: LocalModelID) -> Bool {
-        guard id.isASRModel, state(for: id).isInstalled else {
+        guard id.isWhisperFallbackModel else { return false }
+        guard state(for: id).isInstalled else {
             if let model = Self.catalog.first(where: { $0.id == id }) {
                 states[id] = .failed("Download and verify \(model.title) before selecting it.")
             }
@@ -428,7 +499,7 @@ final class LocalModelManager {
     }
 
     func isActiveASRModel(_ id: LocalModelID) -> Bool {
-        id.isASRModel && activeASRModelID == id
+        id.isWhisperFallbackModel && activeASRModelID == id
     }
 
     func hasRequiredModels(for feature: LocalModelDescriptor.LocalFeature) -> Bool {
@@ -439,9 +510,11 @@ final class LocalModelManager {
     }
 
     func hasRequiredTranscriptionModels(languageCode: String?, speakerCount: Int?) -> Bool {
-        var required: Set<LocalModelID> = [activeASRModelID, .forcedAligner, .sileroVAD]
-        if languageCode == nil { required.insert(.spokenLanguageID) }
-        if speakerCount != 1 { required.insert(.sortformerDiarization) }
+        let required = LocalModelInstallPlan.requiredModelIDs(
+            languageCode: languageCode,
+            speakerCount: speakerCount,
+            whisperFallbackModelID: activeASRModelID
+        )
         return required.allSatisfy { state(for: $0).isInstalled }
     }
 
@@ -470,7 +543,10 @@ final class LocalModelManager {
     }
 
     func downloadAndUseASRModel(_ id: LocalModelID) {
-        guard id.isASRModel else { return }
+        guard id.isWhisperFallbackModel else {
+            download(id)
+            return
+        }
         download(id, activateWhenInstalled: true)
     }
 
@@ -701,10 +777,25 @@ final class LocalModelManager {
         guard mainWeightVerified else {
             throw LocalAIError.incompleteModel(model.title)
         }
-        if let specification = model.asrSpecification {
+        if !model.requiredArtifacts.isEmpty || model.asrSpecification != nil || id.asrEngine != nil {
             states[id] = .downloading(progress: 0.94, message: "Verifying pinned model artifacts…")
-            guard await Self.verifyArtifacts(model.requiredArtifacts, in: directory),
-                  await Self.validateASRConfiguration(in: directory, specification: specification) else {
+            let artifactsValid: Bool
+            if model.requiredArtifacts.isEmpty {
+                artifactsValid = true
+            } else {
+                artifactsValid = await Self.verifyArtifacts(model.requiredArtifacts, in: directory)
+            }
+            let configurationValid: Bool
+            if let specification = model.asrSpecification {
+                configurationValid = await Self.validateASRConfiguration(in: directory, specification: specification)
+            } else if id == .qwen3ASR17B8Bit {
+                configurationValid = await Self.validateQwenASRConfiguration(in: directory)
+            } else if id == .parakeetTDT06Bv3 {
+                configurationValid = await Self.validateParakeetConfiguration(in: directory)
+            } else {
+                configurationValid = true
+            }
+            guard artifactsValid, configurationValid else {
                 throw LocalAIError.incompleteModel(model.title)
             }
             states[id] = .downloading(progress: 0.98, message: "Finalizing verified model…")
@@ -809,7 +900,8 @@ final class LocalModelManager {
 
     private nonisolated static func additionalFiles(for id: LocalModelID) -> [String] {
         switch id {
-        case .whisperLargeV3Turbo8Bit, .whisperLargeV3TurboFP16:
+        case .whisperLargeV3Turbo8Bit, .whisperLargeV3TurboFP16,
+             .qwen3ASR17B8Bit, .parakeetTDT06Bv3:
             catalog.first(where: { $0.id == id })?.requiredArtifacts.map(\.filename) ?? []
         case .whisperSmall:
             ["config.json", "generation_config.json"]
@@ -1018,6 +1110,31 @@ final class LocalModelManager {
         }.value
     }
 
+    private nonisolated static func validateQwenASRConfiguration(in directory: URL) async -> Bool {
+        await Task.detached(priority: .utility) {
+            guard let data = try? Data(contentsOf: directory.appendingPathComponent("config.json")),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  json["model_type"] as? String == "qwen3_asr" else {
+                return false
+            }
+            return true
+        }.value
+    }
+
+    private nonisolated static func validateParakeetConfiguration(in directory: URL) async -> Bool {
+        await Task.detached(priority: .utility) {
+            let quantizationURL = directory.appendingPathComponent("quantization_config.json")
+            guard let data = try? Data(contentsOf: quantizationURL),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  json["bits"] as? Int == 8 else {
+                return false
+            }
+            return FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("tokenizer.model").path
+            )
+        }.value
+    }
+
     private nonisolated static func removeDirectoryIfPresent(_ directory: URL) async throws {
         try await Task.detached(priority: .utility) {
             guard FileManager.default.fileExists(atPath: directory.path) else { return }
@@ -1032,6 +1149,10 @@ enum LocalAIError: LocalizedError {
     case missingModels(String)
     case incompleteModel(String)
     case emptyTranscript
+    case noAudioSamples
+    case audioTooQuiet
+    case vadNoSpeech
+    case asrNoSpeech
     case noAudioOutput
 
     var errorDescription: String? {
@@ -1044,6 +1165,14 @@ enum LocalAIError: LocalizedError {
             "The downloaded \(name) files failed local integrity checks. Try downloading the model again."
         case .emptyTranscript:
             "No speech was recognized in this file."
+        case .noAudioSamples:
+            "The audio file contains no readable audio samples."
+        case .audioTooQuiet:
+            "The audio level is too low or silent for transcription. Increase the recording level and try again."
+        case .vadNoSpeech:
+            "Speech detection found no usable speech regions in this file."
+        case .asrNoSpeech:
+            "Speech recognition did not produce a transcript from the detected audio."
         case .noAudioOutput:
             "The speech model did not produce audio."
         }

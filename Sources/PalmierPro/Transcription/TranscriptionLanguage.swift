@@ -69,15 +69,15 @@ struct TranscriptionLanguage: Equatable, Sendable {
             outputLanguageCode = "zh-TW"
             chineseScript = .traditional
         case "yue-CN":
-            asrLanguageCode = "zh"
+            asrLanguageCode = "yue"
             outputLanguageCode = "yue-CN"
             chineseScript = .simplified
         case "yue-TW":
-            asrLanguageCode = "zh"
+            asrLanguageCode = "yue"
             outputLanguageCode = "yue-TW"
             chineseScript = .traditional
         case "yue":
-            asrLanguageCode = "zh"
+            asrLanguageCode = "yue"
             outputLanguageCode = "yue"
             chineseScript = nil
         case let value?:

@@ -117,6 +117,7 @@ let package = Package(
                 // SwiftUI VideoPlayer crashes without an explicit AVKit link in non-debugger launches.
                 .linkedFramework("AVKit"),
                 .linkedFramework("AVFoundation"),
+                .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("SoundAnalysis"),
                 .linkedFramework("AuthenticationServices"),
             ],

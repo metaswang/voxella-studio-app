@@ -14,9 +14,11 @@ struct LocalModelInstallPlanTests {
             isInstalled: { _ in false }
         )
         #expect(plan.items.map(\.id) == [
+            .sileroVAD,
+            .qwen3ASR17B8Bit,
+            .parakeetTDT06Bv3,
             .whisperLargeV3Turbo8Bit,
             .forcedAligner,
-            .sileroVAD,
             .spokenLanguageID,
             .sortformerDiarization,
         ])
@@ -26,21 +28,49 @@ struct LocalModelInstallPlanTests {
         #expect(plan.requiresLicenseAcceptance)
     }
 
-    @Test func specifiedLanguageAndSingleSpeakerOmitOptionalModels() {
+    @Test func englishLocksToParakeetWithoutAlignerOrLanguageID() {
         let plan = LocalModelInstallPlan.plan(
             languageCode: "en",
             speakerCount: 1,
-            asrModelID: .whisperSmall,
+            asrModelID: .whisperLargeV3Turbo8Bit,
             catalog: Self.catalog,
             isInstalled: { _ in false }
         )
-        #expect(plan.items.map(\.id) == [.whisperSmall, .forcedAligner, .sileroVAD])
+        #expect(plan.items.map(\.id) == [.sileroVAD, .parakeetTDT06Bv3])
         #expect(plan.missingItems.contains { $0.id == .spokenLanguageID } == false)
+        #expect(plan.missingItems.contains { $0.id == .forcedAligner } == false)
         #expect(plan.missingItems.contains { $0.id == .sortformerDiarization } == false)
     }
 
+    @Test func japaneseLocksToQwenWithoutParakeetOrLanguageID() {
+        let plan = LocalModelInstallPlan.plan(
+            languageCode: "ja",
+            speakerCount: 1,
+            asrModelID: .whisperLargeV3Turbo8Bit,
+            catalog: Self.catalog,
+            isInstalled: { _ in false }
+        )
+        #expect(plan.items.map(\.id) == [.sileroVAD, .qwen3ASR17B8Bit, .forcedAligner])
+        #expect(plan.missingItems.contains { $0.id == .parakeetTDT06Bv3 } == false)
+        #expect(plan.missingItems.contains { $0.id == .spokenLanguageID } == false)
+    }
+
+    @Test func cantoneseLocksToQwen() {
+        let plan = LocalModelInstallPlan.plan(
+            languageCode: "yue-CN",
+            speakerCount: 1,
+            asrModelID: .whisperLargeV3Turbo8Bit,
+            catalog: Self.catalog,
+            isInstalled: { _ in false }
+        )
+        #expect(plan.items.map(\.id) == [.sileroVAD, .qwen3ASR17B8Bit, .forcedAligner])
+    }
+
     @Test func installedModelsAreExcludedFromAdditionalDiskSpace() {
-        let installed: Set<LocalModelID> = [.whisperLargeV3Turbo8Bit, .forcedAligner, .sileroVAD]
+        let installed: Set<LocalModelID> = [
+            .whisperLargeV3Turbo8Bit, .forcedAligner, .sileroVAD,
+            .qwen3ASR17B8Bit, .parakeetTDT06Bv3,
+        ]
         let plan = LocalModelInstallPlan.plan(
             languageCode: nil,
             speakerCount: 2,
@@ -53,16 +83,16 @@ struct LocalModelInstallPlanTests {
         #expect(plan.additionalDiskSpaceLabel.contains("~400 MB"))
     }
 
-    @Test func higherASRPrecisionChangesThePlanSize() {
+    @Test func higherWhisperFallbackPrecisionChangesWhisperDomainPlanSize() {
         let eightBit = LocalModelInstallPlan.plan(
-            languageCode: "en",
+            languageCode: "fa",
             speakerCount: 1,
             asrModelID: .whisperLargeV3Turbo8Bit,
             catalog: Self.catalog,
             isInstalled: { _ in false }
         )
         let fp16 = LocalModelInstallPlan.plan(
-            languageCode: "en",
+            languageCode: "fa",
             speakerCount: 1,
             asrModelID: .whisperLargeV3TurboFP16,
             catalog: Self.catalog,
@@ -70,6 +100,7 @@ struct LocalModelInstallPlanTests {
         )
         #expect(fp16.additionalBytes > eightBit.additionalBytes)
         #expect(fp16.asrModelID == .whisperLargeV3TurboFP16)
+        #expect(eightBit.items.map(\.id) == [.sileroVAD, .whisperLargeV3Turbo8Bit, .forcedAligner])
     }
 
     @Test func liveCatalogComputesAutomaticDefaultFromInstalledState() {
@@ -93,6 +124,8 @@ struct LocalModelInstallPlanTests {
 
     private static var catalog: [LocalModelDescriptor] {
         [
+            descriptor(.qwen3ASR17B8Bit, bytes: 2_400_000_000, license: false),
+            descriptor(.parakeetTDT06Bv3, bytes: 750_000_000, license: false),
             descriptor(.whisperLargeV3Turbo8Bit, bytes: 1_600_000_000, license: true),
             descriptor(.whisperLargeV3TurboFP16, bytes: 3_000_000_000, license: true),
             descriptor(.whisperSmall, bytes: 500_000_000, license: false),

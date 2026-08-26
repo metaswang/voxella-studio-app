@@ -10,7 +10,7 @@ struct TranscriptionQualityProcessorTests {
         #expect(simplified.chineseScript?.applying(to: "漢語龍馬") == "汉语龙马")
 
         let cantoneseTraditional = TranscriptionLanguage(code: "yue-TW")
-        #expect(cantoneseTraditional.asrLanguageCode == "zh")
+        #expect(cantoneseTraditional.asrLanguageCode == "yue")
         #expect(cantoneseTraditional.outputLanguageCode == "yue-TW")
         #expect(cantoneseTraditional.chineseScript?.applying(to: "汉语龙马") == "漢語龍馬")
 

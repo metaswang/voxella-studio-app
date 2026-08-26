@@ -363,7 +363,14 @@ struct TranscriptionProcessingView: View {
             }
             return lines
         case .speechRecognition:
-            var lines = [localModelTitle(models.activeASRModelID), localModelTitle(.forcedAligner)]
+            var lines = [
+                localModelTitle(.qwen3ASR17B8Bit),
+                localModelTitle(.parakeetTDT06Bv3),
+                localModelTitle(models.activeASRModelID),
+            ]
+            if job.languageCode == nil || ASREngineLanguagePolicy.engine(forLanguageCode: job.languageCode) != .parakeet {
+                lines.append(localModelTitle(.forcedAligner))
+            }
             if job.speakerCount.count == 1 {
                 lines.append("Deterministic single-speaker assignment · no diarization model")
             } else {

@@ -200,6 +200,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var cloudSyncRevision = 0
     var cloudSyncState: DubCloudSyncState?
     var pendingCloudSyncError: String?
+    var isRecordedCapture = false
 
     var placement: TranscriptionPlacement {
         get { TranscriptionPlacement(storage: storage, compute: compute) }
@@ -330,6 +331,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         case diarizationDiagnostics, transcriptionAlignmentDiagnostics, errorMessage
         case storage, compute, remoteSessionID, localCachePath
         case cloudSyncRevision, cloudSyncState, pendingCloudSyncError
+        case isRecordedCapture
     }
 
     init(
@@ -379,7 +381,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         localCachePath: String? = nil,
         cloudSyncRevision: Int = 0,
         cloudSyncState: DubCloudSyncState? = nil,
-        pendingCloudSyncError: String? = nil
+        pendingCloudSyncError: String? = nil,
+        isRecordedCapture: Bool = false
     ) {
         self.id = id
         self.sourcePath = sourcePath
@@ -428,6 +431,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         self.cloudSyncRevision = cloudSyncRevision
         self.cloudSyncState = cloudSyncState
         self.pendingCloudSyncError = pendingCloudSyncError
+        self.isRecordedCapture = isRecordedCapture
     }
 
     init(from decoder: Decoder) throws {
@@ -503,6 +507,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         cloudSyncRevision = try container.decodeIfPresent(Int.self, forKey: .cloudSyncRevision) ?? 0
         cloudSyncState = try container.decodeIfPresent(DubCloudSyncState.self, forKey: .cloudSyncState)
         pendingCloudSyncError = try container.decodeIfPresent(String.self, forKey: .pendingCloudSyncError)
+        isRecordedCapture = try container.decodeIfPresent(Bool.self, forKey: .isRecordedCapture) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -558,6 +563,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         try container.encode(cloudSyncRevision, forKey: .cloudSyncRevision)
         try container.encodeIfPresent(cloudSyncState, forKey: .cloudSyncState)
         try container.encodeIfPresent(pendingCloudSyncError, forKey: .pendingCloudSyncError)
+        try container.encode(isRecordedCapture, forKey: .isRecordedCapture)
     }
 }
 
@@ -813,6 +819,12 @@ struct WorkbenchDubRevision: Codable, Identifiable, Sendable {
     var alignmentDiagnostics: KnownTextAlignmentDiagnostics?
 
     var outputURL: URL { URL(fileURLWithPath: outputPath) }
+}
+
+enum WorkbenchMediaImportOrigin: String, Equatable, Sendable {
+    case files
+    case netVideo
+    case recording
 }
 
 enum WorkbenchSessionSource: String, Sendable {
@@ -1110,6 +1122,7 @@ final class WorkbenchStore {
         var diarizationDiagnostics: DiarizationDiagnostics?
         var alignmentDiagnostics: TranscriptionAlignmentDiagnostics?
         var processedSourcePath: String?
+        var cloudUploadPath: String?
 
         mutating func upsertTranslation(_ track: SubtitleTrack, languageCode: String) {
             let normalizedCode = languageCode.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1520,12 +1533,15 @@ final class WorkbenchStore {
     /// Media URLs waiting for the Processing options sheet (web upload flow).
     var pendingMediaImportURLs: [URL] = []
     var pendingNetVideoSource: WorkbenchNetVideoSource?
+    var pendingMediaImportOrigin: WorkbenchMediaImportOrigin = .files
     /// Open the transcribe empty state on the Net Video entry instead of file import.
     var preferNetVideoEntry = false
+    var preferRecordEntry = false
 
     func stageMediaImport(_ urls: [URL]) {
         transcriptionAdmissionError = nil
         pendingNetVideoSource = nil
+        pendingMediaImportOrigin = .files
         pendingMediaImportURLs = urls
         selectedTranscriptionID = nil
         route = .transcribe
@@ -1545,14 +1561,26 @@ final class WorkbenchStore {
             platform: .youtube,
             title: title
         )
+        pendingMediaImportOrigin = .netVideo
         pendingMediaImportURLs = [mediaURL]
         selectedTranscriptionID = nil
+        route = .transcribe
+    }
+
+    func stageRecordedMedia(_ url: URL) {
+        transcriptionAdmissionError = nil
+        pendingNetVideoSource = nil
+        pendingMediaImportOrigin = .recording
+        pendingMediaImportURLs = [url]
+        selectedTranscriptionID = nil
+        preferRecordEntry = true
         route = .transcribe
     }
 
     func clearPendingMediaImport() {
         pendingMediaImportURLs = []
         pendingNetVideoSource = nil
+        pendingMediaImportOrigin = .files
     }
 
     func discardPendingMediaImport() {
@@ -1561,6 +1589,7 @@ final class WorkbenchStore {
         }
         pendingMediaImportURLs = []
         pendingNetVideoSource = nil
+        pendingMediaImportOrigin = .files
     }
 
     func showNetVideoImport() {
@@ -1575,8 +1604,17 @@ final class WorkbenchStore {
         return preferNetVideoEntry
     }
 
+    func consumeRecordEntryPreference() -> Bool {
+        defer { preferRecordEntry = false }
+        return preferRecordEntry
+    }
+
     nonisolated static var netVideoMediaDirectory: URL {
         dataDirectory.appendingPathComponent("NetVideo", isDirectory: true)
+    }
+
+    nonisolated static var recordingMediaDirectory: URL {
+        dataDirectory.appendingPathComponent("Recordings", isDirectory: true)
     }
 
     @discardableResult
@@ -1606,7 +1644,8 @@ final class WorkbenchStore {
         sourceURLs: [URL],
         submission: TranscriptionSubmission,
         openSessionWhenDone: Bool = true,
-        netVideoSource: WorkbenchNetVideoSource? = nil
+        netVideoSource: WorkbenchNetVideoSource? = nil,
+        isRecordedCapture: Bool = false
     ) -> UUID? {
         transcriptionAdmissionError = nil
         if submission.placement.compute == .local {
@@ -1639,6 +1678,7 @@ final class WorkbenchStore {
             }
             job.batchID = batchID
             job.placement = submission.placement
+            job.isRecordedCapture = isRecordedCapture
             job.progressMessage = submission.placement.compute == .local
                 ? "Queued"
                 : "Queued for VoxStudio Cloud"
@@ -2795,6 +2835,39 @@ final class WorkbenchStore {
                 flowJob.clipEndMs = nil
             }
             let isCloud = flowJob.compute == .cloud
+            var uploadURL = input.sourceURL
+            if isCloud, flowJob.isRecordedCapture {
+                do {
+                    if let stripped = try await materializeRecordingCloudAudioIfNeeded(
+                        sourceURL: input.sourceURL,
+                        jobID: id
+                    ) {
+                        uploadURL = stripped
+                        if var staged = stagedTranscriptions[id] {
+                            staged.cloudUploadPath = stripped.path
+                            stagedTranscriptions[id] = staged
+                        }
+                    }
+                } catch is CancellationError {
+                    updateTranscription(id) {
+                        $0.state = .cancelled
+                        $0.errorMessage = nil
+                        $0.progressMessage = "Cancelled — ready to retry"
+                    }
+                    discardStagedTranscription(id)
+                    return
+                } catch {
+                    updateTranscription(id) {
+                        $0.state = .failed
+                        $0.errorMessage = error.localizedDescription
+                        $0.progressMessage = "Audio extraction failed"
+                        $0.flowProgressStage = nil
+                        $0.progressStep = nil
+                    }
+                    discardStagedTranscription(id)
+                    return
+                }
+            }
             if !isCloud {
                 _ = await LLMSettingsStore.shared.credentialAvailable()
             }
@@ -2804,9 +2877,9 @@ final class WorkbenchStore {
             let request = TranscriptionTaskRequest(
                 jobID: id,
                 sourceURL: input.sourceURL,
-                originalFilename: flowJob.originalFilename,
-                mimeType: Self.mimeType(for: input.sourceURL),
-                sizeBytes: (try? input.sourceURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init),
+                originalFilename: uploadURL.lastPathComponent,
+                mimeType: Self.mimeType(for: uploadURL),
+                sizeBytes: (try? uploadURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init),
                 durationHintSec: flowJob.clipRangeSeconds.map { $0.upperBound - $0.lowerBound },
                 options: flowJob.processingOptions,
                 placement: flowJob.placement,
@@ -2825,7 +2898,8 @@ final class WorkbenchStore {
                     && flowJob.remoteSessionID != nil
                     && flowJob.placement.storage == .cloud
                     && flowJob.placement.compute == .cloud,
-                sourcePreview: Self.sourcePreview(for: flowJob)
+                sourcePreview: Self.sourcePreview(for: flowJob),
+                uploadURL: uploadURL == input.sourceURL ? nil : uploadURL
             )
             for await event in taskAccess.events(for: request) {
                 if Task.isCancelled {
@@ -2993,6 +3067,27 @@ final class WorkbenchStore {
             $0.progressStep = "flow_started"
         }
         return .init(sourceURL: destinationURL, usesExtractedClip: true)
+    }
+
+    private func materializeRecordingCloudAudioIfNeeded(sourceURL: URL, jobID: UUID) async throws -> URL? {
+        let hasVideo = await WorkbenchAudioStripper.assetHasVideoTrack(at: sourceURL)
+        guard hasVideo else { return nil }
+        updateTranscription(jobID) {
+            $0.progress = 0.05
+            $0.progressMessage = "Extracting audio for VoxStudio Cloud…"
+            $0.flowProgressStage = .transcription
+            $0.progressStep = "extract_audio"
+        }
+        let destinationURL = Self.clipsDirectory
+            .appendingPathComponent("\(jobID.uuidString)-cloud-audio")
+            .appendingPathExtension("m4a")
+        try await WorkbenchAudioStripper.extractM4A(from: sourceURL, to: destinationURL)
+        try Task.checkCancellation()
+        updateTranscription(jobID) {
+            $0.progressMessage = "Uploading to VoxStudio Cloud…"
+            $0.progressStep = "flow_started"
+        }
+        return destinationURL
     }
 
     func cancelTranscription(_ id: UUID) {
@@ -3606,6 +3701,11 @@ final class WorkbenchStore {
               TranscriptionCommitPolicy.shouldCommit(status: .completed, artifacts: artifacts) else {
             return false
         }
+        if let cloudUploadPath = staged.cloudUploadPath {
+            Task.detached(priority: .utility) {
+                Self.removeManagedClipMediaIfNeeded(URL(fileURLWithPath: cloudUploadPath))
+            }
+        }
         updateTranscription(id) { job in
             artifacts.apply(to: &job)
         }
@@ -3619,11 +3719,12 @@ final class WorkbenchStore {
     }
 
     private func discardStagedTranscription(_ id: UUID) {
-        guard let staged = stagedTranscriptions.removeValue(forKey: id),
-              let processedSourcePath = staged.processedSourcePath else { return }
-        let url = URL(fileURLWithPath: processedSourcePath)
+        guard let staged = stagedTranscriptions.removeValue(forKey: id) else { return }
+        let paths = [staged.processedSourcePath, staged.cloudUploadPath].compactMap { $0 }
         Task.detached(priority: .utility) {
-            Self.removeManagedClipMediaIfNeeded(url)
+            for path in paths {
+                Self.removeManagedClipMediaIfNeeded(URL(fileURLWithPath: path))
+            }
         }
     }
 
@@ -4575,6 +4676,7 @@ final class WorkbenchStore {
         let roots = [
             clipsDirectory.resolvingSymlinksInPath().path,
             netVideoMediaDirectory.resolvingSymlinksInPath().path,
+            recordingMediaDirectory.resolvingSymlinksInPath().path,
         ]
         let candidate = url.resolvingSymlinksInPath().path
         guard roots.contains(where: { candidate.hasPrefix($0 + "/") }) else { return }

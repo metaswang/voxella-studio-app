@@ -505,6 +505,11 @@ enum AppTheme {
         static let transcriptCardMinHeight: CGFloat = 76
         static let filterWidth: CGFloat = 170
         static let pickerWidth: CGFloat = 190
+        static let recordingDevicePickerWidth: CGFloat = 220
+        static let recordingInfoPopoverWidth: CGFloat = 280
+        static let recordingRegionMinSize: CGFloat = 48
+        static let recordingRegionHandleSize: CGFloat = 8
+        static let cloudClipAnchor = "cloudClipLimit"
         static let compactPanelWidth: CGFloat = 420
         static let summaryRefinementSheetWidth: CGFloat = 520
         static let summaryRefinementEditorHeight: CGFloat = 140

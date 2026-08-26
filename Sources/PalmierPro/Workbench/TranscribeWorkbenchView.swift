@@ -12,6 +12,7 @@ struct TranscribeWorkbenchView: View {
     @State private var netVideoPhase: NetVideoImportPhase = .idle
     @State private var pendingNetVideoTitle: String?
     @State private var netVideoTask: Task<Void, Never>?
+    @Bindable private var recording = RecordingSessionController.shared
 
     var body: some View {
         Group {
@@ -40,6 +41,11 @@ struct TranscribeWorkbenchView: View {
                 applyPreferredEntryMode()
             }
         }
+        .onChange(of: store.preferRecordEntry) { _, prefersRecord in
+            if prefersRecord {
+                applyPreferredEntryMode()
+            }
+        }
         .onChange(of: store.pendingMediaImportURLs) { _, urls in
             showProcessingOptions = !urls.isEmpty
         }
@@ -56,6 +62,7 @@ struct TranscribeWorkbenchView: View {
             ProcessingOptionsSheet(
                 mediaURLs: store.pendingMediaImportURLs,
                 initialOptions: pendingNetVideoTitle.map { LocalProcessingOptions(customTitle: $0) },
+                allowsCloudStorage: store.pendingMediaImportOrigin != .recording,
                 onPrepareCloud: { placement in
                     await store.prepareCloudAccess(for: placement)
                 },
@@ -80,13 +87,19 @@ struct TranscribeWorkbenchView: View {
                         }
                     }
                     let netVideoSource = store.pendingNetVideoSource
+                    let isRecordedCapture = store.pendingMediaImportOrigin == .recording
+                    var submission = submission
+                    if isRecordedCapture {
+                        submission.placement.storage = .local
+                    }
                     store.clearPendingMediaImport()
                     pendingNetVideoTitle = nil
                     showProcessingOptions = false
                     _ = store.beginTranscriptions(
                         sourceURLs: urls,
                         submission: submission,
-                        netVideoSource: netVideoSource
+                        netVideoSource: netVideoSource,
+                        isRecordedCapture: isRecordedCapture
                     )
                 }
             )
@@ -103,7 +116,9 @@ struct TranscribeWorkbenchView: View {
     }
 
     private func applyPreferredEntryMode() {
-        if store.consumeNetVideoEntryPreference() {
+        if store.consumeRecordEntryPreference() {
+            entryMode = .record
+        } else if store.consumeNetVideoEntryPreference() {
             entryMode = .netVideo
         }
     }
@@ -636,60 +651,77 @@ struct TranscribeWorkbenchView: View {
                     .background(AppTheme.Status.warningColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
                 }
                 transcriptionEntryBar
-                HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
+                if entryMode == .record {
                     entryHero
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(AppTheme.Spacing.xlXxl)
+                        .background(
+                            LinearGradient(
+                                colors: [AppTheme.Background.surfaceColor, AppTheme.Background.raisedColor],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
+                                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+                        }
+                } else {
+                    HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
+                        entryHero
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                    quickStartCard
-                        .frame(width: 300)
-                }
-                .padding(AppTheme.Spacing.xlXxl)
-                .background(
-                    LinearGradient(
-                        colors: [AppTheme.Background.surfaceColor, AppTheme.Background.raisedColor],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
-                        .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-                }
+                        quickStartCard
+                            .frame(width: 300)
+                    }
+                    .padding(AppTheme.Spacing.xlXxl)
+                    .background(
+                        LinearGradient(
+                            colors: [AppTheme.Background.surfaceColor, AppTheme.Background.raisedColor],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
+                            .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+                    }
 
-                HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
-                    if entryMode == .netVideo {
-                        guidanceCard(
-                            eyebrow: "BEST FIT",
-                            title: "When net video is the best choice",
-                            detail: "The talk is already public on YouTube and you want audio extracted on this Mac, without a separate download.",
-                            systemImage: "link"
-                        )
-                        guidanceCard(
-                            eyebrow: "AFTER EXTRACT",
-                            title: "Same workspace from here",
-                            detail: "After the audio file is local, processing options, transcription, translation, and export follow the existing session flow.",
-                            systemImage: "arrow.up.circle"
-                        )
-                    } else {
-                        guidanceCard(
-                            eyebrow: "BEST FIT",
-                            title: "When import is the best choice",
-                            detail: "You already have a local source file and want the shortest path to transcript, translation, or export.",
-                            systemImage: "wand.and.stars"
-                        )
-                        guidanceCard(
-                            eyebrow: "AFTER START",
-                            title: "Keep the workflow moving",
-                            detail: "Once a session is created, edit, translate, export, and prepare a dub without leaving this workspace.",
-                            systemImage: "arrow.up.circle"
-                        )
+                    HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
+                        if entryMode == .netVideo {
+                            guidanceCard(
+                                eyebrow: "BEST FIT",
+                                title: "When net video is the best choice",
+                                detail: "The talk is already public on YouTube and you want audio extracted on this Mac, without a separate download.",
+                                systemImage: "link"
+                            )
+                            guidanceCard(
+                                eyebrow: "AFTER EXTRACT",
+                                title: "Same workspace from here",
+                                detail: "After the audio file is local, processing options, transcription, translation, and export follow the existing session flow.",
+                                systemImage: "arrow.up.circle"
+                            )
+                        } else {
+                            guidanceCard(
+                                eyebrow: "BEST FIT",
+                                title: "When import is the best choice",
+                                detail: "You already have a local source file and want the shortest path to transcript, translation, or export.",
+                                systemImage: "wand.and.stars"
+                            )
+                            guidanceCard(
+                                eyebrow: "AFTER START",
+                                title: "Keep the workflow moving",
+                                detail: "Once a session is created, edit, translate, export, and prepare a dub without leaving this workspace.",
+                                systemImage: "arrow.up.circle"
+                            )
+                        }
                     }
                 }
 
                 WorkbenchRecentTranscriptSessionsSection(
-                    modeTitle: entryMode == .netVideo ? "Net Video" : "Import Files",
-                    onChooseMedia: entryMode == .netVideo ? nil : { importMedia() }
+                    modeTitle: recentSessionsTitle,
+                    onChooseMedia: entryMode == .importFiles ? { importMedia() } : nil
                 )
             }
             .padding(AppTheme.Spacing.xxl)
@@ -709,17 +741,17 @@ struct TranscribeWorkbenchView: View {
             entryModeButton("Net video", systemImage: "video", active: entryMode == .netVideo) {
                 entryMode = .netVideo
             }
-            entryModeButton("Record", systemImage: "video.circle", active: false, disabled: true, action: {})
+            entryModeButton("Record", systemImage: "video.circle", active: entryMode == .record) {
+                entryMode = .record
+            }
             entryModeButton("Live", systemImage: "dot.radiowaves.left.and.right", active: false, disabled: true, action: {})
             Spacer(minLength: AppTheme.Spacing.md)
-            Text(
-                entryMode == .netVideo
-                    ? "Paste a YouTube link, extract audio on this Mac, then transcribe"
-                    : "Fastest path from local files to a structured transcript workspace"
-            )
-                .font(.system(size: AppTheme.FontSize.xs))
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
-                .lineLimit(1)
+            if entryMode != .record {
+                Text(entryBarCaption)
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    .lineLimit(1)
+            }
         }
         .padding(.horizontal, AppTheme.Spacing.lgXl)
         .padding(.vertical, AppTheme.Spacing.md)
@@ -760,11 +792,33 @@ struct TranscribeWorkbenchView: View {
             .padding(.vertical, AppTheme.Spacing.sm)
     }
 
+    private var entryBarCaption: String {
+        switch entryMode {
+        case .netVideo:
+            "Paste a YouTube link, extract audio on this Mac, then transcribe"
+        case .record:
+            "Record this Mac, then transcribe the local file"
+        case .importFiles:
+            "Fastest path from local files to a structured transcript workspace"
+        }
+    }
+
+    private var recentSessionsTitle: String {
+        switch entryMode {
+        case .netVideo: "Net Video"
+        case .record: "Record"
+        case .importFiles: "Import Files"
+        }
+    }
+
     @ViewBuilder
     private var entryHero: some View {
-        if entryMode == .netVideo {
+        switch entryMode {
+        case .netVideo:
             netVideoHero
-        } else {
+        case .record:
+            RecordWorkbenchPanel(session: recording)
+        case .importFiles:
             importFilesHero
         }
     }
@@ -882,14 +936,28 @@ struct TranscribeWorkbenchView: View {
     }
 
     private var quickStartCard: some View {
-        let steps = entryMode == .netVideo
-            ? ["Paste a public YouTube link", "Extract audio on this Mac", "Confirm processing options"]
-            : ["Choose one or more local files", "Confirm processing options", "Continue editing in the workspace"]
+        let steps: [String]
+        let title: String
+        let icon: String
+        switch entryMode {
+        case .netVideo:
+            steps = ["Paste a public YouTube link", "Extract audio on this Mac", "Confirm processing options"]
+            title = "Net video"
+            icon = "link"
+        case .record:
+            steps = ["Choose audio sources", "Record, then stop from the menu bar", "Confirm processing options"]
+            title = "Record"
+            icon = "record.circle"
+        case .importFiles:
+            steps = ["Choose one or more local files", "Confirm processing options", "Continue editing in the workspace"]
+            title = "Import files"
+            icon = "square.and.arrow.down"
+        }
         return VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
-            Label("QUICK START", systemImage: entryMode == .netVideo ? "link" : "square.and.arrow.down")
+            Label("QUICK START", systemImage: icon)
                 .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                 .foregroundStyle(AppTheme.Accent.link)
-            Text(entryMode == .netVideo ? "Net video" : "Import files")
+            Text(title)
                 .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
             ForEach(Array(steps.enumerated()), id: \.offset) { index, title in
                 HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
@@ -903,7 +971,7 @@ struct TranscribeWorkbenchView: View {
                 }
             }
             Divider()
-            Text("\(models.descriptor(for: models.activeASRModelID).title) · word timestamps · up to 4 speakers")
+            Text("Qwen3-ASR · Parakeet v3 · Whisper fallback · word timestamps · up to 4 speakers")
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
         }
@@ -1121,6 +1189,7 @@ struct TranscribeWorkbenchView: View {
 private enum TranscriptionEntryMode {
     case importFiles
     case netVideo
+    case record
 }
 
 private enum NetVideoImportPhase: Equatable {

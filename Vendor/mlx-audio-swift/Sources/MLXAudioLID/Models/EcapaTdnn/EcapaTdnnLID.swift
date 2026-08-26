@@ -47,6 +47,21 @@ public class EcapaTdnn: Module {
 
     // MARK: - Prediction
 
+    /// Full 107-way posterior over ISO language codes.
+    public func posterior(waveform: MLXArray) -> [String: Float] {
+        let mel = EcapaMelSpectrogram.compute(audio: waveform)
+        let logProbs = self.callAsFunction(mel)
+        let probsFlat = exp(logProbs).squeezed(axis: 0)
+        let numLabels = probsFlat.dim(0)
+        var result: [String: Float] = [:]
+        result.reserveCapacity(numLabels)
+        for index in 0..<numLabels {
+            let language = id2label[index] ?? "unknown_\(index)"
+            result[language] = probsFlat[index].item(Float.self)
+        }
+        return result
+    }
+
     /// Run language identification on a 16 kHz mono audio waveform.
     /// Computes SpeechBrain-compatible mel spectrogram internally.
     /// - Parameters:
@@ -54,24 +69,12 @@ public class EcapaTdnn: Module {
     ///   - topK: Number of top language predictions to return (default: 5)
     /// - Returns: `LIDOutput` with top predicted language and confidence scores
     public func predict(waveform: MLXArray, topK: Int = 5) -> LIDOutput {
-        let mel = EcapaMelSpectrogram.compute(audio: waveform)
-        let logProbs = self.callAsFunction(mel)
-        let probs = exp(logProbs)
-
-        let probsFlat = probs.squeezed(axis: 0)
-        let topIndices = argSort(probsFlat, axis: -1)
-
-        let numLabels = probsFlat.dim(0)
-        let k = min(topK, numLabels)
-        var topLanguages: [LanguagePrediction] = []
-
-        for i in 0..<k {
-            let idx = topIndices[numLabels - 1 - i].item(Int.self)
-            let conf = probsFlat[idx].item(Float.self)
-            let lang = id2label[idx] ?? "unknown_\(idx)"
-            topLanguages.append(LanguagePrediction(language: lang, confidence: conf))
+        let distribution = posterior(waveform: waveform)
+        let ranked = distribution.sorted { $0.value > $1.value }
+        let k = min(topK, ranked.count)
+        let topLanguages = ranked.prefix(k).map {
+            LanguagePrediction(language: $0.key, confidence: $0.value)
         }
-
         let best = topLanguages.first ?? LanguagePrediction(language: "unknown", confidence: 0)
         return LIDOutput(
             language: best.language,

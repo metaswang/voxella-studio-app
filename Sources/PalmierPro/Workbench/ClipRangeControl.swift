@@ -97,6 +97,7 @@ private final class ClipRangePlayback {
 
 struct ClipRangeControl: View {
     let mediaURL: URL
+    let expandsPlaceholderRange: Bool
     @Binding var range: ClosedRange<Double>
 
     @State private var duration: Double = 0
@@ -112,6 +113,31 @@ struct ClipRangeControl: View {
         case startHandle
         case endHandle
         case moveRange
+    }
+
+    init(
+        mediaURL: URL,
+        range: Binding<ClosedRange<Double>>,
+        expandsPlaceholderRange: Bool = true
+    ) {
+        self.mediaURL = mediaURL
+        self._range = range
+        self.expandsPlaceholderRange = expandsPlaceholderRange
+    }
+
+    nonisolated static func rangeAfterLoadingMedia(
+        current: ClosedRange<Double>,
+        duration: Double,
+        expandsPlaceholderRange: Bool
+    ) -> ClosedRange<Double> {
+        guard duration.isFinite, duration > 0 else { return current }
+        let isPlaceholder = current.lowerBound == 0 && current.upperBound == 1
+        if (expandsPlaceholderRange && isPlaceholder)
+            || current.upperBound <= current.lowerBound
+            || current.upperBound > duration {
+            return 0...duration
+        }
+        return current
     }
 
     private var timelineDuration: Double { max(duration, 0.001) }
@@ -332,9 +358,11 @@ struct ClipRangeControl: View {
                 return
             }
             duration = seconds
-            if range.upperBound <= range.lowerBound || range.upperBound > seconds {
-                range = 0...seconds
-            }
+            range = Self.rangeAfterLoadingMedia(
+                current: range,
+                duration: seconds,
+                expandsPlaceholderRange: expandsPlaceholderRange
+            )
             playback.install(url: resolvedURL, at: range.lowerBound)
         } catch {
             duration = 0

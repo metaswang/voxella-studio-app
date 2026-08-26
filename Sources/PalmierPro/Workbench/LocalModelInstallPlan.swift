@@ -38,9 +38,33 @@ struct LocalModelInstallPlan: Equatable, Sendable {
         speakerCount: Int?,
         asrModelID: LocalModelID
     ) -> [LocalModelID] {
-        var required: [LocalModelID] = [asrModelID, .forcedAligner, .sileroVAD]
+        requiredModelIDs(
+            languageCode: languageCode,
+            speakerCount: speakerCount,
+            whisperFallbackModelID: asrModelID.isWhisperFallbackModel ? asrModelID : .whisperLargeV3Turbo8Bit
+        )
+    }
+
+    static func requiredModelIDs(
+        languageCode: String?,
+        speakerCount: Int?,
+        whisperFallbackModelID: LocalModelID
+    ) -> [LocalModelID] {
+        var required: [LocalModelID] = [.sileroVAD]
         if languageCode == nil {
-            required.append(.spokenLanguageID)
+            required.append(contentsOf: [
+                .qwen3ASR17B8Bit,
+                .parakeetTDT06Bv3,
+                whisperFallbackModelID,
+                .forcedAligner,
+                .spokenLanguageID,
+            ])
+        } else {
+            let engine = ASREngineLanguagePolicy.engine(forLanguageCode: languageCode)
+            required.append(ASREngineLanguagePolicy.modelID(for: engine, whisperFallback: whisperFallbackModelID))
+            if engine != .parakeet {
+                required.append(.forcedAligner)
+            }
         }
         if speakerCount != 1 {
             required.append(.sortformerDiarization)

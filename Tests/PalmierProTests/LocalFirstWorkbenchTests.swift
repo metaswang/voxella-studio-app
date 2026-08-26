@@ -69,18 +69,22 @@ struct LocalFirstWorkbenchTests {
 
     @Test func modelCatalogIsPinnedAndFitsM5InstallBudget() {
         let catalog = LocalModelManager.catalog
-        #expect(catalog.count == 11)
+        #expect(catalog.count == 13)
         #expect(Set(catalog.map(\.repository)).count == catalog.count)
         #expect(catalog.allSatisfy { $0.revision.count == 40 })
         #expect(catalog.allSatisfy { $0.weightSHA256.count == 64 })
         #expect(catalog.allSatisfy { $0.weightByteSize > 0 })
         #expect(catalog.allSatisfy { $0.byteSize > 0 })
         #expect(catalog.flatMap(\.requiredArtifacts).allSatisfy { $0.byteSize > 0 && $0.sha256.count == 64 })
-        #expect(catalog.filter(\.isRecommended).count == 6)
+        #expect(catalog.filter(\.isRecommended).count == 8)
 
+        let qwenASR = catalog.first { $0.id == .qwen3ASR17B8Bit }!
+        let parakeetASR = catalog.first { $0.id == .parakeetTDT06Bv3 }!
         let recommendedASR = catalog.first { $0.id == .whisperLargeV3Turbo8Bit }!
         let qualityASR = catalog.first { $0.id == .whisperLargeV3TurboFP16 }!
         #expect(LocalModelManager.defaultASRModelID == .whisperLargeV3Turbo8Bit)
+        #expect(qwenASR.isRecommended)
+        #expect(parakeetASR.isRecommended)
         #expect(recommendedASR.isRecommended)
         #expect(!qualityASR.isRecommended)
         #expect(recommendedASR.asrSpecification?.precision == .eightBit)
@@ -97,8 +101,8 @@ struct LocalFirstWorkbenchTests {
         let recommendedInstallBytes = catalog.filter(\.isRecommended)
             .reduce(Int64(0)) { $0 + $1.byteSize } + sharedCodecBytes
         let fullInstallBytes = catalog.reduce(Int64(0)) { $0 + $1.byteSize } + sharedCodecBytes
-        #expect(recommendedInstallBytes < 4_000_000_000)
-        #expect(fullInstallBytes < 8_000_000_000)
+        #expect(recommendedInstallBytes < 9_000_000_000)
+        #expect(fullInstallBytes < 12_000_000_000)
     }
 
     @Test func largeTurboConfigurationsRejectMislabeledPrecisionOrArchitecture() throws {
@@ -669,9 +673,11 @@ struct LocalFirstWorkbenchTests {
         )
 
         #expect(automatic.contains("schema=\(TranscriptCache.localPipelineSchemaVersion)"))
-        let activeASR = LocalModelManager.preferredASRModelID()
-        #expect(automatic.contains("asr=\(activeASR.rawValue)"))
-        #expect(automatic.contains(LocalModelManager.catalog.first { $0.id == activeASR }!.revision))
+        let whisperFallback = LocalModelManager.preferredWhisperFallbackModelID()
+        #expect(automatic.contains("whisper=\(whisperFallback.rawValue)"))
+        #expect(automatic.contains(LocalModelManager.catalog.first { $0.id == whisperFallback }!.revision))
+        #expect(automatic.contains(LocalModelManager.catalog.first { $0.id == .qwen3ASR17B8Bit }!.revision))
+        #expect(automatic.contains(LocalModelManager.catalog.first { $0.id == .parakeetTDT06Bv3 }!.revision))
         #expect(automatic.contains(LocalModelManager.catalog.first { $0.id == .forcedAligner }!.revision))
         #expect(automatic != englishSingle)
         #expect(englishSingle != englishTwo)

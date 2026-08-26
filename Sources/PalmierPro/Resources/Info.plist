@@ -53,7 +53,9 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Voxella Studio uses the microphone only when you record a local reference voice.</string>
+	<string>Voxella Studio uses the microphone when you record a transcript session or a local reference voice.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Voxella Studio captures the display, a window, or system audio when you record a transcript session.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
