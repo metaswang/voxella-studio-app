@@ -158,6 +158,63 @@ struct LocalModelInferenceTests {
         #expect(Double(squeezed) / Double(max(words.count, 1)) < 0.25)
     }
 
+    @Test(.enabled(if: realAudioEnabled))
+    func realChineseTechniqueSharingAutoRoutesToQwen() async throws {
+        let source = URL(fileURLWithPath: "/Users/adamwang/Downloads/手法学习体验分享.m4a")
+        #expect(FileManager.default.fileExists(atPath: source.path))
+        try await Self.ensureInstalled([
+            .sileroVAD,
+            .spokenLanguageID,
+            .qwen3ASR17B8Bit,
+            .parakeetTDT06Bv3,
+            .whisperLargeV3Turbo8Bit,
+            .forcedAligner,
+        ])
+
+        let duration = try await Self.duration(of: source)
+        let output = try await LocalSpeechPipeline.shared.transcribeDetailed(
+            sourceURL: source,
+            languageCode: nil,
+            speakerCount: 1,
+            progressUpdate: { update in
+                let line = "[technique-sharing] \(update.stage.rawValue) "
+                    + "\(update.completed ?? 0)/\(update.total ?? 0) \(update.message)\n"
+                FileHandle.standardError.write(Data(line.utf8))
+            }
+        )
+
+        let result = output.result
+        let route = output.route
+        let compact = result.words.map(\.text).joined()
+        print(
+            "[technique-sharing] engine=\(route.engine.rawValue) reason=\(route.reason.rawValue) "
+                + "q=\(route.scores.qwen) p=\(route.scores.parakeet) w=\(route.scores.whisper) "
+                + "top=\(route.topLanguage ?? "nil") window=\(route.speechDuration)s "
+                + "confidence=\(route.routeConfidence)"
+        )
+        print("[technique-sharing] language=\(result.language ?? "nil") duration=\(duration)")
+        print(
+            "[technique-sharing] words=\(result.words.count) lastEnd=\(result.words.last?.end ?? 0) "
+                + "alignerFallback=\(output.alignmentDiagnostics.atomicSegmentFallbackCount) "
+                + "estimated=\(output.alignmentDiagnostics.estimatedUnitCount)"
+        )
+        print("[technique-sharing] transcript=\(result.text)")
+        print("[technique-sharing] compact=\(compact.prefix(200))")
+
+        #expect(route.engine == .qwen)
+        #expect(route.reason != .userLocked)
+        #expect(route.reason != .whisperDominant)
+        #expect(route.scores.qwen > route.scores.parakeet)
+        #expect(route.scores.qwen > route.scores.whisper)
+        #expect(["zh", "yue"].contains { (result.language ?? "").hasPrefix($0) })
+        #expect(compact.contains(where: { $0 >= "\u{4E00}" && $0 <= "\u{9FFF}" }))
+        #expect(["手法", "学习", "体验", "分享"].contains { compact.contains($0) })
+        #expect(Self.timestampsAreValid(result.words, duration: duration))
+        #expect((result.words.last?.end ?? 0) >= duration * 0.70)
+        #expect(Set(result.words.compactMap(\.speaker)) == ["Speaker 1"])
+        #expect(output.diarizationDiagnostics.backend == .singleSpeaker)
+    }
+
     @Test(.enabled(if: enabled))
     func chineseSingleSpeakerTranscriptionIsTimed() async throws {
         let source = Self.fixture("zh-single.wav")
@@ -341,6 +398,44 @@ struct LocalModelInferenceTests {
             progress: { _, _ in }
         )
         try Self.validateDub(output)
+    }
+
+    @MainActor
+    private static func ensureInstalled(_ ids: [LocalModelID]) async throws {
+        let manager = LocalModelManager.shared
+        for id in ids {
+            let model = manager.descriptor(for: id)
+            if LocalModelManager.isInstalled(model) {
+                FileHandle.standardError.write(Data("[technique-sharing] installed \(model.title)\n".utf8))
+                continue
+            }
+            FileHandle.standardError.write(Data("[technique-sharing] installing \(model.title)\n".utf8))
+            manager.download(id)
+            var lastLogged = -1
+            for _ in 0..<100 where !manager.state(for: id).isBusy && !manager.state(for: id).isInstalled {
+                if case .failed = manager.state(for: id) { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            while manager.state(for: id).isBusy {
+                if case .downloading(let progress, let message) = manager.state(for: id) {
+                    let percent = Int(progress * 100)
+                    if percent != lastLogged {
+                        lastLogged = percent
+                        FileHandle.standardError.write(
+                            Data("[technique-sharing] \(model.title) \(percent)% \(message)\n".utf8)
+                        )
+                    }
+                }
+                try await Task.sleep(for: .seconds(2))
+            }
+            if case .failed(let message) = manager.state(for: id) {
+                throw LocalAIError.incompleteModel("\(model.title): \(message)")
+            }
+            try #require(
+                LocalModelManager.isInstalled(model),
+                "\(model.title) should be installed"
+            )
+        }
     }
 
     private static func fixture(_ name: String) -> URL {

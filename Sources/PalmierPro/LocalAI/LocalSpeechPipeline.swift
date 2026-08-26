@@ -65,6 +65,7 @@ struct LocalTranscriptionOutput: Sendable {
     let alignmentDiagnostics: TranscriptionAlignmentDiagnostics
     let engine: ASREngine
     let routeConfidence: Float
+    let route: ASREngineRouteDecision
 }
 
 actor LocalSpeechPipeline {
@@ -205,8 +206,19 @@ actor LocalSpeechPipeline {
                 Log.transcription.notice("QUALITY_WATCH parakeet language=\(language)")
             }
             Log.transcription.notice(
-                "ASR engine route engine=\(route.engine.rawValue) reason=\(route.reason.rawValue) q=\(String(format: "%.2f", route.scores.qwen)) p=\(String(format: "%.2f", route.scores.parakeet)) w=\(String(format: "%.2f", route.scores.whisper))"
+                "ASR engine route engine=\(route.engine.rawValue) reason=\(route.reason.rawValue) q=\(String(format: "%.2f", route.scores.qwen)) p=\(String(format: "%.2f", route.scores.parakeet)) w=\(String(format: "%.2f", route.scores.whisper)) top=\(route.topLanguage ?? "nil") window=\(String(format: "%.1f", route.speechDuration))s"
             )
+            progressUpdate(.init(
+                stage: .detectingLanguage,
+                fraction: 0.12,
+                message: String(
+                    format: "Using \(route.engine.title) (%@, q=%.2f p=%.2f w=%.2f)…",
+                    route.reason.rawValue,
+                    route.scores.qwen,
+                    route.scores.parakeet,
+                    route.scores.whisper
+                )
+            ))
         }
 
         let asrModelID = ASREngineLanguagePolicy.modelID(
@@ -293,6 +305,9 @@ actor LocalSpeechPipeline {
             outputLanguageCode = outputLanguageCode ?? TranscriptionLanguage(code: iso).outputLanguageCode
             if parameters.language == nil,
                let locked = ASREngineLanguagePolicy.qwenPromptLanguage(from: iso) {
+                Log.transcription.notice(
+                    "Qwen job language lock detected=\(recognition.language ?? "nil") iso=\(iso) prompt=\(locked)"
+                )
                 parameters = STTGenerateParameters(
                     maxTokens: parameters.maxTokens,
                     temperature: parameters.temperature,
@@ -539,7 +554,8 @@ actor LocalSpeechPipeline {
             diarizationDiagnostics: timeline.diagnostics,
             alignmentDiagnostics: alignmentDiagnostics,
             engine: route.engine,
-            routeConfidence: route.routeConfidence
+            routeConfidence: route.routeConfidence,
+            route: route
         )
         #else
         throw LocalAIError.modelsUnavailable
