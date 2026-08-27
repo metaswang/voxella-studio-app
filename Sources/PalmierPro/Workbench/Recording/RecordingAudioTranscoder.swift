@@ -18,10 +18,6 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
         return format
     }()
 
-    static var canonicalFormatDescription: CMAudioFormatDescription {
-        canonicalFormat.formatDescription
-    }
-
     private var converter: AVAudioConverter?
     private var converterInputFormat: AVAudioFormat?
     private var pts = CMTime.zero
@@ -118,6 +114,22 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
         return pcm
     }
 
+    static func makeSilentSampleBuffer(
+        frameCount: AVAudioFrameCount = 2_048,
+        presentationTime: CMTime = .zero
+    ) -> CMSampleBuffer? {
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: canonicalFormat, frameCapacity: frameCount) else {
+            return nil
+        }
+        buffer.frameLength = frameCount
+        if let channels = buffer.floatChannelData {
+            for channel in 0..<Int(buffer.format.channelCount) {
+                channels[channel].update(repeating: 0, count: Int(frameCount))
+            }
+        }
+        return makeSampleBuffer(from: buffer, presentationTime: presentationTime)
+    }
+
     private static func makeSampleBuffer(
         from buffer: AVAudioPCMBuffer,
         presentationTime: CMTime
@@ -206,7 +218,7 @@ private final class ConversionInput: @unchecked Sendable {
 
     func next(status: UnsafeMutablePointer<AVAudioConverterInputStatus>) -> AVAudioBuffer? {
         guard !supplied else {
-            status.pointee = .noDataNow
+            status.pointee = .endOfStream
             return nil
         }
         supplied = true

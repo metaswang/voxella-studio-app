@@ -1,7 +1,9 @@
 import AVFoundation
 import CoreMedia
+import CoreVideo
 import Foundation
 @preconcurrency import ScreenCaptureKit
+import VideoToolbox
 
 struct RecordingEngineRequest {
     var configuration: RecordingCaptureConfiguration
@@ -100,17 +102,25 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     private var stream: SCStream?
     private var writer: AVAssetWriter?
     private var videoInput: AVAssetWriterInput?
+    private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+    private var pixelTransferSession: VTPixelTransferSession?
     private var systemAudioInput: AVAssetWriterInput?
     private var microphoneInput: AVAssetWriterInput?
     private var outputURL: URL?
     private var includesVideo = false
     private var audioTrackCount = 0
+    private var videoSize = (width: 0, height: 0)
     private var didStartSession = false
     private var hostOrigin: CMTime?
     private var pauseOffset: CMTime = .zero
     private var pauseBegan: CMTime?
     private var isPaused = false
     private var didAppendMedia = false
+    private var didAppendVideo = false
+    private var didAppendSystemAudio = false
+    private var didAppendMicrophone = false
+    private var didLogVideoFormat = false
+    private var didLogWriterAppendFailure = false
     private var startContinuation: CheckedContinuation<Void, Error>?
     private var isStopping = false
     private var systemAudioMeter = RecordingAudioLevelMeter()
@@ -211,27 +221,43 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         includesVideo = request.configuration.capturesVideo
         microphoneEnabled = request.configuration.microphone.isEnabled
         systemAudioEnabled = request.configuration.capturesSystemAudio
-        outputURL = request.outputURL
         onAudioLevelWarning = request.onAudioLevelWarning
+
+        var audioTracks = 0
+        if request.configuration.capturesSystemAudio { audioTracks += 1 }
+        if request.configuration.microphone.isEnabled { audioTracks += 1 }
+        let writerURL: URL
+        let fileType: AVFileType
+        if audioTracks >= 2 {
+            fileType = .mov
+            writerURL = request.outputURL.deletingPathExtension().appendingPathExtension("mov")
+        } else {
+            fileType = includesVideo ? .mp4 : .m4a
+            writerURL = request.outputURL
+        }
+        outputURL = writerURL
         try FileManager.default.createDirectory(
-            at: request.outputURL.deletingLastPathComponent(),
+            at: writerURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
         try? FileManager.default.removeItem(at: request.outputURL)
+        if writerURL != request.outputURL {
+            try? FileManager.default.removeItem(at: writerURL)
+        }
 
-        let fileType: AVFileType = includesVideo ? .mp4 : .m4a
-        let writer = try AVAssetWriter(outputURL: request.outputURL, fileType: fileType)
-        var audioTracks = 0
+        let writer = try AVAssetWriter(outputURL: writerURL, fileType: fileType)
 
         if includesVideo {
             guard let filter = request.contentFilter else {
                 throw RecordingError.captureFailed("A capture source is required for video recording.")
             }
             let size = outputSize(filter: filter, sourceRect: request.sourceRect)
+            videoSize = size
             let videoSettings: [String: Any] = [
                 AVVideoCodecKey: AVVideoCodecType.h264,
                 AVVideoWidthKey: size.width,
                 AVVideoHeightKey: size.height,
+                AVVideoScalingModeKey: AVVideoScalingModeResizeAspect,
             ]
             let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
             videoInput.expectsMediaDataInRealTime = true
@@ -240,6 +266,15 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             }
             writer.add(videoInput)
             self.videoInput = videoInput
+            pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+                assetWriterInput: videoInput,
+                sourcePixelBufferAttributes: [
+                    kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
+                    kCVPixelBufferWidthKey as String: size.width,
+                    kCVPixelBufferHeightKey as String: size.height,
+                    kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any],
+                ]
+            )
         }
 
         if request.configuration.capturesSystemAudio {
@@ -249,7 +284,6 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             }
             writer.add(input)
             systemAudioInput = input
-            audioTracks += 1
         }
 
         if request.configuration.microphone.isEnabled {
@@ -259,7 +293,6 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             }
             writer.add(input)
             microphoneInput = input
-            audioTracks += 1
         }
 
         guard writer.startWriting() else {
@@ -284,11 +317,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
                 request: request
             )
             let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-            if includesVideo {
-                try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
-            } else {
-                try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
-            }
+            try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
             if request.configuration.capturesSystemAudio {
                 try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
             }
@@ -342,46 +371,13 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         microphone.stop()
         let stream = self.stream
         self.stream = nil
-        let writer = self.writer
-        let outputURL = self.outputURL
-        let includesVideo = self.includesVideo
-        let audioTrackCount = self.audioTrackCount
-        let didAppendMedia = self.didAppendMedia
         let diagnostics = RecordingSessionDiagnostics(
             microphone: microphoneMeter.snapshot,
             systemAudio: systemAudioMeter.snapshot
         )
-        videoInput?.markAsFinished()
-        systemAudioInput?.markAsFinished()
-        microphoneInput?.markAsFinished()
-        videoInput = nil
-        systemAudioInput = nil
-        microphoneInput = nil
 
         let completeWriter = {
-            guard let writer, let outputURL else {
-                self.resetLocked()
-                if discard {
-                    resume(.failure(RecordingError.cancelled))
-                } else {
-                    resume(.failure(RecordingError.emptyRecording))
-                }
-                return
-            }
-            writer.finishWriting { [weak self] in
-                self?.queue.async {
-                    self?.completeAfterWriterFinished(
-                        writer: writer,
-                        outputURL: outputURL,
-                        includesVideo: includesVideo,
-                        audioTrackCount: audioTrackCount,
-                        didAppendMedia: didAppendMedia,
-                        diagnostics: diagnostics,
-                        discard: discard,
-                        resume: resume
-                    )
-                }
-            }
+            self.finalizeWriterLocked(discard: discard, diagnostics: diagnostics, resume: resume)
         }
 
         if let stream {
@@ -395,6 +391,89 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         }
     }
 
+    private func finalizeWriterLocked(
+        discard: Bool,
+        diagnostics: RecordingSessionDiagnostics,
+        resume: @escaping @Sendable (Result<RecordingStopResult, RecordingError>) -> Void
+    ) {
+        guard let writer, let outputURL else {
+            resetLocked()
+            resume(.failure(discard ? .cancelled : .emptyRecording))
+            return
+        }
+
+        if discard {
+            if writer.status == .writing {
+                writer.cancelWriting()
+            }
+            try? FileManager.default.removeItem(at: outputURL)
+            resetLocked()
+            resume(.failure(.cancelled))
+            return
+        }
+
+        if writer.status == .failed {
+            logWriterFailure("before finish")
+            let message = writer.error?.localizedDescription ?? RecordingError.emptyRecording.localizedDescription
+            try? FileManager.default.removeItem(at: outputURL)
+            resetLocked()
+            resume(.failure(.writerFailed(message)))
+            return
+        }
+
+        if !didStartSession || !didAppendMedia {
+            if writer.status == .writing {
+                writer.cancelWriting()
+            }
+            try? FileManager.default.removeItem(at: outputURL)
+            resetLocked()
+            resume(.failure(.emptyRecording))
+            return
+        }
+
+        if includesVideo && !didAppendVideo {
+            if writer.status == .writing {
+                writer.cancelWriting()
+            }
+            try? FileManager.default.removeItem(at: outputURL)
+            resetLocked()
+            resume(.failure(.writerFailed("The recording did not capture any video frames.")))
+            return
+        }
+
+        if let input = systemAudioInput, !didAppendSystemAudio {
+            appendSilence(to: input)
+        }
+        if let input = microphoneInput, !didAppendMicrophone {
+            appendSilence(to: input)
+        }
+
+        let includesVideo = self.includesVideo
+        let audioTrackCount = self.audioTrackCount
+        let didAppendMedia = self.didAppendMedia
+        videoInput?.markAsFinished()
+        systemAudioInput?.markAsFinished()
+        microphoneInput?.markAsFinished()
+        videoInput = nil
+        systemAudioInput = nil
+        microphoneInput = nil
+        pixelBufferAdaptor = nil
+
+        writer.finishWriting { [weak self] in
+            self?.queue.async {
+                self?.completeAfterWriterFinished(
+                    writer: writer,
+                    outputURL: outputURL,
+                    includesVideo: includesVideo,
+                    audioTrackCount: audioTrackCount,
+                    didAppendMedia: didAppendMedia,
+                    diagnostics: diagnostics,
+                    resume: resume
+                )
+            }
+        }
+    }
+
     private func completeAfterWriterFinished(
         writer: AVAssetWriter,
         outputURL: URL,
@@ -402,16 +481,10 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         audioTrackCount: Int,
         didAppendMedia: Bool,
         diagnostics: RecordingSessionDiagnostics,
-        discard: Bool,
         resume: @escaping @Sendable (Result<RecordingStopResult, RecordingError>) -> Void
     ) {
-        if discard {
-            try? FileManager.default.removeItem(at: outputURL)
-            resetLocked()
-            resume(.failure(.cancelled))
-            return
-        }
         guard writer.status == .completed, didAppendMedia else {
+            logWriterFailure("after finish")
             let message = writer.error?.localizedDescription ?? RecordingError.emptyRecording.localizedDescription
             try? FileManager.default.removeItem(at: outputURL)
             resetLocked()
@@ -425,7 +498,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         }
         let mixedURL = outputURL.deletingLastPathComponent()
             .appendingPathComponent("\(outputURL.deletingPathExtension().lastPathComponent)-mixed")
-            .appendingPathExtension(outputURL.pathExtension)
+            .appendingPathExtension(includesVideo ? "mp4" : "m4a")
         resetLocked()
         Task {
             do {
@@ -454,17 +527,28 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         stream = nil
         writer = nil
         videoInput = nil
+        pixelBufferAdaptor = nil
+        if let pixelTransferSession {
+            VTPixelTransferSessionInvalidate(pixelTransferSession)
+        }
+        pixelTransferSession = nil
         systemAudioInput = nil
         microphoneInput = nil
         outputURL = nil
         includesVideo = false
         audioTrackCount = 0
+        videoSize = (0, 0)
         didStartSession = false
         hostOrigin = nil
         pauseOffset = .zero
         pauseBegan = nil
         isPaused = false
         didAppendMedia = false
+        didAppendVideo = false
+        didAppendSystemAudio = false
+        didAppendMicrophone = false
+        didLogVideoFormat = false
+        didLogWriterAppendFailure = false
         isStopping = false
         startContinuation = nil
         systemAudioMeter = RecordingAudioLevelMeter()
@@ -487,13 +571,17 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         configuration.channelCount = Int(RecordingAudioTranscoder.channels)
         configuration.excludesCurrentProcessAudio = true
         configuration.showsCursor = request.configuration.capturesVideo
+        configuration.pixelFormat = kCVPixelFormatType_32BGRA
+        configuration.queueDepth = 8
         if let sourceRect = request.sourceRect, sourceRect.width > 0, sourceRect.height > 0 {
             configuration.sourceRect = sourceRect
         }
         let size = outputSize(filter: filter, sourceRect: request.sourceRect)
         configuration.width = size.width
         configuration.height = size.height
-        if !request.configuration.capturesVideo {
+        if request.configuration.capturesVideo {
+            configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+        } else {
             configuration.width = 2
             configuration.height = 2
             configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale.max)
@@ -505,9 +593,20 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     private func outputSize(filter: SCContentFilter, sourceRect: CGRect?) -> (width: Int, height: Int) {
         let scale = CGFloat(max(filter.pointPixelScale, 1))
         let rect = sourceRect ?? filter.contentRect
-        let width = max(2, Int((rect.width * scale).rounded()))
-        let height = max(2, Int((rect.height * scale).rounded()))
-        return (width - width % 2, height - height % 2)
+        var width = max(2, Int((rect.width * scale).rounded()))
+        var height = max(2, Int((rect.height * scale).rounded()))
+        width -= width % 2
+        height -= height % 2
+        let maxWidth = 3840
+        let maxHeight = 2160
+        if width > maxWidth || height > maxHeight {
+            let ratio = min(Double(maxWidth) / Double(width), Double(maxHeight) / Double(height))
+            width = max(2, Int((Double(width) * ratio).rounded()))
+            height = max(2, Int((Double(height) * ratio).rounded()))
+            width -= width % 2
+            height -= height % 2
+        }
+        return (width, height)
     }
 
     private func makeAudioInput() -> AVAssetWriterInput {
@@ -517,11 +616,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             AVNumberOfChannelsKey: Int(RecordingAudioTranscoder.channels),
             AVEncoderBitRateKey: 128_000,
         ]
-        let input = AVAssetWriterInput(
-            mediaType: .audio,
-            outputSettings: settings,
-            sourceFormatHint: RecordingAudioTranscoder.canonicalFormatDescription
-        )
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: settings)
         input.expectsMediaDataInRealTime = true
         return input
     }
@@ -540,13 +635,55 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         didStartSession = true
     }
 
-    private func append(_ sampleBuffer: CMSampleBuffer, to input: AVAssetWriterInput?) {
-        guard !isPaused, let input, input.isReadyForMoreMediaData else { return }
-        ensureSessionStarted()
-        guard let retimed = retimedCopy(sampleBuffer, pts: writerPTS()) else { return }
-        if input.append(retimed) {
-            didAppendMedia = true
+    private func appendVideo(_ sampleBuffer: CMSampleBuffer) {
+        guard !isStopping, !isPaused,
+              writer?.status == .writing,
+              let input = videoInput,
+              input.isReadyForMoreMediaData,
+              let adaptor = pixelBufferAdaptor,
+              Self.isCompleteScreenFrame(sampleBuffer),
+              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            return
         }
+        if !didLogVideoFormat {
+            didLogVideoFormat = true
+            Log.recording.notice(
+                "recording video frame \(CVPixelBufferGetWidth(pixelBuffer))x\(CVPixelBufferGetHeight(pixelBuffer)) expected=\(videoSize.width)x\(videoSize.height)"
+            )
+        }
+        ensureSessionStarted()
+        guard let encodedBuffer = pixelBufferForWriter(pixelBuffer) else { return }
+        if adaptor.append(encodedBuffer, withPresentationTime: writerPTS()) {
+            didAppendVideo = true
+            didAppendMedia = true
+        } else {
+            logAppendFailure(kind: "video")
+        }
+    }
+
+    private func pixelBufferForWriter(_ source: CVPixelBuffer) -> CVPixelBuffer? {
+        let sourceWidth = CVPixelBufferGetWidth(source)
+        let sourceHeight = CVPixelBufferGetHeight(source)
+        let sourceFormat = CVPixelBufferGetPixelFormatType(source)
+        if sourceWidth == videoSize.width,
+           sourceHeight == videoSize.height,
+           sourceFormat == kCVPixelFormatType_32BGRA {
+            return source
+        }
+        guard let pool = pixelBufferAdaptor?.pixelBufferPool else { return nil }
+        var destination: CVPixelBuffer?
+        guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &destination) == kCVReturnSuccess,
+              let destination else {
+            return nil
+        }
+        if pixelTransferSession == nil {
+            VTPixelTransferSessionCreate(allocator: kCFAllocatorDefault, pixelTransferSessionOut: &pixelTransferSession)
+        }
+        guard let session = pixelTransferSession,
+              VTPixelTransferSessionTransferImage(session, from: source, to: destination) == noErr else {
+            return nil
+        }
+        return destination
     }
 
     private enum AudioMeterSource {
@@ -559,7 +696,12 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         to input: AVAssetWriterInput?,
         source: AudioMeterSource
     ) {
-        guard !isPaused, let input, input.isReadyForMoreMediaData else { return }
+        guard !isStopping, !isPaused,
+              writer?.status == .writing,
+              let input,
+              input.isReadyForMoreMediaData else {
+            return
+        }
         let transcoder = source == .systemAudio ? systemAudioTranscoder : microphoneTranscoder
         guard let converted = transcoder.transcode(sampleBuffer) else { return }
         switch source {
@@ -575,31 +717,72 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         ensureSessionStarted()
         if input.append(converted) {
             didAppendMedia = true
+            switch source {
+            case .systemAudio: didAppendSystemAudio = true
+            case .microphone: didAppendMicrophone = true
+            }
+        } else {
+            logAppendFailure(kind: source == .systemAudio ? "system audio" : "microphone")
         }
     }
 
-    private func retimedCopy(_ sample: CMSampleBuffer, pts: CMTime) -> CMSampleBuffer? {
-        var timing = CMSampleTimingInfo(
-            duration: CMSampleBufferGetDuration(sample),
-            presentationTimeStamp: pts,
-            decodeTimeStamp: .invalid
-        )
-        var copy: CMSampleBuffer?
-        let status = CMSampleBufferCreateCopyWithNewTiming(
-            allocator: kCFAllocatorDefault,
-            sampleBuffer: sample,
-            sampleTimingEntryCount: 1,
-            sampleTimingArray: &timing,
-            sampleBufferOut: &copy
-        )
-        guard status == noErr else { return nil }
-        return copy
+    private func appendSilence(to input: AVAssetWriterInput) {
+        guard input.isReadyForMoreMediaData,
+              let sample = RecordingAudioTranscoder.makeSilentSampleBuffer() else {
+            return
+        }
+        ensureSessionStarted()
+        if input.append(sample) {
+            didAppendMedia = true
+        }
+    }
+
+    private static func isCompleteScreenFrame(_ sampleBuffer: CMSampleBuffer) -> Bool {
+        guard CMSampleBufferIsValid(sampleBuffer) else { return false }
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+              let first = attachments.first else {
+            return CMSampleBufferGetImageBuffer(sampleBuffer) != nil
+        }
+        if let rawValue = first[.status] as? Int, let status = SCFrameStatus(rawValue: rawValue) {
+            return status == .complete
+        }
+        return CMSampleBufferGetImageBuffer(sampleBuffer) != nil
+    }
+
+    private func logAppendFailure(kind: String) {
+        guard !didLogWriterAppendFailure else { return }
+        didLogWriterAppendFailure = true
+        if let error = writer?.error {
+            Log.recording.error(
+                "recording append failed kind=\(kind) error=\(Log.detail(error))",
+                telemetry: "Recording append failed"
+            )
+        } else {
+            Log.recording.error(
+                "recording append failed kind=\(kind) writerStatus=\(writer?.status.rawValue ?? -1)",
+                telemetry: "Recording append failed"
+            )
+        }
+    }
+
+    private func logWriterFailure(_ phase: String) {
+        if let error = writer?.error {
+            Log.recording.error(
+                "recording writer failed phase=\(phase) error=\(Log.detail(error))",
+                telemetry: "Recording writer failed"
+            )
+        } else {
+            Log.recording.error(
+                "recording writer failed phase=\(phase) status=\(writer?.status.rawValue ?? -1)",
+                telemetry: "Recording writer failed"
+            )
+        }
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         switch type {
         case .screen:
-            append(sampleBuffer, to: videoInput)
+            appendVideo(sampleBuffer)
         case .audio:
             appendConvertedAudio(sampleBuffer, to: systemAudioInput, source: .systemAudio)
         default:
@@ -614,7 +797,13 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
                 self.startContinuation = nil
                 self.resetLocked()
                 startContinuation.resume(throwing: RecordingError.captureFailed(error.localizedDescription))
+                return
             }
+            guard !self.isStopping else { return }
+            Log.recording.error(
+                "recording stream stopped error=\(Log.detail(error))",
+                telemetry: "Recording stream stopped"
+            )
         }
     }
 }
