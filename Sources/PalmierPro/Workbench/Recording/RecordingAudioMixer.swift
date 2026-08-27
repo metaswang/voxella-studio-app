@@ -45,12 +45,15 @@ enum RecordingAudioMixer {
                 preferredTrackID: kCMPersistentTrackID_Invalid
             ) else { continue }
             let timeRange = try await track.load(.timeRange)
-            let duration = CMTimeMinimum(timeRange.duration, assetDuration)
+            guard timeRange.start.isValid, timeRange.duration.isValid, timeRange.duration.isNumeric,
+                  CMTimeCompare(timeRange.start, assetDuration) < 0 else { continue }
+            let end = CMTimeMinimum(CMTimeAdd(timeRange.start, timeRange.duration), assetDuration)
+            let duration = CMTimeSubtract(end, timeRange.start)
             guard duration.isValid, duration.isNumeric, duration.seconds > 0 else { continue }
             try compositionAudio.insertTimeRange(
                 CMTimeRange(start: timeRange.start, duration: duration),
                 of: track,
-                at: .zero
+                at: timeRange.start
             )
             let parameters = AVMutableAudioMixInputParameters(track: compositionAudio)
             parameters.setVolume(1, at: .zero)

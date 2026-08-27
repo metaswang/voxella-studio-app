@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import CoreGraphics
 import Foundation
 
@@ -25,11 +26,55 @@ enum RecordingAudioDeviceEnumerator {
         }
     }
 
-    static func device(id: String?) -> AVCaptureDevice? {
-        if let id {
-            return AVCaptureDevice(uniqueID: id)
+    static func audioDeviceID(forUID uid: String) -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var dataSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &dataSize
+        ) == noErr else {
+            return nil
         }
-        return AVCaptureDevice.default(for: .audio)
+
+        let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.stride
+        var devices = [AudioDeviceID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &dataSize,
+            &devices
+        ) == noErr else {
+            return nil
+        }
+
+        var uidAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        for device in devices {
+            var uidSize = UInt32(MemoryLayout<CFString?>.size)
+            var currentUID: Unmanaged<CFString>?
+            let status = withUnsafeMutablePointer(to: &currentUID) { pointer in
+                AudioObjectGetPropertyData(device, &uidAddress, 0, nil, &uidSize, pointer)
+            }
+            guard status == noErr, let value = currentUID?.takeRetainedValue() as String? else {
+                continue
+            }
+            if value == uid {
+                return device
+            }
+        }
+        return nil
     }
 }
 

@@ -21,19 +21,25 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
     private var converter: AVAudioConverter?
     private var converterInputFormat: AVAudioFormat?
     private var pts = CMTime.zero
+    private var didStartPTS = false
     private var didLogInputFormat = false
 
     func reset() {
         converter = nil
         converterInputFormat = nil
         pts = .zero
+        didStartPTS = false
         didLogInputFormat = false
     }
 
-    func transcode(_ sampleBuffer: CMSampleBuffer) -> CMSampleBuffer? {
+    func transcode(_ sampleBuffer: CMSampleBuffer, timelineStart: CMTime = .zero) -> CMSampleBuffer? {
         guard let input = Self.pcmBuffer(from: sampleBuffer),
               let converted = resample(input) else {
             return nil
+        }
+        if !didStartPTS {
+            pts = timelineStart
+            didStartPTS = true
         }
         guard let output = Self.makeSampleBuffer(from: converted, presentationTime: pts) else {
             return nil
@@ -83,6 +89,7 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
         let status = converter.convert(to: output, error: &conversionError) { _, status in
             supplier.next(status: status)
         }
+        converter.reset()
         guard conversionError == nil, status != .error, output.frameLength > 0 else {
             Log.recording.error(
                 "recording audio conversion failed status=\(String(describing: status)) error=\(conversionError?.localizedDescription ?? "nil")"
@@ -130,7 +137,7 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
         return makeSampleBuffer(from: buffer, presentationTime: presentationTime)
     }
 
-    private static func makeSampleBuffer(
+    static func makeSampleBuffer(
         from buffer: AVAudioPCMBuffer,
         presentationTime: CMTime
     ) -> CMSampleBuffer? {

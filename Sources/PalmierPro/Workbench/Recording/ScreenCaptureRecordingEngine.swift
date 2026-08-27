@@ -129,6 +129,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     private var microphoneTranscoder = RecordingAudioTranscoder()
     private var microphoneEnabled = false
     private var systemAudioEnabled = false
+    private var isMicrophoneMuted = false
     private var onAudioLevelWarning: (@Sendable (RecordingAudioLevelWarning) -> Void)?
 
     func start(_ request: RecordingEngineRequest) async throws {
@@ -172,7 +173,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
 
     func setMicrophoneMuted(_ muted: Bool) {
         queue.async { [weak self] in
-            self?.microphone.isMuted = muted
+            self?.isMicrophoneMuted = muted
         }
     }
 
@@ -441,6 +442,13 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             return
         }
 
+        if microphoneEnabled && !didAppendMicrophone {
+            Log.recording.warning(
+                "recording finished without microphone samples",
+                telemetry: "Recording microphone missing"
+            )
+        }
+
         if let input = systemAudioInput, !didAppendSystemAudio {
             appendSilence(to: input)
         }
@@ -557,6 +565,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         microphoneTranscoder.reset()
         microphoneEnabled = false
         systemAudioEnabled = false
+        isMicrophoneMuted = false
         onAudioLevelWarning = nil
         microphone.stop()
     }
@@ -702,8 +711,9 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
               input.isReadyForMoreMediaData else {
             return
         }
+        if source == .microphone, isMicrophoneMuted { return }
         let transcoder = source == .systemAudio ? systemAudioTranscoder : microphoneTranscoder
-        guard let converted = transcoder.transcode(sampleBuffer) else { return }
+        guard let converted = transcoder.transcode(sampleBuffer, timelineStart: writerPTS()) else { return }
         switch source {
         case .systemAudio:
             if let level = systemAudioMeter.append(converted), !microphoneEnabled {
@@ -718,8 +728,16 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         if input.append(converted) {
             didAppendMedia = true
             switch source {
-            case .systemAudio: didAppendSystemAudio = true
-            case .microphone: didAppendMicrophone = true
+            case .systemAudio:
+                if !didAppendSystemAudio {
+                    Log.recording.notice("recording system audio sample appended")
+                }
+                didAppendSystemAudio = true
+            case .microphone:
+                if !didAppendMicrophone {
+                    Log.recording.notice("recording microphone sample appended")
+                }
+                didAppendMicrophone = true
             }
         } else {
             logAppendFailure(kind: source == .systemAudio ? "system audio" : "microphone")
@@ -785,7 +803,9 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             appendVideo(sampleBuffer)
         case .audio:
             appendConvertedAudio(sampleBuffer, to: systemAudioInput, source: .systemAudio)
-        default:
+        case .microphone:
+            break
+        @unknown default:
             break
         }
     }

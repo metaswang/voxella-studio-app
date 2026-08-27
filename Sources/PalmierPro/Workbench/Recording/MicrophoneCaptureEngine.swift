@@ -2,11 +2,11 @@ import AVFoundation
 import CoreMedia
 import Foundation
 
-final class MicrophoneCaptureEngine: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
+final class MicrophoneCaptureEngine: @unchecked Sendable {
     private let outputQueue: DispatchQueue
-    private var session: AVCaptureSession?
+    private let audioEngine = AVAudioEngine()
     private var onSample: ((CMSampleBuffer) -> Void)?
-    var isMuted = false
+    private var didInstallEngineTap = false
 
     init(outputQueue: DispatchQueue) {
         self.outputQueue = outputQueue
@@ -15,41 +15,59 @@ final class MicrophoneCaptureEngine: NSObject, AVCaptureAudioDataOutputSampleBuf
     func start(deviceID: String?, onSample: @escaping (CMSampleBuffer) -> Void) throws {
         stop()
         self.onSample = onSample
-        let session = AVCaptureSession()
-        session.beginConfiguration()
-        guard let device = RecordingAudioDeviceEnumerator.device(id: deviceID) else {
-            throw RecordingError.captureFailed("The selected microphone is unavailable.")
-        }
-        let input = try AVCaptureDeviceInput(device: device)
-        guard session.canAddInput(input) else {
-            throw RecordingError.captureFailed("Could not open the selected microphone.")
-        }
-        session.addInput(input)
-
-        let output = AVCaptureAudioDataOutput()
-        output.setSampleBufferDelegate(self, queue: outputQueue)
-        guard session.canAddOutput(output) else {
-            throw RecordingError.captureFailed("Could not capture from the selected microphone.")
-        }
-        session.addOutput(output)
-        session.commitConfiguration()
-        session.startRunning()
-        self.session = session
+        try startAudioEngine(deviceID: deviceID)
     }
 
     func stop() {
-        session?.stopRunning()
-        session = nil
+        if didInstallEngineTap {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            didInstallEngineTap = false
+        }
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
         onSample = nil
-        isMuted = false
     }
 
-    func captureOutput(
-        _ output: AVCaptureOutput,
-        didOutput sampleBuffer: CMSampleBuffer,
-        from connection: AVCaptureConnection
-    ) {
-        guard !isMuted else { return }
-        onSample?(sampleBuffer)
+    private func startAudioEngine(deviceID: String?) throws {
+        let input = audioEngine.inputNode
+        if let deviceID {
+            guard let audioDeviceID = RecordingAudioDeviceEnumerator.audioDeviceID(forUID: deviceID) else {
+                throw RecordingError.captureFailed("The selected microphone is unavailable.")
+            }
+            do {
+                try input.auAudioUnit.setDeviceID(audioDeviceID)
+            } catch {
+                throw RecordingError.captureFailed("Could not open the selected microphone.")
+            }
+        }
+
+        let format = input.inputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            throw RecordingError.captureFailed("The selected microphone is unavailable.")
+        }
+        input.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, _ in
+            guard let self else { return }
+            let presentationTime = CMClockGetTime(CMClockGetHostTimeClock())
+            guard let sample = RecordingAudioTranscoder.makeSampleBuffer(
+                from: buffer,
+                presentationTime: presentationTime
+            ) else { return }
+            self.outputQueue.async {
+                self.onSample?(sample)
+            }
+        }
+        didInstallEngineTap = true
+        audioEngine.prepare()
+        do {
+            try audioEngine.start()
+        } catch {
+            input.removeTap(onBus: 0)
+            didInstallEngineTap = false
+            throw RecordingError.captureFailed("The selected microphone did not start.")
+        }
+        Log.recording.notice(
+            "recording microphone started device=\(deviceID ?? "default") rate=\(format.sampleRate) channels=\(format.channelCount)"
+        )
     }
 }

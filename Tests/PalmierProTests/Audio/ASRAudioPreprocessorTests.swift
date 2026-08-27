@@ -107,4 +107,36 @@ struct ASRAudioPreprocessorTests {
         #expect(zeroCrossingRate > 200)
         #expect(zeroCrossingRate < 1_200)
     }
+
+    @Test func transcodesSuccessiveMicrophoneBuffersOnTheSameConverter() throws {
+        let inputFormat = try #require(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: false
+        ))
+        let frames: AVAudioFrameCount = 1_600
+        func tone() throws -> AVAudioPCMBuffer {
+            let input = try #require(AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: frames))
+            input.frameLength = frames
+            let channel = try #require(input.floatChannelData?[0])
+            for index in 0..<Int(frames) {
+                channel[index] = 0.5 * sin(2 * Float.pi * 440 * Float(index) / 16_000)
+            }
+            return input
+        }
+
+        let transcoder = RecordingAudioTranscoder()
+        let first = try #require(transcoder.resample(try tone()))
+        let second = try #require(transcoder.resample(try tone()))
+        #expect(first.frameLength > 3_200)
+        #expect(second.frameLength > 3_200)
+        #expect(second.frameLength == first.frameLength)
+        let left = try #require(second.floatChannelData?[0])
+        var peak = 0.0
+        for index in 0..<Int(second.frameLength) {
+            peak = max(peak, abs(Double(left[index])))
+        }
+        #expect(peak > 0.3)
+    }
 }
