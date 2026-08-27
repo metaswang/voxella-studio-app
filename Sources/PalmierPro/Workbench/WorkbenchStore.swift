@@ -1599,6 +1599,13 @@ final class WorkbenchStore {
         route = .transcribe
     }
 
+    func showRecordImport() {
+        transcriptionAdmissionError = nil
+        preferRecordEntry = true
+        selectedTranscriptionID = nil
+        route = .transcribe
+    }
+
     func consumeNetVideoEntryPreference() -> Bool {
         defer { preferNetVideoEntry = false }
         return preferNetVideoEntry

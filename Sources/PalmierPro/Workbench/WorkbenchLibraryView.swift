@@ -1,8 +1,10 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct WorkbenchLibraryView: View {
     @Bindable private var store = WorkbenchStore.shared
+    @State private var sessionPendingDeletion: WorkbenchSession?
 
     private let columns = [GridItem(.adaptive(minimum: 210, maximum: 320), spacing: 14)]
 
@@ -12,7 +14,7 @@ struct WorkbenchLibraryView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Text("Create")
                         .font(.system(size: 28, weight: .light))
-                    Text("Transcribe, dub, and edit video.")
+                    Text("Transcribe, record, dub, and edit video.")
                         .font(.system(size: AppTheme.FontSize.md))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
@@ -30,6 +32,14 @@ struct WorkbenchLibraryView: View {
                                 store.stageMediaImport(urls)
                             }
                         }
+                    }
+                    actionCard(
+                        title: "Record",
+                        detail: "Mic · display · window · region · then transcribe",
+                        icon: "record.circle.fill",
+                        tint: .red
+                    ) {
+                        store.showRecordImport()
                     }
                     actionCard(
                         title: "Net video",
@@ -57,43 +67,36 @@ struct WorkbenchLibraryView: View {
                     }
                 }
 
-                if !recentItems.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
+                if !store.sessions.isEmpty {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                         Text("Recent work")
                             .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
-                        ForEach(recentItems.prefix(8)) { item in
-                            Button {
-                                item.open()
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: item.icon)
-                                        .foregroundStyle(item.tint)
-                                        .frame(width: 26)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(item.title)
-                                            .foregroundStyle(AppTheme.Text.primaryColor)
-                                        Text(item.subtitle)
-                                            .font(.system(size: AppTheme.FontSize.xs))
-                                            .foregroundStyle(AppTheme.Text.mutedColor)
-                                    }
-                                    Spacer()
-                                    Text(item.state.label)
-                                        .font(.system(size: AppTheme.FontSize.xs))
-                                        .foregroundStyle(AppTheme.Text.tertiaryColor)
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: AppTheme.FontSize.xs))
-                                        .foregroundStyle(AppTheme.Text.mutedColor)
-                                }
-                                .padding(.horizontal, 14)
-                                .frame(height: 58)
-                                .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: AppTheme.Radius.md)
-                                        .strokeBorder(AppTheme.Border.subtleColor, lineWidth: 1)
+                        LazyVStack(spacing: AppTheme.Spacing.mdLg) {
+                            ForEach(store.sessions.prefix(8)) { session in
+                                SessionListRow(
+                                    session: session,
+                                    onOpen: { store.openSession(session.id) },
+                                    onDelete: { sessionPendingDeletion = session },
+                                    allowsDelete: !session.isRemoteOnly
                                 )
-                                .contentShape(Rectangle())
+                                .contextMenu {
+                                    if let sourceURL = session.sourceURL {
+                                        Button("Reveal source in Finder") {
+                                            NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
+                                        }
+                                    }
+                                    if let outputURL = session.outputURL {
+                                        Button("Reveal dub in Finder") {
+                                            NSWorkspace.shared.activateFileViewerSelecting([outputURL])
+                                        }
+                                    }
+                                    Divider()
+                                    Button("Delete", role: .destructive) {
+                                        sessionPendingDeletion = session
+                                    }
+                                    .disabled(session.isRemoteOnly)
+                                }
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -111,6 +114,16 @@ struct WorkbenchLibraryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.Background.baseColor)
+        .alert(item: $sessionPendingDeletion) { session in
+            Alert(
+                title: Text("Delete session?"),
+                message: Text("\"\(session.title)\" and its saved workflow data will be removed."),
+                primaryButton: .destructive(Text("Delete")) {
+                    store.deleteSession(session.id)
+                },
+                secondaryButton: .cancel()
+            )
+        }
     }
 
     private func actionCard(
@@ -147,32 +160,6 @@ struct WorkbenchLibraryView: View {
         }
         .buttonStyle(.plain)
     }
-
-    private var recentItems: [RecentWorkbenchItem] {
-        store.sessions.map { session in
-            RecentWorkbenchItem(
-                id: "session-\(session.id)",
-                title: session.title,
-                subtitle: "\(session.source == .standaloneDub ? "Dub" : session.hasDub ? "Transcript + Dub" : "Transcript") · \(session.modifiedAt.formatted(date: .abbreviated, time: .shortened))",
-                icon: session.hasDub ? "waveform.and.mic" : "text.bubble",
-                tint: session.hasDub ? .purple : .blue,
-                state: session.state,
-                modifiedAt: session.modifiedAt,
-                open: { store.openSession(session.id) }
-            )
-        }
-    }
-}
-
-private struct RecentWorkbenchItem: Identifiable {
-    let id: String
-    let title: String
-    let subtitle: String
-    let icon: String
-    let tint: Color
-    let state: WorkbenchJobState
-    let modifiedAt: Date
-    let open: () -> Void
 }
 
 enum WorkbenchFilePicker {
