@@ -50,35 +50,39 @@ struct RecordWorkbenchPanel: View {
     private var modePicker: some View {
         HStack(spacing: AppTheme.Spacing.smMd) {
             ForEach(RecordingCaptureMode.allCases) { mode in
-                HStack(spacing: AppTheme.Spacing.sm) {
-                    Button {
-                        session.configuration.mode = mode
-                        session.configuration.normalizeAudioSources()
-                    } label: {
+                Button {
+                    session.configuration.mode = mode
+                    session.configuration.normalizeAudioSources()
+                } label: {
+                    HStack(spacing: AppTheme.Spacing.sm) {
                         Label(mode.title, systemImage: mode.systemImage)
                             .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(.plain)
-
-                    RecordingInfoButton(title: mode.title, message: mode.detail)
+                    .padding(.horizontal, AppTheme.Spacing.md)
+                    .padding(.vertical, AppTheme.Spacing.mdLg)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        session.configuration.mode == mode
+                            ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.soft)
+                            : AppTheme.Background.baseColor.opacity(AppTheme.Opacity.soft),
+                        in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+                            .strokeBorder(
+                                session.configuration.mode == mode
+                                    ? AppTheme.Accent.primary
+                                    : AppTheme.Border.subtleColor,
+                                lineWidth: AppTheme.BorderWidth.thin
+                            )
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
                 }
-                .padding(.horizontal, AppTheme.Spacing.md)
-                .padding(.vertical, AppTheme.Spacing.mdLg)
-                .background(
-                    session.configuration.mode == mode
-                        ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.soft)
-                        : AppTheme.Background.baseColor.opacity(AppTheme.Opacity.soft),
-                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                        .strokeBorder(
-                            session.configuration.mode == mode
-                                ? AppTheme.Accent.primary
-                                : AppTheme.Border.subtleColor,
-                            lineWidth: AppTheme.BorderWidth.thin
-                        )
+                .buttonStyle(.plain)
+                .overlay(alignment: .trailing) {
+                    RecordingInfoButton(title: mode.title, message: mode.detail)
+                        .padding(.trailing, AppTheme.Spacing.md)
                 }
                 .disabled(session.phase.isActive)
             }
