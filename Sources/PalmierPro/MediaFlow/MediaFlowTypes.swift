@@ -656,7 +656,7 @@ enum MediaFlowError: LocalizedError {
         case .emptyDubScript:
             "The dub flow has no non-empty script segments."
         case .invalidLLMOutput(let reason):
-            "The LLM returned invalid structured output: \(reason)"
+            "The LLM response could not be used: \(reason)"
         }
     }
 }

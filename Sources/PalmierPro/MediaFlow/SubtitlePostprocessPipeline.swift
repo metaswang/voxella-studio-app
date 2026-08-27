@@ -437,27 +437,23 @@ struct SubtitlePostprocessPipeline: Sendable {
         limits: SubtitleReadabilityPolicy.Limits,
         options: SubtitleProcessingPayload
     ) async throws -> BatchOutcome {
-        let correctionSystem = SubtitleCascadePrompt.correctionSystem(
-            languageCode: languageCode,
-            isCJK: isCJK
-        )
+        let correctionSystem = SubtitleCascadePrompt.correctionSystem(languageCode: languageCode)
         let correctionBaseUser = SubtitleCascadePrompt.correctionUser(
             batchText: batchText,
             contextBefore: contextBefore,
             contextAfter: contextAfter,
             languageCode: languageCode,
             speaker: speaker,
-            limits: limits,
             userInstruction: options.userInstruction
         )
         let segmentationSystem = SubtitleCascadePrompt.segmentationSystem(
             languageCode: languageCode,
-            isCJK: isCJK,
             limits: limits
         )
         let attempts = max(1, options.maximumAttempts)
         var failureReason: String?
         var failureStage: SubtitleCascadePrompt.Stage?
+        var lastRequestError: Error?
 
         for attempt in 0..<attempts {
             try Task.checkCancellation()
@@ -481,8 +477,10 @@ struct SubtitlePostprocessPipeline: Sendable {
                 try Task.checkCancellation()
                 failureReason = "correction_request_failed"
                 failureStage = .correction
+                lastRequestError = error
                 continue
             }
+            lastRequestError = nil
 
             let correction: CorrectionResponse
             do {
@@ -506,8 +504,7 @@ struct SubtitlePostprocessPipeline: Sendable {
                 correctedText: correctedText,
                 sourceText: batchText,
                 sourceWordCount: words.count,
-                isCJK: isCJK,
-                limits: limits
+                isCJK: isCJK
             ) {
                 failureReason = reason
                 failureStage = .correction
@@ -542,8 +539,10 @@ struct SubtitlePostprocessPipeline: Sendable {
                 try Task.checkCancellation()
                 failureReason = "segmentation_request_failed"
                 failureStage = .segmentation
+                lastRequestError = error
                 continue
             }
+            lastRequestError = nil
 
             let segmentation: SegmentationResponse
             do {
@@ -610,9 +609,18 @@ struct SubtitlePostprocessPipeline: Sendable {
             "subtitle batch failed after \(attempts) two-pass attempts at "
                 + "\(String(format: "%.1f", words[0].start))s reason=\(failureReason ?? "unknown")"
         )
+        if let lastRequestError,
+           failureReason == "correction_request_failed"
+            || failureReason == "segmentation_request_failed" {
+            throw lastRequestError
+        }
         throw MediaFlowError.invalidLLMOutput(
-            "Subtitle batch at \(String(format: "%.1f", words[0].start))s "
-                + "failed after \(attempts) attempts (\(failureReason ?? "unknown"))."
+            Self.cascadeFailureDescription(
+                stage: failureStage,
+                reason: failureReason,
+                batchStart: words[0].start,
+                attempts: attempts
+            )
         )
     }
 
@@ -620,26 +628,9 @@ struct SubtitlePostprocessPipeline: Sendable {
         correctedText: String,
         sourceText: String,
         sourceWordCount: Int,
-        isCJK: Bool,
-        limits: SubtitleReadabilityPolicy.Limits
+        isCJK: Bool
     ) -> String? {
         if correctedText.isEmpty { return "empty_correction" }
-        if SubtitleReadabilityPolicy.containsForeignPunctuation(
-            correctedText,
-            denseScript: isCJK
-        ) {
-            return "wrong_script_punctuation"
-        }
-        if isCJK, SubtitleReadabilityPolicy.containsStrandedBoundParticle(correctedText) {
-            return "stranded_bound_particle"
-        }
-        if let reason = punctuationFailureReason(
-            subtitles: [correctedText],
-            isCJK: isCJK,
-            limits: limits
-        ) {
-            return reason
-        }
         let sourceLength = max(1, displayLength(sourceText, isCJK: isCJK))
         let outputLength = displayLength(correctedText, isCJK: isCJK)
         guard sourceWordCount >= 3 else { return nil }
@@ -670,45 +661,41 @@ struct SubtitlePostprocessPipeline: Sendable {
         }) {
             return "overlong_subtitle_line"
         }
-        if subtitles.contains(where: {
-            SubtitleReadabilityPolicy.containsForeignPunctuation($0, denseScript: isCJK)
-        }) {
-            return "wrong_script_punctuation"
-        }
         return nil
     }
 
-    private static func punctuationFailureReason(
-        subtitles: [String],
-        isCJK: Bool,
-        limits: SubtitleReadabilityPolicy.Limits
-    ) -> String? {
-        if subtitles.contains(where: {
-            SubtitleReadabilityPolicy.containsForeignPunctuation($0, denseScript: isCJK)
-        }) {
-            return "wrong_script_punctuation"
+    private static func cascadeFailureDescription(
+        stage: SubtitleCascadePrompt.Stage?,
+        reason: String?,
+        batchStart: Double,
+        attempts: Int
+    ) -> String {
+        let location = "at \(String(format: "%.1f", batchStart))s"
+        let attemptCount = attempts == 1 ? "1 attempt" : "\(attempts) attempts"
+        switch reason {
+        case "invalid_correction_json":
+            return "Subtitle correction \(location) did not return valid JSON after \(attemptCount)."
+        case "empty_correction":
+            return "Subtitle correction \(location) returned empty text after \(attemptCount)."
+        case "near_empty_output":
+            return "Subtitle correction \(location) removed too much of the source transcript after \(attemptCount)."
+        case "extreme_output_expansion":
+            return "Subtitle correction \(location) added too much content after \(attemptCount)."
+        case "invalid_segmentation_json":
+            return "Subtitle segmentation \(location) did not return valid JSON after \(attemptCount)."
+        case "empty_lines":
+            return "Subtitle segmentation \(location) returned no lines after \(attemptCount)."
+        case "excessive_subtitle_count":
+            return "Subtitle segmentation \(location) returned too many lines after \(attemptCount)."
+        case "segmentation_changed_text":
+            return "Subtitle segmentation \(location) changed the corrected transcript after \(attemptCount)."
+        case "overlong_subtitle_line":
+            return "Subtitle segmentation \(location) exceeded the line-length limit after \(attemptCount)."
+        default:
+            let stageName = stage == .segmentation ? "segmentation" : "correction"
+            return "Subtitle \(stageName) \(location) failed validation after \(attemptCount)"
+                + (reason.map { " (\($0))." } ?? ".")
         }
-        let total = subtitles.reduce(0) { $0 + displayLength($1, isCJK: isCJK) }
-        guard total > 0 else { return nil }
-        if subtitles.contains(where: { line in
-            displayLength(line, isCJK: isCJK) > 0
-                && !SubtitleReadabilityPolicy.containsAllowedPunctuation(line, denseScript: isCJK)
-        }) {
-            return "missing_punctuation"
-        }
-        if let last = subtitles.last,
-           !SubtitleReadabilityPolicy.endsWithAllowedPunctuation(last, denseScript: isCJK) {
-            return "missing_punctuation"
-        }
-        let joined = subtitles.joined()
-        if SubtitleReadabilityPolicy.containsUnderpunctuatedRun(
-            joined,
-            denseScript: isCJK,
-            maximumRun: limits.maximum
-        ) {
-            return "missing_punctuation"
-        }
-        return nil
     }
 
     private static func makeCues(

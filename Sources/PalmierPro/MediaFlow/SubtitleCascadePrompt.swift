@@ -9,28 +9,21 @@ enum SubtitleCascadePrompt {
     static let contextCharacters = 1_200
     static let userInstructionCharacters = 400
 
-    static func correctionSystem(
-        languageCode: String?,
-        isCJK: Bool
-    ) -> String {
+    static func correctionSystem(languageCode: String?) -> String {
         var lines = [
-            "Correct this spoken ASR transcript and restore natural punctuation.",
-            "Return JSON only: {\"text\":\"<corrected transcript>\"}.",
-            "Keep the source language, wording, order, repetitions, and meaning.",
-            "Make minimal corrections to likely recognition errors, word boundaries, or names.",
-            "Do not translate, summarize, invent, or split into subtitle lines yet.",
-            "Punctuation must follow the phrase it closes and must not strand a bound particle.",
-            "Mark continuing clause boundaries as well as sentence endings.",
+            "# Role",
+            "You are a professional subtitle editor correcting spoken-language ASR text.",
+            "# Task",
+            "Correct likely recognition errors and add natural punctuation for the source language.",
+            "Preserve the speaker's wording, order, repetitions, tone, meaning, and intentional fragments.",
+            "Use neighboring context to understand names and sentence boundaries, but return only the ASR input.",
+            "A batch may begin or end mid-sentence. Do not force punctuation at fixed intervals, at every future subtitle boundary, or at an incomplete batch edge.",
+            "Do not translate, summarize, invent content, or split the text into subtitle lines.",
+            "# Output",
+            "Return exactly one JSON object: {\"text\":\"<corrected transcript>\"}.",
         ]
-        if isCJK {
-            lines.append("Use only ，。？！ — never ASCII punctuation or 、.")
-            lines.append("End the final sentence with 。？！.")
-        } else {
-            lines.append("Use only , . ? !.")
-            lines.append("End the final sentence with . ? !.")
-        }
         if let languageCode, !languageCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            lines.append("Keep language \(languageCode).")
+            lines.insert("Source language: \(languageCode).", at: 3)
         }
         return lines.joined(separator: "\n")
     }
@@ -41,13 +34,11 @@ enum SubtitleCascadePrompt {
         contextAfter: String?,
         languageCode: String?,
         speaker: String?,
-        limits: SubtitleReadabilityPolicy.Limits,
         userInstruction: String?
     ) -> String {
-        var lines = commonHeader(
+        var lines = metadataHeader(
             languageCode: languageCode,
-            speaker: speaker,
-            limits: limits
+            speaker: speaker
         )
         if let contextBefore, !contextBefore.isEmpty {
             lines.append("<context_before>\n\(contextBefore)\n</context_before>")
@@ -63,7 +54,6 @@ enum SubtitleCascadePrompt {
 
     static func segmentationSystem(
         languageCode: String?,
-        isCJK: Bool,
         limits: SubtitleReadabilityPolicy.Limits
     ) -> String {
         var lines = [
@@ -74,14 +64,11 @@ enum SubtitleCascadePrompt {
             "Joining the lines must reproduce the supplied transcript apart from line whitespace.",
             "Keep lexical compounds, names, and bound particles intact.",
             "Prefer phrase, punctuation, and pause boundaries over fixed cuts.",
+            "A subtitle line does not need to end with punctuation.",
             "Use the stated line limits as hard constraints.",
             "Do not break immediately before an existing punctuation mark.",
+            "Preserve all existing punctuation exactly, including places with no punctuation.",
         ]
-        if isCJK {
-            lines.append("The transcript already uses CJK punctuation; preserve it exactly.")
-        } else {
-            lines.append("The transcript already uses its language punctuation; preserve it exactly.")
-        }
         if let languageCode, !languageCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             lines.append("Keep language \(languageCode).")
         }
@@ -100,10 +87,14 @@ enum SubtitleCascadePrompt {
         limits: SubtitleReadabilityPolicy.Limits,
         userInstruction: String?
     ) -> String {
-        var lines = commonHeader(
+        var lines = metadataHeader(
             languageCode: languageCode,
-            speaker: speaker,
-            limits: limits
+            speaker: speaker
+        )
+        lines.append(
+            "cue_limits: {\"minimumCharactersPerCue\":\(limits.minimum),"
+                + "\"preferredCharactersPerCue\":\(limits.preferred),"
+                + "\"maximumCharactersPerCue\":\(limits.maximum)}"
         )
         if let contextBefore, !contextBefore.isEmpty {
             lines.append("<context_before>\n\(contextBefore)\n</context_before>")
@@ -126,16 +117,14 @@ enum SubtitleCascadePrompt {
             instruction = "Return a JSON object with a non-empty lines array."
         case "segmentation_changed_text":
             instruction = "Do not change any character or punctuation; only insert line boundaries."
-        case "wrong_script_punctuation":
-            instruction = "Use only the punctuation marks allowed for this language."
-        case "missing_punctuation":
-            instruction = "Restore punctuation at clause boundaries and end the final sentence correctly."
-        case "stranded_bound_particle":
-            instruction = "Keep every bound particle with the phrase it modifies."
         case "overlong_subtitle_line":
             instruction = "Split earlier at a coherent phrase boundary and keep every line within the maximum."
-        case "alignment_failed", "unanchored_correction":
-            instruction = "Stay close to the ASR wording so the complete transcript remains monotonically alignable."
+        case "near_empty_output":
+            instruction = "Preserve the complete source transcript while making only necessary corrections."
+        case "extreme_output_expansion":
+            instruction = "Do not add explanations or content that is absent from the source transcript."
+        case "excessive_subtitle_count":
+            instruction = "Use fewer subtitle lines while preserving the complete text."
         default:
             instruction = "Preserve the source wording and follow the JSON contract exactly."
         }
@@ -159,10 +148,9 @@ enum SubtitleCascadePrompt {
         )
     }
 
-    private static func commonHeader(
+    private static func metadataHeader(
         languageCode: String?,
-        speaker: String?,
-        limits: SubtitleReadabilityPolicy.Limits
+        speaker: String?
     ) -> [String] {
         var lines: [String] = []
         if let languageCode, !languageCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -171,11 +159,6 @@ enum SubtitleCascadePrompt {
         if let speaker, !speaker.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             lines.append("speaker: \(speaker)")
         }
-        lines.append(
-            "cue_limits: {\"minimumCharactersPerCue\":\(limits.minimum),"
-                + "\"preferredCharactersPerCue\":\(limits.preferred),"
-                + "\"maximumCharactersPerCue\":\(limits.maximum)}"
-        )
         return lines
     }
 
