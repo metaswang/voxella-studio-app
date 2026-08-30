@@ -17,6 +17,7 @@ let package = Package(
         .package(url: "https://github.com/get-convex/convex-swift", from: "0.8.0"),
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.3"),
         .package(url: "https://github.com/ml-explore/mlx-swift", exact: "0.31.5"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", exact: "3.31.4"),
         .package(url: "https://github.com/airbnb/lottie-ios", from: "4.6.1"),
         .package(url: "https://github.com/gonzalezreal/textual", from: "0.1.0"),
         .package(url: "https://github.com/alexeichhorn/YouTubeKit.git", from: "0.4.9"),
@@ -38,6 +39,16 @@ let package = Package(
                 .product(
                     name: "MLX",
                     package: "mlx-swift",
+                    condition: .when(traits: ["BundledSpeech"])
+                ),
+                .product(
+                    name: "MLXLMCommon",
+                    package: "mlx-swift-lm",
+                    condition: .when(traits: ["BundledSpeech"])
+                ),
+                .product(
+                    name: "MLXVLM",
+                    package: "mlx-swift-lm",
                     condition: .when(traits: ["BundledSpeech"])
                 ),
                 .product(
@@ -95,6 +106,7 @@ let package = Package(
                     package: "swift-huggingface",
                     condition: .when(traits: ["BundledSpeech"])
                 ),
+                "CSQLiteVec",
             ],
             path: "Sources/PalmierPro",
             exclude: [
@@ -120,14 +132,31 @@ let package = Package(
                 .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("SoundAnalysis"),
                 .linkedFramework("AuthenticationServices"),
+                .linkedLibrary("sqlite3"),
             ],
             plugins: ["MetalCIKernelPlugin"]
+        ),
+        .target(
+            name: "CSQLiteVec",
+            path: "Vendor/sqlite-vec",
+            exclude: ["LICENSE"],
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("include"),
+                .define("SQLITE_CORE"),
+                .define("SQLITE_VEC_STATIC"),
+                .define("SQLITE_VEC_OMIT_FS"),
+            ],
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+            ]
         ),
         .plugin(name: "MetalCIKernelPlugin", capability: .buildTool()),
         .testTarget(
             name: "PalmierProTests",
             dependencies: [
                 "PalmierPro",
+                "CSQLiteVec",
                 .product(name: "MCP", package: "swift-sdk"),
             ],
             path: "Tests/PalmierProTests",

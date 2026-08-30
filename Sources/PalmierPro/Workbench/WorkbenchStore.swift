@@ -2125,6 +2125,7 @@ final class WorkbenchStore {
             Self.removeManagedClipMediaIfNeeded(job.sourceURL)
         }
         transcriptions.removeAll { $0.id == id }
+        SessionIndexCoordinator.shared.remove(id)
         if selectedTranscriptionID == id { selectedTranscriptionID = transcriptions.first?.id }
         if var batch = activeTranscriptionBatch {
             batch.jobIDs.removeAll { $0 == id }
@@ -2184,6 +2185,9 @@ final class WorkbenchStore {
                 job.translationTracks[index].track = job.translationTracks[index].track
                     .renamingSpeaker(current, to: replacement)
             }
+        }
+        if let job = transcriptions.first(where: { $0.id == id }) {
+            SessionIndexCoordinator.shared.patchSpeakers(job)
         }
     }
 
@@ -3610,6 +3614,12 @@ final class WorkbenchStore {
                 }
             }
 
+            if committed,
+               let job = transcriptions.first(where: { $0.id == jobID }),
+               job.state == .completed {
+                SessionIndexCoordinator.shared.ingest(job)
+            }
+
         case .artifact(.transcription(let result, let diagnostics, let alignmentDiagnostics)):
             guard var staged = stagedTranscriptions[jobID] else { return }
             staged.rawResult = result
@@ -3883,6 +3893,9 @@ final class WorkbenchStore {
                 $0.progressMessage = $0.translationTracks.isEmpty
                     ? "Transcript and summary ready"
                     : "Transcript, translation, and summary ready"
+            }
+            if let job = transcriptions.first(where: { $0.id == id }) {
+                SessionIndexCoordinator.shared.patchSessionCard(job)
             }
             return true
         } catch {
@@ -4726,6 +4739,7 @@ final class WorkbenchStore {
         for job in resumableCloudDubs {
             resumePersistedCloudDub(job)
         }
+        SessionIndexCoordinator.shared.reconcile(transcriptions)
     }
 
     private func schedulePersistedCloudSyncs() {

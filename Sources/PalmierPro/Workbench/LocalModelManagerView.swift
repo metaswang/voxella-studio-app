@@ -332,6 +332,7 @@ struct LocalModelManagerView: View {
         case .pyannoteSegmentation: "person.2.wave.2"
         case .weSpeaker: "person.crop.circle.badge.checkmark"
         case .qwenTTS06B, .qwenTTS17B: "speaker.wave.3"
+        case .weMMEmbedding2B4Bit: "sparkle.magnifyingglass"
         }
     }
 
@@ -339,6 +340,7 @@ struct LocalModelManagerView: View {
         switch id {
         case .qwenTTS06B, .qwenTTS17B: .purple
         case .sortformerDiarization, .pyannoteSegmentation, .weSpeaker: .orange
+        case .weMMEmbedding2B4Bit: .teal
         default: .blue
         }
     }

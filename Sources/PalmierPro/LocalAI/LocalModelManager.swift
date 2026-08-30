@@ -22,6 +22,7 @@ enum LocalModelID: String, Codable, CaseIterable, Identifiable, Sendable {
     case weSpeaker
     case qwenTTS06B
     case qwenTTS17B
+    case weMMEmbedding2B4Bit
 
     var id: String { rawValue }
 
@@ -133,6 +134,7 @@ struct LocalModelDescriptor: Identifiable, Sendable {
     enum LocalFeature: String, Sendable {
         case transcribe
         case dub
+        case search
     }
 }
 
@@ -434,6 +436,28 @@ final class LocalModelManager {
             requiredFor: [.dub],
             isRecommended: true
         ),
+        .init(
+            id: .weMMEmbedding2B4Bit,
+            title: "WeMM Embedding 2B 4-bit",
+            purpose: "On-device multimodal search over session video and transcript",
+            repository: "hfadam/WeMM-Embedding-2B-MLX-4bit",
+            revision: "5ce6966e8b62135f771f22104bf9c0d1b6a4c075",
+            weightByteSize: 2_007_778_681,
+            weightSHA256: "5564d76ebb9ec4cb1f4c28454d04dcab923d54ce834a58c58e38682a0583fd80",
+            byteSize: 2_027_856_761,
+            sizeLabel: "~ 2.03 GB",
+            license: "Apache-2.0",
+            licenseURL: URL(string: "https://huggingface.co/tencent/WeMM-Embedding-2B/blob/main/LICENSE"),
+            requiredFor: [.search],
+            isRecommended: true,
+            requiredArtifacts: [
+                .init(filename: "config.json", byteSize: 3_537, sha256: "c5abba86ba31264a074383cd164e23627f0dce1a22bdc6c23c96237af8bd3839"),
+                .init(filename: "embedding_chat_template.jinja", byteSize: 1_086, sha256: "7c3df2aab83ab9096428ec27b6b99ad87c4790418b830d119957634f28c677ba"),
+                .init(filename: "tokenizer.json", byteSize: 19_990_378, sha256: "40e444c744512f423da4c8443c47c21e22ff76056ba4e9796a81c04c13a9daf0"),
+                .init(filename: "tokenizer_config.json", byteSize: 1_171, sha256: "b34b3377d4a32eda1a4898aea3f738a98e51aaf8038cc4f465b015d11298c8d1"),
+                .init(filename: "model.safetensors.index.json", byteSize: 81_908, sha256: "fbb49af67f30c6ebf7a2a260403b5759c16f29ce6670c90389467d6bedd059f8"),
+            ]
+        ),
     ]
 
     var states: [LocalModelID: LocalModelDownloadState] = [:]
@@ -573,6 +597,9 @@ final class LocalModelManager {
                 self.states[id] = .installed
                 if self.pendingASRActivation.remove(id) != nil {
                     self.useASRModel(id)
+                }
+                if id == .weMMEmbedding2B4Bit {
+                    SessionIndexCoordinator.shared.resumeEmbeddings()
                 }
             } catch is CancellationError {
                 self.pendingASRActivation.remove(id)
@@ -901,7 +928,7 @@ final class LocalModelManager {
     private nonisolated static func additionalFiles(for id: LocalModelID) -> [String] {
         switch id {
         case .whisperLargeV3Turbo8Bit, .whisperLargeV3TurboFP16,
-             .qwen3ASR17B8Bit, .parakeetTDT06Bv3:
+             .qwen3ASR17B8Bit, .parakeetTDT06Bv3, .weMMEmbedding2B4Bit:
             catalog.first(where: { $0.id == id })?.requiredArtifacts.map(\.filename) ?? []
         case .whisperSmall:
             ["config.json", "generation_config.json"]
