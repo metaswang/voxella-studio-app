@@ -48,6 +48,7 @@ final class SessionIndexCoordinator {
     }
 
     func patchSpeakers(_ job: WorkbenchTranscriptionJob) {
+        guard SessionIndexSnapshot.from(job) != nil else { return }
         pendingSpeakerPatches[job.id] = SessionIndexSnapshot.speakers(in: job)
         pump()
     }
@@ -61,14 +62,18 @@ final class SessionIndexCoordinator {
     }
 
     func reconcile(_ jobs: [WorkbenchTranscriptionJob]) {
-        pendingRetainIDs = Set(jobs.map(\.id))
-        let completed = jobs.filter { $0.state == .completed }
-        Log.search.notice(
-            "session index reconcile jobs=\(jobs.count) completed=\(completed.count)"
-        )
-        for job in completed {
-            ingest(job)
+        var snapshots: [UUID: SessionIndexSnapshot] = [:]
+        for job in jobs {
+            guard let snapshot = SessionIndexSnapshot.from(job) else { continue }
+            snapshots[snapshot.sessionID] = snapshot
         }
+        pendingRetainIDs = Set(snapshots.keys)
+        for (id, snapshot) in snapshots {
+            pending[id] = snapshot
+        }
+        Log.search.notice(
+            "session index reconcile jobs=\(jobs.count) indexable=\(snapshots.count)"
+        )
         pump()
     }
 

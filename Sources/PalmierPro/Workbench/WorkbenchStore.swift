@@ -2186,7 +2186,8 @@ final class WorkbenchStore {
                     .renamingSpeaker(current, to: replacement)
             }
         }
-        if let job = transcriptions.first(where: { $0.id == id }) {
+        if let job = transcriptions.first(where: { $0.id == id }),
+           job.state == .completed {
             SessionIndexCoordinator.shared.patchSpeakers(job)
         }
     }
@@ -3894,7 +3895,8 @@ final class WorkbenchStore {
                     ? "Transcript and summary ready"
                     : "Transcript, translation, and summary ready"
             }
-            if let job = transcriptions.first(where: { $0.id == id }) {
+            if let job = transcriptions.first(where: { $0.id == id }),
+               job.state == .completed {
                 SessionIndexCoordinator.shared.patchSessionCard(job)
             }
             return true

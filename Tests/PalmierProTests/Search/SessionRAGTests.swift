@@ -220,6 +220,38 @@ struct SessionIndexIngestActionTests {
     }
 }
 
+@Suite("Session index eligibility")
+struct SessionIndexEligibilityTests {
+    @Test func snapshotOnlyComesFromCompletedJobsWithTranscript() {
+        let result = TranscriptionResult(
+            text: "脚底很痛",
+            language: "zh",
+            words: [word("脚底", 0.5, 0.9)],
+            segments: [TranscriptionSegment(text: "脚底很痛", start: 0, end: 2, speaker: "Speaker 1")]
+        )
+        for state: WorkbenchJobState in [.ready, .running, .cancelling, .cancelled, .failed] {
+            let job = indexJob(state: state, result: result)
+            #expect(SessionIndexSnapshot.from(job) == nil)
+        }
+        #expect(SessionIndexSnapshot.from(indexJob(state: .completed, result: result)) != nil)
+    }
+
+    @Test func snapshotRejectsCompletedJobsWithoutTranscriptOrCues() {
+        #expect(SessionIndexSnapshot.from(indexJob(state: .completed, result: nil)) == nil)
+    }
+}
+
+private func indexJob(
+    state: WorkbenchJobState,
+    result: TranscriptionResult?
+) -> WorkbenchTranscriptionJob {
+    WorkbenchTranscriptionJob(
+        sourcePath: "/tmp/demo.mp4",
+        state: state,
+        result: result
+    )
+}
+
 private func indexSnapshot(generation: Int) -> SessionIndexSnapshot {
     let sessionID = UUID()
     return SessionIndexSnapshot(
