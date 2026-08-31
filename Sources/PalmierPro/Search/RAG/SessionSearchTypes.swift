@@ -3,7 +3,6 @@ import Foundation
 enum SessionIndexUnitKind: String, Codable, Sendable {
     case sessionCard = "session_card"
     case transcriptChunk = "transcript_chunk"
-    case subtitleCue = "subtitle_cue"
     case mediaClip = "media_clip"
 }
 
@@ -114,6 +113,9 @@ enum SessionIndexIngestAction: Equatable, Sendable {
 }
 
 struct SessionIndexSnapshot: Sendable {
+    /// Bump when lexical unit shape changes so historical rows rebuild.
+    static let ingestFormat = 2
+
     var sessionID: UUID
     var title: String
     var tag: String?
@@ -128,6 +130,9 @@ struct SessionIndexSnapshot: Sendable {
     var segments: [TranscriptionSegment]
     var words: [TranscriptionWord]
     var cues: [SubtitleCue]
-    var translationByCueID: [Int: String]
     var shotBounds: [Double]
+
+    static func generation(modifiedAt: Date) -> Int {
+        ingestFormat &* 1_000_000_000_000 + Int(modifiedAt.timeIntervalSince1970)
+    }
 }

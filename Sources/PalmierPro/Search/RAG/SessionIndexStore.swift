@@ -58,7 +58,6 @@ actor SessionIndexStore {
                 speaker: nil,
                 speakers: snapshot.speakers.map(\.label),
                 text: cardText,
-                translation: nil,
                 cueIDs: [],
                 parentID: nil,
                 modality: .text,
@@ -66,39 +65,17 @@ actor SessionIndexStore {
                 summary: snapshot.summaryMarkdown
             )
 
-            var chunkIDs: [Int] = []
-            for segment in snapshot.segments {
-                let id = try insertUnit(
-                    snapshot: snapshot,
-                    kind: .transcriptChunk,
-                    start: segment.start,
-                    end: segment.end,
-                    speaker: segment.speaker,
-                    speakers: segment.speaker.map { [$0] } ?? [],
-                    text: SpeakerPrefixedText.line(speaker: segment.speaker, text: segment.text),
-                    translation: nil,
-                    cueIDs: [],
-                    parentID: cardID,
-                    modality: .text,
-                    title: snapshot.title,
-                    summary: nil
-                )
-                chunkIDs.append(id)
-            }
-
-            for cue in snapshot.cues {
-                let parent = parentChunkID(for: cue, segments: snapshot.segments, chunkIDs: chunkIDs)
+            for chunk in TranscriptChunkPacker.pack(segments: snapshot.segments) {
                 try insertUnit(
                     snapshot: snapshot,
-                    kind: .subtitleCue,
-                    start: cue.start,
-                    end: cue.end,
-                    speaker: cue.speaker,
-                    speakers: cue.speaker.map { [$0] } ?? [],
-                    text: SpeakerPrefixedText.line(speaker: cue.speaker, text: cue.text),
-                    translation: snapshot.translationByCueID[cue.id],
-                    cueIDs: [cue.id],
-                    parentID: parent,
+                    kind: .transcriptChunk,
+                    start: chunk.start,
+                    end: chunk.end,
+                    speaker: chunk.speakerLabels.first,
+                    speakers: chunk.speakerLabels,
+                    text: chunk.text,
+                    cueIDs: [],
+                    parentID: cardID,
                     modality: .text,
                     title: snapshot.title,
                     summary: nil
@@ -117,7 +94,6 @@ actor SessionIndexStore {
                     speaker: clip.speakerLabels.first,
                     speakers: clip.speakerLabels,
                     text: clip.text,
-                    translation: nil,
                     cueIDs: clip.cueIDs,
                     parentID: cardID,
                     modality: modality,
@@ -296,9 +272,11 @@ actor SessionIndexStore {
         sql += Self.filterSQL(filter, binds: &binds)
         sql += " ORDER BY rank LIMIT ?"
         binds.append(.int(Self.lexicalLimit))
-        return try sqlite.query(sql, binds: binds).compactMap { row in
-            hit(from: row, matchSource: "bm25", invertRank: true)
-        }
+        return try decorateSpeakers(
+            sqlite.query(sql, binds: binds).compactMap { row in
+                hit(from: row, matchSource: "bm25", invertRank: true)
+            }
+        )
     }
 
     func searchVector(
@@ -319,9 +297,11 @@ actor SessionIndexStore {
         sql += Self.filterSQL(filter, binds: &binds)
         sql += " ORDER BY rank LIMIT ?"
         binds.append(.int(Self.vectorLimit))
-        return try sqlite.query(sql, binds: binds).compactMap { row in
-            hit(from: row, matchSource: "vector-\(modality.rawValue)", invertRank: false)
-        }
+        return try decorateSpeakers(
+            sqlite.query(sql, binds: binds).compactMap { row in
+                hit(from: row, matchSource: "vector-\(modality.rawValue)", invertRank: false)
+            }
+        )
     }
 
     func contextUnits(
@@ -366,10 +346,6 @@ actor SessionIndexStore {
         }
     }
 
-    func subtitleList(sessionID: UUID) throws -> [SessionSearchHit] {
-        try contextUnits(sessionID: sessionID, kind: .subtitleCue, start: -.greatestFiniteMagnitude, end: .greatestFiniteMagnitude)
-    }
-
     func speakers(sessionID: UUID) throws -> [SessionSpeaker] {
         try sqlite.query(
             "SELECT label, display_name FROM speakers WHERE session_id = ? ORDER BY label",
@@ -382,24 +358,22 @@ actor SessionIndexStore {
 
     func resolveClip(sessionID: UUID, start: Double, end: Double) throws -> ClipCandidate? {
         guard let card = try sessionCard(id: sessionID) else { return nil }
-        let cues = try contextUnits(sessionID: sessionID, kind: .subtitleCue, start: start, end: end)
-        let text = cues.map(\.text).joined(separator: "\n")
-        let cueIDs = cues.flatMap(\.cueIDs)
-        let media = try sqlite.query(
-            "SELECT media_path FROM sessions WHERE id = ?",
-            binds: [.text(sessionID.uuidString)]
-        ).first?.text("media_path") ?? ""
+        let clips = try contextUnits(sessionID: sessionID, kind: .mediaClip, start: start, end: end)
+        let chunks = try contextUnits(sessionID: sessionID, kind: .transcriptChunk, start: start, end: end)
+        let text = chunks.map(\.text).joined(separator: "\n")
+        let clipText = clips.map(\.text).joined(separator: "\n")
         return ClipCandidate(
             sessionID: sessionID,
             start: start,
             end: end,
-            speakerLabel: cues.first?.speakerLabels.first,
-            text: text,
-            cueIDs: cueIDs,
-            mediaPath: media
+            speakerLabel: chunks.first?.speakerLabels.first ?? clips.first?.speakerLabels.first,
+            text: text.isEmpty ? clipText : text,
+            cueIDs: clips.flatMap(\.cueIDs),
+            mediaPath: card.mediaPath
         )
     }
 
+    @discardableResult
     private func insertUnit(
         snapshot: SessionIndexSnapshot,
         kind: SessionIndexUnitKind,
@@ -408,7 +382,6 @@ actor SessionIndexStore {
         speaker: String?,
         speakers: [String],
         text: String,
-        translation: String?,
         cueIDs: [Int],
         parentID: Int?,
         modality: SessionIndexModality,
@@ -430,7 +403,7 @@ actor SessionIndexStore {
                 .optional(end),
                 .optional(speaker),
                 .text(text),
-                .optional(translation),
+                .null,
                 .text(cueJSON),
                 .optional(parentID),
                 .text(modality.rawValue),
@@ -441,7 +414,7 @@ actor SessionIndexStore {
             binds: [
                 .int(unitID),
                 .text(text),
-                .optional(translation),
+                .null,
                 .text(title),
                 .optional(summary),
             ]
@@ -474,14 +447,13 @@ actor SessionIndexStore {
     }
 
     private func loadUnits(sql: String, binds: [SessionSQLiteValue]) throws -> [SessionIndexUnitRecord] {
-        try sqlite.query(sql, binds: binds).compactMap { row in
+        let records = try sqlite.query(sql, binds: binds).compactMap { row -> SessionIndexUnitRecord? in
             guard let id = row.int("id"),
                   let sessionID = row.text("session_id").flatMap(UUID.init(uuidString:)),
                   let kind = row.text("kind").flatMap(SessionIndexUnitKind.init(rawValue:)),
                   let modality = row.text("modality").flatMap(SessionIndexModality.init(rawValue:)),
                   let text = row.text("text")
             else { return nil }
-            let cueIDs = Self.decodeCueIDs(row.text("cue_ids"))
             return SessionIndexUnitRecord(
                 id: id,
                 sessionID: sessionID,
@@ -490,12 +462,20 @@ actor SessionIndexStore {
                 end: row.double("end_s"),
                 speakers: row.text("speaker_label").map { [$0] } ?? [],
                 text: text,
-                cueIDs: cueIDs,
+                cueIDs: Self.decodeCueIDs(row.text("cue_ids")),
                 modality: modality,
                 title: row.text("title") ?? "",
                 hasVideo: row.bool("has_video"),
                 language: row.text("language")
             )
+        }
+        let speakers = try speakerLabels(for: records.map(\.id))
+        return records.map { record in
+            var copy = record
+            if let labels = speakers[record.id], !labels.isEmpty {
+                copy.speakers = labels
+            }
+            return copy
         }
     }
 
@@ -561,15 +541,31 @@ actor SessionIndexStore {
         return parts.joined(separator: "\n")
     }
 
-    private func parentChunkID(
-        for cue: SubtitleCue,
-        segments: [TranscriptionSegment],
-        chunkIDs: [Int]
-    ) -> Int? {
-        guard let index = segments.firstIndex(where: { $0.start <= cue.start && cue.start < $0.end }) else {
-            return nil
+    private func decorateSpeakers(_ hits: [SessionSearchHit]) throws -> [SessionSearchHit] {
+        let labels = try speakerLabels(for: hits.map(\.unitID))
+        return hits.map { hit in
+            guard let speakers = labels[hit.unitID], !speakers.isEmpty else { return hit }
+            var copy = hit
+            copy.speakerLabels = speakers
+            return copy
         }
-        return chunkIDs.indices.contains(index) ? chunkIDs[index] : nil
+    }
+
+    private func speakerLabels(for unitIDs: [Int]) throws -> [Int: [String]] {
+        guard !unitIDs.isEmpty else { return [:] }
+        let placeholders = Array(repeating: "?", count: unitIDs.count).joined(separator: ",")
+        let rows = try sqlite.query(
+            "SELECT unit_id, speaker_label FROM unit_speakers WHERE unit_id IN (\(placeholders))",
+            binds: unitIDs.map { .int($0) }
+        )
+        var map: [Int: [String]] = [:]
+        for row in rows {
+            guard let id = row.int("unit_id"), let label = row.text("speaker_label") else { continue }
+            if map[id]?.contains(label) != true {
+                map[id, default: []].append(label)
+            }
+        }
+        return map
     }
 
     private func vecTable(_ modality: SessionIndexModality) -> String {
@@ -584,8 +580,6 @@ actor SessionIndexStore {
         switch unit.kind {
         case .sessionCard, .transcriptChunk:
             return try !hasEmbedding(unitID: unit.id, modality: .text)
-        case .subtitleCue:
-            return false
         case .mediaClip:
             switch unit.modality {
             case .text:

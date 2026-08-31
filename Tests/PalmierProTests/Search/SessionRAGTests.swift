@@ -47,6 +47,69 @@ struct CuePackerTests {
     }
 }
 
+@Suite("Transcript chunk packer")
+struct TranscriptChunkPackerTests {
+    @Test func mergesShortSpeakerTurnsIntoOneChunk() {
+        let chunks = TranscriptChunkPacker.pack(segments: [
+            segment("嗯。", 0, 3, "Speaker 1"),
+            segment("痛哪里？", 3.1, 6, "Speaker 2"),
+            segment("脚底。", 6.2, 9, "Speaker 1"),
+        ])
+        #expect(chunks.count == 1)
+        #expect(chunks[0].start == 0)
+        #expect(chunks[0].end == 9)
+        #expect(chunks[0].speakerLabels == ["Speaker 1", "Speaker 2"])
+        #expect(chunks[0].text.contains("脚底"))
+    }
+
+    @Test func flushesOnSpeakerChangeAfterMinimumDuration() {
+        let chunks = TranscriptChunkPacker.pack(segments: [
+            segment("独白一段", 0, 30, "Speaker 1"),
+            segment("另一人继续说完最小窗", 30.2, 60, "Speaker 2"),
+        ])
+        #expect(chunks.count == 2)
+        #expect(chunks[0].speakerLabels == ["Speaker 1"])
+        #expect(chunks[1].speakerLabels == ["Speaker 2"])
+    }
+
+    @Test func attachesShortTrailingTurnToPreviousWindow() {
+        let chunks = TranscriptChunkPacker.pack(segments: [
+            segment("手法说明", 0, 30, "Speaker 1"),
+            segment("好。", 31, 34, "Speaker 2"),
+        ])
+        #expect(chunks.count == 1)
+        #expect(chunks[0].end == 34)
+        #expect(chunks[0].speakerLabels == ["Speaker 1", "Speaker 2"])
+    }
+
+    @Test func keepsLongSegmentIntact() {
+        let chunks = TranscriptChunkPacker.pack(segments: [
+            segment("一整段独白不超过一分钟", 0, 60, "Speaker 1"),
+        ])
+        #expect(chunks.count == 1)
+        #expect(chunks[0].start == 0)
+        #expect(chunks[0].end == 60)
+    }
+
+    @Test func prependsTrailingOverlapWithoutShiftingTimestamps() {
+        let chunks = TranscriptChunkPacker.pack(segments: [
+            segment("前半段内容", 0, 20, "Speaker 1"),
+            segment("窗尾重叠", 20, 30, "Speaker 1"),
+            segment("后窗正文", 33, 63, "Speaker 1"),
+        ])
+        #expect(chunks.count == 2)
+        #expect(chunks[0].end == 30)
+        #expect(chunks[1].start == 33)
+        #expect(chunks[1].end == 63)
+        #expect(chunks[1].text.contains("窗尾重叠"))
+        #expect(chunks[1].text.contains("后窗正文"))
+    }
+
+    private func segment(_ text: String, _ start: Double, _ end: Double, _ speaker: String) -> TranscriptionSegment {
+        TranscriptionSegment(text: text, start: start, end: end, speaker: speaker)
+    }
+}
+
 @Suite("Word span mapper")
 struct WordSpanMapperTests {
     @Test func mapsOverlappingWordsAndTightensToQueryTerms() {
@@ -109,7 +172,6 @@ struct SessionIndexStoreTests {
             cues: [
                 SubtitleCue(id: 1, sourceIDs: [], text: "脚底很痛", start: 0.4, end: 2.0, speaker: "Speaker 1"),
             ],
-            translationByCueID: [:],
             shotBounds: []
         )
         try await store.replaceLexical(
@@ -119,7 +181,7 @@ struct SessionIndexStoreTests {
 
         let hits = try await store.searchLexical(
             query: "脚底很痛",
-            kinds: [.subtitleCue, .transcriptChunk],
+            kinds: [.transcriptChunk],
             filter: SessionSearchFilter(sessionID: sessionID)
         )
         #expect(!hits.isEmpty)
@@ -146,7 +208,9 @@ struct SessionIndexStoreTests {
 
         let needed = try await store.unitsNeedingEmbedding(sessionID: snapshot.sessionID)
         #expect(!needed.isEmpty)
-        #expect(!needed.contains { $0.kind == .subtitleCue })
+        #expect(Set(needed.map(\.kind)).isSubset(of: [
+            .sessionCard, .transcriptChunk, .mediaClip,
+        ]))
 
         let card = try #require(needed.first { $0.kind == .sessionCard })
         try await store.upsertEmbedding(unitID: card.id, modality: .text, vector: dummyVector(0.1))
@@ -180,6 +244,40 @@ struct SessionIndexStoreTests {
         #expect(freshness?.embeddingReady == false)
         let needed = try await store.unitsNeedingEmbedding(sessionID: snapshot.sessionID)
         #expect(needed.contains { $0.kind == .sessionCard && $0.id == card.id })
+    }
+
+    @Test func packsShortTurnsAndDoesNotIndexSubtitleCues() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("session-index-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = try SessionIndexStore(url: url)
+        var snapshot = indexSnapshot(generation: 1)
+        snapshot.speakers = [
+            SessionSpeaker(label: "Speaker 1", displayName: "Speaker 1"),
+            SessionSpeaker(label: "Speaker 2", displayName: "Speaker 2"),
+        ]
+        snapshot.segments = [
+            TranscriptionSegment(text: "嗯。", start: 0, end: 3, speaker: "Speaker 1"),
+            TranscriptionSegment(text: "痛哪里？", start: 3.1, end: 6, speaker: "Speaker 2"),
+            TranscriptionSegment(text: "脚底。", start: 6.2, end: 9, speaker: "Speaker 1"),
+        ]
+        snapshot.cues = [
+            SubtitleCue(id: 9, sourceIDs: [], text: "字幕独有句", start: 0.4, end: 1.2, speaker: "Speaker 1"),
+        ]
+        try await store.replaceLexical(snapshot: snapshot, clips: CuePacker.pack(cues: snapshot.cues))
+
+        let needed = try await store.unitsNeedingEmbedding(sessionID: snapshot.sessionID)
+        let chunks = needed.filter { $0.kind == .transcriptChunk }
+        #expect(chunks.count == 1)
+        #expect(chunks[0].speakers.contains("Speaker 1"))
+        #expect(chunks[0].speakers.contains("Speaker 2"))
+
+        let cueHits = try await store.searchLexical(
+            query: "字幕独有句",
+            kinds: [.transcriptChunk],
+            filter: SessionSearchFilter(sessionID: snapshot.sessionID)
+        )
+        #expect(cueHits.isEmpty)
     }
 }
 
@@ -216,6 +314,22 @@ struct SessionIndexIngestActionTests {
                 freshness: SessionIndexFreshness(generation: 4, lexicalReady: true, embeddingReady: true),
                 generation: 4
             ) == .skip
+        )
+    }
+
+    @Test func formatBumpRebuildsHistoricalMtimeGenerations() {
+        let modifiedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let generation = SessionIndexSnapshot.generation(modifiedAt: modifiedAt)
+        #expect(generation == SessionIndexSnapshot.ingestFormat &* 1_000_000_000_000 + 1_700_000_000)
+        #expect(
+            SessionIndexIngestAction.resolve(
+                freshness: SessionIndexFreshness(
+                    generation: Int(modifiedAt.timeIntervalSince1970),
+                    lexicalReady: true,
+                    embeddingReady: true
+                ),
+                generation: generation
+            ) == .replace
         )
     }
 }
@@ -276,7 +390,6 @@ private func indexSnapshot(generation: Int) -> SessionIndexSnapshot {
         cues: [
             SubtitleCue(id: 1, sourceIDs: [], text: "脚底很痛", start: 0.4, end: 2.0, speaker: "Speaker 1"),
         ],
-        translationByCueID: [:],
         shotBounds: []
     )
 }

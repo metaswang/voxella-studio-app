@@ -78,38 +78,6 @@ struct SearchService: Sendable {
         return hits.map { hydrate($0, words: words, terms: []) }
     }
 
-    func subtitleSearch(
-        query: String,
-        filter: SessionSearchFilter = .init(),
-        words: [TranscriptionWord] = []
-    ) async throws -> [SessionSearchHit] {
-        try await hybridSearch(
-            query: query,
-            kinds: [.subtitleCue],
-            modalities: [.text],
-            filter: filter,
-            words: words
-        )
-    }
-
-    func subtitleContext(
-        sessionID: UUID,
-        start: Double,
-        end: Double,
-        pad: Double = 2
-    ) async throws -> [SessionSearchHit] {
-        try await store.contextUnits(
-            sessionID: sessionID,
-            kind: .subtitleCue,
-            start: start - pad,
-            end: end + pad
-        )
-    }
-
-    func subtitleList(sessionID: UUID) async throws -> [SessionSearchHit] {
-        try await store.subtitleList(sessionID: sessionID)
-    }
-
     func clipSearch(
         query: String,
         filter: SessionSearchFilter = .init(),

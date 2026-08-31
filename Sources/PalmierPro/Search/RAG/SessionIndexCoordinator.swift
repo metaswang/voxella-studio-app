@@ -197,7 +197,7 @@ final class SessionIndexCoordinator {
                 for unit in units {
                     try Task.checkCancellation()
                     switch unit.kind {
-                    case .sessionCard, .transcriptChunk, .subtitleCue:
+                    case .sessionCard, .transcriptChunk:
                         let vector = try await embeddingProvider.encodeText(unit.text)
                         try await store.upsertEmbedding(unitID: unit.id, modality: .text, vector: vector)
                     case .mediaClip:
@@ -265,12 +265,6 @@ extension SessionIndexSnapshot {
             segments.map(\.end).max() ?? 0,
             cues.map(\.end).max() ?? 0
         )
-        var translation: [Int: String] = [:]
-        if let track = job.translationTracks.first?.track {
-            for cue in track.cues {
-                translation[cue.id] = cue.text
-            }
-        }
         return SessionIndexSnapshot(
             sessionID: job.id,
             title: job.sessionTitle,
@@ -281,12 +275,11 @@ extension SessionIndexSnapshot {
             hasVideo: Self.isVideo(job.sourcePath),
             mediaPath: job.sourcePath,
             sourceMTime: job.modifiedAt.timeIntervalSince1970,
-            generation: Int(job.modifiedAt.timeIntervalSince1970),
+            generation: SessionIndexSnapshot.generation(modifiedAt: job.modifiedAt),
             speakers: speakers(in: job),
             segments: segments,
             words: transcript?.words ?? [],
             cues: cues,
-            translationByCueID: translation,
             shotBounds: []
         )
     }
