@@ -1,133 +1,116 @@
-<div align="center">
+# VoxStudio
 
-# Palmier Pro
+VoxStudio is an AI-native video workspace for turning recorded sessions into edited videos and dubbed versions. It combines transcription, timeline editing, translation, voice-cloned dubbing, and media export in a native macOS application.
 
-**The video editor built for AI.**
+> macOS 26 (Tahoe) and Apple Silicon are required.
 
-<a href="https://github.com/palmier-io/palmier-pro/releases/latest/download/PalmierPro.dmg">
-  <img src="./assets/macos-badge.png" alt="Download Palmier Pro for macOS" width="180" />
-</a>
+## What it does
 
-<sub><i>Requires macOS 26 (Tahoe) on Apple Silicon</i></sub>
+### Transcribe sessions
 
-<a href="https://x.com/Palmier_io"><img src="https://img.shields.io/badge/Follow-%40Palmier__io-000000?style=flat&logo=x&logoColor=white" alt="Follow on X" /></a>
-<a href="https://discord.com/invite/SMVW6pKYmg"><img src="https://img.shields.io/badge/Join-Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Join Discord" /></a>
-<a href="https://www.ycombinator.com/companies/palmier"><img src="https://img.shields.io/badge/Y%20Combinator-S24-orange" alt="Y Combinator S24" /></a>
-<br />
-<a href="https://trendshift.io/repositories/41342?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-41342" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/41342" alt="palmier-io%2Fpalmier-pro | Trendshift" width="250" height="55"/></a>
+Create a session from imported media or a screen, window, system-audio, or microphone recording. VoxStudio can produce a time-aligned transcript, detect speakers, and prepare the session for search, editing, subtitles, and downstream media workflows.
 
-<p>
-  <strong>English</strong> ·
-  <a href="docs/readme/README.es.md">Español</a> ·
-  <a href="docs/readme/README.zh-CN.md">简体中文</a> ·
-  <a href="docs/readme/README.zh-TW.md">繁體中文</a> ·
-  <a href="docs/readme/README.ja.md">日本語</a> ·
-  <a href="docs/readme/README.ko.md">한국어</a> ·
-  <a href="docs/readme/README.vi.md">Tiếng Việt</a> ·
-  <a href="docs/readme/README.hi.md">हिन्दी</a> ·
-  <a href="docs/readme/README.bn.md">বাংলা</a> ·
-  <a href="docs/readme/README.ar.md">العربية</a> ·
-  <a href="docs/readme/README.it.md">Italiano</a> ·
-  <a href="docs/readme/README.pt-BR.md">Português (Brasil)</a> ·
-  <a href="docs/readme/README.fr.md">Français</a> ·
-  <a href="docs/readme/README.ru.md">Русский</a> ·
-  <a href="docs/readme/README.tr.md">Türkçe</a>
-</p>
+![Transcription session workspace](app-session-ui.jpg)
 
-</div>
+### Edit video from a session
 
-<img src="./assets/palmier-ui.png" alt="Palmier Pro UI" width="900" />
+Send session media and transcript data into a non-linear timeline. The editor supports multi-track video and audio, trimming, splitting, ripple and overwrite operations, captions, subtitles, keyframes, effects, multicam workflows, audio tools, preview playback, and export.
 
----
+![Video editing timeline populated from a session](app-video-edit-from-session.jpg)
 
-Palmier Pro is an open source video editor for Mac. You and your agent can generate and edit videos together inside the timeline.
+### Create dubbed versions with a cloned voice
 
-### Swift-native video editor
+Prepare a translated or rewritten script, select a reference voice, synthesize timed speech, and assemble the result back into a session or timeline. The workflow keeps source audio, transcript segments, subtitle tracks, generated speech, and dubbed output associated with the same project context.
 
-We built Palmier Pro from scratch with Swift. The north star is Premiere Pro, with our take on integrating AI into the workflow.
+![Dub creation and cloned-voice workflow](app-dub-creation-ui.jpg)
 
-### Built-in Generative AI
+### Work with AI agents
 
-Generate videos and images with SOTA models like Seedance, Kling, Nano Banana Pro inside the timeline editor.
+VoxStudio exposes the editor through an in-app agent and a local MCP HTTP server. Agents can inspect projects, import and organize media, edit timelines, work with captions and subtitles, generate media, and export results through the same domain operations used by the UI.
 
-### Integrates with your agents
+## Architecture
 
-Connects your Claude/Codex/Cursor via MCP, or use the in-app agent to work on the same project together.
+VoxStudio is a Swift-native macOS application built with Swift 6.2, SwiftUI, AppKit, and AVFoundation. SwiftUI is used for application surfaces and workflow panels; AppKit is used where the editor needs precise native macOS interaction, including timeline input and rendering; AVFoundation handles media composition, playback, audio, and export.
+
+```text
+Session / Workbench UI
+        │
+        ▼
+WorkbenchStore ──► MediaFlowExecutor
+        │             ├─ transcription, VAD, diarization, alignment
+        │             ├─ translation and subtitle-track processing
+        │             └─ voice reference, speech synthesis, dub assembly
+        │
+        ▼
+Session artifacts ──► EditorViewModel ──► Timeline / Preview / Export
+                              ▲
+                              │
+                 In-app Agent / MCP HTTP server
+```
+
+The main layers are:
+
+- **Workbench and sessions** — owns transcription and dubbing sessions, their processing state, searchable artifacts, and session-level exports.
+- **Media-flow pipelines** — orchestrates long-running transcription, translation, subtitle, and dubbing stages while reporting progress and respecting cancellation.
+- **Project and timeline model** — represents project settings, media manifests, tracks, clips, captions, effects, keyframes, and linked session media.
+- **Editor and preview** — coordinates user mutations, undo, timeline interaction, AVFoundation composition, playback, frame rendering, and export.
+- **Local AI and backend services** — routes on-device speech and audio processing, optional cloud transcription/dubbing services, model downloads, authentication, and storage.
+- **Agent and MCP** — provides stable filmmaker-oriented tools that reuse editor mutations instead of maintaining a separate editing implementation.
+- **Persistence** — stores projects as package documents and serializes timeline, media, chat-session, generation, and session data through the project package coordinator.
+
+## Technology
+
+- Swift 6.2 and Swift Package Manager
+- SwiftUI and AppKit
+- AVFoundation, AVKit, ScreenCaptureKit, and SoundAnalysis
+- On-device speech processing and optional bundled MLX speech models
+- MCP over a local HTTP endpoint for external agents
+- SQLite vector search and embedding-backed media/session retrieval
+
+## Build and run
+
+```bash
+git clone https://github.com/voxstudio-me/voxstudio-pro.git
+cd voxstudio-pro
+
+swift build
+swift run
+```
+
+To include the optional bundled speech and MLX resources:
+
+```bash
+swift build --traits BundledSpeech
+```
+
+Run the test suite with:
+
+```bash
+swift test
+```
 
 ## MCP server
 
-When the app is open, it exposes an MCP server at `http://127.0.0.1:19789/mcp` via HTTP. To connect:
+When enabled and the app is running, VoxStudio serves MCP over HTTP at:
 
-**Claude Code**
+```text
+http://127.0.0.1:19789/mcp
+```
+
+For example, Codex can connect with:
+
 ```bash
-claude mcp add --transport http palmier-pro http://127.0.0.1:19789/mcp
+codex mcp add voxstudio --url http://127.0.0.1:19789/mcp
 ```
 
-**Codex**
-```bash
-codex mcp add palmier-pro --url http://127.0.0.1:19789/mcp
-```
+The app also includes MCP setup instructions for supported clients in **Help → MCP Instructions**.
 
-**Cursor**
+## Acknowledgements
 
-The easiest way is go inside the app `Help` -> `MCP Instructions` -> `Install in Cursor`, or install manually by adding this to `~/.cursor/mcp.json`:
+The video-editing portion of VoxStudio is inspired by and builds on the open-source [Palmier Pro](https://github.com/palmier-io/palmier-pro) GitHub project. We are grateful to the Palmier Pro authors and contributors for sharing the editor foundation and ideas with the community.
 
-```
-{
-  "mcpServers": {
-    "palmier-pro": {
-      "type": "http",
-      "url": "http://127.0.0.1:19789/mcp"
-    }
-  }
-}
-```
+Please see [LICENSE](LICENSE) for licensing information.
 
-**Claude Desktop**
+## Contributing
 
-We bundle a [mcpb](https://github.com/modelcontextprotocol/mcpb) with the app that allows a one click install Desktop Extension on Claude Desktop. Go to `Help` -> `MCP Instructions` -> `Install in Claude Desktop`
-
-## FAQ
-
-**Is Palmier Pro fully open source?**
-
-The video editor (without the generative AI features) is fully open source. The MCP server and the agent chat are also open source. The only thing that is closed source is the generative AI processing.
-
-**Is it free?**
-
-The editor is free. You can download it with no login required, and use it as a video editor like CapCut or Adobe Premiere. You can also use the MCP server for free, and start experimenting using Claude Code/Desktop or Cursor to interact with your timeline editor.
-
-Generative AI features require login and subscription.
-
-**What platforms does it support?**
-
-macOS 26 (Tahoe) on Apple Silicon only.
-
-See [FAQ.md](FAQ.md) for more.
-
-## Development
-
-See [CONTRIBUTING.md](CONTRIBUTING.md)
-
-## Community &amp; Support
-
-- **Discord:** Join the community on **[Discord](https://discord.com/invite/SMVW6pKYmg)**.
-- **Twitter / X:** Follow **[@Palmier_io](https://x.com/Palmier_io)** for updates and announcements.
-- **Instagram:** Follow [@palmier.io](https://www.instagram.com/palmier.io) 
-- **Feedback &amp; Support:** Create a [Github Issue](https://github.com/palmier-io/palmier-pro/issues) or email us at founders@palmier.io
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=palmier-io%2Fpalmier-pro&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=palmier-io/palmier-pro&type=date&theme=dark&legend=top-left&sealed_token=noeYrwWrpHCjd3KdAoj1jK1SLWKED61qQxKmx0oIh1oFzShl6A_eSw-ABZEgU2tm7WymnOSjnRltpeY01CPYhh6TN2aBTS9gH9Op0wMbGe1YW2J10xzGfjOtSir7GL-Nm80Wt1TCZ3bqjICSdSPQCQosZOTax4zLC_wNXYWunWmKvtcclfTbvWTd08AF" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=palmier-io/palmier-pro&type=date&legend=top-left&sealed_token=noeYrwWrpHCjd3KdAoj1jK1SLWKED61qQxKmx0oIh1oFzShl6A_eSw-ABZEgU2tm7WymnOSjnRltpeY01CPYhh6TN2aBTS9gH9Op0wMbGe1YW2J10xzGfjOtSir7GL-Nm80Wt1TCZ3bqjICSdSPQCQosZOTax4zLC_wNXYWunWmKvtcclfTbvWTd08AF" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=palmier-io/palmier-pro&type=date&legend=top-left&sealed_token=noeYrwWrpHCjd3KdAoj1jK1SLWKED61qQxKmx0oIh1oFzShl6A_eSw-ABZEgU2tm7WymnOSjnRltpeY01CPYhh6TN2aBTS9gH9Op0wMbGe1YW2J10xzGfjOtSir7GL-Nm80Wt1TCZ3bqjICSdSPQCQosZOTax4zLC_wNXYWunWmKvtcclfTbvWTd08AF" />
- </picture>
-</a>
-
-## License
-
-Copyright (C) 2026 Palmier, Inc.
-
-Palmier Pro is open source under [GPLv3](LICENSE).
+Bug reports, feature ideas, and improvements are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and contribution guidelines.
