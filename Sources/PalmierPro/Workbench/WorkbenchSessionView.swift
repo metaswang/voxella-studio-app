@@ -337,7 +337,7 @@ struct WorkbenchSessionDetailView: View {
                 )
 
                 HSplitView {
-                    VStack(alignment: .leading, spacing: 0) {
+                    VSplitView {
                         SessionMediaPlayer(
                             URL: mediaURL,
                             track: selectedTrack,
@@ -355,6 +355,12 @@ struct WorkbenchSessionDetailView: View {
                             cuePlaybackRequest: $cuePlaybackRequest,
                             onSelectTrack: { selectedTrack = $0 }
                         )
+                        .frame(
+                            minHeight: AppTheme.Workbench.sessionVideoMinHeight,
+                            idealHeight: AppTheme.Workbench.sessionVideoIdealHeight,
+                            maxHeight: .infinity,
+                            alignment: .top
+                        )
                         .layoutPriority(1)
                         SessionSummaryPanel(
                             session: session,
@@ -365,10 +371,11 @@ struct WorkbenchSessionDetailView: View {
                         )
                         .frame(
                             minHeight: AppTheme.Workbench.summaryPanelMinHeight,
-                            maxHeight: hasVideo ? AppTheme.Workbench.emptyStateMinHeight : .infinity,
+                            maxHeight: .infinity,
                             alignment: .top
                         )
                     }
+                    .frame(maxHeight: .infinity, alignment: .top)
                     .frame(
                         minWidth: minimumLeftWidth,
                         idealWidth: contentWidth * AppTheme.Workbench.sessionSplitDefaultRatio,

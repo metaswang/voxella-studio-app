@@ -92,6 +92,14 @@ private struct RoutedStubClient: LLMTextClient {
 
 @Suite("LLM routing and resilience")
 struct LLMResilienceTests {
+    @Test
+    func byokTransportTakesPrecedenceOverHostedAccess() {
+        #expect(AITransportPolicy.resolve(useBYOK: true, hasHostedAccess: true) == .byok)
+        #expect(AITransportPolicy.resolve(useBYOK: true, hasHostedAccess: false) == .byok)
+        #expect(AITransportPolicy.resolve(useBYOK: false, hasHostedAccess: true) == .hosted)
+        #expect(AITransportPolicy.resolve(useBYOK: false, hasHostedAccess: false) == .unavailable)
+    }
+
     @Test @MainActor
     func defaultRoutesUseSceneSpecificProviderPrefixedModels() throws {
         let suiteName = "LLMResilienceTests.\(UUID().uuidString)"

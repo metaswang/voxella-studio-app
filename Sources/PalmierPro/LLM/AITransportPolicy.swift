@@ -9,10 +9,15 @@ enum AITransport: Equatable, Sendable {
 @MainActor
 enum AITransportPolicy {
     static var current: AITransport {
-        if LLMSettingsStore.shared.useBYOK {
-            return .byok
-        }
-        return AccountService.shared.aiAllowed ? .hosted : .unavailable
+        resolve(
+            useBYOK: LLMSettingsStore.shared.useBYOK,
+            hasHostedAccess: AccountService.shared.aiAllowed
+        )
+    }
+
+    nonisolated static func resolve(useBYOK: Bool, hasHostedAccess: Bool) -> AITransport {
+        if useBYOK { return .byok }
+        return hasHostedAccess ? .hosted : .unavailable
     }
 
     static func makeTextClient(for useCase: LLMUseCase) async throws -> any LLMTextClient {

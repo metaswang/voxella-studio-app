@@ -316,6 +316,79 @@ struct LocalFirstWorkbenchTests {
         )
     }
 
+    @Test func summaryOwnerRoutesRemoteOnlySessionsToCloud() {
+        let transcriptionID = UUID()
+        let dubID = UUID()
+        let remoteID = UUID()
+
+        #expect(
+            WorkbenchStore.summaryOwner(
+                transcriptionID: transcriptionID,
+                dubID: dubID,
+                remoteSessionID: remoteID
+            ) == .transcription(transcriptionID)
+        )
+        #expect(
+            WorkbenchStore.summaryOwner(
+                transcriptionID: nil,
+                dubID: dubID,
+                remoteSessionID: remoteID
+            ) == .dub(dubID)
+        )
+        #expect(
+            WorkbenchStore.summaryOwner(
+                transcriptionID: nil,
+                dubID: nil,
+                remoteSessionID: remoteID
+            ) == .remote(remoteID)
+        )
+        #expect(
+            WorkbenchStore.summaryOwner(
+                transcriptionID: nil,
+                dubID: nil,
+                remoteSessionID: nil
+            ) == nil
+        )
+    }
+
+    @Test func cloudSummaryWaitAcceptsCopiedPrivateTemplateIdentity() {
+        #expect(
+            WorkbenchStore.cloudSummaryTemplateMatches(
+                expectedTemplateID: nil,
+                expectedSourceTemplateID: "public-1",
+                returnedTemplateID: "private-1"
+            )
+        )
+        #expect(
+            WorkbenchStore.cloudSummaryTemplateMatches(
+                expectedTemplateID: "private-1",
+                expectedSourceTemplateID: "public-1",
+                returnedTemplateID: "PRIVATE-1"
+            )
+        )
+        #expect(
+            WorkbenchStore.cloudSummaryTemplateMatches(
+                expectedTemplateID: "private-1",
+                expectedSourceTemplateID: "public-1",
+                returnedTemplateID: "public-1"
+            )
+        )
+        #expect(
+            !WorkbenchStore.cloudSummaryTemplateMatches(
+                expectedTemplateID: "private-1",
+                expectedSourceTemplateID: "public-1",
+                returnedTemplateID: "other-template"
+            )
+        )
+        #expect(
+            !WorkbenchStore.cloudSummaryTemplateMatches(
+                expectedTemplateID: "private-1",
+                expectedSourceTemplateID: nil,
+                returnedTemplateID: nil
+            )
+        )
+    }
+
     @Test func staleSummaryStateRetriesWhenNoSummaryWasPersisted() {
         var transcription = WorkbenchTranscriptionJob(sourcePath: "/tmp/stale-summary.wav")
         transcription.state = .completed

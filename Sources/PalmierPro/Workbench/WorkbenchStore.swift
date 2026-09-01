@@ -961,6 +961,12 @@ struct WorkbenchSession: Identifiable, Sendable {
     var hasDub: Bool { outputURL != nil || source == .standaloneDub || !dubSegments.isEmpty }
 }
 
+enum SessionSummaryOwner: Equatable, Sendable {
+    case transcription(UUID)
+    case dub(UUID)
+    case remote(UUID)
+}
+
 enum WorkbenchSessionDeletionTarget: Equatable, Sendable {
     case local
     case remote(UUID)
@@ -1486,6 +1492,7 @@ final class WorkbenchStore {
                     mediaHasVideo: rendering.mediaHasVideo
                 )
                 self.remoteSessionLoadingID = nil
+                await self.ensureRemoteSessionSummary(id)
             } catch is CancellationError {
             } catch VoxellaAPIError.cancelled {
             } catch {
@@ -4158,7 +4165,21 @@ final class WorkbenchStore {
     }
 
     func applySummaryTemplate(_ template: SummaryTemplateDefinition, to session: WorkbenchSession) {
-        if let transcriptionID = session.transcriptionID {
+        guard let owner = Self.summaryOwner(
+            transcriptionID: session.transcriptionID,
+            dubID: session.dubID,
+            remoteSessionID: session.remoteSessionID
+        ) else {
+            WorkbenchTipCenter.shared.show(
+                "Summary cannot be generated because this session is not available.",
+                kind: .error,
+                id: "summary.unavailable.\(session.id.uuidString)"
+            )
+            return
+        }
+
+        switch owner {
+        case .transcription(let transcriptionID):
             guard let generation = beginSummaryTask(for: transcriptionID, replacingExisting: true) else {
                 return
             }
@@ -4178,9 +4199,7 @@ final class WorkbenchStore {
                     generation: generation
                 )
             }
-            return
-        }
-        if let dubID = session.dubID {
+        case .dub(let dubID):
             guard let generation = beginSummaryTask(for: dubID, replacingExisting: true) else {
                 return
             }
@@ -4196,6 +4215,27 @@ final class WorkbenchStore {
                 guard let self else { return }
                 await self.applySummaryTemplateToDub(template, id: dubID, generation: generation)
             }
+        case .remote(let remoteID):
+            if remoteSessions[remoteID] == nil {
+                remoteSessions[remoteID] = session
+            }
+            guard let generation = beginSummaryTask(for: remoteID, replacingExisting: true) else {
+                return
+            }
+            updateRemoteSession(remoteID) {
+                $0.summaryTemplateID = template.id
+                $0.summaryTemplateName = template.name
+                $0.summaryState = .running
+                $0.summaryErrorMessage = nil
+            }
+            Task { [weak self] in
+                guard let self else { return }
+                await self.applySummaryTemplateToRemoteSession(
+                    template,
+                    id: remoteID,
+                    generation: generation
+                )
+            }
         }
     }
 
@@ -4207,17 +4247,21 @@ final class WorkbenchStore {
         defer { finishSummaryTask(for: id, generation: generation) }
         guard summaryTaskRegistry.owns(id, generation: generation) else { return }
 
-        let localRouteAvailable = LLMSettingsStore.shared.hasUsableModel(for: .subtitleProcessing)
-        if localRouteAvailable,
-           await enrichCompletedTranscription(
-               id,
-               regenerateMetadata: false,
-               taskAlreadyRegistered: true,
-               summaryGeneration: generation,
-               requireConfiguredModel: false,
-               reportFailure: false
-           ) {
-            await syncSummaryToCloud(forTranscription: id)
+        if await applyTemplateUsingLocalLLMIfPossible(
+            transport: AITransportPolicy.current,
+            hasCloudCopy: transcriptions.first(where: { $0.id == id })?.remoteSessionID != nil,
+            generate: {
+                await enrichCompletedTranscription(
+                    id,
+                    regenerateMetadata: false,
+                    taskAlreadyRegistered: true,
+                    summaryGeneration: generation,
+                    requireConfiguredModel: true,
+                    reportFailure: $0
+                )
+            },
+            sync: { await syncSummaryToCloud(forTranscription: id) }
+        ) {
             return
         }
 
@@ -4236,8 +4280,14 @@ final class WorkbenchStore {
             try Task.checkCancellation()
             guard summaryTaskRegistry.owns(id, generation: generation) else { return }
             guard let summary = response.summary,
-                  !summary.outputMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  isCurrentSummaryTemplate(template.id, forTranscription: id) else {
+                  !summary.outputMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                markCloudSummaryFailure(
+                    forTranscription: id,
+                    message: "Cloud summary generation returned an empty result."
+                )
+                return
+            }
+            guard isCurrentSummaryTemplate(template.id, forTranscription: id) else {
                 return
             }
             let remoteTemplate = response.template
@@ -4272,17 +4322,21 @@ final class WorkbenchStore {
         defer { finishSummaryTask(for: id, generation: generation) }
         guard summaryTaskRegistry.owns(id, generation: generation) else { return }
 
-        let localRouteAvailable = LLMSettingsStore.shared.hasUsableModel(for: .subtitleProcessing)
-        if localRouteAvailable,
-           await enrichCompletedDub(
-               id,
-               regenerateMetadata: false,
-               taskAlreadyRegistered: true,
-               summaryGeneration: generation,
-               requireConfiguredModel: false,
-               reportFailure: false
-           ) {
-            await syncSummaryToCloud(forDub: id)
+        if await applyTemplateUsingLocalLLMIfPossible(
+            transport: AITransportPolicy.current,
+            hasCloudCopy: dubs.first(where: { $0.id == id })?.remoteSessionID != nil,
+            generate: {
+                await enrichCompletedDub(
+                    id,
+                    regenerateMetadata: false,
+                    taskAlreadyRegistered: true,
+                    summaryGeneration: generation,
+                    requireConfiguredModel: true,
+                    reportFailure: $0
+                )
+            },
+            sync: { await syncSummaryToCloud(forDub: id) }
+        ) {
             return
         }
 
@@ -4301,8 +4355,14 @@ final class WorkbenchStore {
             try Task.checkCancellation()
             guard summaryTaskRegistry.owns(id, generation: generation) else { return }
             guard let summary = response.summary,
-                  !summary.outputMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  isCurrentSummaryTemplate(template.id, forDub: id) else {
+                  !summary.outputMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                markCloudSummaryFailure(
+                    forDub: id,
+                    message: "Cloud summary generation returned an empty result."
+                )
+                return
+            }
+            guard isCurrentSummaryTemplate(template.id, forDub: id) else {
                 return
             }
             let remoteTemplate = response.template
@@ -4323,6 +4383,111 @@ final class WorkbenchStore {
         } catch {
             guard summaryTaskRegistry.owns(id, generation: generation) else { return }
             markCloudSummaryFailure(forDub: id, message: error.localizedDescription)
+        }
+    }
+
+    private func applySummaryTemplateToRemoteSession(
+        _ template: SummaryTemplateDefinition,
+        id: UUID,
+        generation: UUID
+    ) async {
+        defer { finishSummaryTask(for: id, generation: generation) }
+        guard summaryTaskRegistry.owns(id, generation: generation) else { return }
+        updateRemoteSession(id) {
+            $0.summaryState = .running
+            $0.summaryErrorMessage = nil
+        }
+        do {
+            let response = try await requestCloudSummary(
+                template: template,
+                sessionID: id,
+                hasExistingSummary: hasSummary(forRemoteSession: id)
+            )
+            try Task.checkCancellation()
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return }
+            guard let summary = response.summary,
+                  !summary.outputMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                markCloudSummaryFailure(
+                    forRemoteSession: id,
+                    message: "Cloud summary generation returned an empty result."
+                )
+                return
+            }
+            guard isCurrentSummaryTemplate(template.id, forRemoteSession: id) else { return }
+            commitCloudSummary(response, fallbackTemplate: template, toRemoteSession: id)
+        } catch is CancellationError {
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return }
+            markCloudSummaryFailure(
+                forRemoteSession: id,
+                message: "Cloud summary generation was cancelled."
+            )
+        } catch {
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return }
+            markCloudSummaryFailure(forRemoteSession: id, message: error.localizedDescription)
+        }
+    }
+
+    private func ensureRemoteSessionSummary(_ id: UUID) async {
+        guard let session = remoteSessions[id] else { return }
+        let transcriptText = session.transcript?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !transcriptText.isEmpty else { return }
+        guard needsSummary(markdown: session.summaryMarkdown, state: session.summaryState) else { return }
+        guard let generation = beginSummaryTask(for: id) else { return }
+        defer { finishSummaryTask(for: id, generation: generation) }
+        updateRemoteSession(id) {
+            $0.summaryState = .running
+            $0.summaryErrorMessage = nil
+        }
+        do {
+            let response = try await requestDefaultCloudSummary(sessionID: id)
+            try Task.checkCancellation()
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return }
+            guard let summary = response.summary,
+                  !summary.outputMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                markCloudSummaryFailure(
+                    forRemoteSession: id,
+                    message: "Cloud summary generation returned an empty result."
+                )
+                return
+            }
+            commitCloudSummary(response, fallbackTemplate: nil, toRemoteSession: id)
+        } catch is CancellationError {
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return }
+            updateRemoteSession(id) {
+                if Self.summaryNeedsGeneration(markdown: $0.summaryMarkdown, state: $0.summaryState) {
+                    $0.summaryState = nil
+                    $0.summaryErrorMessage = nil
+                }
+            }
+        } catch {
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return }
+            markCloudSummaryFailure(forRemoteSession: id, message: error.localizedDescription)
+        }
+    }
+
+    /// Returns true when local generation finished the request (success or no cloud fallback).
+    private func applyTemplateUsingLocalLLMIfPossible(
+        transport: AITransport,
+        hasCloudCopy: Bool,
+        generate: (_ reportFailure: Bool) async -> Bool,
+        sync: () async -> Void
+    ) async -> Bool {
+        switch transport {
+        case .unavailable:
+            if hasCloudCopy { return false }
+            _ = await generate(true)
+            return true
+        case .byok:
+            if await generate(true) {
+                await sync()
+            }
+            return true
+        case .hosted:
+            if await generate(!hasCloudCopy) {
+                await sync()
+                return true
+            }
+            return !hasCloudCopy
         }
     }
 
@@ -4369,13 +4534,32 @@ final class WorkbenchStore {
         return try await waitForCloudSummary(
             sessionID: sessionID,
             expectedTemplateID: template.id,
+            expectedSourceTemplateID: template.sourceTemplateID,
+            locale: SummaryTemplateLocale.resolve(AppLocalization.shared.activeIdentifier)
+        )
+    }
+
+    private func requestDefaultCloudSummary(
+        sessionID: UUID
+    ) async throws -> VoxellaSessionSummaryResponse {
+        try await ensureCloudAccessForSummary()
+        _ = try await VoxellaAPIClient.shared.generateSessionSummary(
+            sessionID: sessionID,
+            templateID: nil,
+            templateUpdate: nil
+        )
+        return try await waitForCloudSummary(
+            sessionID: sessionID,
+            expectedTemplateID: nil,
+            expectedSourceTemplateID: nil,
             locale: SummaryTemplateLocale.resolve(AppLocalization.shared.activeIdentifier)
         )
     }
 
     private func waitForCloudSummary(
         sessionID: UUID,
-        expectedTemplateID: String,
+        expectedTemplateID: String?,
+        expectedSourceTemplateID: String?,
         locale: String
     ) async throws -> VoxellaSessionSummaryResponse {
         let deadline = ContinuousClock.now.advanced(by: .seconds(600))
@@ -4387,8 +4571,11 @@ final class WorkbenchStore {
             )
             if let summary = response.summary {
                 let returnedTemplateID = summary.templateID ?? response.template?.id
-                guard let returnedTemplateID,
-                      returnedTemplateID.caseInsensitiveCompare(expectedTemplateID) == .orderedSame else {
+                guard Self.cloudSummaryTemplateMatches(
+                    expectedTemplateID: expectedTemplateID,
+                    expectedSourceTemplateID: expectedSourceTemplateID ?? response.template?.sourceTemplateID,
+                    returnedTemplateID: returnedTemplateID
+                ) else {
                     try await Task.sleep(for: .seconds(2))
                     continue
                 }
@@ -4447,6 +4634,11 @@ final class WorkbenchStore {
         return !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private func hasSummary(forRemoteSession id: UUID) -> Bool {
+        guard let summary = remoteSessions[id]?.summaryMarkdown else { return false }
+        return !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private func isCurrentSummaryTemplate(
         _ templateID: String,
         forTranscription id: UUID,
@@ -4471,6 +4663,27 @@ final class WorkbenchStore {
         )
     }
 
+    private func isCurrentSummaryTemplate(
+        _ templateID: String,
+        forRemoteSession id: UUID
+    ) -> Bool {
+        Self.summaryTemplateMatches(
+            requestedTemplateID: templateID,
+            currentTemplateID: remoteSessions[id]?.summaryTemplateID
+        )
+    }
+
+    nonisolated static func summaryOwner(
+        transcriptionID: UUID?,
+        dubID: UUID?,
+        remoteSessionID: UUID?
+    ) -> SessionSummaryOwner? {
+        if let transcriptionID { return .transcription(transcriptionID) }
+        if let dubID { return .dub(dubID) }
+        if let remoteSessionID { return .remote(remoteSessionID) }
+        return nil
+    }
+
     nonisolated static func summaryTemplateMatches(
         requestedTemplateID: String,
         currentTemplateID: String?,
@@ -4487,12 +4700,50 @@ final class WorkbenchStore {
         return currentTemplateID.caseInsensitiveCompare(requestedTemplateID) == .orderedSame
     }
 
+    nonisolated static func cloudSummaryTemplateMatches(
+        expectedTemplateID: String?,
+        expectedSourceTemplateID: String?,
+        returnedTemplateID: String?
+    ) -> Bool {
+        let expected = expectedTemplateID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !expected.isEmpty else { return true }
+        let returned = returnedTemplateID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !returned.isEmpty else { return false }
+        if returned.caseInsensitiveCompare(expected) == .orderedSame {
+            return true
+        }
+        let source = expectedSourceTemplateID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !source.isEmpty && returned.caseInsensitiveCompare(source) == .orderedSame
+    }
+
     private func syncSummaryToCloud(forTranscription id: UUID) async {
         scheduleCloudSync(forTranscription: id)
     }
 
     private func syncSummaryToCloud(forDub id: UUID) async {
         scheduleCloudSync(forDub: id)
+    }
+
+    private func updateRemoteSession(_ id: UUID, _ mutate: (inout WorkbenchSession) -> Void) {
+        guard var session = remoteSessions[id] else { return }
+        mutate(&session)
+        remoteSessions[id] = session
+    }
+
+    private func commitCloudSummary(
+        _ response: VoxellaSessionSummaryResponse,
+        fallbackTemplate: SummaryTemplateDefinition?,
+        toRemoteSession id: UUID
+    ) {
+        guard let summary = response.summary else { return }
+        let remoteTemplate = response.template
+        updateRemoteSession(id) {
+            $0.summaryMarkdown = summary.outputMarkdown
+            $0.summaryTemplateID = summary.templateID ?? remoteTemplate?.id ?? fallbackTemplate?.id
+            $0.summaryTemplateName = remoteTemplate?.name ?? fallbackTemplate?.name
+            $0.summaryState = .completed
+            $0.summaryErrorMessage = nil
+        }
     }
 
     private func markCloudSummaryFailure(forTranscription id: UUID, message: String) {
@@ -4514,6 +4765,19 @@ final class WorkbenchStore {
             $0.summaryState = .failed
             $0.summaryErrorMessage = message
             $0.progressMessage = "Dub ready — summary unavailable"
+        }
+        WorkbenchTipCenter.shared.show(
+            message,
+            kind: .error,
+            id: "summary.failed.\(id.uuidString)"
+        )
+        Log.project.warning("cloud summary failed id=\(id.uuidString) error=\(message)")
+    }
+
+    private func markCloudSummaryFailure(forRemoteSession id: UUID, message: String) {
+        updateRemoteSession(id) {
+            $0.summaryState = .failed
+            $0.summaryErrorMessage = message
         }
         WorkbenchTipCenter.shared.show(
             message,
