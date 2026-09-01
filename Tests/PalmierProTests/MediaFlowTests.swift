@@ -22,11 +22,21 @@ private actor StubLLMClient: LLMTextClient {
 private actor ConcurrencyProbeLLMClient: LLMTextClient {
     private var activeRequests = 0
     private(set) var maximumActiveRequests = 0
+    private var firstRequestWaiter: CheckedContinuation<Void, Never>?
+    private var didHoldFirstRequest = false
 
     func complete(system: String, user: String) async throws -> String {
         activeRequests += 1
         maximumActiveRequests = max(maximumActiveRequests, activeRequests)
-        await Task.yield()
+        if let firstRequestWaiter {
+            self.firstRequestWaiter = nil
+            firstRequestWaiter.resume()
+        } else if !didHoldFirstRequest, activeRequests == 1 {
+            didHoldFirstRequest = true
+            await withCheckedContinuation { continuation in
+                firstRequestWaiter = continuation
+            }
+        }
 
         let isCorrection = user.contains("<asr_input>")
         let startTag = isCorrection ? "<asr_input>" : "<corrected_transcript>"
@@ -46,6 +56,70 @@ private actor ConcurrencyProbeLLMClient: LLMTextClient {
     }
 }
 
+private actor TranslationConcurrencyProbeLLMClient: LLMTextClient {
+    private var activeRequests = 0
+    private(set) var maximumActiveRequests = 0
+    private var firstRequestWaiter: CheckedContinuation<Void, Never>?
+    private var didHoldFirstRequest = false
+    private(set) var systemPrompts: [String] = []
+
+    func complete(system: String, user: String) async throws -> String {
+        activeRequests += 1
+        maximumActiveRequests = max(maximumActiveRequests, activeRequests)
+        if let firstRequestWaiter {
+            self.firstRequestWaiter = nil
+            firstRequestWaiter.resume()
+        } else if !didHoldFirstRequest, activeRequests == 1 {
+            didHoldFirstRequest = true
+            await withCheckedContinuation { continuation in
+                firstRequestWaiter = continuation
+            }
+        }
+        defer { activeRequests -= 1 }
+        systemPrompts.append(system)
+        return try echoPayload(from: user)
+    }
+
+    private func echoPayload(from user: String) throws -> String {
+        let object = try JSONSerialization.jsonObject(with: Data(jsonPayload(fromUser: user).utf8))
+        guard let root = object as? [String: Any] else {
+            throw LLMClientError.invalidResponse
+        }
+        if let translate = root["translate"] as? [[String: Any]] {
+            let cues: [[String: Any]] = translate.map { item in
+                let index = item["index"] as? Int ?? 0
+                return [
+                    "text": item["text"] as? String ?? "",
+                    "source_indices": [index],
+                ]
+            }
+            let data = try JSONSerialization.data(withJSONObject: ["target_cues": cues])
+            return String(decoding: data, as: UTF8.self)
+        }
+        if let cues = root["cues"] as? [[String: Any]] {
+            let translations: [[String: Any]] = cues.map { item in
+                [
+                    "id": item["id"] as? Int ?? 0,
+                    "text": item["text"] as? String ?? "",
+                ]
+            }
+            let data = try JSONSerialization.data(withJSONObject: ["translations": translations])
+            return String(decoding: data, as: UTF8.self)
+        }
+        throw LLMClientError.invalidResponse
+    }
+}
+
+private func jsonPayload(fromUser user: String) -> String {
+    if let xml = user.range(of: "\n<context_") {
+        return String(user[..<xml.lowerBound])
+    }
+    if let rejection = user.range(of: "\n\nThe previous response was rejected") {
+        return String(user[..<rejection.lowerBound])
+    }
+    return user
+}
+
 private func assertContinuousCueCoverage(
     _ track: SubtitleTrack,
     sourceWords: [TranscriptionWord]
@@ -63,6 +137,37 @@ private func assertContinuousCueCoverage(
 
 @Suite("Flexible media flows")
 struct MediaFlowTests {
+    @Test func subtitleRebuildCutsBeforeAnOverlongCueGroup() async throws {
+        let client = StubLLMClient(responses: [
+            #"{"lines":["first.","second.","third."]}"#,
+        ])
+        let words = ["first.", "second.", "third."].enumerated().map { index, text in
+            TranscriptionWord(
+                text: text,
+                start: Double(index * 45),
+                end: Double((index + 1) * 45),
+                speaker: "Speaker 1"
+            )
+        }
+        let output = try await SubtitlePostprocessPipeline(client: client).process(
+            transcript: TranscriptionResult(
+                text: words.map(\.text).joined(separator: " "),
+                language: "en",
+                words: words,
+                segments: [],
+                asrEngine: .parakeet
+            ),
+            options: SubtitleProcessingPayload(maximumAttempts: 1),
+            progress: { _, _, _, _ in }
+        )
+
+        #expect(output.track.cues.count == 3)
+        #expect(output.rebuiltSegments.map(\.text) == ["first.", "second.", "third."])
+        #expect(output.rebuiltSegments.map(\.start) == [0, 45, 90])
+        #expect(output.rebuiltSegments.map(\.end) == [45, 90, 135])
+        #expect(output.rebuiltSegments.allSatisfy { $0.end - $0.start <= 60 })
+    }
+
     @Test func subtitleTimingPartitionerPreservesSourceCoverageWithAnchors() {
         let ranges = SubtitleTimingPartitioner.partition(
             cueCount: 3,
@@ -344,6 +449,14 @@ struct MediaFlowTests {
         #expect(afterText.count == SubtitleCascadePrompt.contextCharacters)
         #expect(afterText.hasPrefix(upcoming))
         #expect(!afterText.hasSuffix(farther))
+
+        let short = SubtitleCascadePrompt.neighboringContext(
+            batchTexts: [older, nearer, current, upcoming, farther],
+            index: 2,
+            characterLimit: SubtitleCascadePrompt.segmentationContextCharacters
+        )
+        #expect((short.before ?? "").count == SubtitleCascadePrompt.segmentationContextCharacters)
+        #expect((short.after ?? "").count == SubtitleCascadePrompt.segmentationContextCharacters)
     }
 
     @Test func subtitleProcessorIncludesNeighboringBatchesAsContext() async throws {
@@ -379,6 +492,105 @@ struct MediaFlowTests {
         #expect(requests[2].user.contains("<context_before>\nalpha beta\n</context_before>"))
         #expect(requests[2].user.contains("<asr_input>\ngamma delta\n</asr_input>"))
         #expect(requests[2].user.contains("speaker: Speaker 2"))
+    }
+
+    @Test(arguments: [ASREngine.qwen, .parakeet])
+    func punctuatingASREnginesSkipCorrectionAndOnlySegment(_ engine: ASREngine) async throws {
+        let source = engine == .qwen ? "请测试声音。" : "Hello world."
+        let language = engine == .qwen ? "zh" : "en"
+        let words = source.split(whereSeparator: \.isWhitespace).enumerated().map { index, token in
+            TranscriptionWord(
+                text: String(token),
+                start: Double(index),
+                end: Double(index) + 0.5,
+                speaker: "Speaker 1"
+            )
+        }
+        let client = StubLLMClient(responses: [
+            "{\"lines\":\(String(decoding: try JSONEncoder().encode([source]), as: UTF8.self))}",
+        ])
+
+        let track = try await SubtitleLLMProcessor(client: client).process(
+            transcript: TranscriptionResult(
+                text: source,
+                language: language,
+                words: words,
+                segments: [],
+                asrEngine: engine
+            ),
+            options: SubtitleProcessingPayload(maximumAttempts: 1),
+            progress: { _, _, _, _ in }
+        )
+
+        #expect(track.cues.map(\.text) == [source])
+        #expect(await client.requestCount == 1)
+        let request = try #require(await client.requests.first)
+        #expect(request.system.contains("This is segmentation-only."))
+        #expect(!request.system.contains("add natural punctuation"))
+        #expect(request.user.contains("<corrected_transcript>"))
+        #expect(!request.user.contains("<asr_input>"))
+    }
+
+    @Test func whisperEnglishSkipsCorrectionAndOnlySegments() async throws {
+        let client = StubLLMClient(responses: [
+            #"{"lines":["Hello world."]}"#,
+        ])
+        let words = [
+            TranscriptionWord(text: "Hello", start: 0, end: 0.4, speaker: "Speaker 1"),
+            TranscriptionWord(text: "world.", start: 0.4, end: 0.9, speaker: "Speaker 1"),
+        ]
+
+        let track = try await SubtitleLLMProcessor(client: client).process(
+            transcript: TranscriptionResult(
+                text: "Hello world.",
+                language: "en-US",
+                words: words,
+                segments: [],
+                asrEngine: .whisper
+            ),
+            options: SubtitleProcessingPayload(maximumAttempts: 1),
+            progress: { _, _, _, _ in }
+        )
+
+        #expect(track.cues.map(\.text) == ["Hello world."])
+        #expect(await client.requestCount == 1)
+        let request = try #require(await client.requests.first)
+        #expect(request.system.contains("This is segmentation-only."))
+        #expect(!request.system.contains("add natural punctuation"))
+    }
+
+    @Test func whisperNonEnglishStillCorrectsThenSegments() async throws {
+        let source = "请测试声音。"
+        let client = StubLLMClient(responses: [
+            #"{"text":"请测试声音。"}"#,
+            #"{"lines":["请测试声音。"]}"#,
+        ])
+        let words = Array(source).enumerated().map { index, character in
+            TranscriptionWord(
+                text: String(character),
+                start: Double(index) * 0.2,
+                end: Double(index) * 0.2 + 0.16,
+                speaker: "Speaker 1"
+            )
+        }
+
+        let track = try await SubtitleLLMProcessor(client: client).process(
+            transcript: TranscriptionResult(
+                text: source,
+                language: "zh",
+                words: words,
+                segments: [],
+                asrEngine: .whisper
+            ),
+            options: SubtitleProcessingPayload(maximumAttempts: 1),
+            progress: { _, _, _, _ in }
+        )
+
+        #expect(track.cues.map(\.text) == [source])
+        #expect(await client.requestCount == 2)
+        let requests = await client.requests
+        #expect(requests[0].system.contains("add natural punctuation"))
+        #expect(requests[1].system.contains("This is segmentation-only."))
     }
 
     @Test func subtitleProcessorAllowsContinuationLinesWithoutPunctuation() async throws {
@@ -704,7 +916,7 @@ struct MediaFlowTests {
         try assertContinuousCueCoverage(track, sourceWords: sourceWords)
     }
 
-    @Test func invalidSubtitleJSONFailsTheFlow() async throws {
+    @Test func invalidSubtitleJSONUsesTimedTranscriptFallback() async throws {
         let client = StubLLMClient(responses: ["<think>{not final}</think> not-json"])
         let executor = MediaFlowExecutor(llmClientFactory: { client })
         let transcript = TranscriptionResult(
@@ -726,20 +938,54 @@ struct MediaFlowTests {
             switch event {
             case .artifact(.subtitles(let track, _)):
                 resultingTrack = track
-            case .progress(let progress) where progress.status == .failed:
+            case .progress(let progress) where progress.status == .completed:
                 terminalProgress = progress
             default:
                 break
             }
         }
 
-        #expect(resultingTrack == nil)
-        #expect(terminalProgress?.status == .failed)
-        #expect(terminalProgress?.message.contains("did not return valid JSON") == true)
+        #expect(resultingTrack?.cues.count == 1)
+        #expect(resultingTrack?.usesWordTimestamps == true)
+        #expect(terminalProgress?.status == .completed)
+        #expect(terminalProgress?.message.contains("Subtitle cleanup failed") == true)
+        #expect(terminalProgress?.message.contains("rule-based fallback") == true)
         #expect(terminalProgress?.message.contains("invalid structured output") == false)
     }
 
-    @Test func invalidSubtitleContentReportsTheValidationFailure() async throws {
+    @Test func subtitleFallbackSplitsLongASRSegmentsByLength() throws {
+        let longText = (0..<80).map { "word\($0)" }.joined(separator: " ")
+        let words = longText.split(separator: " ").enumerated().map { index, word in
+            TranscriptionWord(
+                text: String(word),
+                start: Double(index) * 0.3,
+                end: Double(index) * 0.3 + 0.25,
+                speaker: nil
+            )
+        }
+        let transcript = TranscriptionResult(
+            text: longText,
+            language: "en",
+            words: words,
+            segments: [
+                TranscriptionSegment(
+                    text: longText,
+                    start: 0,
+                    end: Double(words.count) * 0.3,
+                    speaker: nil
+                ),
+            ]
+        )
+
+        let output = SubtitlePostprocessPipeline.ruleBasedFallback(from: transcript)
+
+        #expect(output != nil)
+        #expect(output!.track.cues.count > 1)
+        #expect(output!.track.cues.allSatisfy { $0.text.count <= 56 })
+        #expect(output!.track.cues.map(\.text).joined(separator: " ").contains("word0"))
+    }
+
+    @Test func invalidSubtitleContentUsesTimedTranscriptFallback() async throws {
         let source = "请测试一下声音现在开始录制"
         let words = Array(source).enumerated().map { index, character in
             TranscriptionWord(
@@ -759,19 +1005,27 @@ struct MediaFlowTests {
             ),
             steps: [.prepareSubtitles(.init(maximumAttempts: 1))]
         )
+        var resultingTrack: SubtitleTrack?
         var terminalProgress: MediaJobProgressEvent?
 
         for await event in executor.events(for: request) {
-            if case .progress(let progress) = event, progress.status == .failed {
+            switch event {
+            case .artifact(.subtitles(let track, _)):
+                resultingTrack = track
+            case .progress(let progress) where progress.status == .completed:
                 terminalProgress = progress
+            default:
+                break
             }
         }
 
+        #expect(resultingTrack?.cues.count == 1)
+        #expect(terminalProgress?.status == .completed)
         #expect(terminalProgress?.message.contains("removed too much of the source transcript") == true)
         #expect(terminalProgress?.message.contains("invalid structured output") == false)
     }
 
-    @Test func subtitleRequestFailureReportsTheProviderError() async throws {
+    @Test func subtitleRequestFailureUsesTimedTranscriptFallback() async throws {
         let client = StubLLMClient(responses: [])
         let executor = MediaFlowExecutor(llmClientFactory: { client })
         let transcript = TranscriptionResult(
@@ -784,15 +1038,56 @@ struct MediaFlowTests {
             input: .transcript(transcript: transcript, subtitles: nil, translation: nil),
             steps: [.prepareSubtitles(.init(maximumAttempts: 1))]
         )
+        var resultingTrack: SubtitleTrack?
         var terminalProgress: MediaJobProgressEvent?
 
         for await event in executor.events(for: request) {
-            if case .progress(let progress) = event, progress.status == .failed {
+            switch event {
+            case .artifact(.subtitles(let track, _)):
+                resultingTrack = track
+            case .progress(let progress) where progress.status == .completed:
+                terminalProgress = progress
+            default:
+                break
+            }
+        }
+
+        #expect(resultingTrack?.cues.count == 1)
+        #expect(terminalProgress?.status == .completed)
+        #expect(terminalProgress?.message.contains("Subtitle cleanup failed") == true)
+        #expect(terminalProgress?.message.contains("The LLM provider returned an empty response.") == true)
+    }
+
+    @Test func subtitleClientSetupFailureCompletesWithWarning() async throws {
+        struct KeychainUnavailable: LocalizedError {
+            var errorDescription: String? { "User interaction is not allowed." }
+        }
+        let executor = MediaFlowExecutor(llmClientFactory: { throw KeychainUnavailable() })
+        let transcript = TranscriptionResult(
+            text: "hello world",
+            language: "en",
+            words: [
+                .init(text: "hello", start: 0, end: 0.5, speaker: nil),
+                .init(text: "world", start: 0.5, end: 1, speaker: nil),
+            ],
+            segments: [.init(text: "hello world", start: 0, end: 1, speaker: nil)]
+        )
+        let request = MediaFlowRequest(
+            input: .transcript(transcript: transcript, subtitles: nil, translation: nil),
+            steps: [.prepareSubtitles(.init(maximumAttempts: 1))]
+        )
+        var terminalProgress: MediaJobProgressEvent?
+
+        for await event in executor.events(for: request) {
+            if case .progress(let progress) = event,
+               progress.status == .completed || progress.status == .failed {
                 terminalProgress = progress
             }
         }
 
-        #expect(terminalProgress?.message == "The LLM provider returned an empty response.")
+        #expect(terminalProgress?.status == .completed)
+        #expect(terminalProgress?.message.contains("Subtitle cleanup failed") == true)
+        #expect(terminalProgress?.message.contains("User interaction is not allowed") == true)
     }
 
     @Test func translationPreservesCueIdentityTimingAndDurationBudgets() async throws {
@@ -919,6 +1214,236 @@ struct MediaFlowTests {
 
         #expect(translated.cues.map(\.text) == ["First.", "Next."])
         #expect(await client.requestCount == 3)
+    }
+
+    @Test func translationWindowsRunConcurrentlyAndKeepSourceOrder() async throws {
+        let client = TranslationConcurrencyProbeLLMClient()
+        let source = SubtitleTrack(
+            sourceLanguage: "fr",
+            language: "fr",
+            cues: (0..<6).map { index in
+                SubtitleCue(
+                    id: index,
+                    sourceIDs: [index],
+                    text: "Ligne \(index).",
+                    start: Double(index),
+                    end: Double(index) + 0.8,
+                    speaker: "Speaker \(index)"
+                )
+            }
+        )
+
+        let translated = try await TranslationLLMProcessor(client: client).translate(
+            track: source,
+            options: TranslationFlowPayload(
+                targetLanguage: "en-US",
+                maximumCuesPerBatch: 1,
+                maximumConcurrentBatches: 2,
+                maximumAttempts: 1
+            ),
+            progress: { _, _, _, _ in }
+        )
+
+        #expect(await client.maximumActiveRequests == 2)
+        #expect(translated.cues.map(\.text) == (0..<6).map { "Ligne \($0)." })
+        #expect(translated.cues.map(\.start) == (0..<6).map { Double($0) })
+        let prompts = await client.systemPrompts
+        #expect(prompts.count == 6)
+        #expect(prompts.allSatisfy { !$0.contains("Previous context summary") })
+        #expect(prompts.allSatisfy { !$0.contains("window_summary") })
+    }
+
+    @Test func lineAlignedTranslationRunsConcurrentBatches() async throws {
+        let client = TranslationConcurrencyProbeLLMClient()
+        let source = SubtitleTrack(
+            sourceLanguage: "fr",
+            language: "fr",
+            cues: (0..<6).map { index in
+                SubtitleCue(
+                    id: index,
+                    sourceIDs: [index],
+                    text: "Ligne \(index).",
+                    start: Double(index),
+                    end: Double(index) + 0.8,
+                    speaker: "A"
+                )
+            }
+        )
+
+        let translated = try await TranslationLLMProcessor(client: client).lineAlignedTranslate(
+            track: source,
+            options: TranslationFlowPayload(
+                targetLanguage: "en-US",
+                maximumCuesPerBatch: 1,
+                maximumConcurrentBatches: 2,
+                maximumAttempts: 1
+            ),
+            progress: { _, _, _, _ in }
+        )
+
+        #expect(await client.maximumActiveRequests == 2)
+        #expect(translated.cues.map(\.id) == Array(0..<6))
+        #expect(translated.cues.map(\.text) == (0..<6).map { "Ligne \($0)." })
+    }
+
+    @Test func translationPacksUnpunctuatedFragmentsAndCutsOnGaps() {
+        let source = SubtitleTrack(
+            sourceLanguage: "en",
+            language: "en",
+            cues: [
+                SubtitleCue(id: 10, sourceIDs: [10], text: "for", start: 22.194, end: 22.21, speaker: "Speaker 2"),
+                SubtitleCue(
+                    id: 11,
+                    sourceIDs: [11],
+                    text: "our final slides, first one here",
+                    start: 22.21,
+                    end: 22.246,
+                    speaker: "Speaker 2"
+                ),
+                SubtitleCue(id: 12, sourceIDs: [12], text: "Hello there.", start: 23.0, end: 23.5, speaker: "Speaker 2"),
+            ]
+        )
+        #expect(
+            TranslationTrackBuilder.packedUnits(from: source, languageCode: "en") == [[10, 11], [12]]
+        )
+    }
+
+    @Test func translationDoesNotPackAcrossSpeakerChanges() {
+        let source = SubtitleTrack(
+            sourceLanguage: "en",
+            language: "en",
+            cues: [
+                SubtitleCue(id: 10, sourceIDs: [10], text: "for", start: 1.0, end: 1.2, speaker: "Speaker 2"),
+                SubtitleCue(id: 11, sourceIDs: [11], text: "our final slides", start: 1.2, end: 2.0, speaker: "Speaker 4"),
+            ]
+        )
+        #expect(
+            TranslationTrackBuilder.packedUnits(from: source, languageCode: "en") == [[10], [11]]
+        )
+    }
+
+    @Test func translationBindsOutputToSourceUnitTimeAndDropsLeakedIDs() async throws {
+        let client = StubLLMClient(responses: [
+            #"{"translations":[{"id":0,"text":"查看最终幻灯片。"},{"id":1,"text":"你好。"},{"id":99,"text":"机会在电子新闻"}]}"#,
+        ])
+        let source = SubtitleTrack(
+            sourceLanguage: "en",
+            language: "en",
+            cues: [
+                SubtitleCue(id: 10, sourceIDs: [10], text: "for", start: 22.194, end: 22.21, speaker: "Speaker 2"),
+                SubtitleCue(
+                    id: 11,
+                    sourceIDs: [11],
+                    text: "our final slides, first one here",
+                    start: 22.21,
+                    end: 22.246,
+                    speaker: "Speaker 2"
+                ),
+                SubtitleCue(id: 12, sourceIDs: [12], text: "Hello there.", start: 23.0, end: 23.5, speaker: "Speaker 2"),
+            ]
+        )
+        let translated = try await TranslationLLMProcessor(client: client).translate(
+            track: source,
+            options: TranslationFlowPayload(
+                targetLanguage: "zh-CN",
+                maximumConcurrentBatches: 1,
+                maximumAttempts: 1
+            ),
+            progress: { _, _, _, _ in }
+        )
+        #expect(translated.cues.contains(where: { $0.text.contains("电子新闻") }) == false)
+        #expect(translated.cues.allSatisfy { $0.end - $0.start > 0.01 })
+        let first = try #require(translated.cues.first)
+        #expect(first.start == 22.194)
+        #expect(first.end == 22.246)
+        #expect(first.sourceIDs == [10, 11])
+        #expect(first.speaker == "Speaker 2")
+        let last = try #require(translated.cues.last)
+        #expect(last.start == 23.0)
+        #expect(last.end == 23.5)
+        #expect(last.sourceIDs == [12])
+    }
+
+    @Test func translationContextIsPlainTextWithoutSourceIndices() async throws {
+        let client = StubLLMClient(responses: [
+            #"{"translations":[{"id":0,"text":"Alpha."}]}"#,
+            #"{"translations":[{"id":1,"text":"Beta."}]}"#,
+            #"{"translations":[{"id":2,"text":"Gamma."}]}"#,
+        ])
+        let source = SubtitleTrack(
+            sourceLanguage: "en",
+            language: "en",
+            cues: [
+                SubtitleCue(id: 0, sourceIDs: [0], text: "Alpha.", start: 0, end: 1, speaker: "A"),
+                SubtitleCue(id: 1, sourceIDs: [1], text: "Beta.", start: 2, end: 3, speaker: "A"),
+                SubtitleCue(id: 2, sourceIDs: [2], text: "Gamma.", start: 4, end: 5, speaker: "A"),
+            ]
+        )
+        _ = try await TranslationLLMProcessor(client: client).translate(
+            track: source,
+            options: TranslationFlowPayload(
+                targetLanguage: "zh-CN",
+                maximumCuesPerBatch: 1,
+                maximumConcurrentBatches: 1,
+                maximumAttempts: 1
+            ),
+            progress: { _, _, _, _ in }
+        )
+        let requests = await client.requests
+        #expect(requests.count == 3)
+        let middle = requests[1].user
+        #expect(middle.contains("<context_before>"))
+        #expect(middle.contains("Alpha."))
+        #expect(middle.contains("<context_after>"))
+        #expect(middle.contains("Gamma."))
+        #expect(middle.contains("source_indices") == false)
+        if let after = middle.range(of: "<context_after>") {
+            let block = String(middle[after.lowerBound...])
+            #expect(block.contains(#""index""#) == false)
+            #expect(block.contains(#""id""#) == false)
+        }
+        #expect(requests.allSatisfy { !$0.system.contains("already passed punctuation repair") })
+        #expect(requests.allSatisfy { $0.system.contains("<context_before>") })
+    }
+
+    @Test func translationSpottingRejectsRewrittenLines() {
+        let source = "专注于适应高中生活。"
+        #expect(
+            TranslationTrackBuilder.linesPreserveText(
+                ["专注于适应高中生活。"],
+                source: source,
+                languageCode: "zh"
+            )
+        )
+        #expect(
+            TranslationTrackBuilder.linesPreserveText(
+                ["机会在电子新闻"],
+                source: source,
+                languageCode: "zh"
+            ) == false
+        )
+        let limits = SubtitleReadabilityPolicy.limits(denseScript: true)
+        let lines = TranslationTrackBuilder.spottedLines(
+            source,
+            languageCode: "zh",
+            denseScript: true,
+            limits: limits
+        )
+        #expect(TranslationTrackBuilder.linesPreserveText(lines, source: source, languageCode: "zh"))
+    }
+
+    @Test func subtitleTrackMarksKnownSpeakerChangesWhenConvertedToTranscript() {
+        let track = SubtitleTrack(
+            sourceLanguage: "zh",
+            language: "zh",
+            cues: [
+                SubtitleCue(id: 0, sourceIDs: [0], text: "一", start: 1, end: 2, speaker: "Speaker 4"),
+                SubtitleCue(id: 1, sourceIDs: [1], text: "二", start: 2, end: 3, speaker: "Speaker 4"),
+                SubtitleCue(id: 2, sourceIDs: [2], text: "三", start: 3, end: 4, speaker: "Speaker 2"),
+            ]
+        )
+        let result = track.asTranscriptionResult()
+        #expect(result.segments.map(\.speakerBoundary) == [.none, .none, .hard])
     }
 
     @Test func progressEventsRoundTripWithSSEStyleFields() throws {

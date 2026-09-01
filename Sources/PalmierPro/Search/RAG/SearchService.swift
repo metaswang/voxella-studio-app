@@ -8,21 +8,67 @@ struct SearchService: Sendable {
     var store: SessionIndexStore
     var embeddings: (any TextEmbeddingProvider)?
 
+    func sessionLexicalSearch(
+        query: String,
+        filter: SessionSearchFilter = .init()
+    ) async throws -> [SessionCard] {
+        let lexical = try await store.searchLexical(
+            query: query,
+            kinds: [.sessionCard, .transcriptChunk],
+            filter: filter
+        )
+        return try await sessionCards(lexical: lexical, vectorHits: [], filter: filter)
+    }
+
     func sessionSearch(query: String, filter: SessionSearchFilter = .init()) async throws -> [SessionCard] {
         let lexical = try await store.searchLexical(
             query: query,
             kinds: [.sessionCard, .transcriptChunk],
             filter: filter
         )
-        let fusedIDs = ReciprocalRankFusion.fuse(rankings: [lexical.map(\.sessionID)])
         var vectorHits: [SessionSearchHit] = []
         if let embeddings, let vector = try? await embeddings.encodeText(query) {
             vectorHits = (try? await store.searchVector(vector: vector, modality: .text, filter: filter)) ?? []
         }
+        return try await sessionCards(lexical: lexical, vectorHits: vectorHits, filter: filter)
+    }
+
+    func transcriptLexicalSearch(
+        query: String,
+        filter: SessionSearchFilter = .init(),
+        words: [TranscriptionWord] = []
+    ) async throws -> [SessionSearchHit] {
+        try await lexicalSearch(
+            query: query,
+            kinds: [.transcriptChunk],
+            filter: filter,
+            words: words
+        )
+    }
+
+    func clipLexicalSearch(
+        query: String,
+        filter: SessionSearchFilter = .init(),
+        words: [TranscriptionWord] = []
+    ) async throws -> [SessionSearchHit] {
+        try await lexicalSearch(
+            query: query,
+            kinds: [.mediaClip],
+            filter: filter,
+            words: words
+        )
+    }
+
+    private func sessionCards(
+        lexical: [SessionSearchHit],
+        vectorHits: [SessionSearchHit],
+        filter: SessionSearchFilter
+    ) async throws -> [SessionCard] {
+        let lexicalIDs = ReciprocalRankFusion.fuse(rankings: [lexical.map(\.sessionID)])
         let ranked = ReciprocalRankFusion.fuse(
             rankings: [lexical.map(\.sessionID), vectorHits.map(\.sessionID)]
         )
-        let order = ranked.isEmpty ? fusedIDs : ranked
+        let order = ranked.isEmpty ? lexicalIDs : ranked
         var cards: [SessionCard] = []
         for id in order.prefix(filter.limit) {
             guard var card = try await store.sessionCard(id: id) else { continue }
@@ -83,7 +129,7 @@ struct SearchService: Sendable {
         filter: SessionSearchFilter = .init(),
         words: [TranscriptionWord] = []
     ) async throws -> [SessionSearchHit] {
-        var modalities: [SessionIndexModality] = [.mixed, .video]
+        var modalities: [SessionIndexModality] = [.mixed]
         if let modality = filter.modality {
             modalities = [modality]
         }
@@ -127,8 +173,7 @@ struct SearchService: Sendable {
         filter: SessionSearchFilter,
         words: [TranscriptionWord]
     ) async throws -> [SessionSearchHit] {
-        let terms = query.split(whereSeparator: \.isWhitespace).map(String.init)
-        let lexical = try await store.searchLexical(query: query, kinds: kinds, filter: filter)
+        let lexical = try await lexicalSearch(query: query, kinds: kinds, filter: filter, words: words)
         var vectorHits: [SessionSearchHit] = []
         if let embeddings, let vector = try? await embeddings.encodeText(query) {
             for modality in modalities {
@@ -148,8 +193,19 @@ struct SearchService: Sendable {
             byID[hit.unitID] = hit
         }
         return fused.prefix(filter.limit).compactMap { id in
-            byID[id].map { hydrate($0, words: words, terms: terms) }
+            byID[id]
         }
+    }
+
+    private func lexicalSearch(
+        query: String,
+        kinds: [SessionIndexUnitKind],
+        filter: SessionSearchFilter,
+        words: [TranscriptionWord]
+    ) async throws -> [SessionSearchHit] {
+        let terms = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        let hits = try await store.searchLexical(query: query, kinds: kinds, filter: filter)
+        return hits.map { hydrate($0, words: words, terms: terms) }
     }
 
     private func hydrate(

@@ -113,6 +113,10 @@ struct ASREngineRouterTests {
         #expect(ASREngineLanguagePolicy.engine(forLanguageCode: "ja") == .qwen)
         #expect(ASREngineLanguagePolicy.engine(forLanguageCode: "fa") == .whisper)
         #expect(ASREngineLanguagePolicy.whisperLanguageCode(from: "iw") == "he")
+        #expect(ASREngineLanguagePolicy.isEnglish("en-US"))
+        #expect(ASREngineLanguagePolicy.isEnglish("en"))
+        #expect(!ASREngineLanguagePolicy.isEnglish("zh"))
+        #expect(!ASREngineLanguagePolicy.isEnglish(nil))
 
         let locked = ASREngineRouter.decide(
             posterior: [:],
@@ -128,5 +132,58 @@ struct ASREngineRouterTests {
         #expect(ASREngineLanguagePolicy.isoCode(fromQwenLanguage: "Chinese") == "zh")
         #expect(ASREngineLanguagePolicy.isoCode(fromQwenLanguage: "Japanese") == "ja")
         #expect(ASREngineLanguagePolicy.qwenLockLanguage(fromDetected: "Cantonese") == "Cantonese")
+    }
+
+    @Test func aggregatedWindowsRecoverEnglishFromSpuriousOpeningWhisperID() {
+        let opening: [String: Float] = [
+            "hy": 0.87,
+            "en": 0.08,
+            "zh": 0.05,
+        ]
+        let later: [String: Float] = [
+            "en": 0.91,
+            "de": 0.05,
+            "hy": 0.02,
+        ]
+        let openingOnly = ASREngineRouter.decide(posterior: opening, speechDuration: 3)
+        #expect(openingOnly.engine == .whisper)
+        #expect(openingOnly.topLanguage == "hy")
+
+        let aggregated = ASREngineRouter.averagePosteriors([opening, later, later])
+        #expect(aggregated["en", default: 0] > aggregated["hy", default: 0])
+
+        let decision = ASREngineRouter.decide(
+            windowPosteriors: [opening, later, later],
+            speechDuration: 15
+        )
+        #expect(decision.engine == .parakeet)
+        #expect(decision.topLanguage == "en")
+        #expect(decision.parakeetDomainLanguage == "en")
+    }
+
+    @Test func identificationWindowsSpreadAcrossLongSpeech() {
+        let windows = ASREngineRouter.identificationWindows(
+            speechRanges: [ASRSpeechRange(start: 0, end: 60)],
+            audioDuration: 60
+        )
+        #expect(windows.count == 3)
+        #expect(windows.allSatisfy { $0.duration >= 3 && $0.duration <= 5 })
+        #expect(windows[0].start < 1)
+        #expect(windows[1].start > 15)
+        #expect(windows[2].start > 40)
+    }
+
+    @Test func identificationWindowsLeaveTheOpeningIsland() {
+        let windows = ASREngineRouter.identificationWindows(
+            speechRanges: [
+                ASRSpeechRange(start: 0, end: 3),
+                ASRSpeechRange(start: 40, end: 90),
+            ],
+            audioDuration: 90
+        )
+        #expect(windows.count == 3)
+        #expect(windows.filter { $0.start < 3 }.count == 1)
+        #expect(windows.contains { $0.start >= 40 })
+        #expect(windows.contains { $0.start >= 60 })
     }
 }

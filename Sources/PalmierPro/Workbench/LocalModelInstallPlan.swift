@@ -80,11 +80,12 @@ struct LocalModelInstallPlan: Equatable, Sendable {
         catalog: [LocalModelDescriptor] = LocalModelManager.catalog,
         isInstalled: (LocalModelID) -> Bool
     ) -> LocalModelInstallPlan {
-        let ids = requiredModelIDs(
+        let requiredIDs = requiredModelIDs(
             languageCode: languageCode,
             speakerCount: speakerCount,
             asrModelID: asrModelID
         )
+        let ids = requiredIDs
         let descriptors = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
         let items = ids.compactMap { id -> Item? in
             guard let model = descriptors[id] else { return nil }
@@ -96,7 +97,7 @@ struct LocalModelInstallPlan: Equatable, Sendable {
                 sizeLabel: model.sizeLabel,
                 license: model.license,
                 requiresLicenseAcceptance: model.requiresLicenseAcceptance,
-                isInstalled: isInstalled(model.id)
+                isInstalled: isInstalled(id)
             )
         }
         return LocalModelInstallPlan(

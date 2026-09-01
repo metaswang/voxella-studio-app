@@ -6,13 +6,15 @@ struct SubtitlePostprocessResult: Sendable {
     var warnings: [String]
 }
 
-/// Subtitle postprocessing: correct and punctuate text, segment it without
-/// further edits, align the final text to source word timings, then rebuild
+/// Subtitle postprocessing: optionally repair ASR text, then segment it without
+/// further edits, align the final text to source word timings, and rebuild
 /// long transcript segments from the timed cues.
 ///
-/// The LLM never owns absolute time and never translates. Timing always comes
-/// from a monotonic partition of ASR words. Low-confidence remap gaps interpolate
-/// instead of replacing the corrected text with raw ASR wording.
+/// Qwen, Parakeet, and English Whisper already punctuate, so those paths skip
+/// repair and only split cues. The LLM never owns absolute time and never
+/// translates. Timing always comes from a monotonic partition of ASR words.
+/// Low-confidence remap gaps interpolate instead of replacing the corrected
+/// text with raw ASR wording.
 struct SubtitlePostprocessPipeline: Sendable {
     let client: any LLMTextClient
 
@@ -47,6 +49,10 @@ struct SubtitlePostprocessPipeline: Sendable {
         guard !sourceWords.isEmpty else { throw MediaFlowError.missingTranscript }
 
         let languageCode = transcript.language
+        let skipsRepair = SubtitleLLMRepairPolicy.skipsRepair(
+            engine: transcript.asrEngine,
+            languageCode: languageCode
+        )
         let isCJK = Self.usesDenseScript(languageCode: languageCode, sampleText: transcript.text)
         let limits = Self.limits(
             isCJK: isCJK,
@@ -67,11 +73,18 @@ struct SubtitlePostprocessPipeline: Sendable {
             max(1, options.maximumConcurrentBatches),
             batches.count
         )
+        Log.llm.notice(
+            "subtitle postprocess batches=\(batches.count) "
+                + "concurrency=\(maximumConcurrentBatches) "
+                + "repair=\(!skipsRepair)"
+        )
         progress(
             0,
             0,
             batches.count,
-            "Cleaning and segmenting subtitle batches…"
+            skipsRepair
+                ? "Segmenting subtitle batches…"
+                : "Cleaning and segmenting subtitle batches…"
         )
 
         var outcomes = Array<BatchOutcome?>(repeating: nil, count: batches.count)
@@ -88,6 +101,7 @@ struct SubtitlePostprocessPipeline: Sendable {
                         sourceWords: sourceWords,
                         languageCode: languageCode,
                         isCJK: isCJK,
+                        skipsRepair: skipsRepair,
                         limits: limits,
                         options: options
                     )
@@ -102,7 +116,9 @@ struct SubtitlePostprocessPipeline: Sendable {
                     Double(completedBatches) / Double(batches.count),
                     completedBatches,
                     batches.count,
-                    "Cleaned and segmented subtitle batch \(result.index + 1) (\(completedBatches) of \(batches.count) complete)…"
+                    skipsRepair
+                        ? "Segmented subtitle batch \(result.index + 1) (\(completedBatches) of \(batches.count) complete)…"
+                        : "Cleaned and segmented subtitle batch \(result.index + 1) (\(completedBatches) of \(batches.count) complete)…"
                 )
 
                 if nextBatchIndex < batches.count {
@@ -116,6 +132,7 @@ struct SubtitlePostprocessPipeline: Sendable {
                             sourceWords: sourceWords,
                             languageCode: languageCode,
                             isCJK: isCJK,
+                            skipsRepair: skipsRepair,
                             limits: limits,
                             options: options
                         )
@@ -153,8 +170,97 @@ struct SubtitlePostprocessPipeline: Sendable {
         )
         let rebuilt = Self.rebuildSegments(from: cues, languageCode: languageCode)
 
-        progress(1, batches.count, batches.count, "Subtitles cleaned and segmented")
+        progress(1, batches.count, batches.count, skipsRepair ? "Subtitles segmented" : "Subtitles cleaned and segmented")
         return SubtitlePostprocessResult(track: track, rebuiltSegments: rebuilt, warnings: warnings)
+    }
+
+    /// Rule-based segmentation used when LLM subtitle cleanup fails. Splits each
+    /// batch by readability limits and aligns lines to source-word timings.
+    static func ruleBasedFallback(
+        from transcript: TranscriptionResult,
+        options: SubtitleProcessingPayload = SubtitleProcessingPayload()
+    ) -> SubtitlePostprocessResult? {
+        let sourceWords = makeSourceWords(from: transcript)
+        guard !sourceWords.isEmpty else { return nil }
+
+        let languageCode = transcript.language
+        let isCJK = usesDenseScript(languageCode: languageCode, sampleText: transcript.text)
+        let limits = limits(
+            isCJK: isCJK,
+            overridingMaximum: options.maximumCharactersPerCue
+        )
+        let batches = makeBatches(sourceWords: sourceWords, transcript: transcript, options: options)
+        guard !batches.isEmpty else { return nil }
+
+        var cues: [PendingCue] = []
+        for batch in batches {
+            let words = Array(sourceWords[batch])
+            let batchText = TranscriptSegmenter.joinedText(
+                words.map(\.text),
+                language: languageCode
+            )
+            guard !batchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+
+            let subtitles = SubtitleReadabilityPolicy.splitTextByLength(
+                batchText,
+                languageCode: languageCode,
+                denseScript: isCJK,
+                limits: limits
+            )
+            guard !subtitles.isEmpty else { continue }
+
+            let tokens = SubtitleTokenRemapper.buildDestinationTokens(
+                fromSubtitles: subtitles,
+                languageCode: languageCode
+            )
+            let remap = SubtitleTokenRemapper.remap(
+                sourceWords: words.map {
+                    SubtitleRemapSourceWord(
+                        text: $0.text,
+                        start: $0.start,
+                        end: $0.end,
+                        speaker: $0.speaker
+                    )
+                },
+                destinationTokens: tokens,
+                batchStart: words[0].start,
+                batchEnd: words[words.count - 1].end,
+                languageCode: languageCode
+            )
+            let batchCues = makeCues(
+                subtitles: subtitles,
+                remap: remap,
+                words: words,
+                isCJK: isCJK
+            )
+            guard batchCues.count == subtitles.count else { continue }
+            cues.append(contentsOf: batchCues)
+        }
+
+        guard !cues.isEmpty else { return nil }
+
+        let track = SubtitleTrack(
+            sourceLanguage: languageCode,
+            language: languageCode,
+            cues: cues.enumerated().map { index, cue in
+                SubtitleCue(
+                    id: index,
+                    sourceIDs: cue.sourceIndices,
+                    text: cue.text,
+                    start: cue.start,
+                    end: cue.end,
+                    speaker: cue.speaker,
+                    overBudget: cue.overBudget
+                )
+            },
+            usesWordTimestamps: true
+        )
+        let rebuilt = rebuildSegments(from: cues, languageCode: languageCode)
+        return SubtitlePostprocessResult(
+            track: track,
+            rebuiltSegments: rebuilt,
+            warnings: ["Subtitles segmented with rule-based fallback timings."]
+        )
     }
 
     private func processBatch(
@@ -164,6 +270,7 @@ struct SubtitlePostprocessPipeline: Sendable {
         sourceWords: [SourceWord],
         languageCode: String?,
         isCJK: Bool,
+        skipsRepair: Bool,
         limits: SubtitleReadabilityPolicy.Limits,
         options: SubtitleProcessingPayload
     ) async throws -> IndexedBatchOutcome {
@@ -176,7 +283,10 @@ struct SubtitlePostprocessPipeline: Sendable {
 
         let context = SubtitleCascadePrompt.neighboringContext(
             batchTexts: batchTexts,
-            index: index
+            index: index,
+            characterLimit: skipsRepair
+                ? SubtitleCascadePrompt.segmentationContextCharacters
+                : SubtitleCascadePrompt.contextCharacters
         )
         let outcome = try await cascade(
             words: words,
@@ -186,6 +296,7 @@ struct SubtitlePostprocessPipeline: Sendable {
             languageCode: languageCode,
             speaker: SpeakerLabelResolver.dominant(in: words.map(\.speaker)),
             isCJK: isCJK,
+            skipsRepair: skipsRepair,
             limits: limits,
             options: options
         )
@@ -434,18 +545,10 @@ struct SubtitlePostprocessPipeline: Sendable {
         languageCode: String?,
         speaker: String?,
         isCJK: Bool,
+        skipsRepair: Bool,
         limits: SubtitleReadabilityPolicy.Limits,
         options: SubtitleProcessingPayload
     ) async throws -> BatchOutcome {
-        let correctionSystem = SubtitleCascadePrompt.correctionSystem(languageCode: languageCode)
-        let correctionBaseUser = SubtitleCascadePrompt.correctionUser(
-            batchText: batchText,
-            contextBefore: contextBefore,
-            contextAfter: contextAfter,
-            languageCode: languageCode,
-            speaker: speaker,
-            userInstruction: options.userInstruction
-        )
         let segmentationSystem = SubtitleCascadePrompt.segmentationSystem(
             languageCode: languageCode,
             limits: limits
@@ -457,62 +560,75 @@ struct SubtitlePostprocessPipeline: Sendable {
 
         for attempt in 0..<attempts {
             try Task.checkCancellation()
-            var correctionUser = correctionBaseUser
-            if let failureReason, failureStage == .correction, attempt > 0 {
-                correctionUser += "\n\n" + SubtitleCascadePrompt.retry(
-                    stage: .correction,
-                    reason: failureReason
+            let sourceText: String
+            if skipsRepair {
+                sourceText = batchText
+            } else {
+                var correctionUser = SubtitleCascadePrompt.correctionUser(
+                    batchText: batchText,
+                    contextBefore: contextBefore,
+                    contextAfter: contextAfter,
+                    languageCode: languageCode,
+                    speaker: speaker,
+                    userInstruction: options.userInstruction
                 )
-            }
+                if let failureReason, failureStage == .correction, attempt > 0 {
+                    correctionUser += "\n\n" + SubtitleCascadePrompt.retry(
+                        stage: .correction,
+                        reason: failureReason
+                    )
+                }
 
-            let correctionRaw: String
-            do {
-                correctionRaw = try await client.complete(
-                    system: correctionSystem,
-                    user: correctionUser
-                )
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                try Task.checkCancellation()
-                failureReason = "correction_request_failed"
-                failureStage = .correction
-                lastRequestError = error
-                continue
-            }
-            lastRequestError = nil
+                let correctionRaw: String
+                do {
+                    correctionRaw = try await client.complete(
+                        system: SubtitleCascadePrompt.correctionSystem(languageCode: languageCode),
+                        user: correctionUser
+                    )
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    try Task.checkCancellation()
+                    failureReason = "correction_request_failed"
+                    failureStage = .correction
+                    lastRequestError = error
+                    continue
+                }
+                lastRequestError = nil
 
-            let correction: CorrectionResponse
-            do {
-                correction = try SubtitleLLMProcessor.decodeJSON(
-                    CorrectionResponse.self,
-                    from: correctionRaw
-                )
-            } catch {
-                failureReason = "invalid_correction_json"
-                failureStage = .correction
-                continue
-            }
+                let correction: CorrectionResponse
+                do {
+                    correction = try SubtitleLLMProcessor.decodeJSON(
+                        CorrectionResponse.self,
+                        from: correctionRaw
+                    )
+                } catch {
+                    failureReason = "invalid_correction_json"
+                    failureStage = .correction
+                    continue
+                }
 
-            let correctedText = correction.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !correctedText.isEmpty else {
-                failureReason = "empty_correction"
-                failureStage = .correction
-                continue
-            }
-            if let reason = Self.correctionFailureReason(
-                correctedText: correctedText,
-                sourceText: batchText,
-                sourceWordCount: words.count,
-                isCJK: isCJK
-            ) {
-                failureReason = reason
-                failureStage = .correction
-                continue
+                let correctedText = correction.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !correctedText.isEmpty else {
+                    failureReason = "empty_correction"
+                    failureStage = .correction
+                    continue
+                }
+                if let reason = Self.correctionFailureReason(
+                    correctedText: correctedText,
+                    sourceText: batchText,
+                    sourceWordCount: words.count,
+                    isCJK: isCJK
+                ) {
+                    failureReason = reason
+                    failureStage = .correction
+                    continue
+                }
+                sourceText = correctedText
             }
 
             var segmentationUser = SubtitleCascadePrompt.segmentationUser(
-                correctedText: correctedText,
+                correctedText: sourceText,
                 contextBefore: contextBefore,
                 contextAfter: contextAfter,
                 languageCode: languageCode,
@@ -556,20 +672,42 @@ struct SubtitlePostprocessPipeline: Sendable {
                 continue
             }
 
-            let subtitles = segmentation.lines
+            let subtitles: [String]
+            var usedLengthSplit = false
+            let llmSubtitles = segmentation.lines
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
             if let reason = Self.segmentationFailureReason(
-                subtitles: subtitles,
-                correctedText: correctedText,
+                subtitles: llmSubtitles,
+                correctedText: sourceText,
                 sourceWordCount: words.count,
                 languageCode: languageCode,
                 isCJK: isCJK,
                 limits: limits
             ) {
-                failureReason = reason
-                failureStage = .segmentation
-                continue
+                if reason == "overlong_subtitle_line",
+                   let repaired = Self.repairedOverlongSegmentationLines(
+                    subtitles: llmSubtitles,
+                    correctedText: sourceText,
+                    sourceWordCount: words.count,
+                    languageCode: languageCode,
+                    isCJK: isCJK,
+                    limits: limits
+                   ) {
+                    subtitles = repaired
+                    usedLengthSplit = true
+                    Log.llm.notice(
+                        "subtitle batch used length split at "
+                            + "\(String(format: "%.1f", words[0].start))s "
+                            + "lines=\(llmSubtitles.count)->\(repaired.count)"
+                    )
+                } else {
+                    failureReason = reason
+                    failureStage = .segmentation
+                    continue
+                }
+            } else {
+                subtitles = llmSubtitles
             }
 
             let tokens = SubtitleTokenRemapper.buildDestinationTokens(
@@ -599,14 +737,22 @@ struct SubtitlePostprocessPipeline: Sendable {
                         + "could not assign source-word timings."
                 )
             }
-            let warning = remap.usesAnchorTiming
-                ? nil
-                : "Used source-word timing for LLM subtitles."
-            return BatchOutcome(cues: cues, warning: warning)
+            var warnings: [String] = []
+            if usedLengthSplit {
+                warnings.append("Split overlong LLM subtitle lines by length.")
+            }
+            if !remap.usesAnchorTiming {
+                warnings.append("Used source-word timing for LLM subtitles.")
+            }
+            return BatchOutcome(
+                cues: cues,
+                warning: warnings.isEmpty ? nil : warnings.joined(separator: " ")
+            )
         }
 
         Log.llm.warning(
-            "subtitle batch failed after \(attempts) two-pass attempts at "
+            "subtitle batch failed after \(attempts) "
+                + "\(skipsRepair ? "segmentation" : "two-pass") attempts at "
                 + "\(String(format: "%.1f", words[0].start))s reason=\(failureReason ?? "unknown")"
         )
         if let lastRequestError,
@@ -660,6 +806,43 @@ struct SubtitlePostprocessPipeline: Sendable {
             displayLength($0, isCJK: isCJK) > limits.maximum
         }) {
             return "overlong_subtitle_line"
+        }
+        return nil
+    }
+
+    /// Prefer repairing overlong LLM lines in place; fall back to splitting the
+    /// corrected transcript when individual lines cannot be shortened enough.
+    private static func repairedOverlongSegmentationLines(
+        subtitles: [String],
+        correctedText: String,
+        sourceWordCount: Int,
+        languageCode: String?,
+        isCJK: Bool,
+        limits: SubtitleReadabilityPolicy.Limits
+    ) -> [String]? {
+        let candidates = [
+            SubtitleReadabilityPolicy.splitOverlongLines(
+                subtitles,
+                languageCode: languageCode,
+                denseScript: isCJK,
+                limits: limits
+            ),
+            SubtitleReadabilityPolicy.splitTextByLength(
+                correctedText,
+                languageCode: languageCode,
+                denseScript: isCJK,
+                limits: limits
+            ),
+        ]
+        for candidate in candidates where segmentationFailureReason(
+            subtitles: candidate,
+            correctedText: correctedText,
+            sourceWordCount: sourceWordCount,
+            languageCode: languageCode,
+            isCJK: isCJK,
+            limits: limits
+        ) == nil {
+            return candidate
         }
         return nil
     }
@@ -840,12 +1023,16 @@ struct SubtitlePostprocessPipeline: Sendable {
 
             var bestCut: Int?
             var bestScore: Double?
-            var cut = buffer.count
-            while cut > 1 {
+            // The cue that crossed the ceiling belongs to the next rebuilt
+            // segment.  Including it in the candidate range was the source of
+            // 90-second transcript cards when the input cues were ~45 seconds.
+            var cut = exceeded ? max(1, buffer.count - 1) : buffer.count
+            let minimumCut = exceeded ? 1 : 2
+            while cut >= minimumCut {
                 defer { cut -= 1 }
                 let cutDuration = buffer[cut - 1].end - start
                 if !exceeded, cutDuration > maximum + 1e-9 { continue }
-                if !exceeded, cutDuration + 1e-9 < minimum { break }
+                if cutDuration + 1e-9 < minimum { break }
 
                 let leftSpeaker = buffer[cut - 1].speaker
                 let rightSpeaker = cut < buffer.count ? buffer[cut].speaker : nil

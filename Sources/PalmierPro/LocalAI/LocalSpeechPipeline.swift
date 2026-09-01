@@ -8,9 +8,7 @@ import MLX
 import MLXAudioLID
 import MLXAudioSTT
 import MLXAudioTTS
-import MLXAudioVAD
 import Qwen3ASR
-import SpeechVAD
 #endif
 
 enum LocalSpeechStage: String, Codable, Sendable {
@@ -77,7 +75,6 @@ actor LocalSpeechPipeline {
     private var parakeet: (id: LocalModelID, model: ParakeetModel)?
     private var languageIdentifier: EcapaTdnn?
     private var aligner: Qwen3ForcedAligner?
-    private var vad: SileroVADModel?
     private var streamingDiarizer: MLXStreamingSortformerEngine?
     #endif
 
@@ -132,6 +129,7 @@ actor LocalSpeechPipeline {
         defer { MLXRuntime.endInference() }
 
         progressUpdate(.init(stage: .decoding, fraction: 0.03, message: "Decoding audio locally…"))
+        let preparationStartedAt = DispatchTime.now().uptimeNanoseconds
         let preparedURL = try await DecodedAudioCache.file(for: sourceURL, range: clipRangeSeconds)
         let decodedSamples = try AudioFileLoader.load(url: preparedURL, targetSampleRate: ASRAudioPreprocessor.sampleRate)
         let preprocessing = ASRAudioPreprocessor.prepare(samples: decodedSamples)
@@ -149,6 +147,13 @@ actor LocalSpeechPipeline {
         let samples = preprocessing.samples
         let originalMetrics = preprocessing.original
         let processedMetrics = preprocessing.processed
+        let preparationElapsed = Double(
+            DispatchTime.now().uptimeNanoseconds - preparationStartedAt
+        ) / 1_000_000_000
+        Log.transcription.notice(
+            "Transcription audio preparation elapsed=\(String(format: "%.2f", preparationElapsed))s "
+                + "decodedSamples=\(decodedSamples.count) preparedSamples=\(samples.count)"
+        )
         let levelMessage = String(
             format: "ASR audio level originalRMS=%.1fdBFS originalPeak=%.1fdBFS processedRMS=%.1fdBFS processedPeak=%.1fdBFS gain=%.1fdB",
             originalMetrics.rmsDBFS,
@@ -159,14 +164,35 @@ actor LocalSpeechPipeline {
         )
         Log.transcription.notice(levelMessage)
 
-        progressUpdate(.init(stage: .detectingSpeech, fraction: 0.07, message: "Checking for speech locally…"))
-        let vad = try await vadModel()
-        var speechRegions = vad.detectSpeech(audio: samples, sampleRate: ASRAudioPreprocessor.sampleRate)
+        let vadTotalChunks = LocalSpeechVADRunner.chunkCount(for: samples.count)
+        progressUpdate(.init(
+            stage: .detectingSpeech,
+            fraction: 0.07,
+            completed: 0,
+            total: vadTotalChunks,
+            message: "Checking for speech locally…"
+        ))
+
+        let analysis = try await SpeechAnalysisService.shared.analyze(
+            samples: samples,
+            progress: { completed, total, message in
+                let fraction = 0.07 + 0.03 * (Double(completed) / Double(max(1, total)))
+                progressUpdate(.init(
+                    stage: .detectingSpeech,
+                    fraction: fraction,
+                    completed: completed,
+                    total: total,
+                    message: message
+                ))
+            }
+        )
+        try Task.checkCancellation()
+        var speechRegions = analysis.segments
         if speechRegions.isEmpty {
             Log.transcription.warning(
                 "VAD returned no regions after ASR preprocessing; using full-audio fallback rms=\(String(format: "%.1f", processedMetrics.rmsDBFS))dBFS peak=\(String(format: "%.1f", processedMetrics.peakDBFS))dBFS"
             )
-            speechRegions = [SpeechSegment(
+            speechRegions = [SpeechRegion(
                 startTime: 0,
                 endTime: Float(Double(samples.count) / Double(ASRAudioPreprocessor.sampleRate))
             )]
@@ -189,25 +215,13 @@ actor LocalSpeechPipeline {
             outputLanguageCode = requestedLanguage.outputLanguageCode
         } else {
             progressUpdate(.init(stage: .detectingLanguage, fraction: 0.10, message: "Selecting ASR engine locally…"))
-            route = try Self.routeAutomaticEngine(
+            route = Self.routeAutomaticEngine(
                 samples: samples,
                 speechRegions: speechRegions,
-                languageIdentifier: languageIdentifierModel()
+                languageIdentifier: try languageIdentifierModel()
             )
             recognitionLanguageCode = Self.automaticPromptLanguage(for: route)
-            outputLanguageCode = switch route.engine {
-            case .qwen: nil
-            case .parakeet: route.parakeetDomainLanguage
-            case .whisper: route.whisperHint
-            }
-            if route.engine == .parakeet,
-               let language = route.parakeetDomainLanguage,
-               ASREngineLanguagePolicy.parakeetQualityWatchLanguages.contains(language) {
-                Log.transcription.notice("QUALITY_WATCH parakeet language=\(language)")
-            }
-            Log.transcription.notice(
-                "ASR engine route engine=\(route.engine.rawValue) reason=\(route.reason.rawValue) q=\(String(format: "%.2f", route.scores.qwen)) p=\(String(format: "%.2f", route.scores.parakeet)) w=\(String(format: "%.2f", route.scores.whisper)) top=\(route.topLanguage ?? "nil") window=\(String(format: "%.1f", route.speechDuration))s"
-            )
+            outputLanguageCode = Self.outputLanguage(for: route)
             progressUpdate(.init(
                 stage: .detectingLanguage,
                 fraction: 0.12,
@@ -221,6 +235,8 @@ actor LocalSpeechPipeline {
             ))
         }
 
+        let audioDuration = Double(samples.count) / 16_000
+        let speechMask = Self.makeAlignmentSpeechMask(samples: samples, speechRegions: speechRegions)
         let asrModelID = ASREngineLanguagePolicy.modelID(
             for: route.engine,
             whisperFallback: whisperFallbackModelID
@@ -238,9 +254,6 @@ actor LocalSpeechPipeline {
         } else {
             chunkConfiguration = route.engine.chunkConfiguration
         }
-
-        let audioDuration = Double(samples.count) / 16_000
-        let speechMask = Self.makeAlignmentSpeechMask(samples: samples, speechRegions: speechRegions)
         let recognitionChunks = ASRChunkPlanner.chunks(
             speechRanges: speechRegions.map {
                 ASRSpeechRange(start: Double($0.startTime), end: Double($0.endTime))
@@ -249,6 +262,11 @@ actor LocalSpeechPipeline {
             configuration: chunkConfiguration
         )
         guard !recognitionChunks.isEmpty else { throw LocalAIError.vadNoSpeech }
+        Log.transcription.notice(
+            "ASR chunks engine=\(route.engine.rawValue) count=\(recognitionChunks.count) "
+                + "window=\(String(format: "%.0f", chunkConfiguration.maximumWindowDuration))s "
+                + "audio=\(String(format: "%.1f", audioDuration))s"
+        )
 
         progressUpdate(.init(stage: .recognizing, fraction: 0.14, message: "Loading \(asrDescriptor.title)…"))
         let loadedASR = try await asrModel(id: asrModelID, engine: route.engine)
@@ -329,13 +347,19 @@ actor LocalSpeechPipeline {
         )
         let resolvedLanguageCode = outputLanguageCode ?? inferredLanguage.outputLanguageCode
         let alignmentLanguage = Self.alignerLanguage(from: resolvedLanguageCode)
-        let usesNativeTimestamps = route.engine == .parakeet && !recognition.nativeWords.isEmpty
+        let nativeWords = Self.nativeWords(from: recognition.nativeTokens)
+        let usesNativeTimestamps = route.engine == .parakeet && !nativeWords.isEmpty
+        if route.engine == .parakeet {
+            Log.transcription.notice(
+                "Parakeet token postprocess tokens=\(recognition.nativeTokens.count) words=\(nativeWords.count)"
+            )
+        }
         let usesForcedAligner = !usesNativeTimestamps
             && ASREngineLanguagePolicy.supportsForcedAlignment(resolvedLanguageCode)
         let aligner = usesForcedAligner ? try await alignerModel() : nil
         let alignment = try timedWords(
             spans: recognizedSpans,
-            nativeWords: recognition.nativeWords,
+            nativeWords: nativeWords,
             usesNativeTimestamps: usesNativeTimestamps,
             language: alignmentLanguage,
             aligner: aligner,
@@ -415,10 +439,11 @@ actor LocalSpeechPipeline {
                             retriedUncoveredKeptFirstPassCount = cores.count
                             Log.transcription.warning("coverage retry left no spans; keeping first pass")
                         } else {
+                            let retryNativeWords = Self.nativeWords(from: retryRecognition.nativeTokens)
                             let retryAlignment = try timedWords(
                                 spans: retryOwnership.spans,
-                                nativeWords: retryRecognition.nativeWords,
-                                usesNativeTimestamps: usesNativeTimestamps && !retryRecognition.nativeWords.isEmpty,
+                                nativeWords: retryNativeWords,
+                                usesNativeTimestamps: usesNativeTimestamps && !retryNativeWords.isEmpty,
                                 language: alignmentLanguage,
                                 aligner: aligner,
                                 samples: samples,
@@ -482,6 +507,7 @@ actor LocalSpeechPipeline {
         }
         let diarizationPolicy = SpeakerDiarizationPolicy.standard(requestedSpeakerCount: speakerCount)
         let diarizeStart = retriedUncoveredRangeCount > 0 ? 0.88 : 0.72
+        let diarizeSpan = retriedUncoveredRangeCount > 0 ? 0.10 : 0.18
         let timeline: SpeakerActivityTimeline
         if speakerCount == 1 {
             progressUpdate(.init(stage: .assigningSpeakers, fraction: 0.90, message: "Assigning the single speaker locally…"))
@@ -500,7 +526,7 @@ actor LocalSpeechPipeline {
                 progress: { update in
                     progressUpdate(.init(
                         stage: .diarizing,
-                        fraction: diarizeStart + update.fraction * 0.10,
+                        fraction: diarizeStart + update.fraction * diarizeSpan,
                         completed: update.completed,
                         total: update.total,
                         message: update.message
@@ -509,15 +535,26 @@ actor LocalSpeechPipeline {
             )
             try Task.checkCancellation()
         }
+        let assignStartedAt = DispatchTime.now().uptimeNanoseconds
+        let attributed = Self.assignSpeakers(
+            to: aligned,
+            timeline: timeline,
+            audioDuration: audioDuration,
+            languageCode: resolvedLanguageCode,
+            policy: diarizationPolicy
+        )
+        let assignElapsed = Double(DispatchTime.now().uptimeNanoseconds - assignStartedAt) / 1_000_000_000
+        Log.transcription.notice(
+            "Speaker assignment elapsed=\(String(format: "%.2f", assignElapsed))s words=\(attributed.count)"
+        )
+        let qualityStartedAt = DispatchTime.now().uptimeNanoseconds
         let words = TranscriptionQualityProcessor.postprocess(
-            Self.assignSpeakers(
-                to: aligned,
-                timeline: timeline,
-                audioDuration: audioDuration,
-                languageCode: resolvedLanguageCode,
-                policy: diarizationPolicy
-            ),
+            attributed,
             chineseScript: TranscriptionLanguage(code: resolvedLanguageCode).chineseScript
+        )
+        let qualityElapsed = Double(DispatchTime.now().uptimeNanoseconds - qualityStartedAt) / 1_000_000_000
+        Log.transcription.notice(
+            "Transcript quality postprocess elapsed=\(String(format: "%.2f", qualityElapsed))s words=\(words.count)"
         )
         let segments = Self.makeSegments(from: words)
         progressUpdate(.init(stage: .finalizing, fraction: 0.99, message: "Finalizing transcript…"))
@@ -549,7 +586,8 @@ actor LocalSpeechPipeline {
                 text: TranscriptSegmenter.joinedText(words.map(\.text)),
                 language: resolvedLanguageCode,
                 words: words,
-                segments: segments
+                segments: segments,
+                asrEngine: route.engine
             ),
             diarizationDiagnostics: timeline.diagnostics,
             alignmentDiagnostics: alignmentDiagnostics,
@@ -617,11 +655,14 @@ actor LocalSpeechPipeline {
             : requestedLanguage
         let language = Self.alignerLanguage(from: resolvedLanguageCode)
         let audioDuration = Double(samples.count) / 16_000
-        let vad = try await vadModel()
-        var speechRegions = vad.detectSpeech(audio: samples, sampleRate: ASRAudioPreprocessor.sampleRate)
+        let vadAnalysis = try await SpeechAnalysisService.shared.analyze(
+            samples: samples,
+            progress: { _, _, _ in }
+        )
+        var speechRegions = vadAnalysis.segments
         if speechRegions.isEmpty {
             Log.transcription.warning("alignment VAD returned no regions after ASR preprocessing; using full-audio fallback")
-            speechRegions = [SpeechSegment(startTime: 0, endTime: Float(audioDuration))]
+            speechRegions = [SpeechRegion(startTime: 0, endTime: Float(audioDuration))]
         }
         let speechMask = Self.makeAlignmentSpeechMask(samples: samples, speechRegions: speechRegions)
         let spans: [RecognizedSpan]
@@ -704,14 +745,29 @@ actor LocalSpeechPipeline {
                     sampleRate: 16_000,
                     speechRanges: speechRanges,
                     policy: diarizationPolicy,
-                    progress: { _ in }
+                    progress: { update in
+                        progressUpdate(.init(
+                            stage: .diarizing,
+                            fraction: 0.84 + update.fraction * 0.12,
+                            completed: update.completed,
+                            total: update.total,
+                            message: update.message
+                        ))
+                    }
                 )
+                let assignStartedAt = DispatchTime.now().uptimeNanoseconds
                 words = Self.assignSpeakers(
                     to: aligned.words,
                     timeline: timeline,
                     audioDuration: audioDuration,
                     languageCode: resolvedLanguageCode,
                     policy: diarizationPolicy
+                )
+                let assignElapsed = Double(
+                    DispatchTime.now().uptimeNanoseconds - assignStartedAt
+                ) / 1_000_000_000
+                Log.transcription.notice(
+                    "Script speaker assignment elapsed=\(String(format: "%.2f", assignElapsed))s words=\(words.count)"
                 )
             }
         }
@@ -809,26 +865,19 @@ actor LocalSpeechPipeline {
         return loaded
     }
 
-    private func vadModel() async throws -> SileroVADModel {
-        if let vad { return vad }
-        let loaded = try await SileroVADModel.fromPretrained(
-            modelId: SileroVADModel.defaultModelId,
-            engine: .mlx,
-            cacheDir: LocalModelManager.directory(for: .sileroVAD),
-            offlineMode: true
-        )
-        vad = loaded
-        return loaded
-    }
-
     private func streamingDiarizationModel() throws -> MLXStreamingSortformerEngine {
         if let streamingDiarizer { return streamingDiarizer }
         let descriptor = LocalModelManager.catalog.first { $0.id == .sortformerDiarization }!
+        let startedAt = DispatchTime.now().uptimeNanoseconds
         let loaded = try MLXStreamingSortformerEngine(
             modelDirectory: LocalModelManager.directory(for: .sortformerDiarization),
             modelRevision: descriptor.revision
         )
         streamingDiarizer = loaded
+        let elapsed = Double(DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000_000
+        Log.transcription.notice(
+            "Sortformer model ready revision=\(descriptor.revision) elapsed=\(String(format: "%.2f", elapsed))s"
+        )
         return loaded
     }
 
@@ -842,7 +891,7 @@ actor LocalSpeechPipeline {
 
     private nonisolated static func makeAlignmentSpeechMask(
         samples: [Float],
-        speechRegions: [SpeechSegment]
+        speechRegions: [SpeechRegion]
     ) -> AlignmentSpeechMask {
         AlignmentSpeechGate.mask(
             samples: samples,
@@ -858,7 +907,7 @@ actor LocalSpeechPipeline {
         var spans: [RecognizedSpan]
         var language: String?
         var timestampFallbackCount: Int
-        var nativeWords: [AlignedWord]
+        var nativeTokens: [ParakeetTokenAssembler.Token]
     }
 
     private func recognize(
@@ -874,7 +923,7 @@ actor LocalSpeechPipeline {
         chunkMessage: @Sendable (Int, Int) -> String
     ) throws -> RecognitionPass {
         var spans: [RecognizedSpan] = []
-        var nativeWords: [AlignedWord] = []
+        var nativeTokens: [ParakeetTokenAssembler.Token] = []
         var language: String?
         var timestampFallbackCount = 0
         let span = max(0, progressEnd - progressStart)
@@ -905,7 +954,7 @@ actor LocalSpeechPipeline {
                     )
                     spans.append(contentsOf: owned.spans)
                     timestampFallbackCount += owned.timestampFallbackCount
-                    nativeWords.append(contentsOf: Self.nativeWords(
+                    nativeTokens.append(contentsOf: Self.nativeTokens(
                         from: aligned,
                         chunk: chunk,
                         audioDuration: audioDuration
@@ -967,7 +1016,7 @@ actor LocalSpeechPipeline {
             spans: spans,
             language: language,
             timestampFallbackCount: timestampFallbackCount,
-            nativeWords: nativeWords
+            nativeTokens: nativeTokens
         )
     }
 
@@ -1061,21 +1110,33 @@ actor LocalSpeechPipeline {
         spans.reduce(0) { $0 + $1.text.filter { !$0.isWhitespace }.count }
     }
 
-    private nonisolated static func nativeWords(
+    private nonisolated static func nativeTokens(
         from result: ParakeetAlignedResult,
         chunk: ASRRecognitionChunk,
         audioDuration: Double
-    ) -> [AlignedWord] {
+    ) -> [ParakeetTokenAssembler.Token] {
         result.sentences.flatMap(\.tokens).compactMap { token in
-            let text = token.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = token.text.replacingOccurrences(of: "▁", with: " ")
             guard !text.isEmpty else { return nil }
             let start = token.start + chunk.inputStart
             let end = token.end + chunk.inputStart
             guard end > chunk.ownershipStart, start < chunk.ownershipEnd else { return nil }
-            return AlignedWord(
+            return ParakeetTokenAssembler.Token(
                 text: text,
-                startTime: Float(min(audioDuration, max(0, start))),
-                endTime: Float(min(audioDuration, max(start, end)))
+                start: min(audioDuration, max(0, start)),
+                end: min(audioDuration, max(start, end))
+            )
+        }
+    }
+
+    private nonisolated static func nativeWords(
+        from tokens: [ParakeetTokenAssembler.Token]
+    ) -> [AlignedWord] {
+        ParakeetTokenAssembler.assemble(tokens).map {
+            AlignedWord(
+                text: $0.text,
+                startTime: Float($0.start),
+                endTime: Float($0.end)
             )
         }
     }
@@ -1088,6 +1149,32 @@ actor LocalSpeechPipeline {
         }
     }
 
+    private nonisolated static func outputLanguage(for route: ASREngineRouteDecision) -> String? {
+        switch route.engine {
+        case .qwen: nil
+        case .parakeet: route.parakeetDomainLanguage
+        case .whisper: route.whisperHint
+        }
+    }
+
+    private nonisolated static func logRoute(_ route: ASREngineRouteDecision, windowTops: String? = nil) {
+        if route.engine == .parakeet,
+           let language = route.parakeetDomainLanguage,
+           ASREngineLanguagePolicy.parakeetQualityWatchLanguages.contains(language) {
+            Log.transcription.notice("QUALITY_WATCH parakeet language=\(language)")
+        }
+        var message = "ASR engine route engine=\(route.engine.rawValue) reason=\(route.reason.rawValue) "
+            + "q=\(String(format: "%.2f", route.scores.qwen)) "
+            + "p=\(String(format: "%.2f", route.scores.parakeet)) "
+            + "w=\(String(format: "%.2f", route.scores.whisper)) "
+            + "top=\(route.topLanguage ?? "nil") "
+            + "window=\(String(format: "%.1f", route.speechDuration))s"
+        if let windowTops {
+            message += " windows=\(windowTops)"
+        }
+        Log.transcription.notice(message)
+    }
+
     private nonisolated static func automaticPromptLanguage(for route: ASREngineRouteDecision) -> String? {
         switch route.engine {
         case .qwen, .parakeet: nil
@@ -1097,47 +1184,62 @@ actor LocalSpeechPipeline {
 
     private nonisolated static func routeAutomaticEngine(
         samples: [Float],
-        speechRegions: [SpeechSegment],
+        speechRegions: [SpeechRegion],
         languageIdentifier: EcapaTdnn
     ) -> ASREngineRouteDecision {
-        let shortSamples = languageDetectionSamples(
-            from: samples,
-            speechRegions: speechRegions,
-            maximumDuration: ASREngineRouter.shortWindowDuration
+        let audioDuration = Double(samples.count) / Double(ASRAudioPreprocessor.sampleRate)
+        let windows = ASREngineRouter.identificationWindows(
+            speechRanges: speechRegions.map {
+                ASRSpeechRange(start: Double($0.startTime), end: Double($0.endTime))
+            },
+            audioDuration: audioDuration
         )
-        var posterior = languageIdentifier.posterior(waveform: MLXArray(shortSamples))
-        var duration = Double(shortSamples.count) / Double(ASRAudioPreprocessor.sampleRate)
-        if !ASREngineRouter.isConfident(ASREngineRouter.scores(from: posterior)) {
-            let extendedSamples = languageDetectionSamples(
-                from: samples,
-                speechRegions: speechRegions,
-                maximumDuration: ASREngineRouter.extendedWindowDuration
+        let sampledWindows = windows.isEmpty
+            ? [ASRLanguageIdentificationWindow(slices: [
+                ASRSpeechRange(start: 0, end: min(audioDuration, ASREngineRouter.shortWindowDuration))
+            ])]
+            : windows
+        var posteriors: [[String: Float]] = []
+        var tops: [String] = []
+        posteriors.reserveCapacity(sampledWindows.count)
+        for (index, window) in sampledWindows.enumerated() {
+            let waveform = languageDetectionSamples(from: samples, window: window)
+            guard !waveform.isEmpty else { continue }
+            let posterior = languageIdentifier.posterior(waveform: MLXArray(waveform))
+            posteriors.append(posterior)
+            let top = ASREngineRouter.topLanguage(in: posterior)
+            let label = top.map { "\($0.language):\(String(format: "%.2f", $0.confidence))" } ?? "nil"
+            tops.append(label)
+            Log.transcription.notice(
+                "ASR LID window \(index + 1)/\(sampledWindows.count) "
+                    + "start=\(String(format: "%.1f", window.start))s "
+                    + "duration=\(String(format: "%.1f", window.duration))s top=\(label)"
             )
-            if extendedSamples.count > shortSamples.count {
-                posterior = languageIdentifier.posterior(waveform: MLXArray(extendedSamples))
-                duration = Double(extendedSamples.count) / Double(ASRAudioPreprocessor.sampleRate)
-            }
         }
-        return ASREngineRouter.decide(posterior: posterior, speechDuration: duration)
+        let sampledDuration = sampledWindows.reduce(0.0) { $0 + $1.duration }
+        let route = ASREngineRouter.decide(
+            windowPosteriors: posteriors,
+            speechDuration: max(sampledDuration, ASREngineRouter.minimumSpeechDuration)
+        )
+        logRoute(route, windowTops: "\(posteriors.count):\(tops.joined(separator: ","))")
+        return route
     }
 
     private nonisolated static func languageDetectionSamples(
         from samples: [Float],
-        speechRegions: [SpeechSegment],
-        maximumDuration: Double = 30
+        window: ASRLanguageIdentificationWindow
     ) -> [Float] {
-        let maximumSamples = max(1, Int((maximumDuration * Double(ASRAudioPreprocessor.sampleRate)).rounded(.down)))
+        let sampleRate = Double(ASRAudioPreprocessor.sampleRate)
         var selected: [Float] = []
-        selected.reserveCapacity(min(samples.count, maximumSamples))
-
-        for region in speechRegions where selected.count < maximumSamples {
-            let start = min(samples.count, max(0, Int((region.startTime * 16_000).rounded(.down))))
-            let end = min(samples.count, max(start, Int((region.endTime * 16_000).rounded(.up))))
+        let expected = max(1, Int((window.duration * sampleRate).rounded(.down)))
+        selected.reserveCapacity(min(samples.count, expected))
+        for slice in window.slices {
+            let start = min(samples.count, max(0, Int((slice.start * sampleRate).rounded(.down))))
+            let end = min(samples.count, max(start, Int((slice.end * sampleRate).rounded(.up))))
             guard end > start else { continue }
-            let remaining = maximumSamples - selected.count
-            selected.append(contentsOf: samples[start..<min(end, start + remaining)])
+            selected.append(contentsOf: samples[start..<end])
         }
-        return selected.isEmpty ? samples : selected
+        return selected
     }
 
     private nonisolated static func alignerLanguage(from code: String?) -> String {

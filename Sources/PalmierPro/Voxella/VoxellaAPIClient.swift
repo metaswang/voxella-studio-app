@@ -10,16 +10,57 @@ enum VoxellaAPIError: LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .unauthorized:
-            "VoxStudio sign-in is required for this task."
+            return "VoxStudio sign-in is required for this task."
         case .http(let code, let message):
-            message.isEmpty ? "VoxStudio request failed (\(code))." : message
+            let normalizedMessage = Self.userFacingMessage(message)
+            return normalizedMessage.isEmpty ? "VoxStudio request failed (\(code))." : normalizedMessage
         case .decoding:
-            "The VoxStudio response could not be read."
+            return "The VoxStudio response could not be read."
         case .missingUploadURL:
-            "VoxStudio did not return an upload URL."
+            return "VoxStudio did not return an upload URL."
         case .cancelled:
-            "The VoxStudio task was cancelled."
+            return "The VoxStudio task was cancelled."
         }
+    }
+
+    static func userFacingMessage(_ rawMessage: String) -> String {
+        let trimmed = rawMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = trimmed.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let object = object as? [String: Any] else {
+            return truncated(trimmed)
+        }
+        for key in ["detail", "message", "error", "title"] {
+            if let message = messageValue(object[key]) {
+                return truncated(message)
+            }
+        }
+        return trimmed.isEmpty ? "" : "The server returned an error."
+    }
+
+    private static func messageValue(_ value: Any?) -> String? {
+        if let value = value as? String {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let value = value as? [String: Any] {
+            for key in ["message", "detail", "error", "msg", "title"] {
+                if let message = messageValue(value[key]) {
+                    return message
+                }
+            }
+        }
+        if let value = value as? [Any] {
+            let messages = value.compactMap(messageValue)
+            return messages.isEmpty ? nil : messages.joined(separator: ", ")
+        }
+        return nil
+    }
+
+    private static func truncated(_ value: String) -> String {
+        let maxLength = 500
+        guard value.count > maxLength else { return value }
+        return String(value.prefix(maxLength)) + "…"
     }
 }
 
@@ -43,11 +84,13 @@ struct VoxellaDesktopSessionSyncResponse: Decodable, Sendable {
     var sessionID: UUID?
     var revision: Int?
     var applied: Bool?
+    var indexed: Bool?
 
     enum CodingKeys: String, CodingKey {
         case sessionID = "session_id"
         case revision
         case applied
+        case indexed
     }
 }
 
@@ -236,6 +279,54 @@ struct VoxellaSessionListResponse: Decodable, Sendable {
         case items
         case nextCursor = "next_cursor"
     }
+}
+
+struct VoxellaSessionSearchHit: Decodable, Sendable {
+    let sessionID: UUID
+    let sourceType: String?
+    let title: String?
+    let summary: String?
+    let originalFilename: String?
+    let createdAt: String?
+    let updatedAt: String?
+    let matchSource: String?
+    let matchSnippet: String?
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id", sourceType = "source_type", title, summary
+        case originalFilename = "original_filename", createdAt = "created_at", updatedAt = "updated_at"
+        case matchSource = "match_source", matchSnippet = "match_snippet"
+    }
+}
+
+struct VoxellaSessionSearchResponse: Decodable, Sendable {
+    let items: [VoxellaSessionSearchHit]
+}
+
+struct VoxellaSessionTranscriptSearchHit: Decodable, Sendable {
+    let sessionID: UUID
+    let sourceType: String?
+    let title: String?
+    let summary: String?
+    let originalFilename: String?
+    let createdAt: String?
+    let updatedAt: String?
+    let startS: Double
+    let endS: Double
+    let speakerLabel: String?
+    let matchSnippet: String
+    let matchSource: String
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id", sourceType = "source_type", title, summary
+        case originalFilename = "original_filename", createdAt = "created_at", updatedAt = "updated_at"
+        case startS = "start_s", endS = "end_s", speakerLabel = "speaker_label"
+        case matchSnippet = "match_snippet", matchSource = "match_source"
+    }
+}
+
+struct VoxellaSessionTranscriptSearchResponse: Decodable, Sendable {
+    let items: [VoxellaSessionTranscriptSearchHit]
 }
 
 struct VoxellaSessionRenderingData: Sendable {
@@ -1341,6 +1432,21 @@ actor VoxellaAPIClient {
             url: components.url ?? VoxellaAPIConfiguration.sessionsURL,
             method: "GET",
             as: VoxellaSessionListResponse.self
+        )
+    }
+
+    func searchSessions(query: String, typingPauseMS: Int? = nil, limit: Int = 30) async throws -> VoxellaSessionSearchResponse {
+        var body: [String: Any] = ["query": query, "limit": min(max(limit, 1), 50), "offset": 0]
+        if let typingPauseMS { body["typing_pause_ms"] = max(0, typingPauseMS) }
+        return try await request(url: VoxellaAPIConfiguration.sessionSearchURL, method: "POST", json: body, as: VoxellaSessionSearchResponse.self)
+    }
+
+    func searchSessionTranscripts(query: String, limit: Int = 20) async throws -> VoxellaSessionTranscriptSearchResponse {
+        try await request(
+            url: VoxellaAPIConfiguration.sessionTranscriptSearchURL,
+            method: "POST",
+            json: ["query": query, "limit": min(max(limit, 1), 50)],
+            as: VoxellaSessionTranscriptSearchResponse.self
         )
     }
 

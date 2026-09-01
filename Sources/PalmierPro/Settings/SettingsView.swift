@@ -18,7 +18,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .calendar: return "Calendar"
         case .general: return "General"
         case .models: return "Models"
-        case .ai: return "AI"
+        case .ai: return "BYOK"
         case .agent: return "MCP"
         case .skills: return "Skills"
         case .storage: return "Storage"

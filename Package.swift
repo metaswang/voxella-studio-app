@@ -22,6 +22,7 @@ let package = Package(
         .package(url: "https://github.com/gonzalezreal/textual", from: "0.1.0"),
         .package(url: "https://github.com/alexeichhorn/YouTubeKit.git", from: "0.4.9"),
         .package(url: "https://github.com/soniqo/speech-swift", exact: "0.0.21"),
+        .package(path: "Vendor/FluidAudioVAD"),
         .package(url: "https://github.com/huggingface/swift-huggingface.git", exact: "0.9.0"),
         .package(path: "Vendor/mlx-audio-swift"),
     ],
@@ -59,6 +60,11 @@ let package = Package(
                 .product(
                     name: "SpeechVAD",
                     package: "speech-swift",
+                    condition: .when(traits: ["BundledSpeech"])
+                ),
+                .product(
+                    name: "FluidAudio",
+                    package: "FluidAudioVAD",
                     condition: .when(traits: ["BundledSpeech"])
                 ),
                 .product(

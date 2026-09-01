@@ -4,6 +4,8 @@ struct HomeView: View {
     @AppStorage("voxella.workbench.sidebarExpanded") private var sidebarExpanded = false
     @State private var editorSidebarRevealed = false
     @State private var editorSidebarHideTask: Task<Void, Never>?
+    @State private var sessionSearch = SessionSearchController()
+    @State private var isSessionSearchPresented = false
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var tips = WorkbenchTipCenter.shared
     @Bindable private var appState = AppState.shared
@@ -14,7 +16,7 @@ struct HomeView: View {
         ZStack(alignment: .leading) {
             HStack(spacing: 0) {
                 if !isEditorActive {
-                    WorkbenchSidebar(isExpanded: $sidebarExpanded)
+                    WorkbenchSidebar(isExpanded: $sidebarExpanded, onOpenSearch: presentSessionSearch)
                         .frame(
                             width: sidebarExpanded
                                 ? AppTheme.Workbench.sidebarExpandedWidth
@@ -65,6 +67,12 @@ struct HomeView: View {
         .background(AppTheme.Background.baseColor)
         .ignoresSafeArea(.container, edges: .top)
         .focusEffectDisabled()
+        .sheet(isPresented: $isSessionSearchPresented) {
+            SessionSearchPalette(controller: sessionSearch)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .voxellaPresentSessionSearch)) { _ in
+            presentSessionSearch()
+        }
         .onChange(of: appState.editorPresentation) { _, presentation in
             if presentation != .active {
                 editorSidebarRevealed = false
@@ -73,6 +81,11 @@ struct HomeView: View {
             }
             HomeWindowController.shared.applyEditorMode(presentation == .active)
         }
+    }
+
+    private func presentSessionSearch() {
+        sessionSearch.reset()
+        isSessionSearchPresented = true
     }
 
     @ViewBuilder
@@ -118,7 +131,7 @@ struct HomeView: View {
 
                 if editorSidebarRevealed {
                     HStack(spacing: 0) {
-                        WorkbenchSidebar(isExpanded: .constant(true))
+                        WorkbenchSidebar(isExpanded: .constant(true), onOpenSearch: presentSessionSearch)
                             .frame(width: AppTheme.Workbench.sidebarExpandedWidth)
                             .background(AppTheme.Background.surfaceColor)
                             .shadow(AppTheme.Shadow.md)
@@ -255,6 +268,7 @@ private struct WorkbenchTopBar: View {
 
 private struct WorkbenchSidebar: View {
     @Binding var isExpanded: Bool
+    let onOpenSearch: () -> Void
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var appState = AppState.shared
 
@@ -273,6 +287,23 @@ private struct WorkbenchSidebar: View {
             .frame(height: AppTheme.Workbench.toolbarHeight)
             .padding(.horizontal, isExpanded ? AppTheme.Spacing.md : 0)
             .padding(.top, AppTheme.Workbench.windowControlsInset)
+
+            Button(action: onOpenSearch) {
+                HStack(spacing: AppTheme.Spacing.md) {
+                    Image(systemName: "magnifyingglass").frame(width: 24, height: 24)
+                    if isExpanded {
+                        Text("Search").font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
+                        Spacer(minLength: 0)
+                    }
+                }
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .padding(.horizontal, isExpanded ? AppTheme.Spacing.md : 0)
+                .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.sidebarRowHeight, alignment: isExpanded ? .leading : .center)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Search sessions (⌘K)")
+            .accessibilityLabel("Search sessions")
 
             ForEach(WorkbenchRoute.sidebarRoutes) { route in
                 Button {
@@ -396,6 +427,13 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    func presentSessionSearch() {
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(name: .voxellaPresentSessionSearch, object: nil)
+    }
+
     func windowDidBecomeKey(_ notification: Notification) {
         hideNativeTitlebarTitle()
     }
@@ -425,4 +463,8 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
         AppState.shared.activeProject?.undoManager
     }
+}
+
+extension Notification.Name {
+    static let voxellaPresentSessionSearch = Notification.Name("Voxella.presentSessionSearch")
 }

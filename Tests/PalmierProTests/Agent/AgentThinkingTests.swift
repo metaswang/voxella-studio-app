@@ -55,4 +55,17 @@ struct AgentThinkingTests {
 
         #expect(service.messages.count == 1)
     }
+
+    @Test func hostedSettlementFailureDropsPartialAssistantTurn() {
+        let service = AgentService()
+        let message = AgentMessage(
+            role: .assistant,
+            blocks: [.text("partial answer"), .thinking(text: "reasoning", signature: "")]
+        )
+        service.messages = [message]
+
+        service.dropAssistantTurn(id: message.id)
+
+        #expect(service.messages.isEmpty)
+    }
 }

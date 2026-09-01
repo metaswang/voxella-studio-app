@@ -7,6 +7,7 @@ enum LLMProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case miniMax
     case deepInfra
     case zAI
+    case openRouter
     case openAICompatible
 
     var id: String { rawValue }
@@ -17,6 +18,7 @@ enum LLMProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .miniMax: "MiniMax"
         case .deepInfra: "DeepInfra"
         case .zAI: "Z.AI"
+        case .openRouter: "OpenRouter"
         case .openAICompatible: "OpenAI-compatible"
         }
     }
@@ -27,6 +29,7 @@ enum LLMProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .miniMax: "minimax"
         case .deepInfra: "deepinfra"
         case .zAI: "zai"
+        case .openRouter: "openrouter"
         case .openAICompatible: "provider"
         }
     }
@@ -37,6 +40,7 @@ enum LLMProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .miniMax: "https://api.minimax.io/v1"
         case .deepInfra: "https://api.deepinfra.com/v1/openai"
         case .zAI: "https://api.z.ai/api/paas/v4"
+        case .openRouter: "https://openrouter.ai/api/v1"
         case .openAICompatible: ""
         }
     }
@@ -45,7 +49,7 @@ enum LLMProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .openAI: "gpt-5.4-nano"
         case .miniMax: "MiniMax-M3"
-        case .deepInfra, .zAI, .openAICompatible: ""
+        case .deepInfra, .zAI, .openRouter, .openAICompatible: ""
         }
     }
 }
@@ -57,6 +61,8 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
     var displayName: String
     var baseURL: String
     var model: String
+    var extraBody: [String: LLMJSONValue]
+    var openRouterRouting: LLMOpenRouterRouting
 
     static let defaultOpenAI = LLMProviderProfile(
         id: UUID(uuidString: "52C91A63-4B4F-4F10-A4F4-68E00D3A2D01")!,
@@ -82,7 +88,9 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
         prefix: String? = nil,
         displayName: String? = nil,
         baseURL: String,
-        model: String
+        model: String,
+        extraBody: [String: LLMJSONValue] = [:],
+        openRouterRouting: LLMOpenRouterRouting = .init()
     ) {
         self.id = id
         self.provider = provider
@@ -90,6 +98,8 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
         self.displayName = displayName ?? provider.label
         self.baseURL = baseURL
         self.model = model
+        self.extraBody = extraBody
+        self.openRouterRouting = openRouterRouting
     }
 
     var normalizedPrefix: String {
@@ -191,6 +201,8 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
         case displayName
         case baseURL
         case model
+        case extraBody
+        case openRouterRouting
     }
 
     init(from decoder: Decoder) throws {
@@ -203,6 +215,14 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
             ?? Self.inferredPrefix(provider: provider, baseURL: baseURL)
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
             ?? provider.label
+        extraBody = try container.decodeIfPresent(
+            [String: LLMJSONValue].self,
+            forKey: .extraBody
+        ) ?? [:]
+        openRouterRouting = try container.decodeIfPresent(
+            LLMOpenRouterRouting.self,
+            forKey: .openRouterRouting
+        ) ?? .init()
     }
 
     private static func inferredPrefix(provider: LLMProviderKind, baseURL: String) -> String {
@@ -213,6 +233,7 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
         if host.contains("minimax") { return LLMProviderKind.miniMax.defaultPrefix }
         if host.contains("deepinfra") { return LLMProviderKind.deepInfra.defaultPrefix }
         if host.contains("z.ai") { return LLMProviderKind.zAI.defaultPrefix }
+        if host.contains("openrouter.ai") { return LLMProviderKind.openRouter.defaultPrefix }
         return provider.defaultPrefix
     }
 }
@@ -235,7 +256,7 @@ enum LLMUseCase: String, Codable, CaseIterable, Identifiable, Sendable {
     var detail: String {
         switch self {
         case .translation: "Translates timed subtitle cues."
-        case .subtitleProcessing: "Corrects ASR text, adds punctuation, and segments subtitle cues."
+        case .subtitleProcessing: "Segments subtitle cues. Repairs punctuation only when ASR did not already punctuate."
         case .chat: "Plans and applies edits from the editor's left chat panel."
         }
     }
@@ -248,22 +269,40 @@ struct LLMRequestPolicy: Codable, Equatable, Sendable {
 
     static func `default`(for useCase: LLMUseCase) -> LLMRequestPolicy {
         switch useCase {
-        case .translation, .subtitleProcessing:
+        case .subtitleProcessing:
             LLMRequestPolicy(
-                timeoutSeconds: 600,
+                timeoutSeconds: minimumTimeoutSeconds(for: useCase),
+                maximumAttemptsPerModel: 2,
+                initialBackoffSeconds: 0.75
+            )
+        case .translation:
+            LLMRequestPolicy(
+                timeoutSeconds: minimumTimeoutSeconds(for: useCase),
                 maximumAttemptsPerModel: 2,
                 initialBackoffSeconds: 0.75
             )
         case .chat:
             LLMRequestPolicy(
-                timeoutSeconds: 300,
+                timeoutSeconds: 60,
                 maximumAttemptsPerModel: 2,
                 initialBackoffSeconds: 0.5
             )
         }
     }
 
+    static func minimumTimeoutSeconds(for useCase: LLMUseCase) -> Double {
+        switch useCase {
+        case .subtitleProcessing: 90
+        case .translation: 45
+        case .chat: 15
+        }
+    }
+
     func validated() throws -> LLMRequestPolicy {
+        try validated(for: .chat)
+    }
+
+    func validated(for useCase: LLMUseCase) throws -> LLMRequestPolicy {
         guard timeoutSeconds.isFinite, (15...1_800).contains(timeoutSeconds) else {
             throw LLMConfigurationError.invalidTimeout
         }
@@ -273,7 +312,12 @@ struct LLMRequestPolicy: Codable, Equatable, Sendable {
         guard initialBackoffSeconds.isFinite, (0...10).contains(initialBackoffSeconds) else {
             throw LLMConfigurationError.invalidBackoff
         }
-        return self
+        var normalized = self
+        let minimum = Self.minimumTimeoutSeconds(for: useCase)
+        if normalized.timeoutSeconds < minimum {
+            normalized.timeoutSeconds = minimum
+        }
+        return normalized
     }
 }
 
@@ -323,8 +367,38 @@ struct LLMRuntimeConfiguration: Sendable {
     let modelName: String
     let endpoint: URL
     let apiKey: String
+    let useCase: LLMUseCase?
+
+    init(
+        profile: LLMProviderProfile,
+        modelIdentifier: String,
+        modelName: String,
+        endpoint: URL,
+        apiKey: String,
+        useCase: LLMUseCase? = nil
+    ) {
+        self.profile = profile
+        self.modelIdentifier = modelIdentifier
+        self.modelName = modelName
+        self.endpoint = endpoint
+        self.apiKey = apiKey
+        self.useCase = useCase
+    }
 
     var openAICompatibleRequestOptions: LLMOpenAICompatibleRequestOptions {
+        var options = providerRequestOptions
+        if useCase == .subtitleProcessing || useCase == .translation {
+            options.suppressThinking(
+                canDisableThinking: canDisableThinking,
+                disableReasoning: disablesReasoningForStructuredOutput
+            )
+            options.temperature = 0
+            options.maxOutputTokens = useCase == .translation ? 8_192 : 4_096
+        }
+        return options
+    }
+
+    private var providerRequestOptions: LLMOpenAICompatibleRequestOptions {
         let host = endpoint.host?.lowercased() ?? ""
         let normalizedModel = modelName
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -351,20 +425,110 @@ struct LLMRuntimeConfiguration: Sendable {
 
         return .init()
     }
+
+    private var canDisableThinking: Bool {
+        let host = endpoint.host?.lowercased() ?? ""
+        let isMiniMax = profile.provider == .miniMax
+            || profile.normalizedPrefix == LLMProviderKind.miniMax.defaultPrefix
+            || host.hasSuffix("minimax.io")
+        guard isMiniMax else { return true }
+        return modelName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() == "minimax-m3"
+    }
+
+    // OpenRouter/Gemini treat reasoning.effort as enabling thinking.
+    private var disablesReasoningForStructuredOutput: Bool {
+        if profile.isOpenRouter { return true }
+        let host = endpoint.host?.lowercased() ?? ""
+        let model = modelName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if model.contains("gemini") { return true }
+        if host.contains("googleapis.com") || host.contains("generativelanguage") {
+            return true
+        }
+        let prefix = profile.normalizedPrefix
+        return prefix == "google" || prefix == "gemini"
+    }
 }
 
 struct LLMOpenAICompatibleRequestOptions: Equatable, Sendable {
     var reasoningSplit: Bool?
     var thinkingType: String?
+    var reasoningEffort: String?
+    var reasoningEnabled: Bool?
+    var temperature: Double?
+    var maxOutputTokens: Int?
 
-    init(reasoningSplit: Bool? = nil, thinkingType: String? = nil) {
+    init(
+        reasoningSplit: Bool? = nil,
+        thinkingType: String? = nil,
+        reasoningEffort: String? = nil,
+        reasoningEnabled: Bool? = nil,
+        temperature: Double? = nil,
+        maxOutputTokens: Int? = nil
+    ) {
         self.reasoningSplit = reasoningSplit
         self.thinkingType = thinkingType
+        self.reasoningEffort = reasoningEffort
+        self.reasoningEnabled = reasoningEnabled
+        self.temperature = temperature
+        self.maxOutputTokens = maxOutputTokens
+    }
+
+    mutating func suppressThinking(
+        canDisableThinking: Bool,
+        disableReasoning: Bool = false
+    ) {
+        let hadProviderThinking = thinkingType != nil || reasoningSplit != nil
+        if thinkingType == nil, canDisableThinking {
+            thinkingType = "disabled"
+        }
+        if disableReasoning {
+            reasoningEnabled = false
+            reasoningEffort = nil
+            return
+        }
+        if reasoningEffort == nil, !hadProviderThinking {
+            reasoningEffort = "none"
+        }
+    }
+
+    var extraBody: [String: LLMJSONValue] {
+        var result: [String: LLMJSONValue] = [:]
+        if let reasoningSplit {
+            result["reasoning_split"] = .bool(reasoningSplit)
+        }
+        if let thinkingType {
+            result["thinking"] = .object(["type": .string(thinkingType)])
+        }
+        var reasoning: [String: LLMJSONValue] = [:]
+        if let reasoningEnabled {
+            reasoning["enabled"] = .bool(reasoningEnabled)
+        }
+        if let reasoningEffort {
+            reasoning["effort"] = .string(reasoningEffort)
+        }
+        if !reasoning.isEmpty {
+            result["reasoning"] = .object(reasoning)
+        }
+        if let temperature {
+            result["temperature"] = .number(temperature)
+        }
+        if let maxOutputTokens {
+            result["max_tokens"] = .number(Double(maxOutputTokens))
+        }
+        return result
     }
 
     func apply(to body: inout [String: Any]) {
         if let reasoningSplit { body["reasoning_split"] = reasoningSplit }
         if let thinkingType { body["thinking"] = ["type": thinkingType] }
+        var reasoning: [String: Any] = [:]
+        if let reasoningEnabled { reasoning["enabled"] = reasoningEnabled }
+        if let reasoningEffort { reasoning["effort"] = reasoningEffort }
+        if !reasoning.isEmpty { body["reasoning"] = reasoning }
+        if let temperature { body["temperature"] = temperature }
+        if let maxOutputTokens { body["max_tokens"] = maxOutputTokens }
     }
 }
 
@@ -456,6 +620,9 @@ final class LLMSettingsStore {
     private static let configurationDefaultsKey = "voxella.llm.configuration.v2"
     private static let legacyProfileDefaultsKey = "voxella.llm.provider-profile.v1"
     private static let subtitleRouteMigrationKey = "voxella.llm.migration.subtitle-route.v1"
+    private static let performanceRoutingMigrationKey = "voxella.llm.migration.performance-routing.v1"
+    private static let useBYOKKey = "voxella.llm.use-byok.v1"
+    private static let useBYOKMigrationKey = "voxella.llm.migration.use-byok.v1"
 
     private(set) var providers: [LLMProviderProfile]
     private(set) var routes: [LLMUseCase: LLMModelRoute]
@@ -463,6 +630,13 @@ final class LLMSettingsStore {
     private(set) var credentialSaveStates: [UUID: LLMAPIKeySaveState] = [:]
     private(set) var credentialError: String?
     private(set) var configurationError: String?
+
+    var useBYOK: Bool {
+        didSet {
+            defaults.set(useBYOK, forKey: Self.useBYOKKey)
+            defaults.set(true, forKey: Self.useBYOKMigrationKey)
+        }
+    }
 
     var hasAPIKey: Bool {
         credentialAvailability.values.contains(true)
@@ -486,6 +660,7 @@ final class LLMSettingsStore {
             ?? (usesApplicationDefaults ? Self.legacyDefaults : [])
         self.defaults = defaults
         self.credentialSaver = credentialSaver ?? Self.persistCredentialToKeychain
+        self.useBYOK = defaults.object(forKey: Self.useBYOKKey) as? Bool ?? false
         var shouldPersist = false
 
         switch Self.loadConfiguration(from: defaults) {
@@ -528,6 +703,15 @@ final class LLMSettingsStore {
         if migrateLegacySubtitleRouteIfNeeded() {
             shouldPersist = true
         }
+        if migratePerformanceRoutingIfNeeded() {
+            shouldPersist = true
+        }
+        if migrateSubtitleTimeoutIfNeeded() {
+            shouldPersist = true
+        }
+        if normalizeRoutesForProviderRouting() {
+            shouldPersist = true
+        }
         if shouldPersist, configurationError == nil {
             persist()
         }
@@ -560,6 +744,17 @@ final class LLMSettingsStore {
         }
     }
 
+    func hasUsableModel(for useCase: LLMUseCase) -> Bool {
+        switch AITransportPolicy.current {
+        case .hosted:
+            true
+        case .byok:
+            hasConfiguredModel(for: useCase)
+        case .unavailable:
+            false
+        }
+    }
+
     @discardableResult
     func addProvider(kind: LLMProviderKind) -> UUID {
         let prefix = uniquePrefix(basedOn: kind.defaultPrefix)
@@ -588,6 +783,7 @@ final class LLMSettingsStore {
             throw LLMConfigurationError.missingProvider(validated.normalizedPrefix)
         }
         providers[index] = validated
+        _ = normalizeRoutesForProviderRouting()
         persist()
         refreshCredentialStatus()
     }
@@ -609,8 +805,8 @@ final class LLMSettingsStore {
     }
 
     func updateRoute(_ route: LLMModelRoute, for useCase: LLMUseCase) throws {
-        let validatedPolicy = try route.policy.validated()
-        let references = route.modelChain
+        let validatedPolicy = try route.policy.validated(for: useCase)
+        let references = route.modelChain.map(effectiveModelReference)
         guard let primary = references.first else { throw LLMConfigurationError.missingModel }
         for reference in references {
             let parsed = try Self.parseModelReference(reference)
@@ -646,6 +842,21 @@ final class LLMSettingsStore {
             guard generation == credentialGeneration else { return }
             credentialAvailability = statuses
             credentialError = statusError
+            if self.defaults.object(forKey: Self.useBYOKMigrationKey) == nil {
+                // Existing installs with a stored provider key keep their old
+                // behavior. New installs remain hosted by default.
+                var hasLegacyAgentKey = false
+                for provider in AgentProvider.allCases {
+                    if !(await provider.loadAPIKey()).isEmpty {
+                        hasLegacyAgentKey = true
+                        break
+                    }
+                }
+                if statuses.values.contains(true) || hasLegacyAgentKey {
+                    useBYOK = true
+                }
+                self.defaults.set(true, forKey: Self.useBYOKMigrationKey)
+            }
         }
     }
 
@@ -805,22 +1016,32 @@ final class LLMSettingsStore {
     }
 
     private func loadCredential(for profile: LLMProviderProfile) async throws -> String? {
-        try await Task.detached(priority: .utility) {
-            if let value = try KeychainStore.loadProtected(account: profile.credentialAccount) {
-                return value
+        do {
+            return try await Task.detached(priority: .utility) {
+                try Self.loadCredentialSynchronously(for: profile)
+            }.value
+        } catch let error as KeychainStoreError where error.isInteractionNotAllowed {
+            return try await MainActor.run {
+                try Self.loadCredentialSynchronously(for: profile)
             }
-            guard let value = try KeychainStore.loadProtected(account: profile.legacyCredentialAccount)
-            else { return nil }
+        }
+    }
 
-            try KeychainStore.saveProtected(value, account: profile.credentialAccount)
-            try? KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
+    private nonisolated static func loadCredentialSynchronously(for profile: LLMProviderProfile) throws -> String? {
+        if let value = try KeychainStore.loadProtected(account: profile.credentialAccount) {
             return value
-        }.value
+        }
+        guard let value = try KeychainStore.loadProtected(account: profile.legacyCredentialAccount)
+        else { return nil }
+
+        try KeychainStore.saveProtected(value, account: profile.credentialAccount)
+        try? KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
+        return value
     }
 
     func runtimeRoute(for useCase: LLMUseCase) async throws -> LLMRuntimeRoute {
         let route = route(for: useCase)
-        let policy = try route.policy.validated()
+        let policy = try route.policy.validated(for: useCase)
         var configurations: [LLMRuntimeConfiguration] = []
         var firstCredentialError: Error?
 
@@ -839,7 +1060,8 @@ final class LLMSettingsStore {
                     modelIdentifier: "\(validated.normalizedPrefix)/\(parsed.model)",
                     modelName: parsed.model,
                     endpoint: try validated.completionEndpoint(),
-                    apiKey: key
+                    apiKey: key,
+                    useCase: useCase
                 ))
             } catch {
                 firstCredentialError = firstCredentialError ?? error
@@ -943,6 +1165,114 @@ final class LLMSettingsStore {
         guard routes[.subtitleProcessing] == legacyDefault else { return false }
         routes[.subtitleProcessing] = .default(for: .subtitleProcessing)
         return true
+    }
+
+    @discardableResult
+    private func migrateSubtitleTimeoutIfNeeded() -> Bool {
+        var changed = false
+        for useCase in [LLMUseCase.subtitleProcessing, .translation] {
+            guard var route = routes[useCase] else { continue }
+            let minimum = LLMRequestPolicy.minimumTimeoutSeconds(for: useCase)
+            guard route.policy.timeoutSeconds < minimum else { continue }
+            route.policy.timeoutSeconds = minimum
+            routes[useCase] = route
+            changed = true
+        }
+        return changed
+    }
+
+    @discardableResult
+    private func migratePerformanceRoutingIfNeeded() -> Bool {
+        guard !defaults.bool(forKey: Self.performanceRoutingMigrationKey) else { return false }
+        defaults.set(true, forKey: Self.performanceRoutingMigrationKey)
+
+        var changed = false
+        for index in providers.indices where providers[index].isOpenRouter {
+            let routing = providers[index].openRouterRouting
+            guard !routing.enabled, routing.order.isEmpty, routing.sort == nil else { continue }
+            providers[index].openRouterRouting = LLMOpenRouterRouting(
+                enabled: true,
+                order: [],
+                allowFallbacks: routing.allowFallbacks,
+                sort: .throughput
+            )
+            changed = true
+        }
+
+        for useCase in LLMUseCase.allCases {
+            let route = route(for: useCase)
+            let references = route.modelChain.map(effectiveModelReference)
+            guard references != route.modelChain else { continue }
+            routes[useCase] = LLMModelRoute(
+                primaryModel: references[0],
+                fallbackModels: Array(references.dropFirst()),
+                policy: migratedPerformancePolicy(route.policy, for: useCase)
+            )
+            changed = true
+        }
+
+        for useCase in LLMUseCase.allCases {
+            guard var route = routes[useCase] else { continue }
+            let migrated = migratedPerformancePolicy(route.policy, for: useCase)
+            guard migrated != route.policy else { continue }
+            route.policy = migrated
+            routes[useCase] = route
+            changed = true
+        }
+        return changed
+    }
+
+    private func normalizeRoutesForProviderRouting() -> Bool {
+        var changed = false
+        for useCase in LLMUseCase.allCases {
+            guard let route = routes[useCase] else { continue }
+            let references = route.modelChain.map(effectiveModelReference)
+            guard let primary = references.first, references != route.modelChain else { continue }
+            routes[useCase] = LLMModelRoute(
+                primaryModel: primary,
+                fallbackModels: Array(references.dropFirst()),
+                policy: route.policy
+            )
+            changed = true
+        }
+        return changed
+    }
+
+    private func effectiveModelReference(_ reference: String) -> String {
+        guard let parsed = try? Self.parseModelReference(reference),
+              let profile = providers.first(where: {
+                  $0.normalizedPrefix.caseInsensitiveCompare(parsed.prefix) == .orderedSame
+              }),
+              profile.isOpenRouter else {
+            return reference
+        }
+
+        if profile.hasExplicitProviderOrder {
+            let model = Self.removingNitroVariant(from: parsed.model)
+            return "\(parsed.prefix)/\(model)"
+        }
+        guard !parsed.model.contains(":") else { return reference }
+        return "\(parsed.prefix)/\(parsed.model):nitro"
+    }
+
+    private static func removingNitroVariant(from model: String) -> String {
+        let suffix = ":nitro"
+        guard model.lowercased().hasSuffix(suffix) else { return model }
+        return String(model.dropLast(suffix.count))
+    }
+
+    private func migratedPerformancePolicy(
+        _ policy: LLMRequestPolicy,
+        for useCase: LLMUseCase
+    ) -> LLMRequestPolicy {
+        let legacyTimeout = useCase == .chat ? 300.0 : 600.0
+        let legacyBackoff = useCase == .chat ? 0.5 : 0.75
+        guard policy.timeoutSeconds == legacyTimeout,
+              policy.maximumAttemptsPerModel == 2,
+              policy.initialBackoffSeconds == legacyBackoff else {
+            return policy
+        }
+        return .default(for: useCase)
     }
 
     private static var applicationDefaults: UserDefaults {

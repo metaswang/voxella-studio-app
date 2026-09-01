@@ -25,6 +25,8 @@ enum VoxellaAPIConfiguration {
     static var refreshURL: URL { apiURL("api/v1/auth/refresh") }
     static var logoutURL: URL { apiURL("api/v1/auth/logout") }
     static var sessionsURL: URL { apiURL("api/v1/sessions", isCollection: true) }
+    static var sessionSearchURL: URL { apiURL("api/v1/search/sessions") }
+    static var sessionTranscriptSearchURL: URL { apiURL("api/v1/search/sessions/transcript") }
 
     static func authorizationURL(state: String, nonce: String, codeChallenge: String) throws -> URL {
         var components = URLComponents(

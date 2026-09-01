@@ -1,4 +1,15 @@
 import AppKit
+import Darwin
+
+#if BUNDLED_SPEECH
+if CommandLine.arguments.contains("--wemm-eval") {
+    Task {
+        let status = await WeMMEmbeddingCLI.run(arguments: CommandLine.arguments)
+        exit(Int32(status))
+    }
+    dispatchMain()
+}
+#endif
 
 Log.bootstrap()
 Telemetry.start()

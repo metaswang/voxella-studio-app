@@ -240,6 +240,7 @@ enum AgentStreamEvent: Equatable, Sendable {
 
 enum AgentClientTransportError: LocalizedError {
     case missingAPIKey(AgentProvider)
+    case insufficientCredits(String)
     case httpError(provider: AgentProvider, status: Int, body: String)
     case streamError(provider: AgentProvider, message: String)
 
@@ -247,6 +248,8 @@ enum AgentClientTransportError: LocalizedError {
         switch self {
         case .missingAPIKey(let provider):
             "No \(provider.displayName) API key is set."
+        case .insufficientCredits(let message):
+            message.isEmpty ? "There are not enough credits for this AI request." : message
         case .httpError(let provider, let status, let body):
             "\(provider.displayName) API error (\(status)): \(body.prefix(500))"
         case .streamError(let provider, let message):

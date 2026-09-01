@@ -177,35 +177,3 @@ struct SessionPlacementIndicators: View {
         .accessibilityElement(children: .contain)
     }
 }
-
-struct SessionStatusBadge: View {
-    let state: WorkbenchJobState
-
-    var body: some View {
-        Label(state.label, systemImage: systemImage)
-            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
-            .foregroundStyle(color)
-            .padding(.horizontal, AppTheme.Spacing.md)
-            .padding(.vertical, AppTheme.Spacing.sm)
-            .background(color.opacity(AppTheme.Opacity.soft), in: Capsule())
-    }
-
-    private var color: Color {
-        switch state {
-        case .completed: AppTheme.Status.successColor
-        case .failed: AppTheme.Status.errorColor
-        case .running, .cancelling: AppTheme.Status.warningColor
-        case .ready, .cancelled: AppTheme.Text.tertiaryColor
-        }
-    }
-
-    private var systemImage: String {
-        switch state {
-        case .completed: "checkmark.circle.fill"
-        case .failed: "exclamationmark.triangle.fill"
-        case .running, .cancelling: "arrow.trianglehead.2.clockwise.rotate.90"
-        case .ready: "circle"
-        case .cancelled: "xmark.circle"
-        }
-    }
-}

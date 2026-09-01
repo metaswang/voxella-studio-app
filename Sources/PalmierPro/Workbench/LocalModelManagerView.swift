@@ -132,10 +132,12 @@ struct LocalModelManagerView: View {
         let dubbingModels = manager.models(for: .dub).filter {
             !transcriptionModelIDs.contains($0.id)
         }
+        let searchModels = manager.models(for: .search)
 
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
             modelSection("Transcription & Captions", models: transcriptionModels)
             modelSection("Dubbing", models: dubbingModels)
+            modelSection("Search", models: searchModels)
             if !manager.installedLegacyModels.isEmpty {
                 modelSection("Legacy Models", models: manager.installedLegacyModels)
             }
@@ -323,23 +325,22 @@ struct LocalModelManagerView: View {
         switch id {
         case .qwen3ASR17B8Bit: "globe.asia.australia"
         case .parakeetTDT06Bv3: "globe.europe.africa"
-        case .whisperLargeV3Turbo8Bit, .whisperLargeV3TurboFP16, .whisperSmall:
+        case .whisperLargeV3Turbo8Bit, .whisperLargeV3TurboFP16:
             "waveform.badge.magnifyingglass"
         case .spokenLanguageID: "character.bubble"
         case .forcedAligner: "text.line.first.and.arrowtriangle.forward"
         case .sileroVAD: "waveform.path.ecg"
         case .sortformerDiarization: "person.2.wave.2"
-        case .pyannoteSegmentation: "person.2.wave.2"
         case .weSpeaker: "person.crop.circle.badge.checkmark"
-        case .qwenTTS06B, .qwenTTS17B: "speaker.wave.3"
+        case .qwenTTS17B: "speaker.wave.3"
         case .weMMEmbedding2B4Bit: "sparkle.magnifyingglass"
         }
     }
 
     private func tint(for id: LocalModelID) -> Color {
         switch id {
-        case .qwenTTS06B, .qwenTTS17B: .purple
-        case .sortformerDiarization, .pyannoteSegmentation, .weSpeaker: .orange
+        case .qwenTTS17B: .purple
+        case .sortformerDiarization, .weSpeaker: .orange
         case .weMMEmbedding2B4Bit: .teal
         default: .blue
         }

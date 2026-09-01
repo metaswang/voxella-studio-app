@@ -428,8 +428,22 @@ struct SessionSummaryTemplateSheet: View {
             && name == loadedName.trimmingCharacters(in: .whitespacesAndNewlines)
             && description == loadedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
             && edition == loadedUserEdition.trimmingCharacters(in: .whitespacesAndNewlines)
-        if unchanged, currentTemplateID != nil {
-            onCancel()
+        if unchanged,
+           currentTemplateID != nil,
+           let selected = tree?.template(id: activeTemplateID) {
+            onApply(
+                SummaryTemplateDefinition(
+                    id: activeTemplateID,
+                    name: name,
+                    description: description,
+                    userEdition: edition,
+                    isFallback: selected.isFallback,
+                    categoryCode: selected.categoryCode,
+                    scope: selected.scope,
+                    sourceTemplateID: selected.sourceTemplateID,
+                    emojiIcon: selected.emojiIcon
+                )
+            )
             return
         }
 

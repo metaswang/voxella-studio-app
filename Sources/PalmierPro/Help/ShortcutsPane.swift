@@ -16,7 +16,7 @@ struct ShortcutsPane: View {
         ShortcutGroup(title: "Editing", shortcuts: [
             ("A", "Select Forward on Track"),
             ("Shift + A", "Select Forward on All Tracks"),
-            ("Cmd + K", "Split at Playhead"),
+            ("Cmd + Shift + K", "Split at Playhead"),
             ("[ or Q", "Trim Start to Playhead"),
             ("] or W", "Trim End to Playhead"),
             ("Backspace", "Delete"),
@@ -52,6 +52,7 @@ struct ShortcutsPane: View {
             ("Cmd + A", "Select All"),
         ]),
         ShortcutGroup(title: "View", shortcuts: [
+            ("Cmd + K", "Search Sessions"),
             ("Cmd + F", "Full Screen"),
             ("`", "Maximize Focused Panel"),
             ("Cmd + Scroll", "Zoom Preview to Cursor"),

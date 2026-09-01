@@ -18,30 +18,10 @@ struct VoiceActivityTests {
         #expect(!VoiceActivity.isDamagedMedia(CancellationError()))
     }
 
-    @Test func cachesNoAudioAsEmptyAnalysis() throws {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("vad-no-audio-\(UUID().uuidString).mov")
-        try Data().write(to: url)
-        let mediaRef = "vad-no-audio-\(UUID().uuidString)"
-        defer {
-            try? FileManager.default.removeItem(at: url)
-            removeCacheEntries(for: mediaRef)
-        }
-
-        let analysis = VoiceActivity.cacheNoAudioAnalysis(for: url, mediaRef: mediaRef)
+    @Test func returnsEmptyAnalysisForNoAudio() {
+        let analysis = VoiceActivity.noAudioAnalysis()
 
         #expect(analysis.chunkCount == 0)
         #expect(analysis.segments.isEmpty)
-        #expect(VoiceActivity.cachedAnalysis(for: url, mediaRef: mediaRef)?.chunkCount == 0)
-    }
-
-    private func removeCacheEntries(for mediaRef: String) {
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: VoiceActivity.cache.directory,
-            includingPropertiesForKeys: nil
-        ) else { return }
-        for entry in entries where entry.lastPathComponent.hasPrefix("\(mediaRef)_") {
-            try? FileManager.default.removeItem(at: entry)
-        }
     }
 }

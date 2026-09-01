@@ -86,7 +86,7 @@ enum MainMenuBuilder {
         menu.addItem(.separator())
 
         let splitItem = NSMenuItem(title: "Split at Playhead", action: #selector(EditorActions.splitAtPlayhead(_:)), keyEquivalent: "k")
-        splitItem.keyEquivalentModifierMask = [.command]
+        splitItem.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(splitItem)
 
         let trimStartItem = NSMenuItem(title: "Trim Start to Playhead", action: #selector(EditorActions.trimStartToPlayhead(_:)), keyEquivalent: "q")
@@ -116,6 +116,16 @@ enum MainMenuBuilder {
     private static func viewMenu() -> NSMenuItem {
         let item = NSMenuItem()
         let menu = NSMenu(title: "View")
+
+        let searchItem = NSMenuItem(
+            title: "Search Sessions…",
+            action: #selector(AppDelegate.showSessionSearch(_:)),
+            keyEquivalent: "k"
+        )
+        searchItem.keyEquivalentModifierMask = [.command]
+        searchItem.target = NSApp.delegate
+        menu.addItem(searchItem)
+        menu.addItem(.separator())
 
         let mediaItem = NSMenuItem(title: "Media Panel", action: #selector(EditorActions.toggleMediaPanel(_:)), keyEquivalent: "0")
         mediaItem.keyEquivalentModifierMask = [.command]

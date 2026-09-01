@@ -221,6 +221,8 @@ enum AppTheme {
     // MARK: - Interaction fills
 
     enum Interaction {
+        static let hoverScale: CGFloat = 1.1
+
         static func fill(_ opacity: Double) -> Color {
             AppTheme.Text.primaryColor.opacity(opacity)
         }
@@ -440,6 +442,8 @@ enum AppTheme {
         static let skillToastDuration: Duration = .seconds(5)
         static let fieldLabelWidth: CGFloat = 84
         static let providerListWidth: CGFloat = 152
+        static let providerOrderListMinHeight: CGFloat = 72
+        static let extraBodyEditorMinHeight: CGFloat = 128
     }
 
     enum EditorPanel {
@@ -522,8 +526,16 @@ enum AppTheme {
         static let exportSummaryWidth: CGFloat = 280
         static let exportChoiceMinHeight: CGFloat = 112
         static let searchWidth: CGFloat = 260
+        static let searchPaletteWidth: CGFloat = 600
+        static let searchPaletteHeight: CGFloat = 560
+        static let searchPaletteFieldHeight: CGFloat = 46
+        static let searchPaletteRowHeight: CGFloat = 42
+        static let searchPaletteRecentLimit = 6
         static let revisionPickerWidth: CGFloat = 190
         static let sessionIconSize: CGFloat = 44
+        static let sessionStatusWidth: CGFloat = 238
+        static let sessionStatusProgressHeight: CGFloat = 4
+        static let sessionStatusPulseScale: CGFloat = 1.06
         static let recentSessionThumbnailWidth: CGFloat = 76
         static let recentSessionThumbnailHeight: CGFloat = 52
         static let fullscreenControlSize: CGFloat = 48

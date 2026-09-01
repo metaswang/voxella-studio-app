@@ -379,7 +379,7 @@ struct TranscriptionProcessingView: View {
             return lines
         case .finalizing:
             let subtitleWillRun = job.shouldProcessSubtitles(
-                hasAPIKey: llmSettings.hasConfiguredModel(for: .subtitleProcessing)
+                hasAPIKey: llmSettings.hasUsableModel(for: .subtitleProcessing)
             ) || job.normalizedTargetLanguageCode != nil
             var lines = [
                 subtitleWillRun
@@ -402,8 +402,15 @@ struct TranscriptionProcessingView: View {
     }
 
     private func llmRouteDescription(for useCase: LLMUseCase) -> String {
-        let chain = llmSettings.route(for: useCase).modelChain
-        return chain.isEmpty ? "not configured" : chain.joined(separator: " → ")
+        switch AITransportPolicy.current {
+        case .hosted:
+            return L10n.string("Voxella AI (server-managed)")
+        case .byok:
+            let chain = llmSettings.route(for: useCase).modelChain
+            return chain.isEmpty ? L10n.string("Not configured") : chain.joined(separator: " → ")
+        case .unavailable:
+            return L10n.string("Not configured")
+        }
     }
 
     private func etaText(for job: WorkbenchTranscriptionJob) -> String {
@@ -414,6 +421,13 @@ struct TranscriptionProcessingView: View {
            store.isTranscriptionQueued(jobID),
            job.state == .ready {
             return "Estimated: waiting for the local ASR slot"
+        }
+        if job.flowProgressStage == .transcription,
+           job.progressStep == LocalSpeechStage.detectingSpeech.rawValue,
+           let completed = job.progressCompleted,
+           let total = job.progressTotal,
+           total > 0 {
+            return completed >= total ? "Speech check complete" : job.progressMessage
         }
         if job.progress < 0.08 {
             return "Estimated: about <1 min left"
@@ -440,6 +454,12 @@ struct TranscriptionProcessingView: View {
         }
         if job.isActivelyProcessing {
             let location = job.compute == .cloud ? "VoxStudio Cloud" : TaskPlacementCopy.thisMac
+            if let completed = job.progressCompleted,
+               let total = job.progressTotal,
+               total > 0 {
+                let boundedCompleted = min(max(completed, 0), total)
+                return "\(job.progressStep ?? "processing"): \(boundedCompleted)/\(total) • \(location)"
+            }
             return "\(job.progressStep ?? "processing") • \(location)"
         }
         return job.state.label

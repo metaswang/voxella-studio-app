@@ -61,7 +61,7 @@ struct RecentSessionsView: View {
                                 session: session,
                                 onOpen: { store.openSession(session.id) },
                                 onDelete: { sessionPendingDeletion = session },
-                                allowsDelete: !session.isRemoteOnly
+                                allowsDelete: true
                             )
                             .contextMenu {
                                 if let sourceURL = session.sourceURL {
@@ -78,7 +78,6 @@ struct RecentSessionsView: View {
                                 Button("Delete", role: .destructive) {
                                     sessionPendingDeletion = session
                                 }
-                                .disabled(session.isRemoteOnly)
                             }
                         }
                     }
@@ -537,7 +536,10 @@ struct WorkbenchSessionDetailView: View {
                 cloudSyncStatus(session)
             }
             Spacer()
-            SessionStatusBadge(state: session.state)
+            SessionStatusBadge(
+                state: session.state,
+                processing: sessionProcessingSnapshot(for: session)
+            )
             if let dubID = session.dubID {
                 revisionPicker(dubID: dubID)
             }
@@ -580,6 +582,20 @@ struct WorkbenchSessionDetailView: View {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
                 .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
         }
+    }
+
+    private func sessionProcessingSnapshot(for session: WorkbenchSession) -> SessionProcessingSnapshot? {
+        if let dubID = session.dubID,
+           let dub = store.dubs.first(where: { $0.id == dubID }),
+           dub.isActivelyProcessing {
+            return SessionProcessingSnapshot(job: dub)
+        }
+        if let transcriptionID = session.transcriptionID,
+           let transcription = store.transcriptions.first(where: { $0.id == transcriptionID }),
+           transcription.isActivelyProcessing {
+            return SessionProcessingSnapshot(job: transcription)
+        }
+        return nil
     }
 
     @ViewBuilder
@@ -650,7 +666,6 @@ struct WorkbenchSessionDetailView: View {
             Button("Delete", role: .destructive) {
                 sessionPendingDeletion = session
             }
-            .disabled(isProcessing || session.isRemoteOnly)
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
@@ -1615,8 +1630,15 @@ private struct SessionSummaryPanel: View {
                     )
             }
 
+            if let templateName = session.summaryTemplateName,
+               !templateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Label(templateName, systemImage: "doc.text")
+                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+            }
+
             if session.summaryState == .running {
-                ProgressView("Generating summary…")
+                ProgressView(summaryGenerationLabel(for: session))
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if let markdown = session.summaryMarkdown, !markdown.isEmpty {
@@ -1657,6 +1679,15 @@ private struct SessionSummaryPanel: View {
                 .fill(AppTheme.Border.subtleColor)
                 .frame(height: AppTheme.BorderWidth.thin)
         }
+    }
+
+    private func summaryGenerationLabel(for session: WorkbenchSession) -> String {
+        guard let templateName = session.summaryTemplateName?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !templateName.isEmpty else {
+            return "Generating summary…"
+        }
+        return "Generating summary with \(templateName)…"
     }
 }
 

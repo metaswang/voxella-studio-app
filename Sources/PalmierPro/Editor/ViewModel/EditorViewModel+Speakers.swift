@@ -143,11 +143,8 @@ extension EditorViewModel {
         }
         var masks: [String: [Int]] = [:]
         for file in files {
-            // Prefer the VAD analysis cell count so speaker tints and silence washes share a scale.
             let cellCount: Int
-            if let chunks = VoiceActivity.cachedAnalysis(for: file.url, mediaRef: file.mediaRef)?.chunkCount, chunks > 0 {
-                cellCount = chunks
-            } else if let duration = mediaAssets.first(where: { $0.id == file.mediaRef })?.duration, duration > 0 {
+            if let duration = mediaAssets.first(where: { $0.id == file.mediaRef })?.duration, duration > 0 {
                 cellCount = Int(duration / VoiceActivity.chunkDuration) + 1
             } else {
                 continue

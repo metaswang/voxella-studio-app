@@ -228,6 +228,13 @@ enum KeychainStore {
     }
 }
 
+extension KeychainStoreError {
+    var isInteractionNotAllowed: Bool {
+        if case .status(errSecInteractionNotAllowed) = self { return true }
+        return false
+    }
+}
+
 private extension KeychainStoreError {
     var isMissingEntitlement: Bool {
         if case .status(errSecMissingEntitlement) = self { return true }

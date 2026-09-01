@@ -673,6 +673,17 @@ struct MediaPanelInteractionTests {
         #expect(item.keyEquivalentModifierMask == [.command, .shift])
     }
 
+    @Test func mainMenuUsesCommandKForSessionSearch() throws {
+        _ = NSApplication.shared
+        let mainMenu = MainMenuBuilder.buildMenu()
+        let viewMenu = try #require(mainMenu.items.compactMap(\.submenu).first { $0.title == "View" })
+        let item = try #require(viewMenu.items.first { $0.action == #selector(AppDelegate.showSessionSearch(_:)) })
+
+        #expect(item.title == "Search Sessions…")
+        #expect(item.keyEquivalent == "k")
+        #expect(item.keyEquivalentModifierMask == [.command])
+    }
+
     @Test func mixedDeleteIsOneUndoableAction() {
         let e = editor()
         let folderId = e.createFolder(name: "Bin")

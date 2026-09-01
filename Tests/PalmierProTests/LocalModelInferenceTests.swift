@@ -8,6 +8,7 @@ import Testing
 struct LocalModelInferenceTests {
     private static let enabled = ProcessInfo.processInfo.environment["VOXELLA_RUN_LOCAL_FIXTURES"] == "1"
     private static let realAudioEnabled = ProcessInfo.processInfo.environment["VOXELLA_RUN_REAL_AUDIO"] == "1"
+    private static let caseAudioEnabled = ProcessInfo.processInfo.environment["VOXELLA_RUN_CASE_AUDIO"] == "1"
 
     @Test
     func forcedAlignerTimingsAreClampedAndPositive() {
@@ -80,6 +81,67 @@ struct LocalModelInferenceTests {
                 $0.contains("word timings are estimates")
             }
         )
+    }
+
+    @Test(.enabled(if: caseAudioEnabled))
+    func parakeetCaseAudioReconstructsWordsFromNativeTokens() async throws {
+        let source = URL(fileURLWithPath: "/Users/adamwang/Downloads/New Recording 4.m4a")
+        #expect(FileManager.default.fileExists(atPath: source.path))
+        let sourceDuration = try await Self.duration(of: source)
+        let clipEnd = min(120, sourceDuration)
+        let output = try await LocalSpeechPipeline.shared.transcribeDetailed(
+            sourceURL: source,
+            languageCode: "en",
+            speakerCount: 1,
+            clipRangeSeconds: 0...clipEnd,
+            progressUpdate: { update in
+                print(
+                    "[parakeet-case] \(update.stage.rawValue) "
+                        + "\(update.completed ?? 0)/\(update.total ?? 0) \(update.message)"
+                )
+            }
+        )
+
+        let result = output.result
+        let brokenJoinExamples = ["activ iti es", "I ' m", "M add ie", "Go od"]
+        print(
+            "[parakeet-case] engine=\(output.engine.rawValue) duration=\(clipEnd) "
+                + "words=\(result.words.count) segments=\(result.segments.count) "
+                + "estimatedUnits=\(output.alignmentDiagnostics.estimatedUnitCount)"
+        )
+        print("[parakeet-case] transcript=\(result.text)")
+        let phrases = CaptionBuilder.phrases(
+            fromTimedWords: result.words,
+            fits: { _ in true },
+            minDuration: 0.1,
+            language: result.language,
+            characterBudget: 56
+        )
+        let longestPhrase = phrases.map { $0.end - $0.start }.max() ?? 0
+        print(
+            "[parakeet-case] captionPhrases=\(phrases.count) "
+                + "longestPhrase=\(String(format: "%.2f", longestPhrase))s"
+        )
+
+        // These are the exact failure signatures persisted by the reported case.
+        // The test is intentionally gated because it loads the on-device model.
+        // A leading audio fragment such as "ing" is model content and is not
+        // treated as a tokenization failure.
+        #expect(output.engine == .parakeet)
+        #expect(result.text.contains("activities"))
+        #expect(result.text.contains("I'm"))
+        #expect(brokenJoinExamples.allSatisfy { !result.text.contains($0) })
+        #expect(result.words.count < 2_000)
+        #expect(result.segments.allSatisfy { $0.end - $0.start <= TranscriptSegmenter.maximumDuration })
+        #expect(!phrases.isEmpty)
+        #expect(
+            phrases.allSatisfy {
+                $0.end > $0.start
+                    && $0.text.filter { !$0.isWhitespace }.count <= 56
+            }
+        )
+        #expect(longestPhrase < 30)
+        #expect(Self.timestampsAreValid(result.words, duration: clipEnd))
     }
 
     @Test(.enabled(if: realAudioEnabled))

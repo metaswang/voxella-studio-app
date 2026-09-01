@@ -186,10 +186,11 @@ struct OpenAIStreamParser {
         case "error":
             didTerminate = true
             let error = event["error"] as? [String: Any]
-            throw AgentClientTransportError.streamError(
-                provider: .openAI,
-                message: error?["message"] as? String ?? event["message"] as? String ?? "Unknown stream error."
-            )
+            let message = error?["message"] as? String ?? event["message"] as? String ?? "Unknown stream error."
+            if error?["code"] as? String == "insufficient_credits" {
+                throw AgentClientTransportError.insufficientCredits(message)
+            }
+            throw AgentClientTransportError.streamError(provider: .openAI, message: message)
 
         default:
             return []

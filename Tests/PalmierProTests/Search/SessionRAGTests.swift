@@ -334,6 +334,25 @@ struct SessionIndexIngestActionTests {
     }
 }
 
+@Suite("Search service staged queries")
+struct SearchServiceStagedQueryTests {
+    @Test func lexicalSearchDoesNotCallEmbeddingProvider() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("session-index-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = try SessionIndexStore(url: url)
+        let snapshot = indexSnapshot(generation: 1)
+        try await store.replaceLexical(snapshot: snapshot, clips: CuePacker.pack(cues: snapshot.cues))
+
+        let provider = CountingEmbeddingProvider()
+        let service = SearchService(store: store, embeddings: provider)
+        let hits = try await service.transcriptLexicalSearch(query: "脚底很痛")
+
+        #expect(!hits.isEmpty)
+        #expect(await provider.callCount() == 0)
+    }
+}
+
 @Suite("Session index eligibility")
 struct SessionIndexEligibilityTests {
     @Test func snapshotOnlyComesFromCompletedJobsWithTranscript() {
@@ -400,4 +419,17 @@ private func dummyVector(_ seed: Float) -> [Float] {
 
 private func word(_ text: String, _ start: Double, _ end: Double) -> TranscriptionWord {
     TranscriptionWord(text: text, start: start, end: end, speaker: "Speaker 1")
+}
+
+private actor CountingEmbeddingProvider: TextEmbeddingProvider {
+    private var calls = 0
+
+    func encodeText(_ text: String) async throws -> [Float] {
+        calls += 1
+        return []
+    }
+
+    func callCount() -> Int {
+        calls
+    }
 }

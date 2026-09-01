@@ -25,6 +25,7 @@ struct ASRAudioPreprocessingResult: Sendable {
 }
 
 enum ASRAudioPreprocessor {
+    static let cacheVersion = 1
     static let sampleRate = 16_000
     static let targetPeakDBFS = -3.0
     static let maximumGainDB = 30.0

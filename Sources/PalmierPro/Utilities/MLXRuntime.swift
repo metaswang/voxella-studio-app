@@ -30,9 +30,14 @@ enum MLXRuntime {
 
     static func beginInference() async throws {
         try beginOperation()
+        let waitStartedAt = DispatchTime.now().uptimeNanoseconds
         do { try await inferenceGate.wait() } catch {
             endOperation()
             throw error
+        }
+        let waited = Double(DispatchTime.now().uptimeNanoseconds - waitStartedAt) / 1_000_000_000
+        if waited >= 0.05 {
+            Log.app.notice("MLX inference gate waited \(String(format: "%.2f", waited))s")
         }
     }
     static func endInference() {

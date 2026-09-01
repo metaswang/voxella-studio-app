@@ -13,14 +13,11 @@ enum LocalModelID: String, Codable, CaseIterable, Identifiable, Sendable {
     case parakeetTDT06Bv3
     case whisperLargeV3Turbo8Bit
     case whisperLargeV3TurboFP16
-    case whisperSmall
     case spokenLanguageID
     case forcedAligner
     case sileroVAD
     case sortformerDiarization
-    case pyannoteSegmentation
     case weSpeaker
-    case qwenTTS06B
     case qwenTTS17B
     case weMMEmbedding2B4Bit
 
@@ -45,6 +42,11 @@ enum LocalModelID: String, Codable, CaseIterable, Identifiable, Sendable {
         default: nil
         }
     }
+}
+
+enum LocalModelStorage: Sendable, Equatable {
+    case safetensors
+    case coreMLBundle(directoryName: String)
 }
 
 enum LocalASRPrecision: String, Codable, Sendable {
@@ -90,6 +92,7 @@ struct LocalModelDescriptor: Identifiable, Sendable {
     let isLegacy: Bool
     let asrSpecification: LocalASRModelSpecification?
     let requiredArtifacts: [LocalModelArtifact]
+    let storage: LocalModelStorage
 
     init(
         id: LocalModelID,
@@ -109,7 +112,8 @@ struct LocalModelDescriptor: Identifiable, Sendable {
         isRecommended: Bool,
         isLegacy: Bool = false,
         asrSpecification: LocalASRModelSpecification? = nil,
-        requiredArtifacts: [LocalModelArtifact] = []
+        requiredArtifacts: [LocalModelArtifact] = [],
+        storage: LocalModelStorage = .safetensors
     ) {
         self.id = id
         self.title = title
@@ -129,6 +133,7 @@ struct LocalModelDescriptor: Identifiable, Sendable {
         self.isLegacy = isLegacy
         self.asrSpecification = asrSpecification
         self.requiredArtifacts = requiredArtifacts
+        self.storage = storage
     }
 
     enum LocalFeature: String, Sendable {
@@ -182,9 +187,6 @@ final class LocalModelManager {
     nonisolated static let ttsTokenizerByteSize: Int64 = 682_300_739
     nonisolated static let ttsTokenizerWeightByteSize: Int64 = 682_293_092
     nonisolated static let ttsTokenizerWeightSHA256 = "836b7b357f5ea43e889936a3709af68dfe3751881acefe4ecf0dbd30ba571258"
-    nonisolated static let whisperTokenizerRepository = "openai/whisper-small"
-    nonisolated static let whisperTokenizerRevision = "973afd24965f72e36ca33b3055d56a652f456b4d"
-
     private nonisolated static let largeTurboSharedArtifacts: [LocalModelArtifact] = [
         .init(filename: "added_tokens.json", byteSize: 34_648, sha256: "3c51f66c4c21f9e126970078f11ae77a78c74aee8df606ee9daba86e467108e0"),
         .init(filename: "generation_config.json", byteSize: 3_772, sha256: "cce11bfe3aaa6ae9e072ea2637caaec8795e68d9b67e655a5af16ee509681a4c"),
@@ -306,21 +308,6 @@ final class LocalModelManager {
             ]
         ),
         .init(
-            id: .whisperSmall,
-            title: "Whisper Small MLX FP16 (Legacy)",
-            purpose: "Previous ASR model; no longer used for transcription",
-            repository: "mlx-community/whisper-small-fp16",
-            revision: "fa19eb05939653a9334d81bec7e053db81970170",
-            weightByteSize: 481_215_362,
-            weightSHA256: "7408174e70bffbff6a189cadc3621512be0d1d26bb8c9122d3eeace1652d1b54",
-            byteSize: 481_215_628,
-            sizeLabel: "~ 481 MB",
-            license: "Apache-2.0",
-            requiredFor: [],
-            isRecommended: false,
-            isLegacy: true
-        ),
-        .init(
             id: .spokenLanguageID,
             title: "VoxLingua107 ECAPA MLX",
             purpose: "Offline spoken-language detection for automatic ASR",
@@ -351,17 +338,20 @@ final class LocalModelManager {
         ),
         .init(
             id: .sileroVAD,
-            title: "Silero VAD v5 MLX",
-            purpose: "Speech-region detection",
-            repository: "aufklarer/Silero-VAD-v5-MLX",
-            revision: "01edc8ef8265d8f0039910ce471d26eed0b804db",
-            weightByteSize: 1_237_580,
-            weightSHA256: "704e4211eab4177b88dd7f2f0746f53cc737d49711d34c4a34d00950bb78201b",
-            byteSize: 1_241_938,
-            sizeLabel: "~ 1.2 MB",
+            title: "Silero VAD v6 Core ML",
+            purpose: "Speech-region detection on the Neural Engine",
+            repository: "FluidInference/silero-vad-coreml",
+            weightFilename: LocalSpeechVAD.coreMLBundleName,
+            revision: "b419383c55c110e2c9271fa6ee0ea83d03c70d96",
+            weightByteSize: 0,
+            weightSHA256: "",
+            byteSize: 1_070_000,
+            sizeLabel: "~ 1.1 MB",
             license: "MIT",
+            licenseURL: URL(string: "https://huggingface.co/FluidInference/silero-vad-coreml"),
             requiredFor: [.transcribe],
-            isRecommended: true
+            isRecommended: true,
+            storage: .coreMLBundle(directoryName: LocalSpeechVAD.coreMLBundleName)
         ),
         .init(
             id: .sortformerDiarization,
@@ -380,20 +370,6 @@ final class LocalModelManager {
             isRecommended: true
         ),
         .init(
-            id: .pyannoteSegmentation,
-            title: "Pyannote Segmentation MLX",
-            purpose: "Speaker-turn segmentation",
-            repository: "aufklarer/Pyannote-Segmentation-MLX",
-            revision: "abef0110277063f0ea117a802832a3eba22af84c",
-            weightByteSize: 5_960_404,
-            weightSHA256: "d1630fa2c22f47e4c89034f8d5e3aff99884f55347d48ce70dd306328b4421f5",
-            byteSize: 5_965_718,
-            sizeLabel: "~ 6 MB",
-            license: "MIT",
-            requiredFor: [.transcribe],
-            isRecommended: false
-        ),
-        .init(
             id: .weSpeaker,
             title: "WeSpeaker ResNet34 MLX",
             purpose: "Speaker embeddings and clustering",
@@ -406,21 +382,6 @@ final class LocalModelManager {
             license: "MIT",
             requiredFor: [.transcribe],
             isRecommended: false
-        ),
-        .init(
-            id: .qwenTTS06B,
-            title: "Qwen3-TTS Small 0.6B 4-bit",
-            purpose: "Legacy local dubbing model",
-            repository: "aufklarer/Qwen3-TTS-12Hz-0.6B-Base-MLX-4bit",
-            revision: "e382c6ec904317f408fdaaad7e0d6fc9741f0e2f",
-            weightByteSize: 1_024_490_700,
-            weightSHA256: "07dcb37b323614af64624af687876edd5c9a8b442da2a7b549d62f9ba2770ec1",
-            byteSize: 1_029_032_584,
-            sizeLabel: "~ 1.03 GB",
-            license: "Apache-2.0",
-            requiredFor: [.dub],
-            isRecommended: false,
-            isLegacy: true
         ),
         .init(
             id: .qwenTTS17B,
@@ -539,7 +500,9 @@ final class LocalModelManager {
             speakerCount: speakerCount,
             whisperFallbackModelID: activeASRModelID
         )
-        return required.allSatisfy { state(for: $0).isInstalled }
+        return required.allSatisfy { id in
+            state(for: id).isInstalled
+        }
     }
 
     func hasRequiredDubModels(modelID: LocalModelID) -> Bool {
@@ -553,7 +516,8 @@ final class LocalModelManager {
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
             let installed = await Task.detached(priority: .utility) {
-                Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, Self.isInstalled($0)) })
+                Self.pruneUnusedCachedModels()
+                return Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, Self.isInstalled($0)) })
             }.value
             guard let self, !Task.isCancelled, generation == self.refreshGeneration else { return }
             for model in catalog where self.activeDownloads[model.id] == nil {
@@ -610,7 +574,11 @@ final class LocalModelManager {
                 self.states[id] = installed ? .installed : .notInstalled
             } catch {
                 self.pendingASRActivation.remove(id)
-                self.states[id] = .failed(error.localizedDescription)
+                let message = Self.userFacingDownloadError(error)
+                Log.transcription.error(
+                    "local model download failed id=\(id.rawValue) error=\(message)"
+                )
+                self.states[id] = .failed(message)
             }
             self.activeDownloads[id] = nil
         }
@@ -680,10 +648,13 @@ final class LocalModelManager {
 
     nonisolated static func isInstalled(_ model: LocalModelDescriptor) -> Bool {
         guard let directory = try? directory(for: model),
-              weightFileSize(in: directory, filename: model.weightFilename) == model.weightByteSize,
               let modelManifest = manifest(in: directory),
               modelManifest.repository == model.repository,
-              modelManifest.revision == model.revision,
+              modelManifest.revision == model.revision else { return false }
+        if case .coreMLBundle(let directoryName) = model.storage {
+            return coreMLBundleIsValid(in: directory, directoryName: directoryName)
+        }
+        guard weightFileSize(in: directory, filename: model.weightFilename) == model.weightByteSize,
               modelManifest.weightSHA256 == model.weightSHA256 else { return false }
         if !model.requiredArtifacts.isEmpty {
             let expectedHashes = artifactHashes(for: model)
@@ -692,11 +663,7 @@ final class LocalModelManager {
                       weightFileSize(in: directory, filename: artifact.filename) == artifact.byteSize
                   }) else { return false }
         }
-        if model.id == .whisperSmall {
-            return FileManager.default.fileExists(atPath: directory.appendingPathComponent("tokenizer.json").path)
-                && modelManifest.dependencies[whisperTokenizerRepository] == whisperTokenizerRevision
-        }
-        if model.id == .qwenTTS06B || model.id == .qwenTTS17B {
+        if model.id == .qwenTTS17B {
             #if BUNDLED_SPEECH
             guard let tokenizer = try? HuggingFaceDownloader.getCacheDirectory(for: ttsTokenizerRepository) else {
                 return false
@@ -714,6 +681,11 @@ final class LocalModelManager {
     }
 
     private nonisolated static func hasWeights(in directory: URL) -> Bool {
+        if FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent(LocalSpeechVAD.coreMLBundleName).path
+        ) {
+            return true
+        }
         guard let enumerator = FileManager.default.enumerator(
             at: directory,
             includingPropertiesForKeys: [.fileSizeKey],
@@ -748,7 +720,7 @@ final class LocalModelManager {
         var mainWeightVerified = await Task.detached(priority: .utility) {
             Self.coreFilesExist(for: id, in: initialDirectory)
         }.value
-        if mainWeightVerified {
+        if mainWeightVerified, model.storage == .safetensors {
             mainWeightVerified = await Self.verifyWeight(
                 in: initialDirectory,
                 filename: model.weightFilename,
@@ -766,7 +738,7 @@ final class LocalModelManager {
         }
         let mainRange: ClosedRange<Double> = if id.isASRModel {
             0...0.92
-        } else if id == .whisperSmall || id == .qwenTTS06B || id == .qwenTTS17B {
+        } else if id == .qwenTTS17B {
             0...0.82
         } else {
             0...1
@@ -777,7 +749,7 @@ final class LocalModelManager {
                 repository: model.repository,
                 revision: model.revision,
                 to: directory,
-                matching: Self.weightGlobs(additionalFiles: Self.additionalFiles(for: id))
+                matching: Self.snapshotGlobs(for: id)
             ) { [weak self] fraction in
                 self?.updateProgress(
                     id: id,
@@ -787,13 +759,23 @@ final class LocalModelManager {
                 )
             }
             states[id] = .downloading(progress: mainRange.upperBound, message: "Verifying model checksum…")
-            let weightVerified = await Self.verifyWeight(
-                in: directory,
-                filename: model.weightFilename,
-                expectedBytes: model.weightByteSize,
-                expectedSHA256: model.weightSHA256
-            )
             let downloadedDirectory = directory
+            let weightVerified: Bool
+            if case .coreMLBundle(let directoryName) = model.storage {
+                weightVerified = await Task.detached(priority: .utility) {
+                    Self.coreMLBundleIsValid(
+                        in: downloadedDirectory,
+                        directoryName: directoryName
+                    )
+                }.value
+            } else {
+                weightVerified = await Self.verifyWeight(
+                    in: directory,
+                    filename: model.weightFilename,
+                    expectedBytes: model.weightByteSize,
+                    expectedSHA256: model.weightSHA256
+                )
+            }
             let coreFilesVerified = await Task.detached(priority: .utility) {
                 Self.coreFilesExist(for: id, in: downloadedDirectory)
             }.value
@@ -829,24 +811,7 @@ final class LocalModelManager {
         }
         try Task.checkCancellation()
 
-        if id == .whisperSmall {
-            states[id] = .downloading(progress: 0.82, message: "Installing Whisper tokenizer…")
-            try await Self.downloadPinnedSnapshot(
-                repository: Self.whisperTokenizerRepository,
-                revision: Self.whisperTokenizerRevision,
-                to: directory,
-                matching: Self.whisperTokenizerFiles
-            ) { [weak self] fraction in
-                self?.updateProgress(
-                    id: id,
-                    fraction: fraction,
-                    range: 0.82...1,
-                    message: "Installing Whisper tokenizer…"
-                )
-            }
-        }
-
-        if id == .qwenTTS06B || id == .qwenTTS17B {
+        if id == .qwenTTS17B {
             let tokenizer = try HuggingFaceDownloader.getCacheDirectory(for: Self.ttsTokenizerRepository)
             states[id] = .downloading(progress: 0.82, message: "Installing Qwen speech codec…")
             var tokenizerVerified = await Self.verifyWeight(
@@ -908,8 +873,7 @@ final class LocalModelManager {
             }
         }
         let dependencies: [String: String] = switch id {
-        case .whisperSmall: [Self.whisperTokenizerRepository: Self.whisperTokenizerRevision]
-        case .qwenTTS06B, .qwenTTS17B: [Self.ttsTokenizerRepository: Self.ttsTokenizerRevision]
+        case .qwenTTS17B: [Self.ttsTokenizerRepository: Self.ttsTokenizerRevision]
         default: [:]
         }
         try await Self.writeManifest(
@@ -925,24 +889,80 @@ final class LocalModelManager {
         #endif
     }
 
+    private nonisolated static func snapshotGlobs(for id: LocalModelID) -> [String] {
+        let extras = additionalFiles(for: id)
+        guard let model = catalog.first(where: { $0.id == id }),
+              case .coreMLBundle = model.storage else {
+            return weightGlobs(additionalFiles: extras)
+        }
+        return extras
+    }
+
+    private nonisolated static func pruneUnusedCachedModels() {
+        let retained = Set(catalog.map(\.repository)).union([ttsTokenizerRepository])
+        let modelsRoot = speechCacheRoot().appendingPathComponent("models", isDirectory: true)
+        let fileManager = FileManager.default
+        guard let owners = try? fileManager.contentsOfDirectory(
+            at: modelsRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        var removed: [String] = []
+        for owner in owners {
+            guard let repos = try? fileManager.contentsOfDirectory(
+                at: owner,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            for repoDirectory in repos {
+                let repository = "\(owner.lastPathComponent)/\(repoDirectory.lastPathComponent)"
+                guard !retained.contains(repository) else { continue }
+                try? fileManager.removeItem(at: repoDirectory)
+                removed.append(repository)
+            }
+            if let remaining = try? fileManager.contentsOfDirectory(at: owner, includingPropertiesForKeys: nil),
+               remaining.isEmpty {
+                try? fileManager.removeItem(at: owner)
+            }
+        }
+        if !removed.isEmpty {
+            Log.transcription.notice(
+                "pruned unused local model caches repos=\(removed.sorted().joined(separator: ","))"
+            )
+        }
+    }
+
+    private nonisolated static func speechCacheRoot() -> URL {
+        if let override = ProcessInfo.processInfo.environment["QWEN3_CACHE_DIR"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !override.isEmpty {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("qwen3-speech", isDirectory: true)
+    }
+
     private nonisolated static func additionalFiles(for id: LocalModelID) -> [String] {
         switch id {
         case .whisperLargeV3Turbo8Bit, .whisperLargeV3TurboFP16,
              .qwen3ASR17B8Bit, .parakeetTDT06Bv3, .weMMEmbedding2B4Bit:
             catalog.first(where: { $0.id == id })?.requiredArtifacts.map(\.filename) ?? []
-        case .whisperSmall:
-            ["config.json", "generation_config.json"]
         case .forcedAligner:
             ["vocab.json", "merges.txt", "tokenizer_config.json", "quantize_config.json"]
-        case .qwenTTS06B, .qwenTTS17B:
+        case .qwenTTS17B:
             ["vocab.json", "merges.txt", "tokenizer_config.json"]
-        case .spokenLanguageID, .sileroVAD, .sortformerDiarization,
-             .pyannoteSegmentation, .weSpeaker:
+        case .sileroVAD:
+            LocalSpeechVAD.requiredBundleFiles.map { "\(LocalSpeechVAD.coreMLBundleName)/\($0)" }
+        case .spokenLanguageID, .sortformerDiarization, .weSpeaker:
             []
         }
     }
 
     private nonisolated static func coreFilesExist(for id: LocalModelID, in directory: URL) -> Bool {
+        if let model = catalog.first(where: { $0.id == id }),
+           case .coreMLBundle(let directoryName) = model.storage {
+            return coreMLBundleIsValid(in: directory, directoryName: directoryName)
+        }
         let files = additionalFiles(for: id)
         let required = ["config.json"] + (id.isASRModel ? files : files.filter { $0 != "generation_config.json" })
         return required.allSatisfy {
@@ -950,16 +970,16 @@ final class LocalModelManager {
         }
     }
 
-    private static let whisperTokenizerFiles = [
-        "tokenizer.json",
-        "tokenizer_config.json",
-        "special_tokens_map.json",
-        "added_tokens.json",
-        "vocab.json",
-        "merges.txt",
-        "normalizer.json",
-        "generation_config.json",
-    ]
+    private nonisolated static func coreMLBundleIsValid(
+        in directory: URL,
+        directoryName: String
+    ) -> Bool {
+        let bundle = directory.appendingPathComponent(directoryName, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: bundle.path) else { return false }
+        return LocalSpeechVAD.requiredBundleFiles.allSatisfy { relative in
+            FileManager.default.fileExists(atPath: bundle.appendingPathComponent(relative).path)
+        }
+    }
 
     private nonisolated static func weightGlobs(additionalFiles: [String]) -> [String] {
         var globs = ["config.json", "*.safetensors", "model.safetensors.index.json"]
@@ -995,6 +1015,15 @@ final class LocalModelManager {
         #else
         throw LocalAIError.modelsUnavailable
         #endif
+    }
+
+    private nonisolated static func userFacingDownloadError(_ error: Error) -> String {
+        #if BUNDLED_SPEECH
+        if let error = error as? HTTPClientError {
+            return error.description
+        }
+        #endif
+        return error.localizedDescription
     }
 
     private func updateProgress(

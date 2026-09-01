@@ -97,6 +97,10 @@ enum ASREngineLanguagePolicy {
         return .whisper
     }
 
+    static func isEnglish(_ code: String?) -> Bool {
+        normalizedISO(code) == "en"
+    }
+
     static func ecapaRoutingCode(_ language: String) -> String {
         normalizedISO(language) ?? language.lowercased()
     }

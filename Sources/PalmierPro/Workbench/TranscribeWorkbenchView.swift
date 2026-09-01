@@ -220,6 +220,12 @@ struct TranscribeWorkbenchView: View {
                         if diagnostics.processedChunks > 0 {
                             Text("\(diagnostics.processedChunks) chunks")
                         }
+                        if let coverage = diagnostics.speechCoverage {
+                            Text("\(Int((coverage * 100).rounded()))% speech")
+                        }
+                        if let processed = diagnostics.processedAudioDuration {
+                            Text("\(processed.formatted(.number.precision(.fractionLength(0))))s processed")
+                        }
                     }
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
@@ -326,7 +332,7 @@ struct TranscribeWorkbenchView: View {
                     let useCase: LLMUseCase = job.normalizedTargetLanguageCode == nil
                         ? .subtitleProcessing
                         : .translation
-                    let isConfigured = llmSettings.hasConfiguredModel(for: useCase)
+                    let isConfigured = llmSettings.hasUsableModel(for: useCase)
                     Image(systemName: isConfigured ? "checkmark.shield.fill" : "key.slash")
                         .foregroundStyle(
                             isConfigured
@@ -334,7 +340,7 @@ struct TranscribeWorkbenchView: View {
                                 : AppTheme.Status.warningColor
                         )
                     Text(isConfigured
-                        ? llmSettings.route(for: useCase).primaryModel
+                        ? llmRouteDescription(for: useCase)
                         : "An API key is required only for enabled AI steps.")
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -744,7 +750,6 @@ struct TranscribeWorkbenchView: View {
             entryModeButton("Record", systemImage: "video.circle", active: entryMode == .record) {
                 entryMode = .record
             }
-            entryModeButton("Live", systemImage: "dot.radiowaves.left.and.right", active: false, disabled: true, action: {})
             Spacer(minLength: AppTheme.Spacing.md)
             if entryMode != .record {
                 Text(entryBarCaption)
@@ -1124,7 +1129,7 @@ struct TranscribeWorkbenchView: View {
                 }
                 return job.normalizedTargetLanguageCode != nil
                     || job.shouldProcessSubtitles(
-                        hasAPIKey: llmSettings.hasConfiguredModel(for: .subtitleProcessing)
+                        hasAPIKey: llmSettings.hasUsableModel(for: .subtitleProcessing)
                     )
             },
             set: { value in
@@ -1166,11 +1171,23 @@ struct TranscribeWorkbenchView: View {
         let prefix = job.state == .completed ? "Run again" : "Run"
         if job.targetLanguageCode != nil { return "\(prefix): transcribe + translate" }
         if job.shouldProcessSubtitles(
-            hasAPIKey: llmSettings.hasConfiguredModel(for: .subtitleProcessing)
+            hasAPIKey: llmSettings.hasUsableModel(for: .subtitleProcessing)
         ) {
             return "\(prefix): transcribe + subtitles"
         }
         return job.state == .completed ? "Re-transcribe and rebuild subtitles" : "Transcribe"
+    }
+
+    private func llmRouteDescription(for useCase: LLMUseCase) -> String {
+        switch AITransportPolicy.current {
+        case .hosted:
+            return L10n.string("Voxella AI (server-managed)")
+        case .byok:
+            let chain = llmSettings.route(for: useCase).modelChain
+            return chain.isEmpty ? L10n.string("Not configured") : chain.joined(separator: " → ")
+        case .unavailable:
+            return L10n.string("Not configured")
+        }
     }
 
     private func speakerColor(_ speaker: String?) -> Color {

@@ -287,7 +287,10 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         return .source
     }
     var sourceTimedResult: TranscriptionResult? {
-        subtitleTrack?.asTranscriptionResult(preservingWords: result?.words ?? []) ?? result
+        subtitleTrack?.asTranscriptionResult(
+            preservingWords: result?.words ?? [],
+            asrEngine: result?.asrEngine
+        ) ?? result
     }
     var displayedResult: TranscriptionResult? {
         let timed = currentTrack == .translation
@@ -958,6 +961,11 @@ struct WorkbenchSession: Identifiable, Sendable {
     var hasDub: Bool { outputURL != nil || source == .standaloneDub || !dubSegments.isEmpty }
 }
 
+enum WorkbenchSessionDeletionTarget: Equatable, Sendable {
+    case local
+    case remote(UUID)
+}
+
 private struct WorkbenchSnapshot: Codable, Sendable {
     var schemaVersion: Int? = 6
     var transcriptions: [WorkbenchTranscriptionJob]
@@ -1123,6 +1131,8 @@ final class WorkbenchStore {
         var alignmentDiagnostics: TranscriptionAlignmentDiagnostics?
         var processedSourcePath: String?
         var cloudUploadPath: String?
+        var subtitleSegmentationUsedFallback = false
+        var processingWarnings: [String] = []
 
         mutating func upsertTranslation(_ track: SubtitleTrack, languageCode: String) {
             let normalizedCode = languageCode.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1175,6 +1185,7 @@ final class WorkbenchStore {
     private var cloudSyncTasks: [UUID: Task<Void, Never>] = [:]
     private var cloudSyncGenerations: [UUID: Int] = [:]
     private var deletingSessionIDs: Set<UUID> = []
+    private var deletingRemoteSessionIDs: Set<UUID> = []
     /// FIFO of transcription job IDs waiting for the single local ASR slot.
     private var pendingTranscriptionQueue: [UUID] = []
     private var activeQueuedTranscriptionID: UUID?
@@ -1359,6 +1370,16 @@ final class WorkbenchStore {
             }
         }
         Task { await ensureSessionSummary(for: id) }
+    }
+
+    func openSearchResult(localSessionID: UUID?, remoteSessionID: UUID) {
+        if let localSessionID, sessions.contains(where: { $0.id == localSessionID }) {
+            openSession(localSessionID)
+            return
+        }
+        selectedSessionID = remoteSessionID
+        route = .session
+        loadRemoteSession(remoteSessionID)
     }
 
     func refreshRemoteSessions() async {
@@ -2014,6 +2035,16 @@ final class WorkbenchStore {
 
     func deleteSession(_ id: UUID) {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
+        if case .remote(let remoteSessionID) = Self.sessionDeletionTarget(for: session) {
+            beginRemoteFirstDeletion(
+                transcriptionIDs: [],
+                dubIDs: [],
+                additionalRemoteSessionIDs: [remoteSessionID],
+                selectedSessionID: id
+            )
+            return
+        }
+
         let relatedDubIDs: [UUID]
         if let transcriptionID = session.transcriptionID {
             relatedDubIDs = dubs.filter { dub in
@@ -2032,18 +2063,31 @@ final class WorkbenchStore {
         )
     }
 
+    nonisolated static func sessionDeletionTarget(
+        for session: WorkbenchSession
+    ) -> WorkbenchSessionDeletionTarget {
+        guard session.isRemoteOnly, let remoteSessionID = session.remoteSessionID else {
+            return .local
+        }
+        return .remote(remoteSessionID)
+    }
+
     private func beginRemoteFirstDeletion(
         transcriptionIDs: [UUID],
         dubIDs: [UUID],
+        additionalRemoteSessionIDs: [UUID] = [],
         selectedSessionID: UUID? = nil
     ) {
         let transcriptionIDs = Array(Set(transcriptionIDs))
         let dubIDs = Array(Set(dubIDs))
+        let additionalRemoteSessionIDs = Set(additionalRemoteSessionIDs)
         let localIDs = Set(transcriptionIDs).union(dubIDs)
-        guard !localIDs.isEmpty,
-              localIDs.isDisjoint(with: deletingSessionIDs) else { return }
+        guard !localIDs.isEmpty || !additionalRemoteSessionIDs.isEmpty,
+              localIDs.isDisjoint(with: deletingSessionIDs),
+              additionalRemoteSessionIDs.isDisjoint(with: deletingRemoteSessionIDs) else { return }
 
         deletingSessionIDs.formUnion(localIDs)
+        deletingRemoteSessionIDs.formUnion(additionalRemoteSessionIDs)
         let flowIDs = localIDs.filter { flowTasks[$0] != nil }
         for id in flowIDs {
             flowTasks[id]?.cancel()
@@ -2057,20 +2101,25 @@ final class WorkbenchStore {
                 }
             }
 
-            let remoteIDs = remoteSessionIDs(
-                transcriptionIDs: transcriptionIDs,
-                dubIDs: dubIDs
-            )
+            let remoteIDs = Set(additionalRemoteSessionIDs).union(
+                self.remoteSessionIDs(
+                    transcriptionIDs: transcriptionIDs,
+                    dubIDs: dubIDs
+                )
+            ).sorted { $0.uuidString < $1.uuidString }
+            self.deletingRemoteSessionIDs.formUnion(remoteIDs)
             do {
                 for remoteID in remoteIDs {
                     try await cloudSessionSync.delete(remoteSessionID: remoteID)
                 }
             } catch {
                 deletingSessionIDs.subtract(localIDs)
+                deletingRemoteSessionIDs.subtract(remoteIDs)
+                let deletionID = selectedSessionID ?? localIDs.first ?? remoteIDs.first
                 WorkbenchTipCenter.shared.show(
-                    "Cloud deletion failed. The local session was kept so you can retry: \(error.localizedDescription)",
+                    "Cloud deletion failed. The session was kept so you can retry: \(error.localizedDescription)",
                     kind: .error,
-                    id: "session.delete.cloud.\(selectedSessionID?.uuidString ?? localIDs.first!.uuidString)"
+                    id: "session.delete.cloud.\(deletionID?.uuidString ?? "unknown")"
                 )
                 Log.project.warning(
                     "cloud session deletion failed ids=\(remoteIDs.map(\.uuidString).joined(separator: ",")) "
@@ -2086,8 +2135,15 @@ final class WorkbenchStore {
                 removeDubLocally(id)
             }
             deletingSessionIDs.subtract(localIDs)
+            for remoteID in remoteIDs {
+                remoteSessions.removeValue(forKey: remoteID)
+            }
+            deletingRemoteSessionIDs.subtract(remoteIDs)
             if let selectedSessionID,
                self.selectedSessionID == selectedSessionID {
+                self.remoteSessionLoadTask?.cancel()
+                self.remoteSessionLoadTask = nil
+                self.remoteSessionLoadingID = nil
                 self.selectedSessionID = nil
                 if self.route == .session { self.route = .recent }
             }
@@ -2144,7 +2200,11 @@ final class WorkbenchStore {
         save()
     }
 
-    func updateTranscription(_ id: UUID, _ mutate: (inout WorkbenchTranscriptionJob) -> Void) {
+    func updateTranscription(
+        _ id: UUID,
+        persist: Bool = true,
+        _ mutate: (inout WorkbenchTranscriptionJob) -> Void
+    ) {
         guard let index = transcriptions.firstIndex(where: { $0.id == id }) else { return }
         let before = TranscriptionCloudEditableProjection(transcriptions[index])
         mutate(&transcriptions[index])
@@ -2155,7 +2215,7 @@ final class WorkbenchStore {
                 transcriptions[index].cloudSyncRevision
             )
         }
-        save()
+        if persist { save() }
         if changed {
             scheduleCloudSync(forTranscription: id)
         }
@@ -2336,7 +2396,10 @@ final class WorkbenchStore {
             updateTranscription(transcriptionID) { job in
                 let base = job.result.map(SubtitleTrack.fromTranscript)
                 guard let base, let updated = transform(base) else { return }
-                let next = updated.asTranscriptionResult(preservingWords: job.result?.words ?? [])
+                let next = updated.asTranscriptionResult(
+                    preservingWords: job.result?.words ?? [],
+                    asrEngine: job.result?.asrEngine
+                )
                 job.result = next
                 job.editedText = next.text
             }
@@ -2379,7 +2442,8 @@ final class WorkbenchStore {
                     )
                 }
                 let transcript = updated.asTranscriptionResult(
-                    preservingWords: job.alignedTranscript?.words ?? []
+                    preservingWords: job.alignedTranscript?.words ?? [],
+                    asrEngine: job.alignedTranscript?.asrEngine
                 ).aggregatingSegments()
                 job.subtitleTrack = updated
                 job.alignedTranscript = transcript
@@ -2600,7 +2664,8 @@ final class WorkbenchStore {
                     : sourceResult.words,
                 segments: job.editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? []
-                    : sourceResult.segments
+                    : sourceResult.segments,
+                asrEngine: sourceResult.asrEngine
             )
         }
         return CloudSessionSyncSnapshot(
@@ -2883,7 +2948,7 @@ final class WorkbenchStore {
             if !isCloud {
                 _ = await LLMSettingsStore.shared.credentialAvailable()
             }
-            let hasSubtitleModel = !isCloud && LLMSettingsStore.shared.hasConfiguredModel(
+            let hasSubtitleModel = !isCloud && LLMSettingsStore.shared.hasUsableModel(
                 for: .subtitleProcessing
             )
             let request = TranscriptionTaskRequest(
@@ -3328,7 +3393,7 @@ final class WorkbenchStore {
                     _ = await LLMSettingsStore.shared.credentialAvailable()
                 }
                 let hasSubtitleModel = snapshot.placement.compute == .local
-                    && LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing)
+                    && LLMSettingsStore.shared.hasUsableModel(for: .subtitleProcessing)
                 var remoteReferences: [UUID: LocalVoiceReference] = [:]
                 if snapshot.placement.needsAuthentication {
                     for voiceID in missingVoiceIDs.union(
@@ -3556,6 +3621,22 @@ final class WorkbenchStore {
     ) async {
         switch event {
         case .progress(let progress):
+            if progress.step == "subtitle_preparation_fallback",
+               var staged = stagedTranscriptions[jobID] {
+                staged.subtitleSegmentationUsedFallback = true
+                stagedTranscriptions[jobID] = staged
+            }
+            if progress.status == .completed,
+               progress.message.hasPrefix("Completed with warning: "),
+               var staged = stagedTranscriptions[jobID] {
+                let warningText = String(progress.message.dropFirst("Completed with warning: ".count))
+                if !warningText.isEmpty {
+                    staged.processingWarnings.append(warningText)
+                }
+                stagedTranscriptions[jobID] = staged
+            }
+            let subtitleSegmentationUsedFallback =
+                stagedTranscriptions[jobID]?.subtitleSegmentationUsedFallback == true
             let committed: Bool
             if progress.status == .completed {
                 committed = await commitStagedTranscription(
@@ -3564,13 +3645,28 @@ final class WorkbenchStore {
                     languageCode: languageCode,
                     speakerCount: speakerCount
                 )
-            } else if progress.status == .cancelled || progress.status == .failed {
+            } else if progress.status == .cancelled {
                 discardStagedTranscription(jobID)
                 committed = false
+            } else if progress.status == .failed {
+                if stagedTranscriptions[jobID]?.rawResult != nil {
+                    committed = await commitStagedTranscription(
+                        jobID,
+                        sourceURL: sourceURL,
+                        languageCode: languageCode,
+                        speakerCount: speakerCount
+                    )
+                } else {
+                    discardStagedTranscription(jobID)
+                    committed = false
+                }
             } else {
                 committed = false
             }
-            updateTranscription(jobID) { job in
+            updateTranscription(
+                jobID,
+                persist: progress.status != .started && progress.status != .processing
+            ) { job in
                 job.flowProgressStage = progress.stage
                 job.progressStep = progress.step
                 job.progressCompleted = progress.current
@@ -3597,7 +3693,11 @@ final class WorkbenchStore {
                     if let detail = job.transcriptionAlignmentDiagnostics?.completionDetail {
                         job.progressMessage = "Transcript ready · \(detail)"
                     } else if job.translationTrack != nil {
-                        job.progressMessage = "Transcript and translation ready"
+                        job.progressMessage = subtitleSegmentationUsedFallback
+                            ? "Transcript and translation ready · subtitles segmented with fallback timings"
+                            : "Transcript and translation ready"
+                    } else if subtitleSegmentationUsedFallback {
+                        job.progressMessage = "Transcript ready · subtitles segmented with fallback timings"
                     } else if job.subtitleTrack != nil {
                         job.progressMessage = "Transcript and subtitles ready"
                     } else {
@@ -3610,8 +3710,17 @@ final class WorkbenchStore {
                     job.progressMessage = "Cancelled — ready to retry"
                     job.errorMessage = nil
                 } else if progress.status == .failed {
-                    job.state = .failed
-                    job.errorMessage = progress.message
+                    if committed {
+                        job.state = .completed
+                        job.progress = 1
+                        job.localCachePath = sourceURL.path
+                        job.progressMessage = "Transcript ready · subtitle cleanup skipped"
+                        job.selectedTrack = job.translationTrack == nil ? .source : .translation
+                        job.errorMessage = progress.message
+                    } else {
+                        job.state = .failed
+                        job.errorMessage = progress.message
+                    }
                 }
             }
 
@@ -3761,7 +3870,8 @@ final class WorkbenchStore {
         rebuiltSegments: [TranscriptionSegment]?
     ) -> TranscriptionResult {
         let fallback = track.asTranscriptionResult(
-            preservingWords: base?.words ?? []
+            preservingWords: base?.words ?? [],
+            asrEngine: base?.asrEngine
         ).aggregatingSegments()
         guard let rebuiltSegments, !rebuiltSegments.isEmpty else {
             return fallback
@@ -3775,7 +3885,8 @@ final class WorkbenchStore {
             ),
             language: language,
             words: base?.words ?? fallback.words,
-            segments: rebuiltSegments
+            segments: rebuiltSegments,
+            asrEngine: base?.asrEngine
         )
     }
 
@@ -3798,7 +3909,7 @@ final class WorkbenchStore {
             }
         }
 
-        guard !requireConfiguredModel || LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing) else {
+        guard !requireConfiguredModel || LLMSettingsStore.shared.hasUsableModel(for: .subtitleProcessing) else {
             updateTranscription(id) {
                 $0.summaryState = nil
                 $0.summaryErrorMessage = nil
@@ -3830,8 +3941,7 @@ final class WorkbenchStore {
         }
 
         do {
-            let route = try await LLMSettingsStore.shared.runtimeRoute(for: .subtitleProcessing)
-            let client = ResilientLLMTextClient(route: route)
+            let client = try await AITransportPolicy.makeTextClient(for: .subtitleProcessing)
             var title = job.sessionTitle
             var tagText = job.sessionTag ?? "general"
             var internalSummary = job.internalSummary ?? ""
@@ -4010,6 +4120,9 @@ final class WorkbenchStore {
                 $0.summaryTemplateID = template.id
                 $0.summaryTemplateName = template.name
                 $0.summaryTemplateUserEdition = template.userEdition
+                $0.summaryState = .running
+                $0.summaryErrorMessage = nil
+                $0.progressMessage = "Generating summary with \(template.name)…"
             }
             Task { [weak self] in
                 guard let self else { return }
@@ -4022,6 +4135,9 @@ final class WorkbenchStore {
                 $0.summaryTemplateID = template.id
                 $0.summaryTemplateName = template.name
                 $0.summaryTemplateUserEdition = template.userEdition
+                $0.summaryState = .running
+                $0.summaryErrorMessage = nil
+                $0.progressMessage = "Generating summary with \(template.name)…"
             }
             Task { [weak self] in
                 guard let self else { return }
@@ -4037,9 +4153,7 @@ final class WorkbenchStore {
         guard summaryTaskIDs.insert(id).inserted else { return }
         defer { summaryTaskIDs.remove(id) }
 
-        let localRouteAvailable = (try? await LLMSettingsStore.shared.runtimeRoute(
-            for: .subtitleProcessing
-        )) != nil
+        let localRouteAvailable = LLMSettingsStore.shared.hasUsableModel(for: .subtitleProcessing)
         if localRouteAvailable,
            await enrichCompletedTranscription(
                id,
@@ -4098,9 +4212,7 @@ final class WorkbenchStore {
         guard summaryTaskIDs.insert(id).inserted else { return }
         defer { summaryTaskIDs.remove(id) }
 
-        let localRouteAvailable = (try? await LLMSettingsStore.shared.runtimeRoute(
-            for: .subtitleProcessing
-        )) != nil
+        let localRouteAvailable = LLMSettingsStore.shared.hasUsableModel(for: .subtitleProcessing)
         if localRouteAvailable,
            await enrichCompletedDub(
                id,
@@ -4359,7 +4471,7 @@ final class WorkbenchStore {
             }
         }
 
-        guard !requireConfiguredModel || LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing) else {
+        guard !requireConfiguredModel || LLMSettingsStore.shared.hasUsableModel(for: .subtitleProcessing) else {
             updateDub(id) {
                 $0.summaryState = nil
                 $0.summaryErrorMessage = nil
@@ -4391,8 +4503,7 @@ final class WorkbenchStore {
         }
 
         do {
-            let route = try await LLMSettingsStore.shared.runtimeRoute(for: .subtitleProcessing)
-            let client = ResilientLLMTextClient(route: route)
+            let client = try await AITransportPolicy.makeTextClient(for: .subtitleProcessing)
             var title = job.displayTitle
             var tagText = job.sessionTag ?? "general"
             var internalSummary = job.internalSummary ?? ""
@@ -4803,7 +4914,7 @@ final class WorkbenchStore {
             title: persisted.title.isEmpty ? nil : persisted.title,
             cacheURL: URL(fileURLWithPath: cachePath),
             hasSubtitleModel: persisted.placement.compute == .local
-                && LLMSettingsStore.shared.hasConfiguredModel(for: .subtitleProcessing),
+                && LLMSettingsStore.shared.hasUsableModel(for: .subtitleProcessing),
             resumeRemoteSession: true
         )
         dubs[index].state = .running

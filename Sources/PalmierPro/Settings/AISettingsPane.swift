@@ -6,6 +6,9 @@ struct AISettingsPane: View {
     @Bindable private var settings = LLMSettingsStore.shared
     @State private var selectedProviderID: UUID?
     @State private var providerDraft = LLMProviderProfile.defaultOpenAI
+    @State private var extraBodyJSONDraft = "{}"
+    @State private var extraBodyJSONError: String?
+    @State private var isRequestOverridesExpanded = false
     @State private var routeDrafts: [LLMUseCase: LLMModelRoute] = [:]
     @State private var APIKeyDraft = ""
     @State private var maskedAPIKey = ""
@@ -27,8 +30,14 @@ struct AISettingsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
+            SettingsSection(title: L10n.string("AI access")) {
+                transportConfiguration
+            }
             SettingsSection(title: "Providers") {
                 providerConfiguration
+            }
+            SettingsSection(title: L10n.string("Agent Chat BYOK")) {
+                agentCredentialsConfiguration
             }
             SettingsSection(title: "Task Models") {
                 taskModelConfiguration
@@ -57,6 +66,42 @@ struct AISettingsPane: View {
             }
         } message: {
             Text("Model routes that use this provider prefix will remain visible until you update them.")
+        }
+    }
+
+    private var transportConfiguration: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
+            Toggle(L10n.string("Use BYOK"), isOn: $settings.useBYOK)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+            Text(transportDescription)
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var transportDescription: String {
+        if settings.useBYOK {
+            return AccountService.shared.isSignedIn
+                ? L10n.string("You are signed in. You do not need to enable BYOK; your saved keys are currently selected.")
+                : L10n.string("BYOK is enabled. Requests use the keys saved below.")
+        }
+        return AccountService.shared.isSignedIn
+            ? L10n.string("Signed-in requests use Voxella AI and consume account credits.")
+            : L10n.string("Sign in to use hosted AI, or enable BYOK to use your own keys.")
+    }
+
+    private var agentCredentialsConfiguration: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+            Text(L10n.string("Use your own provider keys for AI chat. They are stored in the macOS Keychain."))
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(AgentProvider.allCases, id: \.self) { provider in
+                BYOKAgentKeyRow(provider: provider)
+            }
         }
     }
 
@@ -100,48 +145,57 @@ struct AISettingsPane: View {
     private var providerList: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             ForEach(settings.providers) { provider in
-                Button {
-                    selectProvider(provider.id)
-                } label: {
-                    HStack(spacing: AppTheme.Spacing.sm) {
-                        Circle()
-                            .fill(
-                                settings.hasAPIKey(for: provider.id)
-                                    ? AppTheme.Status.successColor
-                                    : AppTheme.Text.mutedColor
-                            )
-                            .frame(
-                                width: AppTheme.Spacing.smMd,
-                                height: AppTheme.Spacing.smMd
-                            )
-                        VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                            Text(provider.displayName)
-                                .font(.system(
-                                    size: AppTheme.FontSize.sm,
-                                    weight: AppTheme.FontWeight.medium
-                                ))
-                                .foregroundStyle(AppTheme.Text.primaryColor)
-                            Text(provider.normalizedPrefix)
-                                .font(.system(
-                                    size: AppTheme.FontSize.xs,
-                                    design: .monospaced
-                                ))
-                                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                HStack(spacing: AppTheme.Spacing.xs) {
+                    Button {
+                        selectProvider(provider.id)
+                    } label: {
+                        HStack(spacing: AppTheme.Spacing.sm) {
+                            Circle()
+                                .fill(
+                                    settings.hasAPIKey(for: provider.id)
+                                        ? AppTheme.Status.successColor
+                                        : AppTheme.Text.mutedColor
+                                )
+                                .frame(
+                                    width: AppTheme.Spacing.smMd,
+                                    height: AppTheme.Spacing.smMd
+                                )
+                            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                                Text(provider.displayName)
+                                    .font(.system(
+                                        size: AppTheme.FontSize.sm,
+                                        weight: AppTheme.FontWeight.medium
+                                    ))
+                                    .foregroundStyle(AppTheme.Text.primaryColor)
+                                Text(provider.normalizedPrefix)
+                                    .font(.system(
+                                        size: AppTheme.FontSize.xs,
+                                        design: .monospaced
+                                    ))
+                                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                            }
+                            Spacer(minLength: AppTheme.Spacing.sm)
                         }
-                        Spacer(minLength: AppTheme.Spacing.sm)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.horizontal, AppTheme.Spacing.sm)
-                    .padding(.vertical, AppTheme.Spacing.xs)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        selectedProviderID == provider.id
-                            ? AppTheme.Background.raisedColor
-                            : Color.clear,
-                        in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
-                    )
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+
+                    if settings.providers.count > 1 {
+                        ProviderRemoveButton(providerName: provider.displayName) {
+                            providerPendingRemoval = provider
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, AppTheme.Spacing.sm)
+                .padding(.vertical, AppTheme.Spacing.xs)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    selectedProviderID == provider.id
+                        ? AppTheme.Background.raisedColor
+                        : Color.clear,
+                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                )
+                .contentShape(Rectangle())
             }
 
             Menu {
@@ -190,12 +244,12 @@ struct AISettingsPane: View {
                     .focused($focusedField, equals: .defaultModel)
             }
 
-            if settings.providers.count > 1 {
-                Button("Remove", role: .destructive) {
-                    providerPendingRemoval = selectedProvider
-                }
-                .buttonStyle(.capsule(.secondary, size: .regular))
-            }
+            AIRequestOverridesView(
+                profile: $providerDraft,
+                jsonDraft: $extraBodyJSONDraft,
+                jsonError: $extraBodyJSONError,
+                isExpanded: $isRequestOverridesExpanded
+            )
 
             if let providerValidationMessage {
                 Label(providerValidationMessage, systemImage: "exclamationmark.triangle.fill")
@@ -205,8 +259,12 @@ struct AISettingsPane: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .onChange(of: providerDraft) { _, _ in
+        .onChange(of: providerDraft) { oldValue, newValue in
+            let routingChanged = oldValue.openRouterRouting != newValue.openRouterRouting
             persistProviderIfValid()
+            if routingChanged {
+                syncRouteDrafts()
+            }
         }
     }
 
@@ -314,7 +372,7 @@ struct AISettingsPane: View {
                 Stepper(
                     "Timeout: \(Int(draft.wrappedValue.policy.timeoutSeconds))s",
                     value: draft.policy.timeoutSeconds,
-                    in: 15...1_800,
+                    in: timeoutRange(for: useCase),
                     step: 15
                 )
                 Stepper(
@@ -437,6 +495,8 @@ struct AISettingsPane: View {
         }
         selectedProviderID = id
         providerDraft = provider
+        extraBodyJSONDraft = (try? provider.extraBodyValue.prettyJSONString) ?? "{}"
+        extraBodyJSONError = nil
         APIKeyDraft = ""
         maskedAPIKey = ""
         statusMessage = nil
@@ -513,6 +573,7 @@ struct AISettingsPane: View {
 
     private func persistDrafts() {
         flushCredentialIfReady()
+        persistProviderIfValid()
         for useCase in LLMUseCase.allCases {
             persistRouteIfValid(useCase)
         }
@@ -587,10 +648,20 @@ struct AISettingsPane: View {
         )
     }
 
+    private func timeoutRange(for useCase: LLMUseCase) -> ClosedRange<Double> {
+        let minimum = LLMRequestPolicy.minimumTimeoutSeconds(for: useCase)
+        switch useCase {
+        case .subtitleProcessing:
+            return max(60, minimum)...1_800
+        case .translation, .chat:
+            return minimum...1_800
+        }
+    }
+
     private func routeValidationMessage(for useCase: LLMUseCase) -> String? {
         do {
             let route = routeDrafts[useCase] ?? settings.route(for: useCase)
-            _ = try route.policy.validated()
+            _ = try route.policy.validated(for: useCase)
             guard !route.modelChain.isEmpty else {
                 throw LLMConfigurationError.missingModel
             }
@@ -622,5 +693,150 @@ struct AISettingsPane: View {
             statusIsError = true
             statusMessage = error.localizedDescription
         }
+    }
+}
+
+private struct BYOKAgentKeyRow: View {
+    let provider: AgentProvider
+
+    @State private var hasKey = false
+    @State private var maskedKey = ""
+    @State private var draft = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
+            HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.sm) {
+                Text(provider.keyTitle)
+                    .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.medium))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+                Button {
+                    NSWorkspace.shared.open(provider.keyURL, configuration: .init(), completionHandler: nil)
+                } label: {
+                    HStack(spacing: AppTheme.Spacing.xxs) {
+                        Text(provider.keyLinkTitle)
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                    }
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Accent.link)
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+            }
+            HStack(spacing: AppTheme.Spacing.sm) {
+                SecureField(
+                    hasKey ? maskedKey : provider.keyPlaceholder,
+                    text: $draft
+                )
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: AppTheme.FontSize.sm, design: .monospaced))
+                .focused($isFocused)
+                .onSubmit(save)
+
+                if !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Button(L10n.string("Save"), action: save)
+                        .buttonStyle(.capsule(.prominent, size: .regular))
+                        .controlSize(.large)
+                } else if hasKey {
+                    Button(role: .destructive, action: remove) {
+                        Image(systemName: "trash")
+                            .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
+                    }
+                    .buttonStyle(.capsule(.secondary, size: .regular))
+                    .controlSize(.large)
+                    .help(L10n.string("Remove API key"))
+                }
+            }
+        }
+        .onAppear {
+            Task { apply(await provider.loadAPIKey()) }
+        }
+    }
+
+    private func save() {
+        let key = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        draft = ""
+        isFocused = false
+        Task {
+            await provider.setAPIKey(key)
+            apply(key)
+        }
+    }
+
+    private func remove() {
+        draft = ""
+        Task {
+            await provider.setAPIKey(nil)
+            apply("")
+        }
+    }
+
+    private func apply(_ key: String) {
+        hasKey = !key.isEmpty
+        maskedKey = key.count > 4
+            ? String(repeating: "•", count: 36) + key.suffix(4)
+            : String(repeating: "•", count: 32)
+    }
+}
+
+@MainActor
+private extension AgentProvider {
+    var keyTitle: String {
+        switch self {
+        case .anthropic: L10n.string("Anthropic API Key")
+        case .openAI: L10n.string("OpenAI API Key")
+        }
+    }
+
+    var keyLinkTitle: String {
+        switch self {
+        case .anthropic: L10n.string("Get Anthropic API key")
+        case .openAI: L10n.string("Get OpenAI API key")
+        }
+    }
+
+    var keyPlaceholder: String {
+        switch self {
+        case .anthropic: "sk-ant-…"
+        case .openAI: "sk-…"
+        }
+    }
+
+    var keyURL: URL {
+        switch self {
+        case .anthropic: URL(string: "https://console.anthropic.com/settings/keys")!
+        case .openAI: URL(string: "https://platform.openai.com/api-keys")!
+        }
+    }
+}
+
+private struct ProviderRemoveButton: View {
+    let providerName: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(role: .destructive, action: action) {
+            Image(systemName: "trash")
+                .font(.system(
+                    size: AppTheme.FontSize.xs,
+                    weight: AppTheme.FontWeight.semibold
+                ))
+                .foregroundStyle(AppTheme.Status.errorColor)
+                .frame(
+                    width: AppTheme.IconSize.md,
+                    height: AppTheme.IconSize.md
+                )
+                .hoverHighlight(cornerRadius: AppTheme.Radius.xsSm)
+                .scaleEffect(isHovered ? AppTheme.Interaction.hoverScale : 1)
+        }
+        .buttonStyle(.plain)
+        .help("Remove \(providerName)")
+        .accessibilityLabel("Remove \(providerName)")
+        .onHover { isHovered = $0 }
+        .animation(.easeInOut(duration: AppTheme.Anim.hover), value: isHovered)
     }
 }

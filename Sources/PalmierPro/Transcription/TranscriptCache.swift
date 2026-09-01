@@ -95,7 +95,8 @@ actor TranscriptCache {
             text: segments.map(\.text).joined(separator: " "),
             language: r.language,
             words: words,
-            segments: segments
+            segments: segments,
+            asrEngine: r.asrEngine
         )
     }
 

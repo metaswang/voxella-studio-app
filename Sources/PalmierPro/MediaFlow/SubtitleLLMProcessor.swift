@@ -32,6 +32,19 @@ struct SubtitleLLMProcessor: Sendable {
     }
 }
 
+enum SubtitleLLMRepairPolicy {
+    static func skipsRepair(engine: ASREngine?, languageCode: String?) -> Bool {
+        switch engine {
+        case .qwen, .parakeet:
+            return true
+        case .whisper:
+            return ASREngineLanguagePolicy.isEnglish(languageCode)
+        case nil:
+            return false
+        }
+    }
+}
+
 enum SubtitleReadabilityPolicy {
     struct Limits: Equatable, Sendable {
         let minimum: Int
@@ -99,6 +112,74 @@ enum SubtitleReadabilityPolicy {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return 0 }
         return denseScript ? trimmed.filter { !$0.isWhitespace }.count : trimmed.count
+    }
+
+    static let splitDepthLimit = 2
+
+    /// Recursively splits each overlong line on token boundaries without rewriting text.
+    static func splitOverlongLines(
+        _ lines: [String],
+        languageCode: String?,
+        denseScript: Bool,
+        limits: Limits,
+        depthLimit: Int = splitDepthLimit
+    ) -> [String] {
+        var output: [String] = []
+        for line in lines {
+            let text = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            output.append(
+                contentsOf: splitTextByLength(
+                    text,
+                    languageCode: languageCode,
+                    denseScript: denseScript,
+                    limits: limits,
+                    depth: 0,
+                    depthLimit: depthLimit
+                )
+            )
+        }
+        return output
+    }
+
+    /// Length-budget split used when an LLM cue exceeds the readability maximum.
+    static func splitTextByLength(
+        _ text: String,
+        languageCode: String?,
+        denseScript: Bool,
+        limits: Limits,
+        depth: Int = 0,
+        depthLimit: Int = splitDepthLimit
+    ) -> [String] {
+        let length = displayLength(text, denseScript: denseScript)
+        guard length > limits.maximum, depth < depthLimit else { return [text] }
+        let tokens = SubtitleTokenRemapper.tokenize(text, languageCode: languageCode).map(\.text)
+        guard tokens.count > 1 else { return [text] }
+        let parts = max(2, Int((Double(length) / Double(max(1, limits.maximum))).rounded(.up)))
+        let groups = splitTokenIndices(
+            tokens,
+            languageCode: languageCode,
+            denseScript: denseScript,
+            chunkCount: parts,
+            limits: limits
+        )
+        guard groups.count > 1 else { return [text] }
+        let pieces = groups
+            .map { group in
+                TranscriptSegmenter.joinedText(group.map { tokens[$0] }, language: languageCode)
+            }
+            .filter { !$0.isEmpty }
+        guard pieces.count > 1 else { return [text] }
+        return pieces.flatMap {
+            splitTextByLength(
+                $0,
+                languageCode: languageCode,
+                denseScript: denseScript,
+                limits: limits,
+                depth: depth + 1,
+                depthLimit: depthLimit
+            )
+        }
     }
 
     /// Port of the worker's `_split_token_indices_by_length` scoring: chunks aim

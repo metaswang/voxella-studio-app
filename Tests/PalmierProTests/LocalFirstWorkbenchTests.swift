@@ -69,14 +69,25 @@ struct LocalFirstWorkbenchTests {
 
     @Test func modelCatalogIsPinnedAndFitsM5InstallBudget() {
         let catalog = LocalModelManager.catalog
-        #expect(catalog.count == 13)
+        #expect(catalog.count == 11)
         #expect(Set(catalog.map(\.repository)).count == catalog.count)
         #expect(catalog.allSatisfy { $0.revision.count == 40 })
-        #expect(catalog.allSatisfy { $0.weightSHA256.count == 64 })
-        #expect(catalog.allSatisfy { $0.weightByteSize > 0 })
+        #expect(catalog.allSatisfy {
+            if case .coreMLBundle = $0.storage { return true }
+            return $0.weightSHA256.count == 64 && $0.weightByteSize > 0
+        })
         #expect(catalog.allSatisfy { $0.byteSize > 0 })
         #expect(catalog.flatMap(\.requiredArtifacts).allSatisfy { $0.byteSize > 0 && $0.sha256.count == 64 })
-        #expect(catalog.filter(\.isRecommended).count == 8)
+        #expect(catalog.filter(\.isRecommended).count == 9)
+        #expect(catalog.allSatisfy { !$0.isLegacy })
+
+        let coreMLVAD = catalog.first { $0.id == .sileroVAD }!
+        #expect(coreMLVAD.weightByteSize == 0)
+        #expect(coreMLVAD.weightSHA256.isEmpty)
+        #expect(coreMLVAD.storage == .coreMLBundle(directoryName: LocalSpeechVAD.coreMLBundleName))
+        #expect(coreMLVAD.repository == "FluidInference/silero-vad-coreml")
+        #expect(LocalSpeechVAD.requiredBundleFiles.allSatisfy { !$0.contains("*") })
+        #expect(LocalSpeechVAD.requiredBundleFiles.contains("weights/weight.bin"))
 
         let qwenASR = catalog.first { $0.id == .qwen3ASR17B8Bit }!
         let parakeetASR = catalog.first { $0.id == .parakeetTDT06Bv3 }!
@@ -93,16 +104,18 @@ struct LocalFirstWorkbenchTests {
         #expect(qualityASR.asrSpecification?.decoderLayers == 4)
         #expect(recommendedASR.requiredArtifacts.contains { $0.filename == "tokenizer.json" })
         #expect(qualityASR.requiredArtifacts.contains { $0.filename == "tokenizer.json" })
-        #expect(catalog.first { $0.id == .whisperSmall }?.isLegacy == true)
-        #expect(catalog.first { $0.id == .whisperSmall }?.requiredFor.isEmpty == true)
         #expect(catalog.first { $0.id == .forcedAligner }?.requiredFor == [.transcribe, .dub])
+        let weMM = catalog.first { $0.id == .weMMEmbedding2B4Bit }!
+        #expect(weMM.repository == "hfadam/WeMM-Embedding-2B-MLX-4bit")
+        #expect(weMM.requiredFor == [.search])
+        #expect(weMM.requiredArtifacts.contains { $0.filename == "embedding_chat_template.jinja" })
 
         let sharedCodecBytes: Int64 = 682_300_739
         let recommendedInstallBytes = catalog.filter(\.isRecommended)
             .reduce(Int64(0)) { $0 + $1.byteSize } + sharedCodecBytes
         let fullInstallBytes = catalog.reduce(Int64(0)) { $0 + $1.byteSize } + sharedCodecBytes
-        #expect(recommendedInstallBytes < 9_000_000_000)
-        #expect(fullInstallBytes < 12_000_000_000)
+        #expect(recommendedInstallBytes < 12_000_000_000)
+        #expect(fullInstallBytes < 15_000_000_000)
     }
 
     @Test func largeTurboConfigurationsRejectMislabeledPrecisionOrArchitecture() throws {
@@ -469,6 +482,11 @@ struct LocalFirstWorkbenchTests {
         diagnostics.modelRevision = "revision"
         diagnostics.realTimeFactor = 0.42
         diagnostics.peakMLXMemoryBytes = 123_456
+        diagnostics.speechCoverage = 0.41
+        diagnostics.processedAudioDuration = 180
+        diagnostics.chunkDuration = 15.04
+        diagnostics.fifoMax = 0
+        diagnostics.spkcacheMax = 188
 
         let updated = diagnostics.addingWarning("alignment warning")
 
@@ -480,6 +498,11 @@ struct LocalFirstWorkbenchTests {
         #expect(updated.modelRevision == diagnostics.modelRevision)
         #expect(updated.realTimeFactor == diagnostics.realTimeFactor)
         #expect(updated.peakMLXMemoryBytes == diagnostics.peakMLXMemoryBytes)
+        #expect(updated.speechCoverage == diagnostics.speechCoverage)
+        #expect(updated.processedAudioDuration == diagnostics.processedAudioDuration)
+        #expect(updated.chunkDuration == diagnostics.chunkDuration)
+        #expect(updated.fifoMax == diagnostics.fifoMax)
+        #expect(updated.spkcacheMax == diagnostics.spkcacheMax)
         #expect(updated.warnings == ["existing warning", "alignment warning"])
     }
 

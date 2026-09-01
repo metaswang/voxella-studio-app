@@ -7,6 +7,7 @@ enum SubtitleCascadePrompt {
     }
 
     static let contextCharacters = 1_200
+    static let segmentationContextCharacters = 400
     static let userInstructionCharacters = 400
 
     static func correctionSystem(languageCode: String?) -> String {
@@ -137,14 +138,17 @@ enum SubtitleCascadePrompt {
 
     static func neighboringContext(
         batchTexts: [String],
-        index: Int
+        index: Int,
+        characterLimit: Int = contextCharacters
     ) -> (before: String?, after: String?) {
-        guard batchTexts.indices.contains(index) else { return (nil, nil) }
+        guard batchTexts.indices.contains(index), characterLimit > 0 else {
+            return (nil, nil)
+        }
         let before = batchTexts.prefix(index).joined(separator: "\n")
         let after = batchTexts.dropFirst(index + 1).joined(separator: "\n")
         return (
-            clipped(before, keeping: .suffix),
-            clipped(after, keeping: .prefix)
+            clipped(before, keeping: .suffix, limit: characterLimit),
+            clipped(after, keeping: .prefix, limit: characterLimit)
         )
     }
 
@@ -174,14 +178,14 @@ enum SubtitleCascadePrompt {
         case suffix
     }
 
-    private static func clipped(_ text: String, keeping edge: ClipEdge) -> String? {
+    private static func clipped(_ text: String, keeping edge: ClipEdge, limit: Int) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         switch edge {
         case .prefix:
-            return String(trimmed.prefix(contextCharacters))
+            return String(trimmed.prefix(limit))
         case .suffix:
-            return String(trimmed.suffix(contextCharacters))
+            return String(trimmed.suffix(limit))
         }
     }
 }

@@ -55,6 +55,21 @@ struct TranscriptSegmenterTests {
         )
     }
 
+    @Test func closesSpacesAroundEnglishContractionApostrophes() {
+        #expect(TranscriptSegmenter.normalizeDisplayText("it ' s not") == "it's not")
+        #expect(TranscriptSegmenter.joinedText(["I", "’", "m", "ready"]) == "I’m ready")
+        #expect(TranscriptSegmenter.normalizeDisplayText("James ' s book") == "James's book")
+        #expect(TranscriptSegmenter.normalizeDisplayText("he said ' hello'") == "he said ' hello'")
+
+        let segments = TranscriptSegmenter.aggregate(words: [
+            Self.word("it", 0, 0.2, nil),
+            Self.word("'", 0.2, 0.3, nil),
+            Self.word("s", 0.3, 0.4, nil),
+            Self.word("not", 0.4, 0.6, nil),
+        ])
+        #expect(segments.first?.text == "it's not")
+    }
+
     @Test func keepsCanonicalPunctuationSeparateFromSubtitleDisplayText() {
         let track = SubtitleTrack(
             sourceLanguage: "zh-CN",
@@ -136,6 +151,24 @@ struct TranscriptSegmenterTests {
         #expect(segments[0].text == source.text)
         #expect(segments[0].start == source.start)
         #expect(segments[0].end == source.end)
+    }
+
+    @Test func cutsBeforeTheCueThatCrossesTheMaximumDuration() {
+        let sourceCues = (0..<3).map { index in
+            TranscriptionSegment(
+                text: "cue\(index)",
+                start: Double(index * 45),
+                end: Double((index + 1) * 45),
+                speaker: "Speaker 1"
+            )
+        }
+
+        let segments = TranscriptSegmenter.aggregate(segments: sourceCues)
+
+        #expect(segments.map(\.text) == ["cue0", "cue1", "cue2"])
+        #expect(segments.map(\.start) == [0, 45, 90])
+        #expect(segments.map(\.end) == [45, 90, 135])
+        #expect(segments.allSatisfy { $0.end - $0.start <= TranscriptSegmenter.maximumDuration })
     }
 
     @Test func assigningSpeakerUpdatesWordsAndRebuildsSpeakerBoundaries() {

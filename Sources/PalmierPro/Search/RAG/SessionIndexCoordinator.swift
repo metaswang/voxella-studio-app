@@ -35,6 +35,17 @@ final class SessionIndexCoordinator {
         #endif
     }
 
+    func prewarmEmbeddings() async {
+        #if BUNDLED_SPEECH
+        do {
+            try await embeddingProvider.prepare()
+        } catch is CancellationError {
+        } catch {
+            Log.search.warning("search embedding prewarm failed error=\(error.localizedDescription)")
+        }
+        #endif
+    }
+
     func ingest(_ job: WorkbenchTranscriptionJob) {
         guard let snapshot = SessionIndexSnapshot.from(job) else { return }
         pending[snapshot.sessionID] = snapshot

@@ -38,6 +38,24 @@ private actor RoutedStubState {
     }
 }
 
+private final class ClientFactoryCounter: @unchecked Sendable {
+    // NSLock serializes the @Sendable factory's test-only counter.
+    private let lock = NSLock()
+    private var counts: [String: Int] = [:]
+
+    func record(_ model: String) {
+        lock.lock()
+        counts[model, default: 0] += 1
+        lock.unlock()
+    }
+
+    func count(for model: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return counts[model, default: 0]
+    }
+}
+
 private actor CredentialWriteRecorder {
     private var values: [UUID: String] = [:]
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -292,6 +310,115 @@ struct LLMResilienceTests {
         ))
     }
 
+    @Test
+    func subtitleProcessingDisablesThinking() {
+        let configuration = LLMRuntimeConfiguration(
+            profile: .defaultOpenAI,
+            modelIdentifier: "openai/gpt-5.6-luna",
+            modelName: "gpt-5.6-luna",
+            endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
+            apiKey: "test-openai",
+            useCase: .subtitleProcessing
+        )
+
+        #expect(configuration.openAICompatibleRequestOptions == .init(
+            thinkingType: "disabled",
+            reasoningEffort: "none",
+            temperature: 0,
+            maxOutputTokens: 4_096
+        ))
+        #expect(configuration.resolvedExtraBody["reasoning"] == .object(["effort": .string("none")]))
+    }
+
+    @Test
+    func subtitleProcessingDisablesGeminiAndOpenRouterReasoning() {
+        let openRouter = LLMRuntimeConfiguration(
+            profile: LLMProviderProfile(
+                provider: .openRouter,
+                baseURL: "https://openrouter.ai/api/v1",
+                model: "google/gemini-2.5-flash-lite"
+            ),
+            modelIdentifier: "openrouter/google/gemini-2.5-flash-lite",
+            modelName: "google/gemini-2.5-flash-lite",
+            endpoint: URL(string: "https://openrouter.ai/api/v1/chat/completions")!,
+            apiKey: "test-openrouter",
+            useCase: .subtitleProcessing
+        )
+
+        #expect(openRouter.openAICompatibleRequestOptions == .init(
+            thinkingType: "disabled",
+            reasoningEnabled: false,
+            temperature: 0,
+            maxOutputTokens: 4_096
+        ))
+        #expect(openRouter.resolvedExtraBody["reasoning"] == .object(["enabled": .bool(false)]))
+        #expect(openRouter.resolvedExtraBody["temperature"] == .number(0))
+        #expect(openRouter.resolvedExtraBody["max_tokens"] == .number(4_096))
+
+        let google = LLMRuntimeConfiguration(
+            profile: LLMProviderProfile(
+                provider: .openAICompatible,
+                prefix: "google",
+                displayName: "Google",
+                baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+                model: "gemini-2.5-flash-lite"
+            ),
+            modelIdentifier: "google/gemini-2.5-flash-lite",
+            modelName: "gemini-2.5-flash-lite",
+            endpoint: URL(string: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")!,
+            apiKey: "test-google",
+            useCase: .subtitleProcessing
+        )
+
+        #expect(google.openAICompatibleRequestOptions.reasoningEnabled == false)
+        #expect(google.openAICompatibleRequestOptions.reasoningEffort == nil)
+    }
+
+    @Test
+    func translationDisablesGeminiAndOpenRouterReasoning() {
+        let configuration = LLMRuntimeConfiguration(
+            profile: LLMProviderProfile(
+                provider: .openRouter,
+                baseURL: "https://openrouter.ai/api/v1",
+                model: "google/gemini-2.5-flash-lite"
+            ),
+            modelIdentifier: "openrouter/google/gemini-2.5-flash-lite",
+            modelName: "google/gemini-2.5-flash-lite",
+            endpoint: URL(string: "https://openrouter.ai/api/v1/chat/completions")!,
+            apiKey: "test-openrouter",
+            useCase: .translation
+        )
+
+        #expect(configuration.openAICompatibleRequestOptions == .init(
+            thinkingType: "disabled",
+            reasoningEnabled: false,
+            temperature: 0,
+            maxOutputTokens: 8_192
+        ))
+        #expect(configuration.resolvedExtraBody["reasoning"] == .object(["enabled": .bool(false)]))
+        #expect(configuration.resolvedExtraBody["max_tokens"] == .number(8_192))
+    }
+
+    @Test
+    func translationDisablesThinking() {
+        let configuration = LLMRuntimeConfiguration(
+            profile: .defaultOpenAI,
+            modelIdentifier: "openai/gpt-5.6-luna",
+            modelName: "gpt-5.6-luna",
+            endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
+            apiKey: "test-openai",
+            useCase: .translation
+        )
+
+        #expect(configuration.openAICompatibleRequestOptions == .init(
+            thinkingType: "disabled",
+            reasoningEffort: "none",
+            temperature: 0,
+            maxOutputTokens: 8_192
+        ))
+        #expect(configuration.resolvedExtraBody["reasoning"] == .object(["effort": .string("none")]))
+    }
+
     @Test @MainActor
     func legacySingleProviderMigratesIntoMultiProviderRoutes() throws {
         let suiteName = "LLMLegacyMigrationTests.\(UUID().uuidString)"
@@ -319,7 +446,7 @@ struct LLMResilienceTests {
     }
 
     @Test
-    func timeoutRetriesPrimaryThenFallsBackToNextProvider() async throws {
+    func timeoutTriesFallbackBeforeRepeatingPrimary() async throws {
         let state = RoutedStubState(outcomes: [
             "openai/gpt-5.4-nano": [
                 .failure(.timeout),
@@ -340,8 +467,136 @@ struct LLMResilienceTests {
         let result = try await client.complete(system: "system", user: "user")
 
         #expect(result == "fallback result")
-        #expect(await state.attemptCount(for: "openai/gpt-5.4-nano") == 2)
+        #expect(await state.attemptCount(for: "openai/gpt-5.4-nano") == 1)
         #expect(await state.attemptCount(for: "minimax/MiniMax-M3") == 1)
+    }
+
+    @Test
+    func resilientClientCreatesOneTransportClientPerConfiguredModel() async throws {
+        let state = RoutedStubState(outcomes: [
+            "openai/gpt-5.4-nano": [.success("first"), .success("second")],
+            "minimax/MiniMax-M3": [],
+        ])
+        let counter = ClientFactoryCounter()
+        let client = ResilientLLMTextClient(
+            route: route(maximumAttempts: 2),
+            clientFactory: { configuration, _ in
+                counter.record(configuration.modelIdentifier)
+                return RoutedStubClient(model: configuration.modelIdentifier, state: state)
+            },
+            sleeper: { _ in }
+        )
+
+        #expect(try await client.complete(system: "system", user: "first") == "first")
+        #expect(try await client.complete(system: "system", user: "second") == "second")
+        #expect(counter.count(for: "openai/gpt-5.4-nano") == 1)
+        #expect(counter.count(for: "minimax/MiniMax-M3") == 1)
+    }
+
+    @Test
+    func defaultSessionFailsFastWhenConnectivityIsUnavailable() {
+        let configuration = LLMRuntimeConfiguration(
+            profile: .defaultOpenAI,
+            modelIdentifier: "openai/gpt-5.4-nano",
+            modelName: "gpt-5.4-nano",
+            endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
+            apiKey: "test-openai"
+        )
+        let policy = LLMRequestPolicy(timeoutSeconds: 45, maximumAttemptsPerModel: 2, initialBackoffSeconds: 0.75)
+        let client = OpenAICompatibleClient(configuration: configuration, policy: policy)
+
+        #expect(client.session.configuration.waitsForConnectivity == false)
+        #expect(client.session.configuration.timeoutIntervalForRequest == 45)
+        #expect(client.session.configuration.timeoutIntervalForResource == 45)
+        #expect(client.session.configuration.httpMaximumConnectionsPerHost == OpenAICompatibleClient.maximumConnectionsPerHost)
+    }
+
+    @Test @MainActor
+    func openRouterRoutesMigrateToNitroThroughputSettings() throws {
+        let suiteName = "LLMOpenRouterPerformanceMigrationTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let profile = LLMProviderProfile(
+            provider: .openRouter,
+            baseURL: "https://openrouter.ai/api/v1",
+            model: "z-ai/glm-5.3-flash"
+        )
+        let legacyPolicy = LLMRequestPolicy(
+            timeoutSeconds: 600,
+            maximumAttemptsPerModel: 2,
+            initialBackoffSeconds: 0.75
+        )
+        let saved = LLMSettingsStore.PersistedConfiguration(
+            providers: [profile],
+            routes: [
+                .subtitleProcessing: LLMModelRoute(
+                    primaryModel: "openrouter/z-ai/glm-5.3-flash",
+                    fallbackModels: ["openrouter/deepseek/deepseek-v4-flash:floor"],
+                    policy: legacyPolicy
+                ),
+            ]
+        )
+        defaults.set(
+            try JSONEncoder().encode(saved),
+            forKey: "voxella.llm.configuration.v2"
+        )
+
+        let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
+        let route = settings.route(for: .subtitleProcessing)
+        let migratedProfile = try #require(settings.providers.first)
+
+        #expect(route.primaryModel == "openrouter/z-ai/glm-5.3-flash:nitro")
+        #expect(route.fallbackModels == ["openrouter/deepseek/deepseek-v4-flash:floor"])
+        #expect(route.policy == .default(for: .subtitleProcessing))
+        #expect(migratedProfile.openRouterRouting.enabled)
+        #expect(migratedProfile.openRouterRouting.sort == .throughput)
+    }
+
+    @Test @MainActor
+    func explicitOpenRouterProviderOrderRemovesNitroFromRoutes() throws {
+        let suiteName = "LLMOpenRouterProviderOrderTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var profile = LLMProviderProfile(
+            provider: .openRouter,
+            baseURL: "https://openrouter.ai/api/v1",
+            model: "z-ai/glm-5.3-flash"
+        )
+        profile.openRouterRouting = LLMOpenRouterRouting(
+            enabled: true,
+            order: ["Baseten", "Z.AI"],
+            allowFallbacks: true,
+            sort: .throughput
+        )
+        let saved = LLMSettingsStore.PersistedConfiguration(
+            providers: [profile],
+            routes: [
+                .subtitleProcessing: LLMModelRoute(
+                    primaryModel: "openrouter/z-ai/glm-5.3-flash:nitro",
+                    fallbackModels: ["openrouter/deepseek/deepseek-v4-flash:nitro"],
+                    policy: .default(for: .subtitleProcessing)
+                ),
+            ]
+        )
+        defaults.set(
+            try JSONEncoder().encode(saved),
+            forKey: "voxella.llm.configuration.v2"
+        )
+
+        let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
+
+        #expect(settings.route(for: .subtitleProcessing).primaryModel == "openrouter/z-ai/glm-5.3-flash")
+        #expect(settings.route(for: .subtitleProcessing).fallbackModels == ["openrouter/deepseek/deepseek-v4-flash"])
+        #expect(settings.providers[0].openRouterRouting.sort == .throughput)
+
+        var clearedOrder = try #require(settings.providers.first)
+        clearedOrder.openRouterRouting.order = []
+        try settings.updateProvider(clearedOrder)
+
+        #expect(settings.route(for: .subtitleProcessing).primaryModel == "openrouter/z-ai/glm-5.3-flash:nitro")
+        #expect(settings.route(for: .subtitleProcessing).fallbackModels == ["openrouter/deepseek/deepseek-v4-flash:nitro"])
     }
 
     @Test
@@ -421,5 +676,70 @@ struct LLMResilienceTests {
                 initialBackoffSeconds: 0
             )
         )
+    }
+
+    @Test func subtitleProcessingPolicyClampsLowTimeouts() throws {
+        let policy = try LLMRequestPolicy(
+            timeoutSeconds: 15,
+            maximumAttemptsPerModel: 2,
+            initialBackoffSeconds: 0.75
+        ).validated(for: .subtitleProcessing)
+
+        #expect(policy.timeoutSeconds == 90)
+    }
+
+    @Test func translationPolicyClampsLowTimeouts() throws {
+        let policy = try LLMRequestPolicy(
+            timeoutSeconds: 15,
+            maximumAttemptsPerModel: 2,
+            initialBackoffSeconds: 0.75
+        ).validated(for: .translation)
+
+        #expect(policy.timeoutSeconds == 45)
+    }
+
+    @Test @MainActor
+    func subtitleTimeoutMigrationRaisesPersistedLowTimeouts() throws {
+        let suiteName = "LLMSubtitleTimeoutMigrationTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let profile = LLMProviderProfile(
+            provider: .openRouter,
+            baseURL: "https://openrouter.ai/api/v1",
+            model: "google/gemini-2.5-flash-lite"
+        )
+        let saved = LLMSettingsStore.PersistedConfiguration(
+            providers: [profile],
+            routes: [
+                .subtitleProcessing: LLMModelRoute(
+                    primaryModel: "openrouter/google/gemini-2.5-flash-lite",
+                    fallbackModels: [],
+                    policy: LLMRequestPolicy(
+                        timeoutSeconds: 15,
+                        maximumAttemptsPerModel: 2,
+                        initialBackoffSeconds: 0.75
+                    )
+                ),
+                .translation: LLMModelRoute(
+                    primaryModel: "openrouter/google/gemini-2.5-flash-lite",
+                    fallbackModels: [],
+                    policy: LLMRequestPolicy(
+                        timeoutSeconds: 15,
+                        maximumAttemptsPerModel: 2,
+                        initialBackoffSeconds: 0.75
+                    )
+                ),
+            ]
+        )
+        defaults.set(
+            try JSONEncoder().encode(saved),
+            forKey: "voxella.llm.configuration.v2"
+        )
+
+        let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
+
+        #expect(settings.route(for: .subtitleProcessing).policy.timeoutSeconds == 90)
+        #expect(settings.route(for: .translation).policy.timeoutSeconds == 45)
     }
 }

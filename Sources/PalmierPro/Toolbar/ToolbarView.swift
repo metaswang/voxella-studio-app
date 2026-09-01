@@ -27,7 +27,7 @@ struct ToolbarView: View {
 
             // Split, trim buttons
             HStack(spacing: AppTheme.Spacing.md) {
-                toolbarButton("square.split.2x1", help: L10n.string("Split at Playhead (⌘K)"), action: editor.splitAtPlayhead)
+                toolbarButton("square.split.2x1", help: L10n.string("Split at Playhead (⇧⌘K)"), action: editor.splitAtPlayhead)
                 bracketButton("[", help: L10n.string("Trim Start to Playhead (Q)"), action: editor.trimStartToPlayhead)
                 bracketButton("]", help: L10n.string("Trim End to Playhead (W)"), action: editor.trimEndToPlayhead)
             }

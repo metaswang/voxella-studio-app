@@ -4,6 +4,18 @@ import Testing
 
 @Suite("Cloud session edit snapshots")
 struct CloudSessionSyncTests {
+    @Test func desktopSyncResponseDecodesIndexingReceipt() throws {
+        let response = try JSONDecoder().decode(
+            VoxellaDesktopSessionSyncResponse.self,
+            from: Data("""
+            {"session_id":"00000000-0000-0000-0000-000000000001","revision":4,"applied":true,"indexed":true}
+            """.utf8)
+        )
+
+        #expect(response.applied == true)
+        #expect(response.indexed == true)
+    }
+
     @Test func snapshotPreservesEditableSummaryTemplateMetadata() {
         let result = TranscriptionResult(
             text: "Hello",

@@ -40,6 +40,9 @@ struct VoxellaCloudSessionSync: CloudSessionSyncing {
         guard response.applied != false else {
             throw VoxellaAPIError.http(409, "VoxStudio Cloud has a newer edit for this session.")
         }
+        guard response.indexed == true else {
+            throw VoxellaAPIError.http(503, "VoxStudio Cloud could not queue search indexing for this session.")
+        }
     }
 
     func delete(remoteSessionID: UUID) async throws {

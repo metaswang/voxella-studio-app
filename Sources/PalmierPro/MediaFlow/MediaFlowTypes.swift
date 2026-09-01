@@ -194,19 +194,37 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
         )
     }
 
-    func asTranscriptionResult(preservingWords words: [TranscriptionWord] = []) -> TranscriptionResult {
-        TranscriptionResult(
+    func asTranscriptionResult(
+        preservingWords words: [TranscriptionWord] = [],
+        asrEngine: ASREngine? = nil
+    ) -> TranscriptionResult {
+        var previousSpeaker: String?
+        let segments = cues.map { cue -> TranscriptionSegment in
+            let current = cue.speaker?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalizedCurrent = (current?.isEmpty == false) ? current : nil
+            let boundary: SpeakerBoundary
+            if let previousSpeaker, let normalizedCurrent, previousSpeaker != normalizedCurrent {
+                boundary = .hard
+            } else {
+                boundary = .none
+            }
+            if let normalizedCurrent {
+                previousSpeaker = normalizedCurrent
+            }
+            return TranscriptionSegment(
+                text: cue.text,
+                start: cue.start,
+                end: cue.end,
+                speaker: cue.speaker,
+                speakerBoundary: boundary
+            )
+        }
+        return TranscriptionResult(
             text: text,
             language: language,
             words: words,
-            segments: cues.map {
-                TranscriptionSegment(
-                    text: $0.text,
-                    start: $0.start,
-                    end: $0.end,
-                    speaker: $0.speaker
-                )
-            }
+            segments: segments,
+            asrEngine: asrEngine
         )
     }
 
@@ -387,11 +405,12 @@ struct ScriptAlignmentPayload: Sendable {
 }
 
 struct SubtitleProcessingPayload: Sendable {
-    var maximumTokensPerBatch = 180
+    /// Source words packed into one LLM subtitle request.
+    var maximumTokensPerBatch = 480
     /// Speaker-safe source segments per two-pass subtitle batch.
-    var maximumSegmentsPerBatch = 10
+    var maximumSegmentsPerBatch = 24
     /// Maximum number of subtitle batches in flight at once.
-    var maximumConcurrentBatches = 2
+    var maximumConcurrentBatches = 16
     var maximumCharactersPerCue: Int?
     var maximumAttempts = 2
     var userInstruction: String?
@@ -400,6 +419,7 @@ struct SubtitleProcessingPayload: Sendable {
 struct TranslationFlowPayload: Sendable {
     var targetLanguage: String
     var maximumCuesPerBatch = 24
+    var maximumConcurrentBatches = 16
     var maximumAttempts = 2
     var userInstruction: String?
 }

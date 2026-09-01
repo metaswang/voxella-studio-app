@@ -158,7 +158,7 @@ struct AgentPanelView: View {
 
     private var reasoningEffortPicker: some View {
         Menu {
-            ForEach(service.model.supportedReasoningEfforts, id: \.self) { effort in
+            ForEach(service.reasoningEffortsForCurrentTransport, id: \.self) { effort in
                 Button {
                     service.reasoningEffort = effort
                 } label: {
@@ -341,7 +341,7 @@ struct AgentPanelView: View {
         switch error {
         case .unauthenticated, .insufficientCredits, .unavailable:
             return ErrorCTA(title: L10n.string("Open Settings")) {
-                SettingsWindowController.shared.show(tab: .agent)
+                SettingsWindowController.shared.show(tab: .ai)
             }
         case .refusal, .upstream:
             return nil
@@ -350,12 +350,16 @@ struct AgentPanelView: View {
 
     private func errorMessage(_ error: AgentServiceError) -> String {
         switch error {
-        case .unauthenticated, .insufficientCredits:
-            L10n.string("Add an API key to use AI chat.")
+        case .unauthenticated:
+            L10n.string("Sign in or enable BYOK to use AI chat.")
+        case .insufficientCredits:
+            L10n.string("You do not have enough credits for this AI request.")
         case .upstream(let message):
             message
         case .unavailable(let model):
-            model.provider.chatPresentation.unavailableMessage
+            AITransportPolicy.current == .unavailable
+                ? L10n.string("Sign in to use hosted AI, or enable BYOK in Settings.")
+                : model.provider.chatPresentation.unavailableMessage
         case .refusal:
             L10n.string("The selected model refused this request. Revise the prompt and try again.")
         }
@@ -389,7 +393,7 @@ struct AgentPanelView: View {
     private var missingKeyState: some View {
         VStack(spacing: AppTheme.Spacing.mdLg) {
             Button {
-                SettingsWindowController.shared.show(tab: .agent)
+                SettingsWindowController.shared.show(tab: .ai)
             } label: {
                 Label(L10n.string("Open Chat Settings"), systemImage: "gearshape")
                     .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
@@ -397,7 +401,7 @@ struct AgentPanelView: View {
             .buttonStyle(.capsule(.prominent, size: .regular))
 
             Button {
-                SettingsWindowController.shared.show(tab: .agent)
+                SettingsWindowController.shared.show(tab: .ai)
             } label: {
                 Text(missingKeyLinkLabel)
                     .underline()
@@ -412,7 +416,9 @@ struct AgentPanelView: View {
     }
 
     private var missingKeyLinkLabel: String {
-        service.model.provider.chatPresentation.missingKeyLinkTitle
+        AITransportPolicy.current == .unavailable
+            ? L10n.string("Sign in or enable BYOK")
+            : service.model.provider.chatPresentation.missingKeyLinkTitle
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
@@ -441,7 +447,9 @@ struct AgentPanelView: View {
                 onSend: submit,
                 onCancel: { service.cancel() }
             ) {
-                modelPicker
+                if service.route != .hosted {
+                    modelPicker
+                }
                 reasoningEffortPicker
                 byokIndicator
             }

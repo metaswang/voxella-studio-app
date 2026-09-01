@@ -4,6 +4,20 @@
 "or use your own Anthropic key" = "or use your own Anthropic key";
 "Subscribe" = "Subscribe";
 "Open Settings" = "Open Settings";
+"AI access" = "AI access";
+"Use BYOK" = "Use BYOK";
+"You are signed in. You do not need to enable BYOK; your saved keys are currently selected." = "You are signed in. You do not need to enable BYOK; your saved keys are currently selected.";
+"BYOK is enabled. Requests use the keys saved below." = "BYOK is enabled. Requests use the keys saved below.";
+"Signed-in requests use Voxella AI and consume account credits." = "Signed-in requests use Voxella AI and consume account credits.";
+"Sign in to use hosted AI, or enable BYOK to use your own keys." = "Sign in to use hosted AI, or enable BYOK to use your own keys.";
+"Agent Chat BYOK" = "Agent Chat BYOK";
+"Use your own provider keys for AI chat. They are stored in the macOS Keychain." = "Use your own provider keys for AI chat. They are stored in the macOS Keychain.";
+"Sign in or enable BYOK to use AI chat." = "Sign in or enable BYOK to use AI chat.";
+"You do not have enough credits for this AI request." = "You do not have enough credits for this AI request.";
+"Sign in to use hosted AI, or enable BYOK in Settings." = "Sign in to use hosted AI, or enable BYOK in Settings.";
+"Sign in or enable BYOK" = "Sign in or enable BYOK";
+"Voxella AI (server-managed)" = "Voxella AI (server-managed)";
+"Not configured" = "Not configured";
 
 "Meet Bot" = "Meet Bot";
 "Never miss the conversation" = "Never miss the conversation";

@@ -5,6 +5,8 @@ protocol LLMTextClient: Sendable {
 }
 
 struct OpenAICompatibleClient: LLMTextClient {
+    static let maximumConnectionsPerHost = 32
+
     let configuration: LLMRuntimeConfiguration
     let policy: LLMRequestPolicy
     let session: URLSession
@@ -22,7 +24,8 @@ struct OpenAICompatibleClient: LLMTextClient {
             let sessionConfiguration = URLSessionConfiguration.ephemeral
             sessionConfiguration.timeoutIntervalForRequest = policy.timeoutSeconds
             sessionConfiguration.timeoutIntervalForResource = policy.timeoutSeconds
-            sessionConfiguration.waitsForConnectivity = true
+            sessionConfiguration.waitsForConnectivity = false
+            sessionConfiguration.httpMaximumConnectionsPerHost = Self.maximumConnectionsPerHost
             self.session = URLSession(configuration: sessionConfiguration)
         }
     }
@@ -37,7 +40,7 @@ struct OpenAICompatibleClient: LLMTextClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Client-Request-ID")
-        let requestOptions = configuration.openAICompatibleRequestOptions
+        let extraBody = configuration.resolvedExtraBody
         request.httpBody = try JSONEncoder().encode(
             ChatCompletionRequest(
                 model: configuration.modelName,
@@ -45,8 +48,7 @@ struct OpenAICompatibleClient: LLMTextClient {
                     .init(role: "system", content: system),
                     .init(role: "user", content: user),
                 ],
-                reasoningSplit: requestOptions.reasoningSplit,
-                thinking: requestOptions.thinkingType.map { .init(type: $0) }
+                extraBody: extraBody
             )
         )
 
@@ -58,17 +60,23 @@ struct OpenAICompatibleClient: LLMTextClient {
             throw CancellationError()
         } catch let error as URLError where error.code == .cancelled && Task.isCancelled {
             throw CancellationError()
-        } catch let error as URLError where error.code == .timedOut {
-            throw LLMClientError.timeout
+        } catch let error as URLError {
+            if error.code == .timedOut {
+                throw LLMClientError.timeout
+            }
+            throw LLMClientError.transport(
+                code: error.code.rawValue,
+                message: error.localizedDescription
+            )
         } catch {
-            throw LLMClientError.transport(error.localizedDescription)
+            throw LLMClientError.transport(code: nil, message: error.localizedDescription)
         }
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else {
             throw LLMClientError.nonHTTPResponse
         }
-        guard (200..<300).contains(http.statusCode) else {
-            throw LLMClientError.provider(
+            guard (200..<300).contains(http.statusCode) else {
+                throw LLMClientError.provider(
                 status: http.statusCode,
                 message: Self.providerErrorMessage(from: data),
                 retryAfterSeconds: Self.retryAfterSeconds(from: http)
@@ -118,8 +126,14 @@ struct ResilientLLMTextClient: LLMTextClient {
     typealias Sleeper = @Sendable (Duration) async throws -> Void
 
     let route: LLMRuntimeRoute
-    private let clientFactory: ClientFactory
+    private let clients: [ClientEntry]
     private let sleeper: Sleeper
+    private static let slowRequestLogThresholdMilliseconds = 10_000
+
+    private struct ClientEntry: Sendable {
+        let configuration: LLMRuntimeConfiguration
+        let client: any LLMTextClient
+    }
 
     init(
         route: LLMRuntimeRoute,
@@ -127,8 +141,14 @@ struct ResilientLLMTextClient: LLMTextClient {
         sleeper: Sleeper? = nil
     ) {
         self.route = route
-        self.clientFactory = clientFactory ?? {
+        let clientFactory = clientFactory ?? {
             OpenAICompatibleClient(configuration: $0, policy: $1)
+        }
+        self.clients = route.configurations.map {
+            ClientEntry(
+                configuration: $0,
+                client: clientFactory($0, route.policy)
+            )
         }
         self.sleeper = sleeper ?? { try await Task.sleep(for: $0) }
     }
@@ -137,42 +157,49 @@ struct ResilientLLMTextClient: LLMTextClient {
         var failures: [LLMAttemptFailure] = []
         let attempts = route.policy.maximumAttemptsPerModel
 
-        for configuration in route.configurations {
-            let client = clientFactory(configuration, route.policy)
-            for attempt in 1...attempts {
+        for attempt in 1...attempts {
+            var retryDelay: Double?
+            for entry in clients {
                 try Task.checkCancellation()
+                let startedAt = Date()
                 do {
-                    let result = try await client.complete(system: system, user: user)
+                    let result = try await entry.client.complete(system: system, user: user)
+                    let elapsedMilliseconds = Self.elapsedMilliseconds(since: startedAt)
                     if !failures.isEmpty {
                         Log.llm.notice(
-                            "request recovered use_case=\(route.useCase.rawValue) model=\(configuration.modelIdentifier) attempt=\(attempt)"
+                            "request recovered use_case=\(route.useCase.rawValue) model=\(entry.configuration.modelIdentifier) attempt=\(attempt) elapsed_ms=\(elapsedMilliseconds)"
+                        )
+                    } else if elapsedMilliseconds >= Self.slowRequestLogThresholdMilliseconds {
+                        Log.llm.notice(
+                            "slow request use_case=\(route.useCase.rawValue) model=\(entry.configuration.modelIdentifier) attempt=\(attempt) elapsed_ms=\(elapsedMilliseconds)"
                         )
                     }
                     return result
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
+                    let elapsedMilliseconds = Self.elapsedMilliseconds(since: startedAt)
                     let failure = LLMAttemptFailure(
-                        model: configuration.modelIdentifier,
+                        model: entry.configuration.modelIdentifier,
                         attempt: attempt,
                         reason: Self.failureDescription(error)
                     )
                     failures.append(failure)
                     let retryable = Self.isRetryable(error)
                     Log.llm.warning(
-                        "request failed use_case=\(route.useCase.rawValue) model=\(configuration.modelIdentifier) attempt=\(attempt) retryable=\(retryable) reason=\(failure.reason)"
+                        "request failed use_case=\(route.useCase.rawValue) model=\(entry.configuration.modelIdentifier) attempt=\(attempt) elapsed_ms=\(elapsedMilliseconds) retryable=\(retryable) reason=\(failure.reason) detail=\(Self.failureDetail(error))"
                     )
-                    guard retryable, attempt < attempts else { break }
+                    guard retryable else { continue }
                     let delay = Self.retryDelay(
                         error: error,
                         attempt: attempt,
                         initial: route.policy.initialBackoffSeconds
                     )
-                    if delay > 0 {
-                        try await sleeper(.seconds(delay))
-                    }
+                    retryDelay = max(retryDelay ?? 0, delay)
                 }
             }
+            guard attempt < attempts, let retryDelay, retryDelay > 0 else { break }
+            try await sleeper(.seconds(retryDelay))
         }
         throw LLMClientError.exhausted(failures)
     }
@@ -185,6 +212,8 @@ struct ResilientLLMTextClient: LLMTextClient {
             return status == 408 || status == 409 || status == 425 || status == 429 || status >= 500
         case .timeout, .transport, .nonHTTPResponse, .invalidResponse, .emptyResponse:
             return true
+        case .insufficientCredits:
+            return false
         case .exhausted:
             return false
         }
@@ -209,6 +238,17 @@ struct ResilientLLMTextClient: LLMTextClient {
         }
         return String(describing: type(of: error))
     }
+
+    private static func failureDetail(_ error: Error) -> String {
+        if let error = error as? LLMClientError {
+            return error.logDescription
+        }
+        return String(describing: error)
+    }
+
+    private static func elapsedMilliseconds(since startedAt: Date) -> Int {
+        max(0, Int(Date().timeIntervalSince(startedAt) * 1_000))
+    }
 }
 
 private struct ChatCompletionRequest: Encodable {
@@ -217,20 +257,29 @@ private struct ChatCompletionRequest: Encodable {
         let content: String
     }
 
-    struct Thinking: Encodable {
-        let type: String
-    }
-
     let model: String
     let messages: [Message]
-    let reasoningSplit: Bool?
-    let thinking: Thinking?
+    let extraBody: [String: LLMJSONValue]
 
-    private enum CodingKeys: String, CodingKey {
-        case model
-        case messages
-        case reasoningSplit = "reasoning_split"
-        case thinking
+    private struct CodingKeyValue: CodingKey {
+        let stringValue: String
+        let intValue: Int? = nil
+
+        init(stringValue: String) {
+            self.stringValue = stringValue
+        }
+
+        init?(intValue: Int) { return nil }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeyValue.self)
+        let reservedKeys = Set(["model", "messages"])
+        for (key, value) in extraBody where !reservedKeys.contains(key) {
+            try container.encode(value, forKey: CodingKeyValue(stringValue: key))
+        }
+        try container.encode(model, forKey: CodingKeyValue(stringValue: "model"))
+        try container.encode(messages, forKey: CodingKeyValue(stringValue: "messages"))
     }
 }
 
@@ -276,8 +325,9 @@ struct LLMAttemptFailure: Equatable, Sendable {
 enum LLMClientError: LocalizedError, Sendable {
     case nonHTTPResponse
     case timeout
-    case transport(String)
+    case transport(code: Int?, message: String)
     case provider(status: Int, message: String?, retryAfterSeconds: Double?)
+    case insufficientCredits(String)
     case invalidResponse
     case emptyResponse
     case exhausted([LLMAttemptFailure])
@@ -288,7 +338,7 @@ enum LLMClientError: LocalizedError, Sendable {
             return "The LLM provider returned a non-HTTP response."
         case .timeout:
             return "The LLM request timed out."
-        case .transport(let message):
+        case .transport(_, let message):
             return "The LLM request failed: \(message)"
         case .provider(let status, let message, _):
             if let message, !message.isEmpty {
@@ -296,6 +346,8 @@ enum LLMClientError: LocalizedError, Sendable {
             } else {
                 return "The LLM provider returned HTTP \(status)."
             }
+        case .insufficientCredits(let message):
+            return message
         case .invalidResponse:
             return "The LLM provider returned an unsupported response."
         case .emptyResponse:
@@ -316,11 +368,37 @@ enum LLMClientError: LocalizedError, Sendable {
         switch self {
         case .nonHTTPResponse: "non_http_response"
         case .timeout: "timeout"
-        case .transport: "transport"
+        case .transport(let code, _):
+            code.map { "transport_\($0)" } ?? "transport"
         case .provider(let status, _, _): "http_\(status)"
+        case .insufficientCredits: "insufficient_credits"
         case .invalidResponse: "invalid_response"
         case .emptyResponse: "empty_response"
         case .exhausted: "exhausted"
+        }
+    }
+
+    var logDescription: String {
+        switch self {
+        case .nonHTTPResponse:
+            return "non_http_response"
+        case .timeout:
+            return "timeout"
+        case .transport(let code, let message):
+            if let code { return "url_error=\(code) message=\(message)" }
+            return "transport message=\(message)"
+        case .provider(let status, let message, let retryAfterSeconds):
+            let retryAfter = retryAfterSeconds.map { " retry_after_s=\($0)" } ?? ""
+            let providerMessage = message.map { " message=\($0)" } ?? ""
+            return "http_status=\(status)\(retryAfter)\(providerMessage)"
+        case .insufficientCredits(let message):
+            return "insufficient_credits message=\(message)"
+        case .invalidResponse:
+            return "invalid_response"
+        case .emptyResponse:
+            return "empty_response"
+        case .exhausted:
+            return "exhausted"
         }
     }
 }

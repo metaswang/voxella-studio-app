@@ -196,28 +196,62 @@ actor MediaFlowExecutor: MediaJobEventSource {
                         throw MediaFlowError.missingTranscript
                     }
                     if LLMClients[.subtitleProcessing] == nil {
-                        LLMClients[.subtitleProcessing] = try await makeLLMClient(
-                            for: .subtitleProcessing
-                        )
+                        do {
+                            LLMClients[.subtitleProcessing] = try await makeLLMClient(
+                                for: .subtitleProcessing
+                            )
+                        } catch {
+                            try Task.checkCancellation()
+                            try applyPreparedSubtitleFallback(
+                                transcript: transcript,
+                                payload: payload,
+                                reason: error.localizedDescription,
+                                orThrow: error,
+                                context: &context,
+                                progressEvent: progressEvent,
+                                continuation: continuation
+                            )
+                            break
+                        }
                     }
                     guard let client = LLMClients[.subtitleProcessing] else {
                         throw LLMConfigurationError.noConfiguredModel(.subtitleProcessing)
                     }
                     let pipeline = SubtitlePostprocessPipeline(client: client)
-                    let output = try await pipeline.process(
-                        transcript: transcript,
-                        options: payload,
-                        progress: { fraction, current, total, message in
-                            progressEvent(
-                                .subtitlePreparation,
-                                "subtitle_preparation",
-                                fraction,
-                                current,
-                                total,
-                                message
-                            )
+                    let output: SubtitlePostprocessResult
+                    do {
+                        output = try await pipeline.process(
+                            transcript: transcript,
+                            options: payload,
+                            progress: { fraction, current, total, message in
+                                progressEvent(
+                                    .subtitlePreparation,
+                                    "subtitle_preparation",
+                                    fraction,
+                                    current,
+                                    total,
+                                    message
+                                )
+                            }
+                        )
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        try Task.checkCancellation()
+                        if case LLMClientError.insufficientCredits = error {
+                            throw error
                         }
-                    )
+                        try applyPreparedSubtitleFallback(
+                            transcript: transcript,
+                            payload: payload,
+                            reason: error.localizedDescription,
+                            orThrow: error,
+                            context: &context,
+                            progressEvent: progressEvent,
+                            continuation: continuation
+                        )
+                        break
+                    }
                     let track = output.track
                     let rebuiltSegments = output.rebuiltSegments
                     context.transcript = TranscriptionResult(
@@ -227,7 +261,8 @@ actor MediaFlowExecutor: MediaJobEventSource {
                         ),
                         language: transcript.language,
                         words: transcript.words,
-                        segments: output.rebuiltSegments
+                        segments: output.rebuiltSegments,
+                        asrEngine: transcript.asrEngine
                     )
                     context.warnings.append(contentsOf: output.warnings)
                     context.subtitles = track
@@ -347,8 +382,91 @@ actor MediaFlowExecutor: MediaJobEventSource {
         if let llmClientFactory {
             return try await llmClientFactory()
         }
-        let route = try await LLMSettingsStore.shared.runtimeRoute(for: useCase)
-        return ResilientLLMTextClient(route: route)
+        return try await AITransportPolicy.makeTextClient(for: useCase)
+    }
+
+    private func applyPreparedSubtitleFallback(
+        transcript: TranscriptionResult,
+        payload: SubtitleProcessingPayload,
+        reason: String,
+        orThrow error: Error,
+        context: inout FlowContext,
+        progressEvent: @Sendable (
+            MediaFlowStage,
+            String,
+            Double,
+            Int?,
+            Int?,
+            String
+        ) -> Void,
+        continuation: AsyncStream<MediaJobEvent>.Continuation
+    ) throws {
+        let ruleBasedFallback = SubtitlePostprocessPipeline.ruleBasedFallback(
+            from: transcript,
+            options: payload
+        )
+        let fallbackSubtitleTrack = ruleBasedFallback?.track
+            ?? SubtitleTrack.fromTranscript(transcript)
+        guard !fallbackSubtitleTrack.cues.isEmpty else { throw error }
+        applySubtitleFallback(
+            track: fallbackSubtitleTrack,
+            rebuiltSegments: ruleBasedFallback?.rebuiltSegments,
+            transcript: transcript,
+            reason: reason,
+            usedRuleBasedSegmentation: ruleBasedFallback != nil,
+            context: &context,
+            progressEvent: progressEvent,
+            continuation: continuation
+        )
+    }
+
+    private func applySubtitleFallback(
+        track: SubtitleTrack,
+        rebuiltSegments: [TranscriptionSegment]?,
+        transcript: TranscriptionResult,
+        reason: String,
+        usedRuleBasedSegmentation: Bool,
+        context: inout FlowContext,
+        progressEvent: @Sendable (
+            MediaFlowStage,
+            String,
+            Double,
+            Int?,
+            Int?,
+            String
+        ) -> Void,
+        continuation: AsyncStream<MediaJobEvent>.Continuation
+    ) {
+        Log.transcription.warning("subtitle cleanup fallback: \(reason)")
+        let warning = usedRuleBasedSegmentation
+            ? "Subtitle cleanup failed; segmented with rule-based fallback timings: \(reason)"
+            : "Subtitle cleanup failed; using transcript timings: \(reason)"
+        context.warnings.append(warning)
+        if let rebuiltSegments, !rebuiltSegments.isEmpty {
+            context.transcript = TranscriptionResult(
+                text: TranscriptSegmenter.joinedText(
+                    rebuiltSegments.map(\.text),
+                    language: transcript.language
+                ),
+                language: transcript.language,
+                words: transcript.words,
+                segments: rebuiltSegments,
+                asrEngine: transcript.asrEngine
+            )
+        }
+        context.subtitles = track
+        let progressMessage = usedRuleBasedSegmentation
+            ? "Subtitle cleanup failed; segmented with rule-based fallback timings"
+            : "Subtitle cleanup failed; using transcript timings"
+        progressEvent(
+            .subtitlePreparation,
+            "subtitle_preparation_fallback",
+            1,
+            nil,
+            nil,
+            progressMessage
+        )
+        continuation.yield(.artifact(.subtitles(track, rebuiltSegments: rebuiltSegments)))
     }
 
     private func dubSegments(from context: FlowContext) throws -> [DubSegmentPayload] {

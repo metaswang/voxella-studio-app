@@ -127,6 +127,21 @@ struct TranscriptionResult: Sendable, Codable, Equatable {
     let language: String?
     let words: [TranscriptionWord]
     let segments: [TranscriptionSegment]
+    let asrEngine: ASREngine?
+
+    init(
+        text: String,
+        language: String?,
+        words: [TranscriptionWord],
+        segments: [TranscriptionSegment],
+        asrEngine: ASREngine? = nil
+    ) {
+        self.text = text
+        self.language = language
+        self.words = words
+        self.segments = segments
+        self.asrEngine = asrEngine
+    }
 
     /// Shifts all timestamps back into source time after transcribing an extracted range
     func offsetting(by offset: Double) -> TranscriptionResult {
@@ -152,7 +167,8 @@ struct TranscriptionResult: Sendable, Codable, Equatable {
                     speaker: $0.speaker,
                     speakerBoundary: $0.speakerBoundary
                 )
-            }
+            },
+            asrEngine: asrEngine
         )
     }
 
@@ -215,7 +231,8 @@ struct TranscriptionResult: Sendable, Codable, Equatable {
             text: text,
             language: language,
             words: fittedWords,
-            segments: fittedSegments
+            segments: fittedSegments,
+            asrEngine: asrEngine
         )
     }
 }
@@ -331,10 +348,17 @@ enum TranscriptSegmenter {
             var bestCount: Int?
             var bestScore: Double?
             if buffer.count >= 2 {
-                for cut in stride(from: buffer.count, through: 2, by: -1) {
+                // Once the newest item crosses the ceiling it must stay in the
+                // next group.  The old loop allowed `cut == buffer.count`, so
+                // two 45-second cues were emitted together as a 90-second
+                // transcript segment.
+                let upperBound = exceeded ? max(1, buffer.count - 1) : buffer.count
+                let lowerBound = exceeded ? 1 : 2
+                if upperBound >= lowerBound {
+                    for cut in stride(from: upperBound, through: lowerBound, by: -1) {
                     let cutDuration = max(0, buffer[cut - 1].end - first.start)
                     if !exceeded && cutDuration > maximumDuration { continue }
-                    if !exceeded && cutDuration < minimumDuration { break }
+                    if cutDuration < minimumDuration { break }
 
                     let punctuationRank = endPunctuationRank(buffer[cut - 1].text)
                     let closeness = -abs(cutDuration - targetDuration)
@@ -343,6 +367,7 @@ enum TranscriptSegmenter {
                         bestScore = score
                         bestCount = cut
                     }
+                }
                 }
             }
 
@@ -458,18 +483,25 @@ enum TranscriptSegmenter {
     /// language does not use word separators; those spaces must not leak into
     /// transcript cards, exported subtitles, or the dub script.
     static func normalizeDisplayText(_ text: String, language: String? = nil) -> String {
+        let characters = Array(text)
         var output = ""
         var pendingWhitespace = false
+        var previousCharacter: Character?
+        var characterBeforePrevious: Character?
+        var previousApostropheIsContraction = false
 
-        for character in text {
+        for index in characters.indices {
+            let character = characters[index]
             if character.isWhitespace {
                 pendingWhitespace = true
                 continue
             }
 
-            guard let previous = output.last else {
+            guard let previous = previousCharacter else {
                 output.append(character)
                 pendingWhitespace = false
+                previousCharacter = character
+                previousApostropheIsContraction = false
                 continue
             }
 
@@ -477,12 +509,22 @@ enum TranscriptSegmenter {
                !shouldAttachWithoutSpace(
                    previous: previous,
                    current: character,
+                   preceding: characterBeforePrevious,
+                   apostropheIsContraction: previousApostropheIsContraction,
+                   nextCharacters: characters[(index + 1)...],
                    language: language
                ) {
                 output.append(" ")
             }
             output.append(character)
             pendingWhitespace = false
+            characterBeforePrevious = previous
+            previousCharacter = character
+            previousApostropheIsContraction = isApostrophe(character)
+                && isContractionApostrophe(
+                    previous: previous,
+                    nextCharacters: characters[(index + 1)...]
+                )
         }
 
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -491,9 +533,22 @@ enum TranscriptSegmenter {
     private static func shouldAttachWithoutSpace(
         previous: Character,
         current: Character,
+        preceding: Character?,
+        apostropheIsContraction: Bool,
+        nextCharacters: ArraySlice<Character>,
         language: String?
     ) -> Bool {
         if isCJK(previous) && isCJK(current) { return true }
+        if isApostrophe(current) {
+            return isWordLike(previous)
+                && isContractionApostrophe(previous: previous, nextCharacters: nextCharacters)
+        }
+        if isApostrophe(previous) {
+            guard let preceding else { return false }
+            return apostropheIsContraction
+                && isWordLike(preceding)
+                && isWordLike(current)
+        }
         // Never leave a space before sentence punctuation.  A space after
         // punctuation is language-dependent: English and other whitespace
         // languages need it, while CJK/no-space languages do not.
@@ -506,6 +561,27 @@ enum TranscriptSegmenter {
             return true
         }
         return false
+    }
+
+    private static func isContractionApostrophe(
+        previous: Character,
+        nextCharacters: ArraySlice<Character>
+    ) -> Bool {
+        guard isWordLike(previous) else { return false }
+        var suffix = ""
+        for character in nextCharacters {
+            if character.isWhitespace {
+                if suffix.isEmpty { continue }
+                break
+            }
+            guard isWordLike(character) else { break }
+            suffix.append(character)
+        }
+        return ["s", "t", "m", "d", "re", "ve", "ll"].contains(suffix.lowercased())
+    }
+
+    private static func isApostrophe(_ character: Character) -> Bool {
+        "'’ʼ＇".contains(character)
     }
 
     private static func languageLikelyHasNoWhitespace(_ language: String?) -> Bool {
@@ -558,7 +634,8 @@ extension TranscriptionResult {
             text: TranscriptSegmenter.normalizeDisplayText(text, language: language),
             language: language,
             words: words,
-            segments: aggregated
+            segments: aggregated,
+            asrEngine: asrEngine
         )
     }
 
@@ -598,7 +675,8 @@ extension TranscriptionResult {
             text: text,
             language: language,
             words: updatedWords,
-            segments: rebuiltSegments.isEmpty ? updatedSegments : rebuiltSegments
+            segments: rebuiltSegments.isEmpty ? updatedSegments : rebuiltSegments,
+            asrEngine: asrEngine
         )
     }
 
@@ -636,7 +714,8 @@ extension TranscriptionResult {
             text: text,
             language: language,
             words: updatedWords,
-            segments: rebuiltSegments.isEmpty ? updatedSegments : rebuiltSegments
+            segments: rebuiltSegments.isEmpty ? updatedSegments : rebuiltSegments,
+            asrEngine: asrEngine
         )
     }
 

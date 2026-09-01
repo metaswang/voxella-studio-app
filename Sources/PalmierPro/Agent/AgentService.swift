@@ -44,12 +44,19 @@ final class AgentService {
     }
 
     var route: AgentRoute {
-        AgentRouting.route(
-            model: model,
-            credentials: credentials,
-            hasHostedCredits: false,
-            hasPaidPlan: false
-        )
+        switch AITransportPolicy.current {
+        case .hosted:
+            .hosted
+        case .byok:
+            AgentRouting.route(
+                model: model,
+                credentials: credentials,
+                hasHostedCredits: false,
+                hasPaidPlan: false
+            )
+        case .unavailable:
+            .unavailable
+        }
     }
 
     var canStream: Bool {
@@ -69,10 +76,14 @@ final class AgentService {
     var reasoningEffort: AgentReasoningEffort {
         get { reasoningEfforts[model, default: .medium] }
         set {
-            guard model.supportedReasoningEfforts.contains(newValue) else { return }
+            guard reasoningEffortsForCurrentTransport.contains(newValue) else { return }
             reasoningEfforts[model] = newValue
             AgentReasoningPreferences.set(newValue, for: model, defaults: userDefaults)
         }
+    }
+
+    var reasoningEffortsForCurrentTransport: [AgentReasoningEffort] {
+        route == .hosted ? AgentReasoningEffort.allCases : model.supportedReasoningEfforts
     }
 
     func snapshotRunSettings() -> AgentRunSettings {
@@ -84,19 +95,24 @@ final class AgentService {
         let credentials = await AgentCredentialSnapshot.loadFromKeychain()
         self.credentials = credentials
 
-        switch AgentRouting.route(
-            model: settings.model,
-            credentials: credentials,
-            hasHostedCredits: false,
-            hasPaidPlan: false
-        ) {
-        case .direct:
-            return BYOKClient(
-                apiKey: credentials[settings.model.provider],
-                settings: settings
-            )
+        switch AITransportPolicy.current {
         case .hosted:
-            return nil
+            return HostedAgentClient(settings: settings)
+        case .byok:
+            switch AgentRouting.route(
+                model: settings.model,
+                credentials: credentials,
+                hasHostedCredits: false,
+                hasPaidPlan: false
+            ) {
+            case .direct:
+                return BYOKClient(
+                    apiKey: credentials[settings.model.provider],
+                    settings: settings
+                )
+            case .hosted, .unavailable:
+                return nil
+            }
         case .unavailable:
             return nil
         }
@@ -499,6 +515,18 @@ final class AgentService {
                 dropEmptyAssistantTurn(id: assistantID)
                 streamError = err
                 break loop
+            } catch let err as AgentClientTransportError {
+                switch err {
+                case .insufficientCredits(let message):
+                    // The hosted API settles after streaming. If settlement
+                    // fails, do not retain a partial assistant turn.
+                    dropAssistantTurn(id: assistantID)
+                    streamError = .insufficientCredits(message)
+                default:
+                    dropEmptyAssistantTurn(id: assistantID)
+                    streamError = .upstream(err.localizedDescription)
+                }
+                break loop
             } catch {
                 dropEmptyAssistantTurn(id: assistantID)
                 streamError = .upstream(error.localizedDescription)
@@ -515,6 +543,11 @@ final class AgentService {
         guard let index = assistantMessageIndex(id: id) else { return }
         messages[index].blocks.removeAll { !Self.isComplete($0) }
         guard messages[index].blocks.isEmpty else { return }
+        messages.remove(at: index)
+    }
+
+    func dropAssistantTurn(id: UUID) {
+        guard let index = assistantMessageIndex(id: id) else { return }
         messages.remove(at: index)
     }
 

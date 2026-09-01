@@ -112,14 +112,22 @@ struct LocalModelInstallPlanTests {
             catalog: catalog,
             isInstalled: { _ in false }
         )
-        let expected = LocalModelInstallPlan.requiredModelIDs(
-            languageCode: nil,
-            speakerCount: nil,
-            asrModelID: .whisperLargeV3Turbo8Bit
-        ).compactMap { id in catalog.first { $0.id == id }?.byteSize }
-            .reduce(Int64(0), +)
-        #expect(plan.additionalBytes == expected)
+        #expect(plan.items.first?.id == .sileroVAD)
+        #expect(plan.additionalBytes == plan.items.reduce(Int64(0)) { $0 + $1.byteSize })
         #expect(plan.additionalBytes > 0)
+    }
+
+    @Test func installedVADSatisfiesTheRequiredInstallSlot() {
+        let plan = LocalModelInstallPlan.plan(
+            languageCode: "en",
+            speakerCount: 1,
+            asrModelID: .whisperLargeV3Turbo8Bit,
+            catalog: LocalModelManager.catalog,
+            isInstalled: { $0 == .sileroVAD }
+        )
+        #expect(plan.items.first?.id == .sileroVAD)
+        #expect(plan.items.first?.isInstalled == true)
+        #expect(plan.missingItems.contains { $0.id == .sileroVAD } == false)
     }
 
     private static var catalog: [LocalModelDescriptor] {
@@ -128,7 +136,6 @@ struct LocalModelInstallPlanTests {
             descriptor(.parakeetTDT06Bv3, bytes: 750_000_000, license: false),
             descriptor(.whisperLargeV3Turbo8Bit, bytes: 1_600_000_000, license: true),
             descriptor(.whisperLargeV3TurboFP16, bytes: 3_000_000_000, license: true),
-            descriptor(.whisperSmall, bytes: 500_000_000, license: false),
             descriptor(.forcedAligner, bytes: 80_000_000, license: false),
             descriptor(.sileroVAD, bytes: 10_000_000, license: false),
             descriptor(.spokenLanguageID, bytes: 80_000_000, license: false),

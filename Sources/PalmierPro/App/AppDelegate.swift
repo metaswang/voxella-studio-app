@@ -2,6 +2,7 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isTerminating = false
+    private var searchEmbeddingPrewarmTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Activate the app (required when launched from CLI, not a .app bundle)
@@ -20,6 +21,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, !self.isTerminating else { return }
             _ = NSOpenPanel()
         }
+
+        searchEmbeddingPrewarmTask = Task(priority: .utility) { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(5))
+                guard let self, !self.isTerminating else { return }
+                await SessionIndexCoordinator.shared.prewarmEmbeddings()
+            } catch is CancellationError {
+            } catch {
+                Log.search.warning("search embedding prewarm scheduling failed error=\(error.localizedDescription)")
+            }
+        }
     }
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
@@ -36,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if isTerminating { return .terminateLater }
         isTerminating = true
+        searchEmbeddingPrewarmTask?.cancel()
         let projects = AppState.shared.openProjects
 
         Task { @MainActor in
@@ -71,6 +84,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc func showSettings(_ sender: Any?) {
         SettingsWindowController.shared.show()
+    }
+
+    @MainActor
+    @objc func showSessionSearch(_ sender: Any?) {
+        HomeWindowController.shared.presentSessionSearch()
     }
 
     @MainActor

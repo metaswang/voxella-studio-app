@@ -77,7 +77,7 @@ struct WorkbenchLibraryView: View {
                                     session: session,
                                     onOpen: { store.openSession(session.id) },
                                     onDelete: { sessionPendingDeletion = session },
-                                    allowsDelete: !session.isRemoteOnly
+                                    allowsDelete: true
                                 )
                                 .contextMenu {
                                     if let sourceURL = session.sourceURL {
@@ -94,7 +94,6 @@ struct WorkbenchLibraryView: View {
                                     Button("Delete", role: .destructive) {
                                         sessionPendingDeletion = session
                                     }
-                                    .disabled(session.isRemoteOnly)
                                 }
                             }
                         }
