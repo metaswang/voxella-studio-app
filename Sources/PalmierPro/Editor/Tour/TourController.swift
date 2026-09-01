@@ -150,7 +150,7 @@ final class TourController {
             TourStep(kind: .spotlight(.element(.timelineRuler)), title: "Select a range",
                      instruction: "This is the timeline ruler. Shift-drag on it to select a range for playback or export."),
             TourStep(kind: .outro, title: "You're all set",
-                     instruction: "Start creating with Voxella Studio. Editing, transcription, captions, and dubbing stay on this Mac."),
+                     instruction: "Start creating with VoxStudio. Editing, transcription, captions, and dubbing stay on this Mac."),
         ]
         return steps
     }

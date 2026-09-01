@@ -278,7 +278,7 @@ private struct WorkbenchSidebar: View {
                 WorkbenchBrandIcon.image(size: AppTheme.IconSize.smMd)
 
                 if isExpanded {
-                    Text("Voxella Studio")
+                    Text(AppIdentity.productName)
                         .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
                         .lineLimit(1)
                 }

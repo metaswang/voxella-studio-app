@@ -14,10 +14,8 @@ struct TTSCloneExperimentTests {
         "VOXELLA_RUN_TTS_CLONE_EXPERIMENT"
     ] == "1"
 
-    private static let referenceURL = URL(fileURLWithPath:
-        "/Users/adamwang/Library/Application Support/Voxella Studio/VoiceLibrary/"
-            + "D0AA2E85-0D7C-4157-8424-47FE656D7750/reference.wav"
-    )
+    private static let referenceURL = AppSupportPaths.applicationSupport()
+        .appendingPathComponent("VoiceLibrary/D0AA2E85-0D7C-4157-8424-47FE656D7750/reference.wav")
     private static let referenceText = "这时一个测试， 这个音色会被用作参考"
     private static let targetText = "我从2000年开始出现咳嗽的现象，到2017年12月咳嗽加重，感觉好像整天都在咳嗽。"
     private static let seed: UInt64 = 0x564F5845

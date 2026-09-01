@@ -39,7 +39,7 @@ struct MCPInstructionsPane: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
-                Text("Connect an external agent to inspect and edit the active Voxella Studio project.")
+                Text("Connect an external agent to inspect and edit the active VoxStudio project.")
                     .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.regular))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .fixedSize(horizontal: false, vertical: true)
@@ -96,7 +96,7 @@ struct MCPInstructionsPane: View {
         agentSection(
             .cursor,
             name: "Cursor",
-            description: "Install the Voxella Studio MCP server in Cursor.",
+            description: "Install the VoxStudio MCP server in Cursor.",
             action: ("Install in Cursor", openCursor)
         ) {
             ManualFallback(
@@ -110,7 +110,7 @@ struct MCPInstructionsPane: View {
         agentSection(
             .claude,
             name: "Claude Desktop",
-            description: "Install the bundled Voxella Studio connector.",
+            description: "Install the bundled VoxStudio connector.",
             action: ("Install in Claude Desktop", openClaudeDesktopBundle)
         ) {
             EmptyView()
@@ -199,7 +199,7 @@ struct MCPInstructionsPane: View {
 
     private func openClaudeDesktopBundle() {
         guard let bundleURL = claudeDesktopBundleURL else {
-            claudeInstallError = "The Voxella Studio connector could not be found. Reinstall Voxella Studio, then try again."
+            claudeInstallError = "The VoxStudio connector could not be found. Reinstall VoxStudio, then try again."
             return
         }
         guard let claudeURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.anthropic.claudefordesktop") else {
@@ -214,7 +214,7 @@ struct MCPInstructionsPane: View {
         ) { _, error in
             guard error != nil else { return }
             Task { @MainActor in
-                claudeInstallError = "Claude Desktop could not open the Voxella Studio connector. Update Claude Desktop, then try again."
+                claudeInstallError = "Claude Desktop could not open the VoxStudio connector. Update Claude Desktop, then try again."
             }
         }
     }

@@ -260,8 +260,8 @@ final class SessionIndexCoordinator {
     }
 
     private static var indexURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Voxella Studio/Search/index.sqlite")
+        AppSupportPaths.applicationSupport()
+            .appendingPathComponent("Search/index.sqlite")
     }
 }
 

@@ -5,7 +5,7 @@ import os
 /// Categorized logger + crash handler.
 ///
 /// Uncaught exceptions and fatal signals are written to
-/// `~/Library/Logs/Voxella Studio/crash.log` with a backtrace.
+/// `~/Library/Logs/VoxStudio/crash.log` with a backtrace.
 enum Log {
     static let subsystem  = "com.voxella.studio"
     static let app        = CategoryLog("app")
@@ -22,8 +22,7 @@ enum Log {
     static let llm        = CategoryLog("llm")
     static let search     = CategoryLog("search")
 
-    static let crashLogURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/Voxella Studio/crash.log")
+    static let crashLogURL = AppSupportPaths.logs().appendingPathComponent("crash.log")
 
     /// Full NSError chain
     static func detail(_ error: Error) -> String {

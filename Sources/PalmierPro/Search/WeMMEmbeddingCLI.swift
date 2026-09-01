@@ -104,7 +104,7 @@ enum WeMMEmbeddingCLI {
             switch self {
             case .help:
                 """
-                Usage: VoxellaStudio --wemm-eval [--model-dir <MLX model>] [options]
+                Usage: VoxStudio --wemm-eval [--model-dir <MLX model>] [options]
                   --model-dir <path>   defaults to the Local Models cache for WeMM Embedding 2B 4-bit
                   --video <path>       MP4 to evaluate
                   --dimension <n>      64, 128, 256, 512, 1024, or 2048 (default: 256)

@@ -357,7 +357,7 @@ struct LocalModelInferenceTests {
     @Test(.enabled(if: enabled), arguments: [DubModelChoice.medium])
     func qwenDubProducesAudible24kMono(choice: DubModelChoice) async throws {
         let output = try await LocalDubPipeline.shared.synthesize(
-            script: "Voxella Studio keeps this dubbing test on this Mac.",
+            script: "VoxStudio keeps this dubbing test on this Mac.",
             language: "en",
             model: choice,
             referenceAudioURL: nil,
@@ -456,7 +456,7 @@ struct LocalModelInferenceTests {
             language: "en",
             model: .medium,
             referenceAudioURL: Self.fixture("en-single.wav"),
-            referenceText: "Welcome to Voxella Studio. This recording tests local word timestamps.",
+            referenceText: "Welcome to VoxStudio. This recording tests local word timestamps.",
             progress: { _, _ in }
         )
         try Self.validateDub(output)

@@ -6,7 +6,7 @@ let package = Package(
     name: "PalmierPro",
     platforms: [.macOS(.v26)],
     products: [
-        .executable(name: "VoxellaStudio", targets: ["PalmierPro"]),
+        .executable(name: "VoxStudio", targets: ["PalmierPro"]),
     ],
     traits: [
         .trait(name: "BundledSpeech", description: "Include on-device speech models and MLX."),

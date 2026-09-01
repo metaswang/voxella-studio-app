@@ -509,8 +509,8 @@ final class VoiceLibraryStore {
     private var playbackCompletionTask: Task<Void, Never>?
 
     private init() {
-        directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Voxella Studio/VoiceLibrary", isDirectory: true)
+        directory = AppSupportPaths.applicationSupport()
+            .appendingPathComponent("VoiceLibrary", isDirectory: true)
         repository = VoiceLibraryRepository(directory: directory)
         Task { await load() }
     }

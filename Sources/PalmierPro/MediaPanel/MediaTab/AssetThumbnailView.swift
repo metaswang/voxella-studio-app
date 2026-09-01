@@ -261,7 +261,7 @@ struct AssetThumbnailView: View {
                 .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
                 .foregroundStyle(AppTheme.MediaOverlay.secondaryColor)
         }
-        .help("Voxella Studio couldn't load this source file. It may be missing, on an ejected drive, or unreadable.")
+        .help("VoxStudio couldn't load this source file. It may be missing, on an ejected drive, or unreadable.")
     }
 
     private func formatDuration(_ seconds: Double) -> String {

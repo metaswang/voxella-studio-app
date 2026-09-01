@@ -640,8 +640,8 @@ final class LocalModelManager {
         #if BUNDLED_SPEECH
         return try HuggingFaceDownloader.getCacheDirectory(for: model.repository)
         #else
-        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Voxella Studio/Models", isDirectory: true)
+        let base = AppSupportPaths.caches()
+            .appendingPathComponent("Models", isDirectory: true)
         return base.appendingPathComponent(model.repository.replacingOccurrences(of: "/", with: "_"))
         #endif
     }

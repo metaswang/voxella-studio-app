@@ -39,19 +39,19 @@ NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 RESOURCES="$ROOT/Sources/PalmierPro/Resources"
 ENTITLEMENTS_TEMPLATE="$ROOT/scripts/PalmierPro.entitlements"
 DEBUG_ENTITLEMENTS="$ROOT/scripts/PalmierPro.debug.entitlements"
-APP="$ROOT/.build/Voxella Studio.app"
-ZIP="$ROOT/.build/Voxella-Studio.zip"
-DMG="$ROOT/.build/Voxella-Studio.dmg"
+APP="$ROOT/.build/VoxStudio.app"
+ZIP="$ROOT/.build/VoxStudio.zip"
+DMG="$ROOT/.build/VoxStudio.dmg"
 
 echo "==> Building ($CONFIG)"
 TRAITS="BundledSpeech"
 BUILD_ARGS=(-c "$CONFIG" --traits "$TRAITS")
 swift build "${BUILD_ARGS[@]}"
-BIN="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)/VoxellaStudio"
+BIN="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)/VoxStudio"
 echo "==> Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
-cp "$BIN" "$APP/Contents/MacOS/VoxellaStudio"
+cp "$BIN" "$APP/Contents/MacOS/VoxStudio"
 cp "$RESOURCES/Info.plist" "$APP/Contents/Info.plist"
 
 inject_plist() {
@@ -131,7 +131,7 @@ fi
 mkdir -p "$APP/Contents/Resources/mlx-swift_Cmlx.bundle"
 cp "$MLX_METALLIB" "$APP/Contents/Resources/mlx-swift_Cmlx.bundle/default.metallib"
 
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/VoxellaStudio"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/VoxStudio"
 touch "$APP"
 
 if [ "$MODE" = "fast" ]; then
@@ -143,10 +143,10 @@ if [ "$MODE" = "fast" ]; then
   exit 0
 fi
 
-DSYM="$ROOT/.build/Voxella-Studio.dSYM"
+DSYM="$ROOT/.build/VoxStudio.dSYM"
 echo "==> Generating dSYM"
 rm -rf "$DSYM"
-dsymutil "$APP/Contents/MacOS/VoxellaStudio" -o "$DSYM"
+dsymutil "$APP/Contents/MacOS/VoxStudio" -o "$DSYM"
 
 if [ "$MODE" = "dev" ]; then
   echo "==> Ad-hoc signing dev app"
@@ -274,11 +274,11 @@ rm -f "$ZIP"
 echo "==> Building DMG"
 rm -f "$DMG"
 STAGING="$(mktemp -d)"
-cp -R "$APP" "$STAGING/Voxella Studio.app"
+cp -R "$APP" "$STAGING/VoxStudio.app"
 ln -s /Applications "$STAGING/Applications"
 cp "$RESOURCES/AppIcon.icns" "$STAGING/.VolumeIcon.icns"
 hdiutil create \
-  -volname "Voxella Studio" \
+  -volname "VoxStudio" \
   -srcfolder "$STAGING" \
   -ov -format UDZO \
   "$DMG"

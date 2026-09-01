@@ -19,13 +19,13 @@ enum MainMenuBuilder {
 
     private static func appMenu() -> NSMenuItem {
         let item = NSMenuItem()
-        let menu = NSMenu(title: "Voxella Studio")
-        menu.addItem(withTitle: "About Voxella Studio", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let menu = NSMenu(title: AppIdentity.productName)
+        menu.addItem(withTitle: "About \(AppIdentity.productName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
         menu.addItem(withTitle: "Local Models…", action: #selector(AppDelegate.showLocalModels(_:)), keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Voxella Studio", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit \(AppIdentity.productName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.submenu = menu
         return item
     }

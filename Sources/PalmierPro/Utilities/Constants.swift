@@ -1,5 +1,46 @@
 import Foundation
 
+enum AppIdentity {
+    static let productName = "VoxStudio"
+}
+
+enum AppSupportPaths {
+    static let folderName = "VoxStudio"
+    static let legacyFolderName = "Voxella Studio"
+
+    nonisolated static func applicationSupport() -> URL {
+        resolved(in: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0])
+    }
+
+    nonisolated static func caches() -> URL {
+        resolved(in: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0])
+    }
+
+    nonisolated static func documents() -> URL {
+        resolved(in: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0])
+    }
+
+    nonisolated static func logs() -> URL {
+        resolved(
+            in: FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Logs", isDirectory: true)
+        )
+    }
+
+    nonisolated static func resolved(in base: URL) -> URL {
+        let current = base.appendingPathComponent(folderName, isDirectory: true)
+        let legacy = base.appendingPathComponent(legacyFolderName, isDirectory: true)
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: current.path) {
+            return current
+        }
+        if fileManager.fileExists(atPath: legacy.path) {
+            return legacy
+        }
+        return current
+    }
+}
+
 enum Layout {
     // Media panel
     static let mediaPanelDefault: CGFloat = 500
@@ -95,8 +136,7 @@ enum Project {
     static let mediaDirectoryName = "media"
 
     static var storageDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Documents/Voxella Studio", isDirectory: true)
+        AppSupportPaths.documents()
     }
 
     nonisolated static func ensureStorageDirectory() {

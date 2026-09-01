@@ -16,7 +16,7 @@ done
 "$ROOT/scripts/bundle.sh" debug --fast
 
 if ! $stream; then
-    open "$ROOT/.build/Voxella Studio.app"
+    open "$ROOT/.build/VoxStudio.app"
     exit 0
 fi
 
@@ -24,14 +24,14 @@ echo "Streaming OSLog (subsystem=com.voxella.studio). Ctrl-C to quit app and sto
 echo >&2
 
 cleanup() {
-    pid=$(pgrep -f "Voxella Studio.app/Contents/MacOS/VoxellaStudio" | head -1 || true)
+    pid=$(pgrep -f "VoxStudio.app/Contents/MacOS/VoxStudio" | head -1 || true)
     if [ -n "$pid" ]; then
-        osascript -e 'quit app "Voxella Studio"' 2>/dev/null || kill "$pid" 2>/dev/null || true
+        osascript -e 'quit app "VoxStudio"' 2>/dev/null || kill "$pid" 2>/dev/null || true
     fi
 }
 trap cleanup INT TERM EXIT
 
-( sleep 0.5 && open "$ROOT/.build/Voxella Studio.app" ) &
+( sleep 0.5 && open "$ROOT/.build/VoxStudio.app" ) &
 log stream \
     --predicate 'subsystem == "com.voxella.studio"' \
     --level info \

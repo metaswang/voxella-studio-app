@@ -5134,8 +5134,7 @@ final class WorkbenchStore {
     }
 
     nonisolated private static var dataDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Voxella Studio", isDirectory: true)
+        AppSupportPaths.applicationSupport()
     }
 
     private static func mimeType(for url: URL) -> String {

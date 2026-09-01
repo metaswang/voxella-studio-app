@@ -361,10 +361,8 @@ actor LocalDubFlowRenderer {
               ) else {
             throw LocalAIError.noAudioOutput
         }
-        let directory = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        )[0].appendingPathComponent("Voxella Studio/Dubs", isDirectory: true)
+        let directory = AppSupportPaths.applicationSupport()
+            .appendingPathComponent("Dubs", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let URL = directory.appendingPathComponent("dub-flow-\(UUID().uuidString).wav")
         buffer.frameLength = AVAudioFrameCount(samples.count)

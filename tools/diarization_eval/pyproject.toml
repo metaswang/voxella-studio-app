@@ -1,7 +1,7 @@
 [project]
 name = "voxella-diarization-eval"
 version = "0.1.0"
-description = "Reproducible RTTM scoring for Voxella Studio diarization backends"
+description = "Reproducible RTTM scoring for VoxStudio diarization backends"
 requires-python = ">=3.11"
 dependencies = [
   "pyannote.metrics==4.1.0",

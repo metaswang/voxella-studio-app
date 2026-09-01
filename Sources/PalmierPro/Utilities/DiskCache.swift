@@ -1,9 +1,8 @@
 import Foundation
 
-/// A named directory under ~/Library/Caches/Voxella Studio with size/clear helpers.
+/// A named directory under the app cache root with size/clear helpers.
 struct DiskCache: Sendable {
-    static let rootDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Voxella Studio", isDirectory: true)
+    static let rootDirectory = AppSupportPaths.caches()
 
     let directory: URL
 

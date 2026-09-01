@@ -1415,8 +1415,8 @@ actor LocalDubPipeline {
             let tokenizer = try HuggingFaceDownloader.getCacheDirectory(
                 for: LocalModelManager.ttsTokenizerRepository
             )
-            let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("Voxella Studio/MLXAudioTTS", isDirectory: true)
+            let base = AppSupportPaths.caches()
+                .appendingPathComponent("MLXAudioTTS", isDirectory: true)
             let directory = base.appendingPathComponent(
                 "\(id.rawValue)-\(descriptor.revision)",
                 isDirectory: true
@@ -1550,8 +1550,8 @@ actor LocalDubPipeline {
     }
 
     private nonisolated static func writeWAV(_ samples: [Float]) throws -> URL {
-        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Voxella Studio/Dubs", isDirectory: true)
+        let directory = AppSupportPaths.applicationSupport()
+            .appendingPathComponent("Dubs", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("dub-\(UUID().uuidString).wav")
         guard let format = AVAudioFormat(

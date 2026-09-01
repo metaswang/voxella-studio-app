@@ -45,9 +45,9 @@ struct TranscriptSegmenterTests {
         )
         #expect(
             TranscriptSegmenter.normalizeDisplayText(
-                "Welcome to Voxella Studio. This sentence stays readable.",
+                "Welcome to VoxStudio. This sentence stays readable.",
                 language: "en"
-            ) == "Welcome to Voxella Studio. This sentence stays readable."
+            ) == "Welcome to VoxStudio. This sentence stays readable."
         )
         #expect(
             TranscriptSegmenter.normalizeDisplayText("你好。 下一句", language: "zh-CN")

@@ -20,7 +20,7 @@ HF_HUB_DISABLE_XET=1 \
 ## Run the Swift evaluation
 
 ```bash
-swift run --traits BundledSpeech VoxellaStudio --wemm-eval \
+swift run --traits BundledSpeech VoxStudio --wemm-eval \
   --model-dir "/Users/adamwang/Library/Application Support/PalmierPro/Models/WeMM-Embedding-2B-4bit" \
   --video "/Users/adamwang/Downloads/signal-2026-08-14-17-26-29-163.mp4" \
   --dimension 256 \
@@ -49,7 +49,7 @@ The optional `--srt` mode follows the official [Transformers inference example](
 Each temporal segment collects SRT cues that overlap its time range. The full-video mixed embedding uses the complete SRT text. If a segment has no cue, the evaluation falls back to its video-only embedding.
 
 ```bash
-swift run --traits BundledSpeech VoxellaStudio --wemm-eval \
+swift run --traits BundledSpeech VoxStudio --wemm-eval \
   --model-dir "/Users/adamwang/Library/Application Support/PalmierPro/Models/WeMM-Embedding-2B-4bit" \
   --video "/Users/adamwang/Downloads/signal-2026-08-14-17-26-29-163.mp4" \
   --srt "/Users/adamwang/Downloads/手法治疗与居家应用体验_subtitle.srt" \
