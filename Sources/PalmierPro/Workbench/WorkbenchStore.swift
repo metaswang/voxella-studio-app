@@ -1026,6 +1026,26 @@ private struct DubCloudEditableProjection: Equatable {
     }
 }
 
+struct SummaryTaskRegistry: Sendable {
+    private(set) var generations: [UUID: UUID] = [:]
+
+    mutating func begin(for id: UUID, replacingExisting: Bool = false) -> UUID? {
+        guard replacingExisting || generations[id] == nil else { return nil }
+        let generation = UUID()
+        generations[id] = generation
+        return generation
+    }
+
+    mutating func finish(for id: UUID, generation: UUID) {
+        guard generations[id] == generation else { return }
+        generations[id] = nil
+    }
+
+    func owns(_ id: UUID, generation: UUID) -> Bool {
+        generations[id] == generation
+    }
+}
+
 enum WorkbenchMediaFlowPlanner {
     static func transcriptionSteps(
         for job: WorkbenchTranscriptionJob,
@@ -1181,7 +1201,7 @@ final class WorkbenchStore {
     var transcriptionAdmissionError: String?
     private var flowTasks: [UUID: Task<Void, Never>] = [:]
     private var stagedTranscriptions: [UUID: StagedTranscriptionArtifacts] = [:]
-    private var summaryTaskIDs: Set<UUID> = []
+    private var summaryTaskRegistry = SummaryTaskRegistry()
     private var cloudSyncTasks: [UUID: Task<Void, Never>] = [:]
     private var cloudSyncGenerations: [UUID: Int] = [:]
     private var deletingSessionIDs: Set<UUID> = []
@@ -3897,18 +3917,28 @@ final class WorkbenchStore {
         userInstruction: String? = nil,
         regenerateMetadata: Bool? = nil,
         taskAlreadyRegistered: Bool = false,
+        summaryGeneration: UUID? = nil,
         requireConfiguredModel: Bool = true,
         reportFailure: Bool = true
     ) async -> Bool {
+        let generation: UUID
         if !taskAlreadyRegistered {
-            guard summaryTaskIDs.insert(id).inserted else { return false }
+            guard let started = beginSummaryTask(for: id) else { return false }
+            generation = started
+        } else {
+            guard let summaryGeneration,
+                  summaryTaskRegistry.owns(id, generation: summaryGeneration) else {
+                return false
+            }
+            generation = summaryGeneration
         }
         defer {
             if !taskAlreadyRegistered {
-                summaryTaskIDs.remove(id)
+                finishSummaryTask(for: id, generation: generation)
             }
         }
 
+        guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
         guard !requireConfiguredModel || LLMSettingsStore.shared.hasUsableModel(for: .subtitleProcessing) else {
             updateTranscription(id) {
                 $0.summaryState = nil
@@ -3942,6 +3972,7 @@ final class WorkbenchStore {
 
         do {
             let client = try await AITransportPolicy.makeTextClient(for: .subtitleProcessing)
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
             var title = job.sessionTitle
             var tagText = job.sessionTag ?? "general"
             var internalSummary = job.internalSummary ?? ""
@@ -3951,6 +3982,7 @@ final class WorkbenchStore {
                     sourceLanguage: transcript.language ?? job.languageCode,
                     existingTitle: SessionTitlePolicy.normalizedUserTitle(job.customTitle)
                 )
+                guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
                 let shouldApplyTitle = !SessionTitlePolicy.isUserProvided(job.customTitle)
                 updateTranscription(id) {
                     if shouldApplyTitle {
@@ -3964,6 +3996,7 @@ final class WorkbenchStore {
                 internalSummary = metadata.internalSummary
             }
 
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
             let templateJob = transcriptions.first(where: { $0.id == id }) ?? job
             let templateWasUnassigned = templateJob.summaryTemplateID?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3989,6 +4022,7 @@ final class WorkbenchStore {
                 userInstruction: userInstruction
             )
             try Task.checkCancellation()
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
             guard isCurrentSummaryTemplate(
                 template.id,
                 forTranscription: id,
@@ -4011,6 +4045,7 @@ final class WorkbenchStore {
             }
             return true
         } catch {
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
             updateTranscription(id) {
                 $0.summaryState = .failed
                 $0.summaryErrorMessage = error.localizedDescription
@@ -4046,8 +4081,7 @@ final class WorkbenchStore {
         regenerateMetadata: Bool? = nil
     ) {
         let prompt = userPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard userPrompt == nil || !(prompt?.isEmpty ?? true),
-              !summaryTaskIDs.contains(id) else {
+        guard userPrompt == nil || !(prompt?.isEmpty ?? true) else {
             return
         }
         guard let job = transcriptions.first(where: { $0.id == id }),
@@ -4061,6 +4095,7 @@ final class WorkbenchStore {
             )
             return
         }
+        guard let generation = beginSummaryTask(for: id) else { return }
         WorkbenchTipCenter.shared.show(
             prompt == nil
                 ? "Regenerating summary…"
@@ -4068,12 +4103,16 @@ final class WorkbenchStore {
             kind: .info,
             id: "summary.processing.\(id.uuidString)"
         )
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             await enrichCompletedTranscription(
                 id,
                 userInstruction: prompt,
-                regenerateMetadata: regenerateMetadata
+                regenerateMetadata: regenerateMetadata,
+                taskAlreadyRegistered: true,
+                summaryGeneration: generation
             )
+            finishSummaryTask(for: id, generation: generation)
         }
     }
 
@@ -4083,8 +4122,7 @@ final class WorkbenchStore {
         regenerateMetadata: Bool? = nil
     ) {
         let prompt = userPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard userPrompt == nil || !(prompt?.isEmpty ?? true),
-              !summaryTaskIDs.contains(id) else {
+        guard userPrompt == nil || !(prompt?.isEmpty ?? true) else {
             return
         }
         guard let job = dubs.first(where: { $0.id == id }),
@@ -4098,6 +4136,7 @@ final class WorkbenchStore {
             )
             return
         }
+        guard let generation = beginSummaryTask(for: id) else { return }
         WorkbenchTipCenter.shared.show(
             prompt == nil
                 ? "Regenerating summary…"
@@ -4105,17 +4144,24 @@ final class WorkbenchStore {
             kind: .info,
             id: "summary.processing.\(id.uuidString)"
         )
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             await enrichCompletedDub(
                 id,
                 userInstruction: prompt,
-                regenerateMetadata: regenerateMetadata
+                regenerateMetadata: regenerateMetadata,
+                taskAlreadyRegistered: true,
+                summaryGeneration: generation
             )
+            finishSummaryTask(for: id, generation: generation)
         }
     }
 
     func applySummaryTemplate(_ template: SummaryTemplateDefinition, to session: WorkbenchSession) {
         if let transcriptionID = session.transcriptionID {
+            guard let generation = beginSummaryTask(for: transcriptionID, replacingExisting: true) else {
+                return
+            }
             updateTranscription(transcriptionID) {
                 $0.summaryTemplateID = template.id
                 $0.summaryTemplateName = template.name
@@ -4126,11 +4172,18 @@ final class WorkbenchStore {
             }
             Task { [weak self] in
                 guard let self else { return }
-                await self.applySummaryTemplateToTranscription(template, id: transcriptionID)
+                await self.applySummaryTemplateToTranscription(
+                    template,
+                    id: transcriptionID,
+                    generation: generation
+                )
             }
             return
         }
         if let dubID = session.dubID {
+            guard let generation = beginSummaryTask(for: dubID, replacingExisting: true) else {
+                return
+            }
             updateDub(dubID) {
                 $0.summaryTemplateID = template.id
                 $0.summaryTemplateName = template.name
@@ -4141,17 +4194,18 @@ final class WorkbenchStore {
             }
             Task { [weak self] in
                 guard let self else { return }
-                await self.applySummaryTemplateToDub(template, id: dubID)
+                await self.applySummaryTemplateToDub(template, id: dubID, generation: generation)
             }
         }
     }
 
     private func applySummaryTemplateToTranscription(
         _ template: SummaryTemplateDefinition,
-        id: UUID
+        id: UUID,
+        generation: UUID
     ) async {
-        guard summaryTaskIDs.insert(id).inserted else { return }
-        defer { summaryTaskIDs.remove(id) }
+        defer { finishSummaryTask(for: id, generation: generation) }
+        guard summaryTaskRegistry.owns(id, generation: generation) else { return }
 
         let localRouteAvailable = LLMSettingsStore.shared.hasUsableModel(for: .subtitleProcessing)
         if localRouteAvailable,
@@ -4159,6 +4213,7 @@ final class WorkbenchStore {
                id,
                regenerateMetadata: false,
                taskAlreadyRegistered: true,
+               summaryGeneration: generation,
                requireConfiguredModel: false,
                reportFailure: false
            ) {
@@ -4166,6 +4221,7 @@ final class WorkbenchStore {
             return
         }
 
+        guard summaryTaskRegistry.owns(id, generation: generation) else { return }
         updateTranscription(id) {
             $0.summaryState = .running
             $0.summaryErrorMessage = nil
@@ -4178,6 +4234,7 @@ final class WorkbenchStore {
                 hasExistingSummary: hasSummary(forTranscription: id)
             )
             try Task.checkCancellation()
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return }
             guard let summary = response.summary,
                   !summary.outputMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   isCurrentSummaryTemplate(template.id, forTranscription: id) else {
@@ -4196,21 +4253,24 @@ final class WorkbenchStore {
                     : "Transcript, translation, and summary ready"
             }
         } catch is CancellationError {
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return }
             markCloudSummaryFailure(
                 forTranscription: id,
                 message: "Cloud summary generation was cancelled."
             )
         } catch {
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return }
             markCloudSummaryFailure(forTranscription: id, message: error.localizedDescription)
         }
     }
 
     private func applySummaryTemplateToDub(
         _ template: SummaryTemplateDefinition,
-        id: UUID
+        id: UUID,
+        generation: UUID
     ) async {
-        guard summaryTaskIDs.insert(id).inserted else { return }
-        defer { summaryTaskIDs.remove(id) }
+        defer { finishSummaryTask(for: id, generation: generation) }
+        guard summaryTaskRegistry.owns(id, generation: generation) else { return }
 
         let localRouteAvailable = LLMSettingsStore.shared.hasUsableModel(for: .subtitleProcessing)
         if localRouteAvailable,
@@ -4218,6 +4278,7 @@ final class WorkbenchStore {
                id,
                regenerateMetadata: false,
                taskAlreadyRegistered: true,
+               summaryGeneration: generation,
                requireConfiguredModel: false,
                reportFailure: false
            ) {
@@ -4225,6 +4286,7 @@ final class WorkbenchStore {
             return
         }
 
+        guard summaryTaskRegistry.owns(id, generation: generation) else { return }
         updateDub(id) {
             $0.summaryState = .running
             $0.summaryErrorMessage = nil
@@ -4237,6 +4299,7 @@ final class WorkbenchStore {
                 hasExistingSummary: hasSummary(forDub: id)
             )
             try Task.checkCancellation()
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return }
             guard let summary = response.summary,
                   !summary.outputMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   isCurrentSummaryTemplate(template.id, forDub: id) else {
@@ -4255,10 +4318,23 @@ final class WorkbenchStore {
                     : "Dub, subtitles, and summary ready"
             }
         } catch is CancellationError {
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return }
             markCloudSummaryFailure(forDub: id, message: "Cloud summary generation was cancelled.")
         } catch {
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return }
             markCloudSummaryFailure(forDub: id, message: error.localizedDescription)
         }
+    }
+
+    private func beginSummaryTask(
+        for id: UUID,
+        replacingExisting: Bool = false
+    ) -> UUID? {
+        summaryTaskRegistry.begin(for: id, replacingExisting: replacingExisting)
+    }
+
+    private func finishSummaryTask(for id: UUID, generation: UUID) {
+        summaryTaskRegistry.finish(for: id, generation: generation)
     }
 
     private func requestCloudSummary(
@@ -4459,18 +4535,28 @@ final class WorkbenchStore {
         userInstruction: String? = nil,
         regenerateMetadata: Bool? = nil,
         taskAlreadyRegistered: Bool = false,
+        summaryGeneration: UUID? = nil,
         requireConfiguredModel: Bool = true,
         reportFailure: Bool = true
     ) async -> Bool {
+        let generation: UUID
         if !taskAlreadyRegistered {
-            guard summaryTaskIDs.insert(id).inserted else { return false }
+            guard let started = beginSummaryTask(for: id) else { return false }
+            generation = started
+        } else {
+            guard let summaryGeneration,
+                  summaryTaskRegistry.owns(id, generation: summaryGeneration) else {
+                return false
+            }
+            generation = summaryGeneration
         }
         defer {
             if !taskAlreadyRegistered {
-                summaryTaskIDs.remove(id)
+                finishSummaryTask(for: id, generation: generation)
             }
         }
 
+        guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
         guard !requireConfiguredModel || LLMSettingsStore.shared.hasUsableModel(for: .subtitleProcessing) else {
             updateDub(id) {
                 $0.summaryState = nil
@@ -4504,6 +4590,7 @@ final class WorkbenchStore {
 
         do {
             let client = try await AITransportPolicy.makeTextClient(for: .subtitleProcessing)
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
             var title = job.displayTitle
             var tagText = job.sessionTag ?? "general"
             var internalSummary = job.internalSummary ?? ""
@@ -4514,6 +4601,7 @@ final class WorkbenchStore {
                     sourceLanguage: transcript.language ?? job.language,
                     existingTitle: SessionTitlePolicy.normalizedUserTitle(job.title)
                 )
+                guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
                 updateDub(id) {
                     if shouldApplyTitle {
                         $0.title = metadata.title
@@ -4534,6 +4622,7 @@ final class WorkbenchStore {
                 internalSummary = metadata.internalSummary
             }
 
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
             let templateJob = dubs.first(where: { $0.id == id }) ?? job
             let templateWasUnassigned = templateJob.summaryTemplateID?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4554,6 +4643,7 @@ final class WorkbenchStore {
                 userInstruction: userInstruction
             )
             try Task.checkCancellation()
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
             guard isCurrentSummaryTemplate(
                 template.id,
                 forDub: id,
@@ -4572,6 +4662,7 @@ final class WorkbenchStore {
             }
             return true
         } catch {
+            guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
             updateDub(id) {
                 $0.summaryState = .failed
                 $0.summaryErrorMessage = error.localizedDescription

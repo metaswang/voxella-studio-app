@@ -351,6 +351,25 @@ struct LocalFirstWorkbenchTests {
         #expect(!WorkbenchStore.summaryNeedsGeneration(markdown: nil, state: .completed))
     }
 
+    @Test func applyingTemplateReplacesAutomaticSummaryGeneration() {
+        var registry = SummaryTaskRegistry()
+        let id = UUID()
+        let automaticGeneration = registry.begin(for: id)
+        #expect(automaticGeneration != nil)
+        guard let automaticGeneration else { return }
+
+        let appliedGeneration = registry.begin(for: id, replacingExisting: true)
+        #expect(appliedGeneration != nil)
+        guard let appliedGeneration else { return }
+
+        #expect(!registry.owns(id, generation: automaticGeneration))
+        #expect(registry.owns(id, generation: appliedGeneration))
+        registry.finish(for: id, generation: automaticGeneration)
+        #expect(registry.owns(id, generation: appliedGeneration))
+        registry.finish(for: id, generation: appliedGeneration)
+        #expect(!registry.owns(id, generation: appliedGeneration))
+    }
+
     @Test func newDubDraftRetainsOnlyTheLatestSettingsAndReference() {
         let voiceID = UUID()
         var earlier = WorkbenchDubJob()
