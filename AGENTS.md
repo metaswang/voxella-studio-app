@@ -283,3 +283,9 @@ Palmier Pro speaks like a quietly capable native Mac app for filmmakers: direct,
 - [Loading media data asynchronously](https://developer.apple.com/documentation/avfoundation/loading-media-data-asynchronously)
 - [Swift Testing](https://developer.apple.com/documentation/testing)
 - [Swift API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/)
+
+## Cursor Cloud specific instructions
+
+Palmier Pro cannot be built, tested, or run in the Cursor Cloud Agent environment. Cloud agents run on a Linux x86_64 VM, but this project is a macOS 26 (Tahoe), Apple-Silicon-only, non-sandboxed AppKit/SwiftUI app that requires the Xcode Swift toolchain (`.swift-version` is `xcode`). About 226 of 369 source files import Apple-only frameworks (AppKit, SwiftUI, AVFoundation, Metal, Core Image), and dependencies such as `mlx-swift`, `Sparkle`, `sentry-cocoa`, `posthog-ios`, `clerk-ios`, and `lottie-ios` are Apple-only. Installing the Linux Swift toolchain does not help because these frameworks do not exist on Linux, so `swift build`, `swift run`, and `swift test` cannot compile here.
+
+Do all build/test/run work on a local macOS 26 machine on Apple Silicon with Xcode installed (see `CONTRIBUTING.md`): `swift build`, `swift run`, `swift test`, `swift build --traits BundledSpeech`, and `./scripts/dev.sh` for a bundled debug launch. In the cloud environment, scope work to changes that can be reasoned about statically (source edits, docs) and note that compilation/runtime verification must be performed by a human on macOS.
