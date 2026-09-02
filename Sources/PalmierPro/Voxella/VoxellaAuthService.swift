@@ -316,10 +316,14 @@ enum VoxellaGoogleSignInCoordinator {
         else {
             throw VoxellaAuthError.missingGoogleConfiguration
         }
-        guard let presenter = NSApp.keyWindow ?? NSApp.mainWindow else {
+        guard let presenter = presentingWindow() else {
             throw VoxellaAuthError.presentationUnavailable
         }
 
+        if !presenter.isKeyWindow {
+            presenter.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(
             clientID: clientID,
             serverClientID: serverClientID
@@ -332,7 +336,29 @@ enum VoxellaGoogleSignInCoordinator {
     }
 
     static func handle(url: URL) -> Bool {
-        GIDSignIn.sharedInstance.handle(url)
+        let handled = GIDSignIn.sharedInstance.handle(url)
+        Log.account.notice(
+            "google sign-in callback received scheme=\(url.scheme ?? "") host=\(url.host ?? "") path=\(url.path) handled=\(handled)"
+        )
+        return handled
+    }
+
+    private static func presentingWindow() -> NSWindow? {
+        let candidates = [NSApp.keyWindow, NSApp.mainWindow]
+            .compactMap { $0 }
+            + NSApp.windows.filter { $0.isVisible }
+
+        var seen = Set<ObjectIdentifier>()
+        var visibleFallback: NSWindow?
+        for window in candidates where seen.insert(ObjectIdentifier(window)).inserted {
+            if window.isVisible {
+                visibleFallback = visibleFallback ?? window
+                if window.canBecomeKey {
+                    return window
+                }
+            }
+        }
+        return visibleFallback
     }
 }
 
@@ -441,17 +467,7 @@ actor VoxellaAuthService {
                 "host": VoxellaAPIConfiguration.baseURL.host ?? "",
             ]
         )
-        do {
-            return try await signInWithApple()
-        } catch {
-            guard Self.shouldFallBackToBrowser(after: error) else { throw error }
-            Log.account.notice(
-                "native apple unavailable, using voxstudio.me",
-                telemetry: "Native Apple unavailable",
-                data: ["host": VoxellaAPIConfiguration.baseURL.host ?? ""]
-            )
-            return try await signIn()
-        }
+        return try await signInWithApple()
     }
 
     func validAccessToken() async throws -> String? {
@@ -475,16 +491,26 @@ actor VoxellaAuthService {
     }
 
     func signInWithApple() async throws -> String {
-        let authorization = try await apple.signIn()
-        let pair = try await tokens.exchangeAppleIdentityToken(
-            identityToken: authorization.identityToken,
-            authorizationCode: authorization.authorizationCode,
-            name: authorization.name,
-            nonce: authorization.nonce
-        )
-        try store(pair)
-        Log.account.notice("voxstudio sign-in completed", telemetry: "VoxStudio sign-in completed", data: ["provider": "apple"])
-        return pair.accessToken
+        do {
+            let authorization = try await apple.signIn()
+            let pair = try await tokens.exchangeAppleIdentityToken(
+                identityToken: authorization.identityToken,
+                authorizationCode: authorization.authorizationCode,
+                name: authorization.name,
+                nonce: authorization.nonce
+            )
+            try store(pair)
+            Log.account.notice("voxstudio sign-in completed", telemetry: "VoxStudio sign-in completed", data: ["provider": "apple"])
+            return pair.accessToken
+        } catch {
+            guard Self.shouldFallBackToBrowser(after: error) else { throw error }
+            Log.account.notice(
+                "native apple unavailable, using voxstudio.me",
+                telemetry: "Native Apple unavailable",
+                data: ["host": VoxellaAPIConfiguration.baseURL.host ?? ""]
+            )
+            return try await signIn()
+        }
     }
 
     func signIn() async throws -> String {

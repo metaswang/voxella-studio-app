@@ -255,6 +255,42 @@ struct VoxellaAuthServiceTests {
         _ = try await auth.signInWithApple()
     }
 
+    @Test func directAppleSignInFallsBackToVoxStudioWhenNativeAppleIsUnavailable() async throws {
+        let browserOpened = Flag()
+        let browser = MockAuthBrowser { url in
+            browserOpened.value = true
+            let state = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first { $0.name == "state" }?
+                .value ?? ""
+            return URL(string: "voxella-studio://oauth/callback?code=web-code&state=\(state)")!
+        }
+        let tokens = MockTokenClient(
+            onExchange: { code, _, _ in
+                #expect(code == "web-code")
+                return VoxellaAuthTokens(
+                    accessToken: "web-access",
+                    refreshToken: "web-refresh",
+                    expiresAt: Date().addingTimeInterval(3600),
+                    userID: UUID()
+                )
+            }
+        )
+        let auth = VoxellaAuthService(
+            browser: browser,
+            apple: MockAppleSignIn { throw VoxellaAuthError.presentationUnavailable },
+            tokens: tokens,
+            loadRefresh: { nil },
+            saveRefresh: { _ in },
+            deleteRefresh: {}
+        )
+
+        let access = try await auth.signInWithApple()
+
+        #expect(access == "web-access")
+        #expect(browserOpened.value)
+    }
+
     @Test func ensureSignedInFallsBackToVoxStudioWhenNativeAppleIsUnavailable() async throws {
         let browserOpened = Flag()
         let browser = MockAuthBrowser { url in

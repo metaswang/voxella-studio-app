@@ -11,7 +11,7 @@ PYTHON_BIN=/tmp/wemm-mlx-venv/bin/python \
 HF_HUB_DISABLE_XET=1 \
 ./scripts/convert_wemm_to_mlx.sh \
   tencent/WeMM-Embedding-2B \
-  "/Users/adamwang/Library/Application Support/PalmierPro/Models/WeMM-Embedding-2B-4bit" \
+  "$HOME/Library/Application Support/VoxStudio/Models/WeMM-Embedding-2B-4bit" \
   4 64
 ```
 
@@ -21,7 +21,7 @@ HF_HUB_DISABLE_XET=1 \
 
 ```bash
 swift run --traits BundledSpeech VoxStudio --wemm-eval \
-  --model-dir "/Users/adamwang/Library/Application Support/PalmierPro/Models/WeMM-Embedding-2B-4bit" \
+  --model-dir "$HOME/Library/Application Support/VoxStudio/Models/WeMM-Embedding-2B-4bit" \
   --video "/Users/adamwang/Downloads/signal-2026-08-14-17-26-29-163.mp4" \
   --dimension 256 \
   --frames 4 \
@@ -50,7 +50,7 @@ Each temporal segment collects SRT cues that overlap its time range. The full-vi
 
 ```bash
 swift run --traits BundledSpeech VoxStudio --wemm-eval \
-  --model-dir "/Users/adamwang/Library/Application Support/PalmierPro/Models/WeMM-Embedding-2B-4bit" \
+  --model-dir "$HOME/Library/Application Support/VoxStudio/Models/WeMM-Embedding-2B-4bit" \
   --video "/Users/adamwang/Downloads/signal-2026-08-14-17-26-29-163.mp4" \
   --srt "/Users/adamwang/Downloads/手法治疗与居家应用体验_subtitle.srt" \
   --dimension 256 \
