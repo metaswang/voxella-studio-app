@@ -33,25 +33,42 @@ VoxStudio exposes the editor through an in-app agent and a local MCP HTTP server
 VoxStudio is a Swift-native macOS application built with Swift 6.2, SwiftUI, AppKit, and AVFoundation. SwiftUI is used for application surfaces and workflow panels; AppKit is used where the editor needs precise native macOS interaction, including timeline input and rendering; AVFoundation handles media composition, playback, audio, and export.
 
 ```text
-Session / Workbench UI
-        │
-        ▼
-WorkbenchStore ──► MediaFlowExecutor
-        │             ├─ transcription, VAD, diarization, alignment
-        │             ├─ translation and subtitle-track processing
-        │             └─ voice reference, speech synthesis, dub assembly
-        │
-        ▼
-Session artifacts ──► EditorViewModel ──► Timeline / Preview / Export
-                              ▲
-                              │
-                 In-app Agent / MCP HTTP server
+Media / recording
+       │
+       ▼
+Transcription session ──► MediaFlowExecutor
+       │                    ├─ transcription, VAD, diarization, alignment
+       │                    └─ translation and subtitle-track processing
+       │
+       │ sourceTranscriptionID
+       ▼
+Dub session ─────────────► MediaFlowExecutor
+       │                    ├─ script and reference-voice selection
+       │                    ├─ speech synthesis and segment alignment
+       │                    └─ dubbed audio and subtitle-track assembly
+       │
+       ▼
+WorkbenchSession
+       │
+       ├─ Open as clip project ──► WorkbenchEditorBridge
+       │                             └─ EditorViewModel
+       │                                └─ Timeline / Preview / Export
+       │
+       └─ Media-browser drag/drop ─► session ID + subtitle scope
+                                      └─ linked timeline clips
+
+In-app Agent / MCP HTTP server ─────► same Workbench and editor operations
 ```
 
 The main layers are:
 
-- **Workbench and sessions** — owns transcription and dubbing sessions, their processing state, searchable artifacts, and session-level exports.
+- **Transcription sessions** — `WorkbenchStore` owns source media, transcripts, word timings, speaker information, source subtitles, translation tracks, summaries, processing state, and session-level exports.
+- **Dub sessions** — a `WorkbenchDubJob` is the durable dubbing record. It stores the script, target language, reference voice or reference audio, per-speaker or per-segment voice assignments, rendered segments, aligned transcript, dubbed subtitles, output revisions, and processing state. A dub references its source transcription through `sourceTranscriptionID`; standalone dubs are also exposed as `WorkbenchSession` values with `sessionType = dub`.
+- **Unified session projection** — `WorkbenchStore.sessions` combines transcription jobs, their linked dub jobs, and standalone dubs into `WorkbenchSession` values. This gives the UI, search, export, and editor workflows one session-level view while preserving the underlying transcription and dub records.
 - **Media-flow pipelines** — orchestrates long-running transcription, translation, subtitle, and dubbing stages while reporting progress and respecting cancellation.
+- **Session-to-editor bridge** — `WorkbenchEditorBridge.openSession` creates a `VideoProject` and asks `EditorViewModel` to place the session. Source media is imported onto a standard audio or video track; source and translation subtitle cues are converted into timeline text clips; and generated dub audio is placed on a dedicated dub track when needed.
+- **Session identity on the timeline** — inserted media and subtitle clips retain `sourceSessionId`, `sourceCueId`, and `sourceCueScope`. The media browser uses stable session IDs and explicit scopes for source, translation, and dub subtitle drag-and-drop, so timeline content remains traceable to its originating session.
+- **Editor-originated processing** — transcription, translation, and dubbing can also start from a selected timeline clip. The editor creates or updates the corresponding Workbench job, waits for the terminal result, then links the clip and inserts the resulting subtitle or dub track using the same session-aware operations.
 - **Project and timeline model** — represents project settings, media manifests, tracks, clips, captions, effects, keyframes, and linked session media.
 - **Editor and preview** — coordinates user mutations, undo, timeline interaction, AVFoundation composition, playback, frame rendering, and export.
 - **Local AI and backend services** — routes on-device speech and audio processing, optional cloud transcription/dubbing services, model downloads, authentication, and storage.
