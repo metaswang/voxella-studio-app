@@ -41,12 +41,31 @@ struct LocalFirstWorkbenchTests {
         #expect(abs(prepared.duration - duration) < 0.02)
         #expect(prepared.duration > 10)
 
+        #if BUNDLED_SPEECH
+        // Pure tones are not speech; Silero should reject them instead of keeping the
+        // old RMS first-to-last span used by the microphone fallback path.
+        do {
+            _ = try await VoiceReferenceProcessor.shared.prepare(
+                sourceURL: sourceURL,
+                trimBoundarySilence: true
+            )
+            Issue.record("Expected pure-tone fixture to fail speech validation under Silero")
+        } catch let error as VoiceLibraryError {
+            switch error {
+            case .referenceSilent, .referenceTooShort:
+                break
+            default:
+                Issue.record("Unexpected VoiceLibraryError: \(error)")
+            }
+        }
+        #else
         let trimmedPrepared = try await VoiceReferenceProcessor.shared.prepare(
             sourceURL: sourceURL,
             trimBoundarySilence: true
         )
         defer { try? FileManager.default.removeItem(at: trimmedPrepared.URL) }
         #expect(abs(trimmedPrepared.duration - (duration - Double(voicedStart) / sampleRate + 0.1)) < 0.03)
+        #endif
 
         let output = try AVAudioFile(forReading: prepared.URL)
         #expect(output.processingFormat.sampleRate == 24_000)
@@ -95,6 +114,128 @@ struct LocalFirstWorkbenchTests {
 
         #expect(!VoiceReferenceSilenceTrimmer.hasAudibleSpeech(samples: samples, sampleRate: sampleRate))
         #expect(VoiceReferenceSilenceTrimmer.trim(samples: samples, sampleRate: sampleRate) == samples)
+    }
+
+    @Test func voiceReferenceSilenceTrimmerRejectsFlatLightNoise() {
+        let sampleRate = 24_000.0
+        let samples = [Float](repeating: 0.01, count: Int(4 * sampleRate))
+        #expect(!VoiceReferenceSilenceTrimmer.hasAudibleSpeech(samples: samples, sampleRate: sampleRate))
+        #expect(VoiceReferenceSilenceTrimmer.trim(samples: samples, sampleRate: sampleRate) == samples)
+    }
+
+    @Test func voiceReferenceSpeechGateDropsLeadingAndTrailingNoiseBed() {
+        let sampleRate = 24_000.0
+        let leading = Int(1.0 * sampleRate)
+        let speech = Int(4.0 * sampleRate)
+        let trailing = Int(1.0 * sampleRate)
+        var samples = [Float](repeating: 0.01, count: leading + speech + trailing)
+        for index in 0..<speech {
+            samples[leading + index] = 0.15 * sin(2 * .pi * 220 * Float(index) / Float(sampleRate))
+        }
+        let intervals = [
+            VoiceReferenceSpeechInterval(startTime: 1.0, endTime: 5.0)
+        ]
+        let trimmed = VoiceReferenceSpeechGate.trim(
+            samples: samples,
+            sampleRate: sampleRate,
+            speechIntervals: intervals
+        )
+        let duration = Double(trimmed.count) / sampleRate
+        #expect(abs(duration - 4.2) < 0.08)
+        let leadingPeak = trimmed.prefix(Int(0.05 * sampleRate)).map { abs($0) }.max() ?? 0
+        #expect(leadingPeak < 0.03)
+        #expect(trimmed.contains { abs($0) > 0.1 })
+    }
+
+    @Test func voiceReferenceSpeechGateKeepsQuietSpeechOverComparableBed() {
+        let sampleRate = 24_000.0
+        let leading = Int(1.0 * sampleRate)
+        let speech = Int(3.5 * sampleRate)
+        var samples = [Float](repeating: 0.02, count: leading + speech + leading)
+        for index in 0..<speech {
+            samples[leading + index] = 0.04 * sin(2 * .pi * 180 * Float(index) / Float(sampleRate))
+        }
+        let intervals = [
+            VoiceReferenceSpeechInterval(startTime: 1.0, endTime: 4.5)
+        ]
+        let span = VoiceReferenceSpeechGate.trimmedSpan(
+            samples: samples,
+            sampleRate: sampleRate,
+            speechIntervals: intervals
+        )
+        let trimmed = VoiceReferenceSpeechGate.trim(
+            samples: samples,
+            sampleRate: sampleRate,
+            speechIntervals: intervals
+        )
+        #expect(span != nil)
+        #expect(Double(trimmed.count) / sampleRate < 4.0)
+        #expect(Double(trimmed.count) / sampleRate > 3.4)
+    }
+
+    @Test func voiceReferenceSpeechGateIgnoresEmptyIntervals() {
+        let sampleRate = 24_000.0
+        let samples = [Float](repeating: 0.01, count: Int(4 * sampleRate))
+        #expect(
+            VoiceReferenceSpeechGate.trimmedSpan(
+                samples: samples,
+                sampleRate: sampleRate,
+                speechIntervals: []
+            ) == nil
+        )
+    }
+
+    @Test func voiceReferenceLoudnessHitsTargetWithoutExceedingCeiling() {
+        let sampleRate = 24_000
+        var samples = [Float](repeating: 0, count: sampleRate * 4)
+        let step = 2 * Float.pi * 220 / Float(sampleRate)
+        for index in samples.indices {
+            samples[index] = 0.05 * sin(step * Float(index))
+        }
+        let normalized = VoiceReferenceSpeechGate.normalizeLoudness(samples)
+        var peak: Float = 0
+        for sample in normalized {
+            peak = max(peak, abs(sample))
+        }
+        let target = Float(pow(10.0, VoiceReferenceSpeechGate.targetPeakDBFS / 20.0))
+        let ceiling = Float(pow(10.0, VoiceReferenceSpeechGate.truePeakCeilingDBTP / 20.0))
+        #expect(abs(peak - target) < 0.02)
+        #expect(peak <= ceiling + 0.001)
+    }
+
+    @Test func voiceReferenceProcessesLatestLibraryRecordingWithoutOverwritingIt() async throws {
+        let source = URL(
+            filePath: NSHomeDirectory()
+                + "/Library/Application Support/Voxella Studio/VoiceLibrary/EF76B67A-F8D9-4F04-830B-03AAD4EED082/reference.wav"
+        )
+        try #require(FileManager.default.fileExists(atPath: source.path))
+        let original = try Data(contentsOf: source)
+        let prepared = try await VoiceReferenceProcessor.shared.prepare(
+            sourceURL: source,
+            trimBoundarySilence: true
+        )
+        defer { try? FileManager.default.removeItem(at: prepared.URL) }
+        #expect(try Data(contentsOf: source) == original)
+        #expect(prepared.duration >= 3)
+        #expect(prepared.duration <= 9.38 + 0.05)
+
+        let artifacts = URL(filePath: "/Users/adamwang/Project/subdub/voxella-studio-app/artifacts/voice-reference-capture")
+        try FileManager.default.createDirectory(at: artifacts, withIntermediateDirectories: true)
+        let after = artifacts.appending(path: "ad_english.after.wav")
+        let before = artifacts.appending(path: "ad_english.before.wav")
+        try FileIO.copyReplacingDestination(from: source, to: before)
+        try FileIO.copyReplacingDestination(from: prepared.URL, to: after)
+
+        let output = try AVAudioFile(forReading: prepared.URL)
+        #expect(output.processingFormat.sampleRate == 24_000)
+        #expect(output.processingFormat.channelCount == 1)
+        let frameCount = AVAudioFrameCount(output.length)
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: output.processingFormat, frameCapacity: frameCount))
+        try output.read(into: buffer, frameCount: frameCount)
+        let channel = try #require(buffer.floatChannelData?[0])
+        let peak = (0..<Int(buffer.frameLength)).reduce(Float.zero) { max($0, abs(channel[$1])) }
+        let ceiling = Float(pow(10.0, VoiceReferenceSpeechGate.truePeakCeilingDBTP / 20.0))
+        #expect(peak <= ceiling + 0.01)
     }
 
     @Test func exposesOnlyFirstReleaseRoutes() {

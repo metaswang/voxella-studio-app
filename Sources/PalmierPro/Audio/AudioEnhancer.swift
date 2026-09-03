@@ -45,6 +45,12 @@ enum AudioEnhancer {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    #if BUNDLED_SPEECH
+    static func enhanceMonoSamples(_ samples: [Float], sampleRate: Int) async throws -> [Float] {
+        try await modelBox.enhance(audio: samples, sampleRate: sampleRate)
+    }
+    #endif
+
     private static func denoisedURL(for sourceURL: URL, mediaRef: String) -> URL {
         cache.directory.appendingPathComponent("\(mediaRef)_\(DiskCache.sizeMtimeTag(for: sourceURL))_wet.caf")
     }
