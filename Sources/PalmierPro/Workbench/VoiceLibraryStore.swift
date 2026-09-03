@@ -136,7 +136,7 @@ struct PreparedVoiceAudio: Sendable {
     var duration: Double
 }
 
-private final class VoiceConversionInput: @unchecked Sendable {
+final class VoiceConversionInput: @unchecked Sendable {
     private let lock = NSLock()
     private let buffer: AVAudioPCMBuffer
     private var supplied = false
@@ -167,7 +167,7 @@ actor VoiceReferenceProcessor {
     func prepare(
         sourceURL: URL,
         trimBoundarySilence: Bool = false
-    ) throws -> PreparedVoiceAudio {
+    ) async throws -> PreparedVoiceAudio {
         let input = try AVAudioFile(forReading: sourceURL)
         let inputFormat = input.processingFormat
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
@@ -217,10 +217,14 @@ actor VoiceReferenceProcessor {
 
         var samples = Array(UnsafeBufferPointer(start: channel, count: Int(converted.frameLength)))
         if trimBoundarySilence {
-            samples = VoiceReferenceSilenceTrimmer.trim(
+            let processed = try await VoiceReferenceCapturePipeline.process(
                 samples: samples,
                 sampleRate: sampleRate
             )
+            samples = processed.samples
+            if processed.confirmedNoSpeech {
+                throw VoiceLibraryError.referenceSilent
+            }
         }
         let duration = Double(samples.count) / sampleRate
         guard duration >= minimumDuration else { throw VoiceLibraryError.referenceTooShort }
@@ -340,6 +344,11 @@ enum VoiceReferenceSilenceTrimmer {
         let sorted = levels.sorted()
         guard let peakLevel = sorted.last, peakLevel >= 0.006 else { return nil }
         let floorIndex = min(sorted.count - 1, Int(Double(sorted.count) * 0.1))
+        let noiseFloor = max(sorted[floorIndex], 0.0001)
+        if peakLevel < VoiceReferenceSpeechGate.quietFlatPeak,
+           peakLevel / noiseFloor < VoiceReferenceSpeechGate.minimumQuietDynamicRange {
+            return nil
+        }
         let threshold = max(0.003, min(sorted[floorIndex] * 3, peakLevel * 0.35))
         let requiredWindows = max(1, Int((minimumAudibleDuration / analysisWindowDuration).rounded(.up)))
 

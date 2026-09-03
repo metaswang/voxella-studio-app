@@ -65,12 +65,15 @@ actor SpeechAnalysisService {
 
     private struct ModelKey: Hashable, Sendable {
         let revision: String
+        let threshold: Float
     }
 
     private var managers: [ModelKey: VadManager] = [:]
 
     func analyze(
         samples: [Float],
+        threshold: Float = 0.5,
+        segmentation: VadSegmentationConfig? = nil,
         progress: @escaping @Sendable (Int, Int, String) -> Void
     ) async throws -> SpeechRegionAnalysis {
         guard !samples.isEmpty else {
@@ -91,11 +94,11 @@ actor SpeechAnalysisService {
         let totalChunks = LocalSpeechVAD.chunkCount(for: samples.count)
         progress(0, totalChunks, "Checking for speech locally…")
         let startedAt = DispatchTime.now().uptimeNanoseconds
-        let manager = try await vadManager(for: descriptor)
+        let manager = try await vadManager(for: descriptor, threshold: threshold)
         try Task.checkCancellation()
-        var segmentation = VadSegmentationConfig.default
-        segmentation.maxSpeechDuration = .infinity
-        let segments = try await manager.segmentSpeech(samples, config: segmentation)
+        var segmentationConfig = segmentation ?? .default
+        segmentationConfig.maxSpeechDuration = .infinity
+        let segments = try await manager.segmentSpeech(samples, config: segmentationConfig)
         try Task.checkCancellation()
         progress(totalChunks, totalChunks, "Checking for speech locally… almost done")
 
@@ -119,8 +122,11 @@ actor SpeechAnalysisService {
         return analysis
     }
 
-    private func vadManager(for descriptor: LocalModelDescriptor) async throws -> VadManager {
-        let key = ModelKey(revision: descriptor.revision)
+    private func vadManager(
+        for descriptor: LocalModelDescriptor,
+        threshold: Float
+    ) async throws -> VadManager {
+        let key = ModelKey(revision: descriptor.revision, threshold: threshold)
         if let manager = managers[key] { return manager }
 
         let startedAt = DispatchTime.now().uptimeNanoseconds
@@ -133,9 +139,9 @@ actor SpeechAnalysisService {
         let configuration = MLModelConfiguration()
         configuration.computeUnits = .cpuAndNeuralEngine
         let model = try await MLModel.load(contentsOf: modelURL, configuration: configuration)
-        // ANE keeps Metal free for ASR; 0.5 is Silero's published speech threshold.
+        // ANE keeps Metal free for ASR. Callers choose a threshold for their pipeline.
         let config = VadConfig(
-            defaultThreshold: 0.5,
+            defaultThreshold: threshold,
             computeUnits: .cpuAndNeuralEngine
         )
         let manager = VadManager(config: config, vadModel: model)
