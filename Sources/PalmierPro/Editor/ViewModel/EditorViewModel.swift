@@ -143,6 +143,13 @@ final class EditorViewModel {
     var timelineScrollRestoreX: Double?
     var isScrubbing: Bool = false
     var toolMode: ToolMode = .pointer
+    /// Window pointer tracking ignores SwiftUI opacity; false while another workbench route is frontmost.
+    var isPointerInputEnabled = true {
+        didSet {
+            guard oldValue != isPointerInputEnabled else { return }
+            onPointerInputEnabledDidChange?()
+        }
+    }
     var sessionProcessingStates: [String: EditorSessionProcessingState] = [:]
     var showExportDialog: Bool = false
     var showGenerationPanel: Bool = false {
@@ -342,6 +349,7 @@ final class EditorViewModel {
     @ObservationIgnored let projectPackageCoordinator = ProjectPackageCoordinator()
     @ObservationIgnored var onProjectCheckpointRequired: (() -> Void)?
     @ObservationIgnored var onCancelTimelineDrag: (() -> Void)?
+    @ObservationIgnored var onPointerInputEnabledDidChange: (() -> Void)?
     var isDocumentEdited: Bool = false
 
     func telemetrySnapshot() -> [String: Any] {
@@ -434,6 +442,7 @@ final class EditorViewModel {
     }
 
     func seekToFrame(_ frame: Int, mode: PreviewSeekMode = .exact) {
+        if mode == .interactiveScrub, !isPointerInputEnabled { return }
         let clamped = min(max(0, frame), max(0, timeline.totalFrames))
         if mode == .interactiveScrub {
             guard playheadState.timelineFrame != clamped else { return }
@@ -447,6 +456,7 @@ final class EditorViewModel {
     // MARK: - Source playback (for preview tabs)
 
     func seekSourceToFrame(_ frame: Int, mode: PreviewSeekMode = .exact) {
+        if mode == .interactiveScrub, !isPointerInputEnabled { return }
         let clamped = min(max(0, frame), max(0, activePreviewDurationFrames))
         if mode == .interactiveScrub {
             guard playheadState.sourceFrame != clamped else { return }

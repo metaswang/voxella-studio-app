@@ -92,6 +92,7 @@ final class AppState {
                 "presentEditor replacing active project \(current.displayName) with \(project.displayName)"
             )
             current.editorViewModel.pause()
+            current.editorViewModel.isPointerInputEnabled = false
             teardownSession()
             activeProject = nil
             editorPresentation = .none
@@ -104,6 +105,7 @@ final class AppState {
             installSession(for: project)
         }
         editorPresentation = .active
+        project.editorViewModel.isPointerInputEnabled = true
         editorSession?.setInputEnabled(true)
         WorkbenchStore.shared.route = .videoEditor
         HomeWindowController.shared.applyEditorMode(true)
@@ -113,6 +115,8 @@ final class AppState {
     func suspendEditor() {
         guard editorPresentation == .active, let project = activeProject else { return }
         project.editorViewModel.pause()
+        project.editorViewModel.onCancelTimelineDrag?()
+        project.editorViewModel.isPointerInputEnabled = false
         editorPresentation = .suspended
         editorSession?.setInputEnabled(false)
         HomeWindowController.shared.applyEditorMode(false)

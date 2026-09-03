@@ -1059,35 +1059,42 @@ final class TimelineView: NSView {
     // MARK: - Input forwarding
 
     override func mouseDown(with event: NSEvent) {
+        guard editor.isPointerInputEnabled else { return }
         inputController.mouseDown(with: event, geometry: geometry)
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard editor.isPointerInputEnabled else { return }
         inputController.mouseDragged(with: event, geometry: geometry)
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard editor.isPointerInputEnabled else { return }
         inputController.mouseUp(with: event, geometry: geometry)
     }
 
     override func mouseMoved(with event: NSEvent) {
+        guard editor.isPointerInputEnabled else { return }
         inputController.mouseMoved(with: event, geometry: geometry)
     }
 
     override func mouseExited(with event: NSEvent) {
-        setHoveredClipId(nil)
+        inputController.endPointerTracking()
         NSCursor.arrow.set()
     }
 
     override func scrollWheel(with event: NSEvent) {
+        guard editor.isPointerInputEnabled else { return }
         inputController.scrollWheel(with: event, geometry: geometry)
     }
 
     override func magnify(with event: NSEvent) {
+        guard editor.isPointerInputEnabled else { return }
         inputController.magnify(with: event)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        guard editor.isPointerInputEnabled else { return nil }
         let point = convert(event.locationInWindow, from: nil)
         let trackIndex = geometry.trackAt(y: point.y)
         let clickFrame = max(0, geometry.frameAt(x: point.x))
@@ -1583,9 +1590,18 @@ final class TimelineView: NSView {
         needsDisplay = true
     }
 
+    func reloadPointerTracking() {
+        if !editor.isPointerInputEnabled {
+            inputController.endPointerTracking()
+            NSCursor.arrow.set()
+        }
+        updateTrackingAreas()
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         for area in trackingAreas { removeTrackingArea(area) }
+        guard editor.isPointerInputEnabled else { return }
         addTrackingArea(NSTrackingArea(
             rect: bounds,
             options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],

@@ -37,6 +37,10 @@ struct TimelineContainerView: NSViewRepresentable {
         context.coordinator.timelineView = timelineView
         context.coordinator.scrollView = scrollView
         context.coordinator.editor = editor
+        editor.onPointerInputEnabledDidChange = { [weak coordinator = context.coordinator] in
+            coordinator?.applyPointerInputEnabled()
+        }
+        context.coordinator.applyPointerInputEnabled()
 
         scrollView.contentView.postsBoundsChangedNotifications = true
         scrollView.contentView.postsFrameChangedNotifications = true
@@ -63,6 +67,11 @@ struct TimelineContainerView: NSViewRepresentable {
     }
 
     func updateNSView(_ container: NSView, context: Context) {
+        context.coordinator.editor = editor
+        editor.onPointerInputEnabledDidChange = { [weak coordinator = context.coordinator] in
+            coordinator?.applyPointerInputEnabled()
+        }
+        context.coordinator.applyPointerInputEnabled()
         let renderState = RenderState(
             revision: editor.timelineRenderRevision,
             zoomScale: editor.zoomScale,
@@ -120,6 +129,16 @@ struct TimelineContainerView: NSViewRepresentable {
         var scrollView: NSScrollView?
         weak var editor: EditorViewModel?
         private var renderState: RenderState?
+        private var appliedPointerInputEnabled: Bool?
+
+        @MainActor
+        func applyPointerInputEnabled() {
+            let enabled = editor?.isPointerInputEnabled ?? true
+            guard appliedPointerInputEnabled != enabled else { return }
+            appliedPointerInputEnabled = enabled
+            headerView?.reloadPointerTracking()
+            timelineView?.reloadPointerTracking()
+        }
 
         func needsRender(for next: RenderState) -> Bool {
             defer { renderState = next }

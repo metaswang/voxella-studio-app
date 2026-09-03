@@ -549,6 +549,13 @@ enum AppTheme {
         static let emptyStateMinHeight: CGFloat = 260
         static let summaryPanelMinHeight: CGFloat = 160
         static let waveformHeight: CGFloat = 54
+        static let sessionAudioCanvasHeight: CGFloat =
+            AppTheme.Spacing.lgXl
+            + waveformHeight
+            + AppTheme.Spacing.smMd
+            + AppTheme.IconSize.xl
+            + AppTheme.Spacing.md
+            + AppTheme.Spacing.lgXl
         static let waveformBarStep: CGFloat = 5
         static let waveformBarSpacing: CGFloat = 2
         static let waveformBarWidth: CGFloat = 3

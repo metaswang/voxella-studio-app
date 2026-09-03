@@ -934,6 +934,10 @@ struct WorkbenchSession: Identifiable, Sendable {
     var remoteSourcePosterURL: URL? = nil
     var netVideoSource: WorkbenchNetVideoSource? = nil
 
+    var showsFloatingNetVideoPreview: Bool {
+        netVideoSource != nil
+    }
+
     var isRemoteOnly: Bool {
         transcriptionID == nil && dubID == nil && remoteSessionID != nil
     }

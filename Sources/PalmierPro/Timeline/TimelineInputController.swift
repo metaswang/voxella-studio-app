@@ -761,9 +761,18 @@ final class TimelineInputController {
         view.needsDisplay = true
     }
 
-    // MARK: - Mouse moved (cursor updates)
+    // MARK: - Pointer tracking
+
+    func endPointerTracking() {
+        razorPreviewFrame = nil
+        razorPreviewPoint = nil
+        razorSubtitleHint = nil
+        view.setHoveredClipId(nil)
+        view.needsDisplay = true
+    }
 
     func mouseMoved(with event: NSEvent, geometry: TimelineGeometry) {
+        guard editor.isPointerInputEnabled else { return }
         let point = view.convert(event.locationInWindow, from: nil)
         let scrollOffsetY = view.enclosingScrollView?.contentView.bounds.origin.y ?? 0
 

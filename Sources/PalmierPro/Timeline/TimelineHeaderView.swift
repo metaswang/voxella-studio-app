@@ -234,6 +234,7 @@ final class TimelineHeaderView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        guard editor.isPointerInputEnabled else { return }
         let point = convert(event.locationInWindow, from: nil)
 
         for (ti, rect) in captionButtonRects {
@@ -299,6 +300,7 @@ final class TimelineHeaderView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard editor.isPointerInputEnabled else { return }
         let point = convert(event.locationInWindow, from: nil)
 
         if let drag = reorderDrag {
@@ -321,6 +323,7 @@ final class TimelineHeaderView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard editor.isPointerInputEnabled else { return }
         if let drag = reorderDrag {
             reorderDrag = nil
             editor.commitTrackReorder(before: drag.before)
@@ -339,6 +342,7 @@ final class TimelineHeaderView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        guard editor.isPointerInputEnabled else { return }
         let point = convert(event.locationInWindow, from: nil)
         if dragHandleRects.values.contains(where: { $0.contains(point) }) {
             NSCursor.openHand.set()
@@ -362,9 +366,17 @@ final class TimelineHeaderView: NSView {
             || dragHandleRects.values.contains(where: { $0.contains(point) })
     }
 
+    func reloadPointerTracking() {
+        if !editor.isPointerInputEnabled {
+            NSCursor.arrow.set()
+        }
+        updateTrackingAreas()
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         for area in trackingAreas { removeTrackingArea(area) }
+        guard editor.isPointerInputEnabled else { return }
         addTrackingArea(NSTrackingArea(
             rect: bounds,
             options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],

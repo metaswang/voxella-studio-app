@@ -13,6 +13,8 @@
 			<string>VoxStudio Project</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>com.voxella.studio.project</string>
@@ -48,6 +50,8 @@
 	<string>0.6.15</string>
 	<key>CFBundleVersion</key>
 	<string>76</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.video</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>NSHighResolutionCapable</key>
@@ -67,19 +71,7 @@
 				<string>voxstudio</string>
 			</array>
 		</dict>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>Google Sign In</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>CONFIGURE_GOOGLE_MAC_REVERSED_CLIENT_ID</string>
-			</array>
-		</dict>
 	</array>
-	<key>GIDClientID</key>
-	<string>CONFIGURE_GOOGLE_MAC_CLIENT_ID</string>
-	<key>GIDServerClientID</key>
-	<string>CONFIGURE_GOOGLE_SERVER_CLIENT_ID</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

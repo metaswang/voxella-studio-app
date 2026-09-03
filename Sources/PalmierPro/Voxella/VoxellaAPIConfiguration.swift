@@ -20,8 +20,6 @@ enum VoxellaAPIConfiguration {
     }
 
     static var tokenURL: URL { apiURL("oauth/token") }
-    static var googleOneTapURL: URL { apiURL("api/v1/auth/google/one-tap") }
-    static var appleTokenURL: URL { apiURL("api/v1/auth/apple/token") }
     static var refreshURL: URL { apiURL("api/v1/auth/refresh") }
     static var logoutURL: URL { apiURL("api/v1/auth/logout") }
     static var sessionsURL: URL { apiURL("api/v1/sessions", isCollection: true) }

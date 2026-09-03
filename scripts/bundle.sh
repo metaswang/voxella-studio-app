@@ -4,8 +4,9 @@ set -euo pipefail
 # Usage:
 #   scripts/bundle.sh [release|debug]           # ad-hoc signed dev build
 #   scripts/bundle.sh debug --fast              # fastest: skip dSYM + deep sign
-#   scripts/bundle.sh debug --sign              # Apple Development + profile (native SIWA)
-#   scripts/bundle.sh release --sign            # codesign with SIGNING_IDENTITY + profile
+#   scripts/bundle.sh debug --sign              # signed Developer ID-compatible app
+#   scripts/bundle.sh release --sign            # signed Developer ID-compatible app
+#   scripts/bundle.sh release --mas             # Mac App Store app + installer package
 #   scripts/bundle.sh release --dist            # Developer ID + notarize + staple + DMG
 
 CONFIG="release"
@@ -15,6 +16,7 @@ for arg in "$@"; do
     release|debug) CONFIG="$arg" ;;
     --fast)        MODE="fast" ;;
     --sign)        MODE="sign" ;;
+    --mas)         MODE="mas" ;;
     --dist)        MODE="dist" ;;
     *) echo "unknown arg: $arg" >&2; exit 1 ;;
   esac
@@ -37,11 +39,16 @@ fi
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 RESOURCES="$ROOT/Sources/PalmierPro/Resources"
-ENTITLEMENTS_TEMPLATE="$ROOT/scripts/PalmierPro.entitlements"
 DEBUG_ENTITLEMENTS="$ROOT/scripts/PalmierPro.debug.entitlements"
 APP="$ROOT/.build/VoxStudio.app"
 ZIP="$ROOT/.build/VoxStudio.zip"
 DMG="$ROOT/.build/VoxStudio.dmg"
+
+if [ "$MODE" = "mas" ]; then
+  SIGNING_IDENTITY="${MAS_SIGNING_IDENTITY:-$SIGNING_IDENTITY}"
+  ENTITLEMENTS_TEMPLATE="${MAS_ENTITLEMENTS_TEMPLATE:-$ROOT/scripts/PalmierPro.mas.entitlements}"
+  PROVISIONING_PROFILE="${MAS_PROVISIONING_PROFILE:-${PROVISIONING_PROFILE:-}}"
+fi
 
 echo "==> Building ($CONFIG)"
 TRAITS="BundledSpeech"
@@ -67,14 +74,6 @@ inject_plist() {
 echo "==> Injecting backend config into Info.plist"
 inject_plist PalmierConvexDeploymentURL "${CONVEX_DEPLOYMENT_URL:-}"
 inject_plist PalmierConvexHttpURL "${CONVEX_HTTP_URL:-}"
-inject_plist GIDClientID "${GOOGLE_MAC_CLIENT_ID:-}"
-inject_plist GIDServerClientID "${GOOGLE_SERVER_CLIENT_ID:-}"
-if [ -n "${GOOGLE_MAC_REVERSED_CLIENT_ID:-}" ]; then
-  /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:1:CFBundleURLSchemes:0 ${GOOGLE_MAC_REVERSED_CLIENT_ID}" "$APP/Contents/Info.plist"
-else
-  echo "!! GOOGLE_MAC_REVERSED_CLIENT_ID not set in $ENV_FILE — Google Sign-In callback will be unavailable" >&2
-fi
-
 cp "$RESOURCES/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # Flatten SwiftPM's resource bundle into the app's Resources tree.
@@ -131,6 +130,9 @@ fi
 mkdir -p "$APP/Contents/Resources/mlx-swift_Cmlx.bundle"
 cp "$MLX_METALLIB" "$APP/Contents/Resources/mlx-swift_Cmlx.bundle/default.metallib"
 
+echo "==> Clearing quarantine attributes before signing"
+xattr -dr com.apple.quarantine "$APP"
+
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/VoxStudio"
 touch "$APP"
 
@@ -162,6 +164,11 @@ if [ -z "$SIGNING_IDENTITY" ]; then
   exit 1
 fi
 
+if [ "$MODE" = "mas" ] && [[ "$SIGNING_IDENTITY" != 3rd\ Party\ Mac\ Developer\ Application:* ]]; then
+  echo "!! --mas requires a 3rd Party Mac Developer Application identity; got: $SIGNING_IDENTITY" >&2
+  exit 1
+fi
+
 if [ "$MODE" = "dist" ] && [[ "$SIGNING_IDENTITY" != Developer\ ID\ Application:* ]]; then
   echo "!! --dist requires a Developer ID Application identity; got: $SIGNING_IDENTITY" >&2
   exit 1
@@ -184,57 +191,50 @@ if [[ ! "$TEAM_IDENTIFIER" =~ ^[A-Za-z0-9]{10}$ ]]; then
 fi
 if [ "$TEAM_IDENTIFIER" != "$cert_ou" ]; then
   echo "!! TEAM_IDENTIFIER=$TEAM_IDENTIFIER does not match certificate OU=$cert_ou" >&2
-  echo "!! Native Sign in with Apple requires the paid team that owns com.voxella.studio" >&2
   exit 1
 fi
 
-PROVISIONING_PROFILE="${PROVISIONING_PROFILE:-}"
-PROVISIONING_PROFILE="${PROVISIONING_PROFILE/#\~/$HOME}"
-if [ -z "$PROVISIONING_PROFILE" ]; then
-  echo "!! PROVISIONING_PROFILE is required for --sign or --dist (restricted entitlements)" >&2
-  exit 1
-fi
-if [ ! -f "$PROVISIONING_PROFILE" ]; then
-  echo "!! provisioning profile not found: $PROVISIONING_PROFILE" >&2
-  exit 1
-fi
-
-PROFILE_PLIST="$(mktemp -t palmierpro-profile)"
-SIGNING_ENTITLEMENTS="$(mktemp -t palmierpro-entitlements)"
-trap 'rm -f "$PROFILE_PLIST" "$SIGNING_ENTITLEMENTS"' EXIT
-security cms -D -i "$PROVISIONING_PROFILE" > "$PROFILE_PLIST"
-profile_team="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$PROFILE_PLIST")"
-profile_app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$PROFILE_PLIST")"
-if [ "$profile_team" != "$TEAM_IDENTIFIER" ]; then
-  echo "!! provisioning profile team $profile_team does not match $TEAM_IDENTIFIER" >&2
-  exit 1
-fi
-if [ "$profile_app_id" != "$TEAM_IDENTIFIER.com.voxella.studio" ]; then
-  echo "!! provisioning profile application-identifier is $profile_app_id" >&2
-  exit 1
-fi
-if ! /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.applesignin:0' "$PROFILE_PLIST" >/dev/null 2>&1; then
-  echo "!! provisioning profile is missing com.apple.developer.applesignin" >&2
-  exit 1
-fi
-
-host_udid="$(system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Provisioning UDID/{print $2; exit}')"
-if [ -n "$host_udid" ]; then
-  if ! /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$PROFILE_PLIST" | grep -q "$host_udid"; then
-    echo "!! provisioning profile does not include this Mac's Provisioning UDID ($host_udid)" >&2
-    echo "!! Apple Silicon uses Provisioning UDID, not Hardware UUID" >&2
+if [ "$MODE" = "mas" ]; then
+  PROVISIONING_PROFILE="${PROVISIONING_PROFILE:-}"
+  PROVISIONING_PROFILE="${PROVISIONING_PROFILE/#\~/$HOME}"
+  if [ -z "$PROVISIONING_PROFILE" ]; then
+    echo "!! MAS_PROVISIONING_PROFILE is required for --mas" >&2
     exit 1
   fi
+  if [ ! -f "$PROVISIONING_PROFILE" ]; then
+    echo "!! provisioning profile not found: $PROVISIONING_PROFILE" >&2
+    exit 1
+  fi
+
+  PROFILE_PLIST="$(mktemp -t palmierpro-profile)"
+  SIGNING_ENTITLEMENTS="$(mktemp -t palmierpro-entitlements)"
+  trap 'rm -f "$PROFILE_PLIST" "$SIGNING_ENTITLEMENTS"' EXIT
+  security cms -D -i "$PROVISIONING_PROFILE" > "$PROFILE_PLIST"
+  profile_team="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$PROFILE_PLIST")"
+  profile_app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$PROFILE_PLIST")"
+  if [ "$profile_team" != "$TEAM_IDENTIFIER" ]; then
+    echo "!! provisioning profile team $profile_team does not match $TEAM_IDENTIFIER" >&2
+    exit 1
+  fi
+  if [ "$profile_app_id" != "$TEAM_IDENTIFIER.com.voxella.studio" ]; then
+    echo "!! provisioning profile application-identifier is $profile_app_id" >&2
+    exit 1
+  fi
+
+  echo "==> Embedding provisioning profile"
+  cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
+  sed "s/__TEAM_IDENTIFIER__/$TEAM_IDENTIFIER/g" \
+    "$ENTITLEMENTS_TEMPLATE" > "$SIGNING_ENTITLEMENTS"
 fi
 
-echo "==> Embedding provisioning profile"
-cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
-
-sed "s/__TEAM_IDENTIFIER__/$TEAM_IDENTIFIER/g" \
-  "$ENTITLEMENTS_TEMPLATE" > "$SIGNING_ENTITLEMENTS"
-
 echo "==> Codesigning main app ($SIGNING_IDENTITY / $TEAM_IDENTIFIER)"
-CODESIGN_ARGS=(--force --options runtime --entitlements "$SIGNING_ENTITLEMENTS" --sign "$SIGNING_IDENTITY")
+CODESIGN_ARGS=(--force --sign "$SIGNING_IDENTITY")
+if [ "$MODE" = "mas" ]; then
+  CODESIGN_ARGS+=(--entitlements "$SIGNING_ENTITLEMENTS")
+fi
+if [ "$MODE" != "mas" ]; then
+  CODESIGN_ARGS+=(--options runtime)
+fi
 if [ "$MODE" = "dist" ]; then
   CODESIGN_ARGS+=(--timestamp)
 else
@@ -248,13 +248,23 @@ if [ "$signed_team" != "$TEAM_IDENTIFIER" ]; then
   echo "!! signed TeamIdentifier=$signed_team, expected $TEAM_IDENTIFIER" >&2
   exit 1
 fi
-if ! codesign -d --entitlements - "$APP" 2>/dev/null | grep -q 'com.apple.developer.applesignin'; then
-  echo "!! signed app is missing com.apple.developer.applesignin" >&2
+if [ "$MODE" != "mas" ]; then
+  if [ -e "$APP/Contents/embedded.provisionprofile" ]; then
+    echo "!! Developer ID builds must not embed a provisioning profile" >&2
+    exit 1
+  fi
+  if codesign -d --entitlements :- "$APP" 2>/dev/null | grep -Eq '<key>(com\.apple\.developer\.applesignin|com\.apple\.developer\.team-identifier|keychain-access-groups)</key>'; then
+    echo "!! Developer ID builds must not contain restricted Apple sign-in entitlements" >&2
+    exit 1
+  fi
+fi
+if [ "$MODE" = "mas" ] && ! codesign -d --entitlements - "$APP" 2>/dev/null | grep -q 'com.apple.developer.applesignin'; then
+  echo "!! signed MAS app is missing com.apple.developer.applesignin" >&2
   exit 1
 fi
 
-if [ "$MODE" = "sign" ]; then
-  echo "==> Done: $APP (signed, not notarized; native Sign in with Apple enabled)"
+if [ "$MODE" = "sign" ] || [ "$MODE" = "mas" ]; then
+  echo "==> Done: $APP (signed, not notarized)"
   exit 0
 fi
 

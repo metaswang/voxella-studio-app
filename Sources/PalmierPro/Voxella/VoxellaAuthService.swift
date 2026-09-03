@@ -2,7 +2,6 @@ import AppKit
 import AuthenticationServices
 import CryptoKit
 import Foundation
-import GoogleSignIn
 import Security
 
 enum VoxellaAuthError: LocalizedError, Equatable, Sendable {
@@ -15,9 +14,6 @@ enum VoxellaAuthError: LocalizedError, Equatable, Sendable {
     case unauthorized
     case missingRefreshToken
     case browserUnavailable
-    case missingGoogleConfiguration
-    case presentationUnavailable
-    case appleUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -39,35 +35,6 @@ enum VoxellaAuthError: LocalizedError, Equatable, Sendable {
             "VoxStudio sign-in is required for this task."
         case .browserUnavailable:
             "Unable to open the VoxStudio sign-in page."
-        case .missingGoogleConfiguration:
-            "Google Sign-In is not configured for this build."
-        case .presentationUnavailable:
-            "VoxStudio could not present the sign-in window."
-        case .appleUnavailable:
-            "Sign in with Apple isn’t available in this build. Continue at voxstudio.me."
-        }
-    }
-
-    static func fromAppleAuthorization(_ error: Error) -> Error {
-        if let authError = error as? VoxellaAuthError {
-            return authError
-        }
-        let nsError = error as NSError
-        guard nsError.domain == ASAuthorizationError.errorDomain else {
-            return error
-        }
-        if nsError.code == ASAuthorizationError.canceled.rawValue {
-            return VoxellaAuthError.cancelled
-        }
-        switch nsError.code {
-        case ASAuthorizationError.unknown.rawValue,
-             ASAuthorizationError.invalidResponse.rawValue,
-             ASAuthorizationError.notHandled.rawValue,
-             ASAuthorizationError.failed.rawValue,
-             ASAuthorizationError.notInteractive.rawValue:
-            return VoxellaAuthError.appleUnavailable
-        default:
-            return VoxellaAuthError.appleUnavailable
         }
     }
 }
@@ -83,25 +50,7 @@ protocol VoxellaAuthBrowserSessioning: Sendable {
     func start(url: URL, callbackScheme: String) async throws -> URL
 }
 
-protocol VoxellaAppleSigning: Sendable {
-    func signIn() async throws -> VoxellaAppleAuthorization
-}
-
-struct LiveVoxellaAppleSignIn: VoxellaAppleSigning {
-    func signIn() async throws -> VoxellaAppleAuthorization {
-        let coordinator = await MainActor.run { VoxellaAppleSignInCoordinator() }
-        return try await coordinator.signIn()
-    }
-}
-
 protocol VoxellaAuthTokenExchanging: Sendable {
-    func exchangeGoogleIdentityToken(idToken: String) async throws -> VoxellaAuthTokens
-    func exchangeAppleIdentityToken(
-        identityToken: String,
-        authorizationCode: String?,
-        name: String?,
-        nonce: String
-    ) async throws -> VoxellaAuthTokens
     func exchangeAuthorizationCode(
         code: String,
         verifier: String,
@@ -109,21 +58,6 @@ protocol VoxellaAuthTokenExchanging: Sendable {
     ) async throws -> VoxellaAuthTokens
     func refresh(refreshToken: String) async throws -> VoxellaAuthTokens
     func revoke(refreshToken: String) async throws
-}
-
-extension VoxellaAuthTokenExchanging {
-    func exchangeGoogleIdentityToken(idToken: String) async throws -> VoxellaAuthTokens {
-        throw VoxellaAuthError.tokenExchangeFailed("Google Sign-In is not available.")
-    }
-
-    func exchangeAppleIdentityToken(
-        identityToken: String,
-        authorizationCode: String?,
-        name: String?,
-        nonce: String
-    ) async throws -> VoxellaAuthTokens {
-        throw VoxellaAuthError.tokenExchangeFailed("Apple Sign-In is not available.")
-    }
 }
 
 struct ASWebAuthenticationBrowserSession: VoxellaAuthBrowserSessioning {
@@ -199,169 +133,6 @@ final class ASWebAuthenticationSessionController: NSObject, ASWebAuthenticationP
     }
 }
 
-struct VoxellaAppleAuthorization: Sendable {
-    let identityToken: String
-    let authorizationCode: String?
-    let name: String?
-    let nonce: String
-}
-
-enum VoxellaAppleNonce {
-    /// Apple copies this value into the identity token nonce claim.
-    static func requestNonce(from raw: String) -> String {
-        SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
-    }
-}
-
-@MainActor
-final class VoxellaAppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
-    private var controller: ASAuthorizationController?
-    private var continuation: CheckedContinuation<VoxellaAppleAuthorization, Error>?
-    private var rawNonce: String?
-
-    func signIn() async throws -> VoxellaAppleAuthorization {
-        guard continuation == nil else {
-            throw VoxellaAuthError.tokenExchangeFailed("Apple Sign-In is already in progress.")
-        }
-
-        return try await withCheckedThrowingContinuation { continuation in
-            self.continuation = continuation
-            let nonce = Self.randomNonce()
-            rawNonce = nonce
-
-            let request = ASAuthorizationAppleIDProvider().createRequest()
-            request.requestedScopes = [.fullName, .email]
-            request.nonce = VoxellaAppleNonce.requestNonce(from: nonce)
-
-            let controller = ASAuthorizationController(authorizationRequests: [request])
-            controller.delegate = self
-            controller.presentationContextProvider = self
-            self.controller = controller
-
-            guard NSApp.keyWindow ?? NSApp.mainWindow != nil else {
-                finish(.failure(VoxellaAuthError.presentationUnavailable))
-                return
-            }
-            controller.performRequests()
-        }
-    }
-
-    nonisolated func authorizationController(
-        controller: ASAuthorizationController,
-        didCompleteWithAuthorization authorization: ASAuthorization
-    ) {
-        Task { @MainActor in
-            self.handleAuthorization(authorization)
-        }
-    }
-
-    nonisolated func authorizationController(
-        controller: ASAuthorizationController,
-        didCompleteWithError error: Error
-    ) {
-        Task { @MainActor in
-            self.handleError(error)
-        }
-    }
-
-    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
-    }
-
-    private func handleAuthorization(_ authorization: ASAuthorization) {
-        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-              let identityData = credential.identityToken,
-              let identityToken = String(data: identityData, encoding: .utf8),
-              let rawNonce,
-              !rawNonce.isEmpty
-        else {
-            finish(.failure(VoxellaAuthError.invalidCallback))
-            return
-        }
-
-        let code = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
-        let name = credential.fullName
-            .map(PersonNameComponentsFormatter().string)
-            .flatMap { $0.isEmpty ? nil : $0 }
-        finish(.success(VoxellaAppleAuthorization(
-            identityToken: identityToken,
-            authorizationCode: code,
-            name: name,
-            nonce: rawNonce
-        )))
-    }
-
-    private func handleError(_ error: Error) {
-        finish(.failure(VoxellaAuthError.fromAppleAuthorization(error)))
-    }
-
-    private func finish(_ result: Result<VoxellaAppleAuthorization, Error>) {
-        let continuation = continuation
-        self.continuation = nil
-        controller = nil
-        rawNonce = nil
-        continuation?.resume(with: result)
-    }
-
-    private static func randomNonce() -> String {
-        UUID().uuidString + UUID().uuidString
-    }
-}
-
-@MainActor
-enum VoxellaGoogleSignInCoordinator {
-    static func signIn() async throws -> String {
-        guard let clientID = BackendConfig.googleClientID,
-              let serverClientID = BackendConfig.googleServerClientID
-        else {
-            throw VoxellaAuthError.missingGoogleConfiguration
-        }
-        guard let presenter = presentingWindow() else {
-            throw VoxellaAuthError.presentationUnavailable
-        }
-
-        if !presenter.isKeyWindow {
-            presenter.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        GIDSignIn.sharedInstance.configuration = GIDConfiguration(
-            clientID: clientID,
-            serverClientID: serverClientID
-        )
-        let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter)
-        guard let idToken = result.user.idToken?.tokenString, !idToken.isEmpty else {
-            throw VoxellaAuthError.invalidCallback
-        }
-        return idToken
-    }
-
-    static func handle(url: URL) -> Bool {
-        let handled = GIDSignIn.sharedInstance.handle(url)
-        Log.account.notice(
-            "google sign-in callback received scheme=\(url.scheme ?? "") host=\(url.host ?? "") path=\(url.path) handled=\(handled)"
-        )
-        return handled
-    }
-
-    private static func presentingWindow() -> NSWindow? {
-        let candidates = [NSApp.keyWindow, NSApp.mainWindow]
-            .compactMap { $0 }
-            + NSApp.windows.filter { $0.isVisible }
-
-        var seen = Set<ObjectIdentifier>()
-        var visibleFallback: NSWindow?
-        for window in candidates where seen.insert(ObjectIdentifier(window)).inserted {
-            if window.isVisible {
-                visibleFallback = visibleFallback ?? window
-                if window.canBecomeKey {
-                    return window
-                }
-            }
-        }
-        return visibleFallback
-    }
-}
-
 actor VoxellaAuthService {
     static let shared = VoxellaAuthService()
 
@@ -372,7 +143,6 @@ actor VoxellaAuthService {
     static let defaultScopes = "voxstudio.sessions.read voxstudio.sessions.write voxstudio.media.read voxstudio.transcripts.read"
 
     private let browser: any VoxellaAuthBrowserSessioning
-    private let apple: any VoxellaAppleSigning
     private let tokens: any VoxellaAuthTokenExchanging
     private let now: @Sendable () -> Date
     private let loadRefresh: @Sendable () throws -> String?
@@ -394,7 +164,6 @@ actor VoxellaAuthService {
 
     init(
         browser: any VoxellaAuthBrowserSessioning = ASWebAuthenticationBrowserSession(),
-        apple: any VoxellaAppleSigning = LiveVoxellaAppleSignIn(),
         tokens: any VoxellaAuthTokenExchanging = VoxellaAuthTokenClient(),
         now: @escaping @Sendable () -> Date = Date.init,
         loadRefresh: @escaping @Sendable () throws -> String? = {
@@ -408,7 +177,6 @@ actor VoxellaAuthService {
         }
     ) {
         self.browser = browser
-        self.apple = apple
         self.tokens = tokens
         self.now = now
         self.loadRefresh = loadRefresh
@@ -460,10 +228,10 @@ actor VoxellaAuthService {
             return token
         }
         Log.account.notice(
-            "voxstudio sign-in starting provider=apple host=\(VoxellaAPIConfiguration.baseURL.host ?? "")",
+            "voxstudio sign-in starting provider=browser_oauth host=\(VoxellaAPIConfiguration.baseURL.host ?? "")",
             telemetry: "VoxStudio sign-in starting",
             data: [
-                "provider": "apple",
+                "provider": "browser_oauth",
                 "host": VoxellaAPIConfiguration.baseURL.host ?? "",
             ]
         )
@@ -483,34 +251,11 @@ actor VoxellaAuthService {
     }
 
     func signInWithGoogle() async throws -> String {
-        let idToken = try await VoxellaGoogleSignInCoordinator.signIn()
-        let pair = try await tokens.exchangeGoogleIdentityToken(idToken: idToken)
-        try store(pair)
-        Log.account.notice("voxstudio sign-in completed", telemetry: "VoxStudio sign-in completed", data: ["provider": "google"])
-        return pair.accessToken
+        try await signIn()
     }
 
     func signInWithApple() async throws -> String {
-        do {
-            let authorization = try await apple.signIn()
-            let pair = try await tokens.exchangeAppleIdentityToken(
-                identityToken: authorization.identityToken,
-                authorizationCode: authorization.authorizationCode,
-                name: authorization.name,
-                nonce: authorization.nonce
-            )
-            try store(pair)
-            Log.account.notice("voxstudio sign-in completed", telemetry: "VoxStudio sign-in completed", data: ["provider": "apple"])
-            return pair.accessToken
-        } catch {
-            guard Self.shouldFallBackToBrowser(after: error) else { throw error }
-            Log.account.notice(
-                "native apple unavailable, using voxstudio.me",
-                telemetry: "Native Apple unavailable",
-                data: ["host": VoxellaAPIConfiguration.baseURL.host ?? ""]
-            )
-            return try await signIn()
-        }
+        try await signIn()
     }
 
     func signIn() async throws -> String {
@@ -630,27 +375,6 @@ actor VoxellaAuthService {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    nonisolated static func shouldFallBackToBrowser(after error: Error) -> Bool {
-        if let authError = error as? VoxellaAuthError {
-            switch authError {
-            case .appleUnavailable, .presentationUnavailable:
-                return true
-            default:
-                return false
-            }
-        }
-        let mapped = VoxellaAuthError.fromAppleAuthorization(error)
-        if let authError = mapped as? VoxellaAuthError {
-            switch authError {
-            case .appleUnavailable, .presentationUnavailable:
-                return true
-            default:
-                return false
-            }
-        }
-        return false
-    }
-
     static func codeChallenge(for verifier: String) -> String {
         let digest = SHA256.hash(data: Data(verifier.utf8))
         return Data(digest).base64EncodedString()
@@ -661,36 +385,6 @@ actor VoxellaAuthService {
 }
 
 struct VoxellaAuthTokenClient: VoxellaAuthTokenExchanging {
-    func exchangeGoogleIdentityToken(idToken: String) async throws -> VoxellaAuthTokens {
-        var request = URLRequest(url: VoxellaAPIConfiguration.googleOneTapURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(GoogleIdentityBody(
-            credential: idToken,
-            clientID: VoxellaAuthService.clientID
-        ))
-        return try await decodeTokenResponse(request)
-    }
-
-    func exchangeAppleIdentityToken(
-        identityToken: String,
-        authorizationCode: String?,
-        name: String?,
-        nonce: String
-    ) async throws -> VoxellaAuthTokens {
-        var request = URLRequest(url: VoxellaAPIConfiguration.appleTokenURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(AppleIdentityBody(
-            identityToken: identityToken,
-            authorizationCode: authorizationCode,
-            name: name,
-            nonce: nonce,
-            clientID: VoxellaAuthService.clientID
-        ))
-        return try await decodeTokenResponse(request)
-    }
-
     func exchangeAuthorizationCode(
         code: String,
         verifier: String,
@@ -825,22 +519,6 @@ struct VoxellaAuthTokenClient: VoxellaAuthTokenExchanging {
 
         enum CodingKeys: String, CodingKey {
             case credential
-            case clientID = "client_id"
-        }
-    }
-
-    private struct AppleIdentityBody: Encodable {
-        let identityToken: String
-        let authorizationCode: String?
-        let name: String?
-        let nonce: String
-        let clientID: String
-
-        enum CodingKeys: String, CodingKey {
-            case identityToken = "identity_token"
-            case authorizationCode = "authorization_code"
-            case name
-            case nonce
             case clientID = "client_id"
         }
     }

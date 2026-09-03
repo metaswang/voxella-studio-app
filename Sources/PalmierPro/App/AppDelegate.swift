@@ -119,10 +119,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editor.tour.start(in: editor)
     }
 }
-
-extension AppDelegate {
-    @MainActor
-    func application(_ application: NSApplication, open urls: [URL]) -> Bool {
-        urls.contains { VoxellaGoogleSignInCoordinator.handle(url: $0) }
-    }
-}

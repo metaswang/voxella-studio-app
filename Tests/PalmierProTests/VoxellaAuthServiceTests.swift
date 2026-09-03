@@ -1,5 +1,3 @@
-import AuthenticationServices
-import CryptoKit
 import Foundation
 import Testing
 @testable import PalmierPro
@@ -161,12 +159,11 @@ struct VoxellaAuthServiceTests {
         let browserOpened = Flag()
         let browser = MockAuthBrowser { _ in
             browserOpened.value = true
-            throw VoxellaAuthError.browserUnavailable
+            throw VoxellaAuthError.cancelled
         }
         let store = MemoryRefreshStore()
         let auth = VoxellaAuthService(
             browser: browser,
-            apple: MockAppleSignIn { throw VoxellaAuthError.cancelled },
             tokens: MockTokenClient(),
             loadRefresh: { store.value },
             saveRefresh: { store.value = $0 },
@@ -177,85 +174,10 @@ struct VoxellaAuthServiceTests {
         }
         #expect(store.value == nil)
         #expect(await auth.currentAccessToken() == nil)
-        #expect(browserOpened.value == false)
+        #expect(browserOpened.value)
     }
 
-    @Test func ensureSignedInExchangesAnAppleIdentityToken() async throws {
-        let apple = MockAppleSignIn {
-            VoxellaAppleAuthorization(
-                identityToken: "identity-token",
-                authorizationCode: "auth-code",
-                name: "Ada",
-                nonce: "raw-nonce"
-            )
-        }
-        let tokens = MockTokenClient(
-            onApple: { identity, code, name, nonce in
-                #expect(identity == "identity-token")
-                #expect(code == "auth-code")
-                #expect(name == "Ada")
-                #expect(nonce == "raw-nonce")
-                return VoxellaAuthTokens(
-                    accessToken: "apple-access",
-                    refreshToken: "apple-refresh",
-                    expiresAt: Date().addingTimeInterval(3600),
-                    userID: UUID()
-                )
-            }
-        )
-        let store = MemoryRefreshStore()
-        let auth = VoxellaAuthService(
-            browser: MockAuthBrowser { _ in throw VoxellaAuthError.browserUnavailable },
-            apple: apple,
-            tokens: tokens,
-            loadRefresh: { store.value },
-            saveRefresh: { store.value = $0 },
-            deleteRefresh: { store.value = nil }
-        )
-        let access = try await auth.ensureSignedIn()
-        #expect(access == "apple-access")
-        #expect(store.value == "apple-refresh")
-        #expect(await auth.currentAccessToken() == "apple-access")
-    }
-
-    @Test func nativeAppleRequestNonceIsSHA256HexOfTheRawValue() {
-        let digest = SHA256.hash(data: Data("raw-apple-nonce".utf8))
-        let expected = digest.map { String(format: "%02x", $0) }.joined()
-        #expect(VoxellaAppleNonce.requestNonce(from: "raw-apple-nonce") == expected)
-    }
-
-    @Test func nativeApplePassesTheRawNonceThroughToTokenExchange() async throws {
-        let apple = MockAppleSignIn {
-            VoxellaAppleAuthorization(
-                identityToken: "identity-token",
-                authorizationCode: "auth-code",
-                name: nil,
-                nonce: "raw-apple-nonce"
-            )
-        }
-        let tokens = MockTokenClient(
-            onApple: { _, _, _, nonce in
-                #expect(nonce == "raw-apple-nonce")
-                return VoxellaAuthTokens(
-                    accessToken: "apple-access",
-                    refreshToken: "apple-refresh",
-                    expiresAt: Date().addingTimeInterval(3600),
-                    userID: UUID()
-                )
-            }
-        )
-        let auth = VoxellaAuthService(
-            browser: MockAuthBrowser { _ in throw VoxellaAuthError.browserUnavailable },
-            apple: apple,
-            tokens: tokens,
-            loadRefresh: { nil },
-            saveRefresh: { _ in },
-            deleteRefresh: {}
-        )
-        _ = try await auth.signInWithApple()
-    }
-
-    @Test func directAppleSignInFallsBackToVoxStudioWhenNativeAppleIsUnavailable() async throws {
+    @Test func appleSignInUsesTheBrowserOAuthFlow() async throws {
         let browserOpened = Flag()
         let browser = MockAuthBrowser { url in
             browserOpened.value = true
@@ -278,7 +200,6 @@ struct VoxellaAuthServiceTests {
         )
         let auth = VoxellaAuthService(
             browser: browser,
-            apple: MockAppleSignIn { throw VoxellaAuthError.presentationUnavailable },
             tokens: tokens,
             loadRefresh: { nil },
             saveRefresh: { _ in },
@@ -291,7 +212,42 @@ struct VoxellaAuthServiceTests {
         #expect(browserOpened.value)
     }
 
-    @Test func ensureSignedInFallsBackToVoxStudioWhenNativeAppleIsUnavailable() async throws {
+    @Test func googleSignInUsesTheBrowserOAuthFlow() async throws {
+        let browserOpened = Flag()
+        let browser = MockAuthBrowser { url in
+            browserOpened.value = true
+            let state = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first { $0.name == "state" }?
+                .value ?? ""
+            return URL(string: "voxella-studio://oauth/callback?code=google-web-code&state=\(state)")!
+        }
+        let tokens = MockTokenClient(
+            onExchange: { code, _, _ in
+                #expect(code == "google-web-code")
+                return VoxellaAuthTokens(
+                    accessToken: "google-web-access",
+                    refreshToken: "google-web-refresh",
+                    expiresAt: Date().addingTimeInterval(3600),
+                    userID: UUID()
+                )
+            }
+        )
+        let auth = VoxellaAuthService(
+            browser: browser,
+            tokens: tokens,
+            loadRefresh: { nil },
+            saveRefresh: { _ in },
+            deleteRefresh: {}
+        )
+
+        let access = try await auth.signInWithGoogle()
+
+        #expect(access == "google-web-access")
+        #expect(browserOpened.value)
+    }
+
+    @Test func ensureSignedInUsesTheBrowserOAuthFlow() async throws {
         let browserOpened = Flag()
         let browser = MockAuthBrowser { url in
             browserOpened.value = true
@@ -314,7 +270,6 @@ struct VoxellaAuthServiceTests {
         let store = MemoryRefreshStore()
         let auth = VoxellaAuthService(
             browser: browser,
-            apple: MockAppleSignIn { throw VoxellaAuthError.appleUnavailable },
             tokens: tokens,
             loadRefresh: { store.value },
             saveRefresh: { store.value = $0 },
@@ -351,7 +306,6 @@ struct VoxellaAuthServiceTests {
         )
         let auth = VoxellaAuthService(
             browser: browser,
-            apple: MockAppleSignIn { throw VoxellaAuthError.appleUnavailable },
             tokens: tokens,
             loadRefresh: { nil },
             saveRefresh: { _ in },
@@ -367,16 +321,6 @@ struct VoxellaAuthServiceTests {
         #expect(access == "shared-access")
         #expect(other == "shared-access")
         #expect(browserCount.value == 1)
-    }
-
-    @Test func appleAuthorizationError1000MapsToAppleUnavailable() {
-        let error = NSError(
-            domain: ASAuthorizationError.errorDomain,
-            code: ASAuthorizationError.unknown.rawValue
-        )
-        #expect(VoxellaAuthError.fromAppleAuthorization(error) as? VoxellaAuthError == .appleUnavailable)
-        #expect(VoxellaAuthService.shouldFallBackToBrowser(after: error))
-        #expect(!VoxellaAuthService.shouldFallBackToBrowser(after: VoxellaAuthError.cancelled))
     }
 
     @Test func refreshIsSerializedAndClearsMemoryAccessOnUnauthorized() async throws {
@@ -496,14 +440,6 @@ private actor Gate {
     }
 }
 
-private struct MockAppleSignIn: VoxellaAppleSigning {
-    var handler: @Sendable () async throws -> VoxellaAppleAuthorization
-
-    func signIn() async throws -> VoxellaAppleAuthorization {
-        try await handler()
-    }
-}
-
 private struct MockAuthBrowser: VoxellaAuthBrowserSessioning {
     var handler: @Sendable (URL) async throws -> URL
 
@@ -514,7 +450,6 @@ private struct MockAuthBrowser: VoxellaAuthBrowserSessioning {
 
 private struct MockTokenClient: VoxellaAuthTokenExchanging {
     var onExchange: (@Sendable (String, String, String) async throws -> VoxellaAuthTokens)?
-    var onApple: (@Sendable (String, String?, String?, String) async throws -> VoxellaAuthTokens)?
     var onRefresh: (@Sendable (String) async throws -> VoxellaAuthTokens)?
     var onRevoke: (@Sendable (String) async throws -> Void)?
 
@@ -525,16 +460,6 @@ private struct MockTokenClient: VoxellaAuthTokenExchanging {
     ) async throws -> VoxellaAuthTokens {
         guard let onExchange else { throw VoxellaAuthError.tokenExchangeFailed("unused") }
         return try await onExchange(code, verifier, redirectURI)
-    }
-
-    func exchangeAppleIdentityToken(
-        identityToken: String,
-        authorizationCode: String?,
-        name: String?,
-        nonce: String
-    ) async throws -> VoxellaAuthTokens {
-        guard let onApple else { throw VoxellaAuthError.tokenExchangeFailed("unused") }
-        return try await onApple(identityToken, authorizationCode, name, nonce)
     }
 
     func refresh(refreshToken: String) async throws -> VoxellaAuthTokens {

@@ -146,7 +146,7 @@ struct WorkbenchSessionDetailView: View {
                 } else {
                     ZStack(alignment: .bottomTrailing) {
                         sessionView(session)
-                        if let source = session.netVideoSource {
+                        if session.showsFloatingNetVideoPreview, let source = session.netVideoSource {
                             NetVideoFloatingPlayer(source: source)
                                 .padding(AppTheme.Spacing.xl)
                         }
@@ -305,12 +305,7 @@ struct WorkbenchSessionDetailView: View {
         let mediaURL = selectedTrack == .dub ? dubbedMediaURL : originalMediaURL
         let playbackCueScope = cueScope(for: session)
         let playbackCues = editableCues(for: session, scope: playbackCueScope)
-        let hasRemoteVideo = selectedTrack == .dub
-            ? false
-            : session.remoteSourceHasVideo == true
-        let hasVideo = hasRemoteVideo || (probedMediaURL == mediaURL
-            ? probedMediaHasVideo
-            : mediaURL?.isMovie == true)
+        let hasInlineVideo = sessionHasInlineVideo(session, mediaURL: mediaURL)
 
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
             sessionHeader(session)
@@ -337,44 +332,14 @@ struct WorkbenchSessionDetailView: View {
                 )
 
                 HSplitView {
-                    VSplitView {
-                        SessionMediaPlayer(
-                            URL: mediaURL,
-                            track: selectedTrack,
-                            allowsTrackSelection: originalMediaURL != nil && dubbedMediaURL != nil,
-                            showsFilename: false,
-                            prefersVideoCanvas: hasVideo,
-                            subtitleTrack: hasVideo
-                                ? (selectedTrack == .dub
-                                    ? session.dubSubtitleTrack
-                                    : session.subtitleTrack)
-                                : nil,
-                            translationTracks: hasVideo ? session.translationTracks : [],
-                            highlightCues: playbackCues,
-                            activeCueID: $activePlaybackCueID,
-                            cuePlaybackRequest: $cuePlaybackRequest,
-                            onSelectTrack: { selectedTrack = $0 }
-                        )
-                        .frame(
-                            minHeight: AppTheme.Workbench.sessionVideoMinHeight,
-                            idealHeight: AppTheme.Workbench.sessionVideoIdealHeight,
-                            maxHeight: .infinity,
-                            alignment: .top
-                        )
-                        .layoutPriority(1)
-                        SessionSummaryPanel(
-                            session: session,
-                            onOpenTemplate: {
-                                presentTemplatePicker()
-                            },
-                            onRequestRefinement: { showSummaryRefinementSheet = true }
-                        )
-                        .frame(
-                            minHeight: AppTheme.Workbench.summaryPanelMinHeight,
-                            maxHeight: .infinity,
-                            alignment: .top
-                        )
-                    }
+                    sessionMediaAndSummary(
+                        session: session,
+                        mediaURL: mediaURL,
+                        originalMediaURL: originalMediaURL,
+                        dubbedMediaURL: dubbedMediaURL,
+                        hasInlineVideo: hasInlineVideo,
+                        playbackCues: playbackCues
+                    )
                     .frame(maxHeight: .infinity, alignment: .top)
                     .frame(
                         minWidth: minimumLeftWidth,
@@ -445,6 +410,109 @@ struct WorkbenchSessionDetailView: View {
         .task(id: mediaURL) {
             await probeMediaTrack(for: mediaURL)
         }
+    }
+
+    private func sessionHasInlineVideo(_ session: WorkbenchSession, mediaURL: URL?) -> Bool {
+        if session.showsFloatingNetVideoPreview, selectedTrack == .original {
+            return false
+        }
+        if selectedTrack != .dub, session.remoteSourceHasVideo == true {
+            return true
+        }
+        if probedMediaURL == mediaURL {
+            return probedMediaHasVideo
+        }
+        return mediaURL?.isMovie == true
+    }
+
+    @ViewBuilder
+    private func sessionMediaAndSummary(
+        session: WorkbenchSession,
+        mediaURL: URL?,
+        originalMediaURL: URL?,
+        dubbedMediaURL: URL?,
+        hasInlineVideo: Bool,
+        playbackCues: [SubtitleCue]
+    ) -> some View {
+        if hasInlineVideo {
+            VSplitView {
+                sessionPlaybackPlayer(
+                    session: session,
+                    mediaURL: mediaURL,
+                    originalMediaURL: originalMediaURL,
+                    dubbedMediaURL: dubbedMediaURL,
+                    hasInlineVideo: true,
+                    playbackCues: playbackCues
+                )
+                .frame(
+                    minHeight: AppTheme.Workbench.sessionVideoMinHeight,
+                    idealHeight: AppTheme.Workbench.sessionVideoIdealHeight,
+                    maxHeight: .infinity,
+                    alignment: .top
+                )
+                .layoutPriority(1)
+                sessionSummary(session)
+                    .frame(
+                        minHeight: AppTheme.Workbench.summaryPanelMinHeight,
+                        maxHeight: .infinity,
+                        alignment: .top
+                    )
+            }
+        } else {
+            sessionSummary(session)
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .top
+                )
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    sessionPlaybackPlayer(
+                        session: session,
+                        mediaURL: mediaURL,
+                        originalMediaURL: originalMediaURL,
+                        dubbedMediaURL: dubbedMediaURL,
+                        hasInlineVideo: false,
+                        playbackCues: playbackCues
+                    )
+                }
+        }
+    }
+
+    private func sessionPlaybackPlayer(
+        session: WorkbenchSession,
+        mediaURL: URL?,
+        originalMediaURL: URL?,
+        dubbedMediaURL: URL?,
+        hasInlineVideo: Bool,
+        playbackCues: [SubtitleCue]
+    ) -> some View {
+        SessionMediaPlayer(
+            URL: mediaURL,
+            track: selectedTrack,
+            allowsTrackSelection: originalMediaURL != nil && dubbedMediaURL != nil,
+            showsFilename: false,
+            prefersVideoCanvas: hasInlineVideo,
+            subtitleTrack: hasInlineVideo
+                ? (selectedTrack == .dub
+                    ? session.dubSubtitleTrack
+                    : session.subtitleTrack)
+                : nil,
+            translationTracks: hasInlineVideo ? session.translationTracks : [],
+            highlightCues: playbackCues,
+            activeCueID: $activePlaybackCueID,
+            cuePlaybackRequest: $cuePlaybackRequest,
+            onSelectTrack: { selectedTrack = $0 }
+        )
+    }
+
+    private func sessionSummary(_ session: WorkbenchSession) -> some View {
+        SessionSummaryPanel(
+            session: session,
+            onOpenTemplate: {
+                presentTemplatePicker()
+            },
+            onRequestRefinement: { showSummaryRefinementSheet = true }
+        )
     }
 
     private func probeMediaTrack(for mediaURL: URL?) async {
@@ -1250,7 +1318,17 @@ private struct SessionMediaPlayer: View {
     @State private var playback = SessionPlaybackController()
 
     private var showsVideoCanvas: Bool {
-        prefersVideoCanvas || URL?.isMovie == true
+        prefersVideoCanvas
+    }
+
+    private var audioChromeHeight: CGFloat {
+        var height = AppTheme.Workbench.sessionAudioCanvasHeight
+        if allowsTrackSelection {
+            height += AppTheme.Spacing.md
+                + AppTheme.Spacing.sm
+                + AppTheme.Workbench.sessionTabBarMinHeight
+        }
+        return height
     }
 
     var body: some View {
@@ -1284,6 +1362,11 @@ private struct SessionMediaPlayer: View {
             }
         }
         .background(AppTheme.Background.surfaceColor)
+        .frame(
+            maxHeight: showsVideoCanvas
+                ? .infinity
+                : audioChromeHeight
+        )
         .task(id: URL) {
             playback.configureSubtitles(
                 subtitleTrack: subtitleTrack,
@@ -1418,6 +1501,7 @@ private struct SessionMediaPlayer: View {
             }
             .padding(AppTheme.Spacing.lgXl)
         }
+        .frame(height: AppTheme.Workbench.sessionAudioCanvasHeight)
     }
 
     private func videoControls(currentTime: Double) -> some View {
