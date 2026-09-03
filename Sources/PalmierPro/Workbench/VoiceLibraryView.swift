@@ -258,6 +258,7 @@ private struct NewVoiceReferenceComposer: View {
     @State private var gender = VoiceReferenceGender.female
     @State private var transcript = ""
     @State private var audioURL: URL?
+    @State private var audioSource: VoiceReferenceAudioSource = .importedFile
     @State private var avatarURL: URL?
     @State private var isSaving = false
 
@@ -268,7 +269,7 @@ private struct NewVoiceReferenceComposer: View {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 Text("New reference voice")
                     .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
-                Text("Use a clean spoken clip. Audio is converted to 24 kHz mono without trimming or changing its duration.")
+                Text("Use a clean spoken clip. Audio is converted to 24 kHz mono; recordings are trimmed at the edges while preserving a short natural lead-in and tail.")
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
@@ -385,7 +386,10 @@ private struct NewVoiceReferenceComposer: View {
                 .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
         }
         .onChange(of: recorder.recordedURL) { _, next in
-            if let next { audioURL = next }
+            if let next {
+                audioURL = next
+                audioSource = .microphoneRecording
+            }
         }
         .onDisappear { recorder.cancel() }
     }
@@ -426,6 +430,7 @@ private struct NewVoiceReferenceComposer: View {
             if let URL = await WorkbenchFilePicker.pickAudio(title: "Choose a clean voice reference") {
                 recorder.cancel()
                 audioURL = URL
+                audioSource = .importedFile
             }
         }
     }
@@ -456,7 +461,8 @@ private struct NewVoiceReferenceComposer: View {
                     gender: gender,
                     transcript: transcript,
                     sourceAudioURL: audioURL,
-                    avatarURL: avatarURL
+                    avatarURL: avatarURL,
+                    source: audioSource
                 ))
                 recorder.cancel()
                 onSaved()

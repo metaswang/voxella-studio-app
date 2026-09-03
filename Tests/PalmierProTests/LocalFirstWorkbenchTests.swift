@@ -9,7 +9,7 @@ import AudioCommon
 
 @Suite("Voxella local-first workbench")
 struct LocalFirstWorkbenchTests {
-    @Test func voiceReferencePreparationPreservesDurationAndLeadingSilence() async throws {
+    @Test func voiceReferencePreparationPreservesImportedDurationAndLeadingSilence() async throws {
         let sourceURL = FileIO.temporaryFileURL(pathExtension: "wav")
         let duration = 12.25
         let sampleRate = 44_100.0
@@ -41,6 +41,13 @@ struct LocalFirstWorkbenchTests {
         #expect(abs(prepared.duration - duration) < 0.02)
         #expect(prepared.duration > 10)
 
+        let trimmedPrepared = try await VoiceReferenceProcessor.shared.prepare(
+            sourceURL: sourceURL,
+            trimBoundarySilence: true
+        )
+        defer { try? FileManager.default.removeItem(at: trimmedPrepared.URL) }
+        #expect(abs(trimmedPrepared.duration - (duration - Double(voicedStart) / sampleRate + 0.1)) < 0.03)
+
         let output = try AVAudioFile(forReading: prepared.URL)
         #expect(output.processingFormat.sampleRate == 24_000)
         #expect(output.processingFormat.channelCount == 1)
@@ -56,6 +63,38 @@ struct LocalFirstWorkbenchTests {
             max($0, abs(leadingChannel[$1]))
         }
         #expect(leadingPeak < 0.000_1)
+    }
+
+    @Test func voiceReferenceSilenceTrimmerKeepsNaturalBoundaryPadding() {
+        let sampleRate = 24_000.0
+        let leadingSilence = 0.8
+        let speechDuration = 4.0
+        let trailingSilence = 0.9
+        let leadingFrames = Int(leadingSilence * sampleRate)
+        let speechFrames = Int(speechDuration * sampleRate)
+        let trailingFrames = Int(trailingSilence * sampleRate)
+        var samples = [Float](repeating: 0, count: leadingFrames + speechFrames + trailingFrames)
+        for index in 0..<speechFrames {
+            samples[leadingFrames + index] =
+                0.15 * sin(2 * .pi * 220 * Float(index) / Float(sampleRate))
+        }
+
+        let trimmed = VoiceReferenceSilenceTrimmer.trim(samples: samples, sampleRate: sampleRate)
+        let duration = Double(trimmed.count) / sampleRate
+
+        #expect(abs(duration - (speechDuration + 0.2)) < 0.05)
+        #expect(trimmed.first ?? 0 == 0)
+        #expect(trimmed.dropFirst(Int(0.1 * sampleRate) - 100).contains { abs($0) > 0.01 })
+        #expect(trimmed.suffix(Int(0.1 * sampleRate)).contains { abs($0) < 0.000_1 })
+    }
+
+    @Test func voiceReferenceSilenceTrimmerRequiresSustainedActivity() {
+        let sampleRate = 24_000.0
+        var samples = [Float](repeating: 0, count: Int(4 * sampleRate))
+        samples[Int(1 * sampleRate)] = 0.5
+
+        #expect(!VoiceReferenceSilenceTrimmer.hasAudibleSpeech(samples: samples, sampleRate: sampleRate))
+        #expect(VoiceReferenceSilenceTrimmer.trim(samples: samples, sampleRate: sampleRate) == samples)
     }
 
     @Test func exposesOnlyFirstReleaseRoutes() {

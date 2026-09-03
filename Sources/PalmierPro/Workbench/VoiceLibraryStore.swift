@@ -81,6 +81,12 @@ struct VoiceReferenceDraft: Sendable {
     var transcript: String
     var sourceAudioURL: URL
     var avatarURL: URL?
+    var source: VoiceReferenceAudioSource = .importedFile
+}
+
+enum VoiceReferenceAudioSource: Equatable, Sendable {
+    case importedFile
+    case microphoneRecording
 }
 
 enum VoiceLibraryError: LocalizedError, Sendable {
@@ -158,7 +164,10 @@ actor VoiceReferenceProcessor {
     private let sampleRate = 24_000.0
     private let minimumDuration = 3.0
 
-    func prepare(sourceURL: URL) throws -> PreparedVoiceAudio {
+    func prepare(
+        sourceURL: URL,
+        trimBoundarySilence: Bool = false
+    ) throws -> PreparedVoiceAudio {
         let input = try AVAudioFile(forReading: sourceURL)
         let inputFormat = input.processingFormat
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
@@ -206,7 +215,13 @@ actor VoiceReferenceProcessor {
             throw conversionError ?? VoiceLibraryError.unsupportedAudio
         }
 
-        let samples = Array(UnsafeBufferPointer(start: channel, count: Int(converted.frameLength)))
+        var samples = Array(UnsafeBufferPointer(start: channel, count: Int(converted.frameLength)))
+        if trimBoundarySilence {
+            samples = VoiceReferenceSilenceTrimmer.trim(
+                samples: samples,
+                sampleRate: sampleRate
+            )
+        }
         let duration = Double(samples.count) / sampleRate
         guard duration >= minimumDuration else { throw VoiceLibraryError.referenceTooShort }
         try validateAudibleSpeech(in: samples)
@@ -254,41 +269,105 @@ actor VoiceReferenceProcessor {
     }
 
     private func validateAudibleSpeech(in samples: [Float]) throws {
-        let windowSize = max(1, Int(sampleRate * 0.02))
+        guard VoiceReferenceSilenceTrimmer.hasAudibleSpeech(
+            samples: samples,
+            sampleRate: sampleRate
+        ) else {
+            throw VoiceLibraryError.referenceSilent
+        }
+    }
+}
+
+enum VoiceReferenceSilenceTrimmer {
+    static let analysisWindowDuration = 0.02
+    static let minimumAudibleDuration = 0.06
+    static let boundaryPadding = 0.1
+
+    static func trim(
+        samples: [Float],
+        sampleRate: Double,
+        padding: Double = boundaryPadding
+    ) -> [Float] {
+        guard sampleRate.isFinite,
+              sampleRate > 0,
+              padding.isFinite,
+              padding >= 0,
+              sampleRate <= Double(Int.max) / analysisWindowDuration,
+              padding <= Double(Int.max) / sampleRate,
+              let span = audibleSampleSpan(samples: samples, sampleRate: sampleRate) else {
+            return samples
+        }
+        let paddingFrames = max(0, Int((padding * sampleRate).rounded()))
+        let start = max(0, span.lowerBound - paddingFrames)
+        let end = min(samples.count, span.upperBound.addingReportingOverflow(paddingFrames).overflow
+            ? samples.count
+            : span.upperBound + paddingFrames)
+        guard start < end else { return samples }
+        return Array(samples[start..<end])
+    }
+
+    static func hasAudibleSpeech(samples: [Float], sampleRate: Double) -> Bool {
+        audibleSampleSpan(samples: samples, sampleRate: sampleRate) != nil
+    }
+
+    private static func audibleSampleSpan(
+        samples: [Float],
+        sampleRate: Double
+    ) -> Range<Int>? {
+        guard !samples.isEmpty,
+              sampleRate.isFinite,
+              sampleRate > 0,
+              sampleRate <= Double(Int.max) / analysisWindowDuration else {
+            return nil
+        }
+        let windowSize = max(1, Int((sampleRate * analysisWindowDuration).rounded()))
         var levels: [Float] = []
-        levels.reserveCapacity(samples.count / windowSize + 1)
+        let windowCount = samples.count / windowSize
+            + (samples.count % windowSize == 0 ? 0 : 1)
+        levels.reserveCapacity(windowCount)
         var cursor = 0
         while cursor < samples.count {
-            let end = min(samples.count, cursor + windowSize)
+            let end = cursor + min(windowSize, samples.count - cursor)
             var sum: Float = 0
-            for sample in samples[cursor..<end] { sum += sample * sample }
+            for sample in samples[cursor..<end] {
+                let finiteSample = sample.isFinite ? sample : 0
+                sum += finiteSample * finiteSample
+            }
             levels.append(sqrt(sum / Float(max(1, end - cursor))))
             cursor = end
         }
-        guard !levels.isEmpty else { throw VoiceLibraryError.referenceSilent }
+
         let sorted = levels.sorted()
+        guard let peakLevel = sorted.last, peakLevel >= 0.006 else { return nil }
         let floorIndex = min(sorted.count - 1, Int(Double(sorted.count) * 0.1))
-        guard let peakLevel = sorted.last, peakLevel >= 0.006 else {
-            throw VoiceLibraryError.referenceSilent
-        }
-        // A percentile-only noise threshold rejects clean clips that contain
-        // continuous speech because their "floor" is speech too. Cap the
-        // adaptive threshold relative to the clip's peak so both continuous
-        // speech and clips with leading/trailing silence remain valid.
         let threshold = max(0.003, min(sorted[floorIndex] * 3, peakLevel * 0.35))
-        let requiredWindows = 3
-        var consecutive = 0
-        for level in levels {
-            if level >= threshold {
-                consecutive += 1
-                if consecutive >= requiredWindows {
-                    return
+        let requiredWindows = max(1, Int((minimumAudibleDuration / analysisWindowDuration).rounded(.up)))
+
+        var spans: [Range<Int>] = []
+        var runStart: Int?
+        for index in levels.indices {
+            if levels[index] >= threshold {
+                runStart = runStart ?? index
+            } else if let start = runStart {
+                if index - start >= requiredWindows {
+                    spans.append(start..<index)
                 }
-            } else {
-                consecutive = 0
+                runStart = nil
             }
         }
-        throw VoiceLibraryError.referenceSilent
+        if let start = runStart, levels.count - start >= requiredWindows {
+            spans.append(start..<levels.count)
+        }
+        guard let first = spans.first, let last = spans.last else { return nil }
+
+        guard first.lowerBound <= Int.max / windowSize,
+              last.upperBound <= Int.max / windowSize else {
+            return nil
+        }
+        let startFrame = first.lowerBound * windowSize
+        let endFrame = min(samples.count, last.upperBound * windowSize)
+        guard startFrame < endFrame else { return nil }
+        return startFrame..<endFrame
     }
 }
 
@@ -528,7 +607,10 @@ final class VoiceLibraryStore {
 
     func create(_ draft: VoiceReferenceDraft) async throws -> LocalVoiceReference {
         errorMessage = nil
-        let prepared = try await VoiceReferenceProcessor.shared.prepare(sourceURL: draft.sourceAudioURL)
+        let prepared = try await VoiceReferenceProcessor.shared.prepare(
+            sourceURL: draft.sourceAudioURL,
+            trimBoundarySilence: draft.source == .microphoneRecording
+        )
         let reference = try await repository.install(
             draft: draft,
             prepared: prepared,
