@@ -365,9 +365,17 @@ private struct NewVoiceReferenceComposer: View {
             }
 
             if let error = recorder.errorMessage ?? store.errorMessage {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Status.errorColor)
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Status.errorColor)
+                    if recorder.needsMicrophoneSettings {
+                        Button("Open System Settings") {
+                            recorder.openMicrophoneSettings()
+                        }
+                        .buttonStyle(.link)
+                    }
+                }
             }
         }
         .padding(AppTheme.Spacing.xlXxl)

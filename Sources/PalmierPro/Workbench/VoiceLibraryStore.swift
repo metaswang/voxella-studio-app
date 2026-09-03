@@ -83,7 +83,7 @@ struct VoiceReferenceDraft: Sendable {
     var avatarURL: URL?
 }
 
-enum VoiceLibraryError: LocalizedError {
+enum VoiceLibraryError: LocalizedError, Sendable {
     case missingAudio
     case unsupportedAudio
     case referenceTooShort
@@ -92,6 +92,7 @@ enum VoiceLibraryError: LocalizedError {
     case avatarTooLarge
     case referenceInUse
     case microphoneDenied
+    case microphoneRestricted
     case recordingFailed
 
     var errorDescription: String? {
@@ -103,8 +104,18 @@ enum VoiceLibraryError: LocalizedError {
         case .invalidAvatar: "The avatar must be a valid PNG, JPEG, or WebP image."
         case .avatarTooLarge: "The avatar must be 2 MB or smaller."
         case .referenceInUse: "This voice is used by a dubbing session. Replace its assignments before deleting it."
-        case .microphoneDenied: "Microphone access is required to record a reference voice."
+        case .microphoneDenied: "Microphone access is denied. Allow it in System Settings → Privacy & Security → Microphone, then retry."
+        case .microphoneRestricted: "Microphone access is restricted by macOS or device management."
         case .recordingFailed: "The microphone recording could not be started."
+        }
+    }
+
+    var requiresMicrophonePermissionSettings: Bool {
+        switch self {
+        case .microphoneDenied, .microphoneRestricted:
+            true
+        default:
+            false
         }
     }
 }
@@ -721,10 +732,14 @@ private actor VoiceReferenceRecorder {
     private var outputURL: URL?
 
     func start() async throws -> URL {
-        let granted = await withCheckedContinuation { continuation in
-            AVCaptureDevice.requestAccess(for: .audio) { continuation.resume(returning: $0) }
+        switch RecordingPermission.microphoneStatus() {
+        case .authorized:
+            break
+        case .restricted:
+            throw VoiceLibraryError.microphoneRestricted
+        case .denied, .notDetermined:
+            throw VoiceLibraryError.microphoneDenied
         }
-        guard granted else { throw VoiceLibraryError.microphoneDenied }
         let URL = FileIO.temporaryFileURL(pathExtension: "wav")
         let recorder = try AVAudioRecorder(url: URL, settings: [
             AVFormatIDKey: kAudioFormatLinearPCM,
@@ -763,21 +778,40 @@ final class VoiceRecorderController {
     var duration = 0.0
     var recordedURL: URL?
     var errorMessage: String?
+    var needsMicrophoneSettings = false
 
     private let recorder = VoiceReferenceRecorder()
+    private var startTask: Task<Void, Never>?
     private var timerTask: Task<Void, Never>?
     private var startedAt: Date?
 
     func start() {
         guard !isRecording else { return }
         errorMessage = nil
-        Task {
+        needsMicrophoneSettings = false
+        startTask?.cancel()
+        startTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.startTask = nil }
             do {
-                recordedURL = try await recorder.start()
+                try Task.checkCancellation()
+                try await requestMicrophonePermission()
+                try Task.checkCancellation()
+                let URL = try await recorder.start()
+                guard !Task.isCancelled else {
+                    await recorder.cancel()
+                    return
+                }
+                recordedURL = URL
                 startedAt = Date()
                 duration = 0
                 isRecording = true
                 startTimer()
+            } catch is CancellationError {
+                return
+            } catch let error as VoiceLibraryError {
+                needsMicrophoneSettings = error.requiresMicrophonePermissionSettings
+                errorMessage = error.localizedDescription
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -795,12 +829,37 @@ final class VoiceRecorderController {
     }
 
     func cancel() {
+        startTask?.cancel()
+        startTask = nil
         timerTask?.cancel()
         timerTask = nil
         Task { await recorder.cancel() }
         isRecording = false
         duration = 0
         recordedURL = nil
+    }
+
+    func openMicrophoneSettings() {
+        guard let URL = RecordingPermission.microphoneSettingsURL else { return }
+        guard NSWorkspace.shared.open(URL) else {
+            Log.recording.warning("could not open microphone permission settings")
+            return
+        }
+    }
+
+    private func requestMicrophonePermission() async throws {
+        do {
+            try await RecordingPermission.requestMicrophone()
+        } catch let error as RecordingError {
+            switch error {
+            case .microphoneDenied:
+                throw VoiceLibraryError.microphoneDenied
+            case .microphoneRestricted:
+                throw VoiceLibraryError.microphoneRestricted
+            default:
+                throw error
+            }
+        }
     }
 
     private func startTimer() {

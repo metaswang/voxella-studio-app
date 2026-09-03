@@ -329,6 +329,12 @@ final class AccountService {
         }
     }
 
+    func signInWithEmail(email: String, password: String) async {
+        await signIn(provider: "email") {
+            try await VoxellaAuthService.shared.signInWithEmail(email: email, password: password)
+        }
+    }
+
     func refreshAccountForFeatureAccess() async {
         await waitForSessionRestore()
         guard isSignedIn else { return }

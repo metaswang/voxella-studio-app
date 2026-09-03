@@ -166,6 +166,37 @@ enum AppTheme {
         )
     }
 
+    // MARK: - Authentication
+
+    enum Auth {
+        static let contentWidth: CGFloat = 380
+        static let providerButtonHeight: CGFloat = 44
+        static let fieldHeight: CGFloat = 42
+        static let pressedScale: CGFloat = 0.98
+        static let fieldBackground = Background.raisedColor
+        static let fieldBorder = Border.primaryColor
+        static let appleBackground = Color.black
+        static let appleForeground = Color.white
+        static let googleBackground = Color.white
+        static let googleForeground = Color.black.opacity(0.86)
+        static let appleHoverFill = Color.white.opacity(Opacity.faint)
+        static let googleHoverFill = Color.black.opacity(Opacity.faint)
+        static let primaryBackground = Color(red: 0.31, green: 0.27, blue: 0.88)
+        static let primaryForeground = Color.white
+        static let primaryHoverFill = Color.white.opacity(Opacity.faint)
+        static let focusBorder = primaryBackground
+        static let googleMarkGradient = LinearGradient(
+            colors: [
+                Color(red: 0.26, green: 0.52, blue: 0.96),
+                Color(red: 0.20, green: 0.67, blue: 0.34),
+                Color(red: 0.98, green: 0.72, blue: 0.08),
+                Color(red: 0.90, green: 0.24, blue: 0.20),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
     // MARK: - Status
 
     enum Status {

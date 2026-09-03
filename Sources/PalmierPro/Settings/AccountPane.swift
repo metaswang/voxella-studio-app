@@ -20,6 +20,7 @@ struct AccountPane: View {
                 Text(error)
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Status.errorColor)
+                    .frame(maxWidth: AppTheme.Auth.contentWidth, alignment: .leading)
             }
         }
     }
@@ -227,24 +228,7 @@ struct AccountPane: View {
         return end.formatted(date: .abbreviated, time: .omitted)
     }
 
-    @ViewBuilder
     private var signedOutBody: some View {
-        Text("Sign in to subscribe and use AI generation.")
-            .font(.system(size: AppTheme.FontSize.sm))
-            .foregroundStyle(AppTheme.Text.tertiaryColor)
-            .fixedSize(horizontal: false, vertical: true)
-
-        Button(account.isSigningIn ? "Signing in…" : "Sign in with Google") {
-            Task { await account.signInWithGoogle() }
-        }
-        .buttonStyle(.capsule(.secondary, size: .regular))
-        .disabled(account.isSigningIn)
-        .padding(.top, AppTheme.Spacing.xs)
-
-        Button(account.isSigningIn ? "Signing in…" : "Sign in with Apple") {
-            Task { await account.signInWithApple() }
-        }
-        .buttonStyle(.capsule(.secondary, size: .regular))
-        .disabled(account.isSigningIn)
+        AccountSignInView()
     }
 }

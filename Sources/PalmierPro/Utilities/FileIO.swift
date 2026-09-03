@@ -12,9 +12,12 @@ enum FileIOError: LocalizedError {
 }
 
 enum FileIO {
+    private static let temporaryFilePrefix = "voxstudio-stage"
+    private static let preparedFilePrefix = ".voxstudio-stage"
+
     nonisolated static func temporaryFileURL(pathExtension: String) -> URL {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("palmier-stage-\(UUID().uuidString)")
+            .appendingPathComponent("\(temporaryFilePrefix)-\(UUID().uuidString)")
             .appendingPathExtension(pathExtension)
     }
 
@@ -27,7 +30,7 @@ enum FileIO {
     nonisolated static func prepareStagedFile(from stagedURL: URL, nextTo packageURL: URL, maxBytes: Int64? = nil) throws -> URL {
         let fm = FileManager.default
         let directory = packageURL.deletingLastPathComponent()
-        let preparedURL = directory.appendingPathComponent(".palmier-stage-\(UUID().uuidString)")
+        let preparedURL = directory.appendingPathComponent("\(preparedFilePrefix)-\(UUID().uuidString)")
         do {
             try copyReplacingDestination(from: stagedURL, to: preparedURL, maxBytes: maxBytes)
             return preparedURL

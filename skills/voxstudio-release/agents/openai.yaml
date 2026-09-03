@@ -1,0 +1,4 @@
+interface:
+  display_name: "VoxStudio Release"
+  short_description: "Build, notarize, verify, and publish VoxStudio DMG"
+  default_prompt: "Use $voxstudio-release to build and publish a verified VoxStudio DMG."

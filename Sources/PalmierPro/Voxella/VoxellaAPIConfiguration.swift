@@ -20,6 +20,7 @@ enum VoxellaAPIConfiguration {
     }
 
     static var tokenURL: URL { apiURL("oauth/token") }
+    static var passwordTokenURL: URL { apiURL("api/v1/auth/token") }
     static var refreshURL: URL { apiURL("api/v1/auth/refresh") }
     static var logoutURL: URL { apiURL("api/v1/auth/logout") }
     static var sessionsURL: URL { apiURL("api/v1/sessions", isCollection: true) }

@@ -56,6 +56,7 @@ protocol VoxellaAuthTokenExchanging: Sendable {
         verifier: String,
         redirectURI: String
     ) async throws -> VoxellaAuthTokens
+    func signInWithEmail(email: String, password: String) async throws -> VoxellaAuthTokens
     func refresh(refreshToken: String) async throws -> VoxellaAuthTokens
     func revoke(refreshToken: String) async throws
 }
@@ -258,6 +259,21 @@ actor VoxellaAuthService {
         try await signIn()
     }
 
+    func signInWithEmail(email: String, password: String) async throws -> String {
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedEmail.isEmpty, !password.isEmpty else {
+            throw VoxellaAuthError.tokenExchangeFailed("Enter your email and password.")
+        }
+        let pair = try await tokens.signInWithEmail(email: normalizedEmail, password: password)
+        try store(pair)
+        Log.account.notice(
+            "voxstudio sign-in completed",
+            telemetry: "VoxStudio sign-in completed",
+            data: ["provider": "email"]
+        )
+        return pair.accessToken
+    }
+
     func signIn() async throws -> String {
         let verifier = Self.randomURLSafe(32)
         let state = Self.randomURLSafe(24)
@@ -403,6 +419,18 @@ struct VoxellaAuthTokenClient: VoxellaAuthTokenExchanging {
         return try await decodeTokenResponse(request)
     }
 
+    func signInWithEmail(email: String, password: String) async throws -> VoxellaAuthTokens {
+        var request = URLRequest(url: VoxellaAPIConfiguration.passwordTokenURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(PasswordLoginBody(
+            email: email,
+            password: password,
+            clientID: VoxellaAuthService.clientID
+        ))
+        return try await decodeTokenResponse(request)
+    }
+
     func refresh(refreshToken: String) async throws -> VoxellaAuthTokens {
         var request = URLRequest(url: VoxellaAPIConfiguration.refreshURL)
         request.httpMethod = "POST"
@@ -509,6 +537,27 @@ struct VoxellaAuthTokenClient: VoxellaAuthTokenExchanging {
         enum CodingKeys: String, CodingKey {
             case grantType = "grant_type"
             case refreshToken = "refresh_token"
+            case clientID = "client_id"
+        }
+    }
+
+    private struct PasswordLoginBody: Encodable {
+        let grantType: String
+        let email: String
+        let password: String
+        let clientID: String
+
+        init(email: String, password: String, clientID: String) {
+            self.grantType = "password"
+            self.email = email
+            self.password = password
+            self.clientID = clientID
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case grantType = "grant_type"
+            case email
+            case password
             case clientID = "client_id"
         }
     }

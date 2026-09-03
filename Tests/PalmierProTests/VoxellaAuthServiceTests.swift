@@ -247,6 +247,63 @@ struct VoxellaAuthServiceTests {
         #expect(browserOpened.value)
     }
 
+    @Test func emailSignInStoresTokensWithoutOpeningTheBrowser() async throws {
+        let browserOpened = Flag()
+        let store = MemoryRefreshStore()
+        let tokens = MockTokenClient(
+            onEmail: { email, password in
+                #expect(email == "person@example.com")
+                #expect(password == "correct horse battery staple")
+                return VoxellaAuthTokens(
+                    accessToken: "email-access",
+                    refreshToken: "email-refresh",
+                    expiresAt: Date().addingTimeInterval(3600),
+                    userID: UUID()
+                )
+            }
+        )
+        let auth = VoxellaAuthService(
+            browser: MockAuthBrowser { _ in
+                browserOpened.value = true
+                throw VoxellaAuthError.browserUnavailable
+            },
+            tokens: tokens,
+            loadRefresh: { store.value },
+            saveRefresh: { store.value = $0 },
+            deleteRefresh: { store.value = nil }
+        )
+
+        let access = try await auth.signInWithEmail(
+            email: "  person@example.com  ",
+            password: "correct horse battery staple"
+        )
+
+        #expect(access == "email-access")
+        #expect(store.value == "email-refresh")
+        #expect(browserOpened.value == false)
+    }
+
+    @Test func emailSignInRejectsMissingCredentialsBeforeRequestingTokens() async {
+        let requested = Flag()
+        let auth = VoxellaAuthService(
+            browser: MockAuthBrowser { _ in throw VoxellaAuthError.browserUnavailable },
+            tokens: MockTokenClient(
+                onEmail: { _, _ in
+                    requested.value = true
+                    throw VoxellaAuthError.tokenExchangeFailed("unexpected request")
+                }
+            ),
+            loadRefresh: { nil },
+            saveRefresh: { _ in },
+            deleteRefresh: {}
+        )
+
+        await #expect(throws: VoxellaAuthError.tokenExchangeFailed("Enter your email and password.")) {
+            _ = try await auth.signInWithEmail(email: "", password: "")
+        }
+        #expect(requested.value == false)
+    }
+
     @Test func ensureSignedInUsesTheBrowserOAuthFlow() async throws {
         let browserOpened = Flag()
         let browser = MockAuthBrowser { url in
@@ -450,6 +507,7 @@ private struct MockAuthBrowser: VoxellaAuthBrowserSessioning {
 
 private struct MockTokenClient: VoxellaAuthTokenExchanging {
     var onExchange: (@Sendable (String, String, String) async throws -> VoxellaAuthTokens)?
+    var onEmail: (@Sendable (String, String) async throws -> VoxellaAuthTokens)?
     var onRefresh: (@Sendable (String) async throws -> VoxellaAuthTokens)?
     var onRevoke: (@Sendable (String) async throws -> Void)?
 
@@ -460,6 +518,11 @@ private struct MockTokenClient: VoxellaAuthTokenExchanging {
     ) async throws -> VoxellaAuthTokens {
         guard let onExchange else { throw VoxellaAuthError.tokenExchangeFailed("unused") }
         return try await onExchange(code, verifier, redirectURI)
+    }
+
+    func signInWithEmail(email: String, password: String) async throws -> VoxellaAuthTokens {
+        guard let onEmail else { throw VoxellaAuthError.tokenExchangeFailed("unused") }
+        return try await onEmail(email, password)
     }
 
     func refresh(refreshToken: String) async throws -> VoxellaAuthTokens {

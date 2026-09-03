@@ -50,7 +50,7 @@ echo "==> Building the Mac App Store app"
 MAS_SIGNING_IDENTITY="$MAS_SIGNING_IDENTITY" \
 TEAM_IDENTIFIER="$TEAM_IDENTIFIER" \
 MAS_PROVISIONING_PROFILE="$MAS_PROVISIONING_PROFILE" \
-MAS_ENTITLEMENTS_TEMPLATE="$ROOT/scripts/PalmierPro.mas.entitlements" \
+MAS_ENTITLEMENTS_TEMPLATE="$ROOT/scripts/VoxStudio.mas.entitlements" \
   "$ROOT/scripts/bundle.sh" release --mas
 
 echo "==> Building the signed installer package"

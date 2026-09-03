@@ -39,14 +39,15 @@ fi
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 RESOURCES="$ROOT/Sources/PalmierPro/Resources"
-DEBUG_ENTITLEMENTS="$ROOT/scripts/PalmierPro.debug.entitlements"
+DEBUG_ENTITLEMENTS="$ROOT/scripts/VoxStudio.debug.entitlements"
+DEVELOPER_ID_ENTITLEMENTS="$ROOT/scripts/VoxStudio.developer-id.entitlements"
 APP="$ROOT/.build/VoxStudio.app"
 ZIP="$ROOT/.build/VoxStudio.zip"
 DMG="$ROOT/.build/VoxStudio.dmg"
 
 if [ "$MODE" = "mas" ]; then
   SIGNING_IDENTITY="${MAS_SIGNING_IDENTITY:-$SIGNING_IDENTITY}"
-  ENTITLEMENTS_TEMPLATE="${MAS_ENTITLEMENTS_TEMPLATE:-$ROOT/scripts/PalmierPro.mas.entitlements}"
+  ENTITLEMENTS_TEMPLATE="${MAS_ENTITLEMENTS_TEMPLATE:-$ROOT/scripts/VoxStudio.mas.entitlements}"
   PROVISIONING_PROFILE="${MAS_PROVISIONING_PROFILE:-${PROVISIONING_PROFILE:-}}"
 fi
 
@@ -231,6 +232,8 @@ echo "==> Codesigning main app ($SIGNING_IDENTITY / $TEAM_IDENTIFIER)"
 CODESIGN_ARGS=(--force --sign "$SIGNING_IDENTITY")
 if [ "$MODE" = "mas" ]; then
   CODESIGN_ARGS+=(--entitlements "$SIGNING_ENTITLEMENTS")
+elif [ "$MODE" = "sign" ] || [ "$MODE" = "dist" ]; then
+  CODESIGN_ARGS+=(--entitlements "$DEVELOPER_ID_ENTITLEMENTS")
 fi
 if [ "$MODE" != "mas" ]; then
   CODESIGN_ARGS+=(--options runtime)

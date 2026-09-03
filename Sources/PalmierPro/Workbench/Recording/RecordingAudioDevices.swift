@@ -1,4 +1,5 @@
 import AVFoundation
+import AVFAudio
 import CoreAudio
 import CoreGraphics
 import Foundation
@@ -102,8 +103,21 @@ enum RecordingMicrophoneAuthorizationStatus: String, Equatable, Sendable {
 
 enum RecordingPermission {
     static func microphoneStatus() -> RecordingMicrophoneAuthorizationStatus {
-        RecordingMicrophoneAuthorizationStatus(AVCaptureDevice.authorizationStatus(for: .audio))
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted:
+            .authorized
+        case .undetermined:
+            .notDetermined
+        case .denied:
+            .denied
+        @unknown default:
+            .denied
+        }
     }
+
+    static let microphoneSettingsURL = URL(
+        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+    )
 
     static func screenCaptureIsAuthorized() -> Bool {
         CGPreflightScreenCaptureAccess()
@@ -118,7 +132,9 @@ enum RecordingPermission {
         case .authorized:
             return
         case .notDetermined:
-            let granted = await AVCaptureDevice.requestAccess(for: .audio)
+            let granted = await withCheckedContinuation { continuation in
+                AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
+            }
             let finalStatus = microphoneStatus()
             Log.recording.notice(
                 "microphone authorization request granted=\(granted) final=\(finalStatus.rawValue) \(diagnosticContext())"

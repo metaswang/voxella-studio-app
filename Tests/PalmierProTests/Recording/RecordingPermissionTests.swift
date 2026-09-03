@@ -23,6 +23,12 @@ struct RecordingPermissionTests {
         )
     }
 
+    @Test func referenceVoicePermissionErrorsOfferMicrophoneSettings() {
+        #expect(VoiceLibraryError.microphoneDenied.requiresMicrophonePermissionSettings)
+        #expect(VoiceLibraryError.microphoneRestricted.requiresMicrophonePermissionSettings)
+        #expect(RecordingPermission.microphoneSettingsURL?.absoluteString.contains("Privacy_Microphone") == true)
+    }
+
     @Test func recordingSettingsNormalizeToAnAudioSource() {
         var configuration = RecordingCaptureConfiguration(
             mode: .audioOnly,
