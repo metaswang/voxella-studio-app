@@ -300,7 +300,7 @@ struct WorkbenchSessionDetailView: View {
 
     @ViewBuilder
     private func sessionView(_ session: WorkbenchSession) -> some View {
-        let originalMediaURL = session.sourceURL ?? session.remoteSourcePlaybackURL
+        let originalMediaURL = session.preferredPlaybackURL ?? session.remoteSourcePlaybackURL
         let dubbedMediaURL = session.outputURL
         let mediaURL = selectedTrack == .dub ? dubbedMediaURL : originalMediaURL
         let playbackCueScope = cueScope(for: session)

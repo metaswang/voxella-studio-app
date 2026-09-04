@@ -3,6 +3,8 @@ import SwiftUI
 struct RecordWorkbenchPanel: View {
     @Bindable var session: RecordingSessionController
     @Bindable private var account = AccountService.shared
+    @State private var listenEnhanceEnabled = ListenEnhanceSettings.isEnabled
+    @State private var listenEnhanceWetMix = Double(ListenEnhanceSettings.wetMix)
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
@@ -14,6 +16,7 @@ struct RecordWorkbenchPanel: View {
 
             modePicker
             audioSources
+            listenEnhanceOptions
             actionRow
             messages
         }
@@ -116,6 +119,41 @@ struct RecordWorkbenchPanel: View {
                 Toggle("Capture", isOn: $session.configuration.capturesSystemAudio)
                     .toggleStyle(.checkbox)
                     .disabled(session.phase.isActive)
+            }
+        }
+    }
+
+    private var listenEnhanceOptions: some View {
+        sourceCard(
+            title: "Listen enhance",
+            systemImage: "waveform.badge.magnifyingglass",
+            info: "After stop, builds a clearer listen track for playback/export. Transcription always uses the untouched master. Strength is denoise wet mix — lower keeps more hall ambience."
+        ) {
+            Toggle("Enhance for listening", isOn: $listenEnhanceEnabled)
+                .toggleStyle(.checkbox)
+                .disabled(session.phase.isActive)
+                .onChange(of: listenEnhanceEnabled) { _, value in
+                    ListenEnhanceSettings.isEnabled = value
+                }
+            if listenEnhanceEnabled {
+                HStack(spacing: AppTheme.Spacing.md) {
+                    Text("Strength")
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                    Slider(
+                        value: $listenEnhanceWetMix,
+                        in: 0...1,
+                        step: 0.05
+                    )
+                    .disabled(session.phase.isActive)
+                    .onChange(of: listenEnhanceWetMix) { _, value in
+                        ListenEnhanceSettings.wetMix = Float(value)
+                    }
+                    Text("\(Int((listenEnhanceWetMix * 100).rounded()))%")
+                        .font(.system(size: AppTheme.FontSize.xs).monospacedDigit())
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                        .frame(width: 36, alignment: .trailing)
+                }
             }
         }
     }

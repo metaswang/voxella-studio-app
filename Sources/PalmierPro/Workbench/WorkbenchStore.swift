@@ -201,6 +201,10 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var cloudSyncState: DubCloudSyncState?
     var pendingCloudSyncError: String?
     var isRecordedCapture = false
+    /// Enhanced listen-track path (playback/export). ASR always uses `sourcePath`.
+    var listenAudioPath: String?
+    var listenEnhanceState: ListenEnhanceState = .idle
+
 
     var placement: TranscriptionPlacement {
         get { TranscriptionPlacement(storage: storage, compute: compute) }
@@ -211,6 +215,21 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     }
 
     var sourceURL: URL { URL(fileURLWithPath: sourcePath) }
+    var masterAudioURL: URL { sourceURL }
+    var listenAudioURL: URL? {
+        guard let listenAudioPath, !listenAudioPath.isEmpty else { return nil }
+        return URL(fileURLWithPath: listenAudioPath)
+    }
+    /// Playback/export prefer listen when ready; transcription stays on master.
+    var playbackAudioURL: URL {
+        if listenEnhanceState.isReady, let listenAudioURL,
+           FileManager.default.fileExists(atPath: listenAudioURL.path) {
+            return listenAudioURL
+        }
+        return masterAudioURL
+    }
+    var asrAudioURL: URL { masterAudioURL }
+
     var originalFilename: String { sourceURL.lastPathComponent }
     var displayName: String { sourceURL.deletingPathExtension().lastPathComponent }
     var sessionTitle: String {
@@ -335,6 +354,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         case storage, compute, remoteSessionID, localCachePath
         case cloudSyncRevision, cloudSyncState, pendingCloudSyncError
         case isRecordedCapture
+        case listenAudioPath, listenEnhanceState
     }
 
     init(
@@ -385,7 +405,9 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         cloudSyncRevision: Int = 0,
         cloudSyncState: DubCloudSyncState? = nil,
         pendingCloudSyncError: String? = nil,
-        isRecordedCapture: Bool = false
+        isRecordedCapture: Bool = false,
+        listenAudioPath: String? = nil,
+        listenEnhanceState: ListenEnhanceState = .idle
     ) {
         self.id = id
         self.sourcePath = sourcePath
@@ -435,6 +457,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         self.cloudSyncState = cloudSyncState
         self.pendingCloudSyncError = pendingCloudSyncError
         self.isRecordedCapture = isRecordedCapture
+        self.listenAudioPath = listenAudioPath
+        self.listenEnhanceState = listenEnhanceState
     }
 
     init(from decoder: Decoder) throws {
@@ -511,6 +535,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         cloudSyncState = try container.decodeIfPresent(DubCloudSyncState.self, forKey: .cloudSyncState)
         pendingCloudSyncError = try container.decodeIfPresent(String.self, forKey: .pendingCloudSyncError)
         isRecordedCapture = try container.decodeIfPresent(Bool.self, forKey: .isRecordedCapture) ?? false
+        listenAudioPath = try container.decodeIfPresent(String.self, forKey: .listenAudioPath)
+        listenEnhanceState = try container.decodeIfPresent(ListenEnhanceState.self, forKey: .listenEnhanceState) ?? .idle
     }
 
     func encode(to encoder: Encoder) throws {
@@ -567,6 +593,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(cloudSyncState, forKey: .cloudSyncState)
         try container.encodeIfPresent(pendingCloudSyncError, forKey: .pendingCloudSyncError)
         try container.encode(isRecordedCapture, forKey: .isRecordedCapture)
+        try container.encodeIfPresent(listenAudioPath, forKey: .listenAudioPath)
+        try container.encode(listenEnhanceState, forKey: .listenEnhanceState)
     }
 }
 
@@ -933,6 +961,8 @@ struct WorkbenchSession: Identifiable, Sendable {
     var remoteSourceHasVideo: Bool? = nil
     var remoteSourcePosterURL: URL? = nil
     var netVideoSource: WorkbenchNetVideoSource? = nil
+    var listenAudioURL: URL? = nil
+    var listenEnhanceState: ListenEnhanceState = .idle
 
     var showsFloatingNetVideoPreview: Bool {
         netVideoSource != nil
@@ -945,6 +975,31 @@ struct WorkbenchSession: Identifiable, Sendable {
     var originalFilename: String? {
         sourceURL?.lastPathComponent
     }
+
+    var masterAudioURL: URL? { sourceURL }
+
+    /// Prefer listen for human playback when ready and the master is audio-only.
+    /// Video masters keep the picture from `sourceURL`; use `preferredExportAudioURL` for audio export.
+    var preferredPlaybackURL: URL? {
+        if listenEnhanceState.isReady,
+           let listenAudioURL,
+           FileManager.default.fileExists(atPath: listenAudioURL.path),
+           !Self.urlLooksLikeVideo(sourceURL) {
+            return listenAudioURL
+        }
+        return sourceURL
+    }
+
+    var preferredExportAudioURL: URL? {
+        if listenEnhanceState.isReady,
+           let listenAudioURL,
+           FileManager.default.fileExists(atPath: listenAudioURL.path) {
+            return listenAudioURL
+        }
+        return sourceURL
+    }
+
+    var asrAudioURL: URL? { sourceURL }
 
     var translationTrack: SubtitleTrack? {
         if let selectedTranslationLanguageCode,
@@ -963,6 +1018,12 @@ struct WorkbenchSession: Identifiable, Sendable {
     }
 
     var hasDub: Bool { outputURL != nil || source == .standaloneDub || !dubSegments.isEmpty }
+
+    private static func urlLooksLikeVideo(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        let ext = url.pathExtension.lowercased()
+        return ["mp4", "mov", "m4v", "avi", "mkv", "webm"].contains(ext)
+    }
 }
 
 enum SessionSummaryOwner: Equatable, Sendable {
@@ -1273,7 +1334,10 @@ final class WorkbenchStore {
                 modifiedAt: max(job.modifiedAt, dub?.modifiedAt ?? job.modifiedAt),
                 state: Self.combinedState(primary: job.state, secondary: dub?.state),
                 source: .media,
-                sessionType: job.netVideoSourceURL == nil ? .upload : .netVideo,
+                sessionType: {
+                    if job.isRecordedCapture { return .record }
+                    return job.netVideoSourceURL == nil ? .upload : .netVideo
+                }(),
                 transcriptionID: job.id,
                 dubID: dub?.id,
                 sourceURL: job.sourceURL,
@@ -1299,7 +1363,9 @@ final class WorkbenchStore {
                     secondary: dub?.resolvedCloudSyncState
                 ),
                 cloudSyncError: dub?.pendingCloudSyncError ?? job.pendingCloudSyncError,
-                netVideoSource: Self.localNetVideoSource(from: job)
+                netVideoSource: Self.localNetVideoSource(from: job),
+                listenAudioURL: job.listenAudioURL,
+                listenEnhanceState: job.listenEnhanceState
             )
         }
         let standaloneDubs = dubs.filter { job in
@@ -1619,6 +1685,21 @@ final class WorkbenchStore {
         route = .transcribe
     }
 
+
+    func applyListenTrackUpdate(_ update: ListenTrackEnhanceUpdate) {
+        let masterPath = update.masterURL.resolvingSymlinksInPath().path
+        var didChange = false
+        for index in transcriptions.indices {
+            let jobPath = transcriptions[index].sourceURL.resolvingSymlinksInPath().path
+            guard jobPath == masterPath else { continue }
+            transcriptions[index].listenEnhanceState = update.state
+            transcriptions[index].listenAudioPath = update.listenURL?.path
+            transcriptions[index].modifiedAt = Date()
+            didChange = true
+        }
+        if didChange { save() }
+    }
+
     func stageRecordedMedia(_ url: URL) {
         transcriptionAdmissionError = nil
         pendingNetVideoSource = nil
@@ -1627,6 +1708,10 @@ final class WorkbenchStore {
         selectedTranscriptionID = nil
         preferRecordEntry = true
         route = .transcribe
+        // Bake listen track async so playback can start on master immediately.
+        Task {
+            await ListenTrackEnhanceCoordinator.shared.enqueue(masterURL: url)
+        }
     }
 
     func clearPendingMediaImport() {
@@ -1738,6 +1823,19 @@ final class WorkbenchStore {
             job.batchID = batchID
             job.placement = submission.placement
             job.isRecordedCapture = isRecordedCapture
+            if isRecordedCapture {
+                if let existing = ListenTrackLocator.existingListenURL(forMaster: url) {
+                    job.listenAudioPath = existing.path
+                    job.listenEnhanceState = .ready
+                } else if ListenEnhanceSettings.isEnabled {
+                    job.listenEnhanceState = .pending
+                    Task {
+                        await ListenTrackEnhanceCoordinator.shared.enqueue(masterURL: url)
+                    }
+                } else {
+                    job.listenEnhanceState = .skipped
+                }
+            }
             job.progressMessage = submission.placement.compute == .local
                 ? "Queued"
                 : "Queued for VoxStudio Cloud"
@@ -5171,6 +5269,8 @@ final class WorkbenchStore {
         ]
         let candidate = url.resolvingSymlinksInPath().path
         guard roots.contains(where: { candidate.hasPrefix($0 + "/") }) else { return }
+        let listenSidecar = ListenTrackLocator.sidecarURL(forMaster: url)
+        try? FileManager.default.removeItem(at: listenSidecar)
         try? FileManager.default.removeItem(at: url)
     }
 

@@ -581,7 +581,9 @@ enum SessionExportBuilder {
             guard let url = session.outputURL else { throw SessionExportError.missingAudio }
             return url
         case .original, .translation, .bilingual:
-            guard let url = session.sourceURL else { throw SessionExportError.missingAudio }
+            guard let url = session.preferredExportAudioURL ?? session.sourceURL else {
+                throw SessionExportError.missingAudio
+            }
             return url
         }
     }
