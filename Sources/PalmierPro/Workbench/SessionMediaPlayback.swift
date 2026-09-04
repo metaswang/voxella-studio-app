@@ -194,15 +194,17 @@ final class SessionPlaybackController {
     }
 
     @MainActor
-    func load(url: URL?, showsVideoCanvas: Bool) async {
+    func load(url: URL?, showsVideoCanvas: Bool, resumeTime: Double? = nil, resumePlaying: Bool? = nil) async {
         let generation = UUID()
         loadGeneration = generation
+        let shouldResumePlaying = resumePlaying ?? isPlaying
+        let preservedTime = resumeTime ?? (currentTime > 0 ? currentTime : 0)
         dismissFullscreen()
         removeEndObserver()
         removeTimeObserver()
         player?.pause()
         isPlaying = false
-        currentTime = 0
+        currentTime = preservedTime > 0 ? preservedTime : 0
         activeCueID = nil
         posterImage = nil
         peaks = []
@@ -239,6 +241,20 @@ final class SessionPlaybackController {
         let loadedDuration = (try? await nextPlayer.currentItem?.asset.load(.duration).seconds)?.finiteOrZero ?? 0
         guard !Task.isCancelled, generation == loadGeneration else { return }
         duration = loadedDuration
+        if preservedTime > 0, duration > 0 {
+            let clamped = min(preservedTime, duration)
+            currentTime = clamped
+            nextPlayer.seek(
+                to: CMTime(seconds: clamped, preferredTimescale: AppTheme.Workbench.playerTimescale),
+                toleranceBefore: .zero,
+                toleranceAfter: .zero
+            )
+            if shouldResumePlaying {
+                nextPlayer.play()
+                nextPlayer.rate = Float(playbackRate)
+                isPlaying = true
+            }
+        }
         if !showsVideoCanvas {
             peaks = (try? await WaveformExtractor.peakEnvelope(from: playbackURL)) ?? []
             guard !Task.isCancelled, generation == loadGeneration else { return }

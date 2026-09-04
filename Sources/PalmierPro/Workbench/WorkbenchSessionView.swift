@@ -1373,7 +1373,13 @@ private struct SessionMediaPlayer: View {
                 translationTracks: translationTracks
             )
             playback.configureHighlightCues(highlightCues)
-            await playback.load(url: URL, showsVideoCanvas: showsVideoCanvas)
+            // Preserve playhead when master → listen swap completes mid-session.
+            await playback.load(
+                url: URL,
+                showsVideoCanvas: showsVideoCanvas,
+                resumeTime: playback.currentTime > 0 ? playback.currentTime : nil,
+                resumePlaying: playback.isPlaying ? true : nil
+            )
         }
         .onChange(of: highlightCues) { _, cues in
             playback.configureHighlightCues(cues)
