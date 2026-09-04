@@ -147,6 +147,44 @@ struct LocalFirstWorkbenchTests {
         #expect(trimmed.contains { abs($0) > 0.1 })
     }
 
+    /// Silero often marks continuous light beds as speech; Silero∩RMS must still cut edges.
+    @Test func voiceReferenceSpeechGateIntersectsWideSileroWithRMSNoiseBed() {
+        let sampleRate = 24_000.0
+        let leading = Int(1.2 * sampleRate)
+        let speech = Int(3.6 * sampleRate)
+        let trailing = Int(1.2 * sampleRate)
+        // Continuous light bed (~RMS 0.017) that would survive a low quietRatio alone.
+        var samples = [Float](repeating: 0.017, count: leading + speech + trailing)
+        for index in 0..<speech {
+            samples[leading + index] =
+                0.18 * sin(2 * .pi * 220 * Float(index) / Float(sampleRate))
+        }
+        let totalDuration = Double(samples.count) / sampleRate
+        // Over-wide Silero span that includes most of the noise bed.
+        let intervals = [
+            VoiceReferenceSpeechInterval(startTime: 0.05, endTime: totalDuration - 0.05)
+        ]
+        let span = VoiceReferenceSpeechGate.trimmedSpan(
+            samples: samples,
+            sampleRate: sampleRate,
+            speechIntervals: intervals
+        )
+        let trimmed = VoiceReferenceSpeechGate.trim(
+            samples: samples,
+            sampleRate: sampleRate,
+            speechIntervals: intervals
+        )
+        #expect(span != nil)
+        let duration = Double(trimmed.count) / sampleRate
+        // Meaningful edge trim: not nearly the full 6.0s clip.
+        #expect(duration < 4.2)
+        #expect(duration > 3.5)
+        #expect(totalDuration - duration > 1.5)
+        let leadingPeak = trimmed.prefix(Int(0.04 * sampleRate)).map { abs($0) }.max() ?? 0
+        #expect(leadingPeak < 0.05)
+        #expect(trimmed.contains { abs($0) > 0.1 })
+    }
+
     @Test func voiceReferenceSpeechGateKeepsQuietSpeechOverComparableBed() {
         let sampleRate = 24_000.0
         let leading = Int(1.0 * sampleRate)
@@ -183,6 +221,22 @@ struct LocalFirstWorkbenchTests {
                 speechIntervals: []
             ) == nil
         )
+    }
+
+    @Test func voiceReferenceSpeechGateRejectsNearSilentForcedIntervals() {
+        let sampleRate = 24_000.0
+        let samples = [Float](repeating: 0.000_2, count: Int(4 * sampleRate))
+        let intervals = [
+            VoiceReferenceSpeechInterval(startTime: 0.5, endTime: 3.5)
+        ]
+        #expect(
+            VoiceReferenceSpeechGate.trimmedSpan(
+                samples: samples,
+                sampleRate: sampleRate,
+                speechIntervals: intervals
+            ) == nil
+        )
+        #expect(!VoiceReferenceSilenceTrimmer.hasAudibleSpeech(samples: samples, sampleRate: sampleRate))
     }
 
     @Test func voiceReferenceLoudnessHitsTargetWithoutExceedingCeiling() {

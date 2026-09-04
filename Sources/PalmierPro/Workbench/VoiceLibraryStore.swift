@@ -298,7 +298,7 @@ enum VoiceReferenceSilenceTrimmer {
               padding >= 0,
               sampleRate <= Double(Int.max) / analysisWindowDuration,
               padding <= Double(Int.max) / sampleRate,
-              let span = audibleSampleSpan(samples: samples, sampleRate: sampleRate) else {
+              let span = audibleSpan(samples: samples, sampleRate: sampleRate) else {
             return samples
         }
         let paddingFrames = max(0, Int((padding * sampleRate).rounded()))
@@ -311,10 +311,11 @@ enum VoiceReferenceSilenceTrimmer {
     }
 
     static func hasAudibleSpeech(samples: [Float], sampleRate: Double) -> Bool {
-        audibleSampleSpan(samples: samples, sampleRate: sampleRate) != nil
+        audibleSpan(samples: samples, sampleRate: sampleRate) != nil
     }
 
-    private static func audibleSampleSpan(
+    /// Contiguous sample range covering sustained audible energy, without boundary padding.
+    static func audibleSpan(
         samples: [Float],
         sampleRate: Double
     ) -> Range<Int>? {

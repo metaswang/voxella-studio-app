@@ -8,7 +8,7 @@ struct VoiceReferenceSpeechInterval: Equatable, Sendable {
 
 enum VoiceReferenceSpeechGate {
     static let absoluteFloor: Float = 0.003
-    static let quietRatio: Float = 0.25
+    static let quietRatio: Float = 0.4
     static let cellDuration = 512.0 / 16_000.0
     static let minSpeechDuration = 0.15
     static let padding = 0.1
@@ -63,13 +63,28 @@ enum VoiceReferenceSpeechGate {
 
         guard let first = kept.firstIndex(of: true),
               let last = kept.lastIndex(of: true) else { return nil }
-        let keptDuration = Double(last - first + 1) * cellDuration
+
+        // Silero (+ in-interval energy) outer edges, before padding.
+        var start = first * cellSamples
+        var end = min(samples.count, (last + 1) * cellSamples)
+
+        // Intersect with RMS/energy audible edges so continuous light noise beds
+        // that Silero still marks as speech are cut at the tighter outer bound.
+        if let rmsSpan = VoiceReferenceSilenceTrimmer.audibleSpan(
+            samples: samples,
+            sampleRate: sampleRate
+        ) {
+            start = max(start, rmsSpan.lowerBound)
+            end = min(end, rmsSpan.upperBound)
+        }
+        guard start < end else { return nil }
+
+        let keptDuration = Double(end - start) / sampleRate
         guard keptDuration + 1e-9 >= minSpeechDuration else { return nil }
 
         let paddingFrames = max(0, Int((padding * sampleRate).rounded()))
-        let start = max(0, first * cellSamples - paddingFrames)
-        let rawEnd = (last + 1) * cellSamples + paddingFrames
-        let end = min(samples.count, rawEnd)
+        start = max(0, start - paddingFrames)
+        end = min(samples.count, end + paddingFrames)
         guard start < end else { return nil }
         return start..<end
     }
