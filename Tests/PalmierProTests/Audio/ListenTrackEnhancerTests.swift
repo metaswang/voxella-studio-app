@@ -72,4 +72,19 @@ struct ListenTrackEnhancerTests {
         #expect(ListenEnhanceSettings.defaultWetMix > 0.3)
         #expect(ListenEnhanceSettings.defaultWetMix < 0.6)
     }
+
+    @Test func listenEnhanceSettingsDefaultsEnabledWhenUnset() {
+        let key = "voxella.listenEnhance.enabled"
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: key)
+        defaults.removeObject(forKey: key)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        #expect(ListenEnhanceSettings.isEnabled == true)
+    }
 }

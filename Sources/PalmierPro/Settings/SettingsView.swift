@@ -138,6 +138,9 @@ private struct SettingsDetail: View {
                             case .calendar:
                                 GoogleCalendarSettingsPane()
                             case .general:
+                                SettingsSection(title: "Recording") {
+                                    RecordingPane()
+                                }
                                 SettingsSection(title: "Notifications") {
                                     NotificationsPane()
                                 }

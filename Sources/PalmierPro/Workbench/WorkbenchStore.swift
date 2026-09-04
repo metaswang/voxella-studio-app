@@ -1709,8 +1709,11 @@ final class WorkbenchStore {
         preferRecordEntry = true
         route = .transcribe
         // Bake listen track async so playback can start on master immediately.
-        Task {
-            await ListenTrackEnhanceCoordinator.shared.enqueue(masterURL: url)
+        // App Settings / ListenEnhanceSettings is the source of truth (default ON).
+        if ListenEnhanceSettings.isEnabled {
+            Task {
+                await ListenTrackEnhanceCoordinator.shared.enqueue(masterURL: url)
+            }
         }
     }
 

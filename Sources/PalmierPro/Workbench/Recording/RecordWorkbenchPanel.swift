@@ -23,6 +23,8 @@ struct RecordWorkbenchPanel: View {
         .onAppear {
             session.refreshDevices()
             session.refreshPermissionState()
+            listenEnhanceEnabled = ListenEnhanceSettings.isEnabled
+            listenEnhanceWetMix = Double(ListenEnhanceSettings.wetMix)
         }
         .onChange(of: session.configuration.mode) { _, _ in
             session.configuration.normalizeAudioSources()
