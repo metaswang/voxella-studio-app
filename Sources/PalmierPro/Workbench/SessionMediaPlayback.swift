@@ -244,11 +244,13 @@ final class SessionPlaybackController {
         if preservedTime > 0, duration > 0 {
             let clamped = min(preservedTime, duration)
             currentTime = clamped
-            nextPlayer.seek(
-                to: CMTime(seconds: clamped, preferredTimescale: AppTheme.Workbench.playerTimescale),
-                toleranceBefore: .zero,
-                toleranceAfter: .zero
-            )
+            let seekTime = CMTime(seconds: clamped, preferredTimescale: AppTheme.Workbench.playerTimescale)
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                nextPlayer.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                    continuation.resume()
+                }
+            }
+            guard !Task.isCancelled, generation == loadGeneration else { return }
             if shouldResumePlaying {
                 nextPlayer.play()
                 nextPlayer.rate = Float(playbackRate)
