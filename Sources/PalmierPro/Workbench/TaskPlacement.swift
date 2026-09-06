@@ -84,6 +84,7 @@ struct TranscriptionProcessingOptions: Equatable, Sendable {
     var enableTranslation = false
     var targetLanguageCode: String?
     var useLLMSubtitleProcessing: Bool? = nil
+    var cloudVocalRepairEnabled = false
     var clipStartMs: Int?
     var clipEndMs: Int?
 
@@ -207,6 +208,7 @@ struct TaskPlacementCopy {
 struct CloudUsageEstimate: Equatable, Sendable {
     static let uploadUsageType = "upload_transcribe"
     static let translationUsageType = "translation"
+    static let vocalRepairUsageType = "tool_enhance"
 
     let durationSeconds: Double
     let estimatedCredits: Double

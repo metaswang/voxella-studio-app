@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import PalmierPro
 
-@Suite("Listen track dual-path audio")
+@Suite("Listen track dual-path audio", .serialized)
 struct ListenTrackEnhancerTests {
     @Test func sidecarPathSitsBesideMaster() {
         let master = URL(fileURLWithPath: "/tmp/Recordings/Recording-20260904-120000.m4a")
@@ -86,5 +86,26 @@ struct ListenTrackEnhancerTests {
             }
         }
         #expect(ListenEnhanceSettings.isEnabled == true)
+    }
+
+    @Test func listenEnhanceSettingsRoundTripGlobalToggle() {
+        let key = "voxella.listenEnhance.enabled"
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: key)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        ListenEnhanceSettings.isEnabled = false
+        #expect(ListenEnhanceSettings.isEnabled == false)
+        #expect(defaults.bool(forKey: key) == false)
+
+        ListenEnhanceSettings.isEnabled = true
+        #expect(ListenEnhanceSettings.isEnabled == true)
+        #expect(defaults.bool(forKey: key) == true)
     }
 }

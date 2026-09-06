@@ -32,7 +32,7 @@ enum ListenTrackEnhancer {
     /// Returns a ready listen file beside/cached for `masterURL`, baking if needed.
     static func enhance(
         masterURL: URL,
-        wetMix: Float = ListenEnhanceSettings.wetMix,
+        wetMix: Float = ListenEnhanceSettings.defaultWetMix,
         force: Bool = false
     ) async throws -> Result {
         guard ListenEnhanceSettings.isEnabled else { throw EnhanceError.disabled }

@@ -520,14 +520,16 @@ final class AccountService {
 
     func cloudTranscriptionQuota(
         durationSeconds: Double,
-        includesTranslation: Bool
+        includesTranslation: Bool,
+        includesVocalRepair: Bool = false,
+        sourceUsageType: String = CloudTranscriptionQuota.uploadUsageType
     ) async throws -> CloudTranscriptionQuota {
         guard durationSeconds.isFinite, durationSeconds > 0 else {
             throw VoxellaAPIError.http(0, "The media duration is unavailable.")
         }
-        let usageTypes = includesTranslation
-            ? [CloudTranscriptionQuota.uploadUsageType, CloudTranscriptionQuota.translationUsageType]
-            : [CloudTranscriptionQuota.uploadUsageType]
+        var usageTypes = [sourceUsageType]
+        if includesTranslation { usageTypes.append(CloudTranscriptionQuota.translationUsageType) }
+        if includesVocalRepair { usageTypes.append(CloudTranscriptionQuota.vocalRepairUsageType) }
         let estimate = try await api.usageEstimate(
             durationSeconds: durationSeconds,
             usageTypes: usageTypes

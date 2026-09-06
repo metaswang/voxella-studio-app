@@ -187,6 +187,27 @@ struct VoxellaSessionDetail: Decodable, Sendable {
     var options: VoxellaSessionOptions?
     var dubSegments: [VoxellaDubSegment]
 
+    /// Cloud vocal-repair artifacts are optional so historical sessions remain readable.
+    var enhancedAudioPath: String? {
+        artifacts?["enhanced_audio_r2_path"]?.stringValue
+            ?? artifacts?["enhanced_audio_path"]?.stringValue
+    }
+
+    var enhancedAudioStatus: String? {
+        artifacts?["enhanced_audio_status"]?.stringValue
+    }
+
+    var enhancedAudioDurationSec: Double? {
+        artifacts?["enhanced_audio_duration_sec"]?.numberValue
+    }
+
+    var enhancedAudioReady: Bool {
+        guard let path = enhancedAudioPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else { return false }
+        let status = enhancedAudioStatus?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return status == nil || status == "completed" || status == "complete"
+    }
+
     var generationID: String? {
         artifacts?["generation_id"]?.stringValue
     }
@@ -334,6 +355,7 @@ struct VoxellaSessionRenderingData: Sendable {
     let transcriptSegments: [VoxellaTranscriptSegment]
     let subtitleCues: [VoxellaSubtitleCue]
     let mediaPlaybackURL: URL?
+    let enhancedMediaPlaybackURL: URL?
     let mediaHasVideo: Bool
 }
 
@@ -1465,21 +1487,31 @@ actor VoxellaAPIClient {
                 transcriptSegments: [],
                 subtitleCues: [],
                 mediaPlaybackURL: nil,
+                enhancedMediaPlaybackURL: nil,
                 mediaHasVideo: mediaHasVideo
             )
         }
         async let transcriptSegments = transcriptSegments(sessionID)
         async let subtitleCues: [VoxellaSubtitleCue] = (try? await subtitleCues(sessionID)) ?? []
-        async let mediaPlaybackURL = try? await mediaPlaybackURL(
+        async let originalMediaPlaybackURL = try? await mediaPlaybackURL(
             sessionID: sessionID,
             media: mediaHasVideo ? "video" : "audio",
             variant: "original"
         )
+        async let enhancedMediaPlaybackURL: URL? = {
+            guard detail.enhancedAudioReady else { return nil }
+            return try? await mediaPlaybackURL(
+                sessionID: sessionID,
+                media: "audio",
+                variant: "enhanced"
+            )
+        }()
         return try await VoxellaSessionRenderingData(
             detail: detail,
             transcriptSegments: transcriptSegments,
             subtitleCues: subtitleCues,
-            mediaPlaybackURL: mediaPlaybackURL,
+            mediaPlaybackURL: originalMediaPlaybackURL,
+            enhancedMediaPlaybackURL: enhancedMediaPlaybackURL,
             mediaHasVideo: mediaHasVideo
         )
     }
@@ -1883,6 +1915,7 @@ actor VoxellaAPIClient {
         }
         if let language = options.languageCode { payload["language_hint"] = language }
         if let target = options.normalizedTargetLanguageCode { payload["target_language"] = target }
+        if options.cloudVocalRepairEnabled { payload["cloud_vocal_repair_enabled"] = true }
         if let speakers = options.speakerCount.count {
             payload["min_speakers"] = speakers
             payload["max_speakers"] = speakers
@@ -1898,6 +1931,7 @@ actor VoxellaAPIClient {
     private func regenerateOptions(_ options: TranscriptionProcessingOptions) -> [String: Any] {
         var payload: [String: Any] = [:]
         payload["target_language"] = options.normalizedTargetLanguageCode ?? NSNull()
+        if options.cloudVocalRepairEnabled { payload["cloud_vocal_repair_enabled"] = true }
         if let language = options.languageCode { payload["language_hint"] = language }
         if let speakers = options.speakerCount.count {
             payload["min_speakers"] = speakers

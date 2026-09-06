@@ -300,12 +300,24 @@ struct WorkbenchSessionDetailView: View {
 
     @ViewBuilder
     private func sessionView(_ session: WorkbenchSession) -> some View {
-        let originalMediaURL = session.preferredPlaybackURL ?? session.remoteSourcePlaybackURL
+        let originalMediaURL = session.originalPlaybackURL
+        let enhancedMediaURL = session.enhancedPlaybackURL
         let dubbedMediaURL = session.outputURL
-        let mediaURL = selectedTrack == .dub ? dubbedMediaURL : originalMediaURL
+        let originalHasInlineVideo = sessionHasInlineVideo(session, mediaURL: originalMediaURL)
+        let mediaURL: URL? = switch selectedTrack {
+        case .dub:
+            dubbedMediaURL
+        case .enhanced:
+            originalHasInlineVideo ? originalMediaURL : (enhancedMediaURL ?? originalMediaURL)
+        case .original:
+            originalMediaURL
+        }
         let playbackCueScope = cueScope(for: session)
         let playbackCues = editableCues(for: session, scope: playbackCueScope)
         let hasInlineVideo = sessionHasInlineVideo(session, mediaURL: mediaURL)
+        let secondaryAudioURL = selectedTrack == .enhanced && hasInlineVideo
+            ? enhancedMediaURL
+            : nil
 
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
             sessionHeader(session)
@@ -336,7 +348,9 @@ struct WorkbenchSessionDetailView: View {
                         session: session,
                         mediaURL: mediaURL,
                         originalMediaURL: originalMediaURL,
+                        enhancedMediaURL: enhancedMediaURL,
                         dubbedMediaURL: dubbedMediaURL,
+                        secondaryAudioURL: secondaryAudioURL,
                         hasInlineVideo: hasInlineVideo,
                         playbackCues: playbackCues
                     )
@@ -400,12 +414,23 @@ struct WorkbenchSessionDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.Background.baseColor)
         .onAppear {
-            selectedTrack = session.sourceURL == nil && session.outputURL != nil ? .dub : .original
+            if session.sourceURL == nil && session.outputURL != nil {
+                selectedTrack = .dub
+            } else if selectedTrack == .original, enhancedMediaURL != nil {
+                selectedTrack = .enhanced
+            }
             selectedTab = availableTabs(session).first ?? .transcript
             syncLanguageSelections(session)
         }
         .onChange(of: session.id) { _, _ in
             syncLanguageSelections(session)
+        }
+        .onChange(of: enhancedMediaURL) { _, enhancedURL in
+            if selectedTrack == .enhanced, enhancedURL == nil {
+                selectedTrack = .original
+            } else if selectedTrack == .original, enhancedURL != nil {
+                selectedTrack = .enhanced
+            }
         }
         .task(id: mediaURL) {
             await probeMediaTrack(for: mediaURL)
@@ -430,7 +455,9 @@ struct WorkbenchSessionDetailView: View {
         session: WorkbenchSession,
         mediaURL: URL?,
         originalMediaURL: URL?,
+        enhancedMediaURL: URL?,
         dubbedMediaURL: URL?,
+        secondaryAudioURL: URL?,
         hasInlineVideo: Bool,
         playbackCues: [SubtitleCue]
     ) -> some View {
@@ -440,7 +467,9 @@ struct WorkbenchSessionDetailView: View {
                     session: session,
                     mediaURL: mediaURL,
                     originalMediaURL: originalMediaURL,
+                    enhancedMediaURL: enhancedMediaURL,
                     dubbedMediaURL: dubbedMediaURL,
+                    secondaryAudioURL: secondaryAudioURL,
                     hasInlineVideo: true,
                     playbackCues: playbackCues
                 )
@@ -470,7 +499,9 @@ struct WorkbenchSessionDetailView: View {
                         session: session,
                         mediaURL: mediaURL,
                         originalMediaURL: originalMediaURL,
+                        enhancedMediaURL: enhancedMediaURL,
                         dubbedMediaURL: dubbedMediaURL,
+                        secondaryAudioURL: secondaryAudioURL,
                         hasInlineVideo: false,
                         playbackCues: playbackCues
                     )
@@ -482,14 +513,26 @@ struct WorkbenchSessionDetailView: View {
         session: WorkbenchSession,
         mediaURL: URL?,
         originalMediaURL: URL?,
+        enhancedMediaURL: URL?,
         dubbedMediaURL: URL?,
+        secondaryAudioURL: URL?,
         hasInlineVideo: Bool,
         playbackCues: [SubtitleCue]
     ) -> some View {
         SessionMediaPlayer(
             URL: mediaURL,
             track: selectedTrack,
-            allowsTrackSelection: originalMediaURL != nil && dubbedMediaURL != nil,
+            availableTracks: SessionPlaybackTrack.available(
+                originalURL: originalMediaURL,
+                enhancedURL: enhancedMediaURL,
+                dubbedURL: dubbedMediaURL
+            ),
+            allowsTrackSelection: SessionPlaybackTrack.available(
+                originalURL: originalMediaURL,
+                enhancedURL: enhancedMediaURL,
+                dubbedURL: dubbedMediaURL
+            ).count > 1,
+            secondaryAudioURL: secondaryAudioURL,
             showsFilename: false,
             prefersVideoCanvas: hasInlineVideo,
             subtitleTrack: hasInlineVideo
@@ -1161,10 +1204,29 @@ struct WorkbenchSessionDetailView: View {
 
 private enum SessionPlaybackTrack: String, CaseIterable, Identifiable {
     case original
+    case enhanced
     case dub
 
     var id: String { rawValue }
-    var title: String { self == .original ? "Original" : "Dub" }
+    var title: String {
+        switch self {
+        case .original: "Original"
+        case .enhanced: "High-Fidelity Repair"
+        case .dub: "Dub"
+        }
+    }
+
+    static func available(
+        originalURL: URL?,
+        enhancedURL: URL?,
+        dubbedURL: URL?
+    ) -> [SessionPlaybackTrack] {
+        var tracks: [SessionPlaybackTrack] = []
+        if originalURL != nil { tracks.append(.original) }
+        if enhancedURL != nil { tracks.append(.enhanced) }
+        if dubbedURL != nil { tracks.append(.dub) }
+        return tracks
+    }
 }
 
 private enum SessionDetailTab: String, Identifiable {
@@ -1305,7 +1367,9 @@ private struct SessionCuePlaybackRequest: Equatable {
 private struct SessionMediaPlayer: View {
     let URL: URL?
     let track: SessionPlaybackTrack
+    let availableTracks: [SessionPlaybackTrack]
     let allowsTrackSelection: Bool
+    let secondaryAudioURL: URL?
     var showsFilename = true
     var prefersVideoCanvas = false
     var subtitleTrack: SubtitleTrack? = nil
@@ -1336,7 +1400,7 @@ private struct SessionMediaPlayer: View {
             if allowsTrackSelection {
                 HStack {
                     Picker("Track", selection: Binding(get: { track }, set: { value in onSelectTrack(value) })) {
-                        ForEach(SessionPlaybackTrack.allCases) { item in
+                        ForEach(availableTracks) { item in
                             Text(item.title).tag(item)
                         }
                     }
@@ -1367,7 +1431,7 @@ private struct SessionMediaPlayer: View {
                 ? .infinity
                 : audioChromeHeight
         )
-        .task(id: URL) {
+        .task(id: "\(URL?.absoluteString ?? "")|\(secondaryAudioURL?.absoluteString ?? "")") {
             playback.configureSubtitles(
                 subtitleTrack: subtitleTrack,
                 translationTracks: translationTracks
@@ -1377,6 +1441,7 @@ private struct SessionMediaPlayer: View {
             await playback.load(
                 url: URL,
                 showsVideoCanvas: showsVideoCanvas,
+                alternateAudioURL: secondaryAudioURL,
                 resumeTime: playback.currentTime > 0 ? playback.currentTime : nil,
                 resumePlaying: playback.isPlaying ? true : nil
             )

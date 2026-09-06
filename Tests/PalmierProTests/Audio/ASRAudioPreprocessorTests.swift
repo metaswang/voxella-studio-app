@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMedia
 import Foundation
 import Testing
 @testable import PalmierPro
@@ -138,5 +139,26 @@ struct ASRAudioPreprocessorTests {
             peak = max(peak, abs(Double(left[index])))
         }
         #expect(peak > 0.3)
+    }
+
+    @Test func transcodesCanonicalSampleBufferRoundTrip() throws {
+        let frames: AVAudioFrameCount = 2_048
+        let input = try #require(AVAudioPCMBuffer(
+            pcmFormat: RecordingAudioTranscoder.canonicalFormat,
+            frameCapacity: frames
+        ))
+        input.frameLength = frames
+        let left = try #require(input.floatChannelData?[0])
+        let right = try #require(input.floatChannelData?[1])
+        for index in 0..<Int(frames) {
+            let sample = 0.5 * sin(2 * Float.pi * 440 * Float(index) / Float(RecordingAudioTranscoder.sampleRate))
+            left[index] = sample
+            right[index] = sample
+        }
+
+        let sample = try #require(RecordingAudioTranscoder.makeSampleBuffer(from: input, presentationTime: .zero))
+        let transcoder = RecordingAudioTranscoder()
+        let output = try #require(transcoder.transcode(sample))
+        #expect(CMSampleBufferGetNumSamples(output) == Int(frames))
     }
 }

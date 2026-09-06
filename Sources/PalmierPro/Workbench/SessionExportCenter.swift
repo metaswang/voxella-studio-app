@@ -364,11 +364,21 @@ struct SessionExportCenter: View {
                 .init(
                     id: .original,
                     title: "Original",
-                    hint: "The original source audio.",
+                    hint: "The original source or local listening-enhanced audio.",
                     systemImage: "waveform",
                     disabled: !availability.audio
                 ),
             ]
+            if availability.enhancedAudio {
+                choices.append(
+                    .init(
+                        id: .enhanced,
+                        title: "High-Fidelity Repair",
+                        hint: "The cloud-repaired track for clearer listening and export.",
+                        systemImage: SessionExportVariant.enhanced.systemImage
+                    )
+                )
+            }
             if availability.dubbedAudio {
                 choices.append(
                     .init(
@@ -537,7 +547,12 @@ struct SessionExportCenter: View {
         switch draft.content {
         case .transcript: availability.transcript
         case .subtitle: availability.subtitle
-        case .audio: draft.variant == .dub ? availability.dubbedAudio : availability.audio
+        case .audio:
+            switch draft.variant {
+            case .enhanced: availability.enhancedAudio
+            case .dub: availability.dubbedAudio
+            default: availability.audio
+            }
         }
     }
 
@@ -545,8 +560,8 @@ struct SessionExportCenter: View {
         switch draft.content {
         case .audio:
             return [
-                "Audio export copies the local source or dubbed file without re-encoding.",
-                "Use Original for the imported media, or Dubbed Audio after a dub completes.",
+                "Audio export copies the selected track without re-encoding.",
+                "High-Fidelity Repair is the cloud-repaired track; Original remains available as a fallback.",
             ]
         case .subtitle:
             return [

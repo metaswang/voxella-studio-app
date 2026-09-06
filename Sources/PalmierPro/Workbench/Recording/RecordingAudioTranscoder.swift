@@ -101,10 +101,17 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
 
     private static func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
         guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
-              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription),
-              let format = AVAudioFormat(streamDescription: streamDescription) else {
+              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription) else {
             return nil
         }
+        let asbd = streamDescription.pointee
+        let format = AVAudioFormat(streamDescription: streamDescription) ?? AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: asbd.mSampleRate,
+            channels: AVAudioChannelCount(asbd.mChannelsPerFrame),
+            interleaved: (asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0
+        )
+        guard let format else { return nil }
         let frames = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
         guard frames > 0, let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else {
             return nil

@@ -170,6 +170,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var editedText = ""
     var useLLMSubtitleProcessing: Bool?
     var targetLanguageCode: String?
+    var cloudVocalRepairEnabled = false
     var subtitleTrack: SubtitleTrack?
     /// Multi-target translation tracks for one source (aligned with postprocess translation tracks).
     var translationTracks: [WorkbenchTranslationTrack] = []
@@ -261,6 +262,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
             enableTranslation: normalizedTargetLanguageCode != nil,
             targetLanguageCode: targetLanguageCode,
             useLLMSubtitleProcessing: useLLMSubtitleProcessing,
+            cloudVocalRepairEnabled: cloudVocalRepairEnabled,
             clipStartMs: clipStartMs,
             clipEndMs: clipEndMs
         )
@@ -343,7 +345,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, sourcePath, netVideoSourceURL, netVideoVideoID, netVideoPlatform, customTitle, createdAt, modifiedAt, state
         case languageCode, speakerCount, clipStartMs, clipEndMs, batchID
-        case result, editedText, useLLMSubtitleProcessing, targetLanguageCode
+        case result, editedText, useLLMSubtitleProcessing, targetLanguageCode, cloudVocalRepairEnabled
         case subtitleTrack, translationTrack, translationTracks
         case selectedTranslationLanguageCode, selectedTrack
         case summaryMarkdown, summaryTemplateID, summaryTemplateName, summaryTemplateUserEdition
@@ -376,6 +378,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         editedText: String = "",
         useLLMSubtitleProcessing: Bool? = nil,
         targetLanguageCode: String? = nil,
+        cloudVocalRepairEnabled: Bool = false,
         subtitleTrack: SubtitleTrack? = nil,
         translationTracks: [WorkbenchTranslationTrack] = [],
         selectedTranslationLanguageCode: String? = nil,
@@ -427,6 +430,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         self.editedText = editedText
         self.useLLMSubtitleProcessing = useLLMSubtitleProcessing
         self.targetLanguageCode = targetLanguageCode
+        self.cloudVocalRepairEnabled = cloudVocalRepairEnabled
         self.subtitleTrack = subtitleTrack
         self.translationTracks = translationTracks
         self.selectedTranslationLanguageCode = selectedTranslationLanguageCode
@@ -481,6 +485,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         editedText = try container.decodeIfPresent(String.self, forKey: .editedText) ?? ""
         useLLMSubtitleProcessing = try container.decodeIfPresent(Bool.self, forKey: .useLLMSubtitleProcessing)
         targetLanguageCode = try container.decodeIfPresent(String.self, forKey: .targetLanguageCode)
+        cloudVocalRepairEnabled = try container.decodeIfPresent(Bool.self, forKey: .cloudVocalRepairEnabled) ?? false
         subtitleTrack = try container.decodeIfPresent(SubtitleTrack.self, forKey: .subtitleTrack)
         translationTracks = try container.decodeIfPresent(
             [WorkbenchTranslationTrack].self,
@@ -963,6 +968,10 @@ struct WorkbenchSession: Identifiable, Sendable {
     var netVideoSource: WorkbenchNetVideoSource? = nil
     var listenAudioURL: URL? = nil
     var listenEnhanceState: ListenEnhanceState = .idle
+    /// Signed URL for the optional cloud high-fidelity audio track.
+    /// It is intentionally separate from the source/video URL so video playback
+    /// can keep the original picture and swap only its audio track.
+    var remoteEnhancedSourcePlaybackURL: URL? = nil
 
     var showsFloatingNetVideoPreview: Bool {
         netVideoSource != nil
@@ -978,25 +987,40 @@ struct WorkbenchSession: Identifiable, Sendable {
 
     var masterAudioURL: URL? { sourceURL }
 
-    /// Prefer listen for human playback when ready and the master is audio-only.
-    /// Video masters keep the picture from `sourceURL`; use `preferredExportAudioURL` for audio export.
-    var preferredPlaybackURL: URL? {
+    /// The non-cloud-repaired track used as the stable fallback. Local
+    /// "Enhance for listening" remains part of this fallback for backwards
+    /// compatibility; cloud repair is exposed separately below.
+    var originalPlaybackURL: URL? {
         if listenEnhanceState.isReady,
            let listenAudioURL,
            FileManager.default.fileExists(atPath: listenAudioURL.path),
            !Self.urlLooksLikeVideo(sourceURL) {
             return listenAudioURL
         }
-        return sourceURL
+        return remoteSourcePlaybackURL ?? sourceURL
+    }
+
+    var enhancedPlaybackURL: URL? {
+        guard let remoteEnhancedSourcePlaybackURL,
+              remoteEnhancedSourcePlaybackURL.scheme == "http"
+                || remoteEnhancedSourcePlaybackURL.scheme == "https" else {
+            return nil
+        }
+        return remoteEnhancedSourcePlaybackURL
+    }
+
+    /// Prefer listen for human playback when ready and the master is audio-only.
+    /// Video masters keep the picture from `sourceURL`; use `preferredExportAudioURL` for audio export.
+    var preferredPlaybackURL: URL? {
+        if let enhancedPlaybackURL,
+           !Self.urlLooksLikeVideo(sourceURL) {
+            return enhancedPlaybackURL
+        }
+        return originalPlaybackURL
     }
 
     var preferredExportAudioURL: URL? {
-        if listenEnhanceState.isReady,
-           let listenAudioURL,
-           FileManager.default.fileExists(atPath: listenAudioURL.path) {
-            return listenAudioURL
-        }
-        return sourceURL
+        enhancedPlaybackURL ?? originalPlaybackURL
     }
 
     var asrAudioURL: URL? { sourceURL }
@@ -1291,6 +1315,8 @@ final class WorkbenchStore {
     private(set) var remoteSessionLoadingID: UUID?
     private var remoteSessionLoadTask: Task<Void, Never>?
     private var remoteSessionsLoadGeneration = UUID()
+    /// Signed enhanced-audio links are short lived, so keep them in memory only.
+    private(set) var enhancedAudioURLs: [UUID: URL] = [:]
 
     init(
         taskAccess: any TranscriptionTaskAccessing = RoutedTranscriptionTaskAccess(),
@@ -1365,7 +1391,8 @@ final class WorkbenchStore {
                 cloudSyncError: dub?.pendingCloudSyncError ?? job.pendingCloudSyncError,
                 netVideoSource: Self.localNetVideoSource(from: job),
                 listenAudioURL: job.listenAudioURL,
-                listenEnhanceState: job.listenEnhanceState
+                listenEnhanceState: job.listenEnhanceState,
+                remoteEnhancedSourcePlaybackURL: enhancedAudioURLs[dub?.remoteSessionID ?? job.remoteSessionID ?? job.id]
             )
         }
         let standaloneDubs = dubs.filter { job in
@@ -1401,7 +1428,8 @@ final class WorkbenchStore {
                 compute: job.resolvedCompute,
                 remoteSessionID: job.remoteSessionID,
                 cloudSyncState: job.resolvedCloudSyncState,
-                cloudSyncError: job.pendingCloudSyncError
+                cloudSyncError: job.pendingCloudSyncError,
+                remoteEnhancedSourcePlaybackURL: enhancedAudioURLs[job.remoteSessionID ?? job.id]
             )
         }
         let localSessions = transcriptSessions + standaloneDubs
@@ -1447,6 +1475,9 @@ final class WorkbenchStore {
         }
 
         route = .session
+        if let remoteSessionID = session.remoteSessionID, AccountService.shared.isSignedIn {
+            Task { await refreshEnhancedAudio(for: remoteSessionID) }
+        }
         let missingLLMMessage = LLMConfigurationError.noConfiguredModel(.subtitleProcessing)
             .localizedDescription
         if let job = transcriptions.first(where: { $0.id == id }),
@@ -1540,9 +1571,37 @@ final class WorkbenchStore {
         remoteSessionLoadTask?.cancel()
         remoteSessionLoadTask = nil
         remoteSessions = [:]
+        enhancedAudioURLs = [:]
         remoteSessionsError = nil
         isLoadingRemoteSessions = false
         remoteSessionLoadingID = nil
+    }
+
+    /// Refreshes the optional cloud-repaired audio URL without changing the
+    /// original media URL. The endpoint returns a signed URL only after the
+    /// repair task has completed; a missing URL is therefore a normal pending
+    /// state for historical and in-flight sessions.
+    func refreshEnhancedAudio(for remoteSessionID: UUID) async {
+        guard AccountService.shared.isSignedIn else { return }
+        do {
+            let url = try await voxellaAPI.mediaPlaybackURL(
+                sessionID: remoteSessionID,
+                media: "audio",
+                variant: "enhanced"
+            )
+            enhancedAudioURLs[remoteSessionID] = url
+        } catch VoxellaAPIError.http(404, _) {
+            enhancedAudioURLs.removeValue(forKey: remoteSessionID)
+        } catch VoxellaAPIError.http(409, _) {
+            // Repair is still queued/processing; leave any previously signed URL intact.
+        } catch is CancellationError {
+        } catch VoxellaAPIError.cancelled {
+        } catch {
+            Log.project.debug(
+                "enhanced audio unavailable id=\(VoxellaAPIConfiguration.apiIdentifier(remoteSessionID)) "
+                    + "error=\(error.localizedDescription)"
+            )
+        }
     }
 
     private func loadRemoteSession(_ id: UUID) {
@@ -1559,6 +1618,7 @@ final class WorkbenchStore {
                     transcriptSegments: rendering.transcriptSegments,
                     subtitleCues: rendering.subtitleCues,
                     mediaPlaybackURL: rendering.mediaPlaybackURL,
+                    enhancedMediaPlaybackURL: rendering.enhancedMediaPlaybackURL,
                     mediaHasVideo: rendering.mediaHasVideo
                 )
                 self.remoteSessionLoadingID = nil
@@ -1820,6 +1880,7 @@ final class WorkbenchStore {
             job.clipEndMs = sourceURLs.count == 1 ? submission.options.clipEndMs : nil
             job.useLLMSubtitleProcessing = submission.options.useLLMSubtitleProcessing
             job.targetLanguageCode = submission.options.normalizedTargetLanguageCode
+            job.cloudVocalRepairEnabled = submission.options.cloudVocalRepairEnabled
             if sourceURLs.count == 1 {
                 job.customTitle = SessionTitlePolicy.normalizedUserTitle(submission.options.customTitle)
             }
@@ -2269,6 +2330,7 @@ final class WorkbenchStore {
             deletingSessionIDs.subtract(localIDs)
             for remoteID in remoteIDs {
                 remoteSessions.removeValue(forKey: remoteID)
+                enhancedAudioURLs.removeValue(forKey: remoteID)
             }
             deletingRemoteSessionIDs.subtract(remoteIDs)
             if let selectedSessionID,
@@ -2964,6 +3026,7 @@ final class WorkbenchStore {
             $0.clipEndMs = submission.options.clipEndMs
             $0.useLLMSubtitleProcessing = submission.options.useLLMSubtitleProcessing
             $0.targetLanguageCode = submission.options.normalizedTargetLanguageCode
+            $0.cloudVocalRepairEnabled = submission.options.cloudVocalRepairEnabled
             $0.customTitle = SessionTitlePolicy.normalizedUserTitle(submission.options.customTitle)
             $0.placement = submission.placement
         }
@@ -4166,13 +4229,15 @@ final class WorkbenchStore {
                     : "Transcript ready — summary unavailable"
             }
             if reportFailure {
-                WorkbenchTipCenter.shared.show(
-                    error.localizedDescription,
-                    kind: .error,
-                    id: "summary.failed.\(id.uuidString)"
+                reportEnrichmentFailure(
+                    id: id,
+                    technicalMessage: error.localizedDescription,
+                    isRefinement: isRefinement,
+                    readyNoun: "Transcript"
                 )
+            } else {
+                Log.project.warning("session enrichment failed: \(error.localizedDescription)")
             }
-            Log.project.warning("session enrichment failed: \(error.localizedDescription)")
             return false
         }
     }
@@ -4892,6 +4957,23 @@ final class WorkbenchStore {
         Log.project.warning("cloud summary failed id=\(id.uuidString) error=\(message)")
     }
 
+    private func reportEnrichmentFailure(
+        id: UUID,
+        technicalMessage: String,
+        isRefinement: Bool,
+        readyNoun: String
+    ) {
+        let banner = isRefinement
+            ? "Summary regeneration failed"
+            : "\(readyNoun) is ready. Title and summary could not be generated."
+        WorkbenchTipCenter.shared.show(
+            banner,
+            kind: .error,
+            id: "summary.failed.\(id.uuidString)"
+        )
+        Log.project.warning("session enrichment failed ready=\(readyNoun) error=\(technicalMessage)")
+    }
+
     private func nonEmpty(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
@@ -5040,13 +5122,15 @@ final class WorkbenchStore {
                     : "Dub ready — summary unavailable"
             }
             if reportFailure {
-                WorkbenchTipCenter.shared.show(
-                    error.localizedDescription,
-                    kind: .error,
-                    id: "summary.failed.\(id.uuidString)"
+                reportEnrichmentFailure(
+                    id: id,
+                    technicalMessage: error.localizedDescription,
+                    isRefinement: isRefinement,
+                    readyNoun: "Dub"
                 )
+            } else {
+                Log.project.warning("dub session enrichment failed: \(error.localizedDescription)")
             }
-            Log.project.warning("dub session enrichment failed: \(error.localizedDescription)")
             return false
         }
     }
@@ -5526,6 +5610,7 @@ final class WorkbenchStore {
         transcriptSegments: [VoxellaTranscriptSegment] = [],
         subtitleCues: [VoxellaSubtitleCue] = [],
         mediaPlaybackURL: URL? = nil,
+        enhancedMediaPlaybackURL: URL? = nil,
         mediaHasVideo: Bool = false
     ) -> WorkbenchSession {
         let resolvedMediaHasVideo = mediaHasVideo || Self.remoteSessionHasVideo(detail)
@@ -5603,7 +5688,8 @@ final class WorkbenchStore {
             remoteSourcePlaybackURL: mediaPlaybackURL,
             remoteSourceHasVideo: resolvedMediaHasVideo,
             remoteSourcePosterURL: remotePosterURL(for: detail),
-            netVideoSource: netVideoSource
+            netVideoSource: netVideoSource,
+            remoteEnhancedSourcePlaybackURL: enhancedMediaPlaybackURL
         )
     }
 

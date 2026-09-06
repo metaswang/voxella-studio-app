@@ -10,6 +10,7 @@ struct RecordingEngineRequest {
     var contentFilter: SCContentFilter?
     var sourceRect: CGRect?
     var outputURL: URL
+    var liveWaveform: RecordingLiveWaveformStore
     var onAudioLevelWarning: (@Sendable (RecordingAudioLevelWarning) -> Void)?
 }
 
@@ -31,7 +32,7 @@ private struct RecordingAudioLevelMeter {
         )
     }
 
-    mutating func append(_ sampleBuffer: CMSampleBuffer) -> RecordingAudioLevel? {
+    mutating func append(_ sampleBuffer: CMSampleBuffer) -> RecordingAudioMeterTick? {
         guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
               let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription),
               let format = AVAudioFormat(streamDescription: streamDescription),
@@ -52,41 +53,50 @@ private struct RecordingAudioLevelMeter {
             ? streamDescription.pointee.mSampleRate
             : sampleRate
         self.frameCount += Int(frameCount)
+        var bufferPeak = 0.0
         if let channels = pcm.floatChannelData {
             for channel in 0..<Int(pcm.format.channelCount) {
                 for frame in 0..<Int(frameCount) {
-                    accumulate(Double(channels[channel][frame]))
+                    bufferPeak = max(bufferPeak, accumulate(Double(channels[channel][frame])))
                 }
             }
         } else if let channels = pcm.int16ChannelData {
             for channel in 0..<Int(pcm.format.channelCount) {
                 for frame in 0..<Int(frameCount) {
-                    accumulate(Double(channels[channel][frame]) / Double(Int16.max))
+                    bufferPeak = max(
+                        bufferPeak,
+                        accumulate(Double(channels[channel][frame]) / Double(Int16.max))
+                    )
                 }
             }
         } else if let channels = pcm.int32ChannelData {
             for channel in 0..<Int(pcm.format.channelCount) {
                 for frame in 0..<Int(frameCount) {
-                    accumulate(Double(channels[channel][frame]) / Double(Int32.max))
+                    bufferPeak = max(
+                        bufferPeak,
+                        accumulate(Double(channels[channel][frame]) / Double(Int32.max))
+                    )
                 }
             }
         }
 
-        guard !didIssueLowLevelWarning,
-              let level = snapshot,
-              level.duration >= 3,
-              level.rmsDBFS < -40 else {
-            return nil
+        var warningLevel: RecordingAudioLevel?
+        if !didIssueLowLevelWarning,
+           let level = snapshot,
+           level.duration >= 3,
+           level.rmsDBFS < -40 {
+            didIssueLowLevelWarning = true
+            warningLevel = level
         }
-        didIssueLowLevelWarning = true
-        return level
+        return RecordingAudioMeterTick(peak: Float(bufferPeak), warningLevel: warningLevel)
     }
 
-    private mutating func accumulate(_ sample: Double) {
+    private mutating func accumulate(_ sample: Double) -> Double {
         let magnitude = min(1, abs(sample))
         sumSquares += magnitude * magnitude
         peak = max(peak, magnitude)
         sampleCount += 1
+        return magnitude
     }
 
     private func decibels(for amplitude: Double) -> Double {
@@ -130,6 +140,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     private var microphoneEnabled = false
     private var systemAudioEnabled = false
     private var isMicrophoneMuted = false
+    private var liveWaveform: RecordingLiveWaveformStore?
     private var onAudioLevelWarning: (@Sendable (RecordingAudioLevelWarning) -> Void)?
 
     func start(_ request: RecordingEngineRequest) async throws {
@@ -222,6 +233,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         includesVideo = request.configuration.capturesVideo
         microphoneEnabled = request.configuration.microphone.isEnabled
         systemAudioEnabled = request.configuration.capturesSystemAudio
+        liveWaveform = request.liveWaveform
         onAudioLevelWarning = request.onAudioLevelWarning
 
         var audioTracks = 0
@@ -299,11 +311,16 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         guard writer.startWriting() else {
             throw RecordingError.writerFailed(writer.error?.localizedDescription ?? "writer failed to start")
         }
+        // Real-time inputs stay unreadied until the session starts.
+        writer.startSession(atSourceTime: .zero)
+        didStartSession = true
         self.writer = writer
         audioTrackCount = audioTracks
         startContinuation = continuation
 
-        if request.configuration.microphone.isEnabled {
+        let usesStreamMicrophone = request.configuration.microphone.isEnabled
+            && request.configuration.requiresScreenCapture
+        if request.configuration.microphone.isEnabled, !usesStreamMicrophone {
             try microphone.start(deviceID: request.configuration.microphone.deviceID) { [weak self] sample in
                 self?.appendConvertedAudio(sample, to: self?.microphoneInput, source: .microphone)
             }
@@ -321,6 +338,12 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
             if request.configuration.capturesSystemAudio {
                 try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
+            }
+            if usesStreamMicrophone {
+                try stream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: queue)
+                Log.recording.notice(
+                    "recording microphone started backend=stream device=\(request.configuration.microphone.deviceID ?? "default")"
+                )
             }
             self.stream = stream
             stream.startCapture { [weak self] error in
@@ -566,6 +589,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         microphoneEnabled = false
         systemAudioEnabled = false
         isMicrophoneMuted = false
+        liveWaveform = nil
         onAudioLevelWarning = nil
         microphone.stop()
     }
@@ -579,6 +603,10 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         configuration.sampleRate = Int(RecordingAudioTranscoder.sampleRate)
         configuration.channelCount = Int(RecordingAudioTranscoder.channels)
         configuration.excludesCurrentProcessAudio = true
+        if request.configuration.microphone.isEnabled {
+            configuration.captureMicrophone = true
+            configuration.microphoneCaptureDeviceID = request.configuration.microphone.deviceID
+        }
         configuration.showsCursor = request.configuration.capturesVideo
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.queueDepth = 8
@@ -639,7 +667,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     }
 
     private func ensureSessionStarted() {
-        guard !didStartSession, let writer else { return }
+        guard !didStartSession, let writer, writer.status == .writing else { return }
         writer.startSession(atSourceTime: .zero)
         didStartSession = true
     }
@@ -707,24 +735,34 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     ) {
         guard !isStopping, !isPaused,
               writer?.status == .writing,
-              let input,
-              input.isReadyForMoreMediaData else {
+              let input else {
             return
         }
         if source == .microphone, isMicrophoneMuted { return }
         let transcoder = source == .systemAudio ? systemAudioTranscoder : microphoneTranscoder
         guard let converted = transcoder.transcode(sampleBuffer, timelineStart: writerPTS()) else { return }
+        let tick: RecordingAudioMeterTick?
         switch source {
         case .systemAudio:
-            if let level = systemAudioMeter.append(converted), !microphoneEnabled {
-                onAudioLevelWarning?(RecordingAudioLevelWarning(track: .systemAudio, level: level))
-            }
+            tick = systemAudioMeter.append(converted)
         case .microphone:
-            if let level = microphoneMeter.append(converted), !systemAudioEnabled {
-                onAudioLevelWarning?(RecordingAudioLevelWarning(track: .microphone, level: level))
+            tick = microphoneMeter.append(converted)
+        }
+        if let tick {
+            liveWaveform?.ingest(peak: tick.peak, at: ProcessInfo.processInfo.systemUptime)
+            if let level = tick.warningLevel {
+                switch source {
+                case .systemAudio where !microphoneEnabled:
+                    onAudioLevelWarning?(RecordingAudioLevelWarning(track: .systemAudio, level: level))
+                case .microphone where !systemAudioEnabled:
+                    onAudioLevelWarning?(RecordingAudioLevelWarning(track: .microphone, level: level))
+                default:
+                    break
+                }
             }
         }
         ensureSessionStarted()
+        guard input.isReadyForMoreMediaData else { return }
         if input.append(converted) {
             didAppendMedia = true
             switch source {
@@ -804,7 +842,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         case .audio:
             appendConvertedAudio(sampleBuffer, to: systemAudioInput, source: .systemAudio)
         case .microphone:
-            break
+            appendConvertedAudio(sampleBuffer, to: microphoneInput, source: .microphone)
         @unknown default:
             break
         }

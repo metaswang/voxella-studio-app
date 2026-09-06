@@ -750,4 +750,167 @@ struct LLMResilienceTests {
         #expect(settings.route(for: .subtitleProcessing).policy.timeoutSeconds == 90)
         #expect(settings.route(for: .translation).policy.timeoutSeconds == 45)
     }
+
+    @Test
+    func hostedClientRetriesEmptyGateway502ButNotJSONProvider502() {
+        let empty502 = LLMClientError.provider(status: 502, message: nil, retryAfterSeconds: nil)
+        let html502 = LLMClientError.provider(status: 502, message: "  ", retryAfterSeconds: nil)
+        let json502 = LLMClientError.provider(
+            status: 502,
+            message: "The configured LLM provider returned an error.",
+            retryAfterSeconds: nil
+        )
+        let credits = LLMClientError.insufficientCredits("no credits")
+
+        #expect(VoxellaHostedLLMTextClient.isRetryable(empty502))
+        #expect(VoxellaHostedLLMTextClient.isRetryable(html502))
+        #expect(!VoxellaHostedLLMTextClient.isRetryable(json502))
+        #expect(!VoxellaHostedLLMTextClient.isRetryable(credits))
+        #expect(VoxellaHostedLLMTextClient.isRetryable(LLMClientError.timeout))
+        #expect(!VoxellaHostedLLMTextClient.isRetryable(CancellationError()))
+    }
+
+    @Suite(.serialized)
+    struct HostedGatewayRetry {
+        @Test
+        func recoversAfterEmptyGateway502() async throws {
+            HostedLLMSequenceURLProtocol.reset([
+                (502, Data()),
+                (200, Data(#"{"output_text":"session notes"}"#.utf8)),
+            ])
+            let sessionConfiguration = URLSessionConfiguration.ephemeral
+            sessionConfiguration.protocolClasses = [HostedLLMSequenceURLProtocol.self]
+            let client = VoxellaHostedLLMTextClient(
+                useCase: .subtitleProcessing,
+                policy: LLMRequestPolicy(
+                    timeoutSeconds: 90,
+                    maximumAttemptsPerModel: 2,
+                    initialBackoffSeconds: 0
+                ),
+                session: URLSession(configuration: sessionConfiguration),
+                tokenProvider: { "test-token" },
+                tokenRefresher: {},
+                sleeper: { _ in }
+            )
+
+            let result = try await client.complete(system: "system", user: "user")
+
+            #expect(result == "session notes")
+            #expect(HostedLLMSequenceURLProtocol.requestCount() == 2)
+            #expect(Set(HostedLLMSequenceURLProtocol.requestIDValues()).count == 1)
+        }
+
+        @Test
+        func doesNotRetryJSONProvider502() async {
+            HostedLLMSequenceURLProtocol.reset([
+                (
+                    502,
+                    Data(#"{"error":{"message":"The configured LLM provider returned an error."}}"#.utf8)
+                ),
+                (200, Data(#"{"output_text":"must not run"}"#.utf8)),
+            ])
+            let sessionConfiguration = URLSessionConfiguration.ephemeral
+            sessionConfiguration.protocolClasses = [HostedLLMSequenceURLProtocol.self]
+            let client = VoxellaHostedLLMTextClient(
+                useCase: .subtitleProcessing,
+                policy: LLMRequestPolicy(
+                    timeoutSeconds: 90,
+                    maximumAttemptsPerModel: 2,
+                    initialBackoffSeconds: 0
+                ),
+                session: URLSession(configuration: sessionConfiguration),
+                tokenProvider: { "test-token" },
+                tokenRefresher: {},
+                sleeper: { _ in }
+            )
+
+            await #expect(throws: LLMClientError.self) {
+                try await client.complete(system: "system", user: "user")
+            }
+            #expect(HostedLLMSequenceURLProtocol.requestCount() == 1)
+        }
+    }
+}
+
+private final class HostedLLMSequenceState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var remaining: [(status: Int, body: Data)] = []
+    private var requestIDs: [String] = []
+    private var count = 0
+
+    func reset(_ sequence: [(Int, Data)]) {
+        lock.lock()
+        defer { lock.unlock() }
+        remaining = sequence.map { (status: $0.0, body: $0.1) }
+        requestIDs = []
+        count = 0
+    }
+
+    func requestCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    func record(requestID: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        requestIDs.append(requestID ?? "")
+    }
+
+    func requestIDValues() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return requestIDs
+    }
+
+    func next() -> (status: Int, body: Data)? {
+        lock.lock()
+        defer { lock.unlock() }
+        count += 1
+        guard !remaining.isEmpty else { return nil }
+        return remaining.removeFirst()
+    }
+}
+
+private final class HostedLLMSequenceURLProtocol: URLProtocol {
+    static let state = HostedLLMSequenceState()
+
+    static func reset(_ sequence: [(Int, Data)]) {
+        state.reset(sequence)
+    }
+
+    static func requestCount() -> Int {
+        state.requestCount()
+    }
+
+    static func requestIDValues() -> [String] {
+        state.requestIDValues()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        Self.state.record(requestID: request.value(forHTTPHeaderField: "X-Client-Request-ID"))
+        let next = Self.state.next()
+        let status = next?.status ?? 500
+        let body = next?.body ?? Data()
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: status,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

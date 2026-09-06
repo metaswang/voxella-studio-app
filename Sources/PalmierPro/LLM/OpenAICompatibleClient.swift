@@ -219,7 +219,7 @@ struct ResilientLLMTextClient: LLMTextClient {
         }
     }
 
-    private static func retryDelay(
+    static func retryDelay(
         error: Error,
         attempt: Int,
         initial: Double
@@ -399,6 +399,23 @@ enum LLMClientError: LocalizedError, Sendable {
             return "empty_response"
         case .exhausted:
             return "exhausted"
+        }
+    }
+
+    /// Empty/HTML 5xx is a gateway failure; JSON 5xx already exhausted server retries.
+    var isRetryableHostedFailure: Bool {
+        switch self {
+        case .provider(let status, let message, _):
+            if status == 408 || status == 409 || status == 425 || status == 429 {
+                return true
+            }
+            guard status >= 500 else { return false }
+            let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty
+        case .timeout, .transport, .nonHTTPResponse, .invalidResponse, .emptyResponse:
+            return true
+        case .insufficientCredits, .exhausted:
+            return false
         }
     }
 }

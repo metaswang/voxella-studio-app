@@ -21,6 +21,9 @@ struct RecordingPermissionTests {
         #expect(
             RecordingError.screenCaptureDenied.localizedDescription.contains("Screen Recording")
         )
+        #expect(
+            RecordingError.screenCaptureDenied.localizedDescription.contains("Screen & System Audio Recording")
+        )
     }
 
     @Test func referenceVoicePermissionErrorsOfferMicrophoneSettings() {
@@ -40,5 +43,31 @@ struct RecordingPermissionTests {
         configuration.normalizeAudioSources()
         #expect(configuration.microphone == .systemDefault)
         #expect(configuration.hasAudioSource)
+        #expect(!configuration.requiresScreenCapture)
+    }
+
+    @Test func audioOnlyModeDoesNotRequireScreenCaptureUnlessSystemAudioIsOn() {
+        var configuration = RecordingCaptureConfiguration(
+            mode: .display,
+            microphone: .systemDefault,
+            capturesSystemAudio: true
+        )
+        #expect(configuration.requiresScreenCapture)
+
+        configuration.applyMode(.audioOnly)
+        #expect(configuration.mode == .audioOnly)
+        #expect(configuration.microphone == .systemDefault)
+        #expect(!configuration.capturesSystemAudio)
+        #expect(!configuration.requiresScreenCapture)
+
+        configuration.capturesSystemAudio = true
+        #expect(configuration.requiresScreenCapture)
+        configuration.applyMode(.audioOnly)
+        #expect(configuration.capturesSystemAudio)
+
+        configuration.applyMode(.display)
+        #expect(configuration.mode == .display)
+        #expect(configuration.capturesSystemAudio)
+        #expect(configuration.requiresScreenCapture)
     }
 }

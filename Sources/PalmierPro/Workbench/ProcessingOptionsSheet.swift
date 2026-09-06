@@ -25,6 +25,7 @@ struct ProcessingOptionsSheet: View {
     @State private var hasExplicitClipRange = false
     @State private var enableTranslation = false
     @State private var targetLanguageCode = ""
+    @State private var cloudVocalRepairEnabled = CloudVocalRepairSettings.isEnabled
     @State private var didApplyInitialOptions = false
     @State private var storageDestination: TaskStorageDestination = .local
     @State private var computeDestination: TaskComputeDestination = .local
@@ -40,8 +41,9 @@ struct ProcessingOptionsSheet: View {
     private var isSingleFile: Bool { mediaURLs.count == 1 }
     private var continueDisabled: Bool {
         (enableTranslation && targetLanguageCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            || (cloudVocalRepairEnabled && (!account.isSignedIn || !account.isPaid))
             || (
-                computeDestination == .cloud
+                (computeDestination == .cloud || cloudVocalRepairEnabled)
                     && account.isSignedIn
                     && (isLoadingCloudQuota || cloudAccessError != nil || cloudQuota == nil || cloudQuota?.canAfford != true)
             )
@@ -93,6 +95,7 @@ struct ProcessingOptionsSheet: View {
                             advancedSection
                         }
                         placementSection
+                        cloudVocalRepairSection
                         computeDetail
                         if let cloudAccessError {
                             Text(cloudAccessError)
@@ -414,6 +417,48 @@ struct ProcessingOptionsSheet: View {
         }
     }
 
+    private var cloudVocalRepairSection: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            Toggle(isOn: Binding(
+                get: { cloudVocalRepairEnabled },
+                set: { enabled in
+                    guard enabled == false || (account.isSignedIn && account.isPaid) else { return }
+                    cloudVocalRepairEnabled = enabled
+                    CloudVocalRepairSettings.isEnabled = enabled
+                }
+            )) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                    Text("Cloud High-Fidelity Voice Repair")
+                        .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                    Text(cloudVocalRepairDetail)
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                }
+            }
+            .toggleStyle(.checkbox)
+            .disabled(!account.isSignedIn || !account.isPaid)
+            if let quota = cloudQuota,
+               cloudVocalRepairEnabled,
+               let remaining = quota.affordableMediaSeconds {
+                Text("At the current options, remaining Credits cover about \(CloudUsageEstimate.formatDuration(remaining)).")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(quota.canAfford ? AppTheme.Text.mutedColor : AppTheme.Status.warningColor)
+            }
+        }
+        .padding(AppTheme.Spacing.mdLg)
+        .background(AppTheme.Background.raisedColor.opacity(0.45), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+        }
+    }
+
+    private var cloudVocalRepairDetail: String {
+        if !account.isSignedIn { return "Sign in to enable cloud high-fidelity voice repair." }
+        if !account.isPaid { return "Upgrade to Starter or higher to enable cloud high-fidelity voice repair." }
+        return "Create a clearer repaired track for playback and audio export. Transcription always uses the untouched master."
+    }
+
     private var cloudStorageBinding: Binding<Bool> {
         Binding(
             get: { storageDestination == .cloud },
@@ -603,6 +648,7 @@ struct ProcessingOptionsSheet: View {
         enableTranslation = initialOptions.enableTranslation
             || !(initialOptions.normalizedTargetLanguageCode ?? "").isEmpty
         targetLanguageCode = initialOptions.normalizedTargetLanguageCode ?? ""
+        cloudVocalRepairEnabled = initialOptions.cloudVocalRepairEnabled || CloudVocalRepairSettings.isEnabled
         storageDestination = allowsCloudStorage ? initialPlacement.storage : .local
         computeDestination = initialPlacement.compute
         if let startMs = initialOptions.clipStartMs, let endMs = initialOptions.clipEndMs, endMs > startMs {
@@ -621,7 +667,8 @@ struct ProcessingOptionsSheet: View {
             customTitle: SessionTitlePolicy.normalizedUserTitle(sessionTitle),
             speakerCount: speakerCount,
             enableTranslation: enableTranslation,
-            targetLanguageCode: enableTranslation ? targetLanguageCode : nil
+            targetLanguageCode: enableTranslation ? targetLanguageCode : nil,
+            cloudVocalRepairEnabled: cloudVocalRepairEnabled
         )
         if isSingleFile, enableClip {
             options.clipStartMs = Int((clipRange.lowerBound * 1000).rounded())
@@ -687,6 +734,7 @@ struct ProcessingOptionsSheet: View {
         let duration = requestedCloudDurationSeconds.map { String(format: "%.3f", $0) } ?? "unknown"
         return [
             computeDestination.rawValue,
+            cloudVocalRepairEnabled.description,
             enableTranslation ? targetLanguageCode : "",
             duration,
             account.isSignedIn.description,
@@ -718,7 +766,7 @@ struct ProcessingOptionsSheet: View {
     }
 
     private func loadCloudQuota() async {
-        guard computeDestination == .cloud,
+        guard (computeDestination == .cloud || cloudVocalRepairEnabled),
               account.isSignedIn,
               let duration = requestedCloudDurationSeconds,
               duration.isFinite,
@@ -734,7 +782,9 @@ struct ProcessingOptionsSheet: View {
         do {
             cloudQuota = try await account.cloudTranscriptionQuota(
                 durationSeconds: duration,
-                includesTranslation: enableTranslation
+                includesTranslation: computeDestination == .cloud && enableTranslation,
+                includesVocalRepair: cloudVocalRepairEnabled,
+                sourceUsageType: computeDestination == .cloud ? CloudTranscriptionQuota.uploadUsageType : CloudTranscriptionQuota.vocalRepairUsageType
             )
         } catch is CancellationError {
             return
@@ -745,7 +795,7 @@ struct ProcessingOptionsSheet: View {
     }
 
     private func refreshCloudQuotaBeforeSubmission() async -> Bool {
-        guard computeDestination == .cloud else { return true }
+        guard computeDestination == .cloud || cloudVocalRepairEnabled else { return true }
         guard let duration = requestedCloudDurationSeconds,
               duration.isFinite,
               duration > 0
@@ -755,7 +805,9 @@ struct ProcessingOptionsSheet: View {
         do {
             let quota = try await account.cloudTranscriptionQuota(
                 durationSeconds: duration,
-                includesTranslation: enableTranslation
+                includesTranslation: computeDestination == .cloud && enableTranslation,
+                includesVocalRepair: cloudVocalRepairEnabled,
+                sourceUsageType: computeDestination == .cloud ? CloudTranscriptionQuota.uploadUsageType : CloudTranscriptionQuota.vocalRepairUsageType
             )
             cloudQuota = quota
             if !quota.canAfford {
