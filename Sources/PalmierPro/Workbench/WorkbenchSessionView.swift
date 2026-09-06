@@ -301,7 +301,9 @@ struct WorkbenchSessionDetailView: View {
     @ViewBuilder
     private func sessionView(_ session: WorkbenchSession) -> some View {
         let originalMediaURL = session.originalPlaybackURL
-        let enhancedMediaURL = session.enhancedPlaybackURL
+        // Cloud High-Fidelity Repair or local listen enhance — same player switch as web Audio Source.
+        let enhancedMediaURL = session.processedPlaybackURL
+        let hasCloudRepair = session.enhancedPlaybackURL != nil
         let dubbedMediaURL = session.outputURL
         let originalHasInlineVideo = sessionHasInlineVideo(session, mediaURL: originalMediaURL)
         let mediaURL: URL? = switch selectedTrack {
@@ -349,6 +351,7 @@ struct WorkbenchSessionDetailView: View {
                         mediaURL: mediaURL,
                         originalMediaURL: originalMediaURL,
                         enhancedMediaURL: enhancedMediaURL,
+                        hasCloudRepair: hasCloudRepair,
                         dubbedMediaURL: dubbedMediaURL,
                         secondaryAudioURL: secondaryAudioURL,
                         hasInlineVideo: hasInlineVideo,
@@ -456,6 +459,7 @@ struct WorkbenchSessionDetailView: View {
         mediaURL: URL?,
         originalMediaURL: URL?,
         enhancedMediaURL: URL?,
+        hasCloudRepair: Bool,
         dubbedMediaURL: URL?,
         secondaryAudioURL: URL?,
         hasInlineVideo: Bool,
@@ -468,6 +472,7 @@ struct WorkbenchSessionDetailView: View {
                     mediaURL: mediaURL,
                     originalMediaURL: originalMediaURL,
                     enhancedMediaURL: enhancedMediaURL,
+                    hasCloudRepair: hasCloudRepair,
                     dubbedMediaURL: dubbedMediaURL,
                     secondaryAudioURL: secondaryAudioURL,
                     hasInlineVideo: true,
@@ -500,6 +505,7 @@ struct WorkbenchSessionDetailView: View {
                         mediaURL: mediaURL,
                         originalMediaURL: originalMediaURL,
                         enhancedMediaURL: enhancedMediaURL,
+                        hasCloudRepair: hasCloudRepair,
                         dubbedMediaURL: dubbedMediaURL,
                         secondaryAudioURL: secondaryAudioURL,
                         hasInlineVideo: false,
@@ -514,6 +520,7 @@ struct WorkbenchSessionDetailView: View {
         mediaURL: URL?,
         originalMediaURL: URL?,
         enhancedMediaURL: URL?,
+        hasCloudRepair: Bool,
         dubbedMediaURL: URL?,
         secondaryAudioURL: URL?,
         hasInlineVideo: Bool,
@@ -532,6 +539,7 @@ struct WorkbenchSessionDetailView: View {
                 enhancedURL: enhancedMediaURL,
                 dubbedURL: dubbedMediaURL
             ).count > 1,
+            hasCloudRepair: hasCloudRepair,
             secondaryAudioURL: secondaryAudioURL,
             showsFilename: false,
             prefersVideoCanvas: hasInlineVideo,
@@ -1208,10 +1216,11 @@ private enum SessionPlaybackTrack: String, CaseIterable, Identifiable {
     case dub
 
     var id: String { rawValue }
-    var title: String {
+
+    func title(hasCloudRepair: Bool) -> String {
         switch self {
         case .original: "Original"
-        case .enhanced: "High-Fidelity Repair"
+        case .enhanced: hasCloudRepair ? "High-Fidelity Repair" : "Enhanced"
         case .dub: "Dub"
         }
     }
@@ -1369,6 +1378,7 @@ private struct SessionMediaPlayer: View {
     let track: SessionPlaybackTrack
     let availableTracks: [SessionPlaybackTrack]
     let allowsTrackSelection: Bool
+    var hasCloudRepair = false
     let secondaryAudioURL: URL?
     var showsFilename = true
     var prefersVideoCanvas = false
@@ -1401,7 +1411,7 @@ private struct SessionMediaPlayer: View {
                 HStack {
                     Picker("Track", selection: Binding(get: { track }, set: { value in onSelectTrack(value) })) {
                         ForEach(availableTracks) { item in
-                            Text(item.title).tag(item)
+                            Text(item.title(hasCloudRepair: hasCloudRepair)).tag(item)
                         }
                     }
                     .pickerStyle(.segmented)

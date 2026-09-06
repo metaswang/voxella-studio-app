@@ -987,19 +987,23 @@ struct WorkbenchSession: Identifiable, Sendable {
 
     var masterAudioURL: URL? { sourceURL }
 
-    /// The non-cloud-repaired track used as the stable fallback. Local
-    /// "Enhance for listening" remains part of this fallback for backwards
-    /// compatibility; cloud repair is exposed separately below.
+    /// Unprocessed master track. Always the true original so the session player
+    /// can switch away from local listen enhance or cloud High-Fidelity Repair.
     var originalPlaybackURL: URL? {
-        if listenEnhanceState.isReady,
-           let listenAudioURL,
-           FileManager.default.fileExists(atPath: listenAudioURL.path),
-           !Self.urlLooksLikeVideo(sourceURL) {
-            return listenAudioURL
-        }
-        return remoteSourcePlaybackURL ?? sourceURL
+        remoteSourcePlaybackURL ?? sourceURL
     }
 
+    /// Local "Enhance for listening" sidecar when ready.
+    var listenPlaybackURL: URL? {
+        guard listenEnhanceState.isReady,
+              let listenAudioURL,
+              FileManager.default.fileExists(atPath: listenAudioURL.path) else {
+            return nil
+        }
+        return listenAudioURL
+    }
+
+    /// Cloud High-Fidelity Repair signed URL when available.
     var enhancedPlaybackURL: URL? {
         guard let remoteEnhancedSourcePlaybackURL,
               remoteEnhancedSourcePlaybackURL.scheme == "http"
@@ -1009,18 +1013,23 @@ struct WorkbenchSession: Identifiable, Sendable {
         return remoteEnhancedSourcePlaybackURL
     }
 
-    /// Prefer listen for human playback when ready and the master is audio-only.
+    /// Processed listening track for the session player: cloud repair preferred, else local listen.
+    var processedPlaybackURL: URL? {
+        enhancedPlaybackURL ?? listenPlaybackURL
+    }
+
+    /// Prefer processed audio for human playback when the master is audio-only.
     /// Video masters keep the picture from `sourceURL`; use `preferredExportAudioURL` for audio export.
     var preferredPlaybackURL: URL? {
-        if let enhancedPlaybackURL,
+        if let processedPlaybackURL,
            !Self.urlLooksLikeVideo(sourceURL) {
-            return enhancedPlaybackURL
+            return processedPlaybackURL
         }
         return originalPlaybackURL
     }
 
     var preferredExportAudioURL: URL? {
-        enhancedPlaybackURL ?? originalPlaybackURL
+        enhancedPlaybackURL ?? listenPlaybackURL ?? originalPlaybackURL
     }
 
     var asrAudioURL: URL? { sourceURL }
@@ -3216,17 +3225,32 @@ final class WorkbenchStore {
 
     private func syncCompletedTranscriptionToCloud(_ id: UUID, sourceURL: URL) async {
         guard let current = transcriptions.first(where: { $0.id == id }),
-              TranscriptionPlacementRouter.shouldSyncLocalResults(current.placement),
               current.state == .completed,
               let result = current.result else {
             return
         }
+        // A local transcription with cloud repair enabled still needs a
+        // temporary cloud session so the already-uploaded master can be sent
+        // through the audio-tools worker.  It is billed only for
+        // tool_enhance; no cloud transcription stage is added because compute
+        // remains local.
+        let repairOnlySync = current.processingOptions.cloudVocalRepairEnabled
+            && current.placement.compute == .local
+            && current.placement.storage == .local
+        guard TranscriptionPlacementRouter.shouldSyncLocalResults(current.placement) || repairOnlySync else {
+            return
+        }
+        let syncPlacement: TranscriptionPlacement = repairOnlySync
+            ? .init(storage: .cloud, compute: .local)
+            : current.placement
 
         updateTranscription(id) {
             $0.cloudSyncState = .pending
             $0.pendingCloudSyncError = nil
             $0.errorMessage = nil
-            $0.progressMessage = "Completed locally · syncing to VoxStudio Cloud…"
+            $0.progressMessage = repairOnlySync
+                ? "Completed locally · preparing cloud voice repair…"
+                : "Completed locally · syncing to VoxStudio Cloud…"
         }
         guard let snapshot = transcriptions.first(where: { $0.id == id }) else { return }
 
@@ -3240,7 +3264,7 @@ final class WorkbenchStore {
                     mimeType: Self.mimeType(for: sourceURL),
                     sizeBytes: nil,
                     options: snapshot.processingOptions,
-                    placement: snapshot.placement,
+                    placement: syncPlacement,
                     result: result,
                     subtitleTrack: snapshot.subtitleTrack,
                     translationTracks: snapshot.translationTracks,
@@ -3255,9 +3279,11 @@ final class WorkbenchStore {
                 $0.cloudSyncState = .completed
                 $0.pendingCloudSyncError = nil
                 $0.errorMessage = nil
-                $0.progressMessage = $0.summaryMarkdown == nil
-                    ? "Transcript ready · saved to VoxStudio Cloud"
-                    : "Transcript and summary ready · saved to VoxStudio Cloud"
+                $0.progressMessage = repairOnlySync
+                    ? "Transcript ready · cloud voice repair queued"
+                    : ($0.summaryMarkdown == nil
+                        ? "Transcript ready · saved to VoxStudio Cloud"
+                        : "Transcript and summary ready · saved to VoxStudio Cloud")
             }
             scheduleCloudSync(forTranscription: id)
         } catch is CancellationError {
@@ -3279,15 +3305,20 @@ final class WorkbenchStore {
         guard flowTasks[id] == nil,
               let job = transcriptions.first(where: { $0.id == id }),
               job.state == .completed,
-              TranscriptionPlacementRouter.shouldSyncCloudEdits(job.placement),
               job.result != nil else {
+            return
+        }
+        let repairOnlySync = job.processingOptions.cloudVocalRepairEnabled
+            && job.placement.compute == .local
+            && job.placement.storage == .local
+        guard TranscriptionPlacementRouter.shouldSyncCloudEdits(job.placement) || repairOnlySync else {
             return
         }
         if job.remoteSessionID != nil {
             scheduleCloudSync(forTranscription: id)
             return
         }
-        guard TranscriptionPlacementRouter.shouldSyncLocalResults(job.placement),
+        guard (TranscriptionPlacementRouter.shouldSyncLocalResults(job.placement) || repairOnlySync),
               job.resolvedCloudSyncState == .pending else { return }
         let sourceURL = job.sourceURL
         updateTranscription(id) {
