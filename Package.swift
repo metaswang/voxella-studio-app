@@ -10,6 +10,7 @@ let package = Package(
     ],
     traits: [
         .trait(name: "BundledSpeech", description: "Include on-device speech models and MLX."),
+        .trait(name: "SparkleUpdates", description: "Include Sparkle updates for direct distribution."),
     ],
     dependencies: [
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0"),
@@ -24,6 +25,7 @@ let package = Package(
         .package(path: "Vendor/FluidAudioVAD"),
         .package(url: "https://github.com/huggingface/swift-huggingface.git", exact: "0.9.0"),
         .package(path: "Vendor/mlx-audio-swift"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.2"),
     ],
     targets: [
         .executableTarget(
@@ -35,6 +37,11 @@ let package = Package(
                 .product(name: "Lottie", package: "lottie-ios"),
                 .product(name: "Textual", package: "textual"),
                 .product(name: "YouTubeKit", package: "YouTubeKit"),
+                .product(
+                    name: "Sparkle",
+                    package: "Sparkle",
+                    condition: .when(traits: ["SparkleUpdates"])
+                ),
                 .product(
                     name: "MLX",
                     package: "mlx-swift",
@@ -128,6 +135,7 @@ let package = Package(
             ],
             swiftSettings: [
                 .define("BUNDLED_SPEECH", .when(traits: ["BundledSpeech"])),
+                .define("SPARKLE_UPDATES", .when(traits: ["SparkleUpdates"])),
             ],
             linkerSettings: [
                 // SwiftUI VideoPlayer crashes without an explicit AVKit link in non-debugger launches.
@@ -166,6 +174,7 @@ let package = Package(
             path: "Tests/PalmierProTests",
             swiftSettings: [
                 .define("BUNDLED_SPEECH", .when(traits: ["BundledSpeech"])),
+                .define("SPARKLE_UPDATES", .when(traits: ["SparkleUpdates"])),
             ]
         ),
     ]

@@ -12,6 +12,7 @@ struct TranscribeWorkbenchView: View {
     @State private var netVideoPhase: NetVideoImportPhase = .idle
     @State private var pendingNetVideoTitle: String?
     @State private var netVideoTask: Task<Void, Never>?
+    @State private var pendingBasicStart: PendingBasicTranscriptionStart?
     @Bindable private var recording = RecordingSessionController.shared
 
     var body: some View {
@@ -107,6 +108,11 @@ struct TranscribeWorkbenchView: View {
         .sheet(item: $speakerEditRequest) { request in
             SpeakerNameEditor(request: request) { name in
                 commitSpeakerEdit(request, name: name)
+            }
+        }
+        .sheet(item: $pendingBasicStart) { request in
+            TranscriptionAIUpgradePrompt {
+                store.runTranscription(request.jobID)
             }
         }
     }
@@ -1089,7 +1095,17 @@ struct TranscribeWorkbenchView: View {
                 return
             }
         }
-        store.runTranscription(job.id)
+        Task {
+            _ = await llmSettings.credentialAvailable()
+            if TranscriptionAIAccessPromptPolicy.shouldPresent(
+                compute: job.compute,
+                hasUsableLLM: llmSettings.hasUsableModel(for: .subtitleProcessing)
+            ) {
+                pendingBasicStart = PendingBasicTranscriptionStart(jobID: job.id)
+            } else {
+                store.runTranscription(job.id)
+            }
+        }
     }
 
     private func sendToEditor(_ job: WorkbenchTranscriptionJob) {
@@ -1129,7 +1145,7 @@ struct TranscribeWorkbenchView: View {
                 }
                 return job.normalizedTargetLanguageCode != nil
                     || job.shouldProcessSubtitles(
-                        hasAPIKey: llmSettings.hasUsableModel(for: .subtitleProcessing)
+                        hasUsableLLM: llmSettings.hasUsableModel(for: .subtitleProcessing)
                     )
             },
             set: { value in
@@ -1169,9 +1185,13 @@ struct TranscribeWorkbenchView: View {
 
     private func primaryActionLabel(_ job: WorkbenchTranscriptionJob) -> String {
         let prefix = job.state == .completed ? "Run again" : "Run"
-        if job.targetLanguageCode != nil { return "\(prefix): transcribe + translate" }
+        if job.targetLanguageCode != nil,
+           llmSettings.hasUsableModel(for: .subtitleProcessing),
+           llmSettings.hasUsableModel(for: .translation) {
+            return "\(prefix): transcribe + translate"
+        }
         if job.shouldProcessSubtitles(
-            hasAPIKey: llmSettings.hasUsableModel(for: .subtitleProcessing)
+            hasUsableLLM: llmSettings.hasUsableModel(for: .subtitleProcessing)
         ) {
             return "\(prefix): transcribe + subtitles"
         }
@@ -1207,6 +1227,12 @@ private enum TranscriptionEntryMode {
     case importFiles
     case netVideo
     case record
+}
+
+private struct PendingBasicTranscriptionStart: Identifiable {
+    let jobID: UUID
+
+    var id: UUID { jobID }
 }
 
 private enum NetVideoImportPhase: Equatable {

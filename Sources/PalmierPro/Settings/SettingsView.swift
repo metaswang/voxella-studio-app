@@ -138,6 +138,11 @@ private struct SettingsDetail: View {
                             case .calendar:
                                 GoogleCalendarSettingsPane()
                             case .general:
+#if SPARKLE_UPDATES
+                                SettingsSection(title: "Updates") {
+                                    UpdatesPane(updater: AppUpdater.shared)
+                                }
+#endif
                                 SettingsSection(title: "Recording") {
                                     RecordingPane()
                                 }

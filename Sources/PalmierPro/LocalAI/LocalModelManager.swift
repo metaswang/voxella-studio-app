@@ -136,6 +136,10 @@ struct LocalModelDescriptor: Identifiable, Sendable {
         self.storage = storage
     }
 
+    func needsLicenseAcceptance(accepted: Bool) -> Bool {
+        requiresLicenseAcceptance && !accepted
+    }
+
     enum LocalFeature: String, Sendable {
         case transcribe
         case dub
@@ -278,8 +282,8 @@ final class LocalModelManager {
         ),
         .init(
             id: .whisperLargeV3TurboFP16,
-            title: "Whisper Large v3 Turbo FP16",
-            purpose: "Maximum-quality multilingual fallback speech recognition",
+            title: "Whisper Large v3 Turbo FP16 (Legacy)",
+            purpose: "Previously installed multilingual fallback speech recognition",
             repository: "mlx-community/whisper-large-v3-turbo-asr-fp16",
             revision: "624c19c9af5603fa73b83bce14d4aeea96156d18",
             weightByteSize: 1_613_977_443,
@@ -290,6 +294,7 @@ final class LocalModelManager {
             licenseURL: URL(string: "https://github.com/openai/whisper/blob/main/LICENSE"),
             requiredFor: [.transcribe],
             isRecommended: false,
+            isLegacy: true,
             asrSpecification: .init(
                 precision: .fp16,
                 encoderLayers: 32,
@@ -367,7 +372,7 @@ final class LocalModelManager {
             licenseURL: URL(string: "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/"),
             requiresLicenseAcceptance: true,
             requiredFor: [.transcribe],
-            isRecommended: true
+            isRecommended: false
         ),
         .init(
             id: .weSpeaker,
@@ -541,7 +546,7 @@ final class LocalModelManager {
     private func download(_ id: LocalModelID, activateWhenInstalled: Bool) {
         guard activeDownloads[id] == nil else { return }
         let model = descriptor(for: id)
-        guard !model.requiresLicenseAcceptance || isLicenseAccepted(id) else {
+        guard !model.needsLicenseAcceptance(accepted: isLicenseAccepted(id)) else {
             states[id] = .failed("Review and accept the model license before downloading.")
             return
         }
@@ -565,7 +570,8 @@ final class LocalModelManager {
                 if id == .weMMEmbedding2B4Bit {
                     SessionIndexCoordinator.shared.resumeEmbeddings()
                 }
-            } catch is CancellationError {
+            } catch let error where error is CancellationError || Task.isCancelled
+                || (error as? URLError)?.code == .cancelled {
                 self.pendingASRActivation.remove(id)
                 let model = self.descriptor(for: id)
                 let installed = await Task.detached(priority: .utility) {
@@ -987,7 +993,8 @@ final class LocalModelManager {
         return globs
     }
 
-    private nonisolated static func downloadPinnedSnapshot(
+    @concurrent
+    private static func downloadPinnedSnapshot(
         repository: String,
         revision: String,
         to directory: URL,
@@ -999,31 +1006,20 @@ final class LocalModelManager {
             throw URLError(.badURL)
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let transferCache = directory.appendingPathComponent(".voxella-download-cache", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: transferCache) }
-        let client = HubClient(cache: HubCache(cacheDirectory: transferCache))
-        _ = try await client.downloadSnapshot(
-            of: repositoryID,
-            kind: .model,
-            to: directory,
+        try await LocalModelDownload.transferSnapshot(
+            repository: repositoryID,
             revision: revision,
+            to: directory,
             matching: globs,
-            maxConcurrentDownloads: 4
-        ) { progress in
-            progressHandler(progress.fractionCompleted)
-        }
+            progressHandler: progressHandler
+        )
         #else
         throw LocalAIError.modelsUnavailable
         #endif
     }
 
     private nonisolated static func userFacingDownloadError(_ error: Error) -> String {
-        #if BUNDLED_SPEECH
-        if let error = error as? HTTPClientError {
-            return error.description
-        }
-        #endif
-        return error.localizedDescription
+        LocalModelDownload.message(for: error)
     }
 
     private func updateProgress(

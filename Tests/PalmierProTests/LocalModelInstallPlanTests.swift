@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Local model install plan")
 struct LocalModelInstallPlanTests {
-    @Test func automaticLanguageAndSpeakersIncludeLanguageIDAndDiarization() {
+    @Test func automaticLanguageRequiresLanguageIDWithoutDiarization() {
         let catalog = Self.catalog
         let plan = LocalModelInstallPlan.plan(
             languageCode: nil,
@@ -20,7 +20,6 @@ struct LocalModelInstallPlanTests {
             .whisperLargeV3Turbo8Bit,
             .forcedAligner,
             .spokenLanguageID,
-            .sortformerDiarization,
         ])
         let expectedBytes = plan.items.reduce(Int64(0)) { $0 + $1.byteSize }
         #expect(plan.additionalBytes == expectedBytes)
@@ -78,9 +77,9 @@ struct LocalModelInstallPlanTests {
             catalog: Self.catalog,
             isInstalled: { installed.contains($0) }
         )
-        #expect(plan.missingItems.map(\.id) == [.spokenLanguageID, .sortformerDiarization])
-        #expect(plan.additionalBytes == 400_000_000)
-        #expect(plan.additionalDiskSpaceLabel.contains("~400 MB"))
+        #expect(plan.missingItems.map(\.id) == [.spokenLanguageID])
+        #expect(plan.additionalBytes == 80_000_000)
+        #expect(plan.additionalDiskSpaceLabel.contains("~80 MB"))
     }
 
     @Test func higherWhisperFallbackPrecisionChangesWhisperDomainPlanSize() {
@@ -132,7 +131,7 @@ struct LocalModelInstallPlanTests {
 
     private static var catalog: [LocalModelDescriptor] {
         [
-            descriptor(.qwen3ASR17B8Bit, bytes: 2_400_000_000, license: false),
+            descriptor(.qwen3ASR17B8Bit, bytes: 2_80_000_000, license: false),
             descriptor(.parakeetTDT06Bv3, bytes: 750_000_000, license: false),
             descriptor(.whisperLargeV3Turbo8Bit, bytes: 1_600_000_000, license: true),
             descriptor(.whisperLargeV3TurboFP16, bytes: 3_000_000_000, license: true),

@@ -21,6 +21,15 @@ enum MainMenuBuilder {
         let item = NSMenuItem()
         let menu = NSMenu(title: AppIdentity.productName)
         menu.addItem(withTitle: "About \(AppIdentity.productName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+#if SPARKLE_UPDATES
+        menu.addItem(.separator())
+        let updatesItem = menu.addItem(
+            withTitle: "Check for Updates…",
+            action: #selector(AppUpdater.checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        updatesItem.target = AppUpdater.shared
+#endif
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
         menu.addItem(withTitle: "Local Models…", action: #selector(AppDelegate.showLocalModels(_:)), keyEquivalent: "")

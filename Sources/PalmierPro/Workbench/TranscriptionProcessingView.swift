@@ -373,20 +373,24 @@ struct TranscriptionProcessingView: View {
             }
             if job.speakerCount.count == 1 {
                 lines.append("Deterministic single-speaker assignment · no diarization model")
-            } else {
+            } else if models.state(for: .sortformerDiarization).isInstalled {
                 lines.append(localModelTitle(.sortformerDiarization))
+            } else {
+                lines.append(OptionalSpeakerDiarization.unavailableMessage)
             }
             return lines
         case .finalizing:
+            let hasSubtitleModel = llmSettings.hasUsableModel(for: .subtitleProcessing)
+            let hasTranslationModel = llmSettings.hasUsableModel(for: .translation)
             let subtitleWillRun = job.shouldProcessSubtitles(
-                hasAPIKey: llmSettings.hasUsableModel(for: .subtitleProcessing)
-            ) || job.normalizedTargetLanguageCode != nil
+                hasUsableLLM: hasSubtitleModel
+            ) || (hasSubtitleModel && hasTranslationModel && job.normalizedTargetLanguageCode != nil)
             var lines = [
                 subtitleWillRun
                     ? "Subtitle cleanup · configured route: \(llmRouteDescription(for: .subtitleProcessing))"
                     : "Subtitle cleanup · not run",
             ]
-            if job.normalizedTargetLanguageCode != nil {
+            if job.normalizedTargetLanguageCode != nil, hasSubtitleModel, hasTranslationModel {
                 lines.append("Translation · configured route: \(llmRouteDescription(for: .translation))")
             } else {
                 lines.append("Translation · not run")

@@ -243,8 +243,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         return Double(startMs) / 1000 ... Double(endMs) / 1000
     }
 
-    func shouldProcessSubtitles(hasAPIKey: Bool) -> Bool {
-        useLLMSubtitleProcessing ?? hasAPIKey
+    func shouldProcessSubtitles(hasUsableLLM: Bool) -> Bool {
+        hasUsableLLM && (useLLMSubtitleProcessing ?? true)
     }
 
     var normalizedTargetLanguageCode: String? {
@@ -1153,7 +1153,8 @@ struct SummaryTaskRegistry: Sendable {
 enum WorkbenchMediaFlowPlanner {
     static func transcriptionSteps(
         for job: WorkbenchTranscriptionJob,
-        hasAPIKey: Bool
+        hasSubtitleModel: Bool,
+        hasTranslationModel: Bool
     ) -> [MediaFlowStep] {
         var steps: [MediaFlowStep] = [
             .transcribe(TranscriptionFlowPayload(
@@ -1163,10 +1164,11 @@ enum WorkbenchMediaFlowPlanner {
             )),
         ]
         let targetLanguage = job.normalizedTargetLanguageCode
-        if job.shouldProcessSubtitles(hasAPIKey: hasAPIKey) || targetLanguage != nil {
+        let shouldTranslate = hasSubtitleModel && hasTranslationModel && targetLanguage != nil
+        if job.shouldProcessSubtitles(hasUsableLLM: hasSubtitleModel) || shouldTranslate {
             steps.append(.prepareSubtitles(SubtitleProcessingPayload()))
         }
-        if let targetLanguage {
+        if shouldTranslate, let targetLanguage {
             steps.append(.translate(TranslationFlowPayload(targetLanguage: targetLanguage)))
         }
         return steps
@@ -1668,14 +1670,14 @@ final class WorkbenchStore {
         if let transcription = transcriptions.first(where: { $0.id == sessionID }),
            transcription.state == .completed,
            needsSummary(markdown: transcription.summaryMarkdown, state: transcription.summaryState) {
-            await enrichCompletedTranscription(sessionID)
+            await enrichCompletedTranscription(sessionID, reportFailure: false)
         }
         let dub = dubs.first(where: { $0.id == sessionID })
             ?? dubs.first(where: { $0.sourceTranscriptionID == sessionID })
         if let dub,
            dub.state == .completed,
            needsSummary(markdown: dub.summaryMarkdown, state: dub.summaryState) {
-            await enrichCompletedDub(dub.id)
+            await enrichCompletedDub(dub.id, reportFailure: false)
         }
     }
 
@@ -3155,6 +3157,9 @@ final class WorkbenchStore {
             let hasSubtitleModel = !isCloud && LLMSettingsStore.shared.hasUsableModel(
                 for: .subtitleProcessing
             )
+            let hasTranslationModel = !isCloud && LLMSettingsStore.shared.hasUsableModel(
+                for: .translation
+            )
             let request = TranscriptionTaskRequest(
                 jobID: id,
                 sourceURL: input.sourceURL,
@@ -3171,7 +3176,8 @@ final class WorkbenchStore {
                         ? []
                         : WorkbenchMediaFlowPlanner.transcriptionSteps(
                             for: flowJob,
-                            hasAPIKey: hasSubtitleModel
+                            hasSubtitleModel: hasSubtitleModel,
+                            hasTranslationModel: hasTranslationModel
                         )
                 ),
                 remoteSessionID: flowJob.remoteSessionID,
@@ -3217,7 +3223,7 @@ final class WorkbenchStore {
             // Free the local ASR slot before title/summary LLM enrichment.
             finishTranscriptionSlot(id)
             releasedSlot = true
-            await enrichCompletedTranscription(id)
+            await enrichCompletedTranscription(id, reportFailure: false)
             await syncCompletedTranscriptionToCloud(id, sourceURL: input.sourceURL)
         }
         flowTasks[id] = task
@@ -3723,14 +3729,14 @@ final class WorkbenchStore {
                 markdown: transcription.summaryMarkdown,
                 state: transcription.summaryState
            ) {
-            await enrichCompletedTranscription(transcriptionID)
+            await enrichCompletedTranscription(transcriptionID, reportFailure: false)
         }
         guard let current = dubs.first(where: { $0.id == job.id }),
               current.state == .completed,
               needsSummary(markdown: current.summaryMarkdown, state: current.summaryState) else {
             return
         }
-        await enrichCompletedDub(current.id)
+        await enrichCompletedDub(current.id, reportFailure: false)
     }
 
     func cancelDub(_ id: UUID) {

@@ -17,7 +17,7 @@ struct LocalTranscriptCacheConfiguration: Codable, Equatable, Sendable {
 /// Disk + memory cache for local and cloud transcripts, keyed by file identity so edits invalidate naturally.
 actor TranscriptCache {
     static let shared = TranscriptCache()
-    static let localPipelineSchemaVersion = 6
+    static let localPipelineSchemaVersion = 7
     static let directory = FileManager.default
         .urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("\(Log.subsystem)/Transcripts", isDirectory: true)
@@ -41,7 +41,9 @@ actor TranscriptCache {
             full = isVideo
                 ? try await Transcription.transcribeVideoAudio(videoURL: url)
                 : try await Transcription.transcribe(fileURL: url)
-            if let key { store(full, key: key) }
+            if let key, Self.installedSpeakerRevision() == nil || full.words.contains(where: { $0.speaker != nil }) {
+                store(full, key: key)
+            }
         }
         return range.map { Self.filter(full, to: $0) } ?? full
     }
@@ -54,6 +56,8 @@ actor TranscriptCache {
         configuration: LocalTranscriptCacheConfiguration = .automatic,
         publishAsLatest: Bool = true
     ) {
+        if configuration.speakerCount != 1,
+           (Self.installedSpeakerRevision() != nil) != result.words.contains(where: { $0.speaker != nil }) { return }
         guard let exactKey = Self.key(for: url, variant: .local(configuration)) else { return }
         store(result, key: exactKey)
         if publishAsLatest,
@@ -157,7 +161,8 @@ actor TranscriptCache {
     }
 
     nonisolated static func localPipelineFingerprint(
-        configuration: LocalTranscriptCacheConfiguration
+        configuration: LocalTranscriptCacheConfiguration,
+        speakerModelRevision: String? = nil
     ) -> String {
         let whisperFallbackModelID = LocalModelManager.preferredWhisperFallbackModelID()
         let relevant: [LocalModelID] = [
@@ -167,14 +172,22 @@ actor TranscriptCache {
             .spokenLanguageID,
             .forcedAligner,
             .sileroVAD,
-            .sortformerDiarization,
         ]
         let revisions = relevant.compactMap { id in
             LocalModelManager.catalog.first(where: { $0.id == id }).map {
                 "\(id.rawValue)@\($0.revision)"
             }
         }.joined(separator: "|")
-        return "schema=\(localPipelineSchemaVersion)|whisper=\(whisperFallbackModelID.rawValue)|\(configuration.identity)|\(revisions)"
+        let speakerIdentity = OptionalSpeakerDiarization.cacheIdentity(
+            requestedSpeakerCount: configuration.speakerCount, modelRevision: speakerModelRevision
+        )
+        return "diarization=\(speakerIdentity)|schema=\(localPipelineSchemaVersion)|whisper=\(whisperFallbackModelID.rawValue)|\(configuration.identity)|\(revisions)"
+    }
+
+    private static func installedSpeakerRevision() -> String? {
+        guard let model = LocalModelManager.catalog.first(where: { $0.id == .sortformerDiarization }),
+              LocalModelManager.isInstalled(model) else { return nil }
+        return model.revision
     }
 
     private static func key(for url: URL, variant: CacheVariant) -> String? {
@@ -182,7 +195,12 @@ actor TranscriptCache {
               let size = (attrs[.size] as? NSNumber)?.int64Value,
               let mtime = attrs[.modificationDate] as? Date else { return nil }
         let base = "\(url.path)|\(mtime.timeIntervalSince1970)|\(size)"
-        let identity = variant.prefix.map { "\($0)|\(base)" } ?? base
+        let speakerRevision: String?
+        switch variant {
+        case .cloud: speakerRevision = nil
+        case .local, .localLatest: speakerRevision = installedSpeakerRevision()
+        }
+        let identity = variant.prefix(speakerModelRevision: speakerRevision).map { "\($0)|\(base)" } ?? base
         return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined().prefix(32).description
     }
 
@@ -191,12 +209,12 @@ actor TranscriptCache {
         case localLatest
         case cloud(range: ClosedRange<Double>?, language: String?)
 
-        var prefix: String? {
+        func prefix(speakerModelRevision: String?) -> String? {
             switch self {
             case .local(let configuration):
-                return "local|\(TranscriptCache.localPipelineFingerprint(configuration: configuration))"
+                return "local|\(TranscriptCache.localPipelineFingerprint(configuration: configuration, speakerModelRevision: speakerModelRevision))"
             case .localLatest:
-                return "local-latest|\(TranscriptCache.localPipelineFingerprint(configuration: .automatic))"
+                return "local-latest|\(TranscriptCache.localPipelineFingerprint(configuration: .automatic, speakerModelRevision: speakerModelRevision))"
             case .cloud(let range, let language):
                 let lang = language ?? "auto"
                 guard let range else { return "cloud|\(lang)|full" }

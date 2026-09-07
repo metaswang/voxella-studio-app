@@ -35,8 +35,11 @@ struct ProcessingOptionsSheet: View {
     @State private var cloudQuota: CloudTranscriptionQuota?
     @State private var isLoadingCloudQuota = false
     @State private var highlightCloudClipLimit = false
+    @State private var presentedPrompt: ProcessingOptionsPrompt?
+    @State private var permitsBasicTranscription = false
     @Bindable private var models = LocalModelManager.shared
     @Bindable private var account = AccountService.shared
+    @Bindable private var llmSettings = LLMSettingsStore.shared
 
     private var isSingleFile: Bool { mediaURLs.count == 1 }
     private var continueDisabled: Bool {
@@ -123,6 +126,15 @@ struct ProcessingOptionsSheet: View {
         .onAppear { applyInitialOptionsIfNeeded() }
         .task(id: mediaDurationTaskID) { await loadMediaDuration() }
         .task(id: cloudQuotaTaskID) { await loadCloudQuota() }
+        .sheet(item: $presentedPrompt) { prompt in
+            switch prompt {
+            case .aiUpgrade:
+                TranscriptionAIUpgradePrompt {
+                    permitsBasicTranscription = true
+                    Task { await prepareAndSubmit() }
+                }
+            }
+        }
     }
 
     private var sheetHeight: CGFloat {
@@ -518,7 +530,7 @@ struct ProcessingOptionsSheet: View {
                         Text("\(item.purpose) · \(item.sizeLabel) · \(item.license)")
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.mutedColor)
-                        if item.requiresLicenseAcceptance, !item.isInstalled {
+                        if item.requiresLicenseAcceptance, !item.isInstalled, !models.isLicenseAccepted(item.id) {
                             Text("License acceptance required before download.")
                                 .font(.system(size: AppTheme.FontSize.xs))
                                 .foregroundStyle(AppTheme.Status.warningColor)
@@ -526,6 +538,11 @@ struct ProcessingOptionsSheet: View {
                     }
                     Spacer()
                 }
+            }
+            if speakerCount.count != 1, !models.state(for: .sortformerDiarization).isInstalled {
+                Text(OptionalSpeakerDiarization.unavailableMessage)
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
             }
             if !plan.missingItems.isEmpty {
                 Text(plan.additionalDiskSpaceLabel)
@@ -824,6 +841,16 @@ struct ProcessingOptionsSheet: View {
     private func prepareAndSubmit() async {
         guard !isPreparingCloud else { return }
         cloudAccessError = nil
+        if placement.compute == .local, !permitsBasicTranscription {
+            _ = await llmSettings.credentialAvailable()
+            guard !TranscriptionAIAccessPromptPolicy.shouldPresent(
+                compute: placement.compute,
+                hasUsableLLM: llmSettings.hasUsableModel(for: .subtitleProcessing)
+            ) else {
+                presentedPrompt = .aiUpgrade
+                return
+            }
+        }
         if placement.needsAuthentication {
             isPreparingCloud = true
             let result: CloudAccessPreparation
@@ -850,4 +877,10 @@ struct ProcessingOptionsSheet: View {
     private func submitCurrentOptions() {
         onContinue(currentSubmission())
     }
+}
+
+private enum ProcessingOptionsPrompt: String, Identifiable {
+    case aiUpgrade
+
+    var id: String { rawValue }
 }

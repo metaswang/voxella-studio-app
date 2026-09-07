@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
+        AppUpdater.shared.start()
 
         HomeWindowController.shared.showWindow(nil)
         Task.detached(priority: .utility) {
