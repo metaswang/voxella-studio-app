@@ -148,10 +148,6 @@ extension LLMProviderProfile {
             || normalizedBaseURL.localizedCaseInsensitiveContains("openrouter.ai")
     }
 
-    var hasExplicitProviderOrder: Bool {
-        isOpenRouter && openRouterRouting.enabled && !openRouterRouting.order.isEmpty
-    }
-
     var resolvedExtraBody: [String: LLMJSONValue] {
         var result = isOpenRouter ? openRouterRouting.generatedExtraBody : [:]
         LLMJSONValue.deepMerge(extraBody, into: &result)

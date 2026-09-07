@@ -146,11 +146,11 @@ struct TranscribeWorkbenchView: View {
                 Button {
                     store.selectedTranscriptionID = nil
                 } label: {
-                    Label("New transcription", systemImage: "plus")
+                    Label(L10n.string("New transcription"), systemImage: "plus")
                 }
                 .buttonStyle(.borderless)
-                .help("Back to transcription entry")
-                Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([job.sourceURL]) }
+                .help(L10n.string("Start a new transcription task"))
+                Button(L10n.string("Show in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([job.sourceURL]) }
                     .buttonStyle(.borderless)
                 Button {
                     sendToEditor(job)
@@ -158,10 +158,10 @@ struct TranscribeWorkbenchView: View {
                     if openingInEditorID == job.id {
                         HStack(spacing: 7) {
                             ProgressView().controlSize(.small)
-                            Text("Opening editor…")
+                            Text(L10n.string("Opening editor…"))
                         }
                     } else {
-                        Label("Open with captions", systemImage: "captions.bubble")
+                        Label(L10n.string("Open with captions"), systemImage: "captions.bubble")
                     }
                 }
                 .buttonStyle(.bordered)

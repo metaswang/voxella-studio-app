@@ -144,7 +144,10 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
             prefix: newProvider.defaultPrefix,
             displayName: newProvider.label,
             baseURL: newProvider.defaultBaseURL,
-            model: newProvider.defaultModel
+            model: newProvider.defaultModel,
+            openRouterRouting: newProvider == .openRouter
+                ? LLMOpenRouterRouting(enabled: true, sort: .latency)
+                : .init()
         )
     }
 
@@ -620,7 +623,6 @@ final class LLMSettingsStore {
     private static let configurationDefaultsKey = "voxella.llm.configuration.v2"
     private static let legacyProfileDefaultsKey = "voxella.llm.provider-profile.v1"
     private static let subtitleRouteMigrationKey = "voxella.llm.migration.subtitle-route.v1"
-    private static let performanceRoutingMigrationKey = "voxella.llm.migration.performance-routing.v1"
     private static let useBYOKKey = "voxella.llm.use-byok.v1"
     private static let useBYOKMigrationKey = "voxella.llm.migration.use-byok.v1"
 
@@ -763,7 +765,10 @@ final class LLMSettingsStore {
             prefix: prefix,
             displayName: kind.label,
             baseURL: kind.defaultBaseURL,
-            model: kind.defaultModel
+            model: kind.defaultModel,
+            openRouterRouting: kind == .openRouter
+                ? LLMOpenRouterRouting(enabled: true, sort: .latency)
+                : .init()
         )
         providers.append(profile)
         persist()
@@ -1183,18 +1188,27 @@ final class LLMSettingsStore {
 
     @discardableResult
     private func migratePerformanceRoutingIfNeeded() -> Bool {
-        guard !defaults.bool(forKey: Self.performanceRoutingMigrationKey) else { return false }
-        defaults.set(true, forKey: Self.performanceRoutingMigrationKey)
-
         var changed = false
         for index in providers.indices where providers[index].isOpenRouter {
             let routing = providers[index].openRouterRouting
-            guard !routing.enabled, routing.order.isEmpty, routing.sort == nil else { continue }
+            guard routing.order.isEmpty else { continue }
+            let hasNitroRoute = routes.values
+                .flatMap(\.modelChain)
+                .contains { reference in
+                    guard let parsed = try? Self.parseModelReference(reference),
+                          parsed.prefix.caseInsensitiveCompare(providers[index].normalizedPrefix) == .orderedSame
+                    else { return false }
+                    return parsed.model.lowercased().hasSuffix(":nitro")
+                }
+            guard (!routing.enabled && routing.sort == nil)
+                || (routing.sort == .throughput && hasNitroRoute) else {
+                continue
+            }
             providers[index].openRouterRouting = LLMOpenRouterRouting(
                 enabled: true,
                 order: [],
                 allowFallbacks: routing.allowFallbacks,
-                sort: .throughput
+                sort: .latency
             )
             changed = true
         }
@@ -1247,12 +1261,8 @@ final class LLMSettingsStore {
             return reference
         }
 
-        if profile.hasExplicitProviderOrder {
-            let model = Self.removingNitroVariant(from: parsed.model)
-            return "\(parsed.prefix)/\(model)"
-        }
-        guard !parsed.model.contains(":") else { return reference }
-        return "\(parsed.prefix)/\(parsed.model):nitro"
+        let model = Self.removingNitroVariant(from: parsed.model)
+        return "\(parsed.prefix)/\(model)"
     }
 
     private static func removingNitroVariant(from model: String) -> String {

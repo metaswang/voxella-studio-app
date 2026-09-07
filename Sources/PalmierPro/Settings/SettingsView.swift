@@ -138,6 +138,7 @@ private struct SettingsDetail: View {
                             case .calendar:
                                 GoogleCalendarSettingsPane()
                             case .general:
+                                LanguageSettingsPane()
 #if SPARKLE_UPDATES
                                 SettingsSection(title: "Updates") {
                                     UpdatesPane(updater: AppUpdater.shared)
@@ -250,7 +251,7 @@ final class SettingsWindowController: NSWindowController {
     private var hosting: NSHostingController<AnyView>?
 
     private init() {
-        let initialView = SettingsView().tint(AppTheme.Accent.primary)
+        let initialView = SettingsView().appLocalization().tint(AppTheme.Accent.primary)
         let hosting = NSHostingController(rootView: AnyView(initialView))
         hosting.sizingOptions = .minSize
         let window = NSWindow(contentViewController: hosting)
@@ -277,6 +278,7 @@ final class SettingsWindowController: NSWindowController {
             hosting?.rootView = AnyView(
                 SettingsView(initialTab: tab)
                     .id(UUID())
+                    .appLocalization()
                     .tint(AppTheme.Accent.primary)
             )
         }

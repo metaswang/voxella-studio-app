@@ -53,7 +53,7 @@ struct MeetBotView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            Label(L10n.string("Meet Bot"), systemImage: "calendar.badge.clock")
+            Label(L10n.string("Meeting Recorder"), systemImage: "calendar.badge.clock")
                 .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
                 .foregroundStyle(AppTheme.Accent.primary)
             Text(L10n.string("Never miss the conversation"))

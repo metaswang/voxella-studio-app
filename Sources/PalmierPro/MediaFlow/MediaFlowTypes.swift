@@ -414,6 +414,7 @@ struct SubtitleProcessingPayload: Sendable {
     var maximumCharactersPerCue: Int?
     var maximumAttempts = 2
     var userInstruction: String?
+    var boundaryPolicy = SubtitleBoundaryOptimizer.Policy()
 }
 
 struct TranslationFlowPayload: Sendable {

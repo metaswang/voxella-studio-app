@@ -520,7 +520,7 @@ struct LLMResilienceTests {
     }
 
     @Test @MainActor
-    func openRouterRoutesMigrateToNitroThroughputSettings() throws {
+    func openRouterRoutesMigrateToLatencySettings() throws {
         let suiteName = "LLMOpenRouterPerformanceMigrationTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -554,11 +554,49 @@ struct LLMResilienceTests {
         let route = settings.route(for: .subtitleProcessing)
         let migratedProfile = try #require(settings.providers.first)
 
-        #expect(route.primaryModel == "openrouter/z-ai/glm-5.3-flash:nitro")
+        #expect(route.primaryModel == "openrouter/z-ai/glm-5.3-flash")
         #expect(route.fallbackModels == ["openrouter/deepseek/deepseek-v4-flash:floor"])
         #expect(route.policy == .default(for: .subtitleProcessing))
         #expect(migratedProfile.openRouterRouting.enabled)
-        #expect(migratedProfile.openRouterRouting.sort == .throughput)
+        #expect(migratedProfile.openRouterRouting.sort == .latency)
+    }
+
+    @Test @MainActor
+    func existingNitroRoutesMigrateToLatencyWithoutModelSuffix() throws {
+        let suiteName = "LLMOpenRouterNitroMigrationTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var profile = LLMProviderProfile(
+            provider: .openRouter,
+            baseURL: "https://openrouter.ai/api/v1",
+            model: "z-ai/glm-5.3-flash"
+        )
+        profile.openRouterRouting = LLMOpenRouterRouting(
+            enabled: true,
+            order: [],
+            allowFallbacks: true,
+            sort: .throughput
+        )
+        let saved = LLMSettingsStore.PersistedConfiguration(
+            providers: [profile],
+            routes: [
+                .subtitleProcessing: LLMModelRoute(
+                    primaryModel: "openrouter/z-ai/glm-5.3-flash:nitro",
+                    fallbackModels: [],
+                    policy: .default(for: .subtitleProcessing)
+                ),
+            ]
+        )
+        defaults.set(
+            try JSONEncoder().encode(saved),
+            forKey: "voxella.llm.configuration.v2"
+        )
+
+        let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
+
+        #expect(settings.providers[0].openRouterRouting.sort == .latency)
+        #expect(settings.route(for: .subtitleProcessing).primaryModel == "openrouter/z-ai/glm-5.3-flash")
     }
 
     @Test @MainActor
@@ -603,8 +641,8 @@ struct LLMResilienceTests {
         clearedOrder.openRouterRouting.order = []
         try settings.updateProvider(clearedOrder)
 
-        #expect(settings.route(for: .subtitleProcessing).primaryModel == "openrouter/z-ai/glm-5.3-flash:nitro")
-        #expect(settings.route(for: .subtitleProcessing).fallbackModels == ["openrouter/deepseek/deepseek-v4-flash:nitro"])
+        #expect(settings.route(for: .subtitleProcessing).primaryModel == "openrouter/z-ai/glm-5.3-flash")
+        #expect(settings.route(for: .subtitleProcessing).fallbackModels == ["openrouter/deepseek/deepseek-v4-flash"])
     }
 
     @Test
@@ -768,6 +806,34 @@ struct LLMResilienceTests {
         #expect(!VoxellaHostedLLMTextClient.isRetryable(credits))
         #expect(VoxellaHostedLLMTextClient.isRetryable(LLMClientError.timeout))
         #expect(!VoxellaHostedLLMTextClient.isRetryable(CancellationError()))
+    }
+
+    @Test
+    func openRouterUnauthorizedFailuresExplainHowToRecover() throws {
+        let error = LLMClientError.exhausted([
+            .init(model: "openrouter/google/gemini-2.5-flash-lite", attempt: 1, reason: "http_401"),
+            .init(model: "openrouter/openai/gpt-5-nano", attempt: 1, reason: "http_401"),
+        ])
+
+        let message = try #require(error.errorDescription)
+
+        #expect(message.contains("OpenRouter couldn't verify the saved API key"))
+        #expect(message.contains("Settings → BYOK"))
+        #expect(message.contains("disabled, revoked, or expired"))
+        #expect(message.contains("workspace, spending limit, and available account credits"))
+        #expect(message.contains("openrouter/openai/gpt-5-nano (http_401)"))
+    }
+
+    @Test
+    func mixedProviderFailuresKeepTheGenericTechnicalSummary() throws {
+        let error = LLMClientError.exhausted([
+            .init(model: "openrouter/openai/gpt-5-nano", attempt: 1, reason: "http_401"),
+            .init(model: "openai/gpt-5.4-nano", attempt: 1, reason: "http_401"),
+        ])
+
+        let message = try #require(error.errorDescription)
+
+        #expect(message == "All configured LLM models failed: openrouter/openai/gpt-5-nano (http_401); openai/gpt-5.4-nano (http_401)")
     }
 
     @Suite(.serialized)

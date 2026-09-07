@@ -39,7 +39,7 @@ struct AIRequestOverridesView: View {
 
                 if !profile.openRouterRouting.order.isEmpty {
                     Label(
-                        "Explicit provider order takes precedence; :nitro and routing sort are ignored.",
+                        "Explicit provider order takes precedence; routing sort is ignored.",
                         systemImage: "info.circle"
                     )
                     .font(.system(size: AppTheme.FontSize.xs))

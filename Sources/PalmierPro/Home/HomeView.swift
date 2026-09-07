@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HomeView: View {
-    @AppStorage("voxella.workbench.sidebarExpanded") private var sidebarExpanded = false
+    @AppStorage("voxella.workbench.sidebarExpanded") private var sidebarExpanded = true
     @State private var editorSidebarRevealed = false
     @State private var editorSidebarHideTask: Task<Void, Never>?
     @State private var sessionSearch = SessionSearchController()
@@ -227,11 +227,11 @@ private struct WorkbenchTopBar: View {
                     .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
             }
             .buttonStyle(.plain)
-            .help(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar")
-            .accessibilityLabel(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar")
+            .help(L10n.string(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"))
+            .accessibilityLabel(L10n.string(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"))
 
             if store.route != .session {
-                Text(store.route.title)
+                Text(L10n.string(store.route.title))
                     .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.semibold))
                     .lineLimit(1)
             }
@@ -297,7 +297,7 @@ private struct WorkbenchSidebar: View {
                 HStack(spacing: AppTheme.Spacing.md) {
                     Image(systemName: "magnifyingglass").frame(width: 24, height: 24)
                     if isExpanded {
-                        Text("Search").font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
+                        Text(L10n.string("Search")).font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
                         Spacer(minLength: 0)
                     }
                 }
@@ -307,8 +307,8 @@ private struct WorkbenchSidebar: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Search sessions (⌘K)")
-            .accessibilityLabel("Search sessions")
+            .help(L10n.string("Search tasks (⌘K)"))
+            .accessibilityLabel(L10n.string("Search tasks"))
 
             ForEach(WorkbenchRoute.sidebarRoutes) { route in
                 Button {
@@ -318,7 +318,7 @@ private struct WorkbenchSidebar: View {
                         route.navGlyph.view(size: 18)
                             .frame(width: 24, height: 24)
                         if isExpanded {
-                            Text(route.title)
+                            Text(L10n.string(route.title))
                                 .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
                             Spacer(minLength: 0)
                         }
@@ -337,8 +337,8 @@ private struct WorkbenchSidebar: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(route.title)
-                .accessibilityLabel(route.title)
+                .help(L10n.string(route.title))
+                .accessibilityLabel(L10n.string(route.title))
             }
 
             Spacer()
@@ -351,7 +351,7 @@ private struct WorkbenchSidebar: View {
                         .font(.system(size: AppTheme.FontSize.lg, weight: .medium))
                         .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
                     if isExpanded {
-                        Text("Settings")
+                        Text(L10n.string("Settings"))
                             .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.medium))
                         Spacer(minLength: 0)
                     }
@@ -362,7 +362,7 @@ private struct WorkbenchSidebar: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Settings")
+            .help(L10n.string("Settings"))
 
             Spacer().frame(height: AppTheme.Spacing.sm)
         }
@@ -414,7 +414,7 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
     private var hasAppliedInitialWindowState = false
 
     private init() {
-        let hostingController = NSHostingController(rootView: HomeView().tint(AppTheme.Accent.primary))
+        let hostingController = NSHostingController(rootView: HomeView().appLocalization().tint(AppTheme.Accent.primary))
         hostingController.sizingOptions = .minSize
         let window = NSWindow(contentViewController: hostingController)
         window.setContentSize(AppTheme.Window.homeDefault)
