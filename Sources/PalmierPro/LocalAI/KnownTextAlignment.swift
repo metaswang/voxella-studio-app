@@ -45,6 +45,7 @@ struct KnownTextAlignmentRequest: Sendable {
 struct KnownTextAlignmentDiagnostics: Codable, Equatable, Sendable {
     var alignedUnitCount: Int
     var estimatedUnitCount: Int
+    var speakerWarnings: [String]? = nil
 
     var usedEstimatedTiming: Bool { estimatedUnitCount > 0 }
 }

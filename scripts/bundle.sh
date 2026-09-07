@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Usage:
 #   scripts/bundle.sh [release|debug]           # ad-hoc signed dev build
-#   scripts/bundle.sh debug --fast              # fastest: skip dSYM + deep sign
+#   scripts/bundle.sh debug --fast              # fastest: skip dSYM
 #   scripts/bundle.sh debug --sign              # signed Developer ID-compatible app
 #   scripts/bundle.sh release --sign            # signed Developer ID-compatible app
 #   scripts/bundle.sh release --mas             # Mac App Store app + installer package
@@ -53,14 +53,33 @@ fi
 
 echo "==> Building ($CONFIG)"
 TRAITS="BundledSpeech"
+if [ "$MODE" != "mas" ]; then
+  TRAITS="$TRAITS,SparkleUpdates"
+fi
 BUILD_ARGS=(-c "$CONFIG" --traits "$TRAITS")
 swift build "${BUILD_ARGS[@]}"
-BIN="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)/VoxStudio"
+BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
+BIN="$BIN_DIR/VoxStudio"
+SPARKLE_ROOT="$ROOT/.build/artifacts/sparkle/Sparkle"
+SPARKLE_FRAMEWORK="$BIN_DIR/Sparkle.framework"
+SPARKLE_SIGN_UPDATE="$SPARKLE_ROOT/bin/sign_update"
 echo "==> Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN" "$APP/Contents/MacOS/VoxStudio"
 cp "$RESOURCES/Info.plist" "$APP/Contents/Info.plist"
+
+if [ "$MODE" = "mas" ]; then
+  for key in SUAutomaticallyUpdate SUEnableAutomaticChecks SUFeedURL SUPublicEDKey SUScheduledCheckInterval; do
+    /usr/libexec/PlistBuddy -c "Delete :$key" "$APP/Contents/Info.plist" 2>/dev/null || true
+  done
+elif [ -d "$SPARKLE_FRAMEWORK" ]; then
+  echo "==> Embedding Sparkle.framework"
+  /usr/bin/ditto "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
+else
+  echo "!! missing Sparkle.framework at $SPARKLE_FRAMEWORK" >&2
+  exit 1
+fi
 
 inject_plist() {
   local key="$1" value="$2"
@@ -137,8 +156,31 @@ xattr -dr com.apple.quarantine "$APP"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/VoxStudio"
 touch "$APP"
 
+sign_sparkle() {
+  local identity="$1" timestamp="$2"
+  local current="$APP/Contents/Frameworks/Sparkle.framework/Versions/Current"
+  [ -d "$current" ] || return
+
+  echo "==> Codesigning Sparkle helpers"
+  for helper in \
+      "$current/Autoupdate" \
+      "$current/Updater.app/Contents/MacOS/Updater" \
+      "$current/Updater.app" \
+      "$current/XPCServices/Downloader.xpc/Contents/MacOS/Downloader" \
+      "$current/XPCServices/Downloader.xpc" \
+      "$current/XPCServices/Installer.xpc/Contents/MacOS/Installer" \
+      "$current/XPCServices/Installer.xpc"; do
+    if [ -e "$helper" ]; then
+      codesign --force --options runtime "$timestamp" --sign "$identity" "$helper"
+    fi
+  done
+  codesign --force --options runtime "$timestamp" --sign "$identity" \
+    "$APP/Contents/Frameworks/Sparkle.framework"
+}
+
 if [ "$MODE" = "fast" ]; then
-  echo "==> Ad-hoc signing main app (no timestamp, no helpers)"
+  sign_sparkle - --timestamp=none
+  echo "==> Ad-hoc signing main app (no timestamp)"
   echo "!! Ad-hoc builds use the login keychain and may request access after a rebuild." >&2
   codesign --force --options runtime --entitlements "$DEBUG_ENTITLEMENTS" --sign - "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
@@ -154,8 +196,9 @@ dsymutil "$APP/Contents/MacOS/VoxStudio" -o "$DSYM"
 if [ "$MODE" = "dev" ]; then
   echo "==> Ad-hoc signing dev app"
   echo "!! Ad-hoc builds use the login keychain and may request access after a rebuild." >&2
-  codesign --force --deep --options runtime --entitlements "$DEBUG_ENTITLEMENTS" --sign - "$APP"
-  codesign --verify --strict --verbose=2 "$APP"
+  sign_sparkle - --timestamp=none
+  codesign --force --options runtime --entitlements "$DEBUG_ENTITLEMENTS" --sign - "$APP"
+  codesign --verify --deep --strict --verbose=2 "$APP"
   echo "==> Done: $APP (ad-hoc signed)"
   exit 0
 fi
@@ -229,6 +272,13 @@ if [ "$MODE" = "mas" ]; then
 fi
 
 echo "==> Codesigning main app ($SIGNING_IDENTITY / $TEAM_IDENTIFIER)"
+if [ "$MODE" != "mas" ]; then
+  if [ "$MODE" = "dist" ]; then
+    sign_sparkle "$SIGNING_IDENTITY" --timestamp
+  else
+    sign_sparkle "$SIGNING_IDENTITY" --timestamp=none
+  fi
+fi
 CODESIGN_ARGS=(--force --sign "$SIGNING_IDENTITY")
 if [ "$MODE" = "mas" ]; then
   CODESIGN_ARGS+=(--entitlements "$SIGNING_ENTITLEMENTS")
@@ -244,7 +294,7 @@ else
   CODESIGN_ARGS+=(--timestamp=none)
 fi
 codesign "${CODESIGN_ARGS[@]}" "$APP"
-codesign --verify --strict --verbose=2 "$APP"
+codesign --verify --deep --strict --verbose=2 "$APP"
 
 signed_team="$(codesign -dv --verbose=4 "$APP" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
 if [ "$signed_team" != "$TEAM_IDENTIFIER" ]; then
@@ -264,6 +314,30 @@ fi
 if [ "$MODE" = "mas" ] && ! codesign -d --entitlements - "$APP" 2>/dev/null | grep -q 'com.apple.developer.applesignin'; then
   echo "!! signed MAS app is missing com.apple.developer.applesignin" >&2
   exit 1
+fi
+if [ "$MODE" = "mas" ]; then
+  if [ -e "$APP/Contents/Frameworks/Sparkle.framework" ] \
+      || otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q Sparkle; then
+    echo "!! Mac App Store builds must not contain Sparkle" >&2
+    exit 1
+  fi
+  for key in SUAutomaticallyUpdate SUEnableAutomaticChecks SUFeedURL SUPublicEDKey SUScheduledCheckInterval; do
+    if /usr/libexec/PlistBuddy -c "Print :$key" "$APP/Contents/Info.plist" >/dev/null 2>&1; then
+      echo "!! Mac App Store builds must not contain $key" >&2
+      exit 1
+    fi
+  done
+else
+  if ! otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q '@rpath/Sparkle.framework'; then
+    echo "!! Developer ID builds must link the embedded Sparkle.framework" >&2
+    exit 1
+  fi
+  for key in SUAutomaticallyUpdate SUEnableAutomaticChecks SUFeedURL SUPublicEDKey SUScheduledCheckInterval; do
+    if ! /usr/libexec/PlistBuddy -c "Print :$key" "$APP/Contents/Info.plist" >/dev/null 2>&1; then
+      echo "!! Developer ID builds require $key" >&2
+      exit 1
+    fi
+  done
 fi
 
 if [ "$MODE" = "sign" ] || [ "$MODE" = "mas" ]; then
@@ -308,8 +382,16 @@ xcrun notarytool submit "$DMG" \
 echo "==> Stapling DMG"
 xcrun stapler staple "$DMG"
 
+if [ ! -x "$SPARKLE_SIGN_UPDATE" ]; then
+  echo "!! missing Sparkle sign_update tool at $SPARKLE_SIGN_UPDATE" >&2
+  exit 1
+fi
+echo "==> Signing DMG for Sparkle"
+SPARKLE_SIGNATURE="$("$SPARKLE_SIGN_UPDATE" "$DMG")"
+
 echo ""
 echo "==> Done"
 echo "   App: $APP"
 echo "   DMG: $DMG"
+echo "   $SPARKLE_SIGNATURE"
 echo ""

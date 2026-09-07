@@ -179,28 +179,33 @@ struct HomeView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch store.route {
-        case .recent:
-            RecentSessionsView()
-        case .dashboard:
-            WorkbenchLibraryView()
-        case .transcribe:
-            TranscribeWorkbenchView()
-        case .meetBot:
-            MeetBotView()
-        case .dub:
-            DubWorkbenchView()
-        case .voiceLibrary:
-            VoiceLibraryView()
-        case .videoEditor:
-            VideoEditorHomeView()
-        case .session:
-            if store.selectedSession != nil {
-                WorkbenchSessionDetailView()
-            } else {
+        Group {
+            switch store.route {
+            case .recent:
                 RecentSessionsView()
-                    .onAppear { store.showRecentSessions() }
+            case .dashboard:
+                WorkbenchLibraryView()
+            case .transcribe:
+                TranscribeWorkbenchView()
+            case .meetBot:
+                MeetBotView()
+            case .dub:
+                DubWorkbenchView()
+            case .voiceLibrary:
+                VoiceLibraryView()
+            case .videoEditor:
+                VideoEditorHomeView()
+            case .session:
+                if store.selectedSession != nil {
+                    WorkbenchSessionDetailView()
+                } else {
+                    RecentSessionsView()
+                        .onAppear { store.showRecentSessions() }
+                }
             }
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            ExternalOpenHandler.open(providers)
         }
     }
 }
@@ -406,6 +411,7 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
     static let shared = HomeWindowController()
 
     private var isEditorMode = false
+    private var hasAppliedInitialWindowState = false
 
     private init() {
         let hostingController = NSHostingController(rootView: HomeView().tint(AppTheme.Accent.primary))
@@ -426,6 +432,15 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        guard !hasAppliedInitialWindowState, let window else { return }
+        hasAppliedInitialWindowState = true
+        if !window.isZoomed, !window.styleMask.contains(.fullScreen) {
+            window.zoom(nil)
+        }
+    }
 
     func presentSessionSearch() {
         showWindow(nil)

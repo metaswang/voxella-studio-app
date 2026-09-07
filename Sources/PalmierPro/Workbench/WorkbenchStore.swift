@@ -170,6 +170,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var editedText = ""
     var useLLMSubtitleProcessing: Bool?
     var targetLanguageCode: String?
+    var cloudVocalRepairEnabled = false
     var subtitleTrack: SubtitleTrack?
     /// Multi-target translation tracks for one source (aligned with postprocess translation tracks).
     var translationTracks: [WorkbenchTranslationTrack] = []
@@ -201,6 +202,10 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var cloudSyncState: DubCloudSyncState?
     var pendingCloudSyncError: String?
     var isRecordedCapture = false
+    /// Enhanced listen-track path (playback/export). ASR always uses `sourcePath`.
+    var listenAudioPath: String?
+    var listenEnhanceState: ListenEnhanceState = .idle
+
 
     var placement: TranscriptionPlacement {
         get { TranscriptionPlacement(storage: storage, compute: compute) }
@@ -211,6 +216,21 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     }
 
     var sourceURL: URL { URL(fileURLWithPath: sourcePath) }
+    var masterAudioURL: URL { sourceURL }
+    var listenAudioURL: URL? {
+        guard let listenAudioPath, !listenAudioPath.isEmpty else { return nil }
+        return URL(fileURLWithPath: listenAudioPath)
+    }
+    /// Playback/export prefer listen when ready; transcription stays on master.
+    var playbackAudioURL: URL {
+        if listenEnhanceState.isReady, let listenAudioURL,
+           FileManager.default.fileExists(atPath: listenAudioURL.path) {
+            return listenAudioURL
+        }
+        return masterAudioURL
+    }
+    var asrAudioURL: URL { masterAudioURL }
+
     var originalFilename: String { sourceURL.lastPathComponent }
     var displayName: String { sourceURL.deletingPathExtension().lastPathComponent }
     var sessionTitle: String {
@@ -223,8 +243,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         return Double(startMs) / 1000 ... Double(endMs) / 1000
     }
 
-    func shouldProcessSubtitles(hasAPIKey: Bool) -> Bool {
-        useLLMSubtitleProcessing ?? hasAPIKey
+    func shouldProcessSubtitles(hasUsableLLM: Bool) -> Bool {
+        hasUsableLLM && (useLLMSubtitleProcessing ?? true)
     }
 
     var normalizedTargetLanguageCode: String? {
@@ -242,6 +262,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
             enableTranslation: normalizedTargetLanguageCode != nil,
             targetLanguageCode: targetLanguageCode,
             useLLMSubtitleProcessing: useLLMSubtitleProcessing,
+            cloudVocalRepairEnabled: cloudVocalRepairEnabled,
             clipStartMs: clipStartMs,
             clipEndMs: clipEndMs
         )
@@ -324,7 +345,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, sourcePath, netVideoSourceURL, netVideoVideoID, netVideoPlatform, customTitle, createdAt, modifiedAt, state
         case languageCode, speakerCount, clipStartMs, clipEndMs, batchID
-        case result, editedText, useLLMSubtitleProcessing, targetLanguageCode
+        case result, editedText, useLLMSubtitleProcessing, targetLanguageCode, cloudVocalRepairEnabled
         case subtitleTrack, translationTrack, translationTracks
         case selectedTranslationLanguageCode, selectedTrack
         case summaryMarkdown, summaryTemplateID, summaryTemplateName, summaryTemplateUserEdition
@@ -335,6 +356,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         case storage, compute, remoteSessionID, localCachePath
         case cloudSyncRevision, cloudSyncState, pendingCloudSyncError
         case isRecordedCapture
+        case listenAudioPath, listenEnhanceState
     }
 
     init(
@@ -356,6 +378,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         editedText: String = "",
         useLLMSubtitleProcessing: Bool? = nil,
         targetLanguageCode: String? = nil,
+        cloudVocalRepairEnabled: Bool = false,
         subtitleTrack: SubtitleTrack? = nil,
         translationTracks: [WorkbenchTranslationTrack] = [],
         selectedTranslationLanguageCode: String? = nil,
@@ -385,7 +408,9 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         cloudSyncRevision: Int = 0,
         cloudSyncState: DubCloudSyncState? = nil,
         pendingCloudSyncError: String? = nil,
-        isRecordedCapture: Bool = false
+        isRecordedCapture: Bool = false,
+        listenAudioPath: String? = nil,
+        listenEnhanceState: ListenEnhanceState = .idle
     ) {
         self.id = id
         self.sourcePath = sourcePath
@@ -405,6 +430,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         self.editedText = editedText
         self.useLLMSubtitleProcessing = useLLMSubtitleProcessing
         self.targetLanguageCode = targetLanguageCode
+        self.cloudVocalRepairEnabled = cloudVocalRepairEnabled
         self.subtitleTrack = subtitleTrack
         self.translationTracks = translationTracks
         self.selectedTranslationLanguageCode = selectedTranslationLanguageCode
@@ -435,6 +461,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         self.cloudSyncState = cloudSyncState
         self.pendingCloudSyncError = pendingCloudSyncError
         self.isRecordedCapture = isRecordedCapture
+        self.listenAudioPath = listenAudioPath
+        self.listenEnhanceState = listenEnhanceState
     }
 
     init(from decoder: Decoder) throws {
@@ -457,6 +485,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         editedText = try container.decodeIfPresent(String.self, forKey: .editedText) ?? ""
         useLLMSubtitleProcessing = try container.decodeIfPresent(Bool.self, forKey: .useLLMSubtitleProcessing)
         targetLanguageCode = try container.decodeIfPresent(String.self, forKey: .targetLanguageCode)
+        cloudVocalRepairEnabled = try container.decodeIfPresent(Bool.self, forKey: .cloudVocalRepairEnabled) ?? false
         subtitleTrack = try container.decodeIfPresent(SubtitleTrack.self, forKey: .subtitleTrack)
         translationTracks = try container.decodeIfPresent(
             [WorkbenchTranslationTrack].self,
@@ -511,6 +540,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         cloudSyncState = try container.decodeIfPresent(DubCloudSyncState.self, forKey: .cloudSyncState)
         pendingCloudSyncError = try container.decodeIfPresent(String.self, forKey: .pendingCloudSyncError)
         isRecordedCapture = try container.decodeIfPresent(Bool.self, forKey: .isRecordedCapture) ?? false
+        listenAudioPath = try container.decodeIfPresent(String.self, forKey: .listenAudioPath)
+        listenEnhanceState = try container.decodeIfPresent(ListenEnhanceState.self, forKey: .listenEnhanceState) ?? .idle
     }
 
     func encode(to encoder: Encoder) throws {
@@ -567,6 +598,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(cloudSyncState, forKey: .cloudSyncState)
         try container.encodeIfPresent(pendingCloudSyncError, forKey: .pendingCloudSyncError)
         try container.encode(isRecordedCapture, forKey: .isRecordedCapture)
+        try container.encodeIfPresent(listenAudioPath, forKey: .listenAudioPath)
+        try container.encode(listenEnhanceState, forKey: .listenEnhanceState)
     }
 }
 
@@ -933,6 +966,12 @@ struct WorkbenchSession: Identifiable, Sendable {
     var remoteSourceHasVideo: Bool? = nil
     var remoteSourcePosterURL: URL? = nil
     var netVideoSource: WorkbenchNetVideoSource? = nil
+    var listenAudioURL: URL? = nil
+    var listenEnhanceState: ListenEnhanceState = .idle
+    /// Signed URL for the optional cloud high-fidelity audio track.
+    /// It is intentionally separate from the source/video URL so video playback
+    /// can keep the original picture and swap only its audio track.
+    var remoteEnhancedSourcePlaybackURL: URL? = nil
 
     var showsFloatingNetVideoPreview: Bool {
         netVideoSource != nil
@@ -945,6 +984,55 @@ struct WorkbenchSession: Identifiable, Sendable {
     var originalFilename: String? {
         sourceURL?.lastPathComponent
     }
+
+    var masterAudioURL: URL? { sourceURL }
+
+    /// Unprocessed master track. Always the true original so the session player
+    /// can switch away from local listen enhance or cloud High-Fidelity Repair.
+    var originalPlaybackURL: URL? {
+        remoteSourcePlaybackURL ?? sourceURL
+    }
+
+    /// Local "Enhance for listening" sidecar when ready.
+    var listenPlaybackURL: URL? {
+        guard listenEnhanceState.isReady,
+              let listenAudioURL,
+              FileManager.default.fileExists(atPath: listenAudioURL.path) else {
+            return nil
+        }
+        return listenAudioURL
+    }
+
+    /// Cloud High-Fidelity Repair signed URL when available.
+    var enhancedPlaybackURL: URL? {
+        guard let remoteEnhancedSourcePlaybackURL,
+              remoteEnhancedSourcePlaybackURL.scheme == "http"
+                || remoteEnhancedSourcePlaybackURL.scheme == "https" else {
+            return nil
+        }
+        return remoteEnhancedSourcePlaybackURL
+    }
+
+    /// Processed listening track for the session player: cloud repair preferred, else local listen.
+    var processedPlaybackURL: URL? {
+        enhancedPlaybackURL ?? listenPlaybackURL
+    }
+
+    /// Prefer processed audio for human playback when the master is audio-only.
+    /// Video masters keep the picture from `sourceURL`; use `preferredExportAudioURL` for audio export.
+    var preferredPlaybackURL: URL? {
+        if let processedPlaybackURL,
+           !Self.urlLooksLikeVideo(sourceURL) {
+            return processedPlaybackURL
+        }
+        return originalPlaybackURL
+    }
+
+    var preferredExportAudioURL: URL? {
+        enhancedPlaybackURL ?? listenPlaybackURL ?? originalPlaybackURL
+    }
+
+    var asrAudioURL: URL? { sourceURL }
 
     var translationTrack: SubtitleTrack? {
         if let selectedTranslationLanguageCode,
@@ -963,6 +1051,12 @@ struct WorkbenchSession: Identifiable, Sendable {
     }
 
     var hasDub: Bool { outputURL != nil || source == .standaloneDub || !dubSegments.isEmpty }
+
+    private static func urlLooksLikeVideo(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        let ext = url.pathExtension.lowercased()
+        return ["mp4", "mov", "m4v", "avi", "mkv", "webm"].contains(ext)
+    }
 }
 
 enum SessionSummaryOwner: Equatable, Sendable {
@@ -1059,7 +1153,8 @@ struct SummaryTaskRegistry: Sendable {
 enum WorkbenchMediaFlowPlanner {
     static func transcriptionSteps(
         for job: WorkbenchTranscriptionJob,
-        hasAPIKey: Bool
+        hasSubtitleModel: Bool,
+        hasTranslationModel: Bool
     ) -> [MediaFlowStep] {
         var steps: [MediaFlowStep] = [
             .transcribe(TranscriptionFlowPayload(
@@ -1069,10 +1164,11 @@ enum WorkbenchMediaFlowPlanner {
             )),
         ]
         let targetLanguage = job.normalizedTargetLanguageCode
-        if job.shouldProcessSubtitles(hasAPIKey: hasAPIKey) || targetLanguage != nil {
+        let shouldTranslate = hasSubtitleModel && hasTranslationModel && targetLanguage != nil
+        if job.shouldProcessSubtitles(hasUsableLLM: hasSubtitleModel) || shouldTranslate {
             steps.append(.prepareSubtitles(SubtitleProcessingPayload()))
         }
-        if let targetLanguage {
+        if shouldTranslate, let targetLanguage {
             steps.append(.translate(TranslationFlowPayload(targetLanguage: targetLanguage)))
         }
         return steps
@@ -1230,6 +1326,8 @@ final class WorkbenchStore {
     private(set) var remoteSessionLoadingID: UUID?
     private var remoteSessionLoadTask: Task<Void, Never>?
     private var remoteSessionsLoadGeneration = UUID()
+    /// Signed enhanced-audio links are short lived, so keep them in memory only.
+    private(set) var enhancedAudioURLs: [UUID: URL] = [:]
 
     init(
         taskAccess: any TranscriptionTaskAccessing = RoutedTranscriptionTaskAccess(),
@@ -1273,7 +1371,10 @@ final class WorkbenchStore {
                 modifiedAt: max(job.modifiedAt, dub?.modifiedAt ?? job.modifiedAt),
                 state: Self.combinedState(primary: job.state, secondary: dub?.state),
                 source: .media,
-                sessionType: job.netVideoSourceURL == nil ? .upload : .netVideo,
+                sessionType: {
+                    if job.isRecordedCapture { return .record }
+                    return job.netVideoSourceURL == nil ? .upload : .netVideo
+                }(),
                 transcriptionID: job.id,
                 dubID: dub?.id,
                 sourceURL: job.sourceURL,
@@ -1299,7 +1400,10 @@ final class WorkbenchStore {
                     secondary: dub?.resolvedCloudSyncState
                 ),
                 cloudSyncError: dub?.pendingCloudSyncError ?? job.pendingCloudSyncError,
-                netVideoSource: Self.localNetVideoSource(from: job)
+                netVideoSource: Self.localNetVideoSource(from: job),
+                listenAudioURL: job.listenAudioURL,
+                listenEnhanceState: job.listenEnhanceState,
+                remoteEnhancedSourcePlaybackURL: enhancedAudioURLs[dub?.remoteSessionID ?? job.remoteSessionID ?? job.id]
             )
         }
         let standaloneDubs = dubs.filter { job in
@@ -1335,7 +1439,8 @@ final class WorkbenchStore {
                 compute: job.resolvedCompute,
                 remoteSessionID: job.remoteSessionID,
                 cloudSyncState: job.resolvedCloudSyncState,
-                cloudSyncError: job.pendingCloudSyncError
+                cloudSyncError: job.pendingCloudSyncError,
+                remoteEnhancedSourcePlaybackURL: enhancedAudioURLs[job.remoteSessionID ?? job.id]
             )
         }
         let localSessions = transcriptSessions + standaloneDubs
@@ -1381,6 +1486,9 @@ final class WorkbenchStore {
         }
 
         route = .session
+        if let remoteSessionID = session.remoteSessionID, AccountService.shared.isSignedIn {
+            Task { await refreshEnhancedAudio(for: remoteSessionID) }
+        }
         let missingLLMMessage = LLMConfigurationError.noConfiguredModel(.subtitleProcessing)
             .localizedDescription
         if let job = transcriptions.first(where: { $0.id == id }),
@@ -1474,9 +1582,37 @@ final class WorkbenchStore {
         remoteSessionLoadTask?.cancel()
         remoteSessionLoadTask = nil
         remoteSessions = [:]
+        enhancedAudioURLs = [:]
         remoteSessionsError = nil
         isLoadingRemoteSessions = false
         remoteSessionLoadingID = nil
+    }
+
+    /// Refreshes the optional cloud-repaired audio URL without changing the
+    /// original media URL. The endpoint returns a signed URL only after the
+    /// repair task has completed; a missing URL is therefore a normal pending
+    /// state for historical and in-flight sessions.
+    func refreshEnhancedAudio(for remoteSessionID: UUID) async {
+        guard AccountService.shared.isSignedIn else { return }
+        do {
+            let url = try await voxellaAPI.mediaPlaybackURL(
+                sessionID: remoteSessionID,
+                media: "audio",
+                variant: "enhanced"
+            )
+            enhancedAudioURLs[remoteSessionID] = url
+        } catch VoxellaAPIError.http(404, _) {
+            enhancedAudioURLs.removeValue(forKey: remoteSessionID)
+        } catch VoxellaAPIError.http(409, _) {
+            // Repair is still queued/processing; leave any previously signed URL intact.
+        } catch is CancellationError {
+        } catch VoxellaAPIError.cancelled {
+        } catch {
+            Log.project.debug(
+                "enhanced audio unavailable id=\(VoxellaAPIConfiguration.apiIdentifier(remoteSessionID)) "
+                    + "error=\(error.localizedDescription)"
+            )
+        }
     }
 
     private func loadRemoteSession(_ id: UUID) {
@@ -1493,6 +1629,7 @@ final class WorkbenchStore {
                     transcriptSegments: rendering.transcriptSegments,
                     subtitleCues: rendering.subtitleCues,
                     mediaPlaybackURL: rendering.mediaPlaybackURL,
+                    enhancedMediaPlaybackURL: rendering.enhancedMediaPlaybackURL,
                     mediaHasVideo: rendering.mediaHasVideo
                 )
                 self.remoteSessionLoadingID = nil
@@ -1533,14 +1670,14 @@ final class WorkbenchStore {
         if let transcription = transcriptions.first(where: { $0.id == sessionID }),
            transcription.state == .completed,
            needsSummary(markdown: transcription.summaryMarkdown, state: transcription.summaryState) {
-            await enrichCompletedTranscription(sessionID)
+            await enrichCompletedTranscription(sessionID, reportFailure: false)
         }
         let dub = dubs.first(where: { $0.id == sessionID })
             ?? dubs.first(where: { $0.sourceTranscriptionID == sessionID })
         if let dub,
            dub.state == .completed,
            needsSummary(markdown: dub.summaryMarkdown, state: dub.summaryState) {
-            await enrichCompletedDub(dub.id)
+            await enrichCompletedDub(dub.id, reportFailure: false)
         }
     }
 
@@ -1619,6 +1756,21 @@ final class WorkbenchStore {
         route = .transcribe
     }
 
+
+    func applyListenTrackUpdate(_ update: ListenTrackEnhanceUpdate) {
+        let masterPath = update.masterURL.resolvingSymlinksInPath().path
+        var didChange = false
+        for index in transcriptions.indices {
+            let jobPath = transcriptions[index].sourceURL.resolvingSymlinksInPath().path
+            guard jobPath == masterPath else { continue }
+            transcriptions[index].listenEnhanceState = update.state
+            transcriptions[index].listenAudioPath = update.listenURL?.path
+            transcriptions[index].modifiedAt = Date()
+            didChange = true
+        }
+        if didChange { save() }
+    }
+
     func stageRecordedMedia(_ url: URL) {
         transcriptionAdmissionError = nil
         pendingNetVideoSource = nil
@@ -1627,6 +1779,13 @@ final class WorkbenchStore {
         selectedTranscriptionID = nil
         preferRecordEntry = true
         route = .transcribe
+        // Bake listen track async so playback can start on master immediately.
+        // App Settings / ListenEnhanceSettings is the source of truth (default ON).
+        if ListenEnhanceSettings.isEnabled {
+            Task {
+                await ListenTrackEnhanceCoordinator.shared.enqueue(masterURL: url)
+            }
+        }
     }
 
     func clearPendingMediaImport() {
@@ -1732,12 +1891,26 @@ final class WorkbenchStore {
             job.clipEndMs = sourceURLs.count == 1 ? submission.options.clipEndMs : nil
             job.useLLMSubtitleProcessing = submission.options.useLLMSubtitleProcessing
             job.targetLanguageCode = submission.options.normalizedTargetLanguageCode
+            job.cloudVocalRepairEnabled = submission.options.cloudVocalRepairEnabled
             if sourceURLs.count == 1 {
                 job.customTitle = SessionTitlePolicy.normalizedUserTitle(submission.options.customTitle)
             }
             job.batchID = batchID
             job.placement = submission.placement
             job.isRecordedCapture = isRecordedCapture
+            if isRecordedCapture {
+                if let existing = ListenTrackLocator.existingListenURL(forMaster: url) {
+                    job.listenAudioPath = existing.path
+                    job.listenEnhanceState = .ready
+                } else if ListenEnhanceSettings.isEnabled {
+                    job.listenEnhanceState = .pending
+                    Task {
+                        await ListenTrackEnhanceCoordinator.shared.enqueue(masterURL: url)
+                    }
+                } else {
+                    job.listenEnhanceState = .skipped
+                }
+            }
             job.progressMessage = submission.placement.compute == .local
                 ? "Queued"
                 : "Queued for VoxStudio Cloud"
@@ -2168,6 +2341,7 @@ final class WorkbenchStore {
             deletingSessionIDs.subtract(localIDs)
             for remoteID in remoteIDs {
                 remoteSessions.removeValue(forKey: remoteID)
+                enhancedAudioURLs.removeValue(forKey: remoteID)
             }
             deletingRemoteSessionIDs.subtract(remoteIDs)
             if let selectedSessionID,
@@ -2863,6 +3037,7 @@ final class WorkbenchStore {
             $0.clipEndMs = submission.options.clipEndMs
             $0.useLLMSubtitleProcessing = submission.options.useLLMSubtitleProcessing
             $0.targetLanguageCode = submission.options.normalizedTargetLanguageCode
+            $0.cloudVocalRepairEnabled = submission.options.cloudVocalRepairEnabled
             $0.customTitle = SessionTitlePolicy.normalizedUserTitle(submission.options.customTitle)
             $0.placement = submission.placement
         }
@@ -2982,6 +3157,9 @@ final class WorkbenchStore {
             let hasSubtitleModel = !isCloud && LLMSettingsStore.shared.hasUsableModel(
                 for: .subtitleProcessing
             )
+            let hasTranslationModel = !isCloud && LLMSettingsStore.shared.hasUsableModel(
+                for: .translation
+            )
             let request = TranscriptionTaskRequest(
                 jobID: id,
                 sourceURL: input.sourceURL,
@@ -2998,7 +3176,8 @@ final class WorkbenchStore {
                         ? []
                         : WorkbenchMediaFlowPlanner.transcriptionSteps(
                             for: flowJob,
-                            hasAPIKey: hasSubtitleModel
+                            hasSubtitleModel: hasSubtitleModel,
+                            hasTranslationModel: hasTranslationModel
                         )
                 ),
                 remoteSessionID: flowJob.remoteSessionID,
@@ -3044,7 +3223,7 @@ final class WorkbenchStore {
             // Free the local ASR slot before title/summary LLM enrichment.
             finishTranscriptionSlot(id)
             releasedSlot = true
-            await enrichCompletedTranscription(id)
+            await enrichCompletedTranscription(id, reportFailure: false)
             await syncCompletedTranscriptionToCloud(id, sourceURL: input.sourceURL)
         }
         flowTasks[id] = task
@@ -3052,17 +3231,32 @@ final class WorkbenchStore {
 
     private func syncCompletedTranscriptionToCloud(_ id: UUID, sourceURL: URL) async {
         guard let current = transcriptions.first(where: { $0.id == id }),
-              TranscriptionPlacementRouter.shouldSyncLocalResults(current.placement),
               current.state == .completed,
               let result = current.result else {
             return
         }
+        // A local transcription with cloud repair enabled still needs a
+        // temporary cloud session so the already-uploaded master can be sent
+        // through the audio-tools worker.  It is billed only for
+        // tool_enhance; no cloud transcription stage is added because compute
+        // remains local.
+        let repairOnlySync = current.processingOptions.cloudVocalRepairEnabled
+            && current.placement.compute == .local
+            && current.placement.storage == .local
+        guard TranscriptionPlacementRouter.shouldSyncLocalResults(current.placement) || repairOnlySync else {
+            return
+        }
+        let syncPlacement: TranscriptionPlacement = repairOnlySync
+            ? .init(storage: .cloud, compute: .local)
+            : current.placement
 
         updateTranscription(id) {
             $0.cloudSyncState = .pending
             $0.pendingCloudSyncError = nil
             $0.errorMessage = nil
-            $0.progressMessage = "Completed locally · syncing to VoxStudio Cloud…"
+            $0.progressMessage = repairOnlySync
+                ? "Completed locally · preparing cloud voice repair…"
+                : "Completed locally · syncing to VoxStudio Cloud…"
         }
         guard let snapshot = transcriptions.first(where: { $0.id == id }) else { return }
 
@@ -3076,7 +3270,7 @@ final class WorkbenchStore {
                     mimeType: Self.mimeType(for: sourceURL),
                     sizeBytes: nil,
                     options: snapshot.processingOptions,
-                    placement: snapshot.placement,
+                    placement: syncPlacement,
                     result: result,
                     subtitleTrack: snapshot.subtitleTrack,
                     translationTracks: snapshot.translationTracks,
@@ -3091,9 +3285,11 @@ final class WorkbenchStore {
                 $0.cloudSyncState = .completed
                 $0.pendingCloudSyncError = nil
                 $0.errorMessage = nil
-                $0.progressMessage = $0.summaryMarkdown == nil
-                    ? "Transcript ready · saved to VoxStudio Cloud"
-                    : "Transcript and summary ready · saved to VoxStudio Cloud"
+                $0.progressMessage = repairOnlySync
+                    ? "Transcript ready · cloud voice repair queued"
+                    : ($0.summaryMarkdown == nil
+                        ? "Transcript ready · saved to VoxStudio Cloud"
+                        : "Transcript and summary ready · saved to VoxStudio Cloud")
             }
             scheduleCloudSync(forTranscription: id)
         } catch is CancellationError {
@@ -3115,15 +3311,20 @@ final class WorkbenchStore {
         guard flowTasks[id] == nil,
               let job = transcriptions.first(where: { $0.id == id }),
               job.state == .completed,
-              TranscriptionPlacementRouter.shouldSyncCloudEdits(job.placement),
               job.result != nil else {
+            return
+        }
+        let repairOnlySync = job.processingOptions.cloudVocalRepairEnabled
+            && job.placement.compute == .local
+            && job.placement.storage == .local
+        guard TranscriptionPlacementRouter.shouldSyncCloudEdits(job.placement) || repairOnlySync else {
             return
         }
         if job.remoteSessionID != nil {
             scheduleCloudSync(forTranscription: id)
             return
         }
-        guard TranscriptionPlacementRouter.shouldSyncLocalResults(job.placement),
+        guard (TranscriptionPlacementRouter.shouldSyncLocalResults(job.placement) || repairOnlySync),
               job.resolvedCloudSyncState == .pending else { return }
         let sourceURL = job.sourceURL
         updateTranscription(id) {
@@ -3528,14 +3729,14 @@ final class WorkbenchStore {
                 markdown: transcription.summaryMarkdown,
                 state: transcription.summaryState
            ) {
-            await enrichCompletedTranscription(transcriptionID)
+            await enrichCompletedTranscription(transcriptionID, reportFailure: false)
         }
         guard let current = dubs.first(where: { $0.id == job.id }),
               current.state == .completed,
               needsSummary(markdown: current.summaryMarkdown, state: current.summaryState) else {
             return
         }
-        await enrichCompletedDub(current.id)
+        await enrichCompletedDub(current.id, reportFailure: false)
     }
 
     func cancelDub(_ id: UUID) {
@@ -4065,13 +4266,15 @@ final class WorkbenchStore {
                     : "Transcript ready — summary unavailable"
             }
             if reportFailure {
-                WorkbenchTipCenter.shared.show(
-                    error.localizedDescription,
-                    kind: .error,
-                    id: "summary.failed.\(id.uuidString)"
+                reportEnrichmentFailure(
+                    id: id,
+                    technicalMessage: error.localizedDescription,
+                    isRefinement: isRefinement,
+                    readyNoun: "Transcript"
                 )
+            } else {
+                Log.project.warning("session enrichment failed: \(error.localizedDescription)")
             }
-            Log.project.warning("session enrichment failed: \(error.localizedDescription)")
             return false
         }
     }
@@ -4791,6 +4994,23 @@ final class WorkbenchStore {
         Log.project.warning("cloud summary failed id=\(id.uuidString) error=\(message)")
     }
 
+    private func reportEnrichmentFailure(
+        id: UUID,
+        technicalMessage: String,
+        isRefinement: Bool,
+        readyNoun: String
+    ) {
+        let banner = isRefinement
+            ? "Summary regeneration failed"
+            : "\(readyNoun) is ready. Title and summary could not be generated."
+        WorkbenchTipCenter.shared.show(
+            banner,
+            kind: .error,
+            id: "summary.failed.\(id.uuidString)"
+        )
+        Log.project.warning("session enrichment failed ready=\(readyNoun) error=\(technicalMessage)")
+    }
+
     private func nonEmpty(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
@@ -4939,13 +5159,15 @@ final class WorkbenchStore {
                     : "Dub ready — summary unavailable"
             }
             if reportFailure {
-                WorkbenchTipCenter.shared.show(
-                    error.localizedDescription,
-                    kind: .error,
-                    id: "summary.failed.\(id.uuidString)"
+                reportEnrichmentFailure(
+                    id: id,
+                    technicalMessage: error.localizedDescription,
+                    isRefinement: isRefinement,
+                    readyNoun: "Dub"
                 )
+            } else {
+                Log.project.warning("dub session enrichment failed: \(error.localizedDescription)")
             }
-            Log.project.warning("dub session enrichment failed: \(error.localizedDescription)")
             return false
         }
     }
@@ -5171,6 +5393,8 @@ final class WorkbenchStore {
         ]
         let candidate = url.resolvingSymlinksInPath().path
         guard roots.contains(where: { candidate.hasPrefix($0 + "/") }) else { return }
+        let listenSidecar = ListenTrackLocator.sidecarURL(forMaster: url)
+        try? FileManager.default.removeItem(at: listenSidecar)
         try? FileManager.default.removeItem(at: url)
     }
 
@@ -5423,6 +5647,7 @@ final class WorkbenchStore {
         transcriptSegments: [VoxellaTranscriptSegment] = [],
         subtitleCues: [VoxellaSubtitleCue] = [],
         mediaPlaybackURL: URL? = nil,
+        enhancedMediaPlaybackURL: URL? = nil,
         mediaHasVideo: Bool = false
     ) -> WorkbenchSession {
         let resolvedMediaHasVideo = mediaHasVideo || Self.remoteSessionHasVideo(detail)
@@ -5500,7 +5725,8 @@ final class WorkbenchStore {
             remoteSourcePlaybackURL: mediaPlaybackURL,
             remoteSourceHasVideo: resolvedMediaHasVideo,
             remoteSourcePosterURL: remotePosterURL(for: detail),
-            netVideoSource: netVideoSource
+            netVideoSource: netVideoSource,
+            remoteEnhancedSourcePlaybackURL: enhancedMediaPlaybackURL
         )
     }
 

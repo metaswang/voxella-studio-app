@@ -544,6 +544,13 @@ enum AppTheme {
         static let recordingInfoPopoverWidth: CGFloat = 280
         static let recordingRegionMinSize: CGFloat = 48
         static let recordingRegionHandleSize: CGFloat = 8
+        static let recordingWaveformHeight: CGFloat = 22
+        static let recordingWaveformBarWidth: CGFloat = 3
+        static let recordingWaveformBarSpacing: CGFloat = 2
+        static let recordingWaveformMinimumBarHeight: CGFloat = 2
+        static let recordingWaveformRefreshInterval: Double = 1.0 / 30.0
+        static let recordingWaveformFloorDb: Float = -48
+        static let recordingWaveformCeilingDb: Float = -3
         static let cloudClipAnchor = "cloudClipLimit"
         static let compactPanelWidth: CGFloat = 420
         static let summaryRefinementSheetWidth: CGFloat = 520

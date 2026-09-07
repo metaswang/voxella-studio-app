@@ -312,8 +312,8 @@ struct LocalFirstWorkbenchTests {
         })
         #expect(catalog.allSatisfy { $0.byteSize > 0 })
         #expect(catalog.flatMap(\.requiredArtifacts).allSatisfy { $0.byteSize > 0 && $0.sha256.count == 64 })
-        #expect(catalog.filter(\.isRecommended).count == 9)
-        #expect(catalog.allSatisfy { !$0.isLegacy })
+        #expect(catalog.filter(\.isRecommended).count == 8)
+        #expect(catalog.filter(\.isLegacy).map(\.id) == [.whisperLargeV3TurboFP16])
 
         let coreMLVAD = catalog.first { $0.id == .sileroVAD }!
         #expect(coreMLVAD.weightByteSize == 0)
@@ -332,6 +332,11 @@ struct LocalFirstWorkbenchTests {
         #expect(parakeetASR.isRecommended)
         #expect(recommendedASR.isRecommended)
         #expect(!qualityASR.isRecommended)
+        #expect(qualityASR.isLegacy)
+        #expect(qualityASR.title.hasSuffix("(Legacy)"))
+        #expect(!catalog.contains {
+            !$0.isLegacy && $0.requiredFor.contains(.transcribe) && $0.id == .whisperLargeV3TurboFP16
+        })
         #expect(recommendedASR.asrSpecification?.precision == .eightBit)
         #expect(qualityASR.asrSpecification?.precision == .fp16)
         #expect(recommendedASR.asrSpecification?.decoderLayers == 4)
@@ -731,7 +736,7 @@ struct LocalFirstWorkbenchTests {
         #expect(draft.language == "en")
     }
 
-    @Test func localTranscriptionAdmissionRejectsEmptyAndOversizedBatches() throws {
+    @Test func localTranscriptionAdmissionRejectsEmptyAndOverLimitBatches() throws {
         #expect(throws: LocalTranscriptionResourcePolicy.AdmissionError.self) {
             try LocalTranscriptionResourcePolicy.admit([])
         }
@@ -744,6 +749,23 @@ struct LocalFirstWorkbenchTests {
         }
     }
 
+    @Test func localTranscriptionAdmissionAcceptsFilesLargerThanFourGiB() async throws {
+        try await Task.detached {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("voxella-large-import-\(UUID().uuidString).mp4")
+            guard FileManager.default.createFile(atPath: url.path, contents: Data()) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            defer { try? FileManager.default.removeItem(at: url) }
+
+            let handle = try FileHandle(forWritingTo: url)
+            try handle.truncate(atOffset: 4 * 1024 * 1024 * 1024 + 1)
+            try handle.close()
+
+            try LocalTranscriptionResourcePolicy.admit([url])
+        }.value
+    }
+
     @Test func processingOptionsClipAndTranslationMapIntoMediaFlow() {
         var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/clip.wav")
         job.languageCode = "en"
@@ -754,7 +776,11 @@ struct LocalFirstWorkbenchTests {
 
         #expect(job.clipRangeSeconds == 1.5...8.0)
 
-        let steps = WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasAPIKey: true)
+        let steps = WorkbenchMediaFlowPlanner.transcriptionSteps(
+            for: job,
+            hasSubtitleModel: true,
+            hasTranslationModel: true
+        )
         guard case .transcribe(let payload) = steps.first else {
             Issue.record("expected transcribe step")
             return
@@ -794,6 +820,71 @@ struct LocalFirstWorkbenchTests {
 
         store.clearPendingMediaImport()
         #expect(store.pendingMediaImportURLs.isEmpty)
+    }
+
+    @Test func externalOpenClassifierSeparatesMediaProjectsAndUnsupportedFiles() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voxella-external-open-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let wav = directory.appendingPathComponent("talk.wav")
+        let mp4 = directory.appendingPathComponent("talk.mp4")
+        let mkv = directory.appendingPathComponent("talk.mkv")
+        let png = directory.appendingPathComponent("still.png")
+        let project = directory.appendingPathComponent("clip.voxella")
+        for url in [wav, mp4, mkv, png, project] {
+            try Data().write(to: url)
+        }
+
+        let partition = ExternalOpenClassifier.partition([wav, mp4, mkv, png, project])
+        #expect(Set(partition.media.map(\.lastPathComponent)) == ["talk.wav", "talk.mp4", "talk.mkv"])
+        #expect(partition.projects.map(\.lastPathComponent) == ["clip.voxella"])
+        #expect(partition.unsupported.map(\.lastPathComponent) == ["still.png"])
+    }
+
+    @Test func externalOpenClassifierExpandsFoldersShallowly() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voxella-external-folder-\(UUID().uuidString)", isDirectory: true)
+        let nested = directory.appendingPathComponent("nested", isDirectory: true)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try Data().write(to: directory.appendingPathComponent("top.mp3"))
+        try Data().write(to: nested.appendingPathComponent("nested.mp3"))
+
+        let partition = ExternalOpenClassifier.partition([directory])
+        #expect(partition.media.map(\.lastPathComponent) == ["top.mp3"])
+        #expect(partition.unsupported.isEmpty)
+        #expect(partition.projects.isEmpty)
+    }
+
+    @Test func externalOpenClassifierReadsTranscribeURLFiles() throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voxella-shared-\(UUID().uuidString).m4a")
+        try Data().write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        var components = URLComponents(string: "voxstudio://transcribe")
+        components?.queryItems = [URLQueryItem(name: "file", value: file.path)]
+        let url = try #require(components?.url)
+
+        let partition = ExternalOpenClassifier.partition([url])
+        #expect(partition.media.map(\.lastPathComponent) == [file.lastPathComponent])
+        #expect(partition.projects.isEmpty)
+        #expect(partition.unsupported.isEmpty)
+    }
+
+    @Test func externalOpenClassifierIgnoresOAuthCallbacks() throws {
+        let url = try #require(URL(string: "voxella-studio://oauth/callback?code=abc"))
+        let partition = ExternalOpenClassifier.partition([url])
+        #expect(partition == ExternalOpenPartition())
+    }
+
+    @Test func externalOpenPasteboardReadsFileURLData() throws {
+        let file = URL(fileURLWithPath: "/tmp/talk.wav")
+        let parsed = ExternalOpenPasteboard.fileURL(fromItem: file.dataRepresentation as NSSecureCoding)
+        #expect(parsed?.path == file.path)
     }
 
     @Test func appendingPipelineWarningPreservesDiarizationMetrics() {

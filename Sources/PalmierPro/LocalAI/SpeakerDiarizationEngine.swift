@@ -7,12 +7,14 @@ import MLXAudioVAD
 
 enum DiarizationBackend: String, Codable, Sendable {
     case singleSpeaker
+    case unavailable
     case mlxStreamingSortformer
     case pyannoteWeSpeaker
 
     var title: String {
         switch self {
         case .singleSpeaker: "Single-speaker bypass"
+        case .unavailable: "Speaker labels unavailable"
         case .mlxStreamingSortformer: "MLX Streaming Sortformer"
         case .pyannoteWeSpeaker: "Pyannote + WeSpeaker"
         }

@@ -33,7 +33,7 @@ enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
 
     var detail: String {
         switch self {
-        case .audioOnly: "Microphone and/or system audio"
+        case .audioOnly: "Microphone, with optional system audio"
         case .display: "Entire display plus audio"
         case .window: "One window plus audio"
         case .region: "Selected area plus audio"
@@ -72,6 +72,24 @@ struct RecordingCaptureConfiguration: Equatable, Sendable {
         microphone.isEnabled || capturesSystemAudio
     }
 
+    mutating func applyMode(_ newMode: RecordingCaptureMode) {
+        guard newMode != mode else {
+            normalizeAudioSources()
+            return
+        }
+        let wasVideo = mode.capturesVideo
+        mode = newMode
+        if newMode == .audioOnly {
+            capturesSystemAudio = false
+            if !microphone.isEnabled {
+                microphone = .systemDefault
+            }
+        } else if !wasVideo {
+            capturesSystemAudio = true
+        }
+        normalizeAudioSources()
+    }
+
     mutating func normalizeAudioSources() {
         guard !hasAudioSource else { return }
         if capturesVideo {
@@ -91,6 +109,11 @@ struct RecordingAudioLevel: Equatable, Sendable {
     var isLowLevel: Bool {
         duration >= 0.25 && rmsDBFS < -40
     }
+}
+
+struct RecordingAudioMeterTick: Sendable {
+    let peak: Float
+    let warningLevel: RecordingAudioLevel?
 }
 
 enum RecordingAudioTrack: String, Sendable {
@@ -270,7 +293,7 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
         case .microphoneRestricted:
             "Microphone access is restricted by macOS or device management."
         case .screenCaptureDenied:
-            "Screen Recording access is denied. Allow it in System Settings → Privacy & Security → Screen Recording, then retry."
+            "Screen Recording is not available to this app. Allow VoxStudio in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen VoxStudio."
         case .noDisplay:
             "No display is available to record."
         case .writerFailed(let message):

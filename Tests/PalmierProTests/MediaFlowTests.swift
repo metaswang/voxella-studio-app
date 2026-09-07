@@ -1612,22 +1612,94 @@ struct MediaFlowTests {
         var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/interview.mov")
 
         #expect(
-            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasAPIKey: false)
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: false, hasTranslationModel: false)
                 .map { $0.stage.rawValue }
                 == ["transcription"]
         )
         #expect(
-            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasAPIKey: true)
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: true, hasTranslationModel: true)
                 .map { $0.stage.rawValue }
                 == ["transcription", "subtitlePreparation"]
         )
 
         job.useLLMSubtitleProcessing = false
         #expect(
-            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasAPIKey: true)
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: true, hasTranslationModel: true)
                 .map { $0.stage.rawValue }
                 == ["transcription"]
         )
+
+        job.useLLMSubtitleProcessing = true
+        #expect(
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: false, hasTranslationModel: false)
+                .map { $0.stage.rawValue }
+                == ["transcription"]
+        )
+    }
+
+    @Test func transcriptionWithoutLLMAccessSkipsRequestedTranslation() {
+        var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/interview.mov")
+        job.useLLMSubtitleProcessing = true
+        job.targetLanguageCode = "zh-CN"
+
+        #expect(
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: false, hasTranslationModel: false)
+                .map { $0.stage.rawValue }
+                == ["transcription"]
+        )
+        #expect(
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: true, hasTranslationModel: true)
+                .map { $0.stage.rawValue }
+                == ["transcription", "subtitlePreparation", "translation"]
+        )
+    }
+
+    @Test func transcriptionRequiresBothLLMRoutesForTranslation() {
+        var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/interview.mov")
+        job.targetLanguageCode = "zh-CN"
+
+        #expect(
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: true, hasTranslationModel: false)
+                .map { $0.stage.rawValue }
+                == ["transcription", "subtitlePreparation"]
+        )
+    }
+
+    @Test func transcriptionAIAccessPromptOnlyPrecedesBasicLocalTranscription() {
+        #expect(TranscriptionAIAccessPromptPolicy.shouldPresent(compute: .local, hasUsableLLM: false))
+        #expect(!TranscriptionAIAccessPromptPolicy.shouldPresent(compute: .local, hasUsableLLM: true))
+        #expect(!TranscriptionAIAccessPromptPolicy.shouldPresent(compute: .cloud, hasUsableLLM: false))
+    }
+
+    @Test func basicTranscriptionCommitKeepsTimedSegmentsWithoutSubtitleTrack() {
+        let segment = TranscriptionSegment(
+            text: "Raw transcript segment",
+            start: 1.25,
+            end: 3.5,
+            speaker: "Speaker 1"
+        )
+        let result = TranscriptionResult(
+            text: segment.text,
+            language: "en",
+            words: [],
+            segments: [segment]
+        )
+        let artifacts = CompletedTranscriptionArtifacts(
+            rawResult: result,
+            result: result,
+            subtitleTrack: nil,
+            translationTracks: [],
+            diarizationDiagnostics: nil,
+            alignmentDiagnostics: nil,
+            processedSourcePath: nil
+        )
+        var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/interview.mov")
+
+        artifacts.apply(to: &job)
+
+        #expect(job.result?.segments == [segment])
+        #expect(job.subtitleTrack == nil)
+        #expect(job.editedText == segment.text)
     }
 
     @Test func translationFlowsPrepareUnverifiedTimedSegmentsBeforeTranslation() {
@@ -1636,7 +1708,7 @@ struct MediaFlowTests {
         job.targetLanguageCode = " es-MX "
 
         #expect(
-            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasAPIKey: false)
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: true, hasTranslationModel: true)
                 .map { $0.stage.rawValue }
                 == ["transcription", "subtitlePreparation", "translation"]
         )

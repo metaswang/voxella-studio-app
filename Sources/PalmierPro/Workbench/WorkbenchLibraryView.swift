@@ -162,6 +162,41 @@ struct WorkbenchLibraryView: View {
 }
 
 enum WorkbenchFilePicker {
+    static let transcribableContentTypes: [UTType] = [.audio, .movie, .mpeg4Movie, .quickTimeMovie]
+
+    nonisolated static func isProjectPackage(_ url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        return ext == Project.fileExtension || ext == Project.legacyFileExtension
+    }
+
+    nonisolated static func isTranscribableMedia(_ url: URL, contentType: UTType? = nil) -> Bool {
+        if isProjectPackage(url) { return false }
+        if let contentType {
+            if isTranscribable(contentType) { return true }
+            if contentType.conforms(to: .image)
+                || contentType.conforms(to: .text)
+                || contentType.conforms(to: .pdf) {
+                return false
+            }
+        }
+        let ext = url.pathExtension.lowercased()
+        switch ClipType(fileExtension: ext) {
+        case .audio, .video: return true
+        default: break
+        }
+        if extraMediaExtensions.contains(ext) { return true }
+        guard let type = contentType ?? UTType(filenameExtension: ext) else { return false }
+        return isTranscribable(type)
+    }
+
+    nonisolated private static func isTranscribable(_ type: UTType) -> Bool {
+        type.conforms(to: .audio) || type.conforms(to: .movie) || type.conforms(to: .video)
+    }
+
+    nonisolated private static let extraMediaExtensions: Set<String> = [
+        "mkv", "webm", "avi", "ogg", "opus",
+    ]
+
     @MainActor
     static func pickMedia() async -> URL? {
         await pickMediaFiles().first
@@ -174,7 +209,7 @@ enum WorkbenchFilePicker {
         panel.message = "Select one or more files. Processing runs one file at a time."
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.audio, .movie, .mpeg4Movie, .quickTimeMovie]
+        panel.allowedContentTypes = transcribableContentTypes
         return await withCheckedContinuation { continuation in
             panel.begin { response in
                 continuation.resume(returning: response == .OK ? panel.urls : [])

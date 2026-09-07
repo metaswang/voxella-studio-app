@@ -212,11 +212,10 @@ struct LocalModelManagerView: View {
                             .font(.system(size: AppTheme.FontSize.xxs, weight: .bold))
                             .tracking(AppTheme.Spacing.xxs)
                             .foregroundStyle(AppTheme.Status.successColor)
-                    } else if model.id == .whisperLargeV3TurboFP16 {
-                        Text("MAX QUALITY")
-                            .font(.system(size: AppTheme.FontSize.xxs, weight: .bold))
-                            .tracking(AppTheme.Spacing.xxs)
-                            .foregroundStyle(AppTheme.Accent.timecodeColor)
+                    } else if model.id == .sortformerDiarization {
+                        Text("OPTIONAL")
+                            .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
+                            .foregroundStyle(AppTheme.Text.mutedColor)
                     }
                 }
                 Text(model.purpose)
@@ -294,7 +293,7 @@ struct LocalModelManagerView: View {
     }
 
     private func beginDownload(_ model: LocalModelDescriptor) {
-        if model.requiresLicenseAcceptance, !manager.isLicenseAccepted(model.id) {
+        if model.needsLicenseAcceptance(accepted: manager.isLicenseAccepted(model.id)) {
             continueRecommendedDownload = false
             licenseCandidate = model
         } else {
@@ -312,7 +311,7 @@ struct LocalModelManagerView: View {
 
     private func beginRecommendedDownload() {
         if let model = LocalModelManager.catalog.first(where: {
-            $0.isRecommended && $0.requiresLicenseAcceptance && !manager.isLicenseAccepted($0.id)
+            $0.isRecommended && $0.needsLicenseAcceptance(accepted: manager.isLicenseAccepted($0.id))
         }) {
             continueRecommendedDownload = true
             licenseCandidate = model

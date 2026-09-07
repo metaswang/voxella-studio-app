@@ -2,18 +2,29 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isTerminating = false
+    private var didFinishLaunching = false
+    private var pendingOpenURLs: [URL] = []
     private var searchEmbeddingPrewarmTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Activate the app (required when launched from CLI, not a .app bundle)
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        NSApp.servicesProvider = self
+        NSUpdateDynamicServices()
+        AppUpdater.shared.start()
 
         HomeWindowController.shared.showWindow(nil)
         Task.detached(priority: .utility) {
             Project.ensureStorageDirectory()
         }
         AppState.shared.startMCPService()
+        didFinishLaunching = true
+        let queued = pendingOpenURLs
+        pendingOpenURLs = []
+        if !queued.isEmpty {
+            ExternalOpenHandler.open(queued)
+        }
 
         // Pre-warm NSOpenPanel to avoid main thread blocking during cold start.
         Task { @MainActor [weak self] in
@@ -36,6 +47,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        if didFinishLaunching {
+            ExternalOpenHandler.open(urls)
+        } else {
+            pendingOpenURLs.append(contentsOf: urls)
+        }
+    }
+
+    @objc func transcribeMediaFromService(
+        _ pasteboard: NSPasteboard,
+        userData: String,
+        error: AutoreleasingUnsafeMutablePointer<NSString?>?
+    ) {
+        let urls = ExternalOpenPasteboard.fileURLs(from: pasteboard)
+        Task { @MainActor in
+            ExternalOpenHandler.open(urls)
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

@@ -3,6 +3,11 @@
 .build/
 .vscode/
 
+# Generated build and release artifacts
+/artifacts/
+*.app/
+*.dmg
+
 # Xcode
 xcuserdata/
 *.hmap

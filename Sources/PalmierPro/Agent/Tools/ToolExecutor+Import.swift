@@ -1,7 +1,6 @@
 import Foundation
 
 extension ToolExecutor {
-    nonisolated static let remoteImportMaxBytes: Int64 = 5 * 1024 * 1024 * 1024
     nonisolated static let importBytesMaxBase64Length = 15 * 1024 * 1024
     nonisolated static let remoteImportRequestTimeout: TimeInterval = 15 * 60
 
@@ -236,8 +235,7 @@ extension ToolExecutor {
         do {
             var request = URLRequest(url: remoteURL)
             request.timeoutInterval = remoteImportRequestTimeout
-            let delegate = ImportDownloadDelegate(maxBytes: remoteImportMaxBytes)
-            let (tempURL, response) = try await URLSession.shared.download(for: request, delegate: delegate)
+            let (tempURL, response) = try await URLSession.shared.download(for: request)
 
             if let httpResp = response as? HTTPURLResponse, !(200..<300).contains(httpResp.statusCode) {
                 await Task.detached(priority: .utility) {
@@ -246,7 +244,7 @@ extension ToolExecutor {
                 throw ToolError("server returned HTTP \(httpResp.statusCode)")
             }
 
-            asset.url = try await editor.commitStagedProjectMedia(tempURL, filename: asset.url.lastPathComponent, maxBytes: remoteImportMaxBytes)
+            asset.url = try await editor.commitStagedProjectMedia(tempURL, filename: asset.url.lastPathComponent)
             await finishImportedAsset(asset, editor: editor)
         } catch {
             let message = (error as? ToolError)?.message ?? error.localizedDescription
@@ -351,30 +349,5 @@ extension ToolExecutor {
             "type": asset.type.rawValue,
             "status": "ready",
         ]) ?? "{}")
-    }
-}
-
-fileprivate final class ImportDownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    let maxBytes: Int64
-    init(maxBytes: Int64) { self.maxBytes = maxBytes }
-
-    func urlSession(
-        _ session: URLSession,
-        downloadTask: URLSessionDownloadTask,
-        didWriteData bytesWritten: Int64,
-        totalBytesWritten: Int64,
-        totalBytesExpectedToWrite: Int64
-    ) {
-        if totalBytesExpectedToWrite > 0 && totalBytesExpectedToWrite > maxBytes {
-            downloadTask.cancel()
-            return
-        }
-        if totalBytesWritten > maxBytes {
-            downloadTask.cancel()
-        }
-    }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        // No-op: the async download(for:delegate:) API copies the temp file for us.
     }
 }

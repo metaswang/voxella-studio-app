@@ -15,6 +15,9 @@ enum SessionSubtitleDisplayMode: Equatable, Sendable {
 @MainActor
 final class SessionPlaybackController {
     var player: AVPlayer?
+    /// For video sessions the repaired track is kept as an independent audio
+    /// player so the original picture remains untouched.
+    private(set) var alternateAudioPlayer: AVPlayer?
     var posterImage: NSImage?
     var peaks: [Float] = []
     var isPlaying = false
@@ -71,6 +74,8 @@ final class SessionPlaybackController {
     func applyPlaybackRate() {
         player?.rate = isPlaying ? Float(playbackRate) : 0
         player?.defaultRate = Float(playbackRate)
+        alternateAudioPlayer?.rate = isPlaying ? Float(playbackRate) : 0
+        alternateAudioPlayer?.defaultRate = Float(playbackRate)
     }
 
     func setPlaybackRate(_ rate: Double) {
@@ -82,6 +87,7 @@ final class SessionPlaybackController {
         guard let player else { return }
         if isPlaying {
             player.pause()
+            alternateAudioPlayer?.pause()
             isPlaying = false
             updateActiveCueID()
         } else {
@@ -91,6 +97,8 @@ final class SessionPlaybackController {
             }
             player.play()
             player.rate = Float(playbackRate)
+            alternateAudioPlayer?.play()
+            alternateAudioPlayer?.rate = Float(playbackRate)
             isPlaying = true
             updateActiveCueID()
         }
@@ -128,8 +136,11 @@ final class SessionPlaybackController {
         seekGeneration = generation
         currentTime = clamped
         player.pause()
+        alternateAudioPlayer?.pause()
+        let seekTime = CMTime(seconds: clamped, preferredTimescale: AppTheme.Workbench.playerTimescale)
+        alternateAudioPlayer?.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: .zero)
         player.seek(
-            to: CMTime(seconds: clamped, preferredTimescale: AppTheme.Workbench.playerTimescale),
+            to: seekTime,
             toleranceBefore: .zero,
             toleranceAfter: .zero
         ) { [weak self] completed in
@@ -140,9 +151,12 @@ final class SessionPlaybackController {
                 if resumesPlayback {
                     player.play()
                     player.rate = Float(self.playbackRate)
+                    self.alternateAudioPlayer?.play()
+                    self.alternateAudioPlayer?.rate = Float(self.playbackRate)
                     self.isPlaying = true
                 } else {
                     player.pause()
+                    self.alternateAudioPlayer?.pause()
                     self.isPlaying = false
                 }
                 self.updateActiveCueID()
@@ -162,6 +176,7 @@ final class SessionPlaybackController {
 
     func stop() {
         player?.pause()
+        alternateAudioPlayer?.pause()
         isPlaying = false
         updateActiveCueID()
     }
@@ -194,15 +209,25 @@ final class SessionPlaybackController {
     }
 
     @MainActor
-    func load(url: URL?, showsVideoCanvas: Bool) async {
+    func load(
+        url: URL?,
+        showsVideoCanvas: Bool,
+        alternateAudioURL: URL? = nil,
+        resumeTime: Double? = nil,
+        resumePlaying: Bool? = nil
+    ) async {
         let generation = UUID()
         loadGeneration = generation
+        let shouldResumePlaying = resumePlaying ?? isPlaying
+        let preservedTime = resumeTime ?? (currentTime > 0 ? currentTime : 0)
         dismissFullscreen()
         removeEndObserver()
         removeTimeObserver()
         player?.pause()
+        alternateAudioPlayer?.pause()
+        alternateAudioPlayer = nil
         isPlaying = false
-        currentTime = 0
+        currentTime = preservedTime > 0 ? preservedTime : 0
         activeCueID = nil
         posterImage = nil
         peaks = []
@@ -222,6 +247,11 @@ final class SessionPlaybackController {
         let nextPlayer = AVPlayer(url: playbackURL)
         nextPlayer.defaultRate = Float(playbackRate)
         player = nextPlayer
+        if showsVideoCanvas, let alternateAudioURL {
+            let nextAlternate = AVPlayer(url: alternateAudioURL)
+            nextAlternate.defaultRate = Float(playbackRate)
+            alternateAudioPlayer = nextAlternate
+        }
         installTimeObserver(for: nextPlayer)
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
@@ -239,6 +269,24 @@ final class SessionPlaybackController {
         let loadedDuration = (try? await nextPlayer.currentItem?.asset.load(.duration).seconds)?.finiteOrZero ?? 0
         guard !Task.isCancelled, generation == loadGeneration else { return }
         duration = loadedDuration
+        if preservedTime > 0, duration > 0 {
+            let clamped = min(preservedTime, duration)
+            currentTime = clamped
+            let seekTime = CMTime(seconds: clamped, preferredTimescale: AppTheme.Workbench.playerTimescale)
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                nextPlayer.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                    continuation.resume()
+                }
+            }
+            guard !Task.isCancelled, generation == loadGeneration else { return }
+            if shouldResumePlaying {
+                nextPlayer.play()
+                nextPlayer.rate = Float(playbackRate)
+                alternateAudioPlayer?.play()
+                alternateAudioPlayer?.rate = Float(playbackRate)
+                isPlaying = true
+            }
+        }
         if !showsVideoCanvas {
             peaks = (try? await WaveformExtractor.peakEnvelope(from: playbackURL)) ?? []
             guard !Task.isCancelled, generation == loadGeneration else { return }
@@ -263,6 +311,7 @@ final class SessionPlaybackController {
         removeEndObserver()
         removeTimeObserver()
         stop()
+        alternateAudioPlayer = nil
         posterImage = nil
     }
 

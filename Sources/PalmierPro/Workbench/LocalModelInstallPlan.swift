@@ -66,9 +66,6 @@ struct LocalModelInstallPlan: Equatable, Sendable {
                 required.append(.forcedAligner)
             }
         }
-        if speakerCount != 1 {
-            required.append(.sortformerDiarization)
-        }
         var seen = Set<LocalModelID>()
         return required.filter { seen.insert($0).inserted }
     }

@@ -136,6 +136,7 @@ actor MediaFlowExecutor: MediaJobEventSource {
                     } ?? output.result
                     context.transcript = transcript
                     context.diagnostics = output.diarizationDiagnostics
+                    context.warnings.append(contentsOf: output.diarizationDiagnostics.warnings)
                     continuation.yield(.artifact(.transcription(
                         transcript,
                         output.diarizationDiagnostics,
@@ -183,6 +184,7 @@ actor MediaFlowExecutor: MediaJobEventSource {
                         }
                     )
                     context.transcript = output.result
+                    context.warnings.append(contentsOf: output.diagnostics.speakerWarnings ?? [])
                     let track = SubtitleTrack.fromDubSegments(
                         context.dub?.segments ?? [],
                         language: output.result.language

@@ -11,13 +11,11 @@ enum LocalTranscriptionResourcePolicy {
     /// keep the workbench queue at 1 so decode/VAD/align never pile up.
     static let maxConcurrentJobs = 1
     static let maxFilesPerBatch = 20
-    static let maxBytesPerFile: UInt64 = 4 * 1024 * 1024 * 1024
     static let pauseBetweenJobs: Duration = .milliseconds(350)
 
     enum AdmissionError: LocalizedError {
         case emptySelection
         case tooManyFiles(limit: Int)
-        case fileTooLarge(name: String, limitBytes: UInt64)
         case missingFile(name: String)
         case thermalPressure
 
@@ -27,9 +25,6 @@ enum LocalTranscriptionResourcePolicy {
                 return "Choose at least one media file."
             case .tooManyFiles(let limit):
                 return "Select at most \(limit) files at a time so local models stay responsive."
-            case .fileTooLarge(let name, let limitBytes):
-                let gb = Double(limitBytes) / (1024 * 1024 * 1024)
-                return "“\(name)” exceeds the \(gb.formatted(.number.precision(.fractionLength(0)))) GB local processing limit."
             case .missingFile(let name):
                 return "“\(name)” could not be opened."
             case .thermalPressure:
@@ -52,10 +47,6 @@ enum LocalTranscriptionResourcePolicy {
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
                   !isDirectory.boolValue else {
                 throw AdmissionError.missingFile(name: url.lastPathComponent)
-            }
-            let values = try url.resourceValues(forKeys: [.fileSizeKey])
-            if let size = values.fileSize, UInt64(size) > maxBytesPerFile {
-                throw AdmissionError.fileTooLarge(name: url.lastPathComponent, limitBytes: maxBytesPerFile)
             }
         }
     }

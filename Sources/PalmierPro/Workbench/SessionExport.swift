@@ -90,6 +90,7 @@ enum SessionExportFormat: String, CaseIterable, Identifiable, Sendable {
 
 enum SessionExportVariant: String, CaseIterable, Identifiable, Sendable {
     case original
+    case enhanced
     case translation
     case bilingual
     case dub
@@ -99,6 +100,7 @@ enum SessionExportVariant: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .original: "Original"
+        case .enhanced: "High-Fidelity Repair"
         case .translation: "Translation"
         case .bilingual: "Bilingual"
         case .dub: "Dubbed Audio"
@@ -108,6 +110,7 @@ enum SessionExportVariant: String, CaseIterable, Identifiable, Sendable {
     var systemImage: String {
         switch self {
         case .original: "doc.plaintext"
+        case .enhanced: "waveform.badge.mic"
         case .translation: "globe"
         case .bilingual: "arrow.left.arrow.right"
         case .dub: "waveform.and.mic"
@@ -168,6 +171,7 @@ struct SessionExportAvailability: Equatable, Sendable {
     var transcript = false
     var subtitle = false
     var audio = false
+    var enhancedAudio = false
     var dubbedAudio = false
     var translationTracks: [WorkbenchTranslationTrack] = []
 
@@ -181,7 +185,8 @@ struct SessionExportAvailability: Equatable, Sendable {
         return SessionExportAvailability(
             transcript: hasTranscript || !session.dubSegments.isEmpty,
             subtitle: hasSubtitle,
-            audio: session.sourceURL != nil,
+            audio: session.originalPlaybackURL != nil,
+            enhancedAudio: session.enhancedPlaybackURL != nil,
             dubbedAudio: session.outputURL != nil,
             translationTracks: session.translationTracks.filter { !$0.track.cues.isEmpty }
         )
@@ -201,15 +206,15 @@ struct SessionExportDraft: Equatable, Sendable {
     mutating func normalize(against availability: SessionExportAvailability) {
         if content == .transcript, !availability.transcript {
             content = availability.subtitle ? .subtitle
-                : (availability.audio || availability.dubbedAudio) ? .audio
+                : (availability.audio || availability.enhancedAudio || availability.dubbedAudio) ? .audio
                 : .transcript
         }
         if content == .subtitle, !availability.subtitle {
             content = availability.transcript ? .transcript
-                : (availability.audio || availability.dubbedAudio) ? .audio
+                : (availability.audio || availability.enhancedAudio || availability.dubbedAudio) ? .audio
                 : .subtitle
         }
-        if content == .audio, !availability.audio, !availability.dubbedAudio {
+        if content == .audio, !availability.audio, !availability.enhancedAudio, !availability.dubbedAudio {
             content = availability.transcript ? .transcript
                 : availability.subtitle ? .subtitle
                 : .audio
@@ -221,19 +226,27 @@ struct SessionExportDraft: Equatable, Sendable {
             action = .download
             includeSpeakers = false
             includeTimestamps = false
-            if variant == .dub {
+            if variant == .enhanced {
+                if !availability.enhancedAudio {
+                    variant = availability.audio ? .original : (availability.dubbedAudio ? .dub : .enhanced)
+                }
+            } else if variant == .dub {
                 if !availability.dubbedAudio {
                     variant = availability.audio ? .original : .dub
                 }
-            } else {
+            } else if availability.audio {
                 variant = availability.audio ? .original : .dub
+            } else if availability.enhancedAudio {
+                variant = .enhanced
+            } else {
+                variant = .dub
             }
             targetLanguage = nil
         case .transcript, .subtitle:
             if format == .audio {
                 format = .txt
             }
-            if variant == .dub {
+            if variant == .dub || variant == .enhanced {
                 variant = .original
             }
             if variant == .bilingual, content == .subtitle, format != .txt {
@@ -366,7 +379,7 @@ enum SessionExportFormatter {
                 lines = [lines[0]]
             }
             return lines
-        case .original, .dub:
+        case .original, .enhanced, .dub:
             return original.isEmpty ? [] : [original]
         }
     }
@@ -532,12 +545,12 @@ enum SessionExportBuilder {
             let ext = audioURL?.pathExtension.isEmpty == false
                 ? audioURL!.pathExtension
                 : "m4a"
-            let suffix = draft.variant == .dub ? "dub" : "audio"
+            let suffix = draft.variant == .enhanced ? "high-fidelity" : (draft.variant == .dub ? "dub" : "audio")
             return "\(base)_\(suffix).\(ext)"
         case .transcript, .subtitle:
             var parts = [base, draft.content.rawValue]
             switch draft.variant {
-            case .original, .dub:
+            case .original, .enhanced, .dub:
                 break
             case .translation:
                 parts.append("translation")
@@ -580,8 +593,13 @@ enum SessionExportBuilder {
         case .dub:
             guard let url = session.outputURL else { throw SessionExportError.missingAudio }
             return url
+        case .enhanced:
+            guard let url = session.enhancedPlaybackURL else { throw SessionExportError.missingAudio }
+            return url
         case .original, .translation, .bilingual:
-            guard let url = session.sourceURL else { throw SessionExportError.missingAudio }
+            guard let url = session.preferredExportAudioURL ?? session.sourceURL else {
+                throw SessionExportError.missingAudio
+            }
             return url
         }
     }
@@ -592,7 +610,7 @@ enum SessionExportBuilder {
     ) throws -> [SessionExportSegment] {
         let translation = translationTrack(for: session, languageCode: draft.targetLanguage)
         switch draft.variant {
-        case .original, .dub:
+        case .original, .enhanced, .dub:
             let source = sourceTranscriptSegments(session)
             guard !source.isEmpty else { throw SessionExportError.emptyContent }
             return source
@@ -636,7 +654,7 @@ enum SessionExportBuilder {
     ) throws -> [SessionExportSegment] {
         let sourceTrack = session.subtitleTrack ?? session.dubSubtitleTrack
         switch draft.variant {
-        case .original, .dub:
+        case .original, .enhanced, .dub:
             guard let sourceTrack else { throw SessionExportError.emptyContent }
             let cues = orderedCues(sourceTrack.cues)
             guard !cues.isEmpty else { throw SessionExportError.emptyContent }
@@ -832,14 +850,20 @@ enum SessionExportRunner {
         draft: SessionExportDraft
     ) async throws {
         let sourceURL = try SessionExportBuilder.audioURL(for: session, variant: draft.variant)
+        let (localSourceURL, shouldRemoveTemporarySource) = try await materializeAudioURL(sourceURL)
+        defer {
+            if shouldRemoveTemporarySource {
+                try? FileManager.default.removeItem(at: localSourceURL)
+            }
+        }
         let filename = SessionExportBuilder.suggestedFilename(
             session: session,
             draft: draft,
-            audioURL: sourceURL
+            audioURL: localSourceURL
         )
         guard let destination = await presentSavePanel(
             filename: filename,
-            contentType: UTType(filenameExtension: sourceURL.pathExtension) ?? .audio
+            contentType: UTType(filenameExtension: localSourceURL.pathExtension) ?? .audio
         ) else {
             throw SessionExportError.cancelled
         }
@@ -848,13 +872,28 @@ enum SessionExportRunner {
             if fm.fileExists(atPath: destination.path) {
                 try fm.removeItem(at: destination)
             }
-            try fm.copyItem(at: sourceURL, to: destination)
+            try fm.copyItem(at: localSourceURL, to: destination)
         }.value
         WorkbenchTipCenter.shared.show(
             "Saved \(filename).",
             kind: .success,
             id: "session.export.saved.\(session.id.uuidString)"
         )
+    }
+
+    private static func materializeAudioURL(_ url: URL) async throws -> (URL, Bool) {
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            return (url, false)
+        }
+        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        let (downloaded, _) = try await URLSession.shared.download(for: request)
+        let ext = url.pathExtension.isEmpty ? "m4a" : url.pathExtension
+        let target = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voxella-enhanced-\(UUID().uuidString)")
+            .appendingPathExtension(ext)
+        try? FileManager.default.removeItem(at: target)
+        try FileManager.default.moveItem(at: downloaded, to: target)
+        return (target, true)
     }
 
     private static func saveText(

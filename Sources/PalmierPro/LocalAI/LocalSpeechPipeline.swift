@@ -78,6 +78,28 @@ actor LocalSpeechPipeline {
     private var streamingDiarizer: MLXStreamingSortformerEngine?
     #endif
 
+    #if BUNDLED_SPEECH
+    private func speakerTimeline(
+        requestedSpeakerCount: Int?, samples: [Float], speechRanges: [SpeechTimeRange],
+        audioDuration: Double, progress: @escaping @Sendable (DiarizationProgress) -> Void
+    ) async throws -> SpeakerActivityTimeline {
+        let descriptor = LocalModelManager.catalog.first { $0.id == .sortformerDiarization }!
+        let installed = await Task.detached(priority: .utility) {
+            LocalModelManager.isInstalled(descriptor)
+        }.value
+        return try await OptionalSpeakerDiarization.resolve(
+            requestedSpeakerCount: requestedSpeakerCount, isInstalled: installed,
+            speechRanges: speechRanges, audioDuration: audioDuration
+        ) {
+            let diarizer = try self.streamingDiarizationModel()
+            return try await diarizer.diarize(
+                audio: samples, sampleRate: 16_000, speechRanges: speechRanges,
+                policy: .standard(requestedSpeakerCount: requestedSpeakerCount), progress: progress
+            )
+        }
+    }
+    #endif
+
     func transcribe(
         sourceURL: URL,
         languageCode: String?,
@@ -508,35 +530,19 @@ actor LocalSpeechPipeline {
         let diarizationPolicy = SpeakerDiarizationPolicy.standard(requestedSpeakerCount: speakerCount)
         let diarizeStart = retriedUncoveredRangeCount > 0 ? 0.88 : 0.72
         let diarizeSpan = retriedUncoveredRangeCount > 0 ? 0.10 : 0.18
-        let timeline: SpeakerActivityTimeline
-        if speakerCount == 1 {
-            progressUpdate(.init(stage: .assigningSpeakers, fraction: 0.90, message: "Assigning the single speaker locally…"))
-            timeline = SpeakerActivityPostprocessor.singleSpeaker(
-                speechRanges: speechRanges,
-                audioDuration: audioDuration
-            )
-        } else {
-            progressUpdate(.init(stage: .diarizing, fraction: diarizeStart, message: "Loading streaming speaker model…"))
-            let diarizer = try streamingDiarizationModel()
-            timeline = try await diarizer.diarize(
-                audio: samples,
-                sampleRate: 16_000,
-                speechRanges: speechRanges,
-                policy: diarizationPolicy,
-                progress: { update in
-                    progressUpdate(.init(
-                        stage: .diarizing,
-                        fraction: diarizeStart + update.fraction * diarizeSpan,
-                        completed: update.completed,
-                        total: update.total,
-                        message: update.message
-                    ))
-                }
-            )
-            try Task.checkCancellation()
+        let timeline = try await speakerTimeline(
+            requestedSpeakerCount: speakerCount, samples: samples,
+            speechRanges: speechRanges, audioDuration: audioDuration
+        ) { update in
+            progressUpdate(.init(
+                stage: .diarizing, fraction: diarizeStart + update.fraction * diarizeSpan,
+                completed: update.completed, total: update.total, message: update.message
+            ))
         }
         let assignStartedAt = DispatchTime.now().uptimeNanoseconds
-        let attributed = Self.assignSpeakers(
+        let attributed = timeline.diagnostics.backend == .unavailable
+            ? LexicalSpeakerResolver.wordsWithoutSpeakerAttribution(to: aligned, audioDuration: audioDuration)
+            : Self.assignSpeakers(
             to: aligned,
             timeline: timeline,
             audioDuration: audioDuration,
@@ -581,6 +587,7 @@ actor LocalSpeechPipeline {
             retryLexicalUnitCount: retryLexicalUnitCount,
             finalLexicalUnitCount: words.count
         )
+        try Task.checkCancellation()
         return LocalTranscriptionOutput(
             result: TranscriptionResult(
                 text: TranscriptSegmenter.joinedText(words.map(\.text)),
@@ -627,11 +634,7 @@ actor LocalSpeechPipeline {
         #if BUNDLED_SPEECH
         let script = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !script.isEmpty else { throw LocalAIError.emptyTranscript }
-        var requiredModels: [LocalModelID] = [.forcedAligner, .sileroVAD]
-        if case .diarize(let requestedSpeakerCount) = request.speakerAttribution,
-           requestedSpeakerCount != 1 {
-            requiredModels.append(.sortformerDiarization)
-        }
+        let requiredModels: [LocalModelID] = [.forcedAligner, .sileroVAD]
         try Self.requireModels(requiredModels)
         try await MLXRuntime.beginInference()
         defer { MLXRuntime.endInference() }
@@ -715,62 +718,33 @@ actor LocalSpeechPipeline {
             audioDuration: audioDuration
         )
         let words: [TranscriptionWord]
+        var speakerWarnings: [String] = []
         switch request.speakerAttribution {
         case .providedSpans:
             words = KnownTextSpeakerMapper.assign(words: untitledWords, spans: request.spans)
         case .none:
             words = untitledWords
         case .diarize(let requestedSpeakerCount):
-            if requestedSpeakerCount == 1 {
-                words = untitledWords.map {
-                    TranscriptionWord(
-                        text: $0.text,
-                        start: $0.start,
-                        end: $0.end,
-                        speaker: "Speaker 1",
-                        speakerConfidence: 1
-                    )
-                }
-            } else {
-                Memory.clearCache()
-                let speechRanges = speechRegions.map {
+            Memory.clearCache()
+            let timeline = try await speakerTimeline(
+                requestedSpeakerCount: requestedSpeakerCount, samples: samples,
+                speechRanges: speechRegions.map {
                     SpeechTimeRange(start: Double($0.startTime), end: Double($0.endTime))
-                }
-                let diarizer = try streamingDiarizationModel()
-                let diarizationPolicy = SpeakerDiarizationPolicy.standard(
-                    requestedSpeakerCount: requestedSpeakerCount
-                )
-                let timeline = try await diarizer.diarize(
-                    audio: samples,
-                    sampleRate: 16_000,
-                    speechRanges: speechRanges,
-                    policy: diarizationPolicy,
-                    progress: { update in
-                        progressUpdate(.init(
-                            stage: .diarizing,
-                            fraction: 0.84 + update.fraction * 0.12,
-                            completed: update.completed,
-                            total: update.total,
-                            message: update.message
-                        ))
-                    }
-                )
-                let assignStartedAt = DispatchTime.now().uptimeNanoseconds
-                words = Self.assignSpeakers(
-                    to: aligned.words,
-                    timeline: timeline,
-                    audioDuration: audioDuration,
-                    languageCode: resolvedLanguageCode,
-                    policy: diarizationPolicy
-                )
-                let assignElapsed = Double(
-                    DispatchTime.now().uptimeNanoseconds - assignStartedAt
-                ) / 1_000_000_000
-                Log.transcription.notice(
-                    "Script speaker assignment elapsed=\(String(format: "%.2f", assignElapsed))s words=\(words.count)"
-                )
+                }, audioDuration: audioDuration
+            ) { update in
+                progressUpdate(.init(
+                    stage: .diarizing, fraction: 0.84 + update.fraction * 0.12,
+                    completed: update.completed, total: update.total, message: update.message
+                ))
             }
+            speakerWarnings = timeline.diagnostics.warnings
+            words = timeline.diagnostics.backend == .unavailable ? untitledWords : Self.assignSpeakers(
+                to: aligned.words, timeline: timeline, audioDuration: audioDuration,
+                languageCode: resolvedLanguageCode,
+                policy: .standard(requestedSpeakerCount: requestedSpeakerCount)
+            )
         }
+        try Task.checkCancellation()
         progressUpdate(.init(stage: .finalizing, fraction: 0.98, message: "Building timed script segments…"))
         let result = TranscriptionResult(
             text: script,
@@ -783,7 +757,8 @@ actor LocalSpeechPipeline {
             result: result,
             diagnostics: KnownTextAlignmentDiagnostics(
                 alignedUnitCount: aligned.words.count,
-                estimatedUnitCount: aligned.coarseTimedUnitCount
+                estimatedUnitCount: aligned.coarseTimedUnitCount,
+                speakerWarnings: speakerWarnings
             )
         )
         #else

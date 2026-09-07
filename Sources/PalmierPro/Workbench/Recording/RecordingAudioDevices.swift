@@ -3,6 +3,7 @@ import AVFAudio
 import CoreAudio
 import CoreGraphics
 import Foundation
+@preconcurrency import ScreenCaptureKit
 
 struct RecordingAudioDevice: Identifiable, Equatable, Sendable {
     var id: String
@@ -27,7 +28,7 @@ enum RecordingAudioDeviceEnumerator {
         }
     }
 
-    static func audioDeviceID(forUID uid: String) -> AudioDeviceID? {
+    static func audioDeviceID(forUID deviceUID: String) -> AudioDeviceID? {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -57,25 +58,94 @@ enum RecordingAudioDeviceEnumerator {
             return nil
         }
 
+        for device in devices {
+            if uid(for: device) == deviceUID {
+                return device
+            }
+        }
+        return nil
+    }
+
+    static func defaultInputUID() -> String? {
+        var deviceID = AudioDeviceID()
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size,
+            &deviceID
+        ) == noErr, deviceID != kAudioObjectUnknown else {
+            return nil
+        }
+        return uid(for: deviceID)
+    }
+
+    static func resolvedInputUID(explicit: String?) -> String? {
+        if let explicit { return explicit }
+        guard let uid = defaultInputUID() else { return nil }
+        if uid.localizedCaseInsensitiveContains("CADefaultDeviceAggregate") {
+            return nil
+        }
+        return uid
+    }
+
+    static func prefersDefaultAudioEngine(explicitUID: String?) -> Bool {
+        guard let explicitUID, !explicitUID.isEmpty else { return true }
+        return explicitUID == defaultInputUID()
+    }
+
+    static func captureDevice(uniqueID: String) -> AVCaptureDevice? {
+        AVCaptureDevice(uniqueID: uniqueID)
+    }
+
+    static func resolvedMicrophone(
+        _ current: RecordingMicrophoneSource,
+        devices: [RecordingAudioDevice],
+        defaultDeviceID: String?
+    ) -> RecordingMicrophoneSource {
+        let fallback: RecordingMicrophoneSource = {
+            if let defaultDeviceID, devices.contains(where: { $0.id == defaultDeviceID }) {
+                return .device(id: defaultDeviceID)
+            }
+            if let first = devices.first {
+                return .device(id: first.id)
+            }
+            return .systemDefault
+        }()
+
+        switch current {
+        case .off:
+            return .off
+        case .systemDefault:
+            return fallback
+        case .device(let id):
+            if devices.contains(where: { $0.id == id }) {
+                return current
+            }
+            return fallback
+        }
+    }
+
+    private static func uid(for device: AudioDeviceID) -> String? {
         var uidAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceUID,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        for device in devices {
-            var uidSize = UInt32(MemoryLayout<CFString?>.size)
-            var currentUID: Unmanaged<CFString>?
-            let status = withUnsafeMutablePointer(to: &currentUID) { pointer in
-                AudioObjectGetPropertyData(device, &uidAddress, 0, nil, &uidSize, pointer)
-            }
-            guard status == noErr, let value = currentUID?.takeRetainedValue() as String? else {
-                continue
-            }
-            if value == uid {
-                return device
-            }
+        var uidSize = UInt32(MemoryLayout<CFString?>.size)
+        var currentUID: Unmanaged<CFString>?
+        let status = withUnsafeMutablePointer(to: &currentUID) { pointer in
+            AudioObjectGetPropertyData(device, &uidAddress, 0, nil, &uidSize, pointer)
         }
-        return nil
+        guard status == noErr else { return nil }
+        return currentUID?.takeRetainedValue() as String?
     }
 }
 
@@ -119,8 +189,16 @@ enum RecordingPermission {
         string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
     )
 
-    static func screenCaptureIsAuthorized() -> Bool {
-        CGPreflightScreenCaptureAccess()
+    static func canAccessShareableContent() async -> Bool {
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            return !content.displays.isEmpty
+        } catch {
+            Log.recording.notice(
+                "shareable content probe failed preflight=\(CGPreflightScreenCaptureAccess()) error=\(Log.detail(error)) \(diagnosticContext())"
+            )
+            return false
+        }
     }
 
     static func requestMicrophone() async throws {
@@ -149,19 +227,23 @@ enum RecordingPermission {
         }
     }
 
-    static func requestScreenCapture() throws {
-        guard !screenCaptureIsAuthorized() else {
-            Log.recording.notice("screen capture authorization status=authorized \(diagnosticContext())")
+    static func requestScreenCapture() async throws {
+        if await canAccessShareableContent() {
+            Log.recording.notice(
+                "screen capture authorization status=authorized preflight=\(CGPreflightScreenCaptureAccess()) \(diagnosticContext())"
+            )
             return
         }
 
-        Log.recording.notice("screen capture authorization status=denied; requesting access \(diagnosticContext())")
-        let requested = CGRequestScreenCaptureAccess()
-        let authorized = screenCaptureIsAuthorized()
         Log.recording.notice(
-            "screen capture authorization request returned=\(requested) final=\(authorized ? "authorized" : "denied") \(diagnosticContext())"
+            "screen capture authorization status=denied preflight=\(CGPreflightScreenCaptureAccess()); requesting access \(diagnosticContext())"
         )
-        guard requested, authorized else {
+        let requested = await MainActor.run { CGRequestScreenCaptureAccess() }
+        let authorized = await canAccessShareableContent()
+        Log.recording.notice(
+            "screen capture authorization request returned=\(requested) final=\(authorized ? "authorized" : "denied") preflight=\(CGPreflightScreenCaptureAccess()) \(diagnosticContext())"
+        )
+        guard authorized else {
             throw RecordingError.screenCaptureDenied
         }
     }

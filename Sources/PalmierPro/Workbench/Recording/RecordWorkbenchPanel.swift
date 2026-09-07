@@ -21,9 +21,6 @@ struct RecordWorkbenchPanel: View {
             session.refreshDevices()
             session.refreshPermissionState()
         }
-        .onChange(of: session.configuration.mode) { _, _ in
-            session.configuration.normalizeAudioSources()
-        }
     }
 
     private var header: some View {
@@ -51,8 +48,7 @@ struct RecordWorkbenchPanel: View {
         HStack(spacing: AppTheme.Spacing.smMd) {
             ForEach(RecordingCaptureMode.allCases) { mode in
                 Button {
-                    session.configuration.mode = mode
-                    session.configuration.normalizeAudioSources()
+                    session.setCaptureMode(mode)
                 } label: {
                     HStack(spacing: AppTheme.Spacing.sm) {
                         Label(mode.title, systemImage: mode.systemImage)
@@ -94,11 +90,10 @@ struct RecordWorkbenchPanel: View {
             sourceCard(
                 title: "Microphone",
                 systemImage: "mic",
-                info: "Choose a microphone, use the system default, or turn microphone capture off."
+                info: "Choose a microphone or turn microphone capture off."
             ) {
                 Picker("Microphone", selection: $session.configuration.microphone) {
                     Text("Off").tag(RecordingMicrophoneSource.off)
-                    Text("Default").tag(RecordingMicrophoneSource.systemDefault)
                     ForEach(session.devices) { device in
                         Text(device.name).tag(RecordingMicrophoneSource.device(id: device.id))
                     }
@@ -109,9 +104,9 @@ struct RecordWorkbenchPanel: View {
             }
 
             sourceCard(
-                title: "Mac audio",
+                title: "System audio",
                 systemImage: "speaker.wave.2",
-                info: "Captures audio playing through this Mac. Keep this enabled when recording a display, window, or region without a microphone."
+                info: "Captures audio playing through this Mac. Requires Screen Recording permission. Keep this enabled when recording a display, window, or region without a microphone."
             ) {
                 Toggle("Capture", isOn: $session.configuration.capturesSystemAudio)
                     .toggleStyle(.checkbox)
@@ -147,14 +142,14 @@ struct RecordWorkbenchPanel: View {
         HStack(spacing: AppTheme.Spacing.md) {
             RecordingLiveIndicator(isPaused: session.isPaused)
 
-            Text(session.isPaused ? "Paused" : "Live")
-                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
-
             Text(RecordingTimeFormat.clock(session.elapsed))
                 .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.medium))
                 .monospacedDigit()
+                .fixedSize()
+                .foregroundStyle(session.isPaused ? AppTheme.Status.warningColor : AppTheme.Text.primaryColor)
 
-            Spacer(minLength: AppTheme.Spacing.md)
+            RecordingLiveWaveformView(store: session.liveWaveform, isPaused: session.isPaused)
+                .frame(maxWidth: .infinity)
 
             if session.configuration.microphone.isEnabled {
                 Button {
@@ -169,12 +164,23 @@ struct RecordWorkbenchPanel: View {
             }
         }
         .padding(.horizontal, AppTheme.Spacing.lgXl)
-        .padding(.vertical, AppTheme.Spacing.mdLg)
-        .background(AppTheme.Status.errorColor.opacity(AppTheme.Opacity.subtle), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+        .padding(.vertical, AppTheme.Spacing.md)
+        .background(
+            session.isPaused
+                ? AppTheme.Status.warningColor.opacity(AppTheme.Opacity.subtle)
+                : AppTheme.Status.errorColor.opacity(AppTheme.Opacity.subtle),
+            in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+        )
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                .strokeBorder(AppTheme.Status.errorColor.opacity(AppTheme.Opacity.medium), lineWidth: AppTheme.BorderWidth.thin)
+                .strokeBorder(
+                    (session.isPaused ? AppTheme.Status.warningColor : AppTheme.Status.errorColor)
+                        .opacity(AppTheme.Opacity.medium),
+                    lineWidth: AppTheme.BorderWidth.thin
+                )
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(session.isPaused ? "Paused" : "Recording")
     }
 
     private var actionRow: some View {

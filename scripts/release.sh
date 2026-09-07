@@ -21,18 +21,20 @@ if [ $# -ne 1 ]; then
 fi
 
 VERSION="$1"
-TAG="v$VERSION"
-
-if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "error: version must be X.Y.Z (got: $VERSION)" >&2
-  exit 1
-fi
+TAG="$VERSION"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="$ROOT/Sources/PalmierPro/Resources/Info.plist"
 APPCAST="$ROOT/appcast.xml"
 DMG="$ROOT/.build/VoxStudio.dmg"
+FEED_URL="https://raw.githubusercontent.com/palmier-io/palmier-pro/main/appcast.xml"
+SPARKLE_ROOT="$ROOT/.build/artifacts/sparkle/Sparkle"
+EXPECTED_PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$PLIST")"
 cd "$ROOT"
+
+if ! python3 "$ROOT/scripts/release_version.py" validate "$VERSION"; then
+  exit 1
+fi
 
 echo "==> Preflight"
 
@@ -64,9 +66,37 @@ if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
   exit 1
 fi
 
+LIVE_APPCAST="$(mktemp -t palmier-appcast.XXXXXX).xml"
+NOTES_CLEAN=""
+BUILD_LOG=""
+cleanup() {
+  [ -z "$LIVE_APPCAST" ] || rm -f "$LIVE_APPCAST"
+  [ -z "$NOTES_CLEAN" ] || rm -f "$NOTES_CLEAN"
+  [ -z "$BUILD_LOG" ] || rm -f "$BUILD_LOG"
+}
+trap cleanup EXIT
+
+curl --fail --silent --show-error --location "$FEED_URL" --output "$LIVE_APPCAST"
+if ! cmp -s "$APPCAST" "$LIVE_APPCAST"; then
+  echo "error: local appcast.xml differs from the published feed; sync it before releasing" >&2
+  exit 1
+fi
+
+if [ ! -x "$SPARKLE_ROOT/bin/generate_keys" ]; then
+  swift package resolve
+fi
+if [ ! -x "$SPARKLE_ROOT/bin/generate_keys" ]; then
+  echo "error: Sparkle generate_keys tool is unavailable" >&2
+  exit 1
+fi
+ACTUAL_PUBLIC_KEY="$("$SPARKLE_ROOT/bin/generate_keys" -p)"
+if [ "$ACTUAL_PUBLIC_KEY" != "$EXPECTED_PUBLIC_KEY" ]; then
+  echo "error: Sparkle signing key does not match SUPublicEDKey; restore the original private key" >&2
+  exit 1
+fi
+
 echo "==> Generating release notes from commit log"
 NOTES_CLEAN="$(mktemp -t palmier-release.XXXXXX).md"
-trap 'rm -f "$NOTES_CLEAN"' EXIT
 LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo '')"
 {
   echo "## What's new"
@@ -81,15 +111,13 @@ LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo '')"
 echo "    (edit on GitHub later if you want to polish)"
 
 echo "==> Bumping version"
+CURRENT_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")"
 CURRENT_BUILD="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST")"
-NEW_BUILD=$((CURRENT_BUILD + 1))
-
-MAX_PUBLISHED="$(grep -oE '<sparkle:version>[0-9]+</sparkle:version>' "$APPCAST" \
-  | grep -oE '[0-9]+' | sort -n | tail -1)"
-if [ -n "$MAX_PUBLISHED" ] && [ "$NEW_BUILD" -le "$MAX_PUBLISHED" ]; then
-  echo "error: NEW_BUILD=$NEW_BUILD is not greater than max published sparkle:version=$MAX_PUBLISHED" >&2
-  echo "       Info.plist CFBundleVersion ($CURRENT_BUILD) was likely rolled back by an unrelated commit." >&2
-  echo "       Set CFBundleVersion to $MAX_PUBLISHED in $PLIST and retry." >&2
+if ! NEW_BUILD="$(python3 "$ROOT/scripts/release_version.py" plan \
+    --requested "$VERSION" \
+    --current "$CURRENT_VERSION" \
+    --current-build "$CURRENT_BUILD" \
+    --appcast "$LIVE_APPCAST")"; then
   exit 1
 fi
 
@@ -99,7 +127,6 @@ echo "    $VERSION (build $NEW_BUILD)"
 
 echo "==> Building signed + notarized DMG"
 BUILD_LOG="$(mktemp -t palmier-build.XXXXXX).log"
-trap 'rm -f "$NOTES_CLEAN" "$BUILD_LOG"' EXIT
 ./scripts/bundle.sh release --dist 2>&1 | tee "$BUILD_LOG"
 
 # Only match the real signature line (which has length="<digits>"), not the
@@ -116,7 +143,7 @@ fi
 
 echo "==> Committing + pushing version bump"
 git add "$PLIST"
-git commit -m "Bump to $VERSION"
+git commit -m "[build] Set version $VERSION"
 git push origin main
 
 echo "==> Tagging $TAG"
@@ -136,14 +163,15 @@ b = os.environ["NEW_BUILD"]
 d = os.environ["PUBDATE"]
 l = os.environ["LENGTH"]
 s = os.environ["SIGNATURE"]
-url = f"https://github.com/palmier-io/palmier-pro/releases/download/v{v}/VoxStudio.dmg"
+url = f"https://github.com/palmier-io/palmier-pro/releases/download/{v}/VoxStudio.dmg"
 
 item = f"""        <item>
             <title>Version {v}</title>
             <pubDate>{d}</pubDate>
             <sparkle:version>{b}</sparkle:version>
             <sparkle:shortVersionString>{v}</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:minimumSystemVersion>26.0.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure
                 url="{url}"
                 length="{l}"
@@ -160,7 +188,7 @@ with open(path, "w") as f:
 PYEOF
 
 git add "$APPCAST"
-git commit -m "Add $TAG to appcast"
+git commit -m "[build] Publish $TAG appcast"
 git push origin main
 
 echo ""

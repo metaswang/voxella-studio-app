@@ -18,6 +18,7 @@ final class RecordingSessionController {
     var lastDiagnostics: RecordingSessionDiagnostics?
     var liveAudioWarning: String?
     var permissionSettingsURL: URL?
+    @ObservationIgnored let liveWaveform = RecordingLiveWaveformStore()
 
     var isPaused: Bool { phase == .paused }
     var canStart: Bool { !phase.isActive && configuration.hasAudioSource }
@@ -58,13 +59,24 @@ final class RecordingSessionController {
     func refreshDevices() {
         Task { [weak self] in
             let devices = await RecordingAudioDeviceEnumerator.devices()
+            let defaultDeviceID = RecordingAudioDeviceEnumerator.defaultInputUID()
             guard let self else { return }
             self.devices = devices
-            if case .device(let id) = self.configuration.microphone,
-               !devices.contains(where: { $0.id == id }) {
-                self.configuration.microphone = .systemDefault
-            }
+            self.configuration.microphone = RecordingAudioDeviceEnumerator.resolvedMicrophone(
+                self.configuration.microphone,
+                devices: devices,
+                defaultDeviceID: defaultDeviceID
+            )
         }
+    }
+
+    func setCaptureMode(_ mode: RecordingCaptureMode) {
+        configuration.applyMode(mode)
+        configuration.microphone = RecordingAudioDeviceEnumerator.resolvedMicrophone(
+            configuration.microphone,
+            devices: devices,
+            defaultDeviceID: RecordingAudioDeviceEnumerator.defaultInputUID()
+        )
     }
 
     func start() {
@@ -78,6 +90,11 @@ final class RecordingSessionController {
         permissionSettingsURL = nil
         failedPermission = nil
         configuration.normalizeAudioSources()
+        configuration.microphone = RecordingAudioDeviceEnumerator.resolvedMicrophone(
+            configuration.microphone,
+            devices: devices,
+            defaultDeviceID: RecordingAudioDeviceEnumerator.defaultInputUID()
+        )
         let id = UUID()
         sessionID = id
         phase = .preparing
@@ -85,6 +102,7 @@ final class RecordingSessionController {
         isMicrophoneMuted = false
         lastDiagnostics = nil
         liveAudioWarning = nil
+        liveWaveform.reset()
         pauseAccumulated = 0
         pauseStartedAt = nil
 
@@ -105,6 +123,7 @@ final class RecordingSessionController {
                     contentFilter: picked.filter,
                     sourceRect: picked.sourceRect,
                     outputURL: outputURL,
+                    liveWaveform: self.liveWaveform,
                     onAudioLevelWarning: { [weak self] warning in
                         Task { @MainActor [weak self] in
                             guard let self, self.sessionID == id else { return }
@@ -159,6 +178,7 @@ final class RecordingSessionController {
         guard phase.isCapturing else { return }
         if phase == .paused {
             engine.resume()
+            liveWaveform.resume(at: ProcessInfo.processInfo.systemUptime)
             if let pauseStartedAt {
                 pauseAccumulated += Date().timeIntervalSince(pauseStartedAt)
             }
@@ -166,6 +186,7 @@ final class RecordingSessionController {
             phase = .recording
         } else {
             engine.pause()
+            liveWaveform.pause()
             pauseStartedAt = Date()
             phase = .paused
         }
@@ -233,19 +254,24 @@ final class RecordingSessionController {
     }
 
     func refreshPermissionState() {
-        guard let failedPermission else { return }
-        let isAuthorized: Bool
-        switch failedPermission {
-        case .microphone:
-            isAuthorized = RecordingPermission.microphoneStatus() == .authorized
-        case .screenCapture:
-            isAuthorized = RecordingPermission.screenCaptureIsAuthorized()
+        guard failedPermission != nil else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            let kind = self.failedPermission
+            guard let kind else { return }
+            let isAuthorized: Bool
+            switch kind {
+            case .microphone:
+                isAuthorized = RecordingPermission.microphoneStatus() == .authorized
+            case .screenCapture:
+                isAuthorized = await RecordingPermission.canAccessShareableContent()
+            }
+            guard isAuthorized, self.failedPermission == kind else { return }
+            self.failedPermission = nil
+            permissionSettingsURL = nil
+            errorMessage = nil
+            Log.recording.notice("recording permission became authorized after returning to the app")
         }
-        guard isAuthorized else { return }
-        self.failedPermission = nil
-        permissionSettingsURL = nil
-        errorMessage = nil
-        Log.recording.notice("recording permission became authorized after returning to the app")
     }
 
     func openPermissionSettings() {
@@ -261,16 +287,7 @@ final class RecordingSessionController {
             try await RecordingPermission.requestMicrophone()
         }
         if configuration.requiresScreenCapture {
-            try RecordingPermission.requestScreenCapture()
-            do {
-                _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            } catch {
-                Log.recording.error(
-                    "screen capture content enumeration failed error=\(Log.detail(error))",
-                    telemetry: "Screen capture content enumeration failed"
-                )
-                throw RecordingError.screenCaptureDenied
-            }
+            try await RecordingPermission.requestScreenCapture()
         }
     }
 
@@ -381,5 +398,6 @@ final class RecordingSessionController {
         pauseAccumulated = 0
         pauseStartedAt = nil
         isMicrophoneMuted = false
+        liveWaveform.reset()
     }
 }
