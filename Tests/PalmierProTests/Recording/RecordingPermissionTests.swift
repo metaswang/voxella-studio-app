@@ -24,6 +24,14 @@ struct RecordingPermissionTests {
         #expect(
             RecordingError.screenCaptureDenied.localizedDescription.contains("Screen & System Audio Recording")
         )
+        #expect(RecordingError.screenCaptureNeedsRelaunch.permissionKind == nil)
+        #expect(
+            RecordingError.screenCaptureNeedsRelaunch.localizedDescription.contains("Quit VoxStudio")
+        )
+        #expect(RecordingCaptureMode.display.usesSystemPicker)
+        #expect(RecordingCaptureMode.window.usesSystemPicker)
+        #expect(!RecordingCaptureMode.region.usesSystemPicker)
+        #expect(!RecordingCaptureMode.audioOnly.usesSystemPicker)
     }
 
     @Test func referenceVoicePermissionErrorsOfferMicrophoneSettings() {

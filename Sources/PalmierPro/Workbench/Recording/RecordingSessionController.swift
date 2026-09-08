@@ -79,6 +79,18 @@ final class RecordingSessionController {
         )
     }
 
+    func start(mode: RecordingCaptureMode) {
+        guard phase == .idle else { return }
+        setCaptureMode(mode)
+        start()
+    }
+
+    func showRecordingSetup() {
+        NSApp.activate(ignoringOtherApps: true)
+        AppState.shared.showHome()
+        WorkbenchStore.shared.showRecordImport()
+    }
+
     func start() {
         guard canStart else {
             if !configuration.hasAudioSource {
@@ -98,6 +110,7 @@ final class RecordingSessionController {
         let id = UUID()
         sessionID = id
         phase = .preparing
+        statusItem.update()
         elapsed = 0
         isMicrophoneMuted = false
         lastDiagnostics = nil
@@ -205,6 +218,7 @@ final class RecordingSessionController {
         let wasPicking = phase == .picking
         let id = sessionID
         phase = .finishing
+        statusItem.update()
         stopTimer()
         if wasPicking {
             DisplayRegionOverlayController.shared.cancelSelection()
@@ -264,7 +278,11 @@ final class RecordingSessionController {
             case .microphone:
                 isAuthorized = RecordingPermission.microphoneStatus() == .authorized
             case .screenCapture:
-                isAuthorized = await RecordingPermission.canAccessShareableContent()
+                if RecordingPermission.tccAllowsScreenCapture() {
+                    isAuthorized = true
+                } else {
+                    isAuthorized = await RecordingPermission.canAccessShareableContent()
+                }
             }
             guard isAuthorized, self.failedPermission == kind else { return }
             self.failedPermission = nil
@@ -287,7 +305,9 @@ final class RecordingSessionController {
             try await RecordingPermission.requestMicrophone()
         }
         if configuration.requiresScreenCapture {
-            try await RecordingPermission.requestScreenCapture()
+            try await RecordingPermission.requestScreenCapture(
+                usesSystemPicker: configuration.mode.usesSystemPicker
+            )
         }
     }
 
@@ -305,18 +325,24 @@ final class RecordingSessionController {
             return PickedSource(filter: try await displayFilter(), sourceRect: nil)
         case .display:
             phase = .picking
+            statusItem.update()
             let filter = try await RecordingContentPicker.shared.pick(style: .display)
             phase = .preparing
+            statusItem.update()
             return PickedSource(filter: filter, sourceRect: nil)
         case .window:
             phase = .picking
+            statusItem.update()
             let filter = try await RecordingContentPicker.shared.pick(style: .window)
             phase = .preparing
+            statusItem.update()
             return PickedSource(filter: filter, sourceRect: nil)
         case .region:
             phase = .picking
+            statusItem.update()
             let selection = try await DisplayRegionOverlayController.shared.selectRegion()
             phase = .preparing
+            statusItem.update()
             return PickedSource(
                 filter: try await displayFilter(displayID: selection.displayID),
                 sourceRect: selection.sourceRect
@@ -333,6 +359,13 @@ final class RecordingSessionController {
                 "screen capture content enumeration failed error=\(Log.detail(error))",
                 telemetry: "Screen capture content enumeration failed"
             )
+            if RecordingPermission.isScreenCapturePermissionDenied(error),
+               !RecordingPermission.tccAllowsScreenCapture() {
+                throw RecordingError.screenCaptureDenied
+            }
+            if RecordingPermission.tccAllowsScreenCapture() {
+                throw RecordingError.screenCaptureNeedsRelaunch
+            }
             throw RecordingError.screenCaptureDenied
         }
         let display = content.displays.first { displayID == nil || $0.displayID == displayID }
@@ -386,7 +419,6 @@ final class RecordingSessionController {
             hider.restore()
             didHideApp = false
         }
-        statusItem.remove()
     }
 
     private func resetToIdle() {
@@ -399,5 +431,6 @@ final class RecordingSessionController {
         pauseStartedAt = nil
         isMicrophoneMuted = false
         liveWaveform.reset()
+        statusItem.update()
     }
 }

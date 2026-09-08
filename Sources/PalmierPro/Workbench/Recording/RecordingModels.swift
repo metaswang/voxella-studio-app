@@ -39,6 +39,10 @@ enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
         case .region: "Selected area plus audio"
         }
     }
+
+    var usesSystemPicker: Bool {
+        self == .display || self == .window
+    }
 }
 
 enum RecordingMicrophoneSource: Equatable, Hashable, Sendable {
@@ -275,6 +279,7 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
     case microphoneDenied
     case microphoneRestricted
     case screenCaptureDenied
+    case screenCaptureNeedsRelaunch
     case noDisplay
     case writerFailed(String)
     case captureFailed(String)
@@ -294,6 +299,8 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
             "Microphone access is restricted by macOS or device management."
         case .screenCaptureDenied:
             "Screen Recording is not available to this app. Allow VoxStudio in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen VoxStudio."
+        case .screenCaptureNeedsRelaunch:
+            "Screen Recording is allowed, but this session cannot capture yet. Quit VoxStudio and reopen it, then start recording again."
         case .noDisplay:
             "No display is available to record."
         case .writerFailed(let message):

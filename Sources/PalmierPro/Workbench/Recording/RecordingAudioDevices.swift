@@ -189,6 +189,19 @@ enum RecordingPermission {
         string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
     )
 
+    static func tccAllowsScreenCapture() -> Bool {
+        CGPreflightScreenCaptureAccess()
+    }
+
+    static func isScreenCapturePermissionDenied(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.domain == SCStreamError.errorDomain {
+            return ns.code == SCStreamError.Code.userDeclined.rawValue
+        }
+        return false
+    }
+
+    @concurrent
     static func canAccessShareableContent() async -> Bool {
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -227,25 +240,46 @@ enum RecordingPermission {
         }
     }
 
-    static func requestScreenCapture() async throws {
+    static func requestScreenCapture(usesSystemPicker: Bool) async throws {
         if await canAccessShareableContent() {
             Log.recording.notice(
-                "screen capture authorization status=authorized preflight=\(CGPreflightScreenCaptureAccess()) \(diagnosticContext())"
+                "screen capture authorization status=authorized preflight=\(tccAllowsScreenCapture()) \(diagnosticContext())"
             )
             return
         }
 
+        if tccAllowsScreenCapture() {
+            Log.recording.notice(
+                "screen capture TCC granted; shareable content probe failed picker=\(usesSystemPicker) \(diagnosticContext())"
+            )
+            if usesSystemPicker {
+                return
+            }
+            throw RecordingError.screenCaptureNeedsRelaunch
+        }
+
         Log.recording.notice(
-            "screen capture authorization status=denied preflight=\(CGPreflightScreenCaptureAccess()); requesting access \(diagnosticContext())"
+            "screen capture authorization status=denied preflight=false; requesting access \(diagnosticContext())"
         )
         let requested = await MainActor.run { CGRequestScreenCaptureAccess() }
-        let authorized = await canAccessShareableContent()
-        Log.recording.notice(
-            "screen capture authorization request returned=\(requested) final=\(authorized ? "authorized" : "denied") preflight=\(CGPreflightScreenCaptureAccess()) \(diagnosticContext())"
-        )
-        guard authorized else {
-            throw RecordingError.screenCaptureDenied
+        if await canAccessShareableContent() {
+            Log.recording.notice(
+                "screen capture authorization request returned=\(requested) final=authorized preflight=\(tccAllowsScreenCapture()) \(diagnosticContext())"
+            )
+            return
         }
+
+        let preflight = tccAllowsScreenCapture()
+        Log.recording.notice(
+            "screen capture authorization request returned=\(requested) final=denied preflight=\(preflight) picker=\(usesSystemPicker) \(diagnosticContext())"
+        )
+        if requested || preflight {
+            if usesSystemPicker {
+                return
+            }
+            throw RecordingError.screenCaptureNeedsRelaunch
+        }
+        throw RecordingError.screenCaptureDenied
     }
 
     private static func error(for status: RecordingMicrophoneAuthorizationStatus) -> RecordingError {
