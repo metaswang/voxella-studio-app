@@ -10,11 +10,11 @@ final class DisplayRegionOverlayController {
     private var windows: [NSWindow] = []
     private var continuation: CheckedContinuation<RecordingRegionSelection, Error>?
 
-    func selectRegion() async throws -> RecordingRegionSelection {
+    func selectRegion(displayIDs: Set<CGDirectDisplayID> = []) async throws -> RecordingRegionSelection {
         cancelSelection()
         return try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
-            presentOverlays()
+            presentOverlays(displayIDs: displayIDs)
         }
     }
 
@@ -23,8 +23,9 @@ final class DisplayRegionOverlayController {
         resume(.failure(RecordingError.cancelled))
     }
 
-    private func presentOverlays() {
-        windows = NSScreen.screens.map { screen in
+    private func presentOverlays(displayIDs: Set<CGDirectDisplayID>) {
+        let screens = NSScreen.screens.filter { displayIDs.isEmpty || displayIDs.contains($0.displayID) }
+        windows = (screens.isEmpty ? NSScreen.screens : screens).map { screen in
             let window = NSWindow(
                 contentRect: screen.frame,
                 styleMask: [.borderless],

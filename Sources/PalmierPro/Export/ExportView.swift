@@ -15,6 +15,14 @@ enum ExportDestination: String, CaseIterable, Identifiable {
         case .palmierProject: L10n.key("Palmier Project")
         }
     }
+
+    var detail: String {
+        switch self {
+        case .video: "Create a video file that is ready to share."
+        case .timeline: "Open the edit in another video editor."
+        case .palmierProject: "Save an editable copy with its media included."
+        }
+    }
 }
 
 enum TimelineExportFormat: String, CaseIterable, Identifiable {
@@ -178,6 +186,11 @@ struct ExportView: View {
                     destinationButton(destination)
                 }
             }
+
+            Text(L10n.string(key: destination.detail))
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, AppTheme.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)

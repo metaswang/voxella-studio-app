@@ -23,6 +23,7 @@ final class AppLocalization {
 
     private let defaults: UserDefaults
     private let localizedBundle: Bundle
+    private let englishBundle: Bundle
     private let systemIdentifier: String
 
     init(
@@ -56,24 +57,16 @@ final class AppLocalization {
         let resolvedActiveIdentifier = validLanguage.identifier ?? resolvedSystemIdentifier
         activeIdentifier = resolvedActiveIdentifier
         activeLocale = Locale(identifier: resolvedActiveIdentifier)
-        let resourceIdentifier = resources.first { $0.identifier == resolvedActiveIdentifier }?.resourceIdentifier
-            ?? resolvedActiveIdentifier
-        localizedBundle = Self.localizedBundle(
-            for: resourceIdentifier,
-            resourceBundle: resourceBundle
-        )
-    }
-
-    func string(_ keyAndValue: String.LocalizationValue) -> String {
-        String(
-            localized: keyAndValue,
-            bundle: localizedBundle,
-            locale: activeLocale
-        )
+        localizedBundle = resources.first { $0.identifier == resolvedActiveIdentifier }?.bundle
+            ?? resources.first { $0.identifier == "en" }?.bundle
+            ?? resourceBundle
+        englishBundle = resources.first { $0.identifier == "en" }?.bundle ?? resourceBundle
     }
 
     func string(key: String) -> String {
-        localizedBundle.localizedString(forKey: key, value: nil, table: nil)
+        let localized = localizedBundle.localizedString(forKey: key, value: nil, table: nil)
+        guard localized == key else { return localized }
+        return englishBundle.localizedString(forKey: key, value: nil, table: nil)
     }
 
     func displayName(for language: AppLanguage) -> String {
@@ -86,18 +79,24 @@ final class AppLocalization {
 
     private struct LocalizationResource {
         let identifier: String
-        let resourceIdentifier: String
+        let bundle: Bundle
     }
 
     private static func localizationResources(in bundle: Bundle) -> [LocalizationResource] {
-        bundle.localizations
+        let rootURLs = bundle.localizations
             .filter { $0 != "Base" }
-            .map {
-                LocalizationResource(
-                    identifier: Locale(identifier: $0).identifier,
-                    resourceIdentifier: $0
-                )
+            .compactMap { identifier in
+                bundle.url(forResource: identifier, withExtension: "lproj")
             }
+        let nestedURLs = bundle.urls(forResourcesWithExtension: "lproj", subdirectory: "Localization") ?? []
+
+        let resources = (rootURLs + nestedURLs).reduce(into: [String: LocalizationResource]()) { result, url in
+            guard let localizationBundle = Bundle(url: url) else { return }
+            let identifier = Locale(identifier: url.deletingPathExtension().lastPathComponent).identifier
+            result[identifier] = LocalizationResource(identifier: identifier, bundle: localizationBundle)
+        }
+
+        return resources.values
             .sorted { lhs, rhs in
                 let lhsName = Locale(identifier: lhs.identifier)
                     .localizedString(forIdentifier: lhs.identifier) ?? lhs.identifier
@@ -111,18 +110,11 @@ final class AppLocalization {
         in resources: [LocalizationResource],
         preferredLanguages: [String]
     ) -> String {
+        guard let primaryLanguage = preferredLanguages.first else { return "en" }
         return Bundle.preferredLocalizations(
-            from: resources.map(\.resourceIdentifier),
-            forPreferences: preferredLanguages
+            from: resources.map(\.identifier),
+            forPreferences: [primaryLanguage]
         ).first.map { Locale(identifier: $0).identifier } ?? "en"
-    }
-
-    private static func localizedBundle(for identifier: String, resourceBundle: Bundle) -> Bundle {
-        guard let url = resourceBundle.url(forResource: identifier, withExtension: "lproj"),
-              let bundle = Bundle(url: url) else {
-            return resourceBundle
-        }
-        return bundle
     }
 }
 
@@ -138,8 +130,8 @@ enum L10n {
         value.description
     }
 
-    static func string(_ keyAndValue: String.LocalizationValue) -> String {
-        AppLocalization.shared.string(keyAndValue)
+    static func string(_ key: String) -> String {
+        AppLocalization.shared.string(key: key)
     }
 
     static func string(key: String) -> String {

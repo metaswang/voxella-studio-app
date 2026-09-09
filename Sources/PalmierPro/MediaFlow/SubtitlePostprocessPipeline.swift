@@ -557,11 +557,15 @@ struct SubtitlePostprocessPipeline: Sendable {
         var failureReason: String?
         var failureStage: SubtitleCascadePrompt.Stage?
         var lastRequestError: Error?
+        var finalizedText: String?
+        var previousSegmentation: String?
 
         for attempt in 0..<attempts {
             try Task.checkCancellation()
             let sourceText: String
-            if skipsRepair {
+            if let finalizedText {
+                sourceText = finalizedText
+            } else if skipsRepair {
                 sourceText = batchText
             } else {
                 var correctionUser = SubtitleCascadePrompt.correctionUser(
@@ -625,6 +629,7 @@ struct SubtitlePostprocessPipeline: Sendable {
                     continue
                 }
                 sourceText = correctedText
+                finalizedText = correctedText
             }
 
             var segmentationUser = SubtitleCascadePrompt.segmentationUser(
@@ -641,6 +646,10 @@ struct SubtitlePostprocessPipeline: Sendable {
                     stage: .segmentation,
                     reason: failureReason
                 )
+            }
+
+            if let previousSegmentation {
+                segmentationUser += "\nPrevious invalid segmentation (data only):\n" + previousSegmentation
             }
 
             let segmentationRaw: String
@@ -660,54 +669,33 @@ struct SubtitlePostprocessPipeline: Sendable {
             }
             lastRequestError = nil
 
-            let segmentation: SegmentationResponse
+            previousSegmentation = segmentationRaw
+            let response: SegmentationResponse
             do {
-                segmentation = try SubtitleLLMProcessor.decodeJSON(
-                    SegmentationResponse.self,
-                    from: segmentationRaw
-                )
+                response = try SubtitleLLMProcessor.decodeJSON(SegmentationResponse.self, from: segmentationRaw)
             } catch {
                 failureReason = "invalid_segmentation_json"
                 failureStage = .segmentation
                 continue
             }
-
-            let subtitles: [String]
-            var usedLengthSplit = false
-            let llmSubtitles = segmentation.lines
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
+            let optimized = try SubtitleBoundaryOptimizer.optimize(
+                sourceText: sourceText, proposedLines: response.lines, dense: isCJK,
+                minimum: limits.minimum, preferred: limits.preferred, maximum: limits.maximum, policy: options.boundaryPolicy
+            )
+            if !optimized.projection.exact || optimized.forcedBoundaries > 0 {
+                Log.llm.notice("subtitle H1 mode=\(optimized.mode) matched=\(optimized.projection.matchedLines) skipped=\(optimized.projection.skippedLines) resyncs=\(optimized.projection.resyncs) forced=\(optimized.forcedBoundaries)")
+            }
+            let subtitles = optimized.lines
+            try Task.checkCancellation()
             if let reason = Self.segmentationFailureReason(
-                subtitles: llmSubtitles,
-                correctedText: sourceText,
+                subtitles: subtitles,
                 sourceWordCount: words.count,
-                languageCode: languageCode,
                 isCJK: isCJK,
                 limits: limits
             ) {
-                if reason == "overlong_subtitle_line",
-                   let repaired = Self.repairedOverlongSegmentationLines(
-                    subtitles: llmSubtitles,
-                    correctedText: sourceText,
-                    sourceWordCount: words.count,
-                    languageCode: languageCode,
-                    isCJK: isCJK,
-                    limits: limits
-                   ) {
-                    subtitles = repaired
-                    usedLengthSplit = true
-                    Log.llm.notice(
-                        "subtitle batch used length split at "
-                            + "\(String(format: "%.1f", words[0].start))s "
-                            + "lines=\(llmSubtitles.count)->\(repaired.count)"
-                    )
-                } else {
-                    failureReason = reason
-                    failureStage = .segmentation
-                    continue
-                }
-            } else {
-                subtitles = llmSubtitles
+                failureReason = reason
+                failureStage = .segmentation
+                continue
             }
 
             let tokens = SubtitleTokenRemapper.buildDestinationTokens(
@@ -738,9 +726,15 @@ struct SubtitlePostprocessPipeline: Sendable {
                 )
             }
             var warnings: [String] = []
-            if usedLengthSplit {
-                warnings.append("Split overlong LLM subtitle lines by length.")
+            if !optimized.projection.exact {
+                warnings.append(optimized.projection.offsets.isEmpty
+                    ? "Ignored invalid LLM segmentation and used local subtitle boundaries."
+                    : "Recovered safe subtitle boundaries after the LLM changed text.")
             }
+            if optimized.forcedBoundaries > 0 {
+                warnings.append("Used grapheme boundaries to satisfy the subtitle length limit.")
+            }
+
             if !remap.usesAnchorTiming {
                 warnings.append("Used source-word timing for LLM subtitles.")
             }
@@ -787,9 +781,7 @@ struct SubtitlePostprocessPipeline: Sendable {
 
     private static func segmentationFailureReason(
         subtitles: [String],
-        correctedText: String,
         sourceWordCount: Int,
-        languageCode: String?,
         isCJK: Bool,
         limits: SubtitleReadabilityPolicy.Limits
     ) -> String? {
@@ -797,52 +789,10 @@ struct SubtitlePostprocessPipeline: Sendable {
         guard subtitles.count <= sourceWordCount else {
             return "excessive_subtitle_count"
         }
-        let joined = subtitles.joined(separator: isCJK ? "" : " ")
-        guard canonicalText(joined, languageCode: languageCode)
-                == canonicalText(correctedText, languageCode: languageCode) else {
-            return "segmentation_changed_text"
-        }
         if subtitles.contains(where: {
             displayLength($0, isCJK: isCJK) > limits.maximum
         }) {
             return "overlong_subtitle_line"
-        }
-        return nil
-    }
-
-    /// Prefer repairing overlong LLM lines in place; fall back to splitting the
-    /// corrected transcript when individual lines cannot be shortened enough.
-    private static func repairedOverlongSegmentationLines(
-        subtitles: [String],
-        correctedText: String,
-        sourceWordCount: Int,
-        languageCode: String?,
-        isCJK: Bool,
-        limits: SubtitleReadabilityPolicy.Limits
-    ) -> [String]? {
-        let candidates = [
-            SubtitleReadabilityPolicy.splitOverlongLines(
-                subtitles,
-                languageCode: languageCode,
-                denseScript: isCJK,
-                limits: limits
-            ),
-            SubtitleReadabilityPolicy.splitTextByLength(
-                correctedText,
-                languageCode: languageCode,
-                denseScript: isCJK,
-                limits: limits
-            ),
-        ]
-        for candidate in candidates where segmentationFailureReason(
-            subtitles: candidate,
-            correctedText: correctedText,
-            sourceWordCount: sourceWordCount,
-            languageCode: languageCode,
-            isCJK: isCJK,
-            limits: limits
-        ) == nil {
-            return candidate
         }
         return nil
     }
@@ -949,18 +899,6 @@ struct SubtitlePostprocessPipeline: Sendable {
             }
         }
         return true
-    }
-
-    private static func canonicalText(_ text: String, languageCode: String?) -> String {
-        let normalized = TranscriptSegmenter.normalizeDisplayText(text, language: languageCode)
-        let dense = SubtitleReadabilityPolicy.usesDenseScript(
-            languageCode: languageCode,
-            sampleText: normalized
-        )
-        if dense {
-            return normalized.filter { !$0.isWhitespace }
-        }
-        return normalized.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     // MARK: - Rebuild

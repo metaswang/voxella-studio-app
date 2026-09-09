@@ -97,8 +97,8 @@ struct DubWorkbenchView: View {
     private func headerCard(_ job: WorkbenchDubJob) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             HStack(alignment: .top, spacing: AppTheme.Spacing.lg) {
-                fieldColumn(title: "Select dubbing language") {
-                    Picker("Language", selection: languageBinding(job.id)) {
+                fieldColumn(title: L10n.string("Voiceover language")) {
+                    Picker(L10n.string("Language"), selection: languageBinding(job.id)) {
                         ForEach(WorkbenchDubLanguage.allCases.filter { $0 != .automatic }) { language in
                             Text(language.label).tag(language.rawValue)
                         }
@@ -107,7 +107,7 @@ struct DubWorkbenchView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                fieldColumn(title: "Project title") {
+                fieldColumn(title: L10n.string("Task name")) {
                     TextField(
                         SessionTitlePolicy.autoGeneratePlaceholder,
                         text: titleBinding(job.id)
@@ -115,12 +115,12 @@ struct DubWorkbenchView: View {
                     .textFieldStyle(.roundedBorder)
                 }
 
-                fieldColumn(title: "Default reference voice") {
+                fieldColumn(title: L10n.string("Reference voice")) {
                     HStack(spacing: AppTheme.Spacing.sm) {
                         VoiceReferencePicker(
                             selection: referenceVoiceBinding(job.id),
                             languageCode: job.language,
-                            defaultLabel: "Select reference voice…"
+                            defaultLabel: L10n.string("Select a reference voice…")
                         )
                         Button {
                             store.route = .voiceLibrary
@@ -382,7 +382,7 @@ struct DubWorkbenchView: View {
                         .truncationMode(.middle)
                 }
                 Spacer()
-                Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([output]) }
+                Button(L10n.string("Show in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([output]) }
             }
             DubOutputPlayer(
                 url: output,

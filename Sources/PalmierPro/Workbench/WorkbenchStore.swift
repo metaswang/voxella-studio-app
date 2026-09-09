@@ -17,10 +17,10 @@ enum WorkbenchRoute: String, Codable, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .recent: "Recent"
-        case .dashboard: "Dashboard"
+        case .dashboard: "Create"
         case .transcribe: "Transcribe"
-        case .meetBot: "Meet Bot"
-        case .dub: "Dub"
+        case .meetBot: "Meeting Recorder"
+        case .dub: "Voiceover"
         case .voiceLibrary: "Voice Library"
         case .videoEditor: "Video Editor"
         case .session: "Session"

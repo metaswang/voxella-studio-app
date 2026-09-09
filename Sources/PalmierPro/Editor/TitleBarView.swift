@@ -25,11 +25,15 @@ struct EditorChrome: View {
 
     private var agentToggleButton: some View {
         Button(action: { editor.agentPanelVisible.toggle() }) {
-            Image(systemName: editor.agentPanelVisible ? "bubble.left.fill" : "bubble.left")
+            Label(
+                L10n.string("AI Chat"),
+                systemImage: editor.agentPanelVisible ? "bubble.left.fill" : "bubble.left"
+            )
                 .font(.system(size: AppTheme.FontSize.md))
                 .foregroundStyle(AppTheme.aiGradient)
                 .opacity(editor.agentPanelVisible ? 1 : AppTheme.Opacity.strong)
-                .frame(width: AppTheme.IconSize.lg, height: AppTheme.IconSize.lg)
+                .padding(.horizontal, AppTheme.Spacing.sm)
+                .frame(height: AppTheme.IconSize.lg)
                 .hoverHighlight()
         }
         .buttonStyle(.plain)

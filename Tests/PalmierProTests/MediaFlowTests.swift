@@ -402,8 +402,8 @@ struct MediaFlowTests {
             languageCode: "zh",
             limits: limits
         )
-        #expect(segmentation.contains("Do not correct, normalize, translate, add, remove, or reorder"))
-        #expect(segmentation.contains("does not need to end with punctuation"))
+        #expect(segmentation.contains("Do not correct, normalize, translate, summarize, omit repetition"))
+        #expect(segmentation.contains("A cue need not end at punctuation"))
 
         let prior = String(repeating: "前文", count: 80)
         let later = "后文批次"
@@ -620,11 +620,78 @@ struct MediaFlowTests {
         )
 
         #expect(await client.requestCount == 2)
-        #expect(output.track.cues.map(\.text) == [
-            "这是一个没有标点的行",
-            "然后结束。",
-        ])
+        #expect(output.track.cues.map(\.text).joined() == source)
+        #expect(output.track.cues.allSatisfy { $0.text.count <= 18 })
         try assertContinuousCueCoverage(output.track, sourceWords: sourceWords)
+    }
+
+    @Test func subtitleSegmentationRecoversChangedTextWithoutRetry() async throws {
+        let source = "请先看清楚完整示范，然后按照自己的节奏慢慢练习。"
+        let sourceWords = Array(source).enumerated().map { index, character in
+            TranscriptionWord(text: String(character), start: Double(index) * 0.1,
+                              end: Double(index) * 0.1 + 0.08, speaker: "Speaker 1")
+        }
+        let client = StubLLMClient(responses: [
+            #"{"text":"请先看清楚完整示范，然后按照自己的节奏慢慢练习。"}"#,
+            #"{"lines":["请先看清楚示范，","然后按照自己的节奏慢慢练习。"]}"#,
+        ])
+        let output = try await SubtitlePostprocessPipeline(client: client).process(
+            transcript: .init(text: source, language: "zh", words: sourceWords, segments: []),
+            options: .init(maximumConcurrentBatches: 1, maximumAttempts: 2),
+            progress: { _, _, _, _ in }
+        )
+        #expect(output.track.cues.map(\.text) == ["请先看清楚完整示范，", "然后按照自己的节奏慢慢练习。"])
+        #expect(await client.requestCount == 2)
+        #expect(output.warnings.contains { $0.contains("Recovered safe subtitle boundaries") })
+        try assertContinuousCueCoverage(output.track, sourceWords: sourceWords)
+    }
+
+    @Test func subtitleSegmentationOptimizesOverlongAdviceWithoutRetry() async throws {
+        let source = "Stop. Keep this complete semantic phrase and continue with another coherent thought."
+        let sourceWords = source.split(separator: " ").enumerated().map { index, word in
+            TranscriptionWord(text: String(word), start: Double(index) * 0.2,
+                              end: Double(index) * 0.2 + 0.16, speaker: "Speaker 1")
+        }
+        let client = StubLLMClient(responses: [
+            #"{"lines":["Stop.","Keep this complete semantic phrase and continue with another coherent thought."]}"#,
+        ])
+        let output = try await SubtitlePostprocessPipeline(client: client).process(
+            transcript: .init(text: source, language: "en", words: sourceWords,
+                              segments: [], asrEngine: .qwen),
+            options: .init(maximumConcurrentBatches: 1, maximumAttempts: 2),
+            progress: { _, _, _, _ in }
+        )
+        #expect(output.track.cues.map(\.text).joined(separator: " ") == source)
+        #expect(output.track.cues.allSatisfy { $0.text.count <= 56 })
+        #expect(await client.requestCount == 1)
+        try assertContinuousCueCoverage(output.track, sourceWords: sourceWords)
+    }
+
+    @Test func boundaryProjectionIsLosslessAndRejectsAmbiguousMatches() {
+        let omitted = SubtitleBoundaryOptimizer.projectBoundaries(
+            sourceText: "第一句。被遗漏的内容。第三句。", proposedLines: ["第一句。", "第三句。"]
+        )
+        #expect(omitted.offsets == [4])
+        #expect(omitted.resyncs == 1)
+        #expect(!omitted.exact)
+        let ambiguous = SubtitleBoundaryOptimizer.projectBoundaries(
+            sourceText: "first missing tail extra tail end", proposedLines: ["first", "tail"]
+        )
+        #expect(ambiguous.skippedLines == 1)
+        #expect(!SubtitleBoundaryOptimizer.projectBoundaries(
+            sourceText: "Cafe\u{301}", proposedLines: ["Café"]
+        ).exact)
+    }
+
+    @Test func boundaryOptimizerEnforcesLimitsWithoutBreakingGraphemes() throws {
+        let source = String(repeating: "👩🏽‍💻", count: 20)
+        let result = try SubtitleBoundaryOptimizer.optimize(
+            sourceText: source, proposedLines: ["unrelated"], dense: false,
+            minimum: 2, preferred: 4, maximum: 5
+        )
+        #expect(result.lines.joined() == source)
+        #expect(result.lines.allSatisfy { $0.count <= 5 })
+        #expect(result.mode == "local_fallback")
     }
 
     @Test func subtitleProcessorAcceptsNaturalTextWithoutForcedPunctuation() async throws {

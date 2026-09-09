@@ -79,6 +79,18 @@ final class RecordingSessionController {
         )
     }
 
+    func start(mode: RecordingCaptureMode) {
+        guard phase == .idle else { return }
+        setCaptureMode(mode)
+        start()
+    }
+
+    func showRecordingSetup() {
+        NSApp.activate(ignoringOtherApps: true)
+        AppState.shared.showHome()
+        WorkbenchStore.shared.showRecordImport()
+    }
+
     func start() {
         guard canStart else {
             if !configuration.hasAudioSource {
@@ -98,6 +110,7 @@ final class RecordingSessionController {
         let id = UUID()
         sessionID = id
         phase = .preparing
+        statusItem.update()
         elapsed = 0
         isMicrophoneMuted = false
         lastDiagnostics = nil
@@ -205,6 +218,7 @@ final class RecordingSessionController {
         let wasPicking = phase == .picking
         let id = sessionID
         phase = .finishing
+        statusItem.update()
         stopTimer()
         if wasPicking {
             DisplayRegionOverlayController.shared.cancelSelection()
@@ -224,7 +238,10 @@ final class RecordingSessionController {
                 let stopResult = try await self.engine.stop()
                 self.restoreApp()
                 guard self.sessionID == id else {
-                    try? FileManager.default.removeItem(at: stopResult.url)
+                    let leftover = stopResult.url
+                    Task.detached(priority: .utility) {
+                        try? FileManager.default.removeItem(at: leftover)
+                    }
                     return
                 }
                 self.lastDiagnostics = stopResult.diagnostics
@@ -264,7 +281,11 @@ final class RecordingSessionController {
             case .microphone:
                 isAuthorized = RecordingPermission.microphoneStatus() == .authorized
             case .screenCapture:
-                isAuthorized = await RecordingPermission.canAccessShareableContent()
+                if RecordingPermission.tccAllowsScreenCapture() {
+                    isAuthorized = true
+                } else {
+                    isAuthorized = await RecordingPermission.canAccessShareableContent()
+                }
             }
             guard isAuthorized, self.failedPermission == kind else { return }
             self.failedPermission = nil
@@ -286,7 +307,7 @@ final class RecordingSessionController {
         if configuration.microphone.isEnabled {
             try await RecordingPermission.requestMicrophone()
         }
-        if configuration.requiresScreenCapture {
+        if configuration.requiresScreenCapturePermissionRequest {
             try await RecordingPermission.requestScreenCapture()
         }
     }
@@ -302,42 +323,77 @@ final class RecordingSessionController {
             guard configuration.capturesSystemAudio else {
                 return PickedSource(filter: nil, sourceRect: nil)
             }
-            return PickedSource(filter: try await displayFilter(), sourceRect: nil)
+            return PickedSource(filter: try await displayFilterOrPick(), sourceRect: nil)
         case .display:
             phase = .picking
+            statusItem.update()
             let filter = try await RecordingContentPicker.shared.pick(style: .display)
             phase = .preparing
+            statusItem.update()
             return PickedSource(filter: filter, sourceRect: nil)
         case .window:
             phase = .picking
+            statusItem.update()
             let filter = try await RecordingContentPicker.shared.pick(style: .window)
             phase = .preparing
+            statusItem.update()
             return PickedSource(filter: filter, sourceRect: nil)
         case .region:
             phase = .picking
-            let selection = try await DisplayRegionOverlayController.shared.selectRegion()
+            statusItem.update()
+            let filter = try await RecordingContentPicker.shared.pick(style: .display)
+            let displayIDs = Set(filter.includedDisplays.map(\.displayID))
+            let selection = try await DisplayRegionOverlayController.shared.selectRegion(displayIDs: displayIDs)
             phase = .preparing
-            return PickedSource(
-                filter: try await displayFilter(displayID: selection.displayID),
-                sourceRect: selection.sourceRect
+            statusItem.update()
+            return PickedSource(filter: filter, sourceRect: selection.sourceRect)
+        }
+    }
+
+    private func displayFilterOrPick(displayID: CGDirectDisplayID? = nil) async throws -> SCContentFilter {
+        do {
+            return try await displayFilter(displayID: displayID)
+        } catch {
+            Log.recording.notice(
+                "display enumeration failed error=\(Log.detail(error)); falling back to system picker"
             )
+            phase = .picking
+            statusItem.update()
+            let filter = try await RecordingContentPicker.shared.pick(style: .display)
+            phase = .preparing
+            statusItem.update()
+            return filter
         }
     }
 
     private func displayFilter(displayID: CGDirectDisplayID? = nil) async throws -> SCContentFilter {
         let content: SCShareableContent
         do {
-            content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            content = try await RecordingPermission.shareableContent()
         } catch {
             Log.recording.error(
                 "screen capture content enumeration failed error=\(Log.detail(error))",
                 telemetry: "Screen capture content enumeration failed"
             )
+            if RecordingPermission.isScreenCapturePermissionDenied(error),
+               !RecordingPermission.tccAllowsScreenCapture() {
+                throw RecordingError.screenCaptureDenied
+            }
+            if RecordingPermission.tccAllowsScreenCapture() {
+                throw RecordingError.screenCaptureNeedsRelaunch
+            }
             throw RecordingError.screenCaptureDenied
         }
-        let display = content.displays.first { displayID == nil || $0.displayID == displayID }
-            ?? content.displays.first
-        guard let display else { throw RecordingError.noDisplay }
+        let display: SCDisplay
+        if let displayID {
+            guard let match = content.displays.first(where: { $0.displayID == displayID }) else {
+                throw RecordingError.noDisplay
+            }
+            display = match
+        } else {
+            guard let first = content.displays.first else { throw RecordingError.noDisplay }
+            display = first
+        }
         let excluded = content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
         return SCContentFilter(display: display, excludingApplications: excluded, exceptingWindows: [])
     }
@@ -386,7 +442,6 @@ final class RecordingSessionController {
             hider.restore()
             didHideApp = false
         }
-        statusItem.remove()
     }
 
     private func resetToIdle() {
@@ -399,5 +454,6 @@ final class RecordingSessionController {
         pauseStartedAt = nil
         isMicrophoneMuted = false
         liveWaveform.reset()
+        statusItem.update()
     }
 }

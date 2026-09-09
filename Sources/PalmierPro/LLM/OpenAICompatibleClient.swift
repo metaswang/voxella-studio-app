@@ -353,15 +353,43 @@ enum LLMClientError: LocalizedError, Sendable {
         case .emptyResponse:
             return "The LLM provider returned an empty response."
         case .exhausted(let failures):
+            if let recoveryMessage = Self.openRouterAuthenticationRecoveryMessage(for: failures) {
+                return recoveryMessage
+            }
             guard !failures.isEmpty else {
                 return "All configured LLM models are temporarily unavailable."
             }
-            let summary = failures
-                .suffix(4)
-                .map { "\($0.model) (\($0.reason))" }
-                .joined(separator: "; ")
-            return "All configured LLM models failed: \(summary)"
+            return "All configured LLM models failed: \(Self.failureSummary(failures))"
         }
+    }
+
+    private static func openRouterAuthenticationRecoveryMessage(
+        for failures: [LLMAttemptFailure]
+    ) -> String? {
+        guard !failures.isEmpty,
+              failures.allSatisfy({
+                  $0.reason == "http_401" && $0.model.hasPrefix("openrouter/")
+              }) else {
+            return nil
+        }
+        return """
+        OpenRouter couldn't verify the saved API key, so this AI task wasn't completed.
+
+        Try one of these:
+        • In Settings → BYOK, confirm the OpenRouter key is the correct, complete key for this account.
+        • In OpenRouter, check whether the key has been disabled, revoked, or expired.
+        • Check the key's workspace, spending limit, and available account credits.
+        • Replace the saved key with a new active OpenRouter key, then try again.
+
+        Technical details: \(failureSummary(failures)).
+        """
+    }
+
+    private static func failureSummary(_ failures: [LLMAttemptFailure]) -> String {
+        failures
+            .suffix(4)
+            .map { "\($0.model) (\($0.reason))" }
+            .joined(separator: "; ")
     }
 
     var shortDescription: String {

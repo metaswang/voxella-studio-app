@@ -12,17 +12,17 @@ struct WorkbenchLibraryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("Create")
+                    Text(L10n.string("Create"))
                         .font(.system(size: 28, weight: .light))
-                    Text("Transcribe, record, dub, and edit video.")
+                    Text(L10n.string("Choose a task to turn media into text, voice, or a finished video."))
                         .font(.system(size: AppTheme.FontSize.md))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
 
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
                     actionCard(
-                        title: "Transcribe media",
-                        detail: "Word timestamps · speaker labels · editor captions",
+                        title: L10n.string("Transcribe media"),
+                        detail: L10n.string("Turn audio or video into an editable transcript, translation, and captions."),
                         icon: "text.bubble.fill",
                         tint: .blue
                     ) {
@@ -34,32 +34,32 @@ struct WorkbenchLibraryView: View {
                         }
                     }
                     actionCard(
-                        title: "Record",
-                        detail: "Mic · display · window · region · then transcribe",
+                        title: L10n.string("Record and transcribe"),
+                        detail: L10n.string("Capture your voice or screen, then turn it into an editable transcript."),
                         icon: "record.circle.fill",
                         tint: .red
                     ) {
                         store.showRecordImport()
                     }
                     actionCard(
-                        title: "Net video",
-                        detail: "Paste a YouTube link · audio only · then transcribe",
+                        title: L10n.string("Import online video"),
+                        detail: L10n.string("Bring audio from a public online video into a task."),
                         icon: "play.rectangle.fill",
                         tint: .orange
                     ) {
                         store.showNetVideoImport()
                     }
                     actionCard(
-                        title: "Create a dub",
-                        detail: "Qwen3-TTS · voice clone · local WAV",
+                        title: L10n.string("Create a voiceover"),
+                        detail: L10n.string("Turn a script into a voiceover with a selected reference voice."),
                         icon: "waveform.and.mic",
                         tint: .purple
                     ) {
                         store.addDub()
                     }
                     actionCard(
-                        title: "Edit a video",
-                        detail: "Full timeline editor · local media fallback",
+                        title: L10n.string("Edit a video"),
+                        detail: L10n.string("Arrange video, audio, images, and captions into a finished project."),
                         icon: "timeline.selection",
                         tint: .orange
                     ) {
@@ -69,7 +69,7 @@ struct WorkbenchLibraryView: View {
 
                 if !store.sessions.isEmpty {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                        Text("Recent work")
+                        Text(L10n.string("Recent tasks"))
                             .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
                         LazyVStack(spacing: AppTheme.Spacing.mdLg) {
                             ForEach(store.sessions.prefix(8)) { session in
@@ -101,7 +101,7 @@ struct WorkbenchLibraryView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Video projects")
+                    Text(L10n.string("Video projects"))
                         .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
                     MyProjectsSection()
                         .frame(minHeight: 210)

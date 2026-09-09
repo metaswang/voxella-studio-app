@@ -361,7 +361,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         startContinuation = nil
         if let error {
             resetLocked()
-            continuation.resume(throwing: RecordingError.captureFailed(error.localizedDescription))
+            continuation.resume(throwing: RecordingPermission.captureStartError(error))
             return
         }
         continuation.resume()
@@ -854,7 +854,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             if let startContinuation = self.startContinuation {
                 self.startContinuation = nil
                 self.resetLocked()
-                startContinuation.resume(throwing: RecordingError.captureFailed(error.localizedDescription))
+                startContinuation.resume(throwing: RecordingPermission.captureStartError(error))
                 return
             }
             guard !self.isStopping else { return }
