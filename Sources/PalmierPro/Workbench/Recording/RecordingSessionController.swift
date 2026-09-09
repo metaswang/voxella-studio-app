@@ -238,7 +238,10 @@ final class RecordingSessionController {
                 let stopResult = try await self.engine.stop()
                 self.restoreApp()
                 guard self.sessionID == id else {
-                    try? FileManager.default.removeItem(at: stopResult.url)
+                    let leftover = stopResult.url
+                    Task.detached(priority: .utility) {
+                        try? FileManager.default.removeItem(at: leftover)
+                    }
                     return
                 }
                 self.lastDiagnostics = stopResult.diagnostics
@@ -304,10 +307,8 @@ final class RecordingSessionController {
         if configuration.microphone.isEnabled {
             try await RecordingPermission.requestMicrophone()
         }
-        if configuration.requiresScreenCapture {
-            try await RecordingPermission.requestScreenCapture(
-                usesSystemPicker: configuration.mode.usesSystemPicker
-            )
+        if configuration.requiresScreenCapturePermissionRequest {
+            try await RecordingPermission.requestScreenCapture()
         }
     }
 
@@ -322,7 +323,7 @@ final class RecordingSessionController {
             guard configuration.capturesSystemAudio else {
                 return PickedSource(filter: nil, sourceRect: nil)
             }
-            return PickedSource(filter: try await displayFilter(), sourceRect: nil)
+            return PickedSource(filter: try await displayFilterOrPick(), sourceRect: nil)
         case .display:
             phase = .picking
             statusItem.update()
@@ -340,20 +341,35 @@ final class RecordingSessionController {
         case .region:
             phase = .picking
             statusItem.update()
-            let selection = try await DisplayRegionOverlayController.shared.selectRegion()
+            let filter = try await RecordingContentPicker.shared.pick(style: .display)
+            let displayIDs = Set(filter.includedDisplays.map(\.displayID))
+            let selection = try await DisplayRegionOverlayController.shared.selectRegion(displayIDs: displayIDs)
             phase = .preparing
             statusItem.update()
-            return PickedSource(
-                filter: try await displayFilter(displayID: selection.displayID),
-                sourceRect: selection.sourceRect
+            return PickedSource(filter: filter, sourceRect: selection.sourceRect)
+        }
+    }
+
+    private func displayFilterOrPick(displayID: CGDirectDisplayID? = nil) async throws -> SCContentFilter {
+        do {
+            return try await displayFilter(displayID: displayID)
+        } catch {
+            Log.recording.notice(
+                "display enumeration failed error=\(Log.detail(error)); falling back to system picker"
             )
+            phase = .picking
+            statusItem.update()
+            let filter = try await RecordingContentPicker.shared.pick(style: .display)
+            phase = .preparing
+            statusItem.update()
+            return filter
         }
     }
 
     private func displayFilter(displayID: CGDirectDisplayID? = nil) async throws -> SCContentFilter {
         let content: SCShareableContent
         do {
-            content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            content = try await RecordingPermission.shareableContent()
         } catch {
             Log.recording.error(
                 "screen capture content enumeration failed error=\(Log.detail(error))",
@@ -368,9 +384,16 @@ final class RecordingSessionController {
             }
             throw RecordingError.screenCaptureDenied
         }
-        let display = content.displays.first { displayID == nil || $0.displayID == displayID }
-            ?? content.displays.first
-        guard let display else { throw RecordingError.noDisplay }
+        let display: SCDisplay
+        if let displayID {
+            guard let match = content.displays.first(where: { $0.displayID == displayID }) else {
+                throw RecordingError.noDisplay
+            }
+            display = match
+        } else {
+            guard let first = content.displays.first else { throw RecordingError.noDisplay }
+            display = first
+        }
         let excluded = content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
         return SCContentFilter(display: display, excludingApplications: excluded, exceptingWindows: [])
     }

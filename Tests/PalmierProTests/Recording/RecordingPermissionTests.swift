@@ -1,4 +1,5 @@
 import AVFoundation
+import ScreenCaptureKit
 import Testing
 @testable import PalmierPro
 
@@ -77,5 +78,52 @@ struct RecordingPermissionTests {
         #expect(configuration.mode == .display)
         #expect(configuration.capturesSystemAudio)
         #expect(configuration.requiresScreenCapture)
+    }
+
+    @Test func systemPickerModesDoNotRequestBroadScreenCapturePermission() {
+        var configuration = RecordingCaptureConfiguration(
+            mode: .display,
+            microphone: .systemDefault,
+            capturesSystemAudio: true
+        )
+
+        #expect(configuration.requiresScreenCapture)
+        #expect(!configuration.requiresScreenCapturePermissionRequest)
+
+        configuration.mode = .window
+        #expect(!configuration.requiresScreenCapturePermissionRequest)
+
+        configuration.mode = .region
+        #expect(!configuration.requiresScreenCapturePermissionRequest)
+
+        configuration.mode = .audioOnly
+        #expect(configuration.requiresScreenCapturePermissionRequest)
+
+        configuration.capturesSystemAudio = false
+        #expect(!configuration.requiresScreenCapture)
+        #expect(!configuration.requiresScreenCapturePermissionRequest)
+    }
+
+    @Test func streamStartPermissionErrorsMapToScreenCaptureErrors() {
+        let declined = NSError(
+            domain: SCStreamError.errorDomain,
+            code: SCStreamError.Code.userDeclined.rawValue
+        )
+        let mapped = RecordingPermission.captureStartError(declined)
+        #expect(mapped == .screenCaptureDenied || mapped == .screenCaptureNeedsRelaunch)
+
+        let other = NSError(domain: "test.recording", code: 1)
+        guard case .captureFailed(let message) = RecordingPermission.captureStartError(other) else {
+            Issue.record("expected captureFailed for a non-permission stream error")
+            return
+        }
+        #expect(message.contains("test.recording"))
+
+        let tcc = NSError(
+            domain: "com.apple.ScreenCaptureKit",
+            code: 0,
+            userInfo: [NSLocalizedDescriptionKey: "The user declined TCCs for application, window, display capture"]
+        )
+        #expect(RecordingPermission.isScreenCapturePermissionDenied(tcc))
     }
 }

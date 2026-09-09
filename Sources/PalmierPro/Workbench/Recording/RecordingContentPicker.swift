@@ -64,10 +64,7 @@ final class RecordingContentPicker: NSObject, SCContentSharingPickerObserver, @u
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.finishPicker(SCContentSharingPicker.shared)
-            let mapped: RecordingError = RecordingPermission.isScreenCapturePermissionDenied(error)
-                ? .screenCaptureDenied
-                : .captureFailed(error.localizedDescription)
-            self.resume(.failure(mapped))
+            self.resume(.failure(RecordingPermission.captureStartError(error)))
         }
     }
 

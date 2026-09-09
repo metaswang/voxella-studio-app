@@ -72,6 +72,10 @@ struct RecordingCaptureConfiguration: Equatable, Sendable {
         capturesVideo || capturesSystemAudio
     }
 
+    var requiresScreenCapturePermissionRequest: Bool {
+        requiresScreenCapture && mode == .audioOnly
+    }
+
     var hasAudioSource: Bool {
         microphone.isEnabled || capturesSystemAudio
     }

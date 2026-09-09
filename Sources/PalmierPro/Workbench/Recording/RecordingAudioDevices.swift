@@ -194,18 +194,69 @@ enum RecordingPermission {
     }
 
     static func isScreenCapturePermissionDenied(_ error: Error) -> Bool {
-        let ns = error as NSError
-        if ns.domain == SCStreamError.errorDomain {
-            return ns.code == SCStreamError.Code.userDeclined.rawValue
+        var current: NSError? = error as NSError
+        while let ns = current {
+            if ns.domain == SCStreamError.errorDomain {
+                switch ns.code {
+                case SCStreamError.Code.userDeclined.rawValue,
+                     SCStreamError.Code.missingEntitlements.rawValue:
+                    return true
+                default:
+                    break
+                }
+            }
+            let text = (ns.localizedDescription + " " + (ns.localizedFailureReason ?? "")).lowercased()
+            if text.contains("declined tcc") || text.contains("tccs for application") {
+                return true
+            }
+            current = ns.userInfo[NSUnderlyingErrorKey] as? NSError
         }
         return false
+    }
+
+    static func captureStartError(_ error: Error) -> RecordingError {
+        if isScreenCapturePermissionDenied(error) {
+            return tccAllowsScreenCapture() ? .screenCaptureNeedsRelaunch : .screenCaptureDenied
+        }
+        return .captureFailed(Log.detail(error))
+    }
+
+    /// Shareable content that can be used to start an `SCStream`.
+    static func shareableContent() async throws -> SCShareableContent {
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            if !content.displays.isEmpty {
+                return content
+            }
+            Log.recording.notice("shareable content excludingDesktopWindows returned no displays \(diagnosticContext())")
+        } catch {
+            Log.recording.notice(
+                "shareable content excludingDesktopWindows failed preflight=\(CGPreflightScreenCaptureAccess()) error=\(Log.detail(error)) \(diagnosticContext())"
+            )
+        }
+
+        do {
+            let content = try await SCShareableContent.current
+            if !content.displays.isEmpty {
+                Log.recording.notice(
+                    "shareable content using current displays=\(content.displays.count) \(diagnosticContext())"
+                )
+                return content
+            }
+            Log.recording.notice("shareable content current returned no displays \(diagnosticContext())")
+        } catch {
+            Log.recording.notice(
+                "shareable content current failed preflight=\(CGPreflightScreenCaptureAccess()) error=\(Log.detail(error)) \(diagnosticContext())"
+            )
+            throw error
+        }
+        throw RecordingError.noDisplay
     }
 
     @concurrent
     static func canAccessShareableContent() async -> Bool {
         do {
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            return !content.displays.isEmpty
+            return try await shareableContent().displays.isEmpty == false
         } catch {
             Log.recording.notice(
                 "shareable content probe failed preflight=\(CGPreflightScreenCaptureAccess()) error=\(Log.detail(error)) \(diagnosticContext())"
@@ -240,7 +291,7 @@ enum RecordingPermission {
         }
     }
 
-    static func requestScreenCapture(usesSystemPicker: Bool) async throws {
+    static func requestScreenCapture() async throws {
         if await canAccessShareableContent() {
             Log.recording.notice(
                 "screen capture authorization status=authorized preflight=\(tccAllowsScreenCapture()) \(diagnosticContext())"
@@ -250,12 +301,9 @@ enum RecordingPermission {
 
         if tccAllowsScreenCapture() {
             Log.recording.notice(
-                "screen capture TCC granted; shareable content probe failed picker=\(usesSystemPicker) \(diagnosticContext())"
+                "screen capture TCC granted; shareable content probe failed \(diagnosticContext())"
             )
-            if usesSystemPicker {
-                return
-            }
-            throw RecordingError.screenCaptureNeedsRelaunch
+            return
         }
 
         Log.recording.notice(
@@ -271,13 +319,10 @@ enum RecordingPermission {
 
         let preflight = tccAllowsScreenCapture()
         Log.recording.notice(
-            "screen capture authorization request returned=\(requested) final=denied preflight=\(preflight) picker=\(usesSystemPicker) \(diagnosticContext())"
+            "screen capture authorization request returned=\(requested) final=denied preflight=\(preflight) \(diagnosticContext())"
         )
         if requested || preflight {
-            if usesSystemPicker {
-                return
-            }
-            throw RecordingError.screenCaptureNeedsRelaunch
+            return
         }
         throw RecordingError.screenCaptureDenied
     }
