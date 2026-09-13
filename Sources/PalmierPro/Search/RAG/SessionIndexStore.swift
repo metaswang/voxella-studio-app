@@ -1,7 +1,7 @@
 import Foundation
 
 actor SessionIndexStore {
-    static let embeddingDimension = 256
+    static let embeddingDimension = SearchIndexConfig.embeddingDimension
     static let lexicalLimit = 30
     static let vectorLimit = 30
 

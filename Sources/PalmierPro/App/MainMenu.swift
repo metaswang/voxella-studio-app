@@ -4,15 +4,28 @@ import AppKit
 /// Called from AppDelegate to wire shortcuts into the responder chain.
 @MainActor
 enum MainMenuBuilder {
+    private static let fileMenuIdentifier = NSUserInterfaceItemIdentifier("PalmierPro.mainMenu.file")
+    private static let editMenuIdentifier = NSUserInterfaceItemIdentifier("PalmierPro.mainMenu.edit")
 
-    static func buildMenu() -> NSMenu {
+    static func buildMenu(editorMenusVisible: Bool = AppState.shared.isEditorActive) -> NSMenu {
         let mainMenu = NSMenu()
         mainMenu.addItem(appMenu())
-        mainMenu.addItem(fileMenu())
-        mainMenu.addItem(editMenu())
+        let fileMenu = fileMenu()
+        fileMenu.isHidden = !editorMenusVisible
+        mainMenu.addItem(fileMenu)
+        let editMenu = editMenu()
+        editMenu.isHidden = !editorMenusVisible
+        mainMenu.addItem(editMenu)
         mainMenu.addItem(viewMenu())
         mainMenu.addItem(helpMenu())
         return mainMenu
+    }
+
+    static func setEditorMenusVisible(_ visible: Bool, in mainMenu: NSMenu? = NSApp.mainMenu) {
+        let editorMenuIdentifiers = [fileMenuIdentifier, editMenuIdentifier]
+        for item in mainMenu?.items ?? [] where editorMenuIdentifiers.contains(where: { $0 == item.identifier }) {
+            item.isHidden = !visible
+        }
     }
 
     // MARK: - App menu
@@ -32,7 +45,7 @@ enum MainMenuBuilder {
 #endif
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
-        menu.addItem(withTitle: "Local Models…", action: #selector(AppDelegate.showLocalModels(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Local Features…", action: #selector(AppDelegate.showLocalModels(_:)), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit \(AppIdentity.productName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.submenu = menu
@@ -43,6 +56,7 @@ enum MainMenuBuilder {
 
     private static func fileMenu() -> NSMenuItem {
         let item = NSMenuItem()
+        item.identifier = fileMenuIdentifier
         let menu = NSMenu(title: "File")
         let newItem = menu.addItem(withTitle: "New", action: #selector(AppDelegate.newProject(_:)), keyEquivalent: "n")
         newItem.target = NSApp.delegate
@@ -74,6 +88,7 @@ enum MainMenuBuilder {
 
     private static func editMenu() -> NSMenuItem {
         let item = NSMenuItem()
+        item.identifier = editMenuIdentifier
         let menu = NSMenu(title: "Edit")
         menu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
         menu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
@@ -193,7 +208,7 @@ enum MainMenuBuilder {
         let menu = NSMenu(title: "Help")
         menu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(AppDelegate.showKeyboardShortcuts(_:)), keyEquivalent: "?")
         menu.addItem(withTitle: "MCP Instructions", action: #selector(AppDelegate.showMCPInstructions(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Local Models", action: #selector(AppDelegate.showLocalModels(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Local Features", action: #selector(AppDelegate.showLocalModels(_:)), keyEquivalent: "")
         item.submenu = menu
         return item
     }

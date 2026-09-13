@@ -1,0 +1,59 @@
+{
+  "id": "zh-Hans-08",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language zh-Hans.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: zh-Hans\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n今天练习需要准备三样东西：一本笔记本、一支铅笔，以及桌面上随手能拿到的小物件。先描述它的外观，再说明平时可以怎样使用，最后想象一个特殊场景，看看它还能发挥什么作用。这道练习没有唯一正确答案，重点是把细节表达清楚。等大家都写完以后，我们会挑几个例子一起讨论，也欢迎补充与自己经历有关的故事。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "a039f637afb5fd86fb670e887ddd531f0f02b373d802c09234f737da5046bc05",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:40.556469+00:00",
+  "raw": "{\"lines\":[\"今天练习需要准备三样东西：一本笔记本、一支铅笔，以及桌面上随手能拿到的小物件。\",\"先描述它的外观，再说明平时可以怎样使用，最后想象一个特殊场景，看看它还能发挥什么作用。\",\"这道练习没有唯一正确答案，重点是把细节表达清楚。\",\"等大家都写完以后，我们会挑几个例子一起讨论，也欢迎补充与自己经历有关的故事。\"]}",
+  "usage": {
+    "promptTokenCount": 312,
+    "candidatesTokenCount": 120
+  },
+  "provider_usage": {
+    "prompt_tokens": 312,
+    "completion_tokens": 120,
+    "total_tokens": 432,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.5840192079995177,
+  "transport_attempts": 1,
+  "lines": [
+    "今天练习需要准备三样东西：一本笔记本、一支铅笔，以及桌面上随手能拿到的小物件。",
+    "先描述它的外观，再说明平时可以怎样使用，最后想象一个特殊场景，看看它还能发挥什么作用。",
+    "这道练习没有唯一正确答案，重点是把细节表达清楚。",
+    "等大家都写完以后，我们会挑几个例子一起讨论，也欢迎补充与自己经历有关的故事。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 4,
+    "boundaries": 3,
+    "tp": 3,
+    "ref_count": 11,
+    "f1": 0.42857142857142855,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 43
+  }
+}

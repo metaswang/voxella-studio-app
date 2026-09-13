@@ -1,0 +1,60 @@
+{
+  "id": "ja-02",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language ja.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: ja\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n明日プロジェクトを開いても、元の録画はそのまま残っています。最初にインタビューの素材を選び、一つ目の回答の直前まで再生位置を移動してください。誰も話していないからといって、静かな部分をすぐに削除する必要はありません。その間があることで、視聴者は質問の意味を理解しやすくなります。全体の構成ができてから、音楽を入れる位置を考えましょう。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "538d4c73397efa4148bb43a2811e9d179ebe81fefb96f8d0c3da6eb50164d2a1",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:08.459937+00:00",
+  "raw": "{\"lines\": [\"明日プロジェクトを開いても、\", \"元の録画はそのまま残っています。\", \"最初にインタビューの素材を選び、\", \"一つ目の回答の直前まで\", \"再生位置を移動してください。\", \"誰も話していないからといって、\", \"静かな部分をすぐに\", \"削除する必要はありません。\", \"その間があることで、\", \"視聴者は質問の意味を\", \"理解しやすくなります。\", \"全体の構成ができてから、\", \"音楽を入れる位置を考えましょう。\"]}",
+  "usage": {
+    "promptTokenCount": 296,
+    "candidatesTokenCount": 103,
+    "totalTokenCount": 399,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 296
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.1388554160002968,
+  "transport_attempts": 1,
+  "lines": [
+    "明日プロジェクトを開いても、",
+    "元の録画はそのまま残っています。",
+    "最初にインタビューの素材を選び、",
+    "一つ目の回答の直前まで",
+    "再生位置を移動してください。",
+    "誰も話していないからといって、",
+    "静かな部分をすぐに",
+    "削除する必要はありません。",
+    "その間があることで、",
+    "視聴者は質問の意味を",
+    "理解しやすくなります。",
+    "全体の構成ができてから、",
+    "音楽を入れる位置を考えましょう。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 13,
+    "boundaries": 12,
+    "tp": 11,
+    "ref_count": 12,
+    "f1": 0.9166666666666666,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 16
+  }
+}

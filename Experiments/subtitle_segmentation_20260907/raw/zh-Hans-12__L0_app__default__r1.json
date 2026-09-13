@@ -1,0 +1,70 @@
+{
+  "id": "zh-Hans-12",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language zh-Hans.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: zh-Hans\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n客户把这次活动命名为“New Start”，我们在片头保留了英文标题，并且在下面加上中文说明。评审的时候有人建议，把原来的名字换成更短的口号，这样版面看起来会更整齐。导演希望先听听本地团队的意见，因为相同的文字放在不同语境里，可能会让观众产生不同理解。最终的标题还没有确定，请暂时不要批量替换所有画面。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "f0cf009850bcabbdc7dd57c78243ba01d92abfccc2ec94850e026e2da6ab3d58",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:48.229273+00:00",
+  "raw": "{\n  \"lines\": [\n    \"客户把这次活动\",\n    \"命名为“New \",\n    \"Start”，我们在片\",\n    \"头保留了英文标题，\",\n    \"并且在下面加上\",\n    \"中文说明。评审的\",\n    \"时候有人建议，\",\n    \"把原来的名字换成\",\n    \"更短的口号，这样\",\n    \"版面看起来会更整齐。\",\n    \"导演希望先听听\",\n    \"本地团队的意见，\",\n    \"因为相同的文字放在\",\n    \"不同语境里，可能\",\n    \"会让观众产生不同理解。\",\n    \"最终的标题还没有\",\n    \"确定，请暂时不要\",\n    \"批量替换所有画面。\"\n  ]\n}",
+  "usage": {
+    "promptTokenCount": 312,
+    "candidatesTokenCount": 172,
+    "totalTokenCount": 484,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 312
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.245410167000955,
+  "transport_attempts": 1,
+  "lines": [
+    "客户把这次活动",
+    "命名为“New ",
+    "Start”，我们在片",
+    "头保留了英文标题，",
+    "并且在下面加上",
+    "中文说明。评审的",
+    "时候有人建议，",
+    "把原来的名字换成",
+    "更短的口号，这样",
+    "版面看起来会更整齐。",
+    "导演希望先听听",
+    "本地团队的意见，",
+    "因为相同的文字放在",
+    "不同语境里，可能",
+    "会让观众产生不同理解。",
+    "最终的标题还没有",
+    "确定，请暂时不要",
+    "批量替换所有画面。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 18,
+    "boundaries": 17,
+    "tp": 5,
+    "ref_count": 10,
+    "f1": 0.37037037037037035,
+    "overlong": 0,
+    "short": 5,
+    "protected_total": 3,
+    "protected_breaks": 1,
+    "violations": [
+      {
+        "phrase": "New Start",
+        "cut": 15
+      }
+    ],
+    "punctuation_starts": 0,
+    "max_length": 11
+  }
+}

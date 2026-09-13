@@ -1,0 +1,60 @@
+{
+  "id": "de-04",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=de\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nDie Anwohner, die hinter der alten Bibliothek wohnen und schon lange einen Ort suchten, an dem Kinder etwas über Pflanzen lernen können, haben gemeinsam einen Garten angelegt. Jeden Samstag öffnet jemand das Tor und prüft die Bewässerungsanlage. Kleine Werkzeuge können ausgeliehen werden, müssen aber vor dem Schließen zurück ins Regal. Diese einfache Regel hilft dabei, den Garten für alle zugänglich zu halten. Neue Besucher werden am Eingang begrüßt.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "f18d953d4bc3021cb7f061cdd81cc3a6c7324af8f32a45e1e1f7afa281935d08",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:33.997684+00:00",
+  "raw": "{\"subtitles\":[\"Die Anwohner, die hinter der alten Bibliothek wohnen und schon lange einen Ort suchten, an dem Kinder etwas über Pflanzen lernen können, haben gemeinsam einen Garten angelegt.\",\"Jeden Samstag öffnet jemand das Tor und prüft die Bewässerungsanlage.\",\"Kleine Werkzeuge können ausgeliehen werden, müssen aber vor dem Schließen zurück ins Regal.\",\"Diese einfache Regel hilft dabei, den Garten für alle zugänglich zu halten.\",\"Neue Besucher werden am Eingang begrüßt.\"],\"batch_summary\":\"Text über Anwohner, Gartenprojekt, Öffnungszeiten und Regeln; mehrstufiger Satzfluss, jeder Satz als eigenständige Subtitle.\"}",
+  "usage": {
+    "promptTokenCount": 308,
+    "candidatesTokenCount": 140
+  },
+  "provider_usage": {
+    "prompt_tokens": 308,
+    "completion_tokens": 140,
+    "total_tokens": 448,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.6248014999946463,
+  "transport_attempts": 1,
+  "lines": [
+    "Die Anwohner, die hinter der alten Bibliothek wohnen und schon lange einen Ort suchten, an dem Kinder etwas über Pflanzen lernen können, haben gemeinsam einen Garten angelegt.",
+    "Jeden Samstag öffnet jemand das Tor und prüft die Bewässerungsanlage.",
+    "Kleine Werkzeuge können ausgeliehen werden, müssen aber vor dem Schließen zurück ins Regal.",
+    "Diese einfache Regel hilft dabei, den Garten für alle zugänglich zu halten.",
+    "Neue Besucher werden am Eingang begrüßt."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 10,
+    "f1": 0.5714285714285715,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 175
+  }
+}

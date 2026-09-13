@@ -196,9 +196,9 @@ struct TaskPlacementCopy {
     static let checkingCloudAccount = "Checking your VoxStudio account…"
     static let signingIn = "Signing in…"
     static let cloudAccountRequired = "Sign in once to use VoxStudio Cloud. Your account stays connected on this Mac."
-    static let freeCloudUpgrade = "Cloud processing starts without local model downloads. Upgrade to Pro for more cloud time and a lower rate."
+    static let freeCloudUpgrade = "Cloud processing starts without local downloads. Upgrade to Pro for more cloud time and a lower rate."
     static let cloudCreditsUnavailable = "Cloud usage could not be checked. Try again before submitting."
-    static let cloudDubProcessDetail = "Generate dubbed audio without downloading local voice models."
+    static let cloudDubProcessDetail = "Generate dubbed audio without downloading local voice resources."
 
     static func summaryLine(storage: TaskStorageDestination, compute: TaskComputeDestination) -> String {
         "\(keepSessionTitle): \(storage.label)  ·  \(processWithTitle): \(compute.label)"

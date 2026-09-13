@@ -80,7 +80,7 @@ struct RecordingPermissionTests {
         #expect(configuration.requiresScreenCapture)
     }
 
-    @Test func systemPickerModesDoNotRequestBroadScreenCapturePermission() {
+    @Test func displayAndRegionRequirePermissionToExcludeRecordingControls() {
         var configuration = RecordingCaptureConfiguration(
             mode: .display,
             microphone: .systemDefault,
@@ -88,13 +88,13 @@ struct RecordingPermissionTests {
         )
 
         #expect(configuration.requiresScreenCapture)
-        #expect(!configuration.requiresScreenCapturePermissionRequest)
+        #expect(configuration.requiresScreenCapturePermissionRequest)
 
         configuration.mode = .window
         #expect(!configuration.requiresScreenCapturePermissionRequest)
 
         configuration.mode = .region
-        #expect(!configuration.requiresScreenCapturePermissionRequest)
+        #expect(configuration.requiresScreenCapturePermissionRequest)
 
         configuration.mode = .audioOnly
         #expect(configuration.requiresScreenCapturePermissionRequest)

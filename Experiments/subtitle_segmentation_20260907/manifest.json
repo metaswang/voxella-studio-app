@@ -1,0 +1,37 @@
+{
+  "app_commit": "3f05bdec3fdac1f7ae1542a44c01aa02167caa55",
+  "worker_commit": "eb36df398e99d6889929181986cd0c70be2fcfcb",
+  "sha256": {
+    "Sources/PalmierPro/MediaFlow/SubtitleLLMProcessor.swift": "87faa5c5fbe94281f2e93a074703414280c55265ea65415046092338e9c3209b",
+    "Sources/PalmierPro/MediaFlow/SubtitleTokenRemapper.swift": "187fffe67da3e5bbbf52fc995394ce7254e3a4c139ef799deb54173e3793314d",
+    "Sources/PalmierPro/Transcription/Transcription.swift": "f863ff0af69f28f2675c10c51ac9ee9dd4cffd39317fe0b91accbf67c428ce7a",
+    "Sources/PalmierPro/MediaFlow/SubtitleCascadePrompt.swift": "fbfc40a8bcbb7cf1e3fb3ff5cee6384b213f8d4c45b5cc6b6f591b2ca2a0688e"
+  },
+  "dataset_sha256": "2ac4b2869ff58f74fcc3507ba8eec89a69f5e7d3caff99b5f3a5c504366eeb03",
+  "counts": {
+    "en": 20,
+    "zh-Hans": 20,
+    "ja": 5,
+    "de": 5,
+    "fr": 5,
+    "es": 5,
+    "pt-BR": 5
+  },
+  "platform": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.1\nBuildVersion:\t\t25G76\n",
+  "swift": "Apple Swift version 6.3.2 (swiftlang-6.3.2.1.108 clang-2100.1.1.101)\nTarget: arm64-apple-macosx26.0\n",
+  "experiment_sha256": {
+    "run.py": "ccc5153cd2f99541f8967ddb710b2786f6561574abdfbcddbaaeff44848a379a",
+    "corpus.tsv": "1007d7cfa48cc2e4dc9f350b717d9c631fcffdd42a83b65b3911db532ad832f5",
+    "test_harness.py": "2f5c4be049f8121a4d2b88124116c1e9de2e0fa6fc2e9a418a3929a8ab4e1662",
+    "probe.swift": "58d4f2f573282dde0a12a78ca4f46dee47b4c06b033ae5c5a271bf83873e4d6e",
+    "verify.py": "5a58a4b2e1ee41946a5c66e5a7d7200c8819785e56533fd839ef27d9fba54447",
+    "deliver.py": "4589133b316bd9a93d16d757bac102e67324c1163e911d65c876084d80aadc7a",
+    "prepare.py": "7f82d5d564afb6322720750b993113f82bf892e99aeb7f7c6ddcd507aab149b0",
+    "analyze.py": "53842915a7658868cc90bc11b5eecfa0fa9df713a2011d54f219daccd4d68d0f"
+  },
+  "run_counts": {
+    "Gemini": 353,
+    "GPT-5 nano / minimal": 353,
+    "GPT-5 nano / low": 79
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "id": "en-15",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language en.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: en\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nThe instructions were simple: open the box, remove the protective sheet, and place the panel on a flat surface. There was one warning—keep the cable dry. We read it twice before starting, because the workspace was close to a sink. Everything else went smoothly; the connectors fitted without extra pressure. Once the indicator light turned green, we recorded the result in the installation log.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "b9f72d56e788ae769b1cdd580af96831b4b768a52dc5ff0e09ce60231934dca0",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:14.479639+00:00",
+  "raw": "{\"lines\": [\"The instructions were simple: open the box,\", \"remove the protective sheet, and place the\", \"panel on a flat surface. There was one\", \"warning—keep the cable dry. We read it\", \"twice before starting, because the workspace\", \"was close to a sink. Everything else went\", \"smoothly; the connectors fitted without\", \"extra pressure. Once the indicator light\", \"turned green, we recorded the result in\", \"the installation log.\"]}",
+  "usage": {
+    "promptTokenCount": 296,
+    "candidatesTokenCount": 100,
+    "totalTokenCount": 396,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 296
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2033400410000468,
+  "transport_attempts": 1,
+  "lines": [
+    "The instructions were simple: open the box,",
+    "remove the protective sheet, and place the",
+    "panel on a flat surface. There was one",
+    "warning—keep the cable dry. We read it",
+    "twice before starting, because the workspace",
+    "was close to a sink. Everything else went",
+    "smoothly; the connectors fitted without",
+    "extra pressure. Once the indicator light",
+    "turned green, we recorded the result in",
+    "the installation log."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 10,
+    "boundaries": 9,
+    "tp": 0,
+    "ref_count": 9,
+    "f1": 0,
+    "overlong": 0,
+    "short": 1,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 44
+  }
+}

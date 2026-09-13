@@ -1,0 +1,60 @@
+{
+  "id": "en-16",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language en.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: en\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nPlease turn off the desk lamp before you plug in the second monitor. The socket behind the cabinet is loose, so use the power strip beside the window. I will look into the connection problem after the presentation has finished. For now, write down any error messages exactly as they appear on the screen. That will help us work out whether the fault is in the cable or the adapter.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "d375d48367e0467e7e48f1e05d428d0eb0d6d7e3b3bf872930c20cdcd93e0261",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:08.475008+00:00",
+  "raw": "{\"lines\":[\"Please turn off the desk lamp before you plug in the second monitor.\",\" The socket behind the cabinet is loose, so use the power strip beside the window.\",\" I will look into the connection problem after the presentation has finished.\",\" For now, write down any error messages exactly as they appear on the screen.\",\" That will help us work out whether the fault is in the cable or the adapter.\"]}",
+  "usage": {
+    "promptTokenCount": 283,
+    "candidatesTokenCount": 91
+  },
+  "provider_usage": {
+    "prompt_tokens": 283,
+    "completion_tokens": 91,
+    "total_tokens": 374,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.594581040997582,
+  "transport_attempts": 1,
+  "lines": [
+    "Please turn off the desk lamp before you plug in the second monitor.",
+    " The socket behind the cabinet is loose, so use the power strip beside the window.",
+    " I will look into the connection problem after the presentation has finished.",
+    " For now, write down any error messages exactly as they appear on the screen.",
+    " That will help us work out whether the fault is in the cable or the adapter."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 9,
+    "f1": 0.6153846153846153,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 81
+  }
+}

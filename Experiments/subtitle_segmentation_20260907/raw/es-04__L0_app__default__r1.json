@@ -1,0 +1,64 @@
+{
+  "id": "es-04",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language es.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: es\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nElla preguntó: «¿Salimos ahora?» Le expliqué que el tren llevaba retraso, pero que la cafetería de la estación seguía abierta. Podíamos esperar allí un rato y consultar juntos el panel de salidas. «Me parece bien», respondió, mientras recogía la pequeña maleta azul. Cuando llegamos al andén, el anuncio había cambiado otra vez. Decidimos quedarnos cerca del mostrador y pedir una confirmación al personal antes de caminar hacia el otro extremo.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "fadf4ff015097517cecc5e8e126c223d89ec26bfc4a9694efafb350d3ba3bfaa",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:45.168348+00:00",
+  "raw": "{\n  \"lines\": [\n    \"Ella preguntó: «¿Salimos ahora?»\",\n    \"Le expliqué que el tren llevaba retraso,\",\n    \"pero que la cafetería de la estación\",\n    \"seguía abierta. Podíamos esperar allí\",\n    \"un rato y consultar juntos el panel\",\n    \"de salidas. «Me parece bien», respondió,\",\n    \"mientras recogía la pequeña maleta azul.\",\n    \"Cuando llegamos al andén,\",\n    \"el anuncio había cambiado otra vez.\",\n    \"Decidimos quedarnos cerca del mostrador\",\n    \"y pedir una confirmación al personal\",\n    \"antes de caminar hacia el otro extremo.\"\n  ]\n}",
+  "usage": {
+    "promptTokenCount": 317,
+    "candidatesTokenCount": 153,
+    "totalTokenCount": 470,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 317
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.1223204160050955,
+  "transport_attempts": 1,
+  "lines": [
+    "Ella preguntó: «¿Salimos ahora?»",
+    "Le expliqué que el tren llevaba retraso,",
+    "pero que la cafetería de la estación",
+    "seguía abierta. Podíamos esperar allí",
+    "un rato y consultar juntos el panel",
+    "de salidas. «Me parece bien», respondió,",
+    "mientras recogía la pequeña maleta azul.",
+    "Cuando llegamos al andén,",
+    "el anuncio había cambiado otra vez.",
+    "Decidimos quedarnos cerca del mostrador",
+    "y pedir una confirmación al personal",
+    "antes de caminar hacia el otro extremo."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 12,
+    "boundaries": 11,
+    "tp": 8,
+    "ref_count": 11,
+    "f1": 0.7272727272727273,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 1,
+    "violations": [
+      {
+        "phrase": "panel de salidas",
+        "cut": 185
+      }
+    ],
+    "punctuation_starts": 0,
+    "max_length": 40
+  }
+}

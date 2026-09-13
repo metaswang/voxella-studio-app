@@ -2,8 +2,6 @@ import SwiftUI
 
 struct HomeView: View {
     @AppStorage("voxella.workbench.sidebarExpanded") private var sidebarExpanded = true
-    @State private var editorSidebarRevealed = false
-    @State private var editorSidebarHideTask: Task<Void, Never>?
     @State private var sessionSearch = SessionSearchController()
     @State private var isSessionSearchPresented = false
     @Bindable private var store = WorkbenchStore.shared
@@ -13,50 +11,43 @@ struct HomeView: View {
     private var isEditorActive: Bool { appState.editorPresentation == .active }
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            HStack(spacing: 0) {
-                if !isEditorActive {
-                    WorkbenchSidebar(isExpanded: $sidebarExpanded, onOpenSearch: presentSessionSearch)
-                        .frame(
-                            width: sidebarExpanded
-                                ? AppTheme.Workbench.sidebarExpandedWidth
-                                : AppTheme.Workbench.sidebarCollapsedWidth
-                        )
-                    Divider()
+        HStack(spacing: 0) {
+            WorkbenchSidebar(
+                isExpanded: isEditorActive ? .constant(false) : $sidebarExpanded,
+                onOpenSearch: presentSessionSearch
+            )
+            .frame(
+                width: isEditorActive || !sidebarExpanded
+                    ? AppTheme.Workbench.sidebarCollapsedWidth
+                    : AppTheme.Workbench.sidebarExpandedWidth
+            )
+            Divider()
+
+            VStack(spacing: 0) {
+                if isEditorActive, let editor = appState.activeProject?.editorViewModel {
+                    EditorChrome()
+                        .environment(editor)
+                } else {
+                    WorkbenchTopBar(isSidebarExpanded: $sidebarExpanded)
                 }
+                Divider()
+                WorkbenchTopTipBanner()
+                    .animation(.easeInOut(duration: AppTheme.Anim.transition), value: tips.tip?.id)
 
-                VStack(spacing: 0) {
-                    if isEditorActive, let editor = appState.activeProject?.editorViewModel {
-                        EditorChrome()
-                            .environment(editor)
-                    } else {
-                        WorkbenchTopBar(isSidebarExpanded: $sidebarExpanded)
+                ZStack {
+                    if let project = appState.activeProject {
+                        embeddedEditor(project)
+                            .opacity(isEditorActive ? 1 : 0)
+                            .allowsHitTesting(isEditorActive)
+                            .accessibilityHidden(!isEditorActive)
                     }
-                    Divider()
                     if !isEditorActive {
-                        WorkbenchTopTipBanner()
-                            .animation(.easeInOut(duration: AppTheme.Anim.transition), value: tips.tip?.id)
+                        content
                     }
-
-                    ZStack {
-                        if let project = appState.activeProject {
-                            embeddedEditor(project)
-                                .opacity(isEditorActive ? 1 : 0)
-                                .allowsHitTesting(isEditorActive)
-                                .accessibilityHidden(!isEditorActive)
-                        }
-                        if !isEditorActive {
-                            content
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
-            if isEditorActive {
-                editorSidebarOverlay
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(
             minWidth: isEditorActive ? AppTheme.Window.projectMin.width : AppTheme.Window.homeMin.width,
@@ -74,11 +65,6 @@ struct HomeView: View {
             presentSessionSearch()
         }
         .onChange(of: appState.editorPresentation) { _, presentation in
-            if presentation != .active {
-                editorSidebarRevealed = false
-                editorSidebarHideTask?.cancel()
-                editorSidebarHideTask = nil
-            }
             HomeWindowController.shared.applyEditorMode(presentation == .active)
         }
     }
@@ -117,66 +103,6 @@ struct HomeView: View {
             .tint(AppTheme.Accent.primary)
     }
 
-    private var editorSidebarOverlay: some View {
-        HStack(spacing: 0) {
-            ZStack(alignment: .leading) {
-                Color.clear
-                    .frame(width: AppTheme.Workbench.editorSidebarHotZoneWidth)
-                    .frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .onHover { hovering in
-                        if hovering { revealEditorSidebar() }
-                        else { scheduleHideEditorSidebar() }
-                    }
-
-                if editorSidebarRevealed {
-                    HStack(spacing: 0) {
-                        WorkbenchSidebar(isExpanded: .constant(true), onOpenSearch: presentSessionSearch)
-                            .frame(width: AppTheme.Workbench.sidebarExpandedWidth)
-                            .background(AppTheme.Background.surfaceColor)
-                            .shadow(AppTheme.Shadow.md)
-                        Divider()
-                    }
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-                    .onHover { hovering in
-                        if hovering {
-                            editorSidebarHideTask?.cancel()
-                            editorSidebarHideTask = nil
-                            editorSidebarRevealed = true
-                        } else {
-                            scheduleHideEditorSidebar()
-                        }
-                    }
-                }
-            }
-            .frame(
-                width: editorSidebarRevealed
-                    ? AppTheme.Workbench.sidebarExpandedWidth
-                    : AppTheme.Workbench.editorSidebarHotZoneWidth
-            )
-            .animation(.easeInOut(duration: AppTheme.Anim.transition), value: editorSidebarRevealed)
-
-            Spacer(minLength: 0)
-                .allowsHitTesting(false)
-        }
-    }
-
-    private func revealEditorSidebar() {
-        editorSidebarHideTask?.cancel()
-        editorSidebarHideTask = nil
-        editorSidebarRevealed = true
-    }
-
-    private func scheduleHideEditorSidebar() {
-        editorSidebarHideTask?.cancel()
-        editorSidebarHideTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(AppTheme.Anim.editorSidebarHideDelay))
-            guard !Task.isCancelled else { return }
-            editorSidebarRevealed = false
-            editorSidebarHideTask = nil
-        }
-    }
-
     @ViewBuilder
     private var content: some View {
         Group {
@@ -192,7 +118,11 @@ struct HomeView: View {
             case .dub:
                 DubWorkbenchView()
             case .voiceLibrary:
-                VoiceLibraryView()
+                RecentSessionsView()
+                    .onAppear {
+                        store.showRecentSessions()
+                        SettingsWindowController.shared.show(tab: .voiceLibrary)
+                    }
             case .videoEditor:
                 VideoEditorHomeView()
             case .session:
@@ -213,7 +143,6 @@ struct HomeView: View {
 private struct WorkbenchTopBar: View {
     @Binding var isSidebarExpanded: Bool
     @Bindable private var store = WorkbenchStore.shared
-    @Bindable private var models = LocalModelManager.shared
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.smMd) {
@@ -237,37 +166,11 @@ private struct WorkbenchTopBar: View {
             }
 
             Spacer(minLength: 0)
-
-            Button {
-                models.presentManager()
-            } label: {
-                Label(modelSummary, systemImage: "shippingbox")
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .labelStyle(.titleAndIcon)
-            }
-            .buttonStyle(.plain)
-            .help("Manage local models")
-
-            Circle()
-                .fill(offlineReady ? AppTheme.Status.successColor : AppTheme.Status.warningColor)
-                .frame(width: AppTheme.Spacing.sm, height: AppTheme.Spacing.sm)
-                .accessibilityLabel(offlineReady ? "Offline ready" : "Local models required")
         }
         .foregroundStyle(AppTheme.Text.secondaryColor)
         .padding(.horizontal, AppTheme.Spacing.lg)
         .frame(height: AppTheme.Workbench.toolbarHeight)
         .background(AppTheme.Background.surfaceColor)
-    }
-
-    private var modelSummary: String {
-        let installed = LocalModelManager.catalog.filter { models.state(for: $0.id).isInstalled }.count
-        return "Models \(installed)/\(LocalModelManager.catalog.count)"
-    }
-
-    private var offlineReady: Bool {
-        LocalModelManager.catalog
-            .filter(\.isRecommended)
-            .allSatisfy { models.state(for: $0.id).isInstalled }
     }
 }
 
@@ -382,7 +285,7 @@ private struct WorkbenchSidebar: View {
     private func select(_ route: WorkbenchRoute) {
         if route == .videoEditor {
             if appState.editorPresentation == .active {
-                return
+                appState.suspendEditor()
             }
             store.route = .videoEditor
             return
@@ -414,13 +317,12 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
     private var hasAppliedInitialWindowState = false
 
     private init() {
-        let hostingController = NSHostingController(rootView: HomeView().appLocalization().tint(AppTheme.Accent.primary))
+        let hostingController = NSHostingController(rootView: FirstRunRootView().appLocalization().tint(AppTheme.Accent.primary))
         hostingController.sizingOptions = .minSize
         let window = NSWindow(contentViewController: hostingController)
-        window.setContentSize(AppTheme.Window.homeDefault)
+        window.setContentSize(OnboardingState.shared.isComplete ? AppTheme.Window.homeDefault : AppTheme.Onboarding.windowSize)
         window.minSize = NSSize(width: 960, height: 640)
         window.title = " "
-        window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = AppTheme.Background.base
         window.styleMask.insert(.fullSizeContentView)
         window.collectionBehavior = [.fullScreenNone]
@@ -437,7 +339,7 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
         super.showWindow(sender)
         guard !hasAppliedInitialWindowState, let window else { return }
         hasAppliedInitialWindowState = true
-        if !window.isZoomed, !window.styleMask.contains(.fullScreen) {
+        if OnboardingState.shared.isComplete, !window.isZoomed, !window.styleMask.contains(.fullScreen) {
             window.zoom(nil)
         }
     }
@@ -451,6 +353,13 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         hideNativeTitlebarTitle()
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard OnboardingState.shared.isComplete else { return true }
+        guard isEditorMode || WorkbenchStore.shared.route != .dashboard else { return true }
+        AppState.shared.showDashboard()
+        return false
     }
 
     private func hideNativeTitlebarTitle() {

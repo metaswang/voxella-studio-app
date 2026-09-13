@@ -1,0 +1,60 @@
+{
+  "id": "en-10",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=en\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nIf the recording stops before the talk ends, leave the device where it is and write down what happened. Do not press every button at once, because that can make the problem harder to trace. The backup recorder should continue running until the audience has left the room. After that, bring both memory cards to the desk. We will check the files together before anyone starts copying them.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "a8dda1dd005ae47998f665ab5dac265b84f7ef0f211d8b874b06936e844fe162",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:18:55.543541+00:00",
+  "raw": "{\"subtitles\":[\"If the recording stops before the talk ends, leave the device where it is and write down what happened.\",\" Do not press every button at once, because that can make the problem harder to trace.\",\" The backup recorder should continue running until the audience has left the room.\",\" After that, bring both memory cards to the desk.\",\" We will check the files together before anyone starts copying them.\"],\"batch_summary\":\"Split finalized_transcript into subtitle lines at natural pauses; preserve text and punctuation without modification.\"}",
+  "usage": {
+    "promptTokenCount": 291,
+    "candidatesTokenCount": 112
+  },
+  "provider_usage": {
+    "prompt_tokens": 291,
+    "completion_tokens": 112,
+    "total_tokens": 403,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.3191977080059587,
+  "transport_attempts": 1,
+  "lines": [
+    "If the recording stops before the talk ends, leave the device where it is and write down what happened.",
+    " Do not press every button at once, because that can make the problem harder to trace.",
+    " The backup recorder should continue running until the audience has left the room.",
+    " After that, bring both memory cards to the desk.",
+    " We will check the files together before anyone starts copying them."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 9,
+    "f1": 0.6153846153846153,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 103
+  }
+}

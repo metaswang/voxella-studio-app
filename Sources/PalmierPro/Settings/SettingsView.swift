@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
@@ -5,6 +6,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case calendar
     case general
     case models
+    case voiceLibrary
     case ai
     case agent
     case skills
@@ -17,8 +19,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .account: return "Account"
         case .calendar: return "Calendar"
         case .general: return "General"
-        case .models: return "Models"
-        case .ai: return "BYOK"
+        case .voiceLibrary: return "Voice Library"
+        case .models: return "Local Features"
+        case .ai: return "AI Service"
         case .agent: return "MCP"
         case .skills: return "Skills"
         case .storage: return "Storage"
@@ -30,6 +33,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .account: return "person.circle"
         case .calendar: return "calendar"
         case .general: return "gearshape"
+        case .voiceLibrary: return "waveform.badge.magnifyingglass"
         case .models: return "square.stack.3d.up"
         case .ai: return "sparkles"
         case .agent: return "network"
@@ -57,7 +61,7 @@ struct SettingsView: View {
 
             SettingsDetail(tab: selectedTab)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black.opacity(AppTheme.Opacity.medium))
+                .background(AppTheme.Background.surfaceColor)
         }
         .frame(
             minWidth: AppTheme.Window.settingsMin.width,
@@ -109,7 +113,7 @@ private struct SettingsDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if tab != .models {
+            if tab != .models && tab != .voiceLibrary {
                 Text(tab.label)
                     .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.regular))
                     .foregroundStyle(AppTheme.Text.primaryColor)
@@ -124,7 +128,9 @@ private struct SettingsDetail: View {
             }
 
             Group {
-                if tab == .skills {
+                if tab == .voiceLibrary {
+                    VoiceLibraryView()
+                } else if tab == .skills {
                     SkillsPane()
                 } else if tab == .models {
                     // Owns title + scroll so the heading shares one left edge with content.
@@ -138,6 +144,7 @@ private struct SettingsDetail: View {
                             case .calendar:
                                 GoogleCalendarSettingsPane()
                             case .general:
+                                AppearanceSettingsPane()
                                 LanguageSettingsPane()
 #if SPARKLE_UPDATES
                                 SettingsSection(title: "Updates") {
@@ -147,13 +154,16 @@ private struct SettingsDetail: View {
                                 SettingsSection(title: "Recording") {
                                     RecordingPane()
                                 }
+                                SettingsSection(title: "Voice Input") {
+                                    VoiceInputSettingsPane()
+                                }
                                 SettingsSection(title: "Notifications") {
                                     NotificationsPane()
                                 }
                                 SettingsSection(title: "Privacy & Diagnostics") {
                                     PrivacyPane()
                                 }
-                            case .models:
+                            case .models, .voiceLibrary:
                                 EmptyView()
                             case .ai:
                                 AISettingsPane()
@@ -170,7 +180,7 @@ private struct SettingsDetail: View {
                         .padding(.horizontal, AppTheme.Spacing.xxl)
                         .padding(.bottom, AppTheme.Spacing.xxl)
                     }
-                    .scrollEdgeEffectStyle(.soft, for: .top)
+                    .appScrollEdgeEffect(.top)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -245,10 +255,11 @@ struct SettingsToggleRow: View {
 }
 
 @MainActor
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     static let shared = SettingsWindowController()
 
     private var hosting: NSHostingController<AnyView>?
+    private var escapeMonitor: Any?
 
     private init() {
         let initialView = SettingsView().appLocalization().tint(AppTheme.Accent.primary)
@@ -258,7 +269,6 @@ final class SettingsWindowController: NSWindowController {
         window.setContentSize(AppTheme.Window.settingsDefault)
         window.minSize = AppTheme.Window.settingsMin
         window.title = "Settings"
-        window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = AppTheme.Background.base.withAlphaComponent(0.4)
         window.isOpaque = false
         window.titleVisibility = .hidden
@@ -268,6 +278,7 @@ final class SettingsWindowController: NSWindowController {
         window.center()
         self.hosting = hosting
         super.init(window: window)
+        window.delegate = self
     }
 
     @available(*, unavailable)
@@ -285,6 +296,27 @@ final class SettingsWindowController: NSWindowController {
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        installEscapeMonitor()
+    }
+
+    private func installEscapeMonitor() {
+        removeEscapeMonitor()
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.keyCode == 53, event.window === self.window else { return event }
+            self.window?.performClose(nil)
+            return nil
+        }
+    }
+
+    private func removeEscapeMonitor() {
+        if let escapeMonitor {
+            NSEvent.removeMonitor(escapeMonitor)
+            self.escapeMonitor = nil
+        }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        removeEscapeMonitor()
     }
 }
 

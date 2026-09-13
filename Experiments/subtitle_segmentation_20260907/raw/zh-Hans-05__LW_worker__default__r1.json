@@ -1,0 +1,59 @@
+{
+  "id": "zh-Hans-05",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n她问：“我们现在就出发吗？”我告诉她列车暂时晚点，不过车站旁边的咖啡馆还开着，可以在那里等一会儿。“那我们先过去吧。”她一边说，一边拿起放在门口的蓝色行李箱。走到站台的时候，广播里的发车信息又更新了。我们没有继续往前走，而是留在服务台附近，准备确认下一班车到底从哪个站台出发。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "b200e0c2625017cde2c841eb36f4c9132b34392d46277a4619625a53e5c4e92e",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:34.487804+00:00",
+  "raw": "{\n  \"subtitles\": [\n    \"她问：“我们现在就出发吗？”\",\n    \"我告诉她列车暂时晚点，\",\n    \"不过车站旁边的咖啡馆还开着，\",\n    \"可以在那里等一会儿。\",\n    \"“那我们先过去吧。”\",\n    \"她一边说，\",\n    \"一边拿起放在门口的蓝色行李箱。\",\n    \"走到站台的时候，\",\n    \"广播里的发车信息又更新了。\",\n    \"我们没有继续往前走，\",\n    \"而是留在服务台附近，\",\n    \"准备确认下一班车到底从哪个站台出发。\"\n  ],\n  \"batch_summary\": \"人物对话与车站等车的场景切分\"\n}",
+  "usage": {
+    "promptTokenCount": 296,
+    "candidatesTokenCount": 166,
+    "totalTokenCount": 462,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 296
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.3533620829985011,
+  "transport_attempts": 1,
+  "lines": [
+    "她问：“我们现在就出发吗？”",
+    "我告诉她列车暂时晚点，",
+    "不过车站旁边的咖啡馆还开着，",
+    "可以在那里等一会儿。",
+    "“那我们先过去吧。”",
+    "她一边说，",
+    "一边拿起放在门口的蓝色行李箱。",
+    "走到站台的时候，",
+    "广播里的发车信息又更新了。",
+    "我们没有继续往前走，",
+    "而是留在服务台附近，",
+    "准备确认下一班车到底从哪个站台出发。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 12,
+    "boundaries": 11,
+    "tp": 11,
+    "ref_count": 12,
+    "f1": 0.9565217391304348,
+    "overlong": 0,
+    "short": 1,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 18
+  }
+}

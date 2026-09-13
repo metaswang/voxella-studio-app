@@ -1,0 +1,60 @@
+{
+  "id": "de-01",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language de.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: de\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nBevor wir mit der Bewegung beginnen, stellen Sie beide Füße auf den Boden. Lassen Sie die Schultern locker und schauen Sie geradeaus. Es geht darum, sich langsam zu bewegen, ohne den Kopf nach vorne zu ziehen. Falls der Stuhl wackelt, unterbrechen Sie die Übung und wählen Sie einen stabileren Sitz. Wir wiederholen den Ablauf zweimal und vergleichen anschließend, wie sich die beiden Seiten anfühlen.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "b3063b47c6aadca8f0b90d7b8cb732391fb7c438ef6cef93fbf309dda9027019",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:25.970662+00:00",
+  "raw": "{\"lines\":[\"Bevor wir mit der Bewegung beginnen, stellen Sie beide Füße auf den Boden.\",\"Lassen Sie die Schultern locker und schauen Sie geradeaus.\",\"Es geht darum, sich langsam zu bewegen, ohne den Kopf nach vorne zu ziehen.\",\"Falls der Stuhl wackelt, unterbrechen Sie die Übung und wählen Sie einen stabileren Sitz.\",\"Wir wiederholen den Ablauf zweimal und vergleichen anschließend, wie sich die beiden Seiten anfühlen.\"]}",
+  "usage": {
+    "promptTokenCount": 293,
+    "candidatesTokenCount": 102
+  },
+  "provider_usage": {
+    "prompt_tokens": 293,
+    "completion_tokens": 102,
+    "total_tokens": 395,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.5454350410000188,
+  "transport_attempts": 1,
+  "lines": [
+    "Bevor wir mit der Bewegung beginnen, stellen Sie beide Füße auf den Boden.",
+    "Lassen Sie die Schultern locker und schauen Sie geradeaus.",
+    "Es geht darum, sich langsam zu bewegen, ohne den Kopf nach vorne zu ziehen.",
+    "Falls der Stuhl wackelt, unterbrechen Sie die Übung und wählen Sie einen stabileren Sitz.",
+    "Wir wiederholen den Ablauf zweimal und vergleichen anschließend, wie sich die beiden Seiten anfühlen."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 11,
+    "f1": 0.5333333333333333,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 101
+  }
+}

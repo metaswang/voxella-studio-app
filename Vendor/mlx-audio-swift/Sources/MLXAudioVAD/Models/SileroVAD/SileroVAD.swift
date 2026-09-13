@@ -371,7 +371,7 @@ public final class SileroVAD: Module {
         }
         let sanitized = sanitize(weights: allWeights)
         let parameters = ModuleParameters.unflattened(sanitized)
-        try model.update(parameters: parameters, verify: [.all])
+        try model.update(parameters: parameters, verify: .noUnusedKeys)
         eval(model)
         return model
     }

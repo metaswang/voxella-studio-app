@@ -223,6 +223,28 @@ struct LLMResilienceTests {
         #expect(settings.hasAPIKey(for: providerID))
     }
 
+    @Test @MainActor
+    func savedCredentialAvailabilityRestoresWithoutReadingTheCredential() async throws {
+        let suiteName = "LLMCredentialAvailabilityCacheTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = LLMSettingsStore(
+            defaults: defaults,
+            legacyDefaults: [],
+            credentialSaver: { _, _ in }
+        )
+        let providerID = try #require(settings.providers.first?.id)
+
+        try await settings.saveAPIKey("saved-test-key", providerID: providerID)
+
+        let restored = LLMSettingsStore(
+            defaults: defaults,
+            legacyDefaults: [],
+            credentialSaver: { _, _ in }
+        )
+        #expect(restored.hasAPIKey(for: providerID))
+    }
+
     @Test
     func credentialAccountRemainsStableWhenProviderEndpointChanges() {
         var profile = LLMProviderProfile(
@@ -818,7 +840,7 @@ struct LLMResilienceTests {
         let message = try #require(error.errorDescription)
 
         #expect(message.contains("OpenRouter couldn't verify the saved API key"))
-        #expect(message.contains("Settings → BYOK"))
+        #expect(message.contains("Settings → AI Service"))
         #expect(message.contains("disabled, revoked, or expired"))
         #expect(message.contains("workspace, spending limit, and available account credits"))
         #expect(message.contains("openrouter/openai/gpt-5-nano (http_401)"))

@@ -1,0 +1,59 @@
+{
+  "id": "es-03",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=es\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nEl primer prototipo pesaba 3,5 kilogramos, mientras que el segundo pesaba algo menos de tres. Medimos cada muestra cinco veces, siempre con la misma balanza digital. La Dra. García revisó los resultados antes de enviarlos al equipo de diseño. Estas cifras describen una prueba pequeña, así que no representan todos los productos futuros. En el siguiente ensayo aumentaremos las muestras, pero mantendremos el método de medición. Así podremos comparar los resultados sin cambiar varias condiciones a la vez.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "06b97fa189749e58619c65cbb53ebf07fab888e72570019946bc61542c82d00d",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:43.648986+00:00",
+  "raw": "{\n  \"subtitles\": [\n    \"El primer prototipo pesaba 3,5 kilogramos,\",\n    \"mientras que el segundo pesaba algo menos de tres.\",\n    \"Medimos cada muestra cinco veces,\",\n    \"siempre con la misma balanza digital.\",\n    \"La Dra. García revisó los resultados\",\n    \"antes de enviarlos al equipo de diseño.\",\n    \"Estas cifras describen una prueba pequeña,\",\n    \"así que no representan todos los productos futuros.\",\n    \"En el siguiente ensayo aumentaremos las muestras,\",\n    \"pero mantendremos el método de medición.\",\n    \"Así podremos comparar los resultados\",\n    \"sin cambiar varias condiciones a la vez.\"\n  ],\n  \"batch_summary\": \"Subdivision of the Spanish transcript into subtitle lines adhering to length constraints and preserving exact punctuation.\"\n}",
+  "usage": {
+    "promptTokenCount": 308,
+    "candidatesTokenCount": 184,
+    "totalTokenCount": 492,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 308
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.4325017919982201,
+  "transport_attempts": 1,
+  "lines": [
+    "El primer prototipo pesaba 3,5 kilogramos,",
+    "mientras que el segundo pesaba algo menos de tres.",
+    "Medimos cada muestra cinco veces,",
+    "siempre con la misma balanza digital.",
+    "La Dra. García revisó los resultados",
+    "antes de enviarlos al equipo de diseño.",
+    "Estas cifras describen una prueba pequeña,",
+    "así que no representan todos los productos futuros.",
+    "En el siguiente ensayo aumentaremos las muestras,",
+    "pero mantendremos el método de medición.",
+    "Así podremos comparar los resultados",
+    "sin cambiar varias condiciones a la vez."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 12,
+    "boundaries": 11,
+    "tp": 11,
+    "ref_count": 11,
+    "f1": 1.0,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 51
+  }
+}

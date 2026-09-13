@@ -1,0 +1,61 @@
+{
+  "id": "fr-05",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language fr.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: fr\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nL'entrée nord, à côté de la billetterie, restera ouverte pendant les travaux. Les visiteurs avec de grands sacs doivent utiliser cette porte, car l'autre couloir est plutôt étroit. Notre équipe peut expliquer le trajet provisoire aux personnes qui découvrent le bâtiment. L'exposition n'a pas changé de place, même si quelques panneaux sont remplacés. Prévoyez simplement un peu plus de temps pour atteindre la galerie à l'étage. Le plan sera également affiché près de la porte.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "4cb256d6db6887498d74e03c5a38c741eb25aaa69aec5be1b0267efdc11784b0",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:49.497816+00:00",
+  "raw": "{\"lines\":[\"L'entrée nord, à côté de la billetterie, restera ouverte pendant les travaux.\",\"Les visiteurs avec de grands sacs doivent utiliser cette porte, car l'autre couloir est plutôt étroit.\",\"Notre équipe peut expliquer le trajet provisoire aux personnes qui découvrent le bâtiment.\",\"L'exposition n'a pas changé de place, même si quelques panneaux sont remplacés.\",\"Prévoyez simplement un peu plus de temps pour atteindre la galerie à l'étage.\",\"Le plan sera également affiché près de la porte.\"]}",
+  "usage": {
+    "promptTokenCount": 309,
+    "candidatesTokenCount": 117
+  },
+  "provider_usage": {
+    "prompt_tokens": 309,
+    "completion_tokens": 117,
+    "total_tokens": 426,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.4145784590000403,
+  "transport_attempts": 1,
+  "lines": [
+    "L'entrée nord, à côté de la billetterie, restera ouverte pendant les travaux.",
+    "Les visiteurs avec de grands sacs doivent utiliser cette porte, car l'autre couloir est plutôt étroit.",
+    "Notre équipe peut expliquer le trajet provisoire aux personnes qui découvrent le bâtiment.",
+    "L'exposition n'a pas changé de place, même si quelques panneaux sont remplacés.",
+    "Prévoyez simplement un peu plus de temps pour atteindre la galerie à l'étage.",
+    "Le plan sera également affiché près de la porte."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 6,
+    "boundaries": 5,
+    "tp": 5,
+    "ref_count": 11,
+    "f1": 0.625,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 102
+  }
+}

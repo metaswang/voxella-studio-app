@@ -21,15 +21,25 @@ Read references/release-runbook.md before performing a release. Use scripts/uplo
 ## Release invariants
 
 - Work from the repository root: /Users/adamwang/Project/subdub/voxella-studio-app.
+- The supported deployment range is macOS 15.0 or later on arm64. Package.swift and the app Info.plist must declare 15.0; bundle.sh must confirm the Mach-O value matches, and release.sh must copy the plist value into new Sparkle items.
+- Keep macOS 26-only APIs behind availability checks with a functional macOS 15 fallback. Do not raise the deployment target to avoid compatibility work.
+- The Convex 0.8.1 binary target contains vendor objects stamped with the build host's newer macOS version even though its package declares macOS 10.15. Record linker warnings and require a real macOS 15 launch, sign-in, and backend-query smoke test before claiming runtime compatibility.
 - The final distribution command is:
 
       ./scripts/bundle.sh release --dist
+
+- Formal releases must start with `./scripts/release.sh` without a version argument. It reads the current `CFBundleShortVersionString` and published appcast, then automatically increments the semantic-version patch component (`X.Y.Z` → `X.Y.(Z+1)`) before building. Do not manually reuse the previous release version.
+- Every release record must include the previous version, new version, new `CFBundleVersion`, and the exact artifact version used for notarization and Hugging Face publication.
 
 - The release build must use the BundledSpeech trait because the app includes speech and MLX resources.
 - scripts/bundle.sh loads .env.prod for release when present, otherwise .env.
 - SIGNING_IDENTITY must identify a Developer ID Application certificate.
 - TEAM_IDENTIFIER must match the Team ID in that certificate. The bundle script can derive it from the certificate when omitted.
 - NOTARY_PROFILE must name an existing xcrun notarytool Keychain profile.
+- If NOTARY_PROFILE is missing, recover it before building by following the API-key or app-specific-password procedure in the runbook.
+- App Store Connect API keys are managed at https://appstoreconnect.apple.com/access/integrations/api.
+- A Team API key uses an `AuthKey_<KEY_ID>.p8` private key; a `.provisionprofile` is never a notarization credential.
+- Keep local notarization private keys under `.secrets/`, which is ignored by Git, with restrictive file permissions. Never print, commit, or upload the key.
 - PROVISIONING_PROFILE is for the Mac App Store path only. Do not use MacDevelopment.provisionprofile for the Developer ID distribution path.
 - Developer ID microphone recording requires `com.apple.security.device.audio-input=true` in the signed app. `scripts/bundle.sh release --sign` and `release --dist` must use `scripts/VoxStudio.developer-id.entitlements` for this capability.
 - Keep `NSMicrophoneUsageDescription` in the final app `Contents/Info.plist`; an entitlement without the usage description is not sufficient for TCC authorization.
@@ -41,12 +51,12 @@ Read references/release-runbook.md before performing a release. Use scripts/uplo
 ## Standard workflow
 
 1. Check the worktree and release configuration without exposing secret values.
-2. Read the runbook and confirm the exact certificate, notary profile, output paths, and target Hugging Face repository.
-3. Run ./scripts/bundle.sh release --dist.
-4. Verify the app, mounted DMG app, staple tickets, Developer ID signatures, microphone entitlement, restricted entitlements, and Gatekeeper assessments.
-5. Record the DMG byte count and SHA-256 before publication.
-6. If explicitly requested, upload exactly that verified DMG to the target Hugging Face repository.
-7. Verify the remote commit, byte count, and content hash before reporting the download URL.
+2. Read the runbook and confirm the exact certificate, notary profile, output paths, and target Hugging Face repository. If the profile is unavailable, recover it before continuing.
+3. Run `./scripts/release.sh`; it selects and records the next patch version before invoking `./scripts/bundle.sh release --dist`.
+4. Verify the app, mounted DMG app, macOS 15 deployment metadata, staple tickets, Developer ID signatures, microphone entitlement, restricted entitlements, and Gatekeeper assessments.
+5. Record the previous version, new version, build number, DMG byte count, and SHA-256 before publication.
+6. If explicitly requested, upload exactly that versioned and verified DMG to the target Hugging Face repository.
+7. Verify the remote commit, byte count, content hash, and published version before reporting the download URL.
 
 ## Hugging Face defaults
 
@@ -65,10 +75,12 @@ The helper requires an existing Hugging Face CLI login. It never accepts a token
 
 Report:
 
+- previous release version, new automatically selected patch version, and `CFBundleVersion`;
 - build command and whether it completed;
 - signing identity and Team ID, without secret material;
 - notarization/stapling status;
 - app and mounted-DMG Gatekeeper results;
+- Package.swift, Info.plist, Mach-O, and Sparkle minimum-system-version checks;
 - restricted-entitlement and embedded-profile checks;
 - `com.apple.security.device.audio-input=true` and `NSMicrophoneUsageDescription` checks;
 - DMG size and SHA-256;

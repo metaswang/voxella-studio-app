@@ -2,7 +2,7 @@
 
 VoxStudio is an AI-native video workspace for turning recorded sessions into edited videos and dubbed versions. It combines transcription, timeline editing, translation, voice-cloned dubbing, and media export in a native macOS application.
 
-> macOS 26 (Tahoe) and Apple Silicon are required.
+> macOS 15 (Sequoia) or later and Apple Silicon are required.
 
 ## What it does
 

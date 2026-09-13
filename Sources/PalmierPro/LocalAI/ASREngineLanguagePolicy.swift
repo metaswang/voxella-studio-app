@@ -1,8 +1,14 @@
 import Foundation
 
 enum ASREngineLanguagePolicy {
+    static let qwenSupportedLanguages: Set<String> = [
+        "zh", "en", "yue", "ar", "de", "fr", "es", "pt", "id", "it", "ko", "ru",
+        "th", "vi", "ja", "tr", "hi", "ms", "nl", "sv", "da", "fi", "pl", "cs",
+        "tl", "fa", "el", "hu", "mk", "ro",
+    ]
+
     static let qwenLanguages: Set<String> = [
-        "zh", "yue", "ja", "ko", "th", "vi", "id", "ms", "hi", "ar", "tr",
+        "zh", "yue", "ja", "ko", "th", "vi", "id", "ms", "hi", "ar", "tr", "tl", "fa", "mk",
     ]
 
     static let parakeetLanguages: Set<String> = [
@@ -49,6 +55,18 @@ enum ASREngineLanguagePolicy {
         "it": "Italian",
         "pt": "Portuguese",
         "ru": "Russian",
+        "nl": "Dutch",
+        "sv": "Swedish",
+        "da": "Danish",
+        "fi": "Finnish",
+        "pl": "Polish",
+        "cs": "Czech",
+        "tl": "Filipino",
+        "fa": "Persian",
+        "el": "Greek",
+        "hu": "Hungarian",
+        "mk": "Macedonian",
+        "ro": "Romanian",
     ]
 
     private static let qwenNameToISO: [String: String] = [
@@ -71,6 +89,18 @@ enum ASREngineLanguagePolicy {
         "italian": "it",
         "portuguese": "pt",
         "russian": "ru",
+        "dutch": "nl",
+        "swedish": "sv",
+        "danish": "da",
+        "finnish": "fi",
+        "polish": "pl",
+        "czech": "cs",
+        "filipino": "tl",
+        "persian": "fa",
+        "greek": "el",
+        "hungarian": "hu",
+        "macedonian": "mk",
+        "romanian": "ro",
     ]
 
     static var whisperLanguages: Set<String> {

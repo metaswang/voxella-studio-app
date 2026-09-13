@@ -15,16 +15,25 @@ private struct MediaSearchIndexStatus: View {
         let model = VisualModelLoader.shared
         switch model.state {
         case .notInstalled where model.enabled && hasIndexableAssets:
-            statusButton(icon: "sparkle.magnifyingglass", label: L10n.string("Smart search")) {
+            statusButton(icon: "sparkle.magnifyingglass", label: L10n.string("Download and enable smart search")) {
                 model.download()
             }
-            .help(L10n.string("Downloads a \(modelSizeLabel) on-device model so you can search media visually."))
+            .help(L10n.string("Downloads a \(modelSizeLabel) local resources so you can search media visually."))
         case .downloading(let fraction):
-            statusIndicator(L10n.string("Downloading \(Int(fraction * 100))%"),
-                            help: L10n.string("Downloading the on-device model that powers visual search."),
-                            progress: fraction)
+            HStack(spacing: AppTheme.Spacing.sm) {
+                statusIndicator(L10n.string("Downloading \(Int(fraction * 100))%"),
+                                help: L10n.string("Downloading the local resources that powers visual search."),
+                                progress: fraction)
+                Button(L10n.string("Cancel")) { model.cancelDownload() }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: AppTheme.FontSize.xs))
+            }
         case .preparing:
             statusIndicator(L10n.string("Preparing…"), help: L10n.string("Getting the search model ready."))
+        case .ready where search.searchFailure != nil:
+            Label(L10n.string("Search unavailable"), systemImage: "exclamationmark.triangle")
+                .help(search.searchFailure ?? "")
+                .foregroundStyle(AppTheme.Status.errorColor)
         case .ready where search.indexingActive:
             statusIndicator(L10n.string("Indexing \(min(search.batchCompleted + 1, search.batchTotal))/\(search.batchTotal)"),
                             help: L10n.string("Analyzing media so you can search it."),
@@ -42,8 +51,7 @@ private struct MediaSearchIndexStatus: View {
     }
 
     private var modelSizeLabel: String {
-        let files = SearchIndexConfig.manifest.files
-        return ByteCountFormatter.string(fromByteCount: files.imageEncoder.bytes + files.textEncoder.bytes, countStyle: .file)
+        SearchIndexConfig.model.sizeLabel
     }
 
     private func statusButton(icon: String, label: String, action: @escaping () -> Void) -> some View {

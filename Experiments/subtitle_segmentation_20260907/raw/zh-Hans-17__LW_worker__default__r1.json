@@ -1,0 +1,60 @@
+{
+  "id": "zh-Hans-17",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n北侧入口（售票处旁边）在施工期间仍然开放。带着大件行李的访客请优先使用这扇门，因为另一条走廊比较狭窄。如果以前没有来过，工作人员可以指引临时通道。展览本身的位置没有变化，只有少量标识正在更换。请给自己留出一点额外时间，慢慢走到楼上的展厅，也可以在出发前查看当天发布的参观说明。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "33ea2006089f18996b377a9022e9fb537ea334b77f803e690e289a28c26d73c6",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:58.111707+00:00",
+  "raw": "{\n  \"subtitles\": [\n    \"北侧入口（售票处旁边）\",\n    \"在施工期间仍然开放。\",\n    \"带着大件行李的访客\",\n    \"请优先使用这扇门，\",\n    \"因为另一条走廊比较狭窄。\",\n    \"如果以前没有来过，\",\n    \"工作人员可以指引临时通道。\",\n    \"展览本身的位置没有变化，\",\n    \"只有少量标识正在更换。\",\n    \"请给自己留出一点额外时间，\",\n    \"慢慢走到楼上的展厅，\",\n    \"也可以在出发前\",\n    \"查看当天发布的参观说明。\"\n  ],\n  \"batch_summary\": \"说明施工期间北侧入口开放及行李指引等参观注意事项。\"\n}",
+  "usage": {
+    "promptTokenCount": 294,
+    "candidatesTokenCount": 171,
+    "totalTokenCount": 465,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 294
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.3658797909956775,
+  "transport_attempts": 1,
+  "lines": [
+    "北侧入口（售票处旁边）",
+    "在施工期间仍然开放。",
+    "带着大件行李的访客",
+    "请优先使用这扇门，",
+    "因为另一条走廊比较狭窄。",
+    "如果以前没有来过，",
+    "工作人员可以指引临时通道。",
+    "展览本身的位置没有变化，",
+    "只有少量标识正在更换。",
+    "请给自己留出一点额外时间，",
+    "慢慢走到楼上的展厅，",
+    "也可以在出发前",
+    "查看当天发布的参观说明。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 13,
+    "boundaries": 12,
+    "tp": 12,
+    "ref_count": 12,
+    "f1": 1.0,
+    "overlong": 0,
+    "short": 1,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 13
+  }
+}

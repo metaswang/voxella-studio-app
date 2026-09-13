@@ -1,0 +1,60 @@
+{
+  "id": "en-17",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=en\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nThe north entrance (beside the ticket office) will remain open during the renovation. Visitors with large bags should use that door, since the other corridor is quite narrow. Our staff can show you the temporary route if you have not visited the building before. The exhibition itself has not moved, although a few signs are being replaced. Please allow a little extra time to reach the gallery on the upper floor.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "7c304f92723e8d217589f7dc33781d190c8893c4e329817780b372bd53db30d9",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:11.384423+00:00",
+  "raw": "{\"subtitles\":[\"The north entrance (beside the ticket office) will remain open during the renovation.\",\"Visitors with large bags should use that door, since the other corridor is quite narrow.\",\"Our staff can show you the temporary route if you have not visited the building before.\",\"The exhibition itself has not moved, although a few signs are being replaced.\",\"Please allow a little extra time to reach the gallery on the upper floor.\"],\"batch_summary\":\"Split finalized_transcript into five subtitle lines at natural pauses and punctuation.\"}",
+  "usage": {
+    "promptTokenCount": 296,
+    "candidatesTokenCount": 113
+  },
+  "provider_usage": {
+    "prompt_tokens": 296,
+    "completion_tokens": 113,
+    "total_tokens": 409,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.47901270899456,
+  "transport_attempts": 1,
+  "lines": [
+    "The north entrance (beside the ticket office) will remain open during the renovation.",
+    "Visitors with large bags should use that door, since the other corridor is quite narrow.",
+    "Our staff can show you the temporary route if you have not visited the building before.",
+    "The exhibition itself has not moved, although a few signs are being replaced.",
+    "Please allow a little extra time to reach the gallery on the upper floor."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 9,
+    "f1": 0.6153846153846153,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 88
+  }
+}

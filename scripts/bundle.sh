@@ -55,6 +55,8 @@ echo "==> Building ($CONFIG)"
 TRAITS="BundledSpeech"
 if [ "$MODE" != "mas" ]; then
   TRAITS="$TRAITS,SparkleUpdates"
+else
+  TRAITS="$TRAITS,MacAppStore"
 fi
 BUILD_ARGS=(-c "$CONFIG" --traits "$TRAITS")
 swift build "${BUILD_ARGS[@]}"
@@ -68,6 +70,15 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN" "$APP/Contents/MacOS/VoxStudio"
 cp "$RESOURCES/Info.plist" "$APP/Contents/Info.plist"
+
+PLIST_MINIMUM_SYSTEM_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist")"
+BINARY_MINIMUM_SYSTEM_VERSION="$(otool -l "$APP/Contents/MacOS/VoxStudio" \
+  | awk '/LC_BUILD_VERSION/{seen=1} seen && /minos/{print $2; exit}')"
+if [ "$PLIST_MINIMUM_SYSTEM_VERSION" != "$BINARY_MINIMUM_SYSTEM_VERSION" ]; then
+  echo "!! deployment target mismatch: Info.plist=$PLIST_MINIMUM_SYSTEM_VERSION Mach-O=$BINARY_MINIMUM_SYSTEM_VERSION" >&2
+  exit 1
+fi
+echo "==> Minimum macOS: $BINARY_MINIMUM_SYSTEM_VERSION"
 
 if [ "$MODE" = "mas" ]; then
   for key in SUAutomaticallyUpdate SUEnableAutomaticChecks SUFeedURL SUPublicEDKey SUScheduledCheckInterval; do
@@ -91,9 +102,23 @@ inject_plist() {
   /usr/libexec/PlistBuddy -c "Add :$key string $value" "$APP/Contents/Info.plist"
 }
 
+inject_plist_bool() {
+  local key="$1" value="$2"
+  if [ -z "$value" ]; then
+    return
+  fi
+  if [ "$value" != "true" ] && [ "$value" != "false" ]; then
+    echo "!! $key must be true or false" >&2
+    exit 1
+  fi
+  /usr/libexec/PlistBuddy -c "Delete :$key" "$APP/Contents/Info.plist" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add :$key bool $value" "$APP/Contents/Info.plist"
+}
+
 echo "==> Injecting backend config into Info.plist"
 inject_plist PalmierConvexDeploymentURL "${CONVEX_DEPLOYMENT_URL:-}"
 inject_plist PalmierConvexHttpURL "${CONVEX_HTTP_URL:-}"
+inject_plist_bool VoxStudioPaidAccessEnabled "${VOXSTUDIO_PAID_ACCESS_ENABLED:-}"
 cp "$RESOURCES/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # Flatten SwiftPM's resource bundle into the app's Resources tree.
@@ -109,6 +134,13 @@ if [ -f "$RES_BUNDLE/AppIcon.png" ]; then
   cp "$RES_BUNDLE/AppIcon.png" "$APP/Contents/Resources/AppIcon.png"
 else
   echo "!! missing AppIcon.png in SwiftPM resource bundle at $RES_BUNDLE" >&2
+  exit 1
+fi
+
+if [ -f "$RES_BUNDLE/StatusBarIcon.svg" ]; then
+  cp "$RES_BUNDLE/StatusBarIcon.svg" "$APP/Contents/Resources/StatusBarIcon.svg"
+else
+  echo "!! missing StatusBarIcon.svg in SwiftPM resource bundle at $RES_BUNDLE" >&2
   exit 1
 fi
 
@@ -150,8 +182,8 @@ fi
 mkdir -p "$APP/Contents/Resources/mlx-swift_Cmlx.bundle"
 cp "$MLX_METALLIB" "$APP/Contents/Resources/mlx-swift_Cmlx.bundle/default.metallib"
 
-echo "==> Clearing quarantine attributes before signing"
-xattr -dr com.apple.quarantine "$APP"
+echo "==> Clearing extended attributes before signing"
+xattr -cr "$APP"
 
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/VoxStudio"
 touch "$APP"
@@ -272,6 +304,9 @@ if [ "$MODE" = "mas" ]; then
 fi
 
 echo "==> Codesigning main app ($SIGNING_IDENTITY / $TEAM_IDENTIFIER)"
+if [ "$MODE" = "mas" ]; then
+  bash scripts/check-mas-billing.sh "$APP"
+fi
 if [ "$MODE" != "mas" ]; then
   if [ "$MODE" = "dist" ]; then
     sign_sparkle "$SIGNING_IDENTITY" --timestamp
@@ -382,12 +417,15 @@ xcrun notarytool submit "$DMG" \
 echo "==> Stapling DMG"
 xcrun stapler staple "$DMG"
 
-if [ ! -x "$SPARKLE_SIGN_UPDATE" ]; then
-  echo "!! missing Sparkle sign_update tool at $SPARKLE_SIGN_UPDATE" >&2
-  exit 1
+SPARKLE_SIGNATURE=""
+if [ "${SPARKLE_SIGN_UPDATE_REQUIRED:-1}" = "1" ]; then
+  if [ ! -x "$SPARKLE_SIGN_UPDATE" ]; then
+    echo "!! missing Sparkle sign_update tool at $SPARKLE_SIGN_UPDATE" >&2
+    exit 1
+  fi
+  echo "==> Signing DMG for Sparkle"
+  SPARKLE_SIGNATURE="$("$SPARKLE_SIGN_UPDATE" "$DMG")"
 fi
-echo "==> Signing DMG for Sparkle"
-SPARKLE_SIGNATURE="$("$SPARKLE_SIGN_UPDATE" "$DMG")"
 
 echo ""
 echo "==> Done"

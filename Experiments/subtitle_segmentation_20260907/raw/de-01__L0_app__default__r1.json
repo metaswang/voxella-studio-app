@@ -1,0 +1,62 @@
+{
+  "id": "de-01",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language de.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: de\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nBevor wir mit der Bewegung beginnen, stellen Sie beide Füße auf den Boden. Lassen Sie die Schultern locker und schauen Sie geradeaus. Es geht darum, sich langsam zu bewegen, ohne den Kopf nach vorne zu ziehen. Falls der Stuhl wackelt, unterbrechen Sie die Übung und wählen Sie einen stabileren Sitz. Wir wiederholen den Ablauf zweimal und vergleichen anschließend, wie sich die beiden Seiten anfühlen.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "7fb112389e942131505377c0e6c2a5b272c36562e32da6a11bb819c7cb4bef6b",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:16.783500+00:00",
+  "raw": "{\"lines\": [\"Bevor wir mit der Bewegung beginnen, stellen Sie\", \"beide Füße auf den Boden. Lassen Sie die\", \"Schultern locker und schauen Sie geradeaus.\", \"Es geht darum, sich langsam zu bewegen,\", \"ohne den Kopf nach vorne zu ziehen.\", \"Falls der Stuhl wackelt, unterbrechen Sie die\", \"Übung und wählen Sie einen stabileren Sitz.\", \"Wir wiederholen den Ablauf zweimal und\", \"vergleichen anschließend, wie sich die beiden\", \"Seiten anfühlen.\"]}",
+  "usage": {
+    "promptTokenCount": 307,
+    "candidatesTokenCount": 111,
+    "totalTokenCount": 418,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 307
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2194868340011453,
+  "transport_attempts": 1,
+  "lines": [
+    "Bevor wir mit der Bewegung beginnen, stellen Sie",
+    "beide Füße auf den Boden. Lassen Sie die",
+    "Schultern locker und schauen Sie geradeaus.",
+    "Es geht darum, sich langsam zu bewegen,",
+    "ohne den Kopf nach vorne zu ziehen.",
+    "Falls der Stuhl wackelt, unterbrechen Sie die",
+    "Übung und wählen Sie einen stabileren Sitz.",
+    "Wir wiederholen den Ablauf zweimal und",
+    "vergleichen anschließend, wie sich die beiden",
+    "Seiten anfühlen."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 10,
+    "boundaries": 9,
+    "tp": 4,
+    "ref_count": 11,
+    "f1": 0.39999999999999997,
+    "overlong": 0,
+    "short": 1,
+    "protected_total": 3,
+    "protected_breaks": 1,
+    "violations": [
+      {
+        "phrase": "die Schultern",
+        "cut": 90
+      }
+    ],
+    "punctuation_starts": 0,
+    "max_length": 48
+  }
+}

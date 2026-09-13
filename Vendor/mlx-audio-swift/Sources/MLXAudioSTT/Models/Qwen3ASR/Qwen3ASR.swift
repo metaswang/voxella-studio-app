@@ -1236,7 +1236,8 @@ public class Qwen3ASRModel: Module {
         context: String,
         language: String?,
         repetitionPenalty: Float = 1.0,
-        repetitionContextSize: Int = 32
+        repetitionContextSize: Int = 32,
+        onPartialText: ((String) -> Void)? = nil
     ) -> (text: String, language: String?, promptTokens: Int, generationTokens: Int) {
         guard let tokenizer = tokenizer else {
             fatalError("Tokenizer not loaded")
@@ -1270,6 +1271,7 @@ public class Qwen3ASRModel: Module {
         let totalTokens = inputIds.dim(1)
         var processedTokens = 0
         while totalTokens - processedTokens > 1 {
+            if Task.isCancelled { return ("", nil, promptTokenCount, 0) }
             let remaining = (totalTokens - processedTokens) - 1
             let n = min(prefillStepSize, remaining)
             let chunkIds = inputIds[0..., processedTokens..<(processedTokens + n)]
@@ -1304,12 +1306,20 @@ public class Qwen3ASRModel: Module {
         // AR loop with asyncEval pipelining: while CPU is consuming token N
         // (item() blocks briefly), GPU computes token N+1 in the background.
         for tokenIndex in 0..<maxTokens {
+            if Task.isCancelled { break }
             let prevTokenInt = prevTokenArr.item(Int.self)
 
             if eosTokenIds.contains(prevTokenInt) {
                 break
             }
             generatedTokens.append(prevTokenInt)
+            if let onPartialText, tokenIndex.isMultiple(of: 4) {
+                let decoded = tokenizer.decode(tokens: generatedTokens)
+                if language != nil || decoded.contains("<asr_text>") {
+                    let partial = parseGeneratedChunk(decoded, forcedLanguage: language).text
+                    if !partial.isEmpty { onPartialText(partial) }
+                }
+            }
 
             // Backstop for greedy callers (penalty == 1.0): if last 24 tokens have
             // <=3 unique IDs, force-stop to prevent multi-GB KV cache growth and
@@ -1375,7 +1385,8 @@ public class Qwen3ASRModel: Module {
         chunkDuration: Float = 1200.0,
         minChunkDuration: Float = 1.0,
         repetitionPenalty: Float = 1.0,
-        repetitionContextSize: Int = 32
+        repetitionContextSize: Int = 32,
+        onPartialText: ((String) -> Void)? = nil
     ) -> STTOutput {
         let startTime = Date()
         let forcedLanguage = normalizeLanguageName(language)
@@ -1396,7 +1407,7 @@ public class Qwen3ASRModel: Module {
         var chunkLanguages: [String?] = []
 
         for (chunkAudio, offsetSec) in chunks {
-            if remainingTokens <= 0 { break }
+            if remainingTokens <= 0 || Task.isCancelled { break }
 
             let actualChunkDuration = Float(chunkAudio.dim(0)) / Float(sampleRate)
 
@@ -1407,7 +1418,11 @@ public class Qwen3ASRModel: Module {
                 context: context,
                 language: forcedLanguage,
                 repetitionPenalty: repetitionPenalty,
-                repetitionContextSize: repetitionContextSize
+                repetitionContextSize: repetitionContextSize,
+                onPartialText: onPartialText.map { handler in
+                    let prefix = allTexts
+                    return { partial in handler((prefix + [partial]).joined(separator: " ")) }
+                }
             )
 
             allTexts.append(result.text)

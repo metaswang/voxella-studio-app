@@ -27,9 +27,7 @@ struct EmbeddingStoreTests {
             #expect(abs(loaded.vectors[i] - vectors[i]) < 0.01)
         }
 
-        #expect(EmbeddingStore.isCurrent(key: key, model: "test-model", modelVersion: 1, samplerVersion: 1))
-        #expect(!EmbeddingStore.isCurrent(key: key, model: "test-model", modelVersion: 2, samplerVersion: 1))
-        #expect(!EmbeddingStore.isCurrent(key: key, model: "test-model", modelVersion: 1, samplerVersion: 2))
+        #expect(EmbeddingStore.header(key: key) == header)
     }
 
     @Test func missingAndCorrupt() throws {

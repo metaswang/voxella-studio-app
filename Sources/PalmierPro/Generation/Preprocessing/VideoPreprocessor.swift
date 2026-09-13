@@ -72,25 +72,27 @@ enum VideoPreprocessor {
                 width: max(2, floor(abs(display.width) * scale / 2) * 2),
                 height: max(2, floor(abs(display.height) * scale / 2) * 2)
             )
-            var layerConfig = AVVideoCompositionLayerInstruction.Configuration(assetTrack: track)
-            layerConfig.setTransform(
+            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
+            layer.setTransform(
                 transform.concatenating(CGAffineTransform(scaleX: scale, y: scale)), at: .zero)
-            let layer = AVVideoCompositionLayerInstruction(configuration: layerConfig)
-            let instructionConfig = AVVideoCompositionInstruction.Configuration(
-                backgroundColor: nil,
-                enablePostProcessing: false,
-                layerInstructions: [layer],
-                requiredSourceSampleDataTrackIDs: [],
-                timeRange: CMTimeRange(start: .zero, duration: try await asset.load(.duration))
-            )
-            let instruction = AVVideoCompositionInstruction(configuration: instructionConfig)
-            var compositionConfig = try await AVVideoComposition.Configuration(
-                for: asset,
-                prototypeInstruction: instruction
-            )
-            compositionConfig.renderSize = renderSize
-            compositionConfig.instructions = [instruction]
-            session.videoComposition = AVVideoComposition(configuration: compositionConfig)
+            let instruction = AVMutableVideoCompositionInstruction()
+            instruction.enablePostProcessing = false
+            instruction.layerInstructions = [layer]
+            instruction.timeRange = CMTimeRange(start: .zero, duration: try await asset.load(.duration))
+            let videoComposition = AVMutableVideoComposition()
+            let nominalFrameRate = try await track.load(.nominalFrameRate)
+            let frameRate: Int32
+            if nominalFrameRate.isFinite,
+               nominalFrameRate > 0,
+               nominalFrameRate <= Float(Int32.max) {
+                frameRate = max(1, Int32(nominalFrameRate.rounded()))
+            } else {
+                frameRate = 30
+            }
+            videoComposition.frameDuration = CMTime(value: 1, timescale: frameRate)
+            videoComposition.renderSize = renderSize
+            videoComposition.instructions = [instruction]
+            session.videoComposition = videoComposition
         }
         let outputURL = FileIO.temporaryFileURL(pathExtension: "mp4")
         do {

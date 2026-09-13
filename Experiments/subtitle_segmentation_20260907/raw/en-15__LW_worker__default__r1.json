@@ -1,0 +1,57 @@
+{
+  "id": "en-15",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=en\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nThe instructions were simple: open the box, remove the protective sheet, and place the panel on a flat surface. There was one warning—keep the cable dry. We read it twice before starting, because the workspace was close to a sink. Everything else went smoothly; the connectors fitted without extra pressure. Once the indicator light turned green, we recorded the result in the installation log.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "d62707484772fdcac475acd22f3ec13dde541b5da52e25be15bd5b4094e4bb6b",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:14.942908+00:00",
+  "raw": "{\n  \"subtitles\": [\n    \"The instructions were simple: open the box,\",\n    \"remove the protective sheet,\",\n    \"and place the panel on a flat surface.\",\n    \"There was one warning—keep the cable dry.\",\n    \"We read it twice before starting,\",\n    \"because the workspace was close to a sink.\",\n    \"Everything else went smoothly;\",\n    \"the connectors fitted without extra pressure.\",\n    \"Once the indicator light turned green,\",\n    \"we recorded the result in the installation log.\"\n  ],\n  \"batch_summary\": \"Instructions for setting up a panel, highlighting safety and successful completion.\"\n}",
+  "usage": {
+    "promptTokenCount": 281,
+    "candidatesTokenCount": 141,
+    "totalTokenCount": 422,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 281
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.3421899170061806,
+  "transport_attempts": 1,
+  "lines": [
+    "The instructions were simple: open the box,",
+    "remove the protective sheet,",
+    "and place the panel on a flat surface.",
+    "There was one warning—keep the cable dry.",
+    "We read it twice before starting,",
+    "because the workspace was close to a sink.",
+    "Everything else went smoothly;",
+    "the connectors fitted without extra pressure.",
+    "Once the indicator light turned green,",
+    "we recorded the result in the installation log."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 10,
+    "boundaries": 9,
+    "tp": 8,
+    "ref_count": 9,
+    "f1": 0.8888888888888888,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 47
+  }
+}

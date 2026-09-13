@@ -73,7 +73,7 @@ struct RecordingCaptureConfiguration: Equatable, Sendable {
     }
 
     var requiresScreenCapturePermissionRequest: Bool {
-        requiresScreenCapture && mode == .audioOnly
+        requiresScreenCapture && (mode == .display || !mode.usesSystemPicker)
     }
 
     var hasAudioSource: Bool {
@@ -283,6 +283,7 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
     case microphoneDenied
     case microphoneRestricted
     case screenCaptureDenied
+    case screenCapturePermissionRequired
     case screenCaptureNeedsRelaunch
     case noDisplay
     case writerFailed(String)
@@ -302,7 +303,9 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
         case .microphoneRestricted:
             "Microphone access is restricted by macOS or device management."
         case .screenCaptureDenied:
-            "Screen Recording is not available to this app. Allow VoxStudio in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen VoxStudio."
+            "Screen Recording permission is required. Allow VoxStudio in System Settings → Privacy & Security → Screen & System Audio Recording, then try recording again."
+        case .screenCapturePermissionRequired:
+            "Allow Screen Recording for VoxStudio in System Settings → Privacy & Security → Screen & System Audio Recording, then return here and start recording."
         case .screenCaptureNeedsRelaunch:
             "Screen Recording is allowed, but this session cannot capture yet. Quit VoxStudio and reopen it, then start recording again."
         case .noDisplay:
@@ -320,7 +323,7 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
         switch self {
         case .microphoneDenied, .microphoneRestricted:
             .microphone
-        case .screenCaptureDenied:
+        case .screenCaptureDenied, .screenCapturePermissionRequired:
             .screenCapture
         default:
             nil

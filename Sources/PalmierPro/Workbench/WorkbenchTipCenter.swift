@@ -3,6 +3,7 @@ import Observation
 
 enum WorkbenchTipKind: Equatable, Sendable {
     case success
+    case warning
     case error
     case info
 }

@@ -1,0 +1,60 @@
+{
+  "id": "zh-Hans-10",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language zh-Hans.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: zh-Hans\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n如果录音在讲座结束前停止，请先保持设备原来的位置，然后记录刚才发生了什么。不要连续按下所有按钮，否则问题可能会更难排查。备用录音机应该继续运行，直到观众全部离开会场。之后再把两张存储卡交到服务台，由负责整理素材的同事一起检查文件是否完整。确认没有遗漏以后，我们才开始复制，并且为每份文件注明来源。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "6c5676d4c576fed20e021f3b5e2e272746ba5342fc2c982f6c83be9fee516b3e",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:44.245533+00:00",
+  "raw": "{\"lines\":[\"如果录音在讲座结束前停止，\", \"请先保持设备原来的位置，\", \"然后记录刚才发生了什么。\", \"不要连续按下所有按钮，\", \"否则问题可能会更难排查。\", \"备用录音机应该继续运行，\", \"直到观众全部离开会场。\", \"之后再把两张存储卡交到服务台，\", \"由负责整理素材的同事一起检查\", \"文件是否完整。\", \"确认没有遗漏以后，\", \"我们才开始复制，\", \"并且为每份文件注明来源。\"]}",
+  "usage": {
+    "promptTokenCount": 318,
+    "candidatesTokenCount": 120,
+    "totalTokenCount": 438,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 318
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.1407087920015329,
+  "transport_attempts": 1,
+  "lines": [
+    "如果录音在讲座结束前停止，",
+    "请先保持设备原来的位置，",
+    "然后记录刚才发生了什么。",
+    "不要连续按下所有按钮，",
+    "否则问题可能会更难排查。",
+    "备用录音机应该继续运行，",
+    "直到观众全部离开会场。",
+    "之后再把两张存储卡交到服务台，",
+    "由负责整理素材的同事一起检查",
+    "文件是否完整。",
+    "确认没有遗漏以后，",
+    "我们才开始复制，",
+    "并且为每份文件注明来源。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 13,
+    "boundaries": 12,
+    "tp": 11,
+    "ref_count": 12,
+    "f1": 0.9166666666666666,
+    "overlong": 0,
+    "short": 1,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 15
+  }
+}

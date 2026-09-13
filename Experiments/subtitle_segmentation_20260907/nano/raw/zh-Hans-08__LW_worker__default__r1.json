@@ -1,0 +1,59 @@
+{
+  "id": "zh-Hans-08",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n今天练习需要准备三样东西：一本笔记本、一支铅笔，以及桌面上随手能拿到的小物件。先描述它的外观，再说明平时可以怎样使用，最后想象一个特殊场景，看看它还能发挥什么作用。这道练习没有唯一正确答案，重点是把细节表达清楚。等大家都写完以后，我们会挑几个例子一起讨论，也欢迎补充与自己经历有关的故事。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "99565df4b25a53ec913c104928687857c44e899b760fa5a3da2679354dad3b2a",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:40.658270+00:00",
+  "raw": "{\"subtitles\":[\"今天练习需要准备三样东西：一本笔记本、一支铅笔，以及桌面上随手能拿到的小物件。\",\"先描述它的外观，再说明平时可以怎样使用，最后想象一个特殊场景，看看它还能发挥什么作用。\",\"这道练习没有唯一正确答案，重点是把细节表达清楚。\",\"等大家都写完以后，我们会挑几个例子一起讨论，也欢迎补充与自己经历有关的故事。\"],\"batch_summary\":\"逐句切分的字幕，严格保留原文标点与文本，不改动内容。\"}",
+  "usage": {
+    "promptTokenCount": 320,
+    "candidatesTokenCount": 146
+  },
+  "provider_usage": {
+    "prompt_tokens": 320,
+    "completion_tokens": 146,
+    "total_tokens": 466,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.5103816670016386,
+  "transport_attempts": 1,
+  "lines": [
+    "今天练习需要准备三样东西：一本笔记本、一支铅笔，以及桌面上随手能拿到的小物件。",
+    "先描述它的外观，再说明平时可以怎样使用，最后想象一个特殊场景，看看它还能发挥什么作用。",
+    "这道练习没有唯一正确答案，重点是把细节表达清楚。",
+    "等大家都写完以后，我们会挑几个例子一起讨论，也欢迎补充与自己经历有关的故事。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 4,
+    "boundaries": 3,
+    "tp": 3,
+    "ref_count": 11,
+    "f1": 0.42857142857142855,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 43
+  }
+}

@@ -69,32 +69,40 @@ enum AgentReasoningEffort: String, CaseIterable, Sendable {
     }
 }
 
-enum AgentModel: String, CaseIterable, Codable, Sendable {
-    case sonnet5 = "claude-sonnet-5"
-    case opus5 = "claude-opus-5"
-    case fable5 = "claude-fable-5"
-    case luna = "gpt-5.6-luna"
-    case terra = "gpt-5.6-terra"
-    case sol = "gpt-5.6-sol"
+struct AgentModel: Hashable, Codable, Sendable {
+    let rawValue: String
+
+    init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    static let sonnet5 = AgentModel(rawValue: "claude-sonnet-5")
+    static let opus5 = AgentModel(rawValue: "claude-opus-5")
+    static let fable5 = AgentModel(rawValue: "claude-fable-5")
+    static let luna = AgentModel(rawValue: "gpt-5.6-luna")
+    static let terra = AgentModel(rawValue: "gpt-5.6-terra")
+    static let sol = AgentModel(rawValue: "gpt-5.6-sol")
+
+    static let allCases = [sonnet5, opus5, fable5, luna, terra, sol]
+    static let anthropicModels = [sonnet5, opus5, fable5]
 
     static let defaultModel: AgentModel = .terra
 
     var displayName: String {
-        switch self {
-        case .sonnet5: "Sonnet 5"
-        case .opus5: "Opus 5"
-        case .fable5: "Fable 5"
-        case .luna: "GPT-5.6 Luna"
-        case .terra: "GPT-5.6 Terra"
-        case .sol: "GPT-5.6 Sol"
+        switch rawValue {
+        case Self.sonnet5.rawValue: "Sonnet 5"
+        case Self.opus5.rawValue: "Opus 5"
+        case Self.fable5.rawValue: "Fable 5"
+        case Self.luna.rawValue: "GPT-5.6 Luna"
+        case Self.terra.rawValue: "GPT-5.6 Terra"
+        case Self.sol.rawValue: "GPT-5.6 Sol"
+        default:
+            rawValue
         }
     }
 
     var provider: AgentProvider {
-        switch self {
-        case .sonnet5, .opus5, .fable5: .anthropic
-        case .luna, .terra, .sol: .openAI
-        }
+        rawValue.hasPrefix("claude-") ? .anthropic : .openAI
     }
 
     var maxOutputTokens: Int { 64_000 }
@@ -104,7 +112,26 @@ enum AgentModel: String, CaseIterable, Codable, Sendable {
     }
 
     static func persisted(_ rawValue: String) -> AgentModel? {
-        rawValue == "claude-opus-4-8" ? .opus5 : AgentModel(rawValue: rawValue)
+        if rawValue == "claude-opus-4-8" { return .opus5 }
+        if let model = allCases.first(where: { $0.rawValue == rawValue }) { return model }
+        return OpenAIChatModelID(rawValue).map { AgentModel(rawValue: $0.rawValue) }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        guard let model = Self.persisted(rawValue) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unsupported agent model"
+            )
+        }
+        self = model
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 
     var supportedReasoningEfforts: [AgentReasoningEffort] {
@@ -112,10 +139,85 @@ enum AgentModel: String, CaseIterable, Codable, Sendable {
         case .anthropic:
             [.low, .medium, .high, .xHigh, .max]
         case .openAI:
-            AgentReasoningEffort.allCases
+            OpenAIChatModelID(rawValue)?.supportedReasoningEfforts ?? []
         }
     }
 
+}
+
+struct OpenAIChatModelID: Hashable, Sendable {
+    let rawValue: String
+    let majorVersion: Int
+    let minorVersion: Int
+
+    init?(_ rawValue: String) {
+        let components = rawValue.split(separator: "-", omittingEmptySubsequences: false)
+        let version = components.count > 1
+            ? components[1].split(separator: ".", omittingEmptySubsequences: false)
+            : []
+        guard components.count >= 2,
+              components[0] == "gpt",
+              !components.dropFirst(2).contains(where: { $0.isEmpty }),
+              version.count <= 2,
+              let major = Int(version[0]),
+              major >= 5
+        else { return nil }
+
+        let minor = version.count == 2 ? Int(version[1]) : 0
+        guard let minor,
+              components.dropFirst(2).allSatisfy({ $0.allSatisfy(\.isLetter) }),
+              major > 5 || minor >= 6
+        else { return nil }
+
+        self.rawValue = rawValue
+        self.majorVersion = major
+        self.minorVersion = minor
+    }
+
+    var supportedReasoningEfforts: [AgentReasoningEffort] {
+        if majorVersion == 5, minorVersion == 6 {
+            [.none, .low, .medium, .high, .xHigh, .max]
+        } else {
+            [.low, .medium, .high, .xHigh, .max]
+        }
+    }
+}
+
+enum OpenAIModelDiscovery {
+    private struct Response: Decodable {
+        let data: [Model]
+    }
+
+    private struct Model: Decodable {
+        let id: String
+    }
+
+    @concurrent
+    static func fetch(apiKey: String) async throws -> [AgentModel] {
+        guard !apiKey.isEmpty else { return [] }
+
+        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/models")!)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            throw AgentClientTransportError.httpError(
+                provider: .openAI,
+                status: response.statusCode,
+                body: String(decoding: data, as: UTF8.self)
+            )
+        }
+
+        return try models(from: data)
+    }
+
+    static func models(from data: Data) throws -> [AgentModel] {
+        try JSONDecoder().decode(Response.self, from: data).data
+            .compactMap { OpenAIChatModelID($0.id).map { AgentModel(rawValue: $0.rawValue) } }
+            .sorted { $0.rawValue.localizedStandardCompare($1.rawValue) == .orderedAscending }
+    }
 }
 
 struct AgentRunSettings: Equatable, Sendable {

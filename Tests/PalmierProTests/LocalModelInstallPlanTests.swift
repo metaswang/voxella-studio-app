@@ -15,6 +15,7 @@ struct LocalModelInstallPlanTests {
         )
         #expect(plan.items.map(\.id) == [
             .sileroVAD,
+            .sileroVADMLX,
             .qwen3ASR17B8Bit,
             .parakeetTDT06Bv3,
             .whisperLargeV3Turbo8Bit,
@@ -35,7 +36,7 @@ struct LocalModelInstallPlanTests {
             catalog: Self.catalog,
             isInstalled: { _ in false }
         )
-        #expect(plan.items.map(\.id) == [.sileroVAD, .parakeetTDT06Bv3])
+        #expect(plan.items.map(\.id) == [.sileroVAD, .sileroVADMLX, .parakeetTDT06Bv3])
         #expect(plan.missingItems.contains { $0.id == .spokenLanguageID } == false)
         #expect(plan.missingItems.contains { $0.id == .forcedAligner } == false)
         #expect(plan.missingItems.contains { $0.id == .sortformerDiarization } == false)
@@ -49,7 +50,7 @@ struct LocalModelInstallPlanTests {
             catalog: Self.catalog,
             isInstalled: { _ in false }
         )
-        #expect(plan.items.map(\.id) == [.sileroVAD, .qwen3ASR17B8Bit, .forcedAligner])
+        #expect(plan.items.map(\.id) == [.sileroVAD, .sileroVADMLX, .qwen3ASR17B8Bit, .forcedAligner])
         #expect(plan.missingItems.contains { $0.id == .parakeetTDT06Bv3 } == false)
         #expect(plan.missingItems.contains { $0.id == .spokenLanguageID } == false)
     }
@@ -62,12 +63,12 @@ struct LocalModelInstallPlanTests {
             catalog: Self.catalog,
             isInstalled: { _ in false }
         )
-        #expect(plan.items.map(\.id) == [.sileroVAD, .qwen3ASR17B8Bit, .forcedAligner])
+        #expect(plan.items.map(\.id) == [.sileroVAD, .sileroVADMLX, .qwen3ASR17B8Bit, .forcedAligner])
     }
 
     @Test func installedModelsAreExcludedFromAdditionalDiskSpace() {
         let installed: Set<LocalModelID> = [
-            .whisperLargeV3Turbo8Bit, .forcedAligner, .sileroVAD,
+            .whisperLargeV3Turbo8Bit, .forcedAligner, .sileroVAD, .sileroVADMLX,
             .qwen3ASR17B8Bit, .parakeetTDT06Bv3,
         ]
         let plan = LocalModelInstallPlan.plan(
@@ -99,7 +100,7 @@ struct LocalModelInstallPlanTests {
         )
         #expect(fp16.additionalBytes > eightBit.additionalBytes)
         #expect(fp16.asrModelID == .whisperLargeV3TurboFP16)
-        #expect(eightBit.items.map(\.id) == [.sileroVAD, .whisperLargeV3Turbo8Bit, .forcedAligner])
+        #expect(eightBit.items.map(\.id) == [.sileroVAD, .sileroVADMLX, .whisperLargeV3Turbo8Bit, .forcedAligner])
     }
 
     @Test func liveCatalogComputesAutomaticDefaultFromInstalledState() {
@@ -116,17 +117,34 @@ struct LocalModelInstallPlanTests {
         #expect(plan.additionalBytes > 0)
     }
 
-    @Test func installedVADSatisfiesTheRequiredInstallSlot() {
+    @Test func installedVADsSatisfyTheRequiredInstallSlots() {
         let plan = LocalModelInstallPlan.plan(
             languageCode: "en",
             speakerCount: 1,
             asrModelID: .whisperLargeV3Turbo8Bit,
             catalog: LocalModelManager.catalog,
-            isInstalled: { $0 == .sileroVAD }
+            isInstalled: { $0 == .sileroVAD || $0 == .sileroVADMLX }
         )
         #expect(plan.items.first?.id == .sileroVAD)
         #expect(plan.items.first?.isInstalled == true)
         #expect(plan.missingItems.contains { $0.id == .sileroVAD } == false)
+        #expect(plan.missingItems.contains { $0.id == .sileroVADMLX } == false)
+    }
+
+    @Test func dubbingPlanIncludesSelectedVoiceModelAndAlignerWithPinnedRevisions() {
+        let plan = LocalModelInstallPlan.dubPlan(
+            modelID: .qwenTTS17B,
+            catalog: [
+                Self.descriptor(.qwenTTS17B, bytes: 2_400_000_000, license: false),
+                Self.descriptor(.forcedAligner, bytes: 980_000_000, license: false),
+            ],
+            isInstalled: { $0 == .forcedAligner }
+        )
+
+        #expect(plan.items.map(\.id) == [.qwenTTS17B, .forcedAligner])
+        #expect(plan.missingItems.map(\.id) == [.qwenTTS17B])
+        #expect(plan.items.allSatisfy { !$0.revision.isEmpty })
+        #expect(plan.additionalBytes == 2_400_000_000)
     }
 
     private static var catalog: [LocalModelDescriptor] {
@@ -137,6 +155,7 @@ struct LocalModelInstallPlanTests {
             descriptor(.whisperLargeV3TurboFP16, bytes: 3_000_000_000, license: true),
             descriptor(.forcedAligner, bytes: 80_000_000, license: false),
             descriptor(.sileroVAD, bytes: 10_000_000, license: false),
+            descriptor(.sileroVADMLX, bytes: 2_000_000, license: false),
             descriptor(.spokenLanguageID, bytes: 80_000_000, license: false),
             descriptor(.sortformerDiarization, bytes: 320_000_000, license: false),
         ]

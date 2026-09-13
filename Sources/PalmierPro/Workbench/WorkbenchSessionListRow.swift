@@ -9,53 +9,59 @@ struct SessionListRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: onOpen) {
-            HStack(spacing: AppTheme.Spacing.lgXl) {
-                WorkbenchSessionThumbnail(
-                    session: session,
-                    size: CGSize(
-                        width: AppTheme.Workbench.recentSessionThumbnailWidth,
-                        height: AppTheme.Workbench.recentSessionThumbnailHeight
-                    ),
-                    showsTypeBadge: true
-                )
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text(session.title)
-                        .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
-                        .foregroundStyle(AppTheme.Text.primaryColor)
-                        .lineLimit(1)
-                    HStack(spacing: AppTheme.Spacing.smMd) {
-                        if session.sessionType.showsRecentListLabel {
-                            Text(session.sessionType.label)
+        HStack(spacing: AppTheme.Spacing.smMd) {
+            Button(action: onOpen) {
+                HStack(spacing: AppTheme.Spacing.lgXl) {
+                    WorkbenchSessionThumbnail(
+                        session: session,
+                        size: CGSize(
+                            width: AppTheme.Workbench.recentSessionThumbnailWidth,
+                            height: AppTheme.Workbench.recentSessionThumbnailHeight
+                        ),
+                        showsTypeBadge: true
+                    )
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                        Text(session.title)
+                            .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
+                            .foregroundStyle(AppTheme.Text.primaryColor)
+                            .lineLimit(1)
+                        HStack(spacing: AppTheme.Spacing.smMd) {
+                            if session.sessionType.showsRecentListLabel {
+                                Text(session.sessionType.label)
+                            }
+                            if let duration = session.duration {
+                                Text(formatTime(duration))
+                            }
+                            Text(session.modifiedAt.formatted(date: .abbreviated, time: .shortened))
                         }
-                        if let duration = session.duration {
-                            Text(formatTime(duration))
-                        }
-                        Text(session.modifiedAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
                     }
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Text.mutedColor)
+                    Spacer(minLength: AppTheme.Spacing.zero)
+                    SessionPlacementIndicators(
+                        storage: session.storage,
+                        compute: session.compute,
+                        showsLabel: true
+                    )
+                    SessionStatusBadge(status: session.status)
                 }
-                Spacer(minLength: AppTheme.Spacing.zero)
-                SessionPlacementIndicators(
-                    storage: session.storage,
-                    compute: session.compute,
-                    showsLabel: true
-                )
-                SessionStatusBadge(state: session.state)
-                Color.clear
-                    .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+
+            SessionStatusInfoButton(status: session.status)
+
+            Color.clear
+                .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
         }
-        .buttonStyle(.plain)
         .padding(AppTheme.Spacing.lgXl)
         .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.sessionHeaderMinHeight, alignment: .leading)
-        .background(
-            isHovered ? AppTheme.Background.raisedColor : AppTheme.Background.surfaceColor,
-            in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
-        )
+        .background {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+                .fill(isHovered ? AppTheme.Background.raisedColor : AppTheme.Background.surfaceColor)
+                .shadow(isHovered ? AppTheme.Shadow.md : AppTheme.Shadow.sm)
+        }
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
                 .strokeBorder(
@@ -99,7 +105,6 @@ struct SessionListRow: View {
             .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
             .padding(.trailing, AppTheme.Spacing.lgXl)
         }
-        .shadow(isHovered ? AppTheme.Shadow.md : AppTheme.Shadow.sm)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .animation(.easeInOut(duration: AppTheme.Anim.hover), value: isHovered)

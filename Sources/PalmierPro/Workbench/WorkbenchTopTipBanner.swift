@@ -19,6 +19,11 @@ struct WorkbenchTopTipBanner: View {
 
     private func banner(_ tip: WorkbenchTip) -> some View {
         HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
+            Image(systemName: symbol(for: tip.kind))
+                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                .foregroundStyle(foreground(for: tip.kind))
+                .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
+
             Text(tip.message)
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(foreground(for: tip.kind))
@@ -35,16 +40,12 @@ struct WorkbenchTopTipBanner: View {
                 .underline()
             }
 
-            Button {
+            Button("Dismiss") {
                 tips.hide()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
-                    .foregroundStyle(foreground(for: tip.kind).opacity(AppTheme.Opacity.strong))
-                    .frame(width: AppTheme.IconSize.xs, height: AppTheme.IconSize.xs)
-                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+            .foregroundStyle(foreground(for: tip.kind))
             .help("Dismiss")
         }
         .padding(.horizontal, AppTheme.Spacing.lg)
@@ -60,8 +61,18 @@ struct WorkbenchTopTipBanner: View {
     private func foreground(for kind: WorkbenchTipKind) -> Color {
         switch kind {
         case .success: AppTheme.Status.successColor
+        case .warning: AppTheme.Status.warningColor
         case .error: AppTheme.Status.errorColor
         case .info: AppTheme.Status.infoColor
+        }
+    }
+
+    private func symbol(for kind: WorkbenchTipKind) -> String {
+        switch kind {
+        case .success: "checkmark.circle.fill"
+        case .warning: "exclamationmark.triangle.fill"
+        case .error: "xmark.octagon.fill"
+        case .info: "info.circle.fill"
         }
     }
 

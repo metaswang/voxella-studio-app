@@ -214,7 +214,7 @@ struct RecordWorkbenchPanel: View {
                 .accessibilityLabel("Discard recording")
             } else {
                 Button {
-                    session.start()
+                    session.requestStart()
                 } label: {
                     Label(startLabel, systemImage: "record.circle")
                 }
@@ -235,11 +235,11 @@ struct RecordWorkbenchPanel: View {
 
     @ViewBuilder
     private var messages: some View {
-        if let errorMessage = session.errorMessage {
+        if let message = session.errorMessage ?? session.permissionMessage {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text(errorMessage)
+                Text(message)
                     .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Status.errorColor)
+                    .foregroundStyle(session.errorMessage == nil ? AppTheme.Text.secondaryColor : AppTheme.Status.errorColor)
                     .fixedSize(horizontal: false, vertical: true)
                 if session.permissionSettingsURL != nil {
                     Button("Open System Settings") {

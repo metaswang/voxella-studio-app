@@ -6,43 +6,13 @@ struct MediaSessionsBrowser: View {
     @Bindable private var workbench = WorkbenchStore.shared
 
     @State private var searchText = ""
-    @State private var statusFilter: StatusFilter = .all
-
-    enum StatusFilter: String, CaseIterable, Identifiable {
-        case all
-        case completed
-        case processing
-        case ready
-        case needsAttention
-
-        var id: String { rawValue }
-
-        var label: String {
-            switch self {
-            case .all: L10n.key("All")
-            case .completed: L10n.key("Completed")
-            case .processing: L10n.key("Processing")
-            case .ready: L10n.key("Ready")
-            case .needsAttention: L10n.key("Needs Attention")
-            }
-        }
-
-        func matches(_ state: WorkbenchJobState) -> Bool {
-            switch self {
-            case .all: true
-            case .completed: state == .completed
-            case .processing: state == .running || state == .cancelling
-            case .ready: state == .ready
-            case .needsAttention: state == .failed || state == .cancelled
-            }
-        }
-    }
+    @State private var statusFilter: WorkbenchSessionStatusFilter = .all
 
     private var filteredSessions: [WorkbenchSession] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return workbench.sessions
             .filter { session in
-                guard statusFilter.matches(session.state) else { return false }
+                guard statusFilter.matches(session.status) else { return false }
                 guard !query.isEmpty else { return true }
                 let filename = session.sourceURL?.lastPathComponent ?? ""
                 return session.title.localizedCaseInsensitiveContains(query)
@@ -86,7 +56,7 @@ struct MediaSessionsBrowser: View {
             .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
 
             Menu {
-                ForEach(StatusFilter.allCases) { filter in
+                ForEach(WorkbenchSessionStatusFilter.allCases) { filter in
                     Button {
                         statusFilter = filter
                     } label: {
@@ -164,6 +134,7 @@ struct MediaSessionsBrowser: View {
                 ForEach(sessionChips(session), id: \.title) { chip in
                     sessionChip(chip)
                 }
+                SessionStatusInfoButton(status: session.status)
             }
         }
         .padding(AppTheme.Spacing.sm)
@@ -235,7 +206,10 @@ struct MediaSessionsBrowser: View {
         if session.outputURL != nil {
             chips.append(SessionChip(title: "Dub", icon: "waveform.badge.mic"))
         }
-        chips.append(SessionChip(title: session.state.label, icon: "circle.fill"))
+        chips.append(SessionChip(title: session.status.primaryLabel, icon: "circle.fill"))
+        if let secondaryLabel = session.status.secondaryLabel {
+            chips.append(SessionChip(title: secondaryLabel, icon: "exclamationmark.circle"))
+        }
         return chips
     }
 

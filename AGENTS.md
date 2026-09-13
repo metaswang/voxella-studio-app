@@ -1,6 +1,6 @@
 # PalmierPro
 
-AI-native macOS video editor. Swift 6.2, SwiftUI + AppKit, AVFoundation. macOS 26 only, arm64 only. Non-sandboxed Developer ID app.
+AI-native macOS video editor. Swift 6.2, SwiftUI + AppKit, AVFoundation. macOS 15+, arm64 only. Non-sandboxed Developer ID app.
 
 ## Build
 
@@ -164,6 +164,13 @@ All UI styling MUST use `AppTheme` constants from `Sources/PalmierPro/UI/AppThem
 - **Animation durations** → `AppTheme.Anim.*`
 
 If a needed value doesn't exist in AppTheme, add it there first — don't hardcode it.
+
+## Voice input
+
+- Input-bound voice entry must render inside the input's existing bounds using `InlineVoiceInputControl` in `Sources/PalmierPro/SpeechInput/`. This includes search, single-line fields, script editors, and AI instructions.
+- Keep the microphone, live waveform, recognition preview, cancellation, retry, and errors inline. Do not open a sheet, popover, floating window, or `VoiceInputCoordinator.present()` from an input field.
+- Use `multiline: false` for search and single-line fields. Allow the field container to grow vertically for recording and error states; do not clip the control with a fixed height.
+- Reuse the shared speech coordinator, recorder, recognizer, and waveform. Do not add feature-specific recording or transcription pipelines.
 
 ## Drag and drop
 

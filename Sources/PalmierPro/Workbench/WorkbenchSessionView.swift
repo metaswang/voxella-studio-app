@@ -110,7 +110,6 @@ struct RecentSessionsView: View {
 
 struct WorkbenchSessionDetailView: View {
     @Bindable private var store = WorkbenchStore.shared
-    @Bindable private var models = LocalModelManager.shared
     @Bindable private var account = AccountService.shared
     @State private var selectedTrack = SessionPlaybackTrack.original
     @State private var selectedTab = SessionDetailTab.transcript
@@ -200,7 +199,7 @@ struct WorkbenchSessionDetailView: View {
                     onCancel: { showDubOptionsSheet = false },
                     onManageVoices: {
                         showDubOptionsSheet = false
-                        store.route = .voiceLibrary
+                        SettingsWindowController.shared.show(tab: .voiceLibrary)
                     },
                     onStart: { referenceVoiceID in
                         guard let transcriptionID = session.transcriptionID,
@@ -261,15 +260,6 @@ struct WorkbenchSessionDetailView: View {
                     },
                     onCancel: { showRetranscribeSheet = false },
                     onContinue: { submission in
-                        if submission.placement.compute == .local {
-                            guard models.hasRequiredTranscriptionModels(
-                                languageCode: submission.options.languageCode,
-                                speakerCount: submission.options.speakerCount.count
-                            ) else {
-                                models.presentManager()
-                                return
-                            }
-                        }
                         showRetranscribeSheet = false
                         store.retranscribe(transcriptionID, submission: submission)
                     }
@@ -355,7 +345,8 @@ struct WorkbenchSessionDetailView: View {
                         dubbedMediaURL: dubbedMediaURL,
                         secondaryAudioURL: secondaryAudioURL,
                         hasInlineVideo: hasInlineVideo,
-                        playbackCues: playbackCues
+                        playbackCues: playbackCues,
+                        contentHeight: proxy.size.height
                     )
                     .frame(maxHeight: .infinity, alignment: .top)
                     .frame(
@@ -463,9 +454,21 @@ struct WorkbenchSessionDetailView: View {
         dubbedMediaURL: URL?,
         secondaryAudioURL: URL?,
         hasInlineVideo: Bool,
-        playbackCues: [SubtitleCue]
+        playbackCues: [SubtitleCue],
+        contentHeight: CGFloat
     ) -> some View {
         if hasInlineVideo {
+            let summaryIdealHeight = max(
+                AppTheme.Workbench.summaryPanelMinHeight,
+                contentHeight * AppTheme.Workbench.sessionSummaryDefaultRatio
+            )
+            let videoIdealHeight = max(
+                0,
+                contentHeight - summaryIdealHeight
+            )
+            let videoMinHeight = videoIdealHeight > 0
+                ? min(AppTheme.Workbench.sessionVideoMinHeight, videoIdealHeight)
+                : AppTheme.Workbench.sessionVideoMinHeight
             VSplitView {
                 sessionPlaybackPlayer(
                     session: session,
@@ -479,18 +482,19 @@ struct WorkbenchSessionDetailView: View {
                     playbackCues: playbackCues
                 )
                 .frame(
-                    minHeight: AppTheme.Workbench.sessionVideoMinHeight,
-                    idealHeight: AppTheme.Workbench.sessionVideoIdealHeight,
+                    minHeight: videoMinHeight,
+                    idealHeight: videoIdealHeight,
                     maxHeight: .infinity,
                     alignment: .top
                 )
-                .layoutPriority(1)
                 sessionSummary(session)
                     .frame(
-                        minHeight: AppTheme.Workbench.summaryPanelMinHeight,
+                        minHeight: summaryIdealHeight,
+                        idealHeight: summaryIdealHeight,
                         maxHeight: .infinity,
                         alignment: .top
                     )
+                    .layoutPriority(1)
             }
         } else {
             sessionSummary(session)
@@ -662,10 +666,13 @@ struct WorkbenchSessionDetailView: View {
                 cloudSyncStatus(session)
             }
             Spacer()
-            SessionStatusBadge(
-                state: session.state,
-                processing: sessionProcessingSnapshot(for: session)
-            )
+            HStack(spacing: AppTheme.Spacing.xs) {
+                SessionStatusBadge(
+                    status: session.status,
+                    processing: sessionProcessingSnapshot(for: session)
+                )
+                SessionStatusInfoButton(status: session.status)
+            }
             if let dubID = session.dubID {
                 revisionPicker(dubID: dubID)
             }
@@ -780,13 +787,18 @@ struct WorkbenchSessionDetailView: View {
     }
 
     private func sessionOptionsMenu(_ session: WorkbenchSession) -> some View {
-        let isProcessing = session.state == .running || session.state == .cancelling
+        let isProcessing = session.status.showsProcessing || session.status.showsQueued
         return Menu {
             if session.transcriptionID != nil {
                 Button("Re-transcribe and rebuild subtitles") {
                     showRetranscribeSheet = true
                 }
                 .disabled(isProcessing || session.sourceURL == nil)
+            }
+            if session.isRemoteOnly, session.status.displayTaskState == .unknown {
+                Button("Refresh status") {
+                    Task { await store.refreshRemoteSessions() }
+                }
             }
             Divider()
             Button("Delete", role: .destructive) {
@@ -1436,6 +1448,7 @@ private struct SessionMediaPlayer: View {
             }
         }
         .background(AppTheme.Background.surfaceColor)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
         .frame(
             maxHeight: showsVideoCanvas
                 ? .infinity
@@ -1554,12 +1567,7 @@ private struct SessionMediaPlayer: View {
                             playback.togglePlayback()
                         }
                 }
-                .frame(maxWidth: .infinity)
-                .frame(
-                    minHeight: AppTheme.Workbench.sessionVideoMinHeight,
-                    idealHeight: AppTheme.Workbench.sessionVideoIdealHeight
-                )
-                .frame(maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(1)
 
                 videoControls(currentTime: currentTime)

@@ -739,12 +739,23 @@ struct VoxellaUserPlans: Decodable, Sendable {
     let currentPeriodEnd: String?
     let statusNote: String?
     let plans: [VoxellaBillingPlan]
+    let appAccess: AppAccessResponse?
 
     enum CodingKeys: String, CodingKey {
         case userPlanID = "user_plan_id"
         case currentPeriodEnd = "current_period_end"
         case statusNote = "status_note"
         case plans
+        case appAccess = "app_access"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        userPlanID = try container.decodeIfPresent(String.self, forKey: .userPlanID)
+        currentPeriodEnd = try container.decodeIfPresent(String.self, forKey: .currentPeriodEnd)
+        statusNote = try container.decodeIfPresent(String.self, forKey: .statusNote)
+        plans = try container.decodeIfPresent([VoxellaBillingPlan].self, forKey: .plans) ?? []
+        appAccess = try container.decodeIfPresent(AppAccessResponse.self, forKey: .appAccess)
     }
 }
 
@@ -852,6 +863,65 @@ actor VoxellaAPIClient {
             method: "GET",
             as: VoxellaBillingBalance.self
         )
+    }
+
+    func startAppTrial() async throws -> AppAccessResponse {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/trial"),
+            method: "POST",
+            json: [:],
+            as: AppAccessResponse.self
+        )
+    }
+
+    func verifyAppStorePurchase(productID: String, userID: UUID) async throws {
+        struct Eligibility: Decodable, Sendable { let eligible: Bool }
+        let result = try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/app-store/eligibility"),
+            method: "POST",
+            json: ["product_id": productID, "app_account_token": userID.uuidString],
+            as: Eligibility.self
+        )
+        guard result.eligible else { throw AppAccessError.verificationRequired }
+    }
+
+    func syncAppStoreTransaction(
+        signedTransaction: String,
+        appAccountToken: UUID
+    ) async throws -> AppAccessResponse {
+        struct Operation: Decodable, Sendable {
+            let operation_id: UUID
+            let status: String
+            let error_code: String?
+        }
+        let generation = await auth.currentSessionGeneration()
+        let operation = try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/app-store/transactions"),
+            method: "POST", json: ["signed_transaction": signedTransaction],
+            headers: ["Idempotency-Key": UUID().uuidString], as: Operation.self
+        )
+        var delay: UInt64 = 1_000_000_000
+        for _ in 0..<60 {
+            try Task.checkCancellation()
+            guard await auth.currentSessionGeneration() == generation else { throw CancellationError() }
+            let status = try await request(
+                url: VoxellaAPIConfiguration.apiURL("api/v1/billing/operations/\(operation.operation_id.uuidString)"),
+                method: "GET", as: Operation.self
+            )
+            guard await auth.currentSessionGeneration() == generation else { throw CancellationError() }
+            if status.status == "succeeded" {
+                let access = try await request(url: VoxellaAPIConfiguration.apiURL("api/v1/app-access"), method: "GET", as: AppAccessResponse.self)
+                guard await auth.currentSessionGeneration() == generation else { throw CancellationError() }
+                try Task.checkCancellation()
+                return access
+            }
+            if status.status == "failed" {
+                throw VoxellaAPIError.http(409, String(localized: "Your purchase needs review. Please contact support."))
+            }
+            try await Task.sleep(nanoseconds: delay)
+            delay = min(delay * 2, 5_000_000_000)
+        }
+        throw VoxellaAPIError.http(202, String(localized: "Your purchase is still processing. It will be restored automatically."))
     }
 
     func beginGoogleCalendarConnection(redirectURI: String) async throws -> VoxellaCalendarOAuthStart {
@@ -1160,6 +1230,7 @@ actor VoxellaAPIClient {
         )
     }
 
+#if !MAC_APP_STORE
     func createBillingCheckout(planID: String? = nil, topupAmountUSD: Double? = nil) async throws -> VoxellaCheckoutSession {
         var body: [String: Any] = [
             "interval": "month",
@@ -1176,6 +1247,19 @@ actor VoxellaAPIClient {
         )
     }
 
+    func createLifetimeCheckout() async throws -> VoxellaCheckoutSession {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/billing/stripe/checkout"),
+            method: "POST",
+            json: [
+                "purchase_kind": "lifetime",
+                "success_url": VoxellaAPIConfiguration.baseURL.absoluteString,
+                "cancel_url": VoxellaAPIConfiguration.baseURL.absoluteString,
+            ],
+            as: VoxellaCheckoutSession.self
+        )
+    }
+
     func createBillingPortal() async throws -> VoxellaPortalSession {
         try await request(
             url: VoxellaAPIConfiguration.apiURL("api/v1/billing/stripe/portal"),
@@ -1184,6 +1268,8 @@ actor VoxellaAPIClient {
             as: VoxellaPortalSession.self
         )
     }
+
+#endif
 
     func createDubSession(
         sessionID: UUID? = nil,
@@ -1972,10 +2058,11 @@ actor VoxellaAPIClient {
         url: URL,
         method: String,
         json: [String: Any]? = nil,
+        headers: [String: String] = [:],
         as type: T.Type
     ) async throws -> T {
         do {
-            return try await send(url: url, method: method, json: json, as: type, retryingUnauthorized: true)
+            return try await send(url: url, method: method, json: json, headers: headers, as: type, retryingUnauthorized: true)
         } catch VoxellaAPIError.unauthorized {
             throw VoxellaAPIError.unauthorized
         }
@@ -1985,10 +2072,12 @@ actor VoxellaAPIClient {
         url: URL,
         method: String,
         json: [String: Any]?,
+        headers: [String: String],
         as type: T.Type,
         retryingUnauthorized: Bool
     ) async throws -> T {
         var request = try await authorizedRequest(url: url, method: method)
+        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
         if let json {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: json)
@@ -1999,7 +2088,7 @@ actor VoxellaAPIClient {
         }
         if http.statusCode == 401, retryingUnauthorized {
             _ = try await auth.refreshAccessToken()
-            return try await send(url: url, method: method, json: json, as: type, retryingUnauthorized: false)
+            return try await send(url: url, method: method, json: json, headers: headers, as: type, retryingUnauthorized: false)
         }
         if http.statusCode == 401 {
             throw VoxellaAPIError.unauthorized

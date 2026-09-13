@@ -38,7 +38,7 @@ extension ToolExecutor {
         _ editor: EditorViewModel, query: String, limit: Int, restrict: Set<String>?
     ) async -> (moments: [[String: Any]], index: [String: Any]?) {
         let coordinator = editor.searchIndex
-        if VisualModelLoader.shared.enabled, VisualModelLoader.shared.state == .unknown {
+        if VisualModelLoader.shared.enabled {
             await VisualModelLoader.shared.prepare()
         }
 
@@ -62,6 +62,9 @@ extension ToolExecutor {
         }
 
         let hits = await coordinator.search(query: query, limit: limit, within: restrict)
+        if let failure = coordinator.searchFailure {
+            index = ["status": "failed", "indexableAssets": indexable.count, "message": failure]
+        }
         let moments = hits.map { hit -> [String: Any] in
             let asset = editor.mediaAssets.first { $0.id == hit.assetID }
             var entry: [String: Any] = [
@@ -104,7 +107,7 @@ extension ToolExecutor {
         case .ready: return coordinator.indexingActive ? "indexing" : "ready"
         case .notInstalled: return "modelNotInstalled"
         case .downloading: return "downloadingModel"
-        case .preparing, .unknown: return "preparing"
+        case .preparing: return "preparing"
         case .failed: return "failed"
         }
     }

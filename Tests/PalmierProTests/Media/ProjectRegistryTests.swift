@@ -88,6 +88,27 @@ struct ProjectRegistryTests {
         #expect(reg.entries.isEmpty)
     }
 
+    @Test func deletingOpenProjectClosesDocumentBeforeMovingPackageToTrash() async throws {
+        let registry = makeRegistry()
+        let appState = AppState(projectRegistry: registry)
+        let name = "Open-\(UUID().uuidString)"
+        let project = try await appState.createProject(named: name, presentImmediately: false)
+        let url = try #require(project.fileURL)
+        defer {
+            project.close()
+            try? FileManager.default.removeItem(at: url)
+        }
+        let entry = try #require(registry.entries.first { $0.name == name })
+
+        let result = try await appState.deleteProjects(withIDs: [entry.id])
+
+        #expect(result.deletedIDs == [entry.id])
+        #expect(result.failedNames.isEmpty)
+        #expect(!registry.entries.contains { $0.id == entry.id })
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        #expect(!appState.openProjects.contains { $0 === project })
+    }
+
     // MARK: - updateURL (rename / move)
 
     @Test func updateURLChangesURLAndBumpsLastOpenedDate() {

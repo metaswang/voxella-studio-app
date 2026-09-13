@@ -1,0 +1,60 @@
+{
+  "id": "zh-Hans-10",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n如果录音在讲座结束前停止，请先保持设备原来的位置，然后记录刚才发生了什么。不要连续按下所有按钮，否则问题可能会更难排查。备用录音机应该继续运行，直到观众全部离开会场。之后再把两张存储卡交到服务台，由负责整理素材的同事一起检查文件是否完整。确认没有遗漏以后，我们才开始复制，并且为每份文件注明来源。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "46f949970bc003f7790cc9eb68c1f5ab67ff3e5009f8d31ed8ccc0b0ed39ecc1",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:44.706562+00:00",
+  "raw": "{\"subtitles\":[\"如果录音在讲座结束前停止，\",\"请先保持设备原来的位置，\",\"然后记录刚才发生了什么。\",\"不要连续按下所有按钮，\",\"否则问题可能会更难排查。\",\"备用录音机应该继续运行，\",\"直到观众全部离开会场。\",\"之后再把两张存储卡交到服务台，\",\"由负责整理素材的同事\",\"一起检查文件是否完整。\",\"确认没有遗漏以后，\",\"我们才开始复制，\",\"并且为每份文件注明来源。\"],\"batch_summary\":\"录音设备异常时的处理流程及后续交接与检查工作。\"}",
+  "usage": {
+    "promptTokenCount": 302,
+    "candidatesTokenCount": 133,
+    "totalTokenCount": 435,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 302
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2101860000038869,
+  "transport_attempts": 1,
+  "lines": [
+    "如果录音在讲座结束前停止，",
+    "请先保持设备原来的位置，",
+    "然后记录刚才发生了什么。",
+    "不要连续按下所有按钮，",
+    "否则问题可能会更难排查。",
+    "备用录音机应该继续运行，",
+    "直到观众全部离开会场。",
+    "之后再把两张存储卡交到服务台，",
+    "由负责整理素材的同事",
+    "一起检查文件是否完整。",
+    "确认没有遗漏以后，",
+    "我们才开始复制，",
+    "并且为每份文件注明来源。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 13,
+    "boundaries": 12,
+    "tp": 12,
+    "ref_count": 12,
+    "f1": 1.0,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 15
+  }
+}

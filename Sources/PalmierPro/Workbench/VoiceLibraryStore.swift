@@ -22,6 +22,20 @@ enum WorkbenchDubLanguage: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    static func detected(from languageCode: String?) -> Self? {
+        guard let code = ASREngineLanguagePolicy.normalizedISO(languageCode),
+              let language = Self(rawValue: code),
+              language != .automatic else {
+            return nil
+        }
+        return language
+    }
+
+    func resolvedCode(detectedLanguageCode: String?) -> String {
+        guard self == .automatic else { return rawValue }
+        return ASREngineLanguagePolicy.normalizedISO(detectedLanguageCode) ?? rawValue
+    }
+
     var label: String {
         switch self {
         case .automatic: "Auto detect"
@@ -82,6 +96,7 @@ struct VoiceReferenceDraft: Sendable {
     var sourceAudioURL: URL
     var avatarURL: URL?
     var source: VoiceReferenceAudioSource = .importedFile
+    var usesRecognizedPrefix = false
 }
 
 enum VoiceReferenceAudioSource: Equatable, Sendable {
@@ -166,14 +181,48 @@ actor VoiceReferenceProcessor {
 
     func prepare(
         sourceURL: URL,
-        trimBoundarySilence: Bool = false
+        trimBoundarySilence: Bool = false,
+        usesRecognizedPrefix: Bool = false
     ) async throws -> PreparedVoiceAudio {
+        var samples = usesRecognizedPrefix
+            ? try await SpeechInputAudio.samples(from: sourceURL, sampleRate: Int(sampleRate))
+            : try convertedSamples(from: sourceURL)
+        try Task.checkCancellation()
+        if trimBoundarySilence {
+            let processed = try await VoiceReferenceCapturePipeline.process(
+                samples: samples,
+                sampleRate: sampleRate
+            )
+            samples = processed.samples
+            if processed.confirmedNoSpeech {
+                throw VoiceLibraryError.referenceSilent
+            }
+        }
+        try Task.checkCancellation()
+        let duration = Double(samples.count) / sampleRate
+        guard duration >= minimumDuration else { throw VoiceLibraryError.referenceTooShort }
+        try validateAudibleSpeech(in: samples)
+
+        let outputURL = FileIO.temporaryFileURL(pathExtension: "wav")
+        do {
+            try Self.writePCM16WAV(samples: samples, sampleRate: sampleRate, to: outputURL)
+        } catch {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw error
+        }
+        return PreparedVoiceAudio(URL: outputURL, duration: duration)
+    }
+
+    private func convertedSamples(from sourceURL: URL) throws -> [Float] {
         let input = try AVAudioFile(forReading: sourceURL)
         let inputFormat = input.processingFormat
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+        guard inputFormat.sampleRate.isFinite, inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw VoiceLibraryError.unsupportedAudio
         }
         let inputFrameCount = input.length
+        guard inputFrameCount > 0, inputFrameCount < Int64(UInt32.max) else {
+            throw VoiceLibraryError.unsupportedAudio
+        }
         guard inputFrameCount > 0,
               let inputBuffer = AVAudioPCMBuffer(
                 pcmFormat: inputFormat,
@@ -194,9 +243,11 @@ actor VoiceReferenceProcessor {
         }
 
         let ratio = sampleRate / inputFormat.sampleRate
-        let outputCapacity = AVAudioFrameCount(
-            max(1, Int((Double(inputBuffer.frameLength) * ratio).rounded(.up)) + 64)
-        )
+        let capacity = (Double(inputBuffer.frameLength) * ratio).rounded(.up) + 64
+        guard capacity.isFinite, capacity > 0, capacity < Double(UInt32.max) else {
+            throw VoiceLibraryError.unsupportedAudio
+        }
+        let outputCapacity = AVAudioFrameCount(capacity)
         guard let converted = AVAudioPCMBuffer(
             pcmFormat: outputFormat,
             frameCapacity: outputCapacity
@@ -215,29 +266,7 @@ actor VoiceReferenceProcessor {
             throw conversionError ?? VoiceLibraryError.unsupportedAudio
         }
 
-        var samples = Array(UnsafeBufferPointer(start: channel, count: Int(converted.frameLength)))
-        if trimBoundarySilence {
-            let processed = try await VoiceReferenceCapturePipeline.process(
-                samples: samples,
-                sampleRate: sampleRate
-            )
-            samples = processed.samples
-            if processed.confirmedNoSpeech {
-                throw VoiceLibraryError.referenceSilent
-            }
-        }
-        let duration = Double(samples.count) / sampleRate
-        guard duration >= minimumDuration else { throw VoiceLibraryError.referenceTooShort }
-        try validateAudibleSpeech(in: samples)
-
-        let outputURL = FileIO.temporaryFileURL(pathExtension: "wav")
-        do {
-            try Self.writePCM16WAV(samples: samples, sampleRate: sampleRate, to: outputURL)
-        } catch {
-            try? FileManager.default.removeItem(at: outputURL)
-            throw error
-        }
-        return PreparedVoiceAudio(URL: outputURL, duration: duration)
+        return Array(UnsafeBufferPointer(start: channel, count: Int(converted.frameLength)))
     }
 
     private static func writePCM16WAV(
@@ -378,26 +407,6 @@ enum VoiceReferenceSilenceTrimmer {
         let endFrame = min(samples.count, last.upperBound * windowSize)
         guard startFrame < endFrame else { return nil }
         return startFrame..<endFrame
-    }
-}
-
-actor VoiceReferenceScriptRecognizer {
-    static let shared = VoiceReferenceScriptRecognizer()
-
-    func recognize(
-        sourceURL: URL,
-        languageCode: String,
-        progress: @escaping @Sendable (LocalSpeechProgress) -> Void
-    ) async throws -> String {
-        let result = try await LocalSpeechPipeline.shared.transcribe(
-            sourceURL: sourceURL,
-            languageCode: languageCode,
-            speakerCount: 1,
-            progressUpdate: progress
-        )
-        let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { throw LocalAIError.emptyTranscript }
-        return text
     }
 }
 
@@ -619,7 +628,8 @@ final class VoiceLibraryStore {
         errorMessage = nil
         let prepared = try await VoiceReferenceProcessor.shared.prepare(
             sourceURL: draft.sourceAudioURL,
-            trimBoundarySilence: draft.source == .microphoneRecording
+            trimBoundarySilence: draft.source == .microphoneRecording,
+            usesRecognizedPrefix: draft.usesRecognizedPrefix
         )
         let reference = try await repository.install(
             draft: draft,
@@ -816,152 +826,5 @@ final class VoiceLibraryStore {
     private func load() async {
         references = await repository.load().sorted { $0.createdAt > $1.createdAt }
         isLoading = false
-    }
-}
-
-private actor VoiceReferenceRecorder {
-    private var recorder: AVAudioRecorder?
-    private var outputURL: URL?
-
-    func start() async throws -> URL {
-        switch RecordingPermission.microphoneStatus() {
-        case .authorized:
-            break
-        case .restricted:
-            throw VoiceLibraryError.microphoneRestricted
-        case .denied, .notDetermined:
-            throw VoiceLibraryError.microphoneDenied
-        }
-        let URL = FileIO.temporaryFileURL(pathExtension: "wav")
-        let recorder = try AVAudioRecorder(url: URL, settings: [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVSampleRateKey: 44_100,
-            AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-        ])
-        recorder.isMeteringEnabled = true
-        recorder.prepareToRecord()
-        guard recorder.record() else { throw VoiceLibraryError.recordingFailed }
-        self.recorder = recorder
-        outputURL = URL
-        return URL
-    }
-
-    func stop() -> URL? {
-        recorder?.stop()
-        recorder = nil
-        defer { outputURL = nil }
-        return outputURL
-    }
-
-    func cancel() {
-        recorder?.stop()
-        recorder = nil
-        if let outputURL { try? FileManager.default.removeItem(at: outputURL) }
-        outputURL = nil
-    }
-}
-
-@Observable
-@MainActor
-final class VoiceRecorderController {
-    var isRecording = false
-    var duration = 0.0
-    var recordedURL: URL?
-    var errorMessage: String?
-    var needsMicrophoneSettings = false
-
-    private let recorder = VoiceReferenceRecorder()
-    private var startTask: Task<Void, Never>?
-    private var timerTask: Task<Void, Never>?
-    private var startedAt: Date?
-
-    func start() {
-        guard !isRecording else { return }
-        errorMessage = nil
-        needsMicrophoneSettings = false
-        startTask?.cancel()
-        startTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.startTask = nil }
-            do {
-                try Task.checkCancellation()
-                try await requestMicrophonePermission()
-                try Task.checkCancellation()
-                let URL = try await recorder.start()
-                guard !Task.isCancelled else {
-                    await recorder.cancel()
-                    return
-                }
-                recordedURL = URL
-                startedAt = Date()
-                duration = 0
-                isRecording = true
-                startTimer()
-            } catch is CancellationError {
-                return
-            } catch let error as VoiceLibraryError {
-                needsMicrophoneSettings = error.requiresMicrophonePermissionSettings
-                errorMessage = error.localizedDescription
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-
-    func stop() {
-        guard isRecording else { return }
-        timerTask?.cancel()
-        timerTask = nil
-        Task {
-            recordedURL = await recorder.stop()
-            isRecording = false
-        }
-    }
-
-    func cancel() {
-        startTask?.cancel()
-        startTask = nil
-        timerTask?.cancel()
-        timerTask = nil
-        Task { await recorder.cancel() }
-        isRecording = false
-        duration = 0
-        recordedURL = nil
-    }
-
-    func openMicrophoneSettings() {
-        guard let URL = RecordingPermission.microphoneSettingsURL else { return }
-        guard NSWorkspace.shared.open(URL) else {
-            Log.recording.warning("could not open microphone permission settings")
-            return
-        }
-    }
-
-    private func requestMicrophonePermission() async throws {
-        do {
-            try await RecordingPermission.requestMicrophone()
-        } catch let error as RecordingError {
-            switch error {
-            case .microphoneDenied:
-                throw VoiceLibraryError.microphoneDenied
-            case .microphoneRestricted:
-                throw VoiceLibraryError.microphoneRestricted
-            default:
-                throw error
-            }
-        }
-    }
-
-    private func startTimer() {
-        timerTask?.cancel()
-        timerTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(100))
-                guard let self, let startedAt else { return }
-                duration = Date().timeIntervalSince(startedAt)
-            }
-        }
     }
 }

@@ -124,21 +124,21 @@ struct SessionProcessingSnapshot: Equatable, Sendable {
 }
 
 struct SessionStatusBadge: View {
-    let state: WorkbenchJobState
+    let status: WorkbenchSessionStatus
     let processing: SessionProcessingSnapshot?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
-        state: WorkbenchJobState,
+        status: WorkbenchSessionStatus,
         processing: SessionProcessingSnapshot? = nil
     ) {
-        self.state = state
+        self.status = status
         self.processing = processing
     }
 
     var body: some View {
-        if let processing, state == .running || state == .cancelling {
+        if let processing, status.showsProcessing {
             activeStatus(processing)
         } else {
             compactStatus
@@ -151,7 +151,7 @@ struct SessionStatusBadge: View {
                 activityIcon(processing)
 
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                    Text((state == .cancelling ? "Cancelling" : processing.resolvedStageTitle).uppercased())
+                    Text(activeTitle(for: processing).uppercased())
                         .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                         .tracking(AppTheme.Tracking.wide)
                         .foregroundStyle(color)
@@ -207,18 +207,44 @@ struct SessionStatusBadge: View {
         .shadow(AppTheme.Shadow.sm)
         .help(processing.message)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(state == .cancelling ? "Cancelling" : processing.resolvedStageTitle)
+        .accessibilityLabel(activeTitle(for: processing))
         .accessibilityValue(accessibilityValue(for: processing))
     }
 
     private var compactStatus: some View {
-        Label(state.label, systemImage: systemImage)
+        HStack(spacing: AppTheme.Spacing.xs) {
+            statusLabel(status.primaryLabel, systemImage: systemImage, color: color)
+            if let secondaryLabel = status.secondaryLabel {
+                statusLabel(
+                    secondaryLabel,
+                    systemImage: secondarySystemImage,
+                    color: secondaryColor
+                )
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            [status.primaryLabel, status.secondaryLabel]
+                .compactMap { $0 }
+                .map { L10n.string(key: $0) }
+                .joined(separator: ", ")
+        )
+    }
+
+    private func statusLabel(_ title: String, systemImage: String, color: Color) -> some View {
+        Label(L10n.string(key: title), systemImage: systemImage)
             .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
             .foregroundStyle(color)
             .padding(.horizontal, AppTheme.Spacing.md)
             .padding(.vertical, AppTheme.Spacing.sm)
             .background(color.opacity(AppTheme.Opacity.soft), in: Capsule())
-            .accessibilityLabel(state.label)
+    }
+
+    private func activeTitle(for processing: SessionProcessingSnapshot) -> String {
+        let activity = status.displayTaskState == .cancelling
+            ? L10n.string("Cancelling")
+            : processing.resolvedStageTitle
+        return status.hasUsableResult ? "\(L10n.string("Ready")) · \(activity)" : activity
     }
 
     private func activityIcon(_ processing: SessionProcessingSnapshot) -> some View {
@@ -295,29 +321,205 @@ struct SessionStatusBadge: View {
     }
 
     private var color: Color {
-        switch state {
+        if status.hasUsableResult { return AppTheme.Status.successColor }
+        return switch status.displayTaskState {
         case .completed: AppTheme.Status.successColor
-        case .failed: AppTheme.Status.errorColor
-        case .running, .cancelling: AppTheme.Status.warningColor
-        case .ready, .cancelled: AppTheme.Text.tertiaryColor
+        case .failed, .interrupted, .unknown: AppTheme.Status.errorColor
+        case .queued, .running, .cancelling: AppTheme.Status.warningColor
+        case .notStarted, .cancelled: AppTheme.Text.tertiaryColor
         }
     }
 
     private var systemImage: String {
-        switch state {
+        if status.hasUsableResult { return "checkmark.circle.fill" }
+        return switch status.displayTaskState {
         case .completed: "checkmark.circle.fill"
-        case .failed: "exclamationmark.triangle.fill"
+        case .failed, .interrupted, .unknown: "exclamationmark.triangle.fill"
         case .running, .cancelling: "arrow.trianglehead.2.clockwise.rotate.90"
-        case .ready: "circle"
+        case .queued: "clock"
+        case .notStarted: "circle"
         case .cancelled: "xmark.circle"
         }
+    }
+
+    private var secondaryColor: Color {
+        status.needsAttention ? AppTheme.Status.errorColor : AppTheme.Status.warningColor
+    }
+
+    private var secondarySystemImage: String {
+        if status.needsAttention { return "exclamationmark.triangle.fill" }
+        if status.displayTaskState == .cancelled { return "xmark.circle" }
+        if status.displayTaskState == .queued { return "clock" }
+        return "arrow.trianglehead.2.clockwise.rotate.90"
+    }
+}
+
+struct SessionStatusInfoButton: View {
+    let status: WorkbenchSessionStatus?
+
+    @State private var isPresented = false
+
+    init(status: WorkbenchSessionStatus? = nil) {
+        self.status = status
+    }
+
+    var body: some View {
+        Button {
+            isPresented.toggle()
+        } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(L10n.string("About session status"))
+        .accessibilityLabel(L10n.string("About session status"))
+        .accessibilityHint(L10n.string("Shows what Ready and the current task status mean."))
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            SessionStatusHelp(status: status)
+        }
+    }
+}
+
+private struct SessionStatusHelp: View {
+    let status: WorkbenchSessionStatus?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            Label(L10n.string("Session status"), systemImage: "info.circle.fill")
+                .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
+                .foregroundStyle(AppTheme.Text.primaryColor)
+
+            if let status {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                    statusRow(
+                        title: "Result",
+                        value: status.hasUsableResult ? "Ready" : "No result yet",
+                        systemImage: status.hasUsableResult ? "checkmark.circle.fill" : "circle",
+                        color: status.hasUsableResult
+                            ? AppTheme.Status.successColor
+                            : AppTheme.Text.tertiaryColor
+                    )
+                    statusRow(
+                        title: "Current work",
+                        value: status.displayTaskState.label,
+                        systemImage: taskSystemImage,
+                        color: taskColor
+                    )
+                    if let secondaryLabel = status.secondaryLabel {
+                        statusRow(
+                            title: "Additional work",
+                            value: secondaryLabel,
+                            systemImage: secondarySystemImage,
+                            color: secondaryColor
+                        )
+                    }
+                }
+
+                Text(L10n.string(status.hasUsableResult
+                    ? "A committed result is available. You can keep using it while other work continues or needs attention."
+                    : "This session does not have a committed result yet."))
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Divider()
+            }
+
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                explanation(
+                    title: "Ready",
+                    text: "Ready means the latest committed result is available to view, edit, or export."
+                )
+                explanation(
+                    title: "Task status",
+                    text: "Queued, Processing, and Cancelling describe work happening now. Cancelled, Interrupted, Needs attention, and Status unknown describe work that stopped or needs action."
+                )
+            }
+        }
+        .padding(AppTheme.Spacing.xl)
+        .frame(width: AppTheme.Workbench.sessionStatusHelpWidth, alignment: .leading)
+        .background(AppTheme.Background.raisedColor)
+    }
+
+    private func statusRow(
+        title: String,
+        value: String,
+        systemImage: String,
+        color: Color
+    ) -> some View {
+        HStack(spacing: AppTheme.Spacing.md) {
+            Image(systemName: systemImage)
+                .foregroundStyle(color)
+                .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
+            Text(L10n.string(key: title))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+            Spacer(minLength: AppTheme.Spacing.md)
+            Text(L10n.string(key: value))
+                .fontWeight(AppTheme.FontWeight.semibold)
+                .foregroundStyle(AppTheme.Text.primaryColor)
+        }
+        .font(.system(size: AppTheme.FontSize.sm))
+    }
+
+    private func explanation(title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+            Text(L10n.string(key: title))
+                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                .foregroundStyle(AppTheme.Text.primaryColor)
+            Text(L10n.string(key: text))
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var taskColor: Color {
+        switch status?.displayTaskState {
+        case .completed: AppTheme.Status.successColor
+        case .queued, .running, .cancelling: AppTheme.Status.warningColor
+        case .failed, .interrupted, .unknown: AppTheme.Status.errorColor
+        case .notStarted, .cancelled, nil: AppTheme.Text.tertiaryColor
+        }
+    }
+
+    private var taskSystemImage: String {
+        switch status?.displayTaskState {
+        case .completed: "checkmark.circle.fill"
+        case .queued: "clock"
+        case .running, .cancelling: "arrow.trianglehead.2.clockwise.rotate.90"
+        case .failed, .interrupted, .unknown: "exclamationmark.triangle.fill"
+        case .cancelled: "xmark.circle"
+        case .notStarted, nil: "circle"
+        }
+    }
+
+    private var secondaryColor: Color {
+        guard let status else { return AppTheme.Text.tertiaryColor }
+        return status.needsAttention
+            ? AppTheme.Status.errorColor
+            : AppTheme.Status.warningColor
+    }
+
+    private var secondarySystemImage: String {
+        guard let status else { return "circle" }
+        if status.needsAttention { return "exclamationmark.triangle.fill" }
+        if status.displayTaskState == .cancelled { return "xmark.circle" }
+        if status.displayTaskState == .queued { return "clock" }
+        return "arrow.trianglehead.2.clockwise.rotate.90"
     }
 }
 
 #Preview("Session status") {
     VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
         SessionStatusBadge(
-            state: .running,
+            status: WorkbenchSessionStatus(
+                hasUsableResult: true,
+                taskState: .running,
+                hasAdditionalFailure: false
+            ),
             processing: SessionProcessingSnapshot(
                 kind: .translation,
                 fraction: 0.62,
@@ -329,7 +531,11 @@ struct SessionStatusBadge: View {
                 compute: .cloud
             )
         )
-        SessionStatusBadge(state: .completed)
+        SessionStatusBadge(status: WorkbenchSessionStatus(
+            hasUsableResult: true,
+            taskState: .completed,
+            hasAdditionalFailure: false
+        ))
     }
     .padding(AppTheme.Spacing.xl)
     .background(AppTheme.Background.baseColor)

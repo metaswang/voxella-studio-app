@@ -64,6 +64,7 @@ struct SkillCollectionButton: View {
 }
 
 struct SkillRow: View {
+    let systemImage: String
     let name: String
     let description: String
     let status: String
@@ -108,24 +109,25 @@ struct SkillRow: View {
     private var summary: some View {
         if let summaryAction {
             Button(action: summaryAction) {
-                SkillRowSummary(name: name, description: description)
+                SkillRowSummary(systemImage: systemImage, name: name, description: description)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open \(name)")
         } else {
-            SkillRowSummary(name: name, description: description)
+            SkillRowSummary(systemImage: systemImage, name: name, description: description)
         }
     }
 }
 
 private struct SkillRowSummary: View {
+    let systemImage: String
     let name: String
     let description: String
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.md) {
-            SkillRowIcon()
+            SkillRowIcon(systemName: systemImage)
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                 Text(name)
                     .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.regular))
@@ -170,9 +172,49 @@ struct SkillEmptyState: View {
     }
 }
 
-private struct SkillRowIcon: View {
+struct SkillCategorySection<Content: View>: View {
+    let category: SkillCategory
+    let count: Int
+    let content: Content
+
+    init(category: SkillCategory, count: Int, @ViewBuilder content: () -> Content) {
+        self.category = category
+        self.count = count
+        self.content = content()
+    }
+
     var body: some View {
-        Image(systemName: "book.closed")
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Image(systemName: category.systemImage)
+                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    .accessibilityHidden(true)
+                Text(category.title)
+                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                Text(count.formatted())
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
+                Rectangle()
+                    .fill(AppTheme.Border.subtleColor)
+                    .frame(height: AppTheme.BorderWidth.hairline)
+            }
+            .padding(.horizontal, AppTheme.Spacing.smMd)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(category.title), \(count.formatted()) skills")
+
+            content
+        }
+        .padding(.bottom, AppTheme.Spacing.md)
+    }
+}
+
+private struct SkillRowIcon: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
             .font(.system(size: AppTheme.FontSize.md))
             .foregroundStyle(AppTheme.Text.tertiaryColor)
             .frame(

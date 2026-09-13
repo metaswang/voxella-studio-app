@@ -1,0 +1,60 @@
+{
+  "id": "en-18",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language en.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: en\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nAt first, I thought the sound was coming from the fan above the kitchen door. Then I listened again, and again, until I noticed the same pattern in every room. It was the old clock in the hallway, ticking much louder than I remembered. We moved it away from the microphone and recorded another minute of silence. This time, the background was quiet enough for the interview we had planned.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "d8068d5be9e2a4746fdf2ff84c496f0e065edbc792d6557bb43f3e86a3cb1471",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:13.761267+00:00",
+  "raw": "{\"lines\":[\"At first, I thought the sound was coming from the fan above the kitchen door.\",\"Then I listened again, and again, until I noticed the same pattern in every room.\",\"It was the old clock in the hallway, ticking much louder than I remembered.\",\"We moved it away from the microphone and recorded another minute of silence.\",\"This time, the background was quiet enough for the interview we had planned.\"]}",
+  "usage": {
+    "promptTokenCount": 286,
+    "candidatesTokenCount": 94
+  },
+  "provider_usage": {
+    "prompt_tokens": 286,
+    "completion_tokens": 94,
+    "total_tokens": 380,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.7542121250007767,
+  "transport_attempts": 1,
+  "lines": [
+    "At first, I thought the sound was coming from the fan above the kitchen door.",
+    "Then I listened again, and again, until I noticed the same pattern in every room.",
+    "It was the old clock in the hallway, ticking much louder than I remembered.",
+    "We moved it away from the microphone and recorded another minute of silence.",
+    "This time, the background was quiet enough for the interview we had planned."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 9,
+    "f1": 0.6153846153846153,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 81
+  }
+}

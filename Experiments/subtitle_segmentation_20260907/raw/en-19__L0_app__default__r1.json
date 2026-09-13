@@ -1,0 +1,59 @@
+{
+  "id": "en-19",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language en.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: en\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nThe label reads “USB-C, 20 W,” but that does not describe every cable in the box. Check the small print on each connector before putting the equipment into separate bags. One bag is marked “A/B test,” and another carries the version number v2.1. Keep those labels exactly as they are. If a label has fallen off, place the item on the review table instead of guessing which kit it belongs to.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "7b4cafd0edc62ad5443f4816061552d3d3d692d4b5a0a3fd8817a78ccba7ac61",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:22.005297+00:00",
+  "raw": "{\"lines\": [\n  \"The label reads “USB-C, 20 W,”\",\n  \"but that does not describe every cable\",\n  \"in the box.\",\n  \"Check the small print on each connector\",\n  \"before putting the equipment\",\n  \"into separate bags.\",\n  \"One bag is marked “A/B test,”\",\n  \"and another carries the version number v2.1.\",\n  \"Keep those labels exactly as they are.\",\n  \"If a label has fallen off,\",\n  \"place the item on the review table\",\n  \"instead of guessing which kit it belongs to.\"\n]}",
+  "usage": {
+    "promptTokenCount": 310,
+    "candidatesTokenCount": 139,
+    "totalTokenCount": 449,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 310
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2098952909946092,
+  "transport_attempts": 1,
+  "lines": [
+    "The label reads “USB-C, 20 W,”",
+    "but that does not describe every cable",
+    "in the box.",
+    "Check the small print on each connector",
+    "before putting the equipment",
+    "into separate bags.",
+    "One bag is marked “A/B test,”",
+    "and another carries the version number v2.1.",
+    "Keep those labels exactly as they are.",
+    "If a label has fallen off,",
+    "place the item on the review table",
+    "instead of guessing which kit it belongs to."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 12,
+    "boundaries": 11,
+    "tp": 9,
+    "ref_count": 9,
+    "f1": 0.9,
+    "overlong": 0,
+    "short": 2,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 44
+  }
+}

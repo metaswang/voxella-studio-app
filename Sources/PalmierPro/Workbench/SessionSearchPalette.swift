@@ -5,6 +5,7 @@ struct SessionSearchPalette: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var account = AccountService.shared
+    @Bindable private var models = LocalModelManager.shared
     @FocusState private var focusedField: FocusField?
     @State private var hoveredRowID: String?
 
@@ -83,6 +84,7 @@ struct SessionSearchPalette: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                    semanticSearchPreparation
                     if isQueryEmpty {
                         recentSessionsSection
                     } else {
@@ -136,6 +138,51 @@ struct SessionSearchPalette: View {
         .task(id: controller.query) {
             await controller.searchTranscriptAfterPause()
         }
+    }
+
+    @ViewBuilder
+    private var semanticSearchPreparation: some View {
+        let id = LocalModelID.weMMEmbedding2B4Bit
+        switch models.state(for: id) {
+        case .installed:
+            EmptyView()
+        case .queued:
+            semanticSearchNotice(detail: "Waiting to prepare search…") {
+                Button("Cancel") { models.cancel(id) }
+                    .buttonStyle(.borderless)
+            }
+        case .downloading(let progress, _):
+            semanticSearchNotice(detail: "Downloading semantic search… \(Int((progress * 100).rounded()))%") {
+                Button("Cancel") { models.cancel(id) }
+                    .buttonStyle(.borderless)
+            }
+        case .notInstalled, .failed:
+            semanticSearchNotice(detail: "Download local search resources to match sessions by meaning.") {
+                Button("Download and enable") { models.download(id) }
+                    .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private func semanticSearchNotice<Actions: View>(
+        detail: String,
+        @ViewBuilder actions: () -> Actions
+    ) -> some View {
+        HStack(spacing: AppTheme.Spacing.md) {
+            Image(systemName: "sparkle.magnifyingglass")
+                .foregroundStyle(AppTheme.Accent.primary)
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                Text("Semantic session search")
+                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                Text(detail)
+                    .font(.system(size: AppTheme.FontSize.xxs))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
+            }
+            Spacer()
+            actions()
+        }
+        .padding(AppTheme.Spacing.smMd)
+        .background(AppTheme.Accent.primary.opacity(AppTheme.Opacity.subtle), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
     }
 
     private var searchField: some View {

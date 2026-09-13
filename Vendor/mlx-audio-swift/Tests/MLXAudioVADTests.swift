@@ -1005,6 +1005,33 @@ struct SileroVADConfigTests {
 
 struct SileroVADModelTests {
 
+    @Test func fromModelDirectoryLoads16kOnlyCheckpoint() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let config = SileroVADConfig()
+        let source = SileroVAD(config)
+        let weights: [String: MLXArray] = Dictionary(uniqueKeysWithValues: source.parameters().flattened().compactMap { key, value -> (String, MLXArray)? in
+            guard key.hasPrefix("branch16k.") else { return nil }
+            return ("vad_16k." + String(key.dropFirst("branch16k.".count)), value)
+        })
+        try JSONEncoder().encode(config).write(to: directory.appendingPathComponent("config.json"))
+        try MLX.save(arrays: weights, url: directory.appendingPathComponent("model.safetensors"))
+
+        let loaded = try SileroVAD.fromModelDirectory(directory)
+        let probabilities = try loaded.predictProba(
+            MLXArray.zeros([16_000], type: Float.self),
+            sampleRate: 16_000
+        )
+        eval(probabilities)
+
+        #expect(probabilities.shape == [32])
+        let values = probabilities.asArray(Float.self)
+        #expect(values.allSatisfy { $0.isFinite })
+    }
+
     @Test func initialStateShape16k() throws {
         let model = SileroVAD(SileroVADConfig())
         let st = try model.initialState(sampleRate: 16000)

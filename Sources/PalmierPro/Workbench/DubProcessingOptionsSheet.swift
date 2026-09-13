@@ -14,6 +14,7 @@ struct DubProcessingOptionsSheet: View {
     @State private var cloudAccessError: String?
     @State private var estimateError = false
     @State private var estimateReloadID = UUID()
+    @Bindable private var models = LocalModelManager.shared
     @Bindable private var account = AccountService.shared
 
     init(
@@ -42,6 +43,19 @@ struct DubProcessingOptionsSheet: View {
         guard cloudComputeSelected, account.isSignedIn else { return false }
         guard !isLoadingEstimate, !estimateError, let estimate else { return true }
         return !estimate.canAfford
+    }
+
+    private var localModelPlan: LocalModelInstallPlan {
+        models.dubInstallPlan(modelID: job.model.modelID)
+    }
+
+    private var continueLabel: String {
+        if !cloudComputeSelected, !localModelPlan.missingItems.isEmpty {
+            return models.isPreparing(localModelPlan)
+                ? "Prepare and generate"
+                : "Download and generate"
+        }
+        return account.isSignedIn || !placement.needsAuthentication ? "Continue" : "Sign in and continue"
     }
 
     private var notice: CloudCreditNotice {
@@ -74,6 +88,9 @@ struct DubProcessingOptionsSheet: View {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
                     mediaSummary
                     placementSection
+                    if !cloudComputeSelected {
+                        LocalModelRequirementCard(plan: localModelPlan)
+                    }
                     if cloudComputeSelected, notice != .none {
                         cloudCreditCard
                     } else if placement.needsAuthentication {
@@ -89,9 +106,11 @@ struct DubProcessingOptionsSheet: View {
             }
             footer
         }
-        .frame(width: 620, height: 610)
+        .frame(
+            width: 620,
+            height: !cloudComputeSelected && !localModelPlan.missingItems.isEmpty ? 730 : 610
+        )
         .background(AppTheme.Background.surfaceColor)
-        .colorScheme(.dark)
         .task(id: estimateTaskID) {
             await loadEstimate()
         }
@@ -286,7 +305,7 @@ struct DubProcessingOptionsSheet: View {
             Button("Cancel", action: onCancel)
                 .keyboardShortcut(.cancelAction)
                 .disabled(isPreparingCloud)
-            Button(account.isSignedIn || !placement.needsAuthentication ? "Continue" : "Sign in and continue") {
+            Button(continueLabel) {
                 Task { await prepareAndContinue() }
             }
             .buttonStyle(.borderedProminent)
@@ -335,6 +354,14 @@ struct DubProcessingOptionsSheet: View {
         cloudAccessError = nil
         isPreparingCloud = true
         defer { isPreparingCloud = false }
+
+        if !cloudComputeSelected,
+           localModelPlan.missingItems.contains(where: {
+               $0.requiresLicenseAcceptance && !models.isLicenseAccepted($0.id)
+           }) {
+            models.presentManager()
+            return
+        }
 
         if placement.needsAuthentication {
             let result: CloudAccessPreparation

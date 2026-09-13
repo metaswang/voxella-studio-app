@@ -1,0 +1,60 @@
+{
+  "id": "zh-Hans-10",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n如果录音在讲座结束前停止，请先保持设备原来的位置，然后记录刚才发生了什么。不要连续按下所有按钮，否则问题可能会更难排查。备用录音机应该继续运行，直到观众全部离开会场。之后再把两张存储卡交到服务台，由负责整理素材的同事一起检查文件是否完整。确认没有遗漏以后，我们才开始复制，并且为每份文件注明来源。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "deb1953c7fad80ef5371f7ffa7997926a80f87833bf3a82f8f358f94a53873b4",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:45.074576+00:00",
+  "raw": "{\"subtitles\":[\"如果录音在讲座结束前停止，请先保持设备原来的位置，然后记录刚才发生了什么。\",\"不要连续按下所有按钮，否则问题可能会更难排查。\",\"备用录音机应该继续运行，直到观众全部离开会场。\",\"之后再把两张存储卡交到服务台，由负责整理素材的同事一起检查文件是否完整。\",\"确认没有遗漏以后，我们才开始复制，并且为每份文件注明来源。\"],\"batch_summary\":\"逐段切分，完整保留原文文本与标点，按自然停顿和短语点切分为五行。\"}",
+  "usage": {
+    "promptTokenCount": 316,
+    "candidatesTokenCount": 150
+  },
+  "provider_usage": {
+    "prompt_tokens": 316,
+    "completion_tokens": 150,
+    "total_tokens": 466,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.6580019160028314,
+  "transport_attempts": 1,
+  "lines": [
+    "如果录音在讲座结束前停止，请先保持设备原来的位置，然后记录刚才发生了什么。",
+    "不要连续按下所有按钮，否则问题可能会更难排查。",
+    "备用录音机应该继续运行，直到观众全部离开会场。",
+    "之后再把两张存储卡交到服务台，由负责整理素材的同事一起检查文件是否完整。",
+    "确认没有遗漏以后，我们才开始复制，并且为每份文件注明来源。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 12,
+    "f1": 0.5,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 37
+  }
+}

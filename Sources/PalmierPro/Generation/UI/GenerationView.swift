@@ -155,13 +155,13 @@ struct GenerationView: View {
     private var catalogLoadingView: some View {
         VStack(spacing: AppTheme.Spacing.md) {
             ProgressView()
-            Text("Loading models…")
+            Text("Preparing creative tools…")
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
         }
         .frame(maxWidth: .infinity)
         .frame(height: AppTheme.GenerationPanel.loadingHeight)
-        .glassEffect(.regular, in: .rect(cornerRadius: AppTheme.Radius.xl))
+        .appGlassEffect(in: .rect(cornerRadius: AppTheme.Radius.xl))
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
                 .strokeBorder(
@@ -243,7 +243,7 @@ struct GenerationView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measuredPanelHeight = $0 }
         .background {
             Color.clear
-                .glassEffect(.regular, in: .rect(cornerRadius: AppTheme.Radius.xl))
+                .appGlassEffect(in: .rect(cornerRadius: AppTheme.Radius.xl))
                 .allowsHitTesting(false)
         }
         .overlay {

@@ -1,0 +1,61 @@
+{
+  "id": "es-03",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=es\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nEl primer prototipo pesaba 3,5 kilogramos, mientras que el segundo pesaba algo menos de tres. Medimos cada muestra cinco veces, siempre con la misma balanza digital. La Dra. García revisó los resultados antes de enviarlos al equipo de diseño. Estas cifras describen una prueba pequeña, así que no representan todos los productos futuros. En el siguiente ensayo aumentaremos las muestras, pero mantendremos el método de medición. Así podremos comparar los resultados sin cambiar varias condiciones a la vez.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "c4a56737dfe4ca8331fe2a381d1ee3108c0947a164b091983dcc035ec19e6877",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:59.151910+00:00",
+  "raw": "{\"subtitles\":[\"El primer prototipo pesaba 3,5 kilogramos, mientras que el segundo pesaba algo menos de tres.\",\"Medimos cada muestra cinco veces, siempre con la misma balanza digital.\",\"La Dra. García revisó los resultados antes de enviarlos al equipo de diseño.\",\"Estas cifras describen una prueba pequeña, así que no representan todos los productos futuros.\",\"En el siguiente ensayo aumentaremos las muestras, pero mantendremos el método de medición.\",\"Así podremos comparar los resultados sin cambiar varias condiciones a la vez.\"],\"batch_summary\":\"Se dividen las oraciones del transcript finalizado manteniendo puntuación y estructura.\"}",
+  "usage": {
+    "promptTokenCount": 322,
+    "candidatesTokenCount": 141
+  },
+  "provider_usage": {
+    "prompt_tokens": 322,
+    "completion_tokens": 141,
+    "total_tokens": 463,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.5802932500009774,
+  "transport_attempts": 1,
+  "lines": [
+    "El primer prototipo pesaba 3,5 kilogramos, mientras que el segundo pesaba algo menos de tres.",
+    "Medimos cada muestra cinco veces, siempre con la misma balanza digital.",
+    "La Dra. García revisó los resultados antes de enviarlos al equipo de diseño.",
+    "Estas cifras describen una prueba pequeña, así que no representan todos los productos futuros.",
+    "En el siguiente ensayo aumentaremos las muestras, pero mantendremos el método de medición.",
+    "Así podremos comparar los resultados sin cambiar varias condiciones a la vez."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 6,
+    "boundaries": 5,
+    "tp": 5,
+    "ref_count": 11,
+    "f1": 0.625,
+    "overlong": 6,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 94
+  }
+}

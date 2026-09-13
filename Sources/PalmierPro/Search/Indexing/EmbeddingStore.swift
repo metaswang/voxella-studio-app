@@ -55,11 +55,6 @@ struct EmbeddingStore {
         return try? JSONDecoder().decode(Header.self, from: json)
     }
 
-    static func isCurrent(key: String, model: String, modelVersion: Int, samplerVersion: Int) -> Bool {
-        guard let h = header(key: key) else { return false }
-        return h.model == model && h.modelVersion == modelVersion && h.samplerVersion == samplerVersion
-    }
-
     static func load(key: String) throws -> AssetIndex {
         let data = try Data(contentsOf: diskURL(key))
         guard data.count > magic.count + 4, data.prefix(magic.count) == magic else { throw StoreError.corrupt }

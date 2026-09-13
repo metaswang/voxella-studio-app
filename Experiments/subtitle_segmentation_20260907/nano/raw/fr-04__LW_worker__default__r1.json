@@ -1,0 +1,61 @@
+{
+  "id": "fr-04",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=fr\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nElle a demandé : « On part maintenant ? » Je lui ai expliqué que le train avait du retard, mais que le café de la gare était encore ouvert. Nous pouvions y attendre un moment et consulter ensemble le tableau des départs. « C'est une bonne idée », a-t-elle répondu, en prenant la petite valise bleue. Lorsque nous sommes arrivés sur le quai, l'annonce venait encore de changer. Nous avons préféré rester près de l'accueil pour demander une confirmation avant de repartir.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "4186896cb205dbe626a38493fe008265f4176bc149a1b270286f7a4c16eedb29",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:47.517513+00:00",
+  "raw": "{\"subtitles\":[\"Elle a demandé : « On part maintenant ? »\",\"Je lui ai expliqué que le train avait du retard, mais que le café de la gare était encore ouvert.\",\"Nous pouvions y attendre un moment et consulter ensemble le tableau des départs.\",\"« C'est une bonne idée », a-t-elle répondu, en prenant la petite valise bleue.\",\"Lorsque nous sommes arrivés sur le quai, l'annonce venait encore de changer.\",\"Nous avons préféré rester près de l'accueil pour demander une confirmation avant de repartir.\"],\"batch_summary\":\"把法语原文按自然停顿切分成六行字幕，保持原文与标点不变。\"}",
+  "usage": {
+    "promptTokenCount": 317,
+    "candidatesTokenCount": 145
+  },
+  "provider_usage": {
+    "prompt_tokens": 317,
+    "completion_tokens": 145,
+    "total_tokens": 462,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.6910974589991383,
+  "transport_attempts": 1,
+  "lines": [
+    "Elle a demandé : « On part maintenant ? »",
+    "Je lui ai expliqué que le train avait du retard, mais que le café de la gare était encore ouvert.",
+    "Nous pouvions y attendre un moment et consulter ensemble le tableau des départs.",
+    "« C'est une bonne idée », a-t-elle répondu, en prenant la petite valise bleue.",
+    "Lorsque nous sommes arrivés sur le quai, l'annonce venait encore de changer.",
+    "Nous avons préféré rester près de l'accueil pour demander une confirmation avant de repartir."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 6,
+    "boundaries": 5,
+    "tp": 5,
+    "ref_count": 10,
+    "f1": 0.6666666666666666,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 97
+  }
+}

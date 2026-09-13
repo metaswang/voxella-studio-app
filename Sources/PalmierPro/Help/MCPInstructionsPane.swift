@@ -57,7 +57,7 @@ struct MCPInstructionsPane: View {
             .padding(.horizontal, AppTheme.Spacing.xlXxl)
             .padding(.bottom, AppTheme.Spacing.xxl)
         }
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        .appScrollEdgeEffect(.top)
         .alert(
             "Unable to open Claude Desktop",
             isPresented: Binding(

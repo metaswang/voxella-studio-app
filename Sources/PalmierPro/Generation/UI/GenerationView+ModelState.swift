@@ -160,15 +160,6 @@ extension GenerationView {
         }
     }
 
-    var currentModelName: String {
-        switch selectedType {
-        case .video: videoModel.displayName
-        case .image: imageModel.displayName
-        case .audio: audioModel.displayName
-        case .upscale: upscaleModel.displayName
-        }
-    }
-
     var currentModelId: String {
         switch selectedType {
         case .video: videoModel.id

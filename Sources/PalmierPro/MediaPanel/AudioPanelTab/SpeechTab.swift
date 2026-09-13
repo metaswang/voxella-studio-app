@@ -46,7 +46,7 @@ struct SpeechTab: View {
                     .disabled(editor.speakerIdentifyInFlight)
                     .help("Matches voices across clips on this Mac. Local transcripts and voice fingerprints are cached, so re-runs are fast.")
                 } else {
-                    Button("Download Local Models…") { models.presentManager() }
+                    Button("Prepare Local Features…") { models.presentManager() }
                         .controlSize(.small)
                     Text("Required for speaker detection")
                         .font(.system(size: AppTheme.FontSize.xs))

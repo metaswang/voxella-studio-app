@@ -1,0 +1,57 @@
+{
+  "id": "zh-Hans-03",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n第一批样品的平均重量是三点五千克，第二批则接近三千克。我们使用同一台电子秤，对每个样品分别测量了五次，再把结果记录到表格里。这些数字只代表本次小规模测试，不能直接推断后续所有产品都会出现相同变化。下一轮实验会增加样本数量，同时保留原来的测量方法，这样才能判断差异是否来自材料本身。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "06cc0b2999eafbffff51269a8b2cbcf7aa310158b2802bf41098451bd6c5ecbf",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:30.513264+00:00",
+  "raw": "{\"subtitles\":[\"第一批样品的平均重量是三点五千克，\",\"第二批则接近三千克。\",\"我们使用同一台电子秤，\",\"对每个样品分别测量了五次，\",\"再把结果记录到表格里。\",\"这些数字只代表本次小规模测试，\",\"不能直接推断后续所有产品都会出现相同变化。\",\"下一轮实验会增加样本数量，\",\"同时保留原来的测量方法，\",\"这样才能判断差异是否来自材料本身。\"],\"batch_summary\":\"第一批与第二批样品重量测试的说明及后续实验计划。\"}",
+  "usage": {
+    "promptTokenCount": 295,
+    "candidatesTokenCount": 123,
+    "totalTokenCount": 418,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 295
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.1826873749960214,
+  "transport_attempts": 1,
+  "lines": [
+    "第一批样品的平均重量是三点五千克，",
+    "第二批则接近三千克。",
+    "我们使用同一台电子秤，",
+    "对每个样品分别测量了五次，",
+    "再把结果记录到表格里。",
+    "这些数字只代表本次小规模测试，",
+    "不能直接推断后续所有产品都会出现相同变化。",
+    "下一轮实验会增加样本数量，",
+    "同时保留原来的测量方法，",
+    "这样才能判断差异是否来自材料本身。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 10,
+    "boundaries": 9,
+    "tp": 9,
+    "ref_count": 12,
+    "f1": 0.8571428571428571,
+    "overlong": 1,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 21
+  }
+}

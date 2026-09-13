@@ -1,0 +1,263 @@
+# 七语种 transcript 数据集
+
+65 条合成样本；每条由两个 segment 构成。以下展示完整合并文本，原始 segment ID、精确接缝及参考边界见 dataset.json。zh-Hans-01 使用截图中的口语表达并增加合成续文。
+
+## en-01 · workshop
+
+Before we begin the movement, make sure both feet are resting on the floor. Keep your shoulders relaxed and look straight ahead. The aim is to move slowly, without pulling your neck forward. If the chair feels unstable, stop and choose a firmer seat. We will repeat the same sequence twice, then compare how the two sides feel.
+
+## en-02 · editing
+
+When you open the project tomorrow, the original recordings will still be available. Start by selecting the interview clip, then move the playhead to the first answer. Do not delete the quiet moment just because nobody is speaking. That pause gives the audience time to understand the question. Once the rough cut is ready, we can decide where the music should begin.
+
+## en-03 · numbers
+
+The first prototype weighed 3.5 kilograms, while the second came in at just under three. We measured each sample five times, using the same digital scale. Dr. Patel checked the results before we sent them to the design team. These figures describe our small trial, so they should not be treated as a prediction for every future unit. The next test will use a larger batch.
+
+## en-04 · negation
+
+I didn't say the new camera was unreliable. I said we hadn't tested it in heavy rain. Those are different claims, and the distinction matters. You can still use it for tomorrow's interview, provided that the crew has a dry location. If the weather changes unexpectedly, call the producer before leaving the studio. We would rather adjust the schedule than lose the only recording of the conversation.
+
+## en-05 · dialogue
+
+She asked, “Are we leaving now?” I told her the train had been delayed, but the station café was still open. We could wait there for a while and check the departure board together. “That sounds better,” she said, picking up the small blue suitcase. By the time we reached the platform, the announcement had changed again. We decided to stay close to the information desk.
+
+## en-06 · long_clause
+
+The community garden behind the old library was built by residents who wanted a place where children could learn about growing food without having to travel outside the city. Every Saturday, a different volunteer opens the gate and checks the watering system. Visitors can borrow small tools from the shed, but they need to return them before closing. This simple arrangement has kept the garden welcoming and easy to maintain.
+
+## en-07 · self_correction
+
+We should meet on Thursday, sorry, I mean Friday afternoon. Thursday is when the sound engineer needs to inspect the room. I have already sent the updated address, although the map in the first email was wrong. Please use the entrance beside the bakery and take the stairs to the second floor. If the door is locked when you arrive, give me a call and I will come downstairs.
+
+## en-08 · list
+
+For this exercise, you need a notebook, a pencil, and a small object from your desk. First, describe what the object looks like. Next, explain how someone might use it. Finally, imagine a situation in which it would become unexpectedly useful. There is no single correct answer, so focus on making the details clear. When everyone has finished writing, we will read a few examples aloud.
+
+## en-09 · proper_names
+
+Maria da Silva joined the research group after working with a museum in São Paulo. Her first task was to catalogue photographs that had never been shown to the public. Some images had dates on the back, while others carried only a family name. Instead of guessing where they belonged, she kept a separate list of uncertain records. Local residents later helped the museum identify several people in those pictures.
+
+## en-10 · conditional
+
+If the recording stops before the talk ends, leave the device where it is and write down what happened. Do not press every button at once, because that can make the problem harder to trace. The backup recorder should continue running until the audience has left the room. After that, bring both memory cards to the desk. We will check the files together before anyone starts copying them.
+
+## en-11 · technical
+
+The application saves a temporary copy whenever you finish a major edit. This copy is stored separately from the version you named yourself. When you reopen the project, the recovery panel explains which copy is newer. Read that message before choosing an option. A larger file is not necessarily a more complete version of the work. If neither copy looks right, keep both files for further inspection.
+
+## en-12 · code_switch
+
+The client called the campaign “新生活,” which means a new life in Chinese. We kept that title on the opening card and used an English subtitle below it. During the review, someone suggested replacing the title with a shorter slogan. The director asked us to wait until the local team had checked the wording. A phrase that looks neat in the layout may carry a different meaning in another language.
+
+## en-13 · abbreviation
+
+The U.S. office sent its notes at 9:30 a.m., just before our weekly planning call. Most comments concerned the final paragraph, not the overall direction of the article. We agreed to check the figures again and explain where the estimates came from. Prof. Lewis offered to review the revised draft, provided that we sent it before Friday. That gave the editor enough time to prepare the next version for discussion.
+
+## en-14 · contrast
+
+The room looked brighter after the walls were painted a pale shade of yellow. It did not become any larger, but people found it easier to move around. We also removed a table near the entrance and placed the signs at eye level. These changes were inexpensive, yet they made the space feel more welcoming. Next month, we will ask regular visitors which part of the new arrangement works best.
+
+## en-15 · punctuation
+
+The instructions were simple: open the box, remove the protective sheet, and place the panel on a flat surface. There was one warning—keep the cable dry. We read it twice before starting, because the workspace was close to a sink. Everything else went smoothly; the connectors fitted without extra pressure. Once the indicator light turned green, we recorded the result in the installation log.
+
+## en-16 · phrasal_verbs
+
+Please turn off the desk lamp before you plug in the second monitor. The socket behind the cabinet is loose, so use the power strip beside the window. I will look into the connection problem after the presentation has finished. For now, write down any error messages exactly as they appear on the screen. That will help us work out whether the fault is in the cable or the adapter.
+
+## en-17 · parenthetical
+
+The north entrance (beside the ticket office) will remain open during the renovation. Visitors with large bags should use that door, since the other corridor is quite narrow. Our staff can show you the temporary route if you have not visited the building before. The exhibition itself has not moved, although a few signs are being replaced. Please allow a little extra time to reach the gallery on the upper floor.
+
+## en-18 · repetition
+
+At first, I thought the sound was coming from the fan above the kitchen door. Then I listened again, and again, until I noticed the same pattern in every room. It was the old clock in the hallway, ticking much louder than I remembered. We moved it away from the microphone and recorded another minute of silence. This time, the background was quiet enough for the interview we had planned.
+
+## en-19 · mixed_symbols
+
+The label reads “USB-C, 20 W,” but that does not describe every cable in the box. Check the small print on each connector before putting the equipment into separate bags. One bag is marked “A/B test,” and another carries the version number v2.1. Keep those labels exactly as they are. If a label has fallen off, place the item on the review table instead of guessing which kit it belongs to.
+
+## en-20 · story
+
+By the time the ferry reached the island, the morning fog had begun to lift. A shopkeeper was arranging fresh bread in the window opposite the landing stage. We bought two rolls and asked for directions to the footpath along the eastern shore. She drew a quick map on a paper bag, adding a star beside a sheltered beach. That small gesture changed our plans, and we spent the afternoon by the water.
+
+## zh-Hans-01 · 截图同类动作讲解
+
+先做一个起头的动作，整个把这个髂骨跟肩椎的这个卡住这个关节面先把它打开。这个动作做完之后，后面的动作做会比较顺，它可以把这个这髂骨把它能够自动调整，所以这个动作是很重要的。大家先看清楚示范，然后再按照自己的节奏慢慢跟着做一遍。如果刚才没有看清楚，可以先停下来，等讲解结束以后再重新观察。
+
+## zh-Hans-02 · 剪辑教学
+
+打开项目之后，先找到昨天录制的采访素材，把播放位置移到第一个回答前面。这里有一小段安静的画面，不要因为没有人说话就直接把它删除。观众需要一点时间理解问题，这段停顿也能保留现场气氛。等粗剪完成以后，我们再一起判断音乐从哪里进入，以及结尾是否需要补充说明。保存之前记得检查文件名称，避免把练习版本当成最终成片。
+
+## zh-Hans-03 · 数字单位
+
+第一批样品的平均重量是三点五千克，第二批则接近三千克。我们使用同一台电子秤，对每个样品分别测量了五次，再把结果记录到表格里。这些数字只代表本次小规模测试，不能直接推断后续所有产品都会出现相同变化。下一轮实验会增加样本数量，同时保留原来的测量方法，这样才能判断差异是否来自材料本身。
+
+## zh-Hans-04 · 否定转折
+
+我不是说这台相机不能使用，而是说我们还没有测试过它在大雨中的表现。明天的采访可以照常进行，前提是现场有合适的室内位置。如果天气突然变化，请先联系负责协调的同事，不要到了拍摄地点才临时决定。我们宁可提前调整安排，也不希望唯一一次采访因为准备不足而无法保留。设备清单我已经发到群里，出发前再核对一遍。
+
+## zh-Hans-05 · 引用对话
+
+她问：“我们现在就出发吗？”我告诉她列车暂时晚点，不过车站旁边的咖啡馆还开着，可以在那里等一会儿。“那我们先过去吧。”她一边说，一边拿起放在门口的蓝色行李箱。走到站台的时候，广播里的发车信息又更新了。我们没有继续往前走，而是留在服务台附近，准备确认下一班车到底从哪个站台出发。
+
+## zh-Hans-06 · 长句稀疏标点
+
+住在老图书馆后面的居民希望孩子们不必离开城市也能亲眼观察蔬菜从播种到成熟的整个过程，于是一起把空地改造成了社区花园。每个周六都有志愿者负责开门，并且检查浇水设备是否正常。来访的人可以借用小工具，只要在离开之前把它们放回原来的架子。这种简单的安排持续了很久，也让更多邻居愿意参与。
+
+## zh-Hans-07 · 口语自我纠正
+
+我们星期四下午见，不对，应该是星期五下午，星期四还要等音响师过来检查。我已经把新的地址发给你了，不过第一封邮件里面的地图不对，请以刚刚发送的版本为准。到了以后从面包店旁边进去，再沿着楼梯走到二楼。如果门没有打开，直接给我打电话就行。不要在楼下等太久，我可能正在里面整理设备，听不到走廊里的声音。
+
+## zh-Hans-08 · 列举流程
+
+今天练习需要准备三样东西：一本笔记本、一支铅笔，以及桌面上随手能拿到的小物件。先描述它的外观，再说明平时可以怎样使用，最后想象一个特殊场景，看看它还能发挥什么作用。这道练习没有唯一正确答案，重点是把细节表达清楚。等大家都写完以后，我们会挑几个例子一起讨论，也欢迎补充与自己经历有关的故事。
+
+## zh-Hans-09 · 专名地名
+
+陈思远加入研究小组之前，曾经在圣保罗的一家博物馆工作。他接到的第一个任务，是整理一批从未公开展出的老照片。有些照片背面写着日期，有些却只留下一个姓氏，无法直接确定拍摄地点。他没有急着给出答案，而是把存疑的信息单独列出来。后来附近的居民来到馆里，帮助工作人员认出了照片中的人物，也补充了许多当年的故事。
+
+## zh-Hans-10 · 条件说明
+
+如果录音在讲座结束前停止，请先保持设备原来的位置，然后记录刚才发生了什么。不要连续按下所有按钮，否则问题可能会更难排查。备用录音机应该继续运行，直到观众全部离开会场。之后再把两张存储卡交到服务台，由负责整理素材的同事一起检查文件是否完整。确认没有遗漏以后，我们才开始复制，并且为每份文件注明来源。
+
+## zh-Hans-11 · 软件恢复
+
+每次完成比较大的修改以后，应用都会保存一份临时副本，它和你自己命名的版本分开放置。重新打开项目时，恢复面板会说明哪份副本更新，请先读完提示再选择。文件体积比较大，并不一定代表内容更加完整。如果两份文件看起来都有问题，先把它们全部保留，不要急着覆盖其中任何一份。我们可以继续检查修改记录，再决定使用哪个版本。
+
+## zh-Hans-12 · 中英混合
+
+客户把这次活动命名为“New Start”，我们在片头保留了英文标题，并且在下面加上中文说明。评审的时候有人建议，把原来的名字换成更短的口号，这样版面看起来会更整齐。导演希望先听听本地团队的意见，因为相同的文字放在不同语境里，可能会让观众产生不同理解。最终的标题还没有确定，请暂时不要批量替换所有画面。
+
+## zh-Hans-13 · 小数百分比
+
+报告里面写的是增长3.5%，不是增加了三十五个百分点。这两个说法看起来接近，实际表达的变化却不一样。我们先把原始数据放到同一张表，再确认比较的时间范围，以及是否包含后来补录的记录。如果口径没有统一，直接比较总数就容易产生误解。图表做好以后，也请把单位标在读者容易看到的位置，不要只放在最后一页的说明里。
+
+## zh-Hans-14 · 结果对比
+
+墙面换成浅黄色以后，房间看起来明亮了一些，但实际使用面积没有增加。我们还移走了入口旁边的桌子，把指示牌放到接近视线的高度。这些调整花费不多，却让第一次来的访客更容易找到自己要去的地方。下个月我们准备收集使用反馈，看看哪些变化确实有帮助，哪些地方仍然让人困惑，再安排下一轮小范围修改。
+
+## zh-Hans-15 · 破折号括号
+
+安装说明一共只有三步：打开包装，取下保护膜，再把面板放到平整的桌面上。旁边还有一句提醒——连接线必须保持干燥。我们读了两遍才开始操作，因为工作台离水槽比较近。其余部分进行得很顺利；接头不需要额外用力就能插好。等指示灯变成绿色以后，我们把结果写进安装记录，并且保留包装盒上的型号标签。
+
+## zh-Hans-16 · 动补结构
+
+先把桌上的台灯关掉，再接上第二台显示器。柜子后面的插座有些松动，这次使用窗边的插线板。等演示结束以后，我会再查一下连接不稳定的原因。现在如果看到错误提示，请按屏幕上的原文记下来，不要凭印象换一种说法。这些记录能帮助我们判断，问题到底出在线材、接口，还是设备当前的设置里面。
+
+## zh-Hans-17 · 括号补充
+
+北侧入口（售票处旁边）在施工期间仍然开放。带着大件行李的访客请优先使用这扇门，因为另一条走廊比较狭窄。如果以前没有来过，工作人员可以指引临时通道。展览本身的位置没有变化，只有少量标识正在更换。请给自己留出一点额外时间，慢慢走到楼上的展厅，也可以在出发前查看当天发布的参观说明。
+
+## zh-Hans-18 · 重复犹豫
+
+一开始我以为那个声音是厨房门上面的风扇发出来的。后来又听了一遍，又听了一遍，才发现每个房间里都有同样规律的响动。原来是走廊上的旧时钟，比我印象中响得多。我们把它挪到远离麦克风的位置，又录了一分钟安静的环境声。这次背景终于足够干净，可以继续原来安排的采访。刚才那段录音也先保留，方便后面比较两次的差别。
+
+## zh-Hans-19 · 型号符号
+
+标签写着“USB-C，20 W”，但这不代表盒子里的每根线都适用于同一种设备。请先检查接头上的小字，再把器材分别装进不同袋子。一个袋子标着“A/B test”，另一个写着版本号v2.1。这些名称暂时保持原样，不要为了整齐而重新缩写。如果某件器材的标签脱落了，请放到待检查的桌面上，不要猜测它原来属于哪一套。
+
+## zh-Hans-20 · 叙事
+
+渡船靠近小岛的时候，早晨的雾已经开始散去。码头对面的店主正在把新出炉的面包摆进橱窗。我们买了两个面包，顺便询问通往东岸小路的方向。她拿起纸袋画了一张简单的地图，还在一片避风的沙滩旁边画了一颗小星星。这个小小的举动改变了我们的计划，我们没有继续赶路，而是在海边度过了整个下午。
+
+## ja-01 · 動作説明
+
+動きを始める前に、両足が床についていることを確認してください。肩の力を抜いて、正面をゆっくり見ます。首を前に引っ張るのではなく、無理のない範囲で動かします。椅子がぐらつく場合は、いったん中止して安定したものに替えてください。同じ動きを二回繰り返した後、左右で感じ方に違いがあるか落ち着いて確かめましょう。
+
+## ja-02 · 編集解説
+
+明日プロジェクトを開いても、元の録画はそのまま残っています。最初にインタビューの素材を選び、一つ目の回答の直前まで再生位置を移動してください。誰も話していないからといって、静かな部分をすぐに削除する必要はありません。その間があることで、視聴者は質問の意味を理解しやすくなります。全体の構成ができてから、音楽を入れる位置を考えましょう。
+
+## ja-03 · 数値と固有名詞
+
+田中美咲さんは、午前九時三十分に届いた資料を会議の前に読み直しました。最初の試作品は3.5キログラムで、二つ目は三キログラム弱でした。どちらも同じ電子はかりで五回ずつ測定しています。ただし、今回の結果だけで今後のすべての製品を評価することはできません。次の試験では試料を増やし、測定方法を変えずに違いが再現されるか調べます。
+
+## ja-04 · 言い直しと引用
+
+「木曜日に会いましょう」と言いましたが、すみません、正しくは金曜日の午後です。木曜日は音響担当者が会場を確認する予定でした。新しい住所は送りましたが、最初のメールの地図には間違いがありました。パン屋の隣の入口を使い、階段で二階へ上がってください。到着したときに鍵がかかっていたら、電話をいただければすぐに下まで迎えに行きます。
+
+## ja-05 · 記号と条件
+
+箱には「USB-C、20 W」と書かれていますが、すべてのケーブルが同じ機器に使えるわけではありません。袋に分ける前に、接続部分の小さな文字を一つずつ確認してください。「A/B test」というラベルやバージョン番号v2.1は、元の表記をそのまま残します。ラベルが外れている場合は、所属を推測して戻すのではなく、確認用の机に置いてください。
+
+## de-01 · Bewegung
+
+Bevor wir mit der Bewegung beginnen, stellen Sie beide Füße auf den Boden. Lassen Sie die Schultern locker und schauen Sie geradeaus. Es geht darum, sich langsam zu bewegen, ohne den Kopf nach vorne zu ziehen. Falls der Stuhl wackelt, unterbrechen Sie die Übung und wählen Sie einen stabileren Sitz. Wir wiederholen den Ablauf zweimal und vergleichen anschließend, wie sich die beiden Seiten anfühlen.
+
+## de-02 · Schnitt
+
+Wenn Sie morgen das Projekt öffnen, sind die ursprünglichen Aufnahmen noch da. Wählen Sie zuerst das Interview aus und gehen Sie zum Beginn der ersten Antwort. Löschen Sie die stille Stelle nicht sofort, nur weil dort niemand spricht. Die Zuschauer brauchen einen Moment, um die Frage richtig zu verstehen. Sobald der erste Schnitt fertig ist, entscheiden wir gemeinsam, an welcher Stelle die Musik einsetzen soll und ob der Schluss noch eine Erklärung braucht.
+
+## de-03 · Zahlen
+
+Dr. Weber hat die Messwerte geprüft, bevor wir sie an das Entwicklungsteam schickten. Der erste Prototyp wog 3,5 Kilogramm, der zweite etwas weniger als drei. Jede Probe wurde fünfmal gewogen, immer mit derselben digitalen Waage. Die Ergebnisse gelten für diesen kleinen Test, nicht automatisch für alle späteren Produkte. Beim nächsten Versuch erhöhen wir die Anzahl, behalten aber die Messmethode bei. So lässt sich der Unterschied besser beurteilen.
+
+## de-04 · Nebensatz
+
+Die Anwohner, die hinter der alten Bibliothek wohnen und schon lange einen Ort suchten, an dem Kinder etwas über Pflanzen lernen können, haben gemeinsam einen Garten angelegt. Jeden Samstag öffnet jemand das Tor und prüft die Bewässerungsanlage. Kleine Werkzeuge können ausgeliehen werden, müssen aber vor dem Schließen zurück ins Regal. Diese einfache Regel hilft dabei, den Garten für alle zugänglich zu halten. Neue Besucher werden am Eingang begrüßt.
+
+## de-05 · Korrektur
+
+Wir treffen uns am Donnerstag, Entschuldigung, ich meine Freitag Nachmittag. Am Donnerstag kommt der Tontechniker, um den Raum vor der Veranstaltung zu prüfen. Die neue Adresse habe ich schon geschickt, aber die Karte in der ersten E-Mail war falsch. Bitte benutzen Sie den Eingang neben der Bäckerei und gehen Sie über die Treppe in den zweiten Stock. Wenn die Tür bei Ihrer Ankunft verschlossen ist, rufen Sie mich an. Ich komme dann nach unten und öffne Ihnen.
+
+## fr-01 · Mouvement
+
+Avant de commencer le mouvement, posez les deux pieds sur le sol. Relâchez les épaules et regardez tranquillement devant vous. L'objectif est de bouger lentement, sans tirer la tête vers l'avant. Si la chaise n'est pas stable, interrompez l'exercice et choisissez un siège plus ferme. Nous répéterons la même séquence deux fois, puis nous comparerons les sensations du côté droit et du côté gauche.
+
+## fr-02 · Montage
+
+Quand vous ouvrirez le projet demain, les enregistrements d'origine seront disponibles. Sélectionnez d'abord l'entretien, puis placez la lecture avant la première réponse. Ne supprimez pas immédiatement le passage calme simplement parce que personne ne parle. Ce silence laisse au public le temps de comprendre la question. Une fois le premier montage terminé, nous déciderons où faire commencer la musique. Nous vérifierons aussi si la conclusion a besoin d'une courte explication supplémentaire.
+
+## fr-03 · Chiffres
+
+La première version pesait 3,5 kilogrammes, et la deuxième un peu moins de trois. Nous avons pesé chaque échantillon cinq fois, toujours avec la même balance numérique. Mme Dupont a vérifié les résultats avant leur envoi à l'équipe de conception. Ces chiffres décrivent un essai limité, ils ne prédisent pas tous les futurs produits. La prochaine expérience utilisera plus de pièces, mais gardera la même méthode de mesure. Nous pourrons ainsi comparer les deux séries.
+
+## fr-04 · Récit
+
+Elle a demandé : « On part maintenant ? » Je lui ai expliqué que le train avait du retard, mais que le café de la gare était encore ouvert. Nous pouvions y attendre un moment et consulter ensemble le tableau des départs. « C'est une bonne idée », a-t-elle répondu, en prenant la petite valise bleue. Lorsque nous sommes arrivés sur le quai, l'annonce venait encore de changer. Nous avons préféré rester près de l'accueil pour demander une confirmation avant de repartir.
+
+## fr-05 · Consigne
+
+L'entrée nord, à côté de la billetterie, restera ouverte pendant les travaux. Les visiteurs avec de grands sacs doivent utiliser cette porte, car l'autre couloir est plutôt étroit. Notre équipe peut expliquer le trajet provisoire aux personnes qui découvrent le bâtiment. L'exposition n'a pas changé de place, même si quelques panneaux sont remplacés. Prévoyez simplement un peu plus de temps pour atteindre la galerie à l'étage. Le plan sera également affiché près de la porte.
+
+## es-01 · Movimiento
+
+Antes de empezar el movimiento, apoya los dos pies en el suelo. Relaja los hombros y mira despacio hacia delante. La idea es moverse con calma, sin tirar de la cabeza hacia el pecho. Si la silla no está estable, interrumpe el ejercicio y busca un asiento más firme. Vamos a repetir la secuencia dos veces y después compararemos las sensaciones del lado derecho y del izquierdo.
+
+## es-02 · Edición
+
+Cuando abras el proyecto mañana, las grabaciones originales seguirán disponibles. Selecciona primero la entrevista y lleva la reproducción al inicio de la respuesta. No borres enseguida el momento de silencio solo porque nadie está hablando. Esa pausa permite que el público comprenda la pregunta antes de escuchar la respuesta. Cuando terminemos el primer montaje, decidiremos dónde debe comenzar la música. También revisaremos el final para comprobar si necesita una explicación adicional.
+
+## es-03 · Cifras
+
+El primer prototipo pesaba 3,5 kilogramos, mientras que el segundo pesaba algo menos de tres. Medimos cada muestra cinco veces, siempre con la misma balanza digital. La Dra. García revisó los resultados antes de enviarlos al equipo de diseño. Estas cifras describen una prueba pequeña, así que no representan todos los productos futuros. En el siguiente ensayo aumentaremos las muestras, pero mantendremos el método de medición. Así podremos comparar los resultados sin cambiar varias condiciones a la vez.
+
+## es-04 · Pregunta
+
+Ella preguntó: «¿Salimos ahora?» Le expliqué que el tren llevaba retraso, pero que la cafetería de la estación seguía abierta. Podíamos esperar allí un rato y consultar juntos el panel de salidas. «Me parece bien», respondió, mientras recogía la pequeña maleta azul. Cuando llegamos al andén, el anuncio había cambiado otra vez. Decidimos quedarnos cerca del mostrador y pedir una confirmación al personal antes de caminar hacia el otro extremo.
+
+## es-05 · Corrección
+
+Nos vemos el jueves, perdón, quería decir el viernes por la tarde. El jueves viene el técnico de sonido para comprobar la sala antes de la presentación. Ya te envié la dirección actualizada, pero el mapa del primer correo estaba equivocado. Entra por la puerta junto a la panadería y sube por las escaleras hasta el segundo piso. Si encuentras la puerta cerrada cuando llegues, llámame por teléfono. Estaré dentro organizando el equipo y bajaré a buscarte en cuanto pueda.
+
+## pt-BR-01 · Movimento
+
+Antes de começar o movimento, apoie os dois pés no chão. Relaxe os ombros e olhe devagar para a frente. A ideia é se movimentar com calma, sem puxar a cabeça em direção ao peito. Se a cadeira estiver balançando, interrompa o exercício e escolha um assento mais firme. Vamos repetir a mesma sequência duas vezes e depois comparar as sensações do lado direito e do lado esquerdo.
+
+## pt-BR-02 · Edição
+
+Quando você abrir o projeto amanhã, as gravações originais ainda estarão disponíveis. Primeiro, selecione a entrevista e leve a reprodução para o início da resposta. Não apague logo o trecho silencioso só porque ninguém está falando. Essa pausa dá ao público um tempo para entender a pergunta antes de ouvir a resposta. Quando o primeiro corte estiver pronto, vamos decidir onde a música deve começar. Também podemos rever o encerramento e verificar se falta alguma explicação.
+
+## pt-BR-03 · Valores
+
+O primeiro protótipo pesava 3,5 quilogramas, enquanto o segundo ficou um pouco abaixo de três. Medimos cada amostra cinco vezes, sempre usando a mesma balança digital. A Dra. Oliveira conferiu os resultados antes de enviarmos os dados à equipe de criação. Esses números descrevem um teste pequeno, por isso não representam todos os produtos futuros. Na próxima etapa, vamos ampliar a amostra e manter o mesmo método de medição. Assim, a comparação entre os lotes ficará mais fácil de interpretar.
+
+## pt-BR-04 · Conversa
+
+Ela perguntou: “A gente vai sair agora?” Expliquei que o trem estava atrasado, mas a cafeteria da estação continuava aberta. Dava para esperar um pouco por lá e olhar juntos o painel de partidas. “Então vamos”, ela respondeu, pegando a pequena mala azul perto da porta. Quando chegamos à plataforma, o aviso tinha mudado de novo. Preferimos ficar perto do balcão de informações e confirmar o horário com um funcionário antes de seguir para o outro lado.
+
+## pt-BR-05 · Identificadores
+
+A etiqueta diz “USB-C, 20 W”, mas isso não descreve todos os cabos da caixa. Confira as letras pequenas nos conectores antes de separar o equipamento em sacolas. Uma sacola está marcada como “A/B test”, e outra traz o número de versão v2.1. Mantenha essas etiquetas exatamente como estão. Se alguma delas tiver se soltado, coloque o item na mesa de conferência em vez de adivinhar a qual conjunto pertence. Depois vamos revisar tudo com a equipe e registrar os itens que ainda precisam de identificação.

@@ -2,7 +2,6 @@ import SwiftUI
 
 struct TranscribeWorkbenchView: View {
     @Bindable private var store = WorkbenchStore.shared
-    @Bindable private var models = LocalModelManager.shared
     @Bindable private var llmSettings = LLMSettingsStore.shared
     @State private var openingInEditorID: UUID?
     @State private var speakerEditRequest: SpeakerEditRequest?
@@ -30,7 +29,6 @@ struct TranscribeWorkbenchView: View {
         }
         .background(AppTheme.Background.baseColor)
         .onAppear {
-            llmSettings.refreshCredentialStatus()
             presentOptionsIfNeeded()
             applyPreferredEntryMode()
         }
@@ -77,15 +75,6 @@ struct TranscribeWorkbenchView: View {
                     guard !urls.isEmpty else {
                         showProcessingOptions = false
                         return
-                    }
-                    if submission.placement.compute == .local {
-                        guard models.hasRequiredTranscriptionModels(
-                            languageCode: submission.options.languageCode,
-                            speakerCount: submission.options.speakerCount.count
-                        ) else {
-                            models.presentManager()
-                            return
-                        }
                     }
                     let netVideoSource = store.pendingNetVideoSource
                     let isRecordedCapture = store.pendingMediaImportOrigin == .recording
@@ -165,8 +154,8 @@ struct TranscribeWorkbenchView: View {
                     }
                 }
                 .buttonStyle(.bordered)
-                .disabled(job.result == nil || job.state == .running || openingInEditorID != nil)
-                if job.state == .running || job.state == .cancelling {
+                .disabled(job.result == nil || job.state.isActive || openingInEditorID != nil)
+                if job.state.isActive {
                     Button(role: .cancel) {
                         store.cancelTranscription(job.id)
                     } label: {
@@ -370,7 +359,7 @@ struct TranscribeWorkbenchView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
-                        .disabled(job.state == .running || job.state == .cancelling)
+                        .disabled(job.state.isActive)
                     }
                 }
             }
@@ -381,29 +370,7 @@ struct TranscribeWorkbenchView: View {
 
     @ViewBuilder
     private func processingState(_ job: WorkbenchTranscriptionJob) -> some View {
-        if job.compute == .local,
-           !models.hasRequiredTranscriptionModels(
-               languageCode: job.languageCode,
-               speakerCount: job.speakerCount.count
-           ) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "arrow.down.circle")
-                    .foregroundStyle(AppTheme.Status.warningColor)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Local speech models are required")
-                        .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
-                    Text("Whisper, spoken-language detection, word alignment, VAD, and speaker detection are downloaded only when you choose to install them.")
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
-                }
-                Spacer()
-                Button("Manage Models") { models.presentManager() }
-            }
-            .padding(12)
-            .background(AppTheme.Status.warningColor.opacity(0.10), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-        }
-
-        if job.state == .running || job.state == .cancelling {
+        if job.state.isActive {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     HStack(spacing: 7) {
@@ -981,10 +948,6 @@ struct TranscribeWorkbenchView: View {
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
             }
-            Divider()
-            Text("Qwen3-ASR · Parakeet v3 · Whisper fallback · word timestamps · up to 4 speakers")
-                .font(.system(size: AppTheme.FontSize.xs))
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
         }
         .padding(AppTheme.Spacing.lgXl)
         .background(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.subtle), in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
@@ -1032,9 +995,16 @@ struct TranscribeWorkbenchView: View {
     private func importMedia() {
         pendingNetVideoTitle = nil
         Task {
-            let urls = await WorkbenchFilePicker.pickMediaFiles()
-            if !urls.isEmpty {
-                store.stageMediaImport(urls)
+            do {
+                try await AccountService.shared.prepareNewContentAccess()
+                let urls = await WorkbenchFilePicker.pickMediaFiles()
+                if !urls.isEmpty {
+                    store.stageMediaImport(urls)
+                }
+                } catch is AppAccessError {
+                    return
+                } catch {
+                    store.transcriptionAdmissionError = error.localizedDescription
             }
         }
     }
@@ -1047,8 +1017,9 @@ struct TranscribeWorkbenchView: View {
         }
         netVideoTask?.cancel()
         netVideoTask = Task {
-            netVideoPhase = .extractingLocal
             do {
+                try await AccountService.shared.prepareNewContentAccess()
+                netVideoPhase = .extractingLocal
                 let result = try await YouTubeAudioImporter.importAudio(
                     from: raw,
                     into: WorkbenchStore.netVideoMediaDirectory
@@ -1079,6 +1050,8 @@ struct TranscribeWorkbenchView: View {
                 )
             } catch is CancellationError {
                 netVideoPhase = .idle
+            } catch is AppAccessError {
+                return
             } catch {
                 netVideoPhase = .failed(error.localizedDescription)
             }
@@ -1086,15 +1059,6 @@ struct TranscribeWorkbenchView: View {
     }
 
     private func start(_ job: WorkbenchTranscriptionJob) {
-        if job.compute == .local {
-            guard models.hasRequiredTranscriptionModels(
-                languageCode: job.languageCode,
-                speakerCount: job.speakerCount.count
-            ) else {
-                models.presentManager()
-                return
-            }
-        }
         Task {
             _ = await llmSettings.credentialAvailable()
             if TranscriptionAIAccessPromptPolicy.shouldPresent(

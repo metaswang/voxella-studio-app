@@ -1,0 +1,34 @@
+{
+  "source": "read-only local workbench snapshot; no network request",
+  "job_id": "1CDE9713-4644-4788-8F7E-D2885C3FD722",
+  "asr_engine": "qwen",
+  "stored_excerpt": [
+    {
+      "id": 12,
+      "text": "先做一个起头的动作，整个把这个髂骨"
+    },
+    {
+      "id": 13,
+      "text": "跟肩椎的这个卡住这"
+    },
+    {
+      "id": 14,
+      "text": "个关节面先把它打开。"
+    },
+    {
+      "id": 15,
+      "text": "这个动作做完之后，后面的动作做会比较"
+    },
+    {
+      "id": 16,
+      "text": "顺，它可以把这个这髂骨把它能够自动"
+    }
+  ],
+  "local_current_rule_excerpt": [
+    "骨，髂骨跟这个这边的肩椎这边呢，",
+    "的动作，整个把这个髂骨跟肩椎的这个卡",
+    "住这个关节面先把它打开。",
+    "这个动作做完之后，后面的动作做会比较"
+  ],
+  "limitations": "Current full-segment rule replay uses a different batch boundary from historical execution; it is not an exact historical pipeline reproduction."
+}

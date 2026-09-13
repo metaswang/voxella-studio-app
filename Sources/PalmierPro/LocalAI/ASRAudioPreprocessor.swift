@@ -32,6 +32,7 @@ enum ASRAudioPreprocessor {
     static let targetIntegratedLUFS = -20.0
     static let truePeakCeilingDBTP = -3.0
     static let maximumGainDB = 30.0
+    static let maximumVADRescueGainDB = 12.0
     static let lowLevelRMSDBFS = -40.0
     static let silenceRMSDBFS = -60.0
     static let silencePeakDBFS = -50.0
@@ -84,6 +85,37 @@ enum ASRAudioPreprocessor {
             original: original,
             processed: processed,
             appliedGainDB: appliedGainDB
+        )
+    }
+
+    static func prepareVADRescue(samples: [Float]) -> ASRAudioPreprocessingResult {
+        let original = metrics(for: samples)
+        guard !samples.isEmpty, !original.isEffectivelySilent,
+              original.rmsDBFS < lowLevelRMSDBFS || original.peakDBFS < -24 else {
+            return ASRAudioPreprocessingResult(
+                samples: samples,
+                original: original,
+                processed: original,
+                appliedGainDB: 0
+            )
+        }
+        let gainDB = min(maximumVADRescueGainDB, max(0, targetPeakDBFS - original.peakDBFS))
+        guard gainDB > 0.01 else {
+            return ASRAudioPreprocessingResult(
+                samples: samples,
+                original: original,
+                processed: original,
+                appliedGainDB: 0
+            )
+        }
+        let gain = Float(pow(10, gainDB / 20))
+        let ceiling = Float(pow(10, truePeakCeilingDBTP / 20))
+        let rescued = samples.map { min(ceiling, max(-ceiling, $0 * gain)) }
+        return ASRAudioPreprocessingResult(
+            samples: rescued,
+            original: original,
+            processed: metrics(for: rescued),
+            appliedGainDB: gainDB
         )
     }
 

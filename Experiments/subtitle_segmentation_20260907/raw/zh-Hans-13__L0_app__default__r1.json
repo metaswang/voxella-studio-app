@@ -1,0 +1,70 @@
+{
+  "id": "zh-Hans-13",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language zh-Hans.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: zh-Hans\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n报告里面写的是增长3.5%，不是增加了三十五个百分点。这两个说法看起来接近，实际表达的变化却不一样。我们先把原始数据放到同一张表，再确认比较的时间范围，以及是否包含后来补录的记录。如果口径没有统一，直接比较总数就容易产生误解。图表做好以后，也请把单位标在读者容易看到的位置，不要只放在最后一页的说明里。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "fb33d2d671690eccff7672d6ec72079615c8d0bcf8a76decb559c6e3eff117f4",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:50.131827+00:00",
+  "raw": "{\"lines\": [\"报告里面写的是增长3.\", \"5%，不是增加了\", \"三十五个百分点。\", \"这两个说法看起来接近，\", \"实际表达的变化却不一样。\", \"我们先把原始数据\", \"放到同一张表，\", \"再确认比较的时间范围，\", \"以及是否包含\", \"后来补录的记录。\", \"如果口径没有统一，\", \"直接比较总数\", \"就容易产生误解。\", \"图表做好以后，\", \"也请把单位标在\", \"读者容易看到的位置，\", \"不要只放在\", \"最后一页的说明里。\"]}",
+  "usage": {
+    "promptTokenCount": 314,
+    "candidatesTokenCount": 126,
+    "totalTokenCount": 440,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 314
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2970766250000452,
+  "transport_attempts": 1,
+  "lines": [
+    "报告里面写的是增长3.",
+    "5%，不是增加了",
+    "三十五个百分点。",
+    "这两个说法看起来接近，",
+    "实际表达的变化却不一样。",
+    "我们先把原始数据",
+    "放到同一张表，",
+    "再确认比较的时间范围，",
+    "以及是否包含",
+    "后来补录的记录。",
+    "如果口径没有统一，",
+    "直接比较总数",
+    "就容易产生误解。",
+    "图表做好以后，",
+    "也请把单位标在",
+    "读者容易看到的位置，",
+    "不要只放在",
+    "最后一页的说明里。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 18,
+    "boundaries": 17,
+    "tp": 10,
+    "ref_count": 11,
+    "f1": 0.7142857142857143,
+    "overlong": 0,
+    "short": 6,
+    "protected_total": 3,
+    "protected_breaks": 1,
+    "violations": [
+      {
+        "phrase": "3.5%",
+        "cut": 11
+      }
+    ],
+    "punctuation_starts": 0,
+    "max_length": 12
+  }
+}

@@ -62,7 +62,7 @@ extension GenerationView {
         }
         .padding(AppTheme.Spacing.xs)
         .frame(minWidth: 180)
-        .glassEffect(.clear, in: .rect(cornerRadius: AppTheme.Radius.md))
+        .appGlassEffect(.clear, in: .rect(cornerRadius: AppTheme.Radius.md))
     }
 
     func updateRefMentionQuery(from text: String) {

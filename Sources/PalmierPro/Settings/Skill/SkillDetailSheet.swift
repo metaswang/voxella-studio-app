@@ -87,7 +87,7 @@ struct SkillDetailSheet: View {
                     viewContent(skill)
                         .padding(AppTheme.Spacing.xlXxl)
                 }
-                .scrollEdgeEffectStyle(.soft, for: .top)
+                .appScrollEdgeEffect(.top)
                 .themedSurface(AppTheme.Background.raisedColor, cornerRadius: AppTheme.Radius.md)
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
                 .padding(.horizontal, AppTheme.Spacing.xlXxl)

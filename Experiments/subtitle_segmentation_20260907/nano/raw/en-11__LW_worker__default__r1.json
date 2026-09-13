@@ -1,0 +1,61 @@
+{
+  "id": "en-11",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=en\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nThe application saves a temporary copy whenever you finish a major edit. This copy is stored separately from the version you named yourself. When you reopen the project, the recovery panel explains which copy is newer. Read that message before choosing an option. A larger file is not necessarily a more complete version of the work. If neither copy looks right, keep both files for further inspection.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "22f09dbd9d5eb6ba25d188dee82e10b067fc27f5ba360b82dfcb1397f6b86193",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:18:58.005699+00:00",
+  "raw": "{\"subtitles\":[\"The application saves a temporary copy whenever you finish a major edit.\",\"This copy is stored separately from the version you named yourself.\",\"When you reopen the project, the recovery panel explains which copy is newer.\",\"Read that message before choosing an option.\",\"A larger file is not necessarily a more complete version of the work.\",\"If neither copy looks right, keep both files for further inspection.\"],\"batch_summary\":\"Split finalized_transcript into subtitle lines without altering text or punctuation.\"}",
+  "usage": {
+    "promptTokenCount": 290,
+    "candidatesTokenCount": 106
+  },
+  "provider_usage": {
+    "prompt_tokens": 290,
+    "completion_tokens": 106,
+    "total_tokens": 396,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.4773159579999628,
+  "transport_attempts": 1,
+  "lines": [
+    "The application saves a temporary copy whenever you finish a major edit.",
+    "This copy is stored separately from the version you named yourself.",
+    "When you reopen the project, the recovery panel explains which copy is newer.",
+    "Read that message before choosing an option.",
+    "A larger file is not necessarily a more complete version of the work.",
+    "If neither copy looks right, keep both files for further inspection."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 6,
+    "boundaries": 5,
+    "tp": 5,
+    "ref_count": 10,
+    "f1": 0.6666666666666666,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 77
+  }
+}

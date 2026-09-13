@@ -1,0 +1,59 @@
+{
+  "id": "zh-Hans-12",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n客户把这次活动命名为“New Start”，我们在片头保留了英文标题，并且在下面加上中文说明。评审的时候有人建议，把原来的名字换成更短的口号，这样版面看起来会更整齐。导演希望先听听本地团队的意见，因为相同的文字放在不同语境里，可能会让观众产生不同理解。最终的标题还没有确定，请暂时不要批量替换所有画面。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "2cadfb20337f67ae5603a5fb1f741aad5f92c98425f45c1c3395d9375385afce",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:49.958169+00:00",
+  "raw": "{\"subtitles\":[\"客户把这次活动命名为“New Start”，我们在片头保留了英文标题，并且在下面加上中文说明。\",\"评审的时候有人建议，把原来的名字换成更短的口号，这样版面看起来会更整齐。\",\"导演希望先听听本地团队的意见，因为相同的文字放在不同语境里，可能会让观众产生不同理解。\",\"最终的标题还没有确定，请暂时不要批量替换所有画面。\"],\"batch_summary\":\"将 finalized_transcript 切分为多行字幕，保持原文文本与标点不变，按自然停顿和短语切分。\"}",
+  "usage": {
+    "promptTokenCount": 324,
+    "candidatesTokenCount": 160
+  },
+  "provider_usage": {
+    "prompt_tokens": 324,
+    "completion_tokens": 160,
+    "total_tokens": 484,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 2.059637207996275,
+  "transport_attempts": 1,
+  "lines": [
+    "客户把这次活动命名为“New Start”，我们在片头保留了英文标题，并且在下面加上中文说明。",
+    "评审的时候有人建议，把原来的名字换成更短的口号，这样版面看起来会更整齐。",
+    "导演希望先听听本地团队的意见，因为相同的文字放在不同语境里，可能会让观众产生不同理解。",
+    "最终的标题还没有确定，请暂时不要批量替换所有画面。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 4,
+    "boundaries": 3,
+    "tp": 3,
+    "ref_count": 10,
+    "f1": 0.4615384615384615,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 46
+  }
+}

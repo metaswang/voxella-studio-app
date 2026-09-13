@@ -376,7 +376,7 @@ enum LLMClientError: LocalizedError, Sendable {
         OpenRouter couldn't verify the saved API key, so this AI task wasn't completed.
 
         Try one of these:
-        • In Settings → BYOK, confirm the OpenRouter key is the correct, complete key for this account.
+        • In Settings → AI Service, confirm the OpenRouter key is the correct, complete key for this account.
         • In OpenRouter, check whether the key has been disabled, revoked, or expired.
         • Check the key's workspace, spending limit, and available account credits.
         • Replace the saved key with a new active OpenRouter key, then try again.

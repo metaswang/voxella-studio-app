@@ -6,7 +6,7 @@ final class SessionIndexCoordinator {
 
     private let store: SessionIndexStore
     #if BUNDLED_SPEECH
-    private let embeddingProvider = WeMMEmbeddingProvider()
+    private let embeddingProvider = WeMMEmbeddingProvider.shared
     #endif
     private var ingestTask: Task<Void, Never>?
     private var pending: [UUID: SessionIndexSnapshot] = [:]
@@ -99,7 +99,7 @@ final class SessionIndexCoordinator {
 
     private var embeddingsAvailable: Bool {
         #if BUNDLED_SPEECH
-        LocalModelManager.isInstalled(LocalModelManager.shared.descriptor(for: .weMMEmbedding2B4Bit))
+        LocalModelManager.shared.state(for: SearchIndexConfig.modelID).isInstalled
         #else
         false
         #endif

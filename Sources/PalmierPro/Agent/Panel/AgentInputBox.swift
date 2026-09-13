@@ -68,7 +68,7 @@ struct AgentInputBox<LeadingTools: View>: View {
                 .onChange(of: mentionTab) { _, _ in highlightedMentionIndex = 0 }
             bottomBar
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: AppTheme.Radius.xl))
+        .appGlassEffect(in: .rect(cornerRadius: AppTheme.Radius.xl))
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
                 .strokeBorder(
@@ -130,7 +130,7 @@ struct AgentInputBox<LeadingTools: View>: View {
         HStack(spacing: AppTheme.Spacing.md) {
             leadingTools
             Spacer(minLength: 0)
-            GlassEffectContainer(spacing: AppTheme.Spacing.xs) {
+            AppGlassEffectContainer(spacing: AppTheme.Spacing.xs) {
                 sendStopButton
             }
         }
@@ -146,11 +146,11 @@ struct AgentInputBox<LeadingTools: View>: View {
                     .font(.system(size: AppTheme.FontSize.xs, weight: .bold))
                     .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
             }
-            .buttonStyle(.glass)
+            .appGlassButtonStyle()
             .buttonBorderShape(.circle)
             .controlSize(.regular)
             .tint(AppTheme.Text.secondaryColor)
-            .glassEffectID("sendStop", in: sendStopNamespace)
+            .appGlassEffectID("sendStop", in: sendStopNamespace)
             .help(L10n.string("Stop"))
             .transition(.scale.combined(with: .opacity))
         } else {
@@ -159,11 +159,11 @@ struct AgentInputBox<LeadingTools: View>: View {
                     .font(.system(size: AppTheme.FontSize.sm, weight: .bold))
                     .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
             }
-            .buttonStyle(.glassProminent)
+            .appGlassButtonStyle(prominent: true)
             .buttonBorderShape(.circle)
             .controlSize(.regular)
             .tint(AppTheme.Accent.primary)
-            .glassEffectID("sendStop", in: sendStopNamespace)
+            .appGlassEffectID("sendStop", in: sendStopNamespace)
             .disabled(!canSend)
             .opacity(canSend ? 1 : AppTheme.Opacity.strong)
             .transition(.scale.combined(with: .opacity))

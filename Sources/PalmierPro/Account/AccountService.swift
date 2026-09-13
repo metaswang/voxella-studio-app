@@ -1,8 +1,11 @@
 import AppKit
 import Foundation
+#if MAC_APP_STORE
+import StoreKit
+#endif
 @preconcurrency import ConvexMobile
 
-struct AccountTier: Hashable, Decodable, Sendable {
+struct AccountTier: Hashable, Codable, Sendable {
     let rawValue: String
 
     static let none = AccountTier(rawValue: "free")
@@ -23,6 +26,11 @@ struct AccountTier: Hashable, Decodable, Sendable {
 
     var isPaid: Bool { rawValue != Self.none.rawValue }
 
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
     var planLabel: String {
         isPaid ? "\(displayName) plan" : "Free"
     }
@@ -41,7 +49,8 @@ struct AccountTier: Hashable, Decodable, Sendable {
     }
 }
 
-struct AccountUser: Decodable, Sendable {
+struct AccountUser: Codable, Sendable {
+    let id: UUID
     let email: String?
     let name: String?
     let image: String?
@@ -62,7 +71,7 @@ struct AccountUser: Decodable, Sendable {
     }
 }
 
-struct AccountPlan: Decodable, Sendable {
+struct AccountPlan: Codable, Sendable {
     let tier: AccountTier
     let monthlyPriceUsd: Int
     let monthlyBudgetCredits: Int?
@@ -85,7 +94,7 @@ struct AvailablePlan: Decodable, Sendable, Identifiable {
     }
 }
 
-struct AccountResponse: Decodable, Sendable {
+struct AccountResponse: Codable, Sendable {
     let user: AccountUser
     let plan: AccountPlan?
 }
@@ -104,10 +113,15 @@ private struct OkResponse: Decodable, Sendable {
 final class AccountService {
     static let shared = AccountService()
 
+#if !MAC_APP_STORE
     private static let allowedBillingHosts: Set<String> = [
         "checkout.stripe.com",
         "billing.stripe.com",
     ]
+#endif
+
+    private static let paidAccessEnabled =
+        (Bundle.main.object(forInfoDictionaryKey: "VoxStudioPaidAccessEnabled") as? Bool) ?? false
 
     private(set) var isLoading: Bool = true
     private(set) var isMisconfigured: Bool = false
@@ -118,14 +132,60 @@ final class AccountService {
     private(set) var isBuyingCredits: Bool = false
     private(set) var authState: AuthState<String> = .loading
     private(set) var cloudBillingBalance: VoxellaBillingBalance?
+    private(set) var appAccess = AppAccessSnapshot()
+    private(set) var isOfflineAccount = false
+    private(set) var lifetimePromotion: AppAccessResponse.Promotion?
+#if MAC_APP_STORE
+    private(set) var isPurchasingAppStoreProduct = false
+    @ObservationIgnored private var transactionUpdatesTask: Task<Void, Never>?
+    @ObservationIgnored private var transactionRecoveryTask: Task<Void, Never>?
+
+    func purchaseAppStoreProduct(_ id: String) async {
+        guard !isPurchasingAppStoreProduct else { return }
+        guard let product = AppStoreProductID(rawValue: id), let userID else {
+            lastError = AppAccessError.signInRequired.localizedDescription
+            return
+        }
+        if [.credits5, .credits10, .credits20, .credits50].contains(product), !canPurchaseCredits {
+            lastError = "Choose Lifetime, Starter, or Pro before buying credits."
+            return
+        }
+        let generation = sessionGeneration
+        isPurchasingAppStoreProduct = true
+        lastError = nil
+        defer { isPurchasingAppStoreProduct = false }
+        do {
+            _ = try await AppStorePurchaseProvider.shared.purchase(product, appAccountToken: userID)
+            guard isCurrentSession(generation), self.userID == userID else { return }
+            await refreshAccountForFeatureAccess()
+        } catch {
+            guard isCurrentSession(generation) else { return }
+            if (error as? AppStorePurchaseError) != .cancelled { lastError = error.localizedDescription }
+        }
+    }
+#endif
 
     var isSignedIn: Bool {
+        if isOfflineAccount { return true }
         if case .authenticated = authState { return true }
         return false
     }
     var aiAllowed: Bool { isSignedIn && !isMisconfigured }
     var tier: AccountTier { account?.user.tier ?? .none }
     var isPaid: Bool { tier.isPaid }
+    var userID: UUID? { account?.user.id }
+    var isAppAccessEnforced: Bool { Self.paidAccessEnabled }
+    var canCreateNewContent: Bool {
+        AppAccessGate.canCreateNewContent(
+            enforced: isAppAccessEnforced,
+            signedIn: isSignedIn,
+            access: appAccess
+        )
+    }
+    var canPurchaseCredits: Bool { isSignedIn && (!isAppAccessEnforced || appAccess.canPurchaseCredits) }
+    var appAccessLabel: String {
+        AppAccessGate.label(enforced: isAppAccessEnforced, access: appAccess, tier: tier)
+    }
 
     var spentCredits: Int { account?.user.spentCreditsThisPeriod ?? 0 }
     var budgetCredits: Int? {
@@ -148,12 +208,36 @@ final class AccountService {
     @ObservationIgnored private var cloudAccessGeneration = UUID()
     @ObservationIgnored private let api = VoxellaAPIClient.shared
     @ObservationIgnored private var sessionGeneration = UUID()
+    @ObservationIgnored private var appAccessPreparationTask: Task<Void, Error>?
+    @ObservationIgnored private var entitlementRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var entitlementSchedule = AppAccessRefreshSchedule()
+    @ObservationIgnored private var entitlementTimerTask: Task<Void, Never>?
+    @ObservationIgnored private var accessRequestID = UUID()
+    @ObservationIgnored private var cacheRevision: UInt64 = 0
+    @ObservationIgnored private var didBecomeActiveObserver: NSObjectProtocol?
 
     private init() {}
 
     func configure() {
         guard !didConfigure else { return }
         didConfigure = true
+#if MAC_APP_STORE
+        transactionUpdatesTask = Task { [weak self] in
+            for await result in Transaction.updates {
+                guard !Task.isCancelled else { break }
+                guard let self, let owner = self.userID else { continue }
+                if case .verified(let transaction) = result, transaction.appAccountToken != owner { continue }
+                let generation = self.sessionGeneration
+                do {
+                    _ = try await AppStorePurchaseProvider.shared.synchronize(result, appAccountToken: owner)
+                    guard self.isCurrentSession(generation), self.userID == owner else { continue }
+                    await self.refreshAccountForFeatureAccess()
+                } catch {
+                    if self.isCurrentSession(generation), self.userID == owner { self.lastError = error.localizedDescription }
+                }
+            }
+        }
+#endif
 
         if let deploymentURL = BackendConfig.convexDeploymentURL {
             convex = ConvexClientWithAuth(
@@ -180,6 +264,55 @@ final class AccountService {
             ]
         )
         restoreSession()
+        didBecomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshEntitlementAfterActivation()
+            }
+        }
+        entitlementTimerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(AppAccessRefreshSchedule.interval)) }
+                catch { return }
+                guard let self else { return }
+                if NSApplication.shared.isActive { self.refreshEntitlementAfterActivation() }
+            }
+        }
+    }
+
+    private func refreshEntitlementAfterActivation() {
+        guard entitlementRefreshTask == nil,
+              Self.paidAccessEnabled, isSignedIn, !isLoading, !isSigningIn,
+              entitlementSchedule.isDue(at: .now)
+        else { return }
+        entitlementSchedule.attempted(at: .now)
+        entitlementRefreshTask = Task { [weak self] in
+            await self?.refreshEntitlementInBackground()
+        }
+    }
+
+    private func refreshEntitlementInBackground() async {
+        defer { entitlementRefreshTask = nil }
+        guard Self.paidAccessEnabled, let owner = userID, isSignedIn else { return }
+        let generation = sessionGeneration
+        let requestID = UUID()
+        accessRequestID = requestID
+        do {
+            let response = try await api.billingPlans()
+            guard isCurrentSession(generation), userID == owner, accessRequestID == requestID,
+                  let access = response.appAccess?.snapshot else { return }
+            appAccess = access
+            lifetimePromotion = response.appAccess?.lifetimePromotion
+            entitlementSchedule.succeeded(at: .now)
+            try await persistAppAccess()
+        } catch {
+            guard isCurrentSession(generation), accessRequestID == requestID else { return }
+            if AppAccessRefreshSchedule.invalidatesSession(error) { await rejectSession(); return }
+            Log.account.warning("Background entitlement refresh unavailable")
+        }
     }
 
     private func restoreSession() {
@@ -196,25 +329,27 @@ final class AccountService {
                 }
             }
 
+            _ = await self.restoreOfflineAccess(generation: generation)
             do {
                 guard let token = try await VoxellaAuthService.shared.validAccessToken() else {
                     guard self.isCurrentSession(generation) else { return }
-                    self.authState = .unauthenticated
-                    self.clearAccount()
+                    await self.rejectSession()
                     return
                 }
                 guard self.isCurrentSession(generation) else { return }
-                _ = await self.applyAuthenticatedSession(token: token, generation: generation)
+                _ = await self.applyAuthenticatedSession(token: token, generation: generation, allowOfflineRestore: true)
             } catch {
                 guard self.isCurrentSession(generation) else { return }
-                self.authState = .unauthenticated
-                self.clearAccount()
+                if AppAccessRefreshSchedule.permitsOfflineFallback(error), await self.restoreOfflineAccess(generation: generation) { return }
+                await self.rejectSession()
                 self.lastError = error.localizedDescription
             }
         }
     }
 
     private func reloadAccount(generation: UUID) async throws {
+        let requestID = UUID()
+        accessRequestID = requestID
         async let plans = api.billingPlans()
         async let balance = api.billingBalance()
         let profileResponse = try await api.accountProfile()
@@ -222,6 +357,7 @@ final class AccountService {
         do {
             plansResponse = try await plans
         } catch {
+            if AppAccessRefreshSchedule.invalidatesSession(error) { throw error }
             plansResponse = nil
             Log.account.warning(
                 "billing plans refresh failed error=\(error.localizedDescription)",
@@ -253,10 +389,12 @@ final class AccountService {
         let available = Int((balanceResponse?.availableCredits ?? 0).rounded(.down))
         let periodEnd = plansResponse?.currentPeriodEnd.flatMap(Self.periodMilliseconds)
 
-        guard isCurrentSession(generation) else { return }
+        guard isCurrentSession(generation), accessRequestID == requestID else { return }
 
+        if userID != profileResponse.id { appAccess = .init() }
         account = AccountResponse(
             user: AccountUser(
+                id: profileResponse.id,
                 email: profileResponse.email,
                 name: profileResponse.name,
                 image: profileResponse.pictureURL,
@@ -275,6 +413,16 @@ final class AccountService {
             }
         )
         cloudBillingBalance = balanceResponse
+        lifetimePromotion = plansResponse?.appAccess?.lifetimePromotion
+        isOfflineAccount = false
+        if Self.paidAccessEnabled {
+            if let reportedAccess = plansResponse?.appAccess?.snapshot {
+                appAccess = reportedAccess
+                entitlementSchedule.succeeded(at: .now)
+            }
+        } else {
+            appAccess = .init()
+        }
         availablePlans = plansResponse?.plans.compactMap { plan in
             let tier = AccountTier(planCode: plan.planCode)
             guard tier.isPaid else { return nil }
@@ -287,6 +435,11 @@ final class AccountService {
             )
         } ?? []
         lastError = nil
+        if Self.paidAccessEnabled, plansResponse?.appAccess != nil {
+            do { try await persistAppAccess() }
+            catch { lastError = "Offline access could not be saved: \(error.localizedDescription)" }
+            guard isCurrentSession(generation) else { return }
+        }
         Telemetry.setUser(id: profileResponse.id.uuidString)
         Analytics.identifyUser(
             id: profileResponse.id.uuidString,
@@ -307,12 +460,21 @@ final class AccountService {
     }
 
     private func clearAccount() {
+        accessRequestID = UUID()
+        entitlementSchedule = .init()
+#if MAC_APP_STORE
+        transactionRecoveryTask?.cancel()
+        transactionRecoveryTask = nil
+#endif
+        isOfflineAccount = false
         Telemetry.setUser(id: nil)
         Analytics.resetUser()
         buyCreditsTask?.cancel()
         buyCreditsTask = nil
         account = nil
+        lifetimePromotion = nil
         cloudBillingBalance = nil
+        appAccess = .init()
         availablePlans = []
         isBuyingCredits = false
     }
@@ -350,8 +512,107 @@ final class AccountService {
             try await reloadAccount(generation: generation)
         } catch {
             guard isCurrentSession(generation) else { return }
+            if AppAccessRefreshSchedule.invalidatesSession(error) { await rejectSession(); return }
             lastError = error.localizedDescription
         }
+    }
+
+    func prepareNewContentAccess() async throws {
+        if let task = appAccessPreparationTask {
+            do {
+                try await task.value
+                try Task.checkCancellation()
+                try requireNewContentAccess()
+                return
+            } catch let error as AppAccessError {
+                presentAppAccessNotice(for: error)
+                throw error
+            }
+        }
+        let task = Task { try await performAppAccessPreparation() }
+        appAccessPreparationTask = task
+        defer { appAccessPreparationTask = nil }
+        do {
+            try await task.value
+            try Task.checkCancellation()
+            try requireNewContentAccess()
+        } catch let error as AppAccessError {
+            presentAppAccessNotice(for: error)
+            throw error
+        }
+    }
+
+    private func performAppAccessPreparation() async throws {
+        guard Self.paidAccessEnabled else { return }
+        if isSignedIn, appAccess.policy() == .allowed { return }
+        if isLoading, userID == nil {
+            _ = await restoreOfflineAccess(generation: sessionGeneration)
+            if isSignedIn, appAccess.policy() == .allowed { return }
+        }
+        await waitForSessionRestore()
+        if isSignedIn, appAccess.policy() == .allowed { return }
+        if !isSignedIn {
+            let preparation = await ensureCloudAccess()
+            switch preparation {
+            case .ready:
+                break
+            case .cancelled:
+                throw AppAccessError.signInRequired
+            case .failed:
+                throw AppAccessError.verificationRequired
+            }
+        }
+
+        await refreshAccountForFeatureAccess()
+        if appAccess.license == .none, !tier.isPaid {
+            let generation = sessionGeneration
+            let owner = userID
+            do {
+#if MAC_APP_STORE
+                guard let userID else { throw AppAccessError.signInRequired }
+                guard let access = try await AppStorePurchaseProvider.shared.purchase(.trial, appAccountToken: userID) else {
+                    throw AppAccessError.verificationRequired
+                }
+#else
+                let access = try await api.startAppTrial().snapshot
+#endif
+                guard isCurrentSession(generation), userID == owner else { throw CancellationError() }
+                accessRequestID = UUID()
+                appAccess = access
+                entitlementSchedule.succeeded(at: .now)
+                try await persistAppAccess()
+                try Task.checkCancellation()
+            } catch {
+                lastError = error.localizedDescription
+                throw (error as? AppAccessError) ?? AppAccessError.verificationRequired
+            }
+        }
+        try requireNewContentAccess()
+    }
+
+    func requireNewContentAccess() throws {
+        refreshEntitlementAfterActivation()
+        do {
+            try AppAccessGate.requireNewContent(
+                enforced: Self.paidAccessEnabled,
+                signedIn: isSignedIn,
+                access: appAccess
+            )
+        } catch let error as AppAccessError {
+            presentAppAccessNotice(for: error)
+            if error == .trialExpired {
+                AppAccessWindow.shared.present()
+            }
+            throw error
+        }
+    }
+
+    private func presentAppAccessNotice(for error: AppAccessError) {
+        WorkbenchTipCenter.shared.show(
+            error.localizedDescription,
+            kind: .warning,
+            id: "app-access.\(error.receiptCode)"
+        )
     }
 
     func ensureCloudAccess() async -> CloudAccessPreparation {
@@ -363,9 +624,12 @@ final class AccountService {
         let task: Task<CloudAccessPreparation, Never> = Task { @MainActor [weak self] in
             guard let self else { return CloudAccessPreparation.failed("VoxStudio could not finish setting up this account.") }
             await self.waitForSessionRestore()
+            guard !Task.isCancelled else { return .cancelled }
             if let preparation = await self.preparationIfAlreadyAuthenticated() {
+                guard !Task.isCancelled else { return .cancelled }
                 return preparation
             }
+            guard !Task.isCancelled else { return .cancelled }
             let generation = self.beginSessionOperation()
             self.isSigningIn = true
             self.lastError = nil
@@ -575,27 +839,49 @@ final class AccountService {
     }
 
     func signOut() async {
+        appAccessPreparationTask?.cancel()
         Log.account.notice("sign out requested", telemetry: "Sign out requested")
         let generation = invalidateSessionOperations()
         isSigningIn = false
         authState = .unauthenticated
         clearAccount()
+        do { try await clearOfflineAccess() }
+        catch { lastError = "Offline access could not be removed: \(error.localizedDescription)" }
         await VoxellaAuthService.shared.signOut()
         guard sessionGeneration == generation else { return }
         await convex?.logout()
     }
 
     @discardableResult
-    private func applyAuthenticatedSession(token: String, generation: UUID) async -> Bool {
+    private func applyAuthenticatedSession(token: String, generation: UUID, allowOfflineRestore: Bool = false) async -> Bool {
         guard isCurrentSession(generation) else { return false }
         authState = .authenticated(token)
         _ = await convex?.loginFromCache()
         guard isCurrentSession(generation) else { return false }
         do {
             try await reloadAccount(generation: generation)
+            guard isCurrentSession(generation) else { return false }
+            if let userID { try await VoxellaAuthService.shared.bindAccount(userID, token: token) }
+            guard isCurrentSession(generation) else { return false }
+#if MAC_APP_STORE
+            if let owner = userID {
+                transactionRecoveryTask?.cancel()
+                transactionRecoveryTask = Task { [weak self] in
+                    do {
+                        try await AppStorePurchaseProvider.shared.recover(appAccountToken: owner)
+                        guard !Task.isCancelled, self?.userID == owner else { return }
+                        await self?.refreshAccountForFeatureAccess()
+                    } catch {
+                        if !Task.isCancelled, self?.userID == owner { self?.lastError = error.localizedDescription }
+                    }
+                }
+            }
+#endif
             return isCurrentSession(generation)
         } catch {
             guard isCurrentSession(generation) else { return false }
+            if allowOfflineRestore, AppAccessRefreshSchedule.permitsOfflineFallback(error), await restoreOfflineAccess(generation: generation) { return true }
+            if AppAccessRefreshSchedule.invalidatesSession(error) { await rejectSession(); return false }
             lastError = error.localizedDescription
             Log.account.warning(
                 "account refresh failed error=\(error.localizedDescription)",
@@ -613,6 +899,43 @@ final class AccountService {
         let generation = UUID()
         sessionGeneration = generation
         return generation
+    }
+
+    private func persistAppAccess() async throws {
+        guard let account else { return }
+        cacheRevision += 1
+        try await AppAccessCache.shared.save(account: account, access: appAccess, revision: cacheRevision)
+    }
+
+    private func clearOfflineAccess() async throws {
+        cacheRevision += 1
+        try await AppAccessCache.shared.clear(revision: cacheRevision)
+    }
+
+    private func rejectSession() async {
+        _ = invalidateSessionOperations()
+        authState = .unauthenticated
+        clearAccount()
+        do { try await clearOfflineAccess() }
+        catch { lastError = "Offline access could not be removed: \(error.localizedDescription)" }
+    }
+
+    private func restoreOfflineAccess(generation: UUID) async -> Bool {
+        guard Self.paidAccessEnabled else { return false }
+        do {
+            guard let owner = try await VoxellaAuthService.shared.offlineAccountID(),
+                  let entry = try await AppAccessCache.shared.load(), entry.account.user.id == owner,
+                  isCurrentSession(generation),
+                  userID == nil || userID == entry.account.user.id else { return false }
+            account = entry.account
+            appAccess = entry.access
+            isOfflineAccount = true
+            lastError = nil
+            return true
+        } catch {
+            lastError = "Offline access is unavailable: \(error.localizedDescription)"
+            return false
+        }
     }
 
     private func invalidateSessionOperations() -> UUID {
@@ -633,6 +956,21 @@ final class AccountService {
 
     func subscribe(tier: AccountTier) async {
         lastError = nil
+#if MAC_APP_STORE
+        guard let userID else {
+            lastError = AppAccessError.signInRequired.localizedDescription
+            return
+        }
+        let productID: AppStoreProductID
+        switch tier.rawValue {
+        case "starter": productID = .starter
+        case "pro": productID = .pro
+        default:
+            lastError = "The selected plan is unavailable."
+            return
+        }
+        await purchaseAppStoreProduct(productID.rawValue)
+#else
         guard tier.isPaid, let planID = availablePlan(for: tier)?.planID else {
             lastError = "The selected plan is unavailable."
             return
@@ -643,9 +981,54 @@ final class AccountService {
         } catch {
             lastError = error.localizedDescription
         }
+#endif
+    }
+
+    func purchaseLifetime() async {
+        lastError = nil
+#if MAC_APP_STORE
+        guard let userID else {
+            lastError = AppAccessError.signInRequired.localizedDescription
+            return
+        }
+        await purchaseAppStoreProduct(AppStoreProductID.lifetime.rawValue)
+#else
+        do {
+            let result = try await api.createLifetimeCheckout()
+            openInBrowser(result.checkoutURL)
+        } catch {
+            lastError = error.localizedDescription
+        }
+#endif
+    }
+
+    func restorePurchases() async {
+#if MAC_APP_STORE
+        guard !isPurchasingAppStoreProduct else { return }
+        lastError = nil
+        guard let userID else {
+            lastError = AppAccessError.signInRequired.localizedDescription
+            return
+        }
+        let generation = sessionGeneration
+        isPurchasingAppStoreProduct = true
+        defer { isPurchasingAppStoreProduct = false }
+        do {
+            _ = try await AppStorePurchaseProvider.shared.restore(appAccountToken: userID)
+            guard isCurrentSession(generation), self.userID == userID else { return }
+            await refreshAccountForFeatureAccess()
+        } catch {
+            guard isCurrentSession(generation), self.userID == userID else { return }
+            lastError = error.localizedDescription
+        }
+#endif
     }
 
     func buyCredits(dollars: Int) {
+        guard canPurchaseCredits else {
+            lastError = "Choose Lifetime, Starter, or Pro before buying credits."
+            return
+        }
         guard (TopOffLimits.minDollars...TopOffLimits.maxDollars).contains(dollars) else {
             lastError = "Amount must be $\(TopOffLimits.minDollars)–$\(TopOffLimits.maxDollars)."
             return
@@ -660,8 +1043,26 @@ final class AccountService {
             }
             do {
                 guard let self else { return }
+#if MAC_APP_STORE
+                guard let userID = self.userID else {
+                    self.lastError = AppAccessError.signInRequired.localizedDescription
+                    return
+                }
+                let productID: AppStoreProductID
+                switch dollars {
+                case 5: productID = .credits5
+                case 10: productID = .credits10
+                case 20: productID = .credits20
+                case 50: productID = .credits50
+                default:
+                    self.lastError = "Choose a $5, $10, $20, or $50 credit pack."
+                    return
+                }
+                await self.purchaseAppStoreProduct(productID.rawValue)
+#else
                 let result = try await self.api.createBillingCheckout(topupAmountUSD: Double(dollars))
                 self.openInBrowser(result.checkoutURL)
+#endif
             } catch {
                 self?.lastError = error.localizedDescription
             }
@@ -696,14 +1097,24 @@ final class AccountService {
 
     func manageSubscription() async {
         lastError = nil
+        if appAccess.subscriptionSource == .appStore {
+            guard let url = URL(string: "https://apps.apple.com/account/subscriptions") else { return }
+            if !NSWorkspace.shared.open(url) { lastError = "Could not open Apple subscription settings." }
+            return
+        }
+#if MAC_APP_STORE
+        lastError = "This subscription is managed outside the App Store."
+#else
         do {
             let result = try await api.createBillingPortal()
             openInBrowser(result.url)
         } catch {
             lastError = error.localizedDescription
         }
+#endif
     }
 
+#if !MAC_APP_STORE
     private func openInBrowser(_ urlString: String) {
         guard let url = URL(string: urlString),
               url.scheme == "https",
@@ -715,6 +1126,7 @@ final class AccountService {
         }
         NSWorkspace.shared.open(url, configuration: .init(), completionHandler: nil)
     }
+#endif
 }
 
 // MARK: - Display helpers

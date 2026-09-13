@@ -17,7 +17,7 @@ struct EditorChrome: View {
 
             exportButton
         }
-        .padding(.leading, AppTheme.Workbench.windowControlsLeadingInset)
+        .padding(.leading, AppTheme.Spacing.lg)
         .padding(.trailing, AppTheme.Spacing.lg)
         .frame(height: AppTheme.Workbench.toolbarHeight)
         .background(AppTheme.Background.surfaceColor)

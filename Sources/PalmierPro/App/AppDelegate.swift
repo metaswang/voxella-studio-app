@@ -6,6 +6,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingOpenURLs: [URL] = []
     private var searchEmbeddingPrewarmTask: Task<Void, Never>?
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        _ = AppAppearancePreferences.shared
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Activate the app (required when launched from CLI, not a .app bundle)
         NSApp.setActivationPolicy(.regular)
@@ -13,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
         AppUpdater.shared.start()
+        _ = RecordingSessionController.shared
+        VoiceInputShortcutService.shared.start()
 
         HomeWindowController.shared.showWindow(nil)
         Task.detached(priority: .utility) {
@@ -70,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            AppState.shared.showHome()
+            AppState.shared.showDashboard()
         }
         return true
     }
@@ -79,6 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if isTerminating { return .terminateLater }
         isTerminating = true
         searchEmbeddingPrewarmTask?.cancel()
+        VoiceInputShortcutService.shared.stop()
+        VoiceInputCoordinator.shared.shutdown()
         let projects = AppState.shared.openProjects
 
         Task { @MainActor in

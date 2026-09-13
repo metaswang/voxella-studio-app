@@ -1,4 +1,6 @@
 import importlib.util
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -56,6 +58,24 @@ class ReleaseVersionTests(unittest.TestCase):
                 ),
             )
 
+    def test_auto_increments_patch_after_latest_published_version(self):
+        next_version = release_version.next_patch_version(
+            current=release_version.ReleaseVersion.parse("7.0.7"),
+            published=release_version.PublishedRelease(
+                release_version.ReleaseVersion.parse("7.0.7"), 91
+            ),
+        )
+        self.assertEqual(next_version, release_version.ReleaseVersion.parse("7.0.8"))
+
+    def test_auto_increments_from_newer_current_version(self):
+        next_version = release_version.next_patch_version(
+            current=release_version.ReleaseVersion.parse("7.0.9"),
+            published=release_version.PublishedRelease(
+                release_version.ReleaseVersion.parse("7.0.7"), 91
+            ),
+        )
+        self.assertEqual(next_version, release_version.ReleaseVersion.parse("7.0.10"))
+
     def test_reads_version_and_build_independently(self):
         appcast = """<?xml version="1.0"?>
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
@@ -68,6 +88,11 @@ class ReleaseVersionTests(unittest.TestCase):
             path = Path(directory) / "appcast.xml"
             path.write_text(appcast)
             published = release_version.latest_published_release(path)
+            result = subprocess.run(
+                [sys.executable, str(MODULE_PATH), "next", "--current", "7.0.7", "--appcast", str(path)],
+                check=True, capture_output=True, text=True,
+            )
+            self.assertEqual(result.stdout.strip(), "7.0.8")
         self.assertEqual(published.build, 91)
         self.assertEqual(published.version, release_version.ReleaseVersion.parse("7.0.7"))
 

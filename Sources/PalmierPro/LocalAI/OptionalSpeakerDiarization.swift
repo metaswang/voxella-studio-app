@@ -1,7 +1,7 @@
 import Foundation
 
 enum OptionalSpeakerDiarization {
-    static let unavailableMessage = "Speaker model not installed. Transcription will include timestamps without speaker labels."
+    static let unavailableMessage = "Speaker identification is not prepared on this Mac. Transcription will include timestamps without speaker labels."
     static let failedMessage = "Speaker recognition failed. Transcription is complete without speaker labels."
 
     static func resolve(

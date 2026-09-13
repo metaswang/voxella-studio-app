@@ -492,7 +492,7 @@ struct ExportView: View {
             Button(L10n.string("Close")) { editor.showExportDialog = false }
                 .keyboardShortcut(.cancelAction)
             Button(exportQueue.hasActivity ? L10n.string("Add to Queue") : L10n.string("Export")) { startExport() }
-                .buttonStyle(.glassProminent)
+                .appGlassButtonStyle(prominent: true)
                 .buttonBorderShape(.capsule)
                 .keyboardShortcut(.defaultAction)
         }

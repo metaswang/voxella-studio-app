@@ -1,0 +1,61 @@
+{
+  "id": "zh-Hans-18",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n一开始我以为那个声音是厨房门上面的风扇发出来的。后来又听了一遍，又听了一遍，才发现每个房间里都有同样规律的响动。原来是走廊上的旧时钟，比我印象中响得多。我们把它挪到远离麦克风的位置，又录了一分钟安静的环境声。这次背景终于足够干净，可以继续原来安排的采访。刚才那段录音也先保留，方便后面比较两次的差别。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "1682f7dccff2872ac24599d0586fddf615205afaead36c341d629aa969e9587e",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:04.880953+00:00",
+  "raw": "{\"subtitles\":[\"一开始我以为那个声音是厨房门上面的风扇发出来的。\",\"后来又听了一遍，又听了一遍，才发现每个房间里都有同样规律的响动。\",\"原来是走廊上的旧时钟，比我印象中响得多。\",\"我们把它挪到远离麦克风的位置，又录了一分钟安静的环境声。\",\"这次背景终于足够干净，可以继续原来安排的采访。\",\"刚才那段录音也先保留，方便后面比较两次的差别。\"],\"batch_summary\":\"按原顺序切分，每条为一个短句，未改变文本内容与标点。\"}",
+  "usage": {
+    "promptTokenCount": 339,
+    "candidatesTokenCount": 167
+  },
+  "provider_usage": {
+    "prompt_tokens": 339,
+    "completion_tokens": 167,
+    "total_tokens": 506,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.4896645000044373,
+  "transport_attempts": 1,
+  "lines": [
+    "一开始我以为那个声音是厨房门上面的风扇发出来的。",
+    "后来又听了一遍，又听了一遍，才发现每个房间里都有同样规律的响动。",
+    "原来是走廊上的旧时钟，比我印象中响得多。",
+    "我们把它挪到远离麦克风的位置，又录了一分钟安静的环境声。",
+    "这次背景终于足够干净，可以继续原来安排的采访。",
+    "刚才那段录音也先保留，方便后面比较两次的差别。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 6,
+    "boundaries": 5,
+    "tp": 5,
+    "ref_count": 12,
+    "f1": 0.5882352941176471,
+    "overlong": 6,
+    "short": 0,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 32
+  }
+}

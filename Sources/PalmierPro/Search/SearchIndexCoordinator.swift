@@ -35,6 +35,8 @@ final class SearchIndexCoordinator {
     private(set) var batchTotal = 0
     private(set) var batchCompleted = 0
     private(set) var currentAssetFraction: Double = 0
+    private(set) var searchFailure: String?
+    private var cacheGeneration = 0
 
     var indexingActive: Bool { batchCompleted < batchTotal }
     var indexingProgress: Double {
@@ -75,7 +77,7 @@ final class SearchIndexCoordinator {
 
     static func clearIndexGlobally() async {
         await resetAll()
-        EmbeddingStore.clearAll()
+        await Task.detached(priority: .utility) { EmbeddingStore.clearAll() }.value
         sweepAll()
     }
 
@@ -135,6 +137,8 @@ final class SearchIndexCoordinator {
     }
 
     private func cancelIndexing() async {
+        cacheGeneration += 1
+        searchFailure = nil
         isCancelling = true
         defer { isCancelling = false }
         let current = worker
@@ -270,6 +274,7 @@ final class SearchIndexCoordinator {
             default:
                 break
             }
+            try Task.checkCancellation()
             loadedIndexes[asset.id] = nil
             let visualSeconds = start.duration(to: .now).seconds
             currentAssetFraction = visualShare
@@ -299,28 +304,51 @@ final class SearchIndexCoordinator {
             .filter { ($0.type == .video || $0.type == .image) && (ids?.contains($0.id) ?? true) }
             .map { ($0.id, $0.url) }
         let cached = loadedIndexes
-        let minScore = SearchIndexConfig.visualMatchCosineFloor
+        let generation = cacheGeneration
 
-        let (hits, loaded) = await Task.detached(priority: .userInitiated) {
+        let task = Task.detached(priority: .userInitiated) {
             var indexes: [(String, EmbeddingStore.AssetIndex)] = []
             var loaded: [String: (key: String, index: EmbeddingStore.AssetIndex)] = [:]
             for (assetID, url) in candidates {
+                try Task.checkCancellation()
                 guard let key = EmbeddingStore.key(for: url) else { continue }
-                if let hit = cached[assetID], hit.key == key {
+                if let hit = cached[assetID], hit.key == key, model.spec.matches(hit.index.header) {
                     indexes.append((assetID, hit.index))
-                } else if let index = try? EmbeddingStore.load(key: key) {
+                } else if let index = try? EmbeddingStore.load(key: key), model.spec.matches(index.header) {
                     loaded[assetID] = (key, index)
                     indexes.append((assetID, index))
                 }
             }
-            guard !indexes.isEmpty, let vector = try? model.encode(text: trimmed) else {
+            guard !indexes.isEmpty else {
                 return ([VisualSearch.Hit](), loaded)
             }
-            return (VisualSearch.search(query: vector, indexes: indexes, limit: limit, minScore: minScore), loaded)
-        }.value
+            let vector = try await model.encode(text: trimmed)
+            try Task.checkCancellation()
+            return (VisualSearch.search(query: vector, indexes: indexes, limit: limit), loaded)
+        }
 
-        loadedIndexes.merge(loaded) { _, new in new }
-        return hits
+        do {
+            let (hits, loaded) = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            guard !Task.isCancelled, generation == cacheGeneration,
+                  VisualModelLoader.shared.embedder?.spec == model.spec else { return [] }
+            let current = Dictionary(uniqueKeysWithValues: assetsProvider().map { ($0.id, $0.url) })
+            let validIDs = Set(candidates.compactMap { current[$0.0] == $0.1 ? $0.0 : nil })
+            loadedIndexes.merge(loaded.filter { validIDs.contains($0.key) }) { _, new in new }
+            searchFailure = nil
+            return hits.filter { validIDs.contains($0.assetID) }
+        } catch is CancellationError {
+            return []
+        } catch {
+            if generation == cacheGeneration, !Task.isCancelled {
+                searchFailure = error.localizedDescription
+                Log.search.error("visual search failed error=\(error.localizedDescription)")
+            }
+            return []
+        }
     }
 }
 

@@ -19,14 +19,22 @@ struct SkillsPane: View {
 
     private var installedSkills: [Skill] {
         store.skills
-            .filter { matches($0.name, $0.description) }
+            .filter { matches($0.name, $0.description, category: category(for: $0)) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private var communityEntries: [SkillCatalogEntry] {
         catalog.entries
-            .filter { matches($0.name, $0.description) }
+            .filter { matches($0.name, $0.description, category: $0.skillCategory) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var installedCategories: [SkillCategory] {
+        sortedCategories(installedSkills.map(category(for:)))
+    }
+
+    private var communityCategories: [SkillCategory] {
+        sortedCategories(communityEntries.map(\.skillCategory))
     }
 
     var body: some View {
@@ -36,7 +44,7 @@ struct SkillsPane: View {
             ScrollView {
                 skillList
             }
-            .scrollEdgeEffectStyle(.soft, for: .top)
+            .appScrollEdgeEffect(.top)
         }
         .frame(maxWidth: AppTheme.Settings.contentMaxWidth, alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -57,7 +65,7 @@ struct SkillsPane: View {
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
 
-            if let url = URL(string: "https://github.com/palmier-io/palmier-skills") {
+            if let url = URL(string: "https://github.com/voxstudio-me/voxstudio-skills") {
                 Link("Browse Community Skills ↗", destination: url)
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Accent.link)
@@ -154,7 +162,7 @@ struct SkillsPane: View {
     }
 
     private var skillList: some View {
-        VStack(spacing: AppTheme.Spacing.sm) {
+        LazyVStack(spacing: AppTheme.Spacing.sm) {
             switch collection {
             case .installed:
                 installedList
@@ -178,18 +186,12 @@ struct SkillsPane: View {
             } else if installedSkills.isEmpty {
                 noMatchesState
             } else {
-                ForEach(installedSkills) { skill in
-                    let state = SkillCommunityState.resolve(skill, store: store, catalog: catalog)
-                    SkillRow(
-                        name: skill.name,
-                        description: skill.description,
-                        status: state?.label ?? "Local",
-                        statusColor: state?.color ?? AppTheme.Text.tertiaryColor,
-                        actionTitle: state == .update ? "Update" : "Open",
-                        working: working.contains(skill.id),
-                        summaryAction: { present(skill.id) },
-                        action: { state == .update ? update(skill) : present(skill.id) }
-                    )
+                ForEach(installedCategories) { category in
+                    SkillCategorySection(category: category, count: installedCount(in: category)) {
+                        ForEach(installedSkills.filter { self.category(for: $0) == category }) { skill in
+                            installedRow(skill, category: category)
+                        }
+                    }
                 }
             }
         }
@@ -229,8 +231,12 @@ struct SkillsPane: View {
                     noMatchesState
                 }
             } else {
-                ForEach(communityEntries) { entry in
-                    communityRow(entry)
+                ForEach(communityCategories) { category in
+                    SkillCategorySection(category: category, count: communityCount(in: category)) {
+                        ForEach(communityEntries.filter { $0.skillCategory == category }) { entry in
+                            communityRow(entry)
+                        }
+                    }
                 }
             }
         }
@@ -250,6 +256,7 @@ struct SkillsPane: View {
         let skill = store.skills.first { $0.id == entry.id }
         let state = skill.flatMap { SkillCommunityState.resolve($0, store: store, catalog: catalog) }
         return SkillRow(
+            systemImage: entry.skillCategory.systemImage,
             name: entry.name,
             description: entry.description,
             status: state?.label ?? (skill == nil ? "Available" : "Local"),
@@ -269,11 +276,46 @@ struct SkillsPane: View {
         )
     }
 
-    private func matches(_ name: String, _ description: String) -> Bool {
+    private func installedRow(_ skill: Skill, category: SkillCategory) -> some View {
+        let state = SkillCommunityState.resolve(skill, store: store, catalog: catalog)
+        return SkillRow(
+            systemImage: category.systemImage,
+            name: skill.name,
+            description: skill.description,
+            status: state?.label ?? "Local",
+            statusColor: state?.color ?? AppTheme.Text.tertiaryColor,
+            actionTitle: state == .update ? "Update" : "Open",
+            working: working.contains(skill.id),
+            summaryAction: { present(skill.id) },
+            action: { state == .update ? update(skill) : present(skill.id) }
+        )
+    }
+
+    private func matches(_ name: String, _ description: String, category: SkillCategory? = nil) -> Bool {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !search.isEmpty else { return true }
         return name.localizedCaseInsensitiveContains(search)
             || description.localizedCaseInsensitiveContains(search)
+            || category?.title.localizedCaseInsensitiveContains(search) == true
+    }
+
+    private func category(for skill: Skill) -> SkillCategory {
+        catalog.entry(id: skill.id)?.skillCategory ?? .local
+    }
+
+    private func sortedCategories(_ categories: [SkillCategory]) -> [SkillCategory] {
+        Set(categories).sorted {
+            if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+            return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+        }
+    }
+
+    private func installedCount(in category: SkillCategory) -> Int {
+        installedSkills.count { self.category(for: $0) == category }
+    }
+
+    private func communityCount(in category: SkillCategory) -> Int {
+        communityEntries.count { $0.skillCategory == category }
     }
 
     private func createSkill() {

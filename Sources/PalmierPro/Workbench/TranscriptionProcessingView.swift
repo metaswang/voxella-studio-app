@@ -4,8 +4,6 @@ struct TranscriptionProcessingView: View {
     let jobID: UUID
 
     @Bindable private var store = WorkbenchStore.shared
-    @Bindable private var models = LocalModelManager.shared
-    @Bindable private var llmSettings = LLMSettingsStore.shared
     @State private var events: [ProcessingLogEvent] = []
     @State private var showAdvanced = false
     @State private var wavePhase: CGFloat = 0
@@ -116,21 +114,6 @@ struct TranscriptionProcessingView: View {
                 .foregroundStyle(AppTheme.Text.secondaryColor)
 
             milestoneList(for: job)
-
-            if job.compute == .local,
-               !models.hasRequiredTranscriptionModels(
-                   languageCode: job.languageCode,
-                   speakerCount: job.speakerCount.count
-               ) {
-                HStack {
-                    Text("Required speech models are missing.")
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Status.warningColor)
-                    Spacer()
-                    Button("Manage Models") { models.presentManager() }
-                        .buttonStyle(.bordered)
-                }
-            }
 
             if job.state == .failed || job.state == .cancelled {
                 HStack {
@@ -250,8 +233,6 @@ struct TranscriptionProcessingView: View {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
                 if job.compute == .cloud {
                     cloudPipelineDetails(for: job)
-                } else {
-                    stageModelList(for: job)
                 }
 
                 LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
@@ -283,7 +264,7 @@ struct TranscriptionProcessingView: View {
             Text("Cloud pipeline")
                 .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
-            Text("Speech recognition and result assembly run in VoxStudio Cloud. This Mac does not need speech models for this task.")
+            Text("Speech recognition and result assembly run in VoxStudio Cloud. This Mac does not need additional downloads for this task.")
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .fixedSize(horizontal: false, vertical: true)
@@ -327,103 +308,13 @@ struct TranscriptionProcessingView: View {
         }
     }
 
-    private func stageModelList(for job: WorkbenchTranscriptionJob) -> some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
-            Text("Models by stage")
-                .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
-                .foregroundStyle(AppTheme.Text.secondaryColor)
-
-            ForEach(ProcessingMilestone.allCases) { milestone in
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text(milestone.title)
-                        .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
-                        .foregroundStyle(AppTheme.Text.primaryColor)
-                    ForEach(modelLines(for: milestone, job: job), id: \.self) { line in
-                        Text(line)
-                            .font(.system(size: AppTheme.FontSize.xs))
-                            .foregroundStyle(AppTheme.Text.tertiaryColor)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-        }
-    }
-
-    private func modelLines(
-        for milestone: ProcessingMilestone,
-        job: WorkbenchTranscriptionJob
-    ) -> [String] {
-        switch milestone {
-        case .preparing:
-            return ["No model · local job admission and media preparation"]
-        case .preprocessing:
-            var lines = [localModelTitle(.sileroVAD)]
-            if job.languageCode == nil {
-                lines.append(localModelTitle(.spokenLanguageID))
-            }
-            return lines
-        case .speechRecognition:
-            var lines = [
-                localModelTitle(.qwen3ASR17B8Bit),
-                localModelTitle(.parakeetTDT06Bv3),
-                localModelTitle(models.activeASRModelID),
-            ]
-            if job.languageCode == nil || ASREngineLanguagePolicy.engine(forLanguageCode: job.languageCode) != .parakeet {
-                lines.append(localModelTitle(.forcedAligner))
-            }
-            if job.speakerCount.count == 1 {
-                lines.append("Deterministic single-speaker assignment · no diarization model")
-            } else if models.state(for: .sortformerDiarization).isInstalled {
-                lines.append(localModelTitle(.sortformerDiarization))
-            } else {
-                lines.append(OptionalSpeakerDiarization.unavailableMessage)
-            }
-            return lines
-        case .finalizing:
-            let hasSubtitleModel = llmSettings.hasUsableModel(for: .subtitleProcessing)
-            let hasTranslationModel = llmSettings.hasUsableModel(for: .translation)
-            let subtitleWillRun = job.shouldProcessSubtitles(
-                hasUsableLLM: hasSubtitleModel
-            ) || (hasSubtitleModel && hasTranslationModel && job.normalizedTargetLanguageCode != nil)
-            var lines = [
-                subtitleWillRun
-                    ? "Subtitle cleanup · configured route: \(llmRouteDescription(for: .subtitleProcessing))"
-                    : "Subtitle cleanup · not run",
-            ]
-            if job.normalizedTargetLanguageCode != nil, hasSubtitleModel, hasTranslationModel {
-                lines.append("Translation · configured route: \(llmRouteDescription(for: .translation))")
-            } else {
-                lines.append("Translation · not run")
-            }
-            return lines
-        case .completed:
-            return ["No additional model · result committed to the session"]
-        }
-    }
-
-    private func localModelTitle(_ id: LocalModelID) -> String {
-        models.descriptor(for: id).title
-    }
-
-    private func llmRouteDescription(for useCase: LLMUseCase) -> String {
-        switch AITransportPolicy.current {
-        case .hosted:
-            return L10n.string("Voxella AI (server-managed)")
-        case .byok:
-            let chain = llmSettings.route(for: useCase).modelChain
-            return chain.isEmpty ? L10n.string("Not configured") : chain.joined(separator: " → ")
-        case .unavailable:
-            return L10n.string("Not configured")
-        }
-    }
-
     private func etaText(for job: WorkbenchTranscriptionJob) -> String {
         if job.state == .failed { return "Processing stopped" }
         if job.state == .cancelling { return "Cancelling…" }
         if job.state == .completed { return "Completed" }
         if job.compute == .local,
            store.isTranscriptionQueued(jobID),
-           job.state == .ready {
+           job.state == .queued {
             return "Estimated: waiting for the local ASR slot"
         }
         if job.flowProgressStage == .transcription,
@@ -445,7 +336,7 @@ struct TranscriptionProcessingView: View {
     private func metaLine(for job: WorkbenchTranscriptionJob) -> String {
         if job.compute == .local,
            store.isTranscriptionQueued(jobID),
-           job.state == .ready {
+           job.state == .queued {
             return "Queued • Local serial processing"
         }
         if job.compute == .cloud,
@@ -473,7 +364,7 @@ struct TranscriptionProcessingView: View {
         if job.state == .completed { return .completed }
         if job.compute == .local,
            store.isTranscriptionQueued(jobID),
-           job.state == .ready { return .preparing }
+           job.state == .queued { return .preparing }
         switch job.flowProgressStage {
         case .subtitlePreparation, .translation: return .finalizing
         case .transcription, .none:

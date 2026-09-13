@@ -48,7 +48,7 @@ final class RecordingContentPicker: NSObject, SCContentSharingPickerObserver, @u
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.finishPicker(picker)
-            self.resume(.success(filter))
+            self.resumeAfterPickerDismisses(filter)
         }
     }
 
@@ -82,6 +82,15 @@ final class RecordingContentPicker: NSObject, SCContentSharingPickerObserver, @u
             continuation.resume(returning: captured)
         case .failure(let error):
             continuation.resume(throwing: error)
+        }
+    }
+
+    private func resumeAfterPickerDismisses(_ filter: SCContentFilter) {
+        guard let continuation else { return }
+        self.continuation = nil
+        nonisolated(unsafe) let captured = filter
+        DispatchQueue.main.async {
+            continuation.resume(returning: captured)
         }
     }
 }

@@ -5,6 +5,7 @@ struct LocalModelInstallPlan: Equatable, Sendable {
         var id: LocalModelID
         var title: String
         var purpose: String
+        var revision: String
         var byteSize: Int64
         var sizeLabel: String
         var license: String
@@ -50,7 +51,7 @@ struct LocalModelInstallPlan: Equatable, Sendable {
         speakerCount: Int?,
         whisperFallbackModelID: LocalModelID
     ) -> [LocalModelID] {
-        var required: [LocalModelID] = [.sileroVAD]
+        var required: [LocalModelID] = [.sileroVAD, .sileroVADMLX]
         if languageCode == nil {
             required.append(contentsOf: [
                 .qwen3ASR17B8Bit,
@@ -90,6 +91,7 @@ struct LocalModelInstallPlan: Equatable, Sendable {
                 id: model.id,
                 title: model.title,
                 purpose: model.purpose,
+                revision: model.revision,
                 byteSize: model.byteSize,
                 sizeLabel: model.sizeLabel,
                 license: model.license,
@@ -101,6 +103,35 @@ struct LocalModelInstallPlan: Equatable, Sendable {
             asrModelID: asrModelID,
             languageCode: languageCode,
             speakerCount: speakerCount,
+            items: items
+        )
+    }
+
+    static func dubPlan(
+        modelID: LocalModelID,
+        catalog: [LocalModelDescriptor] = LocalModelManager.catalog,
+        isInstalled: (LocalModelID) -> Bool
+    ) -> LocalModelInstallPlan {
+        let requiredIDs = [modelID, .forcedAligner]
+        let descriptors = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
+        let items = requiredIDs.compactMap { id -> Item? in
+            guard let model = descriptors[id] else { return nil }
+            return Item(
+                id: model.id,
+                title: model.title,
+                purpose: model.purpose,
+                revision: model.revision,
+                byteSize: model.byteSize,
+                sizeLabel: model.sizeLabel,
+                license: model.license,
+                requiresLicenseAcceptance: model.requiresLicenseAcceptance,
+                isInstalled: isInstalled(id)
+            )
+        }
+        return LocalModelInstallPlan(
+            asrModelID: modelID,
+            languageCode: nil,
+            speakerCount: nil,
             items: items
         )
     }
@@ -132,5 +163,16 @@ extension LocalModelManager {
         ) { id in
             state(for: id).isInstalled
         }
+    }
+
+
+    func dubInstallPlan(modelID: LocalModelID) -> LocalModelInstallPlan {
+        LocalModelInstallPlan.dubPlan(modelID: modelID) { id in
+            state(for: id).isInstalled
+        }
+    }
+
+    func isPreparing(_ plan: LocalModelInstallPlan) -> Bool {
+        plan.missingItems.contains { state(for: $0.id).isBusy }
     }
 }

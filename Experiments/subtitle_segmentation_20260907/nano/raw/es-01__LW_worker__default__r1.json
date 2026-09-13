@@ -1,0 +1,60 @@
+{
+  "id": "es-01",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=es\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nAntes de empezar el movimiento, apoya los dos pies en el suelo. Relaja los hombros y mira despacio hacia delante. La idea es moverse con calma, sin tirar de la cabeza hacia el pecho. Si la silla no está estable, interrumpe el ejercicio y busca un asiento más firme. Vamos a repetir la secuencia dos veces y después compararemos las sensaciones del lado derecho y del izquierdo.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "cf74a495f9616e720fe621e4a3e9b20ed3281bdc645a6693f6153f2f54ff5094",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:53.044091+00:00",
+  "raw": "{\"subtitles\":[\"Antes de empezar el movimiento, apoya los dos pies en el suelo.\",\"Relaja los hombros y mira despacio hacia delante.\",\"La idea es moverse con calma, sin tirar de la cabeza hacia el pecho.\",\"Si la silla no está estable, interrumpe el ejercicio y busca un asiento más firme.\",\"Vamos a repetir la secuencia dos veces y después compararemos las sensaciones del lado derecho y del izquierdo.\"],\"batch_summary\":\"Dividido el texto finalizado en subtítulos respetando pausas y puntuación.\"}",
+  "usage": {
+    "promptTokenCount": 301,
+    "candidatesTokenCount": 121
+  },
+  "provider_usage": {
+    "prompt_tokens": 301,
+    "completion_tokens": 121,
+    "total_tokens": 422,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.5586274169982062,
+  "transport_attempts": 1,
+  "lines": [
+    "Antes de empezar el movimiento, apoya los dos pies en el suelo.",
+    "Relaja los hombros y mira despacio hacia delante.",
+    "La idea es moverse con calma, sin tirar de la cabeza hacia el pecho.",
+    "Si la silla no está estable, interrumpe el ejercicio y busca un asiento más firme.",
+    "Vamos a repetir la secuencia dos veces y después compararemos las sensaciones del lado derecho y del izquierdo."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 11,
+    "f1": 0.5333333333333333,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 111
+  }
+}

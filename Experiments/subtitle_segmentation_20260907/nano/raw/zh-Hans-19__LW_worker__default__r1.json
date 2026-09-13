@@ -1,0 +1,56 @@
+{
+  "id": "zh-Hans-19",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n标签写着“USB-C，20 W”，但这不代表盒子里的每根线都适用于同一种设备。请先检查接头上的小字，再把器材分别装进不同袋子。一个袋子标着“A/B test”，另一个写着版本号v2.1。这些名称暂时保持原样，不要为了整齐而重新缩写。如果某件器材的标签脱落了，请放到待检查的桌面上，不要猜测它原来属于哪一套。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "c89005ba3e21944915f6dabed53e595b06273c9ab27ae5ab128ba859b564383a",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:07.400019+00:00",
+  "raw": "{\"subtitles\":[\"标签写着“USB-C，20 W”，但这不代表盒子里的每根线都适用于同一种设备。请先检查接头上的小字，再把器材分别装进不同袋子。一个袋子标着“A/B test”，另一个写着版本号v2.1。这些名称暂时保持原样，不要为了整齐而重新缩写。如果某件器材的标签脱落了，请放到待检查的桌面上，不要猜测它原来属于哪一套。\"],\"batch_summary\":\"按原句切分成一个字幕行，保持文本与标点原样，不增删改动\"}",
+  "usage": {
+    "promptTokenCount": 331,
+    "candidatesTokenCount": 154
+  },
+  "provider_usage": {
+    "prompt_tokens": 331,
+    "completion_tokens": 154,
+    "total_tokens": 485,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 2.0867263749969425,
+  "transport_attempts": 1,
+  "lines": [
+    "标签写着“USB-C，20 W”，但这不代表盒子里的每根线都适用于同一种设备。请先检查接头上的小字，再把器材分别装进不同袋子。一个袋子标着“A/B test”，另一个写着版本号v2.1。这些名称暂时保持原样，不要为了整齐而重新缩写。如果某件器材的标签脱落了，请放到待检查的桌面上，不要猜测它原来属于哪一套。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 1,
+    "boundaries": 0,
+    "tp": 0,
+    "ref_count": 11,
+    "f1": 0,
+    "overlong": 1,
+    "short": 0,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 151
+  }
+}

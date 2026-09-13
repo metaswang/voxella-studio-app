@@ -130,7 +130,7 @@ extension GenerationView {
                 .font(.system(size: AppTheme.FontSize.sm, weight: .bold))
                 .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
         }
-        .buttonStyle(.glassProminent)
+        .appGlassButtonStyle(prominent: true)
         .buttonBorderShape(.circle)
         .controlSize(.regular)
         .tint(AppTheme.Accent.primary)
@@ -243,6 +243,20 @@ extension GenerationView {
     }
 
     private func submitGeneration() {
+        Task {
+            do {
+                try await AccountService.shared.prepareNewContentAccess()
+                try submitAuthorizedGeneration()
+            } catch is AppAccessError {
+                return
+            } catch {
+                flashDropError(error.localizedDescription)
+            }
+        }
+    }
+
+    private func submitAuthorizedGeneration() throws {
+        try AccountService.shared.requireNewContentAccess()
         if currentModelLocked {
             SettingsWindowController.shared.show(tab: .account)
             return
@@ -356,7 +370,7 @@ extension GenerationView {
                     baseOnComplete?(asset)
                 }
             }()
-            let videoAssetId = VideoGenerationSubmission.make(
+            let videoAssetId = try VideoGenerationSubmission.make(
                 genInput: genInput,
                 model: model,
                 inputAssets: inputAssets,
@@ -377,7 +391,7 @@ extension GenerationView {
             autoOpenPreview(videoAssetId)
         case .image:
             let model = imageModel
-            let imageAssetId = ImageGenerationSubmission.make(
+            let imageAssetId = try ImageGenerationSubmission.make(
                 genInput: genInput,
                 model: model,
                 references: imageReferences,
@@ -406,7 +420,7 @@ extension GenerationView {
                     onCompleteAudio?(asset)
                 }
             }()
-            let audioAssetId = AudioGenerationSubmission.make(
+            let audioAssetId = try AudioGenerationSubmission.make(
                 genInput: genInput,
                 model: model,
                 params: audioParams(audioDuration: audioDuration),

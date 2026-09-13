@@ -1,0 +1,59 @@
+{
+  "id": "pt-BR-01",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language pt-BR.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: pt-BR\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nAntes de começar o movimento, apoie os dois pés no chão. Relaxe os ombros e olhe devagar para a frente. A ideia é se movimentar com calma, sem puxar a cabeça em direção ao peito. Se a cadeira estiver balançando, interrompa o exercício e escolha um assento mais firme. Vamos repetir a mesma sequência duas vezes e depois comparar as sensações do lado direito e do lado esquerdo.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "44e9078fa4a283ced189ded916bf2ecf2ec9dc72bdbc45bffcaf6a44aa653e61",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:21:06.739478+00:00",
+  "raw": "{\"lines\":[\"Antes de começar o movimento, apoie os dois pés no chão. Relaxe os ombros e olhe devagar para a frente.\",\"A ideia é se movimentar com calma, sem puxar a cabeça em direção ao peito.\",\"Se a cadeira estiver balançando, interrompa o exercício e escolha um assento mais firme.\",\"Vamos repetir a mesma sequência duas vezes e depois comparar as sensações do lado direito e do lado esquerdo.\"]}",
+  "usage": {
+    "promptTokenCount": 299,
+    "candidatesTokenCount": 103
+  },
+  "provider_usage": {
+    "prompt_tokens": 299,
+    "completion_tokens": 103,
+    "total_tokens": 402,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.4663195839966647,
+  "transport_attempts": 1,
+  "lines": [
+    "Antes de começar o movimento, apoie os dois pés no chão. Relaxe os ombros e olhe devagar para a frente.",
+    "A ideia é se movimentar com calma, sem puxar a cabeça em direção ao peito.",
+    "Se a cadeira estiver balançando, interrompa o exercício e escolha um assento mais firme.",
+    "Vamos repetir a mesma sequência duas vezes e depois comparar as sensações do lado direito e do lado esquerdo."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 4,
+    "boundaries": 3,
+    "tp": 3,
+    "ref_count": 11,
+    "f1": 0.42857142857142855,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 109
+  }
+}

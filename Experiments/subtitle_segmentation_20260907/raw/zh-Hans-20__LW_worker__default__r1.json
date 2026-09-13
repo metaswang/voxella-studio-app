@@ -1,0 +1,60 @@
+{
+  "id": "zh-Hans-20",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n渡船靠近小岛的时候，早晨的雾已经开始散去。码头对面的店主正在把新出炉的面包摆进橱窗。我们买了两个面包，顺便询问通往东岸小路的方向。她拿起纸袋画了一张简单的地图，还在一片避风的沙滩旁边画了一颗小星星。这个小小的举动改变了我们的计划，我们没有继续赶路，而是在海边度过了整个下午。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "dbd2bf21d0703c24492bbea169198b040aef6a945339d6bb6b8edb91f204fb23",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:04.096669+00:00",
+  "raw": "{\"subtitles\":[\"渡船靠近小岛的时候，\",\"早晨的雾已经开始散去。\",\"码头对面的店主\",\"正在把新出炉的面包摆进橱窗。\",\"我们买了两个面包，\",\"顺便询问通往东岸小路的方向。\",\"她拿起纸袋画了一张简单的地图，\",\"还在一片避风的沙滩旁边\",\"画了一颗小星星。\",\"这个小小的举动\",\"改变了我们的计划，\",\"我们没有继续赶路，\",\"而是在海边度过了整个下午。\"],\"batch_summary\":\"讲述了渡船靠岸后，店主画地图的小举动改变了行程，让“我们”在沙滩度过下午的故事。\"}",
+  "usage": {
+    "promptTokenCount": 305,
+    "candidatesTokenCount": 152,
+    "totalTokenCount": 457,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 305
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2777266249977401,
+  "transport_attempts": 1,
+  "lines": [
+    "渡船靠近小岛的时候，",
+    "早晨的雾已经开始散去。",
+    "码头对面的店主",
+    "正在把新出炉的面包摆进橱窗。",
+    "我们买了两个面包，",
+    "顺便询问通往东岸小路的方向。",
+    "她拿起纸袋画了一张简单的地图，",
+    "还在一片避风的沙滩旁边",
+    "画了一颗小星星。",
+    "这个小小的举动",
+    "改变了我们的计划，",
+    "我们没有继续赶路，",
+    "而是在海边度过了整个下午。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 13,
+    "boundaries": 12,
+    "tp": 11,
+    "ref_count": 11,
+    "f1": 0.9565217391304348,
+    "overlong": 0,
+    "short": 2,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 15
+  }
+}

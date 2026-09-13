@@ -4,7 +4,6 @@ import SwiftUI
 /// `WorkbenchRecentSessionsSection` on the Transcription entry page.
 struct WorkbenchRecentTranscriptSessionsSection: View {
     @Bindable private var store = WorkbenchStore.shared
-    @Bindable private var models = LocalModelManager.shared
 
     var modeTitle: String = "Import Files"
     var onChooseMedia: (() -> Void)?
@@ -19,7 +18,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
     private var filteredSessions: [WorkbenchSession] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return uploadSessions.filter { session in
-            guard statusFilter.matches(session.state) else { return false }
+            guard statusFilter.matches(session.status) else { return false }
             guard !query.isEmpty else { return true }
             let filename = session.sourceURL?.lastPathComponent ?? ""
             return session.title.localizedCaseInsensitiveContains(query)
@@ -88,9 +87,9 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
                         statusFilter = filter
                     } label: {
                         if statusFilter == filter {
-                            Label(filter.label, systemImage: "checkmark")
+                            Label(LocalizedStringKey(filter.label), systemImage: "checkmark")
                         } else {
-                            Text(filter.label)
+                            Text(LocalizedStringKey(filter.label))
                         }
                     }
                 }
@@ -250,7 +249,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
                     Button("Re-transcribe and rebuild subtitles") {
                         retranscribe(transcriptionID)
                     }
-                    .disabled(session.state == .running || session.state == .cancelling)
+                    .disabled(session.status.showsProcessing || session.status.showsQueued)
                     Button(session.hasDub ? "Redub" : "Create dub") {
                         createDub(for: transcriptionID)
                     }
@@ -319,13 +318,6 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
 
     private func retranscribe(_ transcriptionID: UUID) {
         guard let job = store.transcriptions.first(where: { $0.id == transcriptionID }) else { return }
-        guard models.hasRequiredTranscriptionModels(
-            languageCode: job.languageCode,
-            speakerCount: job.speakerCount.count
-        ) else {
-            models.presentManager()
-            return
-        }
         store.retranscribe(transcriptionID, options: job.processingOptions)
     }
 

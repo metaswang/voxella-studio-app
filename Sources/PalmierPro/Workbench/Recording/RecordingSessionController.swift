@@ -15,6 +15,7 @@ final class RecordingSessionController {
     var elapsed: TimeInterval = 0
     var isMicrophoneMuted = false
     var errorMessage: String?
+    var permissionMessage: String?
     var lastDiagnostics: RecordingSessionDiagnostics?
     var liveAudioWarning: String?
     var permissionSettingsURL: URL?
@@ -26,8 +27,10 @@ final class RecordingSessionController {
     private let engine = ScreenCaptureRecordingEngine()
     private let hider = RecordingAppHider()
     private let statusItem = RecordingStatusItemController()
+    private let floatingControls = RecordingFloatingControlsController()
     private var sessionID = UUID()
     private var timerTask: Task<Void, Never>?
+    private var preparationTask: Task<Void, Never>?
     private var startedAt: Date?
     private var pauseAccumulated: TimeInterval = 0
     private var pauseStartedAt: Date?
@@ -82,16 +85,44 @@ final class RecordingSessionController {
     func start(mode: RecordingCaptureMode) {
         guard phase == .idle else { return }
         setCaptureMode(mode)
-        start()
+        requestStart()
+    }
+
+    func requestStart() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await AccountService.shared.prepareNewContentAccess()
+                self.start()
+            } catch is AppAccessError {
+                self.errorMessage = nil
+                return
+            } catch {
+                self.errorMessage = error.localizedDescription
+            }
+        }
     }
 
     func showRecordingSetup() {
+        if phase.isCapturing {
+            floatingControls.present(session: self)
+            return
+        }
         NSApp.activate(ignoringOtherApps: true)
         AppState.shared.showHome()
         WorkbenchStore.shared.showRecordImport()
     }
 
     func start() {
+        do {
+            try AccountService.shared.requireNewContentAccess()
+        } catch is AppAccessError {
+            errorMessage = nil
+            return
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
         guard canStart else {
             if !configuration.hasAudioSource {
                 errorMessage = RecordingError.audioSourceRequired.localizedDescription
@@ -99,6 +130,7 @@ final class RecordingSessionController {
             return
         }
         errorMessage = nil
+        permissionMessage = nil
         permissionSettingsURL = nil
         failedPermission = nil
         configuration.normalizeAudioSources()
@@ -110,7 +142,7 @@ final class RecordingSessionController {
         let id = UUID()
         sessionID = id
         phase = .preparing
-        statusItem.update()
+        updateControls()
         elapsed = 0
         isMicrophoneMuted = false
         lastDiagnostics = nil
@@ -119,7 +151,7 @@ final class RecordingSessionController {
         pauseAccumulated = 0
         pauseStartedAt = nil
 
-        Task { [weak self] in
+        preparationTask = Task { [weak self] in
             guard let self else { return }
             do {
                 try await self.preparePermissions()
@@ -131,6 +163,9 @@ final class RecordingSessionController {
                 guard self.sessionID == id else { return }
 
                 let outputURL = try await self.makeOutputURL()
+                try Task.checkCancellation()
+                guard self.sessionID == id, self.phase == .preparing else { return }
+                try AccountService.shared.requireNewContentAccess()
                 let request = RecordingEngineRequest(
                     configuration: self.configuration,
                     contentFilter: picked.filter,
@@ -157,15 +192,21 @@ final class RecordingSessionController {
                 self.startedAt = Date()
                 self.phase = .recording
                 self.startTimer()
-                self.statusItem.update()
+                self.updateControls()
             } catch is CancellationError {
-                guard self.sessionID == id else { return }
+                guard self.sessionID == id, self.phase != .finishing else { return }
                 self.resetToIdle()
             } catch let error as RecordingError where error == .cancelled {
-                guard self.sessionID == id else { return }
+                guard self.sessionID == id, self.phase != .finishing else { return }
+                self.resetToIdle()
+            } catch RecordingError.screenCapturePermissionRequired {
+                guard self.sessionID == id, self.phase != .finishing else { return }
+                self.failedPermission = .screenCapture
+                self.permissionSettingsURL = RecordingPermissionKind.screenCapture.settingsURL
+                self.permissionMessage = RecordingError.screenCapturePermissionRequired.localizedDescription
                 self.resetToIdle()
             } catch {
-                guard self.sessionID == id else { return }
+                guard self.sessionID == id, self.phase != .finishing else { return }
                 let recordingError = error as? RecordingError
                 self.failedPermission = recordingError?.permissionKind
                 self.permissionSettingsURL = recordingError?.permissionKind?.settingsURL
@@ -203,22 +244,25 @@ final class RecordingSessionController {
             pauseStartedAt = Date()
             phase = .paused
         }
-        statusItem.update()
+        updateControls()
     }
 
     func toggleMicrophoneMuted() {
         guard configuration.microphone.isEnabled, phase.isCapturing else { return }
         isMicrophoneMuted.toggle()
         engine.setMicrophoneMuted(isMicrophoneMuted)
-        statusItem.update()
+        updateControls()
     }
 
     private func finish(discard: Bool) {
         guard phase.isCapturing || phase == .preparing || phase == .picking else { return }
+        preparationTask?.cancel()
+        let preparation = preparationTask
+        let wasPreparing = phase == .preparing || phase == .picking
         let wasPicking = phase == .picking
         let id = sessionID
         phase = .finishing
-        statusItem.update()
+        updateControls()
         stopTimer()
         if wasPicking {
             DisplayRegionOverlayController.shared.cancelSelection()
@@ -227,8 +271,10 @@ final class RecordingSessionController {
 
         Task { [weak self] in
             guard let self else { return }
+            await preparation?.value
+            guard self.sessionID == id else { return }
             do {
-                if discard {
+                if discard || wasPreparing {
                     await self.engine.cancel()
                     self.restoreApp()
                     guard self.sessionID == id else { return }
@@ -281,16 +327,13 @@ final class RecordingSessionController {
             case .microphone:
                 isAuthorized = RecordingPermission.microphoneStatus() == .authorized
             case .screenCapture:
-                if RecordingPermission.tccAllowsScreenCapture() {
-                    isAuthorized = true
-                } else {
-                    isAuthorized = await RecordingPermission.canAccessShareableContent()
-                }
+                isAuthorized = RecordingPermission.tccAllowsScreenCapture()
             }
             guard isAuthorized, self.failedPermission == kind else { return }
             self.failedPermission = nil
             permissionSettingsURL = nil
             errorMessage = nil
+            permissionMessage = nil
             Log.recording.notice("recording permission became authorized after returning to the app")
         }
     }
@@ -307,6 +350,7 @@ final class RecordingSessionController {
         if configuration.microphone.isEnabled {
             try await RecordingPermission.requestMicrophone()
         }
+        try Task.checkCancellation()
         if configuration.requiresScreenCapturePermissionRequest {
             try await RecordingPermission.requestScreenCapture()
         }
@@ -326,26 +370,46 @@ final class RecordingSessionController {
             return PickedSource(filter: try await displayFilterOrPick(), sourceRect: nil)
         case .display:
             phase = .picking
-            statusItem.update()
-            let filter = try await RecordingContentPicker.shared.pick(style: .display)
+            updateControls()
+            let pickedFilter = try await RecordingContentPicker.shared.pick(style: .display)
+            try Task.checkCancellation()
+            if #available(macOS 15.2, *) {
+                guard pickedFilter.includedDisplays.count == 1,
+                      let displayID = pickedFilter.includedDisplays.first?.displayID else {
+                    throw RecordingError.noDisplay
+                }
+                phase = .preparing
+                updateControls()
+                floatingControls.present(session: self, displayID: displayID)
+                let filter = try await displayFilter(displayID: displayID)
+                try Task.checkCancellation()
+                return PickedSource(filter: filter, sourceRect: nil)
+            }
             phase = .preparing
-            statusItem.update()
-            return PickedSource(filter: filter, sourceRect: nil)
+            updateControls()
+            return PickedSource(filter: pickedFilter, sourceRect: nil)
         case .window:
             phase = .picking
-            statusItem.update()
+            updateControls()
             let filter = try await RecordingContentPicker.shared.pick(style: .window)
+            try Task.checkCancellation()
             phase = .preparing
-            statusItem.update()
+            updateControls()
             return PickedSource(filter: filter, sourceRect: nil)
         case .region:
             phase = .picking
-            statusItem.update()
-            let filter = try await RecordingContentPicker.shared.pick(style: .display)
-            let displayIDs = Set(filter.includedDisplays.map(\.displayID))
-            let selection = try await DisplayRegionOverlayController.shared.selectRegion(displayIDs: displayIDs)
+            updateControls()
+            hider.hideWorkbenchWindows()
+            didHideApp = true
+            let selection = try await DisplayRegionOverlayController.shared.selectRegion()
+            try Task.checkCancellation()
+            guard phase == .picking else { throw RecordingError.cancelled }
             phase = .preparing
-            statusItem.update()
+            floatingControls.present(session: self, displayID: selection.displayID)
+            let filter = try await displayFilter(displayID: selection.displayID)
+            try Task.checkCancellation()
+            guard phase == .preparing else { throw RecordingError.cancelled }
+            updateControls()
             return PickedSource(filter: filter, sourceRect: selection.sourceRect)
         }
     }
@@ -354,14 +418,16 @@ final class RecordingSessionController {
         do {
             return try await displayFilter(displayID: displayID)
         } catch {
+            try Task.checkCancellation()
             Log.recording.notice(
                 "display enumeration failed error=\(Log.detail(error)); falling back to system picker"
             )
             phase = .picking
-            statusItem.update()
+            updateControls()
             let filter = try await RecordingContentPicker.shared.pick(style: .display)
+            try Task.checkCancellation()
             phase = .preparing
-            statusItem.update()
+            updateControls()
             return filter
         }
     }
@@ -394,7 +460,10 @@ final class RecordingSessionController {
             guard let first = content.displays.first else { throw RecordingError.noDisplay }
             display = first
         }
-        let excluded = content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
+        let excluded = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
+        guard !configuration.capturesVideo || !excluded.isEmpty else {
+            throw RecordingError.captureFailed("Could not exclude recording controls from capture. Try again.")
+        }
         return SCContentFilter(display: display, excludingApplications: excluded, exceptingWindows: [])
     }
 
@@ -411,6 +480,11 @@ final class RecordingSessionController {
         }.value
     }
 
+    private func updateControls() {
+        statusItem.update()
+        floatingControls.update(session: self)
+    }
+
     private func startTimer() {
         timerTask?.cancel()
         timerTask = Task { [weak self] in
@@ -418,7 +492,7 @@ final class RecordingSessionController {
                 try? await Task.sleep(for: .milliseconds(200))
                 guard let self, self.phase.isCapturing else { return }
                 self.elapsed = self.currentElapsed()
-                self.statusItem.update()
+                self.updateControls()
             }
         }
     }
@@ -445,6 +519,7 @@ final class RecordingSessionController {
     }
 
     private func resetToIdle() {
+        preparationTask = nil
         stopTimer()
         restoreApp()
         phase = .idle
@@ -454,6 +529,6 @@ final class RecordingSessionController {
         pauseStartedAt = nil
         isMicrophoneMuted = false
         liveWaveform.reset()
-        statusItem.update()
+        updateControls()
     }
 }

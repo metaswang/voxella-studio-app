@@ -37,11 +37,11 @@ enum FrameSampler {
         }
     }
 
-    private static func sample(
+    @concurrent static func sample(
         url: URL,
         duration: Double,
         options: Options,
-        emit: (Frame) -> Void
+        emit: (Frame) async throws -> Void
     ) async throws {
         let asset = AVURLAsset(url: url)
         var interval = options.candidateInterval
@@ -85,7 +85,7 @@ enum FrameSampler {
 
             guard isNewShot || t - lastKeptTime >= options.coverageFloor else { continue }
             lastKeptTime = t
-            emit(Frame(time: t, image: image, isNewShot: isNewShot))
+            try await emit(Frame(time: t, image: image, isNewShot: isNewShot))
         }
     }
 }

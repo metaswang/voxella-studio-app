@@ -17,6 +17,9 @@ class ReleaseVersion:
     minor: int
     patch: int
 
+    def __str__(self) -> str:
+        return f"{self.major}.{self.minor}.{self.patch}"
+
     @classmethod
     def parse(cls, value: str) -> "ReleaseVersion":
         match = VERSION_PATTERN.fullmatch(value)
@@ -69,6 +72,14 @@ def planned_build(
     return max(current_build, published.build) + 1
 
 
+def next_patch_version(
+    current: ReleaseVersion,
+    published: PublishedRelease,
+) -> ReleaseVersion:
+    baseline = max(current, published.version)
+    return ReleaseVersion(baseline.major, baseline.minor, baseline.patch + 1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -82,6 +93,10 @@ def main() -> None:
     plan_parser.add_argument("--current-build", required=True, type=int)
     plan_parser.add_argument("--appcast", required=True, type=Path)
 
+    next_parser = subparsers.add_parser("next")
+    next_parser.add_argument("--current", required=True)
+    next_parser.add_argument("--appcast", required=True, type=Path)
+
     arguments = parser.parse_args()
     try:
         if arguments.command == "validate":
@@ -89,13 +104,16 @@ def main() -> None:
             return
 
         published = latest_published_release(arguments.appcast)
-        build = planned_build(
-            requested=ReleaseVersion.parse(arguments.requested),
-            current=ReleaseVersion.parse(arguments.current),
-            current_build=arguments.current_build,
-            published=published,
-        )
-        print(build)
+        if arguments.command == "next":
+            print(next_patch_version(ReleaseVersion.parse(arguments.current), published))
+        else:
+            build = planned_build(
+                requested=ReleaseVersion.parse(arguments.requested),
+                current=ReleaseVersion.parse(arguments.current),
+                current_build=arguments.current_build,
+                published=published,
+            )
+            print(build)
     except (ET.ParseError, OSError, ValueError) as error:
         parser.error(str(error))
 

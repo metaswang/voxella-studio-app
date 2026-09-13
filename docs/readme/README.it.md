@@ -10,7 +10,7 @@
   <img src="../../assets/macos-badge.png" alt="Scarica Palmier Pro per macOS" width="180" />
 </a>
 
-<sub><i>Richiede macOS 26 (Tahoe) su Apple Silicon</i></sub>
+<sub><i>Richiede macOS 15 (Sequoia) su Apple Silicon</i></sub>
 
 <a href="https://x.com/Palmier_io"><img src="https://img.shields.io/badge/Follow-%40Palmier__io-000000?style=flat&logo=x&logoColor=white" alt="Segui su X" /></a>
 <a href="https://discord.com/invite/SMVW6pKYmg"><img src="https://img.shields.io/badge/Join-Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Entra su Discord" /></a>
@@ -103,7 +103,7 @@ Le funzioni di AI generativa richiedono login e abbonamento.
 
 **Quali piattaforme supporta?**
 
-Solo macOS 26 (Tahoe) su Apple Silicon.
+Solo macOS 15 (Sequoia) su Apple Silicon.
 
 Vedi [FAQ.md](../../FAQ.md) per maggiori dettagli.
 

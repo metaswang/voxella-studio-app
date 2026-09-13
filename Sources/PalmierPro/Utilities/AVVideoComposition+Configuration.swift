@@ -1,16 +1,16 @@
 import AVFoundation
 
 extension AVVideoComposition {
-    func palmierConfiguration() -> AVVideoComposition.Configuration {
-        var config = AVVideoComposition.Configuration()
-        config.customVideoCompositorClass = customVideoCompositorClass
-        config.frameDuration = frameDuration
-        config.sourceTrackIDForFrameTiming = sourceTrackIDForFrameTiming
-        config.renderSize = renderSize
-        config.renderScale = renderScale
-        config.instructions = instructions
-        config.animationTool = animationTool
-        config.sourceSampleDataTrackIDs = sourceSampleDataTrackIDs
-        return config
+    func palmierMutableCopy() -> AVMutableVideoComposition {
+        let composition = AVMutableVideoComposition()
+        composition.customVideoCompositorClass = customVideoCompositorClass
+        composition.frameDuration = frameDuration
+        composition.sourceTrackIDForFrameTiming = sourceTrackIDForFrameTiming
+        composition.renderSize = renderSize
+        composition.renderScale = renderScale
+        composition.instructions = instructions
+        composition.animationTool = animationTool
+        composition.sourceSampleDataTrackIDs = sourceSampleDataTrackIDs
+        return composition
     }
 }

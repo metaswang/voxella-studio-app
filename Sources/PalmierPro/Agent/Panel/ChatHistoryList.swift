@@ -32,7 +32,7 @@ struct ChatHistoryList: View {
             }
         }
         .frame(width: 280)
-        .glassEffect(.clear, in: .rect(cornerRadius: AppTheme.Radius.md))
+        .appGlassEffect(.clear, in: .rect(cornerRadius: AppTheme.Radius.md))
     }
 
     private func row(session: ChatSession) -> some View {

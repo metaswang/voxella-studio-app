@@ -1,0 +1,58 @@
+{
+  "id": "en-11",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language en.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: en\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nThe application saves a temporary copy whenever you finish a major edit. This copy is stored separately from the version you named yourself. When you reopen the project, the recovery panel explains which copy is newer. Read that message before choosing an option. A larger file is not necessarily a more complete version of the work. If neither copy looks right, keep both files for further inspection.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "89ad1c43722b070a3b34281cad63fc670eb44208cc391f173370fd93cadfd96e",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:07.211077+00:00",
+  "raw": "{\"lines\": [\"The application saves a temporary copy whenever\", \"you finish a major edit.\", \"This copy is stored separately from\", \"the version you named yourself.\", \"When you reopen the project,\", \"the recovery panel explains which copy is newer.\", \"Read that message before choosing an option.\", \"A larger file is not necessarily\", \"a more complete version of the work.\", \"If neither copy looks right,\", \"keep both files for further inspection.\"]}",
+  "usage": {
+    "promptTokenCount": 294,
+    "candidatesTokenCount": 93,
+    "totalTokenCount": 387,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 294
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.0316152079976746,
+  "transport_attempts": 1,
+  "lines": [
+    "The application saves a temporary copy whenever",
+    "you finish a major edit.",
+    "This copy is stored separately from",
+    "the version you named yourself.",
+    "When you reopen the project,",
+    "the recovery panel explains which copy is newer.",
+    "Read that message before choosing an option.",
+    "A larger file is not necessarily",
+    "a more complete version of the work.",
+    "If neither copy looks right,",
+    "keep both files for further inspection."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 11,
+    "boundaries": 10,
+    "tp": 8,
+    "ref_count": 10,
+    "f1": 0.8000000000000002,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 48
+  }
+}

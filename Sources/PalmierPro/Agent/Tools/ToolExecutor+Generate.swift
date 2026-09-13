@@ -25,6 +25,7 @@ extension ToolExecutor {
     }
 
     func generate(_ editor: EditorViewModel, _ args: [String: Any], type: ClipType) throws -> ToolResult {
+        try requireNewContentAccess()
         let prompt = args["prompt"] == nil ? "" : try args.requireString("prompt")
         guard AccountService.shared.isSignedIn else {
             throw ToolError("Generation requires signing in to VoxStudio. Tell the user to sign in.")
@@ -111,7 +112,7 @@ extension ToolExecutor {
             duration: duration,
             aspectRatio: aspectRatio, resolution: resolution
         )
-        let placeholderId = VideoGenerationSubmission.make(
+        let placeholderId = try VideoGenerationSubmission.make(
             genInput: genInput,
             model: model,
             inputAssets: inputAssets,
@@ -179,7 +180,7 @@ extension ToolExecutor {
         let folderId = try resolveFolder(
             args, editor: editor, fallbackReferences: inputAssets.textToVideoReferences
         )
-        let placeholderId = VideoGenerationSubmission.make(
+        let placeholderId = try VideoGenerationSubmission.make(
             genInput: genInput,
             model: model,
             inputAssets: inputAssets,
@@ -242,7 +243,7 @@ extension ToolExecutor {
             aspectRatio: aspectRatio, resolution: resolution, quality: quality
         )
         let folderId = try resolveFolder(args, editor: editor, fallbackReferences: refs)
-        let placeholderId = ImageGenerationSubmission.make(
+        let placeholderId = try ImageGenerationSubmission.make(
             genInput: genInput,
             model: model,
             references: refs,
@@ -257,6 +258,7 @@ extension ToolExecutor {
     }
 
     func generateAudio(_ editor: EditorViewModel, _ args: [String: Any]) async throws -> ToolResult {
+        try requireNewContentAccess()
         guard AccountService.shared.isSignedIn else {
             throw ToolError("Generation requires signing in to VoxStudio. Tell the user to sign in.")
         }
@@ -404,8 +406,8 @@ extension ToolExecutor {
 
         if let startFrame = placementStartFrame, let sourceSpan = spanSeconds {
             let outputSpan = requestedDurationSeconds.map(Double.init) ?? sourceSpan
-            let placeholderId = editor.undo.perform("Add \(model.category.label) (Agent)") {
-                let placeholderId = submission.submit(
+            let placeholderId = try editor.undo.perform("Add \(model.category.label) (Agent)") {
+                let placeholderId = try submission.submit(
                     service: editor.generationService,
                     projectURL: editor.projectURL,
                     editor: editor,
@@ -422,7 +424,7 @@ extension ToolExecutor {
             return .ok("Generation started and placed on the timeline at frame \(startFrame). Placeholder asset ID: \(placeholderId). Model: \(model.displayName), \(model.category.label) (scored from video).")
         }
 
-        let placeholderId = submission.submit(
+        let placeholderId = try submission.submit(
             service: editor.generationService,
             projectURL: editor.projectURL,
             editor: editor

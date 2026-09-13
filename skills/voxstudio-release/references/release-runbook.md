@@ -12,6 +12,14 @@ Run from the repository root:
       test -f Package.swift
       test -f scripts/VoxStudio.developer-id.entitlements
 
+Confirm the supported deployment target remains macOS 15.0 across build and release metadata:
+
+      rg -n 'platforms: \[\.macOS\(\.v15\)\]' Package.swift
+      /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' Sources/PalmierPro/Resources/Info.plist | rg -q '^15\.0$'
+      rg -n 'MINIMUM_SYSTEM_VERSION.*LSMinimumSystemVersion|minimum_system_version' scripts/release.sh
+
+The complete release includes Textual and bundled speech, both of which require macOS 15. Keep macOS 26-only APIs behind availability checks and preserve the macOS 15 fallback instead of raising the target. The Convex binary target may emit warnings for vendor objects stamped with the build host's newer macOS version; preserve those warnings in the release record and complete the macOS 15 runtime smoke test below.
+
 Inspect release variables without printing values:
 
       for name in SIGNING_IDENTITY TEAM_IDENTIFIER NOTARY_PROFILE PROVISIONING_PROFILE; do
@@ -44,18 +52,71 @@ For notarization, NOTARY_PROFILE must already exist in the local Keychain. Read 
 
 This command may return an empty history and still prove that the profile is usable. A missing profile must be fixed before building the distribution artifact. Do not print the environment file or any credential value.
 
-If the profile has not been created, create it once with an Apple app-specific password or an App Store Connect API key, then keep the resulting profile in the Keychain:
+### Recover a missing profile with an App Store Connect Team API key
 
-      xcrun notarytool store-credentials VoxStudioNotary \
-        --apple-id DEVELOPER_APPLE_ID \
-        --team-id TEAM_IDENTIFIER \
-        --password APP_SPECIFIC_PASSWORD
+Open [App Store Connect API Keys](https://appstoreconnect.apple.com/access/integrations/api), create or select a Team API key, and download its private key. The private key is an `AuthKey_<KEY_ID>.p8` file; it is not a `.provisionprofile`. Individual API keys cannot be used with `notarytool`.
+
+Keep the private key local to this repository only in the ignored `.secrets/` directory. For this checkout, the expected path is:
+
+      /Users/adamwang/Project/subdub/voxella-studio-app/.secrets/AuthKey_46AK8UQ7G7.p8
+
+Set restrictive permissions and verify that Git ignores it without printing its contents:
+
+      chmod 600 .secrets/AuthKey_46AK8UQ7G7.p8
+      git check-ignore -v .secrets/AuthKey_46AK8UQ7G7.p8
+
+The interactive recovery flow is:
+
+      xcrun notarytool store-credentials "$NOTARY_PROFILE"
+
+Enter the `.p8` path, the matching API Key ID (`46AK8UQ7G7` for the file above), and the Issuer ID shown in App Store Connect. Do not enter a provisioning profile path. Alternatively, use explicit arguments without putting secrets in shell history:
+
+      xcrun notarytool store-credentials "$NOTARY_PROFILE" \
+        --key "$NOTARY_API_KEY_PATH" \
+        --key-id "$NOTARY_API_KEY_ID" \
+        --issuer "$NOTARY_API_ISSUER"
+
+Set `NOTARY_API_KEY_PATH`, `NOTARY_API_KEY_ID`, and `NOTARY_API_ISSUER` only in the current shell or an ignored local environment file; never commit them with a private key or print their values.
+
+### Recover a missing profile with an Apple app-specific password
+
+If an App Store Connect Team API key is unavailable, use an app-specific password instead:
+
+      xcrun notarytool store-credentials "$NOTARY_PROFILE" \
+        --apple-id "$APPLE_ID" \
+        --team-id "$TEAM_IDENTIFIER"
+
+notarytool prompts for the app-specific password when `--password` is omitted.
 
 Set NOTARY_PROFILE in the local release environment to the profile name. Never commit the password, API key, or a populated environment file.
 
-## 2. Build and distribute
+After either recovery path, verify the profile before building:
 
-Use the repository release wrapper:
+      xcrun notarytool history --keychain-profile "$NOTARY_PROFILE"
+
+The command must no longer report `No Keychain password item found`. Use the same profile name in `.env` or `.env.prod` that the release wrapper loads.
+
+## 2. Select and record the release version
+
+Formal releases must use the release wrapper with no manually supplied version:
+
+      ./scripts/release.sh
+
+Before it changes `Info.plist`, the wrapper reads the current
+`CFBundleShortVersionString` and the highest version in the published appcast,
+then selects the next semantic-version patch (`X.Y.Z` becomes `X.Y.(Z+1)`).
+It also plans a new `CFBundleVersion`. A release must never reuse the prior
+marketing version, and the release record must contain the previous version,
+new version, build number, DMG hash, and the exact version uploaded.
+
+The wrapper performs the version bump before invoking the distribution build;
+do not invoke `bundle.sh release --dist` directly for a formal release unless
+the version has already been selected and recorded by the wrapper.
+
+## 3. Build and distribute
+
+The formal release wrapper invokes the distribution build after selecting and
+recording the next patch version. The build step is:
 
       ./scripts/bundle.sh release --dist
 
@@ -82,7 +143,7 @@ Apple sign-in entitlements to the Developer ID app.
 
 release --sign signs without completing the final notarized distribution flow. Use release --dist for the artifact intended for users. debug --fast and swift run are development checks, not release packaging.
 
-## 3. Recover a network-interrupted notarization
+## 4. Recover a network-interrupted notarization
 
 If xcrun notarytool submit --wait prints a submission ID and then loses network connectivity, do not submit the same artifact again. Query the exact submission:
 
@@ -90,7 +151,7 @@ If xcrun notarytool submit --wait prints a submission ID and then loses network 
 
 If the result is Accepted, continue with stapling and the remaining package steps. Query the DMG submission separately if the later DMG upload was the interrupted operation.
 
-## 4. Verify the app before upload
+## 5. Verify the app before upload
 
 Run these checks after release --dist:
 
@@ -108,6 +169,10 @@ Run these checks after release --dist:
         | rg -q '^true$'
       /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$APP/Contents/Info.plist" >/dev/null
       test ! -e "$APP/Contents/embedded.provisionprofile"
+      /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist" | rg -q '^15\.0$'
+      otool -l "$APP/Contents/MacOS/VoxStudio" \
+        | awk '/LC_BUILD_VERSION/{seen=1} seen && /minos/{print $2; exit}' \
+        | rg -q '^15\.0$'
 
       if codesign -d --entitlements :- "$APP" 2>/dev/null | rg -q 'com\.apple\.developer\.applesignin|com\.apple\.developer\.team-identifier|keychain-access-groups'; then
         echo 'Restricted Developer ID entitlements found'
@@ -119,7 +184,9 @@ Run these checks after release --dist:
 
 The expected spctl result is accepted with a notarized Developer ID source. A profile or one of the restricted entitlements is a release blocker.
 
-## 5. Verify the DMG and the app inside it
+On an Apple Silicon Mac running macOS 15, launch the notarized app from the mounted DMG, sign in, and perform one authenticated backend read. This smoke test is required because compile-time availability checks cannot prove that the prebuilt Convex Rust archive avoids newer runtime symbols.
+
+## 6. Verify the DMG and the app inside it
 
 Verify the DMG signature and ticket:
 
@@ -151,7 +218,7 @@ Mount the DMG read-only and repeat the executable checks against the copy users 
 
 If any check fails, keep the artifact local, inspect the signing output, fix the packaging configuration, and rebuild. Do not upload an unverified or partially stapled DMG.
 
-## 6. Post-install microphone/TCC check
+## 7. Post-install microphone/TCC check
 
 After installing the DMG, launch `/Applications/VoxStudio.app` and test
 `Voice Library -> New reference -> Start recording`. The expected result is a
@@ -172,7 +239,7 @@ explicitly requests cleanup. The release evidence must identify the tested
 bundle path, display name, bundle identifier, signature, and microphone
 permission result.
 
-## 7. Record the exact artifact
+## 8. Record the exact artifact
 
 Record these values immediately before upload:
 
@@ -181,7 +248,7 @@ Record these values immediately before upload:
 
 The local SHA-256 is the comparison value for the uploaded file. The DMG byte count must also match the remote response.
 
-## 8. Publish to Hugging Face with the helper
+## 9. Publish to Hugging Face with the helper
 
 The helper defaults to the verified local artifact and the project repository:
 
@@ -201,7 +268,7 @@ The helper selects hf or huggingface-cli, supports the project Python 3.12.12 fa
 
 The helper's --repo-type option is accepted for clarity even though this project defaults to model. Keep the repository ID and revision explicit when publishing a different destination.
 
-## 9. Browser fallback
+## 10. Browser fallback
 
 Use this only when the user explicitly requested the upload and the CLI is unavailable, but an authenticated browser session is available:
 
@@ -220,7 +287,7 @@ Use this only when the user explicitly requested the upload and the CLI is unava
 
 The response should expose x-repo-commit, a byte count matching the local DMG, and, for the current Xet-backed repository, x-linked-etag matching the local SHA-256. If the hash header is absent, verify the file size and the repository tree/API before reporting completion.
 
-## 10. Final report
+## 11. Final report
 
 Include:
 

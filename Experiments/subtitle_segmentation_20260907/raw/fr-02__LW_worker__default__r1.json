@@ -1,0 +1,59 @@
+{
+  "id": "fr-02",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=fr\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nQuand vous ouvrirez le projet demain, les enregistrements d'origine seront disponibles. Sélectionnez d'abord l'entretien, puis placez la lecture avant la première réponse. Ne supprimez pas immédiatement le passage calme simplement parce que personne ne parle. Ce silence laisse au public le temps de comprendre la question. Une fois le premier montage terminé, nous déciderons où faire commencer la musique. Nous vérifierons aussi si la conclusion a besoin d'une courte explication supplémentaire.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "31372c6cf5f43967573ae635534386797fdacd66b8710285552589780cf9d0f6",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:30.664845+00:00",
+  "raw": "{\"subtitles\":[\"Quand vous ouvrirez le projet demain,\",\"les enregistrements d'origine seront disponibles.\",\"Sélectionnez d'abord l'entretien,\",\"puis placez la lecture avant la première réponse.\",\"Ne supprimez pas immédiatement le passage calme\",\"simplement parce que personne ne parle.\",\"Ce silence laisse au public le temps\",\"de comprendre la question.\",\"Une fois le premier montage terminé,\",\"nous déciderons où faire commencer la musique.\",\"Nous vérifierons aussi si la conclusion\",\"a besoin d'une courte explication supplémentaire.\"],\"batch_summary\":\"Consignes pour le montage audio du projet prévoyant le respect des silences et l'organisation des pistes.\"}",
+  "usage": {
+    "promptTokenCount": 301,
+    "candidatesTokenCount": 145,
+    "totalTokenCount": 446,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 301
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.7042163329970208,
+  "transport_attempts": 1,
+  "lines": [
+    "Quand vous ouvrirez le projet demain,",
+    "les enregistrements d'origine seront disponibles.",
+    "Sélectionnez d'abord l'entretien,",
+    "puis placez la lecture avant la première réponse.",
+    "Ne supprimez pas immédiatement le passage calme",
+    "simplement parce que personne ne parle.",
+    "Ce silence laisse au public le temps",
+    "de comprendre la question.",
+    "Une fois le premier montage terminé,",
+    "nous déciderons où faire commencer la musique.",
+    "Nous vérifierons aussi si la conclusion",
+    "a besoin d'une courte explication supplémentaire."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 12,
+    "boundaries": 11,
+    "tp": 11,
+    "ref_count": 11,
+    "f1": 1.0,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 49
+  }
+}

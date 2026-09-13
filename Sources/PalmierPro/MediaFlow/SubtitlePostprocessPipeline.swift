@@ -727,7 +727,10 @@ struct SubtitlePostprocessPipeline: Sendable {
             }
             var warnings: [String] = []
             if !optimized.projection.exact {
-                warnings.append(optimized.projection.offsets.isEmpty
+                let recoveredBoundaries = !optimized.projection.offsets.isEmpty
+                    || optimized.projection.resyncs > 0
+                    || optimized.projection.matchedLines > 0
+                warnings.append(!recoveredBoundaries
                     ? "Ignored invalid LLM segmentation and used local subtitle boundaries."
                     : "Recovered safe subtitle boundaries after the LLM changed text.")
             }

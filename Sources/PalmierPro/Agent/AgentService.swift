@@ -9,6 +9,9 @@ final class AgentService {
     private var apiKeyObserver: NSObjectProtocol?
     private let userDefaults: UserDefaults
     private var reasoningEfforts: [AgentModel: AgentReasoningEffort]
+    private var openAIModels: [AgentModel] = []
+    private var modelDiscoveryTask: Task<Void, Never>?
+    private var modelDiscoveryGeneration = 0
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -18,7 +21,6 @@ final class AgentService {
         self.reasoningEfforts = Dictionary(uniqueKeysWithValues: AgentModel.allCases.map {
             ($0, AgentReasoningPreferences.effort(for: $0, defaults: userDefaults))
         })
-        reloadAPIKeys()
         apiKeyObserver = NotificationCenter.default.addObserver(
             forName: .agentAPIKeyChanged,
             object: nil,
@@ -31,13 +33,47 @@ final class AgentService {
     }
 
     private func reloadAPIKeys() {
-        Task { [weak self] in
+        modelDiscoveryTask?.cancel()
+        modelDiscoveryGeneration += 1
+        let generation = modelDiscoveryGeneration
+        modelDiscoveryTask = Task { [weak self] in
             let credentials = await AgentCredentialSnapshot.loadFromKeychain()
-            self?.credentials = credentials
+            guard !Task.isCancelled,
+                  let self,
+                  generation == modelDiscoveryGeneration
+            else { return }
+            self.credentials = credentials
+
+            let apiKey = credentials[.openAI]
+            guard !apiKey.isEmpty else {
+                openAIModels = []
+                return
+            }
+
+            do {
+                let models = try await OpenAIModelDiscovery.fetch(apiKey: apiKey)
+                guard !Task.isCancelled, generation == modelDiscoveryGeneration else { return }
+                openAIModels = models
+                selectAvailableOpenAIModelIfNeeded()
+            } catch is CancellationError {
+                return
+            } catch {
+                guard generation == modelDiscoveryGeneration else { return }
+                openAIModels = []
+            }
         }
     }
 
+    private func selectAvailableOpenAIModelIfNeeded() {
+        guard model.provider == .openAI,
+              !openAIModels.contains(model),
+              let replacement = openAIModels.first(where: { $0 == .terra }) ?? openAIModels.first
+        else { return }
+        model = replacement
+    }
+
     isolated deinit {
+        modelDiscoveryTask?.cancel()
         if let token = apiKeyObserver {
             NotificationCenter.default.removeObserver(token)
         }
@@ -60,13 +96,30 @@ final class AgentService {
     }
 
     var canStream: Bool {
-        route != .unavailable
+        AITransportPolicy.current == .byok || route != .unavailable
     }
 
-    var availableModels: [AgentModel] { AgentModel.allCases }
+    var availableModels: [AgentModel] {
+        switch AITransportPolicy.current {
+        case .byok:
+            AgentModel.anthropicModels + (openAIModels.isEmpty ? AgentModel.allCases.filter { $0.provider == .openAI } : openAIModels)
+        case .hosted, .unavailable:
+            AgentModel.allCases
+        }
+    }
 
-    func canSelectModel(_ candidate: AgentModel) -> Bool {
-        !credentials[candidate.provider].isEmpty
+    func canSelectModel(
+        _ candidate: AgentModel,
+        transport: AITransport = AITransportPolicy.current
+    ) -> Bool {
+        switch transport {
+        case .hosted:
+            true
+        case .byok:
+            candidate.provider != .openAI || openAIModels.isEmpty || openAIModels.contains(candidate)
+        case .unavailable:
+            false
+        }
     }
 
     var activeBYOKProvider: AgentProvider? {
@@ -91,8 +144,11 @@ final class AgentService {
     }
 
     private func selectClient(for settings: AgentRunSettings) async -> (any AgentClient)? {
+        if AITransportPolicy.current == .hosted { return HostedAgentClient(settings: settings) }
+        guard AITransportPolicy.current == .byok else { return nil }
         // Re-read keys so changes made mid-session affect the next send.
         let credentials = await AgentCredentialSnapshot.loadFromKeychain()
+        guard !Task.isCancelled else { return nil }
         self.credentials = credentials
 
         switch AITransportPolicy.current {

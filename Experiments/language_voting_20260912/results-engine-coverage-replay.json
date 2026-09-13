@@ -1,0 +1,561 @@
+[
+  {
+    "engine" : "whisper",
+    "id" : "session-01",
+    "parakeetCoverage" : 2.1701342e-05,
+    "previousEngine" : "whisper",
+    "qwenCoverage" : 0.28235787,
+    "reason" : "insufficientEngineCoverage",
+    "uncovered" : 0.7176413,
+    "windowCoverage" : [
+      {
+        "parakeet" : 2.170134e-05,
+        "qwen" : 0.28235793,
+        "uncovered" : 0.71764135
+      }
+    ]
+  },
+  {
+    "engine" : "qwen",
+    "id" : "session-02",
+    "parakeetCoverage" : 5.334906e-08,
+    "previousEngine" : "qwen",
+    "qwenCoverage" : 0.99999106,
+    "reason" : "engineCoverage",
+    "uncovered" : 8.951799e-06,
+    "windowCoverage" : [
+      {
+        "parakeet" : 1.7669763e-09,
+        "qwen" : 0.9999994,
+        "uncovered" : 5.659608e-07
+      },
+      {
+        "parakeet" : 8.122554e-12,
+        "qwen" : 1,
+        "uncovered" : 5.6940253e-09
+      },
+      {
+        "parakeet" : 1.5827206e-07,
+        "qwen" : 0.9999737,
+        "uncovered" : 2.6283748e-05
+      }
+    ]
+  },
+  {
+    "engine" : "qwen",
+    "id" : "session-03",
+    "parakeetCoverage" : 3.6375587e-07,
+    "previousEngine" : "qwen",
+    "qwenCoverage" : 0.9098165,
+    "reason" : "engineCoverage",
+    "uncovered" : 0.09018341,
+    "windowCoverage" : [
+      {
+        "parakeet" : 3.4407233e-08,
+        "qwen" : 0.9917519,
+        "uncovered" : 0.008248027
+      },
+      {
+        "parakeet" : 6.9310454e-07,
+        "qwen" : 0.82788116,
+        "uncovered" : 0.17211878
+      }
+    ]
+  },
+  {
+    "engine" : "qwen",
+    "id" : "session-04",
+    "parakeetCoverage" : 4.1341252e-07,
+    "previousEngine" : "qwen",
+    "qwenCoverage" : 0.9942842,
+    "reason" : "engineCoverage",
+    "uncovered" : 0.0057157534,
+    "windowCoverage" : [
+      {
+        "parakeet" : 4.1341252e-07,
+        "qwen" : 0.99428415,
+        "uncovered" : 0.0057157525
+      }
+    ]
+  },
+  {
+    "engine" : "qwen",
+    "id" : "session-05",
+    "parakeetCoverage" : 0.0039452775,
+    "previousEngine" : "qwen",
+    "qwenCoverage" : 0.91459465,
+    "reason" : "engineCoverage",
+    "uncovered" : 0.08537759,
+    "windowCoverage" : [
+      {
+        "parakeet" : 6.1758416e-05,
+        "qwen" : 0.9763831,
+        "uncovered" : 0.023616413
+      },
+      {
+        "parakeet" : 0.011773851,
+        "qwen" : 0.7674475,
+        "uncovered" : 0.23246966
+      },
+      {
+        "parakeet" : 2.2266377e-07,
+        "qwen" : 0.9999532,
+        "uncovered" : 4.672665e-05
+      }
+    ]
+  },
+  {
+    "engine" : "whisper",
+    "id" : "session-06",
+    "parakeetCoverage" : 0.27335718,
+    "previousEngine" : "whisper",
+    "qwenCoverage" : 0.3765204,
+    "reason" : "insufficientEngineCoverage",
+    "uncovered" : 0.62038404,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.011258976,
+        "qwen" : 0.016064307,
+        "uncovered" : 0.9834972
+      },
+      {
+        "parakeet" : 0.49094868,
+        "qwen" : 0.6321403,
+        "uncovered" : 0.35984507
+      },
+      {
+        "parakeet" : 0.31786376,
+        "qwen" : 0.48135677,
+        "uncovered" : 0.5178097
+      }
+    ]
+  },
+  {
+    "engine" : "parakeet",
+    "id" : "session-07",
+    "parakeetCoverage" : 0.63983506,
+    "previousEngine" : "whisper",
+    "qwenCoverage" : 0.7078232,
+    "reason" : "engineCoverage",
+    "uncovered" : 0.29124415,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.7156444,
+        "qwen" : 0.72246206,
+        "uncovered" : 0.27575526
+      },
+      {
+        "parakeet" : 0.5084006,
+        "qwen" : 0.5294515,
+        "uncovered" : 0.47013766
+      },
+      {
+        "parakeet" : 0.6954601,
+        "qwen" : 0.871556,
+        "uncovered" : 0.12783942
+      }
+    ]
+  },
+  {
+    "engine" : "whisper",
+    "id" : "session-08",
+    "parakeetCoverage" : 0.23069023,
+    "previousEngine" : "whisper",
+    "qwenCoverage" : 0.2855948,
+    "reason" : "insufficientEngineCoverage",
+    "uncovered" : 0.71422845,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.0716559,
+        "qwen" : 0.07816572,
+        "uncovered" : 0.9217551
+      },
+      {
+        "parakeet" : 0.3263955,
+        "qwen" : 0.481936,
+        "uncovered" : 0.51786405
+      },
+      {
+        "parakeet" : 0.2940193,
+        "qwen" : 0.2966827,
+        "uncovered" : 0.703066
+      }
+    ]
+  },
+  {
+    "engine" : "whisper",
+    "id" : "session-09",
+    "parakeetCoverage" : 0.33962968,
+    "previousEngine" : "whisper",
+    "qwenCoverage" : 0.47937125,
+    "reason" : "insufficientEngineCoverage",
+    "uncovered" : 0.5113684,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.11648638,
+        "qwen" : 0.1802291,
+        "uncovered" : 0.8191609
+      },
+      {
+        "parakeet" : 0.61570233,
+        "qwen" : 0.72237635,
+        "uncovered" : 0.26048246
+      },
+      {
+        "parakeet" : 0.2867003,
+        "qwen" : 0.5355082,
+        "uncovered" : 0.45446205
+      }
+    ]
+  },
+  {
+    "engine" : "parakeet",
+    "id" : "session-10",
+    "parakeetCoverage" : 0.974739,
+    "previousEngine" : "parakeet",
+    "qwenCoverage" : 0.97482896,
+    "reason" : "engineCoverage",
+    "uncovered" : 0.02496003,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.9960192,
+        "qwen" : 0.99634385,
+        "uncovered" : 0.0033825093
+      },
+      {
+        "parakeet" : 0.9787214,
+        "qwen" : 0.97894883,
+        "uncovered" : 0.020982755
+      },
+      {
+        "parakeet" : 0.9494763,
+        "qwen" : 0.949194,
+        "uncovered" : 0.050514836
+      }
+    ]
+  },
+  {
+    "engine" : "whisper",
+    "id" : "session-11",
+    "parakeetCoverage" : 0.6980123,
+    "previousEngine" : "parakeet",
+    "qwenCoverage" : 0.73674655,
+    "reason" : "insufficientEngineCoverage",
+    "uncovered" : 0.26188514,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.25929993,
+        "qwen" : 0.37527376,
+        "uncovered" : 0.6206436
+      },
+      {
+        "parakeet" : 0.8711638,
+        "qwen" : 0.87122047,
+        "uncovered" : 0.12876637
+      },
+      {
+        "parakeet" : 0.9635733,
+        "qwen" : 0.9637453,
+        "uncovered" : 0.036245335
+      }
+    ]
+  },
+  {
+    "engine" : "parakeet",
+    "id" : "session-12",
+    "parakeetCoverage" : 0.996381,
+    "previousEngine" : "parakeet",
+    "qwenCoverage" : 0.9964489,
+    "reason" : "engineCoverage",
+    "uncovered" : 0.0035306208,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.99453473,
+        "qwen" : 0.9945686,
+        "uncovered" : 0.0054265913
+      },
+      {
+        "parakeet" : 0.9994947,
+        "qwen" : 0.99949676,
+        "uncovered" : 0.000500413
+      },
+      {
+        "parakeet" : 0.9951134,
+        "qwen" : 0.9952814,
+        "uncovered" : 0.004664858
+      }
+    ]
+  },
+  {
+    "engine" : "parakeet",
+    "id" : "session-13",
+    "parakeetCoverage" : 0.9999898,
+    "previousEngine" : "parakeet",
+    "qwenCoverage" : 0.99999,
+    "reason" : "engineCoverage",
+    "uncovered" : 1.0049298e-05,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.9999887,
+        "qwen" : 0.9999887,
+        "uncovered" : 1.12830485e-05
+      },
+      {
+        "parakeet" : 0.99999756,
+        "qwen" : 0.99999774,
+        "uncovered" : 2.2908885e-06
+      },
+      {
+        "parakeet" : 0.99998313,
+        "qwen" : 0.99998343,
+        "uncovered" : 1.6573958e-05
+      }
+    ]
+  },
+  {
+    "engine" : "qwen",
+    "id" : "session-14",
+    "parakeetCoverage" : 0.28037268,
+    "previousEngine" : "whisper",
+    "qwenCoverage" : 0.9165593,
+    "reason" : "engineCoverage",
+    "uncovered" : 0.07545944,
+    "windowCoverage" : [
+      {
+        "parakeet" : 5.524929e-07,
+        "qwen" : 0.99995595,
+        "uncovered" : 4.3989516e-05
+      },
+      {
+        "parakeet" : 0.019425342,
+        "qwen" : 0.88384026,
+        "uncovered" : 0.11061071
+      },
+      {
+        "parakeet" : 0.821692,
+        "qwen" : 0.8658814,
+        "uncovered" : 0.115723565
+      }
+    ]
+  },
+  {
+    "engine" : "qwen",
+    "id" : "session-15",
+    "parakeetCoverage" : 0.0054307412,
+    "previousEngine" : "whisper",
+    "qwenCoverage" : 0.9353623,
+    "reason" : "engineCoverage",
+    "uncovered" : 0.06443782,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.0003247347,
+        "qwen" : 0.9851172,
+        "uncovered" : 0.014823223
+      },
+      {
+        "parakeet" : 0.00019331333,
+        "qwen" : 0.99996597,
+        "uncovered" : 3.3179964e-05
+      },
+      {
+        "parakeet" : 0.015774174,
+        "qwen" : 0.8210029,
+        "uncovered" : 0.178457
+      }
+    ]
+  },
+  {
+    "engine" : "qwen",
+    "id" : "session-16",
+    "parakeetCoverage" : 1.9795183e-07,
+    "previousEngine" : "qwen",
+    "qwenCoverage" : 0.9999987,
+    "reason" : "engineCoverage",
+    "uncovered" : 1.2414561e-06,
+    "windowCoverage" : [
+      {
+        "parakeet" : 9.612256e-12,
+        "qwen" : 1,
+        "uncovered" : 5.037599e-09
+      },
+      {
+        "parakeet" : 5.933078e-07,
+        "qwen" : 0.9999996,
+        "uncovered" : 3.670477e-07
+      },
+      {
+        "parakeet" : 5.380184e-10,
+        "qwen" : 0.9999966,
+        "uncovered" : 3.3522826e-06
+      }
+    ]
+  },
+  {
+    "engine" : "qwen",
+    "id" : "session-17",
+    "parakeetCoverage" : 7.953666e-09,
+    "previousEngine" : "qwen",
+    "qwenCoverage" : 0.99999917,
+    "reason" : "engineCoverage",
+    "uncovered" : 7.8757614e-07,
+    "windowCoverage" : [
+      {
+        "parakeet" : 2.1847622e-08,
+        "qwen" : 0.9999981,
+        "uncovered" : 1.8378086e-06
+      },
+      {
+        "parakeet" : 2.0133029e-09,
+        "qwen" : 0.9999995,
+        "uncovered" : 5.0615336e-07
+      },
+      {
+        "parakeet" : 7.1364335e-14,
+        "qwen" : 1,
+        "uncovered" : 1.8766054e-08
+      }
+    ]
+  },
+  {
+    "engine" : "parakeet",
+    "id" : "session-18",
+    "parakeetCoverage" : 0.99998665,
+    "previousEngine" : "parakeet",
+    "qwenCoverage" : 0.99998677,
+    "reason" : "engineCoverage",
+    "uncovered" : 1.322749e-05,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.9999799,
+        "qwen" : 0.9999799,
+        "uncovered" : 2.0120042e-05
+      },
+      {
+        "parakeet" : 0.999997,
+        "qwen" : 0.9999972,
+        "uncovered" : 2.7857768e-06
+      },
+      {
+        "parakeet" : 0.999983,
+        "qwen" : 0.9999832,
+        "uncovered" : 1.6776656e-05
+      }
+    ]
+  },
+  {
+    "engine" : "qwen",
+    "id" : "session-19",
+    "parakeetCoverage" : 0.0025590295,
+    "previousEngine" : "qwen",
+    "qwenCoverage" : 0.97528434,
+    "reason" : "engineCoverage",
+    "uncovered" : 0.024576223,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.0065835803,
+        "qwen" : 0.9569286,
+        "uncovered" : 0.043043256
+      },
+      {
+        "parakeet" : 9.248667e-05,
+        "qwen" : 0.9993519,
+        "uncovered" : 0.0005983936
+      },
+      {
+        "parakeet" : 0.0010010211,
+        "qwen" : 0.96957284,
+        "uncovered" : 0.03008702
+      }
+    ]
+  },
+  {
+    "engine" : "qwen",
+    "id" : "session-20",
+    "parakeetCoverage" : 0.06472752,
+    "previousEngine" : "qwen",
+    "qwenCoverage" : 0.87820464,
+    "reason" : "engineCoverage",
+    "uncovered" : 0.10417404,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.00879342,
+        "qwen" : 0.9854813,
+        "uncovered" : 0.010502532
+      },
+      {
+        "parakeet" : 5.4448783e-06,
+        "qwen" : 0.9999862,
+        "uncovered" : 1.3629833e-05
+      },
+      {
+        "parakeet" : 0.1853837,
+        "qwen" : 0.6491467,
+        "uncovered" : 0.30200595
+      }
+    ]
+  },
+  {
+    "engine" : "whisper",
+    "id" : "short-en",
+    "parakeetCoverage" : 0,
+    "previousEngine" : "whisper",
+    "qwenCoverage" : 0,
+    "reason" : "insufficientSpeech",
+    "uncovered" : 0,
+    "windowCoverage" : [
+
+    ]
+  },
+  {
+    "engine" : "parakeet",
+    "id" : "quiet-en",
+    "parakeetCoverage" : 0.974153,
+    "previousEngine" : "parakeet",
+    "qwenCoverage" : 0.97426194,
+    "reason" : "engineCoverage",
+    "uncovered" : 0.025612658,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.99610335,
+        "qwen" : 0.996341,
+        "uncovered" : 0.003581671
+      },
+      {
+        "parakeet" : 0.9501202,
+        "qwen" : 0.9501435,
+        "uncovered" : 0.049710065
+      },
+      {
+        "parakeet" : 0.9762355,
+        "qwen" : 0.97630095,
+        "uncovered" : 0.023546228
+      }
+    ]
+  },
+  {
+    "engine" : "qwen",
+    "id" : "mixed-en-zh",
+    "parakeetCoverage" : 0.3320306,
+    "previousEngine" : "whisper",
+    "qwenCoverage" : 0.99791586,
+    "reason" : "chineseEnglishConflict",
+    "uncovered" : 0.0019920813,
+    "windowCoverage" : [
+      {
+        "parakeet" : 0.99601924,
+        "qwen" : 0.996344,
+        "uncovered" : 0.003382509
+      },
+      {
+        "parakeet" : 7.2600735e-05,
+        "qwen" : 0.99740404,
+        "uncovered" : 0.0025936528
+      },
+      {
+        "parakeet" : 1.6055413e-09,
+        "qwen" : 0.99999994,
+        "uncovered" : 8.154663e-08
+      }
+    ]
+  }
+]

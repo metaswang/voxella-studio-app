@@ -1,0 +1,71 @@
+{
+  "id": "en-02",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language en.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: en\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nWhen you open the project tomorrow, the original recordings will still be available. Start by selecting the interview clip, then move the playhead to the first answer. Do not delete the quiet moment just because nobody is speaking. That pause gives the audience time to understand the question. Once the rough cut is ready, we can decide where the music should begin.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "b614fd51de4633f13ef19c5af7f042dcea84f78a1217e8d5d3e64b7ceb45822c",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:18:35.664827+00:00",
+  "raw": "{\"lines\":[\"When you open the project tomorrow, the original\",\"recordings will still be available. Start by selecting the\",\"interview clip, then move the playhead to the first\",\"answer. Do not delete the quiet moment just because\",\"nobody is speaking. That pause gives the audience time to\",\"understand the question. Once the rough cut is ready, we can\",\"decide where the music should begin.\"]}",
+  "usage": {
+    "promptTokenCount": 277,
+    "candidatesTokenCount": 96
+  },
+  "provider_usage": {
+    "prompt_tokens": 277,
+    "completion_tokens": 96,
+    "total_tokens": 373,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.4280841670042719,
+  "transport_attempts": 1,
+  "lines": [
+    "When you open the project tomorrow, the original",
+    "recordings will still be available. Start by selecting the",
+    "interview clip, then move the playhead to the first",
+    "answer. Do not delete the quiet moment just because",
+    "nobody is speaking. That pause gives the audience time to",
+    "understand the question. Once the rough cut is ready, we can",
+    "decide where the music should begin."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 7,
+    "boundaries": 6,
+    "tp": 0,
+    "ref_count": 9,
+    "f1": 0,
+    "overlong": 3,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 2,
+    "violations": [
+      {
+        "phrase": "the original recordings",
+        "cut": 49
+      },
+      {
+        "phrase": "the first answer",
+        "cut": 160
+      }
+    ],
+    "punctuation_starts": 0,
+    "max_length": 60
+  }
+}

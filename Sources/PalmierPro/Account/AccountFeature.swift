@@ -40,17 +40,4 @@ extension AccountService {
         return .allowed
     }
 
-    func subscribeToMinimumPlan(for feature: AccountFeature) async {
-        let candidates = availablePlans
-            .filter { $0.tier.satisfies(feature.minimumPlan) }
-            .sorted {
-                if $0.effectiveMonthlyPriceUsd != $1.effectiveMonthlyPriceUsd {
-                    return $0.effectiveMonthlyPriceUsd < $1.effectiveMonthlyPriceUsd
-                }
-                return $0.tier.subscriptionRank < $1.tier.subscriptionRank
-            }
-        guard let plan = candidates.first else { return }
-        await subscribe(tier: plan.tier)
-    }
-
 }

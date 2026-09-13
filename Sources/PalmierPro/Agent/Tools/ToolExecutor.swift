@@ -17,6 +17,7 @@ final class ToolExecutor {
     private(set) var mcpSessionActivation = Analytics.SessionActivation()
     private let analyticsSessionID = UUID().uuidString
     let exportQueue: ExportQueue
+    let requireNewContentAccess: () throws -> Void
 
     var editor: EditorViewModel? {
         frontmostProjectProvider == nil ? inAppEditor : sessionProject?.editorViewModel
@@ -31,13 +32,16 @@ final class ToolExecutor {
 
     var frontmostProject: VideoProject? { frontmostProjectProvider?() }
 
-    init(editor: EditorViewModel, exportQueue: ExportQueue = .shared) {
+    init(editor: EditorViewModel, exportQueue: ExportQueue = .shared,
+         requireNewContentAccess: @escaping () throws -> Void = { try AccountService.shared.requireNewContentAccess() }) {
+        self.requireNewContentAccess = requireNewContentAccess
         self.inAppEditor = editor
         self.frontmostProjectProvider = nil
         self.exportQueue = exportQueue
     }
 
     init(projectProvider: @escaping () -> VideoProject?, exportQueue: ExportQueue = .shared) {
+        self.requireNewContentAccess = { try AccountService.shared.requireNewContentAccess() }
         let project = projectProvider()
         self.inAppEditor = nil
         self.frontmostProjectProvider = projectProvider
@@ -132,6 +136,8 @@ final class ToolExecutor {
         do {
             let resolved = try expandingIdPrefixes(in: args, editor: editor)
             result = try await run(tool, editor, resolved)
+        } catch let err as AppAccessError {
+            result = .error(err.receiptCode)
         } catch let err as ToolError {
             result = .error(err.message)
         } catch {

@@ -42,7 +42,7 @@ struct VideoEditorHomeView: View {
                 .frame(maxWidth: AppTheme.Workbench.contentMaxWidth, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
-            .scrollEdgeEffectStyle(.soft, for: .top)
+            .appScrollEdgeEffect(.top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(AppTheme.Background.baseColor)
@@ -382,10 +382,6 @@ struct VideoEditorHomeView: View {
     }
 
     private func requestDeletion(_ entry: ProjectEntry) {
-        if let open = openProject(matching: entry) {
-            deletionMessage = "Close \(open.name) before deleting."
-            return
-        }
         projectPendingDeletion = entry
     }
 
@@ -396,7 +392,7 @@ struct VideoEditorHomeView: View {
         Task { @MainActor in
             defer { deletingProjectIDs.remove(entry.id) }
             do {
-                let result = try await AppState.shared.deleteProjects(withIDs: [entry.id])
+                let result = try await appState.deleteProjects(withIDs: [entry.id])
                 if let failed = result.failedNames.first {
                     deletionMessage = "Couldn’t move \(failed) to the Trash."
                 } else if result.deletedIDs.isEmpty {
@@ -408,10 +404,6 @@ struct VideoEditorHomeView: View {
         }
     }
 
-    private func openProject(matching entry: ProjectEntry) -> ProjectEntry? {
-        let paths = Set(AppState.shared.openProjects.compactMap { $0.fileURL?.standardizedFileURL.path })
-        return paths.contains(entry.url.standardizedFileURL.path) ? entry : nil
-    }
 }
 
 private enum LibraryLayout: String, Hashable {

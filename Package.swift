@@ -4,13 +4,14 @@ import PackageDescription
 
 let package = Package(
     name: "PalmierPro",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v15)],
     products: [
         .executable(name: "VoxStudio", targets: ["PalmierPro"]),
     ],
     traits: [
         .trait(name: "BundledSpeech", description: "Include on-device speech models and MLX."),
         .trait(name: "SparkleUpdates", description: "Include Sparkle updates for direct distribution."),
+        .trait(name: "MacAppStore", description: "Build the Mac App Store purchase surface."),
     ],
     dependencies: [
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0"),
@@ -127,6 +128,7 @@ let package = Package(
             ],
             resources: [
                 .copy("Resources/AppIcon.png"),
+                .copy("Resources/StatusBarIcon.svg"),
                 .copy("Resources/Fonts"),
                 .copy("Resources/MCPB/palmier-pro.mcpb"),
                 .copy("Resources/Images"),
@@ -136,12 +138,14 @@ let package = Package(
             swiftSettings: [
                 .define("BUNDLED_SPEECH", .when(traits: ["BundledSpeech"])),
                 .define("SPARKLE_UPDATES", .when(traits: ["SparkleUpdates"])),
+                .define("MAC_APP_STORE", .when(traits: ["MacAppStore"])),
             ],
             linkerSettings: [
                 // SwiftUI VideoPlayer crashes without an explicit AVKit link in non-debugger launches.
                 .linkedFramework("AVKit"),
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("ScreenCaptureKit"),
+                .linkedFramework("Carbon"),
                 .linkedFramework("SoundAnalysis"),
                 .linkedFramework("AuthenticationServices"),
                 .linkedLibrary("sqlite3"),
@@ -175,6 +179,7 @@ let package = Package(
             swiftSettings: [
                 .define("BUNDLED_SPEECH", .when(traits: ["BundledSpeech"])),
                 .define("SPARKLE_UPDATES", .when(traits: ["SparkleUpdates"])),
+                .define("MAC_APP_STORE", .when(traits: ["MacAppStore"])),
             ]
         ),
     ]
