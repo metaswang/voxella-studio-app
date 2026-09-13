@@ -1,0 +1,60 @@
+{
+  "id": "fr-01",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language fr.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: fr\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nAvant de commencer le mouvement, posez les deux pieds sur le sol. Relâchez les épaules et regardez tranquillement devant vous. L'objectif est de bouger lentement, sans tirer la tête vers l'avant. Si la chaise n'est pas stable, interrompez l'exercice et choisissez un siège plus ferme. Nous répéterons la même séquence deux fois, puis nous comparerons les sensations du côté droit et du côté gauche.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "34551002349cafa41f9220eaab82c70843280051495b9b4013f3b42cbd9c1f4b",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:39.266400+00:00",
+  "raw": "{\"lines\":[\"Avant de commencer le mouvement, posez les deux pieds sur le sol.\",\"Relâchez les épaules et regardez tranquillement devant vous.\",\"L'objectif est de bouger lentement, sans tirer la tête vers l'avant.\",\"Si la chaise n'est pas stable, interrompez l'exercice et choisissez un siège plus ferme.\",\"Nous répéterons la même séquence deux fois, puis nous comparerons les sensations du côté droit et du côté gauche.\"]}",
+  "usage": {
+    "promptTokenCount": 297,
+    "candidatesTokenCount": 105
+  },
+  "provider_usage": {
+    "prompt_tokens": 297,
+    "completion_tokens": 105,
+    "total_tokens": 402,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 2.313551165992976,
+  "transport_attempts": 1,
+  "lines": [
+    "Avant de commencer le mouvement, posez les deux pieds sur le sol.",
+    "Relâchez les épaules et regardez tranquillement devant vous.",
+    "L'objectif est de bouger lentement, sans tirer la tête vers l'avant.",
+    "Si la chaise n'est pas stable, interrompez l'exercice et choisissez un siège plus ferme.",
+    "Nous répéterons la même séquence deux fois, puis nous comparerons les sensations du côté droit et du côté gauche."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 11,
+    "f1": 0.5333333333333333,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 113
+  }
+}

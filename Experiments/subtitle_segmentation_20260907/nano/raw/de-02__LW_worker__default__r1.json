@@ -1,0 +1,60 @@
+{
+  "id": "de-02",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=de\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nWenn Sie morgen das Projekt öffnen, sind die ursprünglichen Aufnahmen noch da. Wählen Sie zuerst das Interview aus und gehen Sie zum Beginn der ersten Antwort. Löschen Sie die stille Stelle nicht sofort, nur weil dort niemand spricht. Die Zuschauer brauchen einen Moment, um die Frage richtig zu verstehen. Sobald der erste Schnitt fertig ist, entscheiden wir gemeinsam, an welcher Stelle die Musik einsetzen soll und ob der Schluss noch eine Erklärung braucht.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "412a733d3ef4b11360349dae875276633e8e903e6553ddb4365c8d8183a8ceff",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:29.514428+00:00",
+  "raw": "{\"subtitles\":[\"Wenn Sie morgen das Projekt öffnen, sind die ursprünglichen Aufnahmen noch da.\",\"Wählen Sie zuerst das Interview aus und gehen Sie zum Beginn der ersten Antwort.\",\"Löschen Sie die stille Stelle nicht sofort, nur weil dort niemand spricht.\",\"Die Zuschauer brauchen einen Moment, um die Frage richtig zu verstehen.\",\"Sobald der erste Schnitt fertig ist, entscheiden wir gemeinsam, an welcher Stelle die Musik einsetzen soll und ob der Schluss noch eine Erklärung braucht.\"],\"batch_summary\":\"Text in Sprechabschnitten in timestamp-ähnlicher Subtitelstruktur aufgeteilt; keine inhaltliche Änderung.\"}",
+  "usage": {
+    "promptTokenCount": 303,
+    "candidatesTokenCount": 131
+  },
+  "provider_usage": {
+    "prompt_tokens": 303,
+    "completion_tokens": 131,
+    "total_tokens": 434,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.5757211659947643,
+  "transport_attempts": 1,
+  "lines": [
+    "Wenn Sie morgen das Projekt öffnen, sind die ursprünglichen Aufnahmen noch da.",
+    "Wählen Sie zuerst das Interview aus und gehen Sie zum Beginn der ersten Antwort.",
+    "Löschen Sie die stille Stelle nicht sofort, nur weil dort niemand spricht.",
+    "Die Zuschauer brauchen einen Moment, um die Frage richtig zu verstehen.",
+    "Sobald der erste Schnitt fertig ist, entscheiden wir gemeinsam, an welcher Stelle die Musik einsetzen soll und ob der Schluss noch eine Erklärung braucht."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 11,
+    "f1": 0.5333333333333333,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 154
+  }
+}

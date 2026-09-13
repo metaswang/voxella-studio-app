@@ -1,0 +1,60 @@
+{
+  "id": "ja-04",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=ja\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n「木曜日に会いましょう」と言いましたが、すみません、正しくは金曜日の午後です。木曜日は音響担当者が会場を確認する予定でした。新しい住所は送りましたが、最初のメールの地図には間違いがありました。パン屋の隣の入口を使い、階段で二階へ上がってください。到着したときに鍵がかかっていたら、電話をいただければすぐに下まで迎えに行きます。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "b622ae674c1dd3bae92ab04785e3d998808b6f276bc18b12073c2cb9309455be",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:20.639663+00:00",
+  "raw": "{\"subtitles\":[\"「木曜日に会いましょう」と言いましたが、すみません、正しくは金曜日の午後です。\",\"木曜日は音響担当者が会場を確認する予定でした。\",\"新しい住所は送りましたが、最初のメールの地図には間違いがありました。\",\"パン屋の隣の入口を使い、階段で二階へ上がってください。\",\"到着したときに鍵がかかっていたら、電話をいただければすぐに下まで迎えに行きます。\"],\"batch_summary\":\"文本を分割して字幕行に分けた\"}",
+  "usage": {
+    "promptTokenCount": 334,
+    "candidatesTokenCount": 152
+  },
+  "provider_usage": {
+    "prompt_tokens": 334,
+    "completion_tokens": 152,
+    "total_tokens": 486,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.4128234169984353,
+  "transport_attempts": 1,
+  "lines": [
+    "「木曜日に会いましょう」と言いましたが、すみません、正しくは金曜日の午後です。",
+    "木曜日は音響担当者が会場を確認する予定でした。",
+    "新しい住所は送りましたが、最初のメールの地図には間違いがありました。",
+    "パン屋の隣の入口を使い、階段で二階へ上がってください。",
+    "到着したときに鍵がかかっていたら、電話をいただければすぐに下まで迎えに行きます。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 12,
+    "f1": 0.5,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 5,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 40
+  }
+}

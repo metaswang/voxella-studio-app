@@ -45,7 +45,8 @@ final class GenerationService {
         editor: EditorViewModel,
         onComplete: (@MainActor (MediaAsset) -> Void)? = nil,
         onFailure: (@MainActor () -> Void)? = nil
-    ) -> String {
+    ) throws -> String {
+        try AccountService.shared.requireNewContentAccess()
         let count = max(1, min(4, numImages))
         let baseName = name ?? String(genInput.prompt.prefix(30))
 

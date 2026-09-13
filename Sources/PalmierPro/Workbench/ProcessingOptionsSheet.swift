@@ -25,7 +25,6 @@ struct ProcessingOptionsSheet: View {
     @State private var hasExplicitClipRange = false
     @State private var enableTranslation = false
     @State private var targetLanguageCode = ""
-    @State private var cloudVocalRepairEnabled = CloudVocalRepairSettings.isEnabled
     @State private var didApplyInitialOptions = false
     @State private var storageDestination: TaskStorageDestination = .local
     @State private var computeDestination: TaskComputeDestination = .local
@@ -44,9 +43,8 @@ struct ProcessingOptionsSheet: View {
     private var isSingleFile: Bool { mediaURLs.count == 1 }
     private var continueDisabled: Bool {
         (enableTranslation && targetLanguageCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            || (cloudVocalRepairEnabled && (!account.isSignedIn || !account.isPaid))
             || (
-                (computeDestination == .cloud || cloudVocalRepairEnabled)
+                computeDestination == .cloud
                     && account.isSignedIn
                     && (isLoadingCloudQuota || cloudAccessError != nil || cloudQuota == nil || cloudQuota?.canAfford != true)
             )
@@ -69,7 +67,12 @@ struct ProcessingOptionsSheet: View {
     }
 
     private var continueLabel: String {
-        switch mode {
+        if computeDestination == .local, !localModelPlan.missingItems.isEmpty {
+            return models.isPreparing(localModelPlan)
+                ? "Prepare and transcribe"
+                : "Download and transcribe"
+        }
+        return switch mode {
         case .upload: "Transcribe"
         case .retranscribe: "Re-transcribe and rebuild"
         }
@@ -80,6 +83,10 @@ struct ProcessingOptionsSheet: View {
             storage: allowsCloudStorage ? storageDestination : .local,
             compute: computeDestination
         )
+    }
+
+    private var localModelPlan: LocalModelInstallPlan {
+        models.installPlan(languageCode: languageCode, speakerCount: speakerCount.count)
     }
 
     var body: some View {
@@ -98,8 +105,12 @@ struct ProcessingOptionsSheet: View {
                             advancedSection
                         }
                         placementSection
-                        cloudVocalRepairSection
-                        computeDetail
+                        if computeDestination == .local {
+                            LocalModelRequirementCard(plan: localModelPlan)
+                        }
+                        if computeDestination == .cloud {
+                            cloudComputeCard
+                        }
                         if let cloudAccessError {
                             Text(cloudAccessError)
                                 .font(.system(size: AppTheme.FontSize.xs))
@@ -122,7 +133,6 @@ struct ProcessingOptionsSheet: View {
         }
         .frame(width: 620, height: sheetHeight)
         .background(AppTheme.Background.surfaceColor)
-        .colorScheme(.dark)
         .onAppear { applyInitialOptionsIfNeeded() }
         .task(id: mediaDurationTaskID) { await loadMediaDuration() }
         .task(id: cloudQuotaTaskID) { await loadCloudQuota() }
@@ -139,9 +149,12 @@ struct ProcessingOptionsSheet: View {
 
     private var sheetHeight: CGFloat {
         if isSingleFile, enableClip, showAdvanced {
-            return 920
+            return 720
         }
-        return isSingleFile ? 780 : 720
+        let base = isSingleFile ? 560.0 : 520.0
+        return computeDestination == .local && !localModelPlan.missingItems.isEmpty
+            ? base + 140
+            : base
     }
 
     private var header: some View {
@@ -423,52 +436,10 @@ struct ProcessingOptionsSheet: View {
             }
             cloudPlacementToggle(
                 title: TaskPlacementCopy.processWithTitle,
-                detail: "Transcribe without downloading models to this Mac.",
+                detail: "Transcribe without downloading local resources to this Mac.",
                 isOn: cloudComputeBinding
             )
         }
-    }
-
-    private var cloudVocalRepairSection: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            Toggle(isOn: Binding(
-                get: { cloudVocalRepairEnabled },
-                set: { enabled in
-                    guard enabled == false || (account.isSignedIn && account.isPaid) else { return }
-                    cloudVocalRepairEnabled = enabled
-                    CloudVocalRepairSettings.isEnabled = enabled
-                }
-            )) {
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                    Text("Cloud High-Fidelity Voice Repair")
-                        .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
-                    Text(cloudVocalRepairDetail)
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Text.mutedColor)
-                }
-            }
-            .toggleStyle(.checkbox)
-            .disabled(!account.isSignedIn || !account.isPaid)
-            if let quota = cloudQuota,
-               cloudVocalRepairEnabled,
-               let remaining = quota.affordableMediaSeconds {
-                Text("At the current options, remaining Credits cover about \(CloudUsageEstimate.formatDuration(remaining)).")
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(quota.canAfford ? AppTheme.Text.mutedColor : AppTheme.Status.warningColor)
-            }
-        }
-        .padding(AppTheme.Spacing.mdLg)
-        .background(AppTheme.Background.raisedColor.opacity(0.45), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-        }
-    }
-
-    private var cloudVocalRepairDetail: String {
-        if !account.isSignedIn { return "Sign in to enable cloud high-fidelity voice repair." }
-        if !account.isPaid { return "Upgrade to Starter or higher to enable cloud high-fidelity voice repair." }
-        return "Create a clearer repaired track for playback and audio export. Transcription always uses the untouched master."
     }
 
     private var cloudStorageBinding: Binding<Bool> {
@@ -500,62 +471,6 @@ struct ProcessingOptionsSheet: View {
             }
         }
         .toggleStyle(.checkbox)
-    }
-
-    private var computeDetail: some View {
-        Group {
-            if computeDestination == .local {
-                localComputeCard
-            } else {
-                cloudComputeCard
-            }
-        }
-    }
-
-    private var localComputeCard: some View {
-        let plan = models.installPlan(
-            languageCode: languageCode,
-            speakerCount: speakerCount.count
-        )
-        return VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            Text("Models for this Mac")
-                .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
-            ForEach(plan.items) { item in
-                HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
-                    Image(systemName: item.isInstalled ? "checkmark.circle.fill" : "arrow.down.circle")
-                        .foregroundStyle(item.isInstalled ? AppTheme.Status.successColor : Color.indigo)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.title)
-                            .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
-                        Text("\(item.purpose) · \(item.sizeLabel) · \(item.license)")
-                            .font(.system(size: AppTheme.FontSize.xs))
-                            .foregroundStyle(AppTheme.Text.mutedColor)
-                        if item.requiresLicenseAcceptance, !item.isInstalled, !models.isLicenseAccepted(item.id) {
-                            Text("License acceptance required before download.")
-                                .font(.system(size: AppTheme.FontSize.xs))
-                                .foregroundStyle(AppTheme.Status.warningColor)
-                        }
-                    }
-                    Spacer()
-                }
-            }
-            if speakerCount.count != 1, !models.state(for: .sortformerDiarization).isInstalled {
-                Text(OptionalSpeakerDiarization.unavailableMessage)
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Text.mutedColor)
-            }
-            if !plan.missingItems.isEmpty {
-                Text(plan.additionalDiskSpaceLabel)
-                    .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
-            }
-            Button("Local Models…") {
-                models.presentManager()
-            }
-            .buttonStyle(.borderless)
-            .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
-        }
-        .padding(AppTheme.Spacing.mdLg)
-        .background(AppTheme.Background.raisedColor.opacity(0.55), in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
     }
 
     @ViewBuilder
@@ -665,7 +580,6 @@ struct ProcessingOptionsSheet: View {
         enableTranslation = initialOptions.enableTranslation
             || !(initialOptions.normalizedTargetLanguageCode ?? "").isEmpty
         targetLanguageCode = initialOptions.normalizedTargetLanguageCode ?? ""
-        cloudVocalRepairEnabled = initialOptions.cloudVocalRepairEnabled || CloudVocalRepairSettings.isEnabled
         storageDestination = allowsCloudStorage ? initialPlacement.storage : .local
         computeDestination = initialPlacement.compute
         if let startMs = initialOptions.clipStartMs, let endMs = initialOptions.clipEndMs, endMs > startMs {
@@ -684,8 +598,7 @@ struct ProcessingOptionsSheet: View {
             customTitle: SessionTitlePolicy.normalizedUserTitle(sessionTitle),
             speakerCount: speakerCount,
             enableTranslation: enableTranslation,
-            targetLanguageCode: enableTranslation ? targetLanguageCode : nil,
-            cloudVocalRepairEnabled: cloudVocalRepairEnabled
+            targetLanguageCode: enableTranslation ? targetLanguageCode : nil
         )
         if isSingleFile, enableClip {
             options.clipStartMs = Int((clipRange.lowerBound * 1000).rounded())
@@ -751,7 +664,6 @@ struct ProcessingOptionsSheet: View {
         let duration = requestedCloudDurationSeconds.map { String(format: "%.3f", $0) } ?? "unknown"
         return [
             computeDestination.rawValue,
-            cloudVocalRepairEnabled.description,
             enableTranslation ? targetLanguageCode : "",
             duration,
             account.isSignedIn.description,
@@ -783,7 +695,7 @@ struct ProcessingOptionsSheet: View {
     }
 
     private func loadCloudQuota() async {
-        guard (computeDestination == .cloud || cloudVocalRepairEnabled),
+        guard computeDestination == .cloud,
               account.isSignedIn,
               let duration = requestedCloudDurationSeconds,
               duration.isFinite,
@@ -799,9 +711,9 @@ struct ProcessingOptionsSheet: View {
         do {
             cloudQuota = try await account.cloudTranscriptionQuota(
                 durationSeconds: duration,
-                includesTranslation: computeDestination == .cloud && enableTranslation,
-                includesVocalRepair: cloudVocalRepairEnabled,
-                sourceUsageType: computeDestination == .cloud ? CloudTranscriptionQuota.uploadUsageType : CloudTranscriptionQuota.vocalRepairUsageType
+                includesTranslation: enableTranslation,
+                includesVocalRepair: false,
+                sourceUsageType: CloudTranscriptionQuota.uploadUsageType
             )
         } catch is CancellationError {
             return
@@ -812,7 +724,7 @@ struct ProcessingOptionsSheet: View {
     }
 
     private func refreshCloudQuotaBeforeSubmission() async -> Bool {
-        guard computeDestination == .cloud || cloudVocalRepairEnabled else { return true }
+        guard computeDestination == .cloud else { return true }
         guard let duration = requestedCloudDurationSeconds,
               duration.isFinite,
               duration > 0
@@ -822,9 +734,9 @@ struct ProcessingOptionsSheet: View {
         do {
             let quota = try await account.cloudTranscriptionQuota(
                 durationSeconds: duration,
-                includesTranslation: computeDestination == .cloud && enableTranslation,
-                includesVocalRepair: cloudVocalRepairEnabled,
-                sourceUsageType: computeDestination == .cloud ? CloudTranscriptionQuota.uploadUsageType : CloudTranscriptionQuota.vocalRepairUsageType
+                includesTranslation: enableTranslation,
+                includesVocalRepair: false,
+                sourceUsageType: CloudTranscriptionQuota.uploadUsageType
             )
             cloudQuota = quota
             if !quota.canAfford {
@@ -841,6 +753,13 @@ struct ProcessingOptionsSheet: View {
     private func prepareAndSubmit() async {
         guard !isPreparingCloud else { return }
         cloudAccessError = nil
+        if placement.compute == .local,
+           localModelPlan.missingItems.contains(where: {
+               $0.requiresLicenseAcceptance && !models.isLicenseAccepted($0.id)
+           }) {
+            models.presentManager()
+            return
+        }
         if placement.compute == .local, !permitsBasicTranscription {
             _ = await llmSettings.credentialAvailable()
             guard !TranscriptionAIAccessPromptPolicy.shouldPresent(

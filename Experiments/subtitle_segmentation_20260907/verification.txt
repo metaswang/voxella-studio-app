@@ -1,0 +1,15 @@
+test_all_dp_results_reconstruct_source (test_harness.ContractTests.test_all_dp_results_reconstruct_source) ... ok
+test_candidate_ids_never_split_spaced_words_or_decimal (test_harness.ContractTests.test_candidate_ids_never_split_spaced_words_or_decimal) ... ok
+test_dataset_counts_and_exact_segment_coverage (test_harness.ContractTests.test_dataset_counts_and_exact_segment_coverage) ... ok
+test_dp_accepts_empty_source_without_mutation (test_harness.ContractTests.test_dp_accepts_empty_source_without_mutation) ... ok
+test_dp_preserves_overlong_indivisible_word (test_harness.ContractTests.test_dp_preserves_overlong_indivisible_word) ... ok
+test_empty_and_malformed_outputs_are_rejected (test_harness.ContractTests.test_empty_and_malformed_outputs_are_rejected) ... ok
+test_protected_phrase_metric_detects_demonstrative_and_predicate_split (test_harness.ContractTests.test_protected_phrase_metric_detects_demonstrative_and_predicate_split) ... ok
+test_reconstruction_preserves_internal_whitespace_and_punctuation (test_harness.ContractTests.test_reconstruction_preserves_internal_whitespace_and_punctuation) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.150s
+
+OK
+PASS: 785 complete request receipts, 65 IDs in every main cell; 2059/2210 valid result source maps reconstruct exactly; 65 comparison sections; dataset hash matches.
+Browser visual verification not completed: the in-app browser URL policy blocked the local file URL. No alternate browser route was attempted.

@@ -1,0 +1,59 @@
+{
+  "id": "zh-Hans-02",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n打开项目之后，先找到昨天录制的采访素材，把播放位置移到第一个回答前面。这里有一小段安静的画面，不要因为没有人说话就直接把它删除。观众需要一点时间理解问题，这段停顿也能保留现场气氛。等粗剪完成以后，我们再一起判断音乐从哪里进入，以及结尾是否需要补充说明。保存之前记得检查文件名称，避免把练习版本当成最终成片。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "7c7629013ec87dbcebd84ef9de7f96daff50686490b85b38daa3c0a54daac3b9",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:28.699045+00:00",
+  "raw": "{\n  \"subtitles\": [\n    \"打开项目之后，\",\n    \"先找到昨天录制的采访素材，\",\n    \"把播放位置移到第一个回答前面。\",\n    \"这里有一小段安静的画面，\",\n    \"不要因为没有人说话就直接把它删除。\",\n    \"观众需要一点时间理解问题，\",\n    \"这段停顿也能保留现场气氛。\",\n    \"等粗剪完成以后，\",\n    \"我们再一起判断音乐从哪里进入，\",\n    \"以及结尾是否需要补充说明。\",\n    \"保存之前记得检查文件名称，\",\n    \"避免把练习版本当成最终成片。\"\n  ],\n  \"batch_summary\": \"指导如何处理采访素材的粗剪，包括保留停顿和后续检查文件名。\"\n}",
+  "usage": {
+    "promptTokenCount": 298,
+    "candidatesTokenCount": 174,
+    "totalTokenCount": 472,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 298
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.4018662500020582,
+  "transport_attempts": 1,
+  "lines": [
+    "打开项目之后，",
+    "先找到昨天录制的采访素材，",
+    "把播放位置移到第一个回答前面。",
+    "这里有一小段安静的画面，",
+    "不要因为没有人说话就直接把它删除。",
+    "观众需要一点时间理解问题，",
+    "这段停顿也能保留现场气氛。",
+    "等粗剪完成以后，",
+    "我们再一起判断音乐从哪里进入，",
+    "以及结尾是否需要补充说明。",
+    "保存之前记得检查文件名称，",
+    "避免把练习版本当成最终成片。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 12,
+    "boundaries": 11,
+    "tp": 11,
+    "ref_count": 12,
+    "f1": 0.9565217391304348,
+    "overlong": 0,
+    "short": 1,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 17
+  }
+}

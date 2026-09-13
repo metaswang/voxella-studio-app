@@ -1,0 +1,2525 @@
+[
+  {
+    "id": "en-01",
+    "language": "en",
+    "topic": "workshop",
+    "segments": [
+      {
+        "id": "en-01-s1",
+        "text": "Before we begin the movement, make sure both feet are resting on the floor. Keep your shoulders relaxed and look straight ahead. The aim is to move slowly, without",
+        "speaker": "A"
+      },
+      {
+        "id": "en-01-s2",
+        "text": " pulling your neck forward. If the chair feels unstable, stop and choose a firmer seat. We will repeat the same sequence twice, then compare how the two sides feel.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Before we begin the movement, make sure both feet are resting on the floor. Keep your shoulders relaxed and look straight ahead. The aim is to move slowly, without pulling your neck forward. If the chair feels unstable, stop and choose a firmer seat. We will repeat the same sequence twice, then compare how the two sides feel.",
+    "reference_cuts": [
+      29,
+      75,
+      103,
+      128,
+      155,
+      190,
+      219,
+      250,
+      290
+    ],
+    "protected_phrases": [
+      "look straight ahead",
+      "both feet",
+      "two sides"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "en-02",
+    "language": "en",
+    "topic": "editing",
+    "segments": [
+      {
+        "id": "en-02-s1",
+        "text": "When you open the project tomorrow, the original recordings will still be available. Start by selecting the interview clip, then move the playhead to the first answer. Do not delete the quiet moment",
+        "speaker": "A"
+      },
+      {
+        "id": "en-02-s2",
+        "text": " just because nobody is speaking. That pause gives the audience time to understand the question. Once the rough cut is ready, we can decide where the music should begin.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "When you open the project tomorrow, the original recordings will still be available. Start by selecting the interview clip, then move the playhead to the first answer. Do not delete the quiet moment just because nobody is speaking. That pause gives the audience time to understand the question. Once the rough cut is ready, we can decide where the music should begin.",
+    "reference_cuts": [
+      35,
+      84,
+      123,
+      167,
+      198,
+      231,
+      266,
+      294,
+      323
+    ],
+    "protected_phrases": [
+      "the original recordings",
+      "the first answer",
+      "rough cut"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "en-03",
+    "language": "en",
+    "topic": "numbers",
+    "segments": [
+      {
+        "id": "en-03-s1",
+        "text": "The first prototype weighed 3.5 kilograms, while the second came in at just under three. We measured each sample five times, using the same digital scale. Dr. Patel checked the results b",
+        "speaker": "A"
+      },
+      {
+        "id": "en-03-s2",
+        "text": "efore we sent them to the design team. These figures describe our small trial, so they should not be treated as a prediction for every future unit. The next test will use a larger batch.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "The first prototype weighed 3.5 kilograms, while the second came in at just under three. We measured each sample five times, using the same digital scale. Dr. Patel checked the results before we sent them to the design team. These figures describe our small trial, so they should not be treated as a prediction for every future unit. The next test will use a larger batch.",
+    "reference_cuts": [
+      42,
+      88,
+      124,
+      154,
+      184,
+      224,
+      264,
+      294,
+      333
+    ],
+    "protected_phrases": [
+      "3.5 kilograms",
+      "Dr. Patel",
+      "digital scale"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "en-04",
+    "language": "en",
+    "topic": "negation",
+    "segments": [
+      {
+        "id": "en-04-s1",
+        "text": "I didn't say the new camera was unreliable. I said we hadn't tested it in heavy rain. Those are different claims, and the distinction matters. You can still use it for tomorrow's interview,",
+        "speaker": "A"
+      },
+      {
+        "id": "en-04-s2",
+        "text": " provided that the crew has a dry location. If the weather changes unexpectedly, call the producer before leaving the studio. We would rather adjust the schedule than lose the only recording of the conversation.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "I didn't say the new camera was unreliable. I said we hadn't tested it in heavy rain. Those are different claims, and the distinction matters. You can still use it for tomorrow's interview, provided that the crew has a dry location. If the weather changes unexpectedly, call the producer before leaving the studio. We would rather adjust the schedule than lose the only recording of the conversation.",
+    "reference_cuts": [
+      43,
+      85,
+      113,
+      142,
+      189,
+      232,
+      269,
+      314,
+      350
+    ],
+    "protected_phrases": [
+      "didn't say",
+      "hadn't tested",
+      "the new camera"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "en-05",
+    "language": "en",
+    "topic": "dialogue",
+    "segments": [
+      {
+        "id": "en-05-s1",
+        "text": "She asked, “Are we leaving now?” I told her the train had been delayed, but the station café was still open. We could wait there for a while and check the departure board together. “Tha",
+        "speaker": "A"
+      },
+      {
+        "id": "en-05-s2",
+        "text": "t sounds better,” she said, picking up the small blue suitcase. By the time we reached the platform, the announcement had changed again. We decided to stay close to the information desk.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "She asked, “Are we leaving now?” I told her the train had been delayed, but the station café was still open. We could wait there for a while and check the departure board together. “That sounds better,” she said, picking up the small blue suitcase. By the time we reached the platform, the announcement had changed again. We decided to stay close to the information desk.",
+    "reference_cuts": [
+      32,
+      71,
+      108,
+      140,
+      180,
+      212,
+      248,
+      285,
+      321
+    ],
+    "protected_phrases": [
+      "departure board",
+      "small blue suitcase",
+      "information desk"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-06",
+    "language": "en",
+    "topic": "long_clause",
+    "segments": [
+      {
+        "id": "en-06-s1",
+        "text": "The community garden behind the old library was built by residents who wanted a place where children could learn about growing food without having to travel outside the city. Every Saturday, a different volunteer",
+        "speaker": "A"
+      },
+      {
+        "id": "en-06-s2",
+        "text": " opens the gate and checks the watering system. Visitors can borrow small tools from the shed, but they need to return them before closing. This simple arrangement has kept the garden welcoming and easy to maintain.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "The community garden behind the old library was built by residents who wanted a place where children could learn about growing food without having to travel outside the city. Every Saturday, a different volunteer opens the gate and checks the watering system. Visitors can borrow small tools from the shed, but they need to return them before closing. This simple arrangement has kept the garden welcoming and easy to maintain.",
+    "reference_cuts": [
+      43,
+      85,
+      131,
+      174,
+      212,
+      259,
+      306,
+      351,
+      395
+    ],
+    "protected_phrases": [
+      "community garden",
+      "old library",
+      "watering system"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-07",
+    "language": "en",
+    "topic": "self_correction",
+    "segments": [
+      {
+        "id": "en-07-s1",
+        "text": "We should meet on Thursday, sorry, I mean Friday afternoon. Thursday is when the sound engineer needs to inspect the room. I have already sent the updated address, although the map in the",
+        "speaker": "A"
+      },
+      {
+        "id": "en-07-s2",
+        "text": " first email was wrong. Please use the entrance beside the bakery and take the stairs to the second floor. If the door is locked when you arrive, give me a call and I will come downstairs.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "We should meet on Thursday, sorry, I mean Friday afternoon. Thursday is when the sound engineer needs to inspect the room. I have already sent the updated address, although the map in the first email was wrong. Please use the entrance beside the bakery and take the stairs to the second floor. If the door is locked when you arrive, give me a call and I will come downstairs.",
+    "reference_cuts": [
+      27,
+      59,
+      95,
+      122,
+      163,
+      210,
+      252,
+      293,
+      332
+    ],
+    "protected_phrases": [
+      "sound engineer",
+      "Friday afternoon",
+      "second floor"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-08",
+    "language": "en",
+    "topic": "list",
+    "segments": [
+      {
+        "id": "en-08-s1",
+        "text": "For this exercise, you need a notebook, a pencil, and a small object from your desk. First, describe what the object looks like. Next, explain how someone might use it. Finally, imagine a situation",
+        "speaker": "A"
+      },
+      {
+        "id": "en-08-s2",
+        "text": " in which it would become unexpectedly useful. There is no single correct answer, so focus on making the details clear. When everyone has finished writing, we will read a few examples aloud.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "For this exercise, you need a notebook, a pencil, and a small object from your desk. First, describe what the object looks like. Next, explain how someone might use it. Finally, imagine a situation in which it would become unexpectedly useful. There is no single correct answer, so focus on making the details clear. When everyone has finished writing, we will read a few examples aloud.",
+    "reference_cuts": [
+      39,
+      84,
+      128,
+      168,
+      197,
+      243,
+      278,
+      316,
+      352
+    ],
+    "protected_phrases": [
+      "single correct answer",
+      "small object",
+      "finished writing"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-09",
+    "language": "en",
+    "topic": "proper_names",
+    "segments": [
+      {
+        "id": "en-09-s1",
+        "text": "Maria da Silva joined the research group after working with a museum in São Paulo. Her first task was to catalogue photographs that had never been shown to the public. Some images had dates on the back, whil",
+        "speaker": "A"
+      },
+      {
+        "id": "en-09-s2",
+        "text": "e others carried only a family name. Instead of guessing where they belonged, she kept a separate list of uncertain records. Local residents later helped the museum identify several people in those pictures.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Maria da Silva joined the research group after working with a museum in São Paulo. Her first task was to catalogue photographs that had never been shown to the public. Some images had dates on the back, while others carried only a family name. Instead of guessing where they belonged, she kept a separate list of uncertain records. Local residents later helped the museum identify several people in those pictures.",
+    "reference_cuts": [
+      40,
+      82,
+      126,
+      167,
+      202,
+      243,
+      284,
+      331,
+      371
+    ],
+    "protected_phrases": [
+      "Maria da Silva",
+      "São Paulo",
+      "family name"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-10",
+    "language": "en",
+    "topic": "conditional",
+    "segments": [
+      {
+        "id": "en-10-s1",
+        "text": "If the recording stops before the talk ends, leave the device where it is and write down what happened. Do not press every button at once, because that can make the problem harder to trace.",
+        "speaker": "A"
+      },
+      {
+        "id": "en-10-s2",
+        "text": " The backup recorder should continue running until the audience has left the room. After that, bring both memory cards to the desk. We will check the files together before anyone starts copying them.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "If the recording stops before the talk ends, leave the device where it is and write down what happened. Do not press every button at once, because that can make the problem harder to trace. The backup recorder should continue running until the audience has left the room. After that, bring both memory cards to the desk. We will check the files together before anyone starts copying them.",
+    "reference_cuts": [
+      44,
+      73,
+      103,
+      138,
+      189,
+      233,
+      271,
+      320,
+      353
+    ],
+    "protected_phrases": [
+      "backup recorder",
+      "memory cards",
+      "at once"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-11",
+    "language": "en",
+    "topic": "technical",
+    "segments": [
+      {
+        "id": "en-11-s1",
+        "text": "The application saves a temporary copy whenever you finish a major edit. This copy is stored separately from the version you named yourself. When you reopen the project, the recovery panel explains whi",
+        "speaker": "A"
+      },
+      {
+        "id": "en-11-s2",
+        "text": "ch copy is newer. Read that message before choosing an option. A larger file is not necessarily a more complete version of the work. If neither copy looks right, keep both files for further inspection.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "The application saves a temporary copy whenever you finish a major edit. This copy is stored separately from the version you named yourself. When you reopen the project, the recovery panel explains which copy is newer. Read that message before choosing an option. A larger file is not necessarily a more complete version of the work. If neither copy looks right, keep both files for further inspection.",
+    "reference_cuts": [
+      38,
+      72,
+      103,
+      140,
+      169,
+      218,
+      263,
+      296,
+      333,
+      362
+    ],
+    "protected_phrases": [
+      "temporary copy",
+      "recovery panel",
+      "necessarily"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-12",
+    "language": "en",
+    "topic": "code_switch",
+    "segments": [
+      {
+        "id": "en-12-s1",
+        "text": "The client called the campaign “新生活,” which means a new life in Chinese. We kept that title on the opening card and used an English subtitle below it. During the review, someone suggested",
+        "speaker": "A"
+      },
+      {
+        "id": "en-12-s2",
+        "text": " replacing the title with a shorter slogan. The director asked us to wait until the local team had checked the wording. A phrase that looks neat in the layout may carry a different meaning in another language.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "The client called the campaign “新生活,” which means a new life in Chinese. We kept that title on the opening card and used an English subtitle below it. During the review, someone suggested replacing the title with a shorter slogan. The director asked us to wait until the local team had checked the wording. A phrase that looks neat in the layout may carry a different meaning in another language.",
+    "reference_cuts": [
+      37,
+      72,
+      111,
+      150,
+      187,
+      230,
+      260,
+      306,
+      345
+    ],
+    "protected_phrases": [
+      "新生活",
+      "English subtitle",
+      "local team"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-13",
+    "language": "en",
+    "topic": "abbreviation",
+    "segments": [
+      {
+        "id": "en-13-s1",
+        "text": "The U.S. office sent its notes at 9:30 a.m., just before our weekly planning call. Most comments concerned the final paragraph, not the overall direction of the article. We agreed to check the figures again ",
+        "speaker": "A"
+      },
+      {
+        "id": "en-13-s2",
+        "text": "and explain where the estimates came from. Prof. Lewis offered to review the revised draft, provided that we sent it before Friday. That gave the editor enough time to prepare the next version for discussion.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "The U.S. office sent its notes at 9:30 a.m., just before our weekly planning call. Most comments concerned the final paragraph, not the overall direction of the article. We agreed to check the figures again and explain where the estimates came from. Prof. Lewis offered to review the revised draft, provided that we sent it before Friday. That gave the editor enough time to prepare the next version for discussion.",
+    "reference_cuts": [
+      44,
+      82,
+      127,
+      169,
+      206,
+      249,
+      298,
+      338,
+      371
+    ],
+    "protected_phrases": [
+      "U.S.",
+      "9:30 a.m.",
+      "Prof. Lewis"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-14",
+    "language": "en",
+    "topic": "contrast",
+    "segments": [
+      {
+        "id": "en-14-s1",
+        "text": "The room looked brighter after the walls were painted a pale shade of yellow. It did not become any larger, but people found it easier to move around. We also removed a table near the entrance",
+        "speaker": "A"
+      },
+      {
+        "id": "en-14-s2",
+        "text": " and placed the signs at eye level. These changes were inexpensive, yet they made the space feel more welcoming. Next month, we will ask regular visitors which part of the new arrangement works best.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "The room looked brighter after the walls were painted a pale shade of yellow. It did not become any larger, but people found it easier to move around. We also removed a table near the entrance and placed the signs at eye level. These changes were inexpensive, yet they made the space feel more welcoming. Next month, we will ask regular visitors which part of the new arrangement works best.",
+    "reference_cuts": [
+      40,
+      77,
+      107,
+      150,
+      192,
+      227,
+      259,
+      304,
+      345
+    ],
+    "protected_phrases": [
+      "pale shade",
+      "eye level",
+      "regular visitors"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-15",
+    "language": "en",
+    "topic": "punctuation",
+    "segments": [
+      {
+        "id": "en-15-s1",
+        "text": "The instructions were simple: open the box, remove the protective sheet, and place the panel on a flat surface. There was one warning—keep the cable dry. We read it twice before starting, because t",
+        "speaker": "A"
+      },
+      {
+        "id": "en-15-s2",
+        "text": "he workspace was close to a sink. Everything else went smoothly; the connectors fitted without extra pressure. Once the indicator light turned green, we recorded the result in the installation log.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "The instructions were simple: open the box, remove the protective sheet, and place the panel on a flat surface. There was one warning—keep the cable dry. We read it twice before starting, because the workspace was close to a sink. Everything else went smoothly; the connectors fitted without extra pressure. Once the indicator light turned green, we recorded the result in the installation log.",
+    "reference_cuts": [
+      29,
+      72,
+      111,
+      153,
+      187,
+      230,
+      261,
+      307,
+      346
+    ],
+    "protected_phrases": [
+      "protective sheet",
+      "indicator light",
+      "installation log"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-16",
+    "language": "en",
+    "topic": "phrasal_verbs",
+    "segments": [
+      {
+        "id": "en-16-s1",
+        "text": "Please turn off the desk lamp before you plug in the second monitor. The socket behind the cabinet is loose, so use the power strip beside the window. I will look into the connection problem",
+        "speaker": "A"
+      },
+      {
+        "id": "en-16-s2",
+        "text": " after the presentation has finished. For now, write down any error messages exactly as they appear on the screen. That will help us work out whether the fault is in the cable or the adapter.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Please turn off the desk lamp before you plug in the second monitor. The socket behind the cabinet is loose, so use the power strip beside the window. I will look into the connection problem after the presentation has finished. For now, write down any error messages exactly as they appear on the screen. That will help us work out whether the fault is in the cable or the adapter.",
+    "reference_cuts": [
+      29,
+      68,
+      108,
+      150,
+      190,
+      227,
+      266,
+      304,
+      331
+    ],
+    "protected_phrases": [
+      "turn off",
+      "plug in",
+      "look into",
+      "work out"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-17",
+    "language": "en",
+    "topic": "parenthetical",
+    "segments": [
+      {
+        "id": "en-17-s1",
+        "text": "The north entrance (beside the ticket office) will remain open during the renovation. Visitors with large bags should use that door, since the other corridor is quite narrow. Our staff can show you the tempo",
+        "speaker": "A"
+      },
+      {
+        "id": "en-17-s2",
+        "text": "rary route if you have not visited the building before. The exhibition itself has not moved, although a few signs are being replaced. Please allow a little extra time to reach the gallery on the upper floor.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "The north entrance (beside the ticket office) will remain open during the renovation. Visitors with large bags should use that door, since the other corridor is quite narrow. Our staff can show you the temporary route if you have not visited the building before. The exhibition itself has not moved, although a few signs are being replaced. Please allow a little extra time to reach the gallery on the upper floor.",
+    "reference_cuts": [
+      45,
+      85,
+      132,
+      174,
+      217,
+      262,
+      299,
+      340,
+      373
+    ],
+    "protected_phrases": [
+      "ticket office",
+      "large bags",
+      "upper floor"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-18",
+    "language": "en",
+    "topic": "repetition",
+    "segments": [
+      {
+        "id": "en-18-s1",
+        "text": "At first, I thought the sound was coming from the fan above the kitchen door. Then I listened again, and again, until I noticed the same pattern in every room. It was the old clock in the hallway,",
+        "speaker": "A"
+      },
+      {
+        "id": "en-18-s2",
+        "text": " ticking much louder than I remembered. We moved it away from the microphone and recorded another minute of silence. This time, the background was quiet enough for the interview we had planned.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "At first, I thought the sound was coming from the fan above the kitchen door. Then I listened again, and again, until I noticed the same pattern in every room. It was the old clock in the hallway, ticking much louder than I remembered. We moved it away from the microphone and recorded another minute of silence. This time, the background was quiet enough for the interview we had planned.",
+    "reference_cuts": [
+      40,
+      77,
+      111,
+      159,
+      196,
+      235,
+      272,
+      312,
+      355
+    ],
+    "protected_phrases": [
+      "and again",
+      "old clock",
+      "another minute"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-19",
+    "language": "en",
+    "topic": "mixed_symbols",
+    "segments": [
+      {
+        "id": "en-19-s1",
+        "text": "The label reads “USB-C, 20 W,” but that does not describe every cable in the box. Check the small print on each connector before putting the equipment into separate bags. One bag is marked “A/B t",
+        "speaker": "A"
+      },
+      {
+        "id": "en-19-s2",
+        "text": "est,” and another carries the version number v2.1. Keep those labels exactly as they are. If a label has fallen off, place the item on the review table instead of guessing which kit it belongs to.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "The label reads “USB-C, 20 W,” but that does not describe every cable in the box. Check the small print on each connector before putting the equipment into separate bags. One bag is marked “A/B test,” and another carries the version number v2.1. Keep those labels exactly as they are. If a label has fallen off, place the item on the review table instead of guessing which kit it belongs to.",
+    "reference_cuts": [
+      30,
+      81,
+      121,
+      170,
+      200,
+      245,
+      284,
+      311,
+      346
+    ],
+    "protected_phrases": [
+      "USB-C",
+      "20 W",
+      "A/B test",
+      "v2.1"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "en-20",
+    "language": "en",
+    "topic": "story",
+    "segments": [
+      {
+        "id": "en-20-s1",
+        "text": "By the time the ferry reached the island, the morning fog had begun to lift. A shopkeeper was arranging fresh bread in the window opposite the landing stage. We bought two rolls and asked for directions",
+        "speaker": "A"
+      },
+      {
+        "id": "en-20-s2",
+        "text": " to the footpath along the eastern shore. She drew a quick map on a paper bag, adding a star beside a sheltered beach. That small gesture changed our plans, and we spent the afternoon by the water.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "By the time the ferry reached the island, the morning fog had begun to lift. A shopkeeper was arranging fresh bread in the window opposite the landing stage. We bought two rolls and asked for directions to the footpath along the eastern shore. She drew a quick map on a paper bag, adding a star beside a sheltered beach. That small gesture changed our plans, and we spent the afternoon by the water.",
+    "reference_cuts": [
+      41,
+      76,
+      115,
+      157,
+      202,
+      243,
+      280,
+      320,
+      358
+    ],
+    "protected_phrases": [
+      "fresh bread",
+      "eastern shore",
+      "paper bag"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-01",
+    "language": "zh-Hans",
+    "topic": "截图同类动作讲解",
+    "segments": [
+      {
+        "id": "zh-Hans-01-s1",
+        "text": "先做一个起头的动作，整个把这个髂骨跟肩椎的这个卡住这个关节面先把它打开。这个动作做完之后，后面的动作做会比较顺，它可以把这个这髂骨把它能够自动",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-01-s2",
+        "text": "调整，所以这个动作是很重要的。大家先看清楚示范，然后再按照自己的节奏慢慢跟着做一遍。如果刚才没有看清楚，可以先停下来，等讲解结束以后再重新观察。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "先做一个起头的动作，整个把这个髂骨跟肩椎的这个卡住这个关节面先把它打开。这个动作做完之后，后面的动作做会比较顺，它可以把这个这髂骨把它能够自动调整，所以这个动作是很重要的。大家先看清楚示范，然后再按照自己的节奏慢慢跟着做一遍。如果刚才没有看清楚，可以先停下来，等讲解结束以后再重新观察。",
+    "reference_cuts": [
+      10,
+      17,
+      30,
+      36,
+      45,
+      56,
+      65,
+      74,
+      86,
+      95,
+      105,
+      113,
+      123,
+      130
+    ],
+    "protected_phrases": [
+      "这个",
+      "关节面",
+      "比较顺",
+      "髂骨"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "zh-Hans-02",
+    "language": "zh-Hans",
+    "topic": "剪辑教学",
+    "segments": [
+      {
+        "id": "zh-Hans-02-s1",
+        "text": "打开项目之后，先找到昨天录制的采访素材，把播放位置移到第一个回答前面。这里有一小段安静的画面，不要因为没有人说话就直接把它删除。观众需要一点时间理解问题，",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-02-s2",
+        "text": "这段停顿也能保留现场气氛。等粗剪完成以后，我们再一起判断音乐从哪里进入，以及结尾是否需要补充说明。保存之前记得检查文件名称，避免把练习版本当成最终成片。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "打开项目之后，先找到昨天录制的采访素材，把播放位置移到第一个回答前面。这里有一小段安静的画面，不要因为没有人说话就直接把它删除。观众需要一点时间理解问题，这段停顿也能保留现场气氛。等粗剪完成以后，我们再一起判断音乐从哪里进入，以及结尾是否需要补充说明。保存之前记得检查文件名称，避免把练习版本当成最终成片。",
+    "reference_cuts": [
+      7,
+      20,
+      35,
+      47,
+      56,
+      64,
+      77,
+      90,
+      98,
+      113,
+      126,
+      139
+    ],
+    "protected_phrases": [
+      "采访素材",
+      "现场气氛",
+      "最终成片"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "zh-Hans-03",
+    "language": "zh-Hans",
+    "topic": "数字单位",
+    "segments": [
+      {
+        "id": "zh-Hans-03-s1",
+        "text": "第一批样品的平均重量是三点五千克，第二批则接近三千克。我们使用同一台电子秤，对每个样品分别测量了五次，再把结果记录到表格里。这些数字只代表本",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-03-s2",
+        "text": "次小规模测试，不能直接推断后续所有产品都会出现相同变化。下一轮实验会增加样本数量，同时保留原来的测量方法，这样才能判断差异是否来自材料本身。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "第一批样品的平均重量是三点五千克，第二批则接近三千克。我们使用同一台电子秤，对每个样品分别测量了五次，再把结果记录到表格里。这些数字只代表本次小规模测试，不能直接推断后续所有产品都会出现相同变化。下一轮实验会增加样本数量，同时保留原来的测量方法，这样才能判断差异是否来自材料本身。",
+    "reference_cuts": [
+      10,
+      17,
+      27,
+      38,
+      51,
+      62,
+      77,
+      89,
+      98,
+      111,
+      123,
+      131
+    ],
+    "protected_phrases": [
+      "三点五千克",
+      "电子秤",
+      "小规模测试"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "zh-Hans-04",
+    "language": "zh-Hans",
+    "topic": "否定转折",
+    "segments": [
+      {
+        "id": "zh-Hans-04-s1",
+        "text": "我不是说这台相机不能使用，而是说我们还没有测试过它在大雨中的表现。明天的采访可以照常进行，前提是现场有合适的室内位置。如果天气突然变化，请先联系负责协调的同事，",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-04-s2",
+        "text": "不要到了拍摄地点才临时决定。我们宁可提前调整安排，也不希望唯一一次采访因为准备不足而无法保留。设备清单我已经发到群里，出发前再核对一遍。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "我不是说这台相机不能使用，而是说我们还没有测试过它在大雨中的表现。明天的采访可以照常进行，前提是现场有合适的室内位置。如果天气突然变化，请先联系负责协调的同事，不要到了拍摄地点才临时决定。我们宁可提前调整安排，也不希望唯一一次采访因为准备不足而无法保留。设备清单我已经发到群里，出发前再核对一遍。",
+    "reference_cuts": [
+      13,
+      24,
+      33,
+      45,
+      59,
+      68,
+      80,
+      94,
+      105,
+      115,
+      127,
+      139
+    ],
+    "protected_phrases": [
+      "不是",
+      "不能使用",
+      "大雨",
+      "准备不足"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "zh-Hans-05",
+    "language": "zh-Hans",
+    "topic": "引用对话",
+    "segments": [
+      {
+        "id": "zh-Hans-05-s1",
+        "text": "她问：“我们现在就出发吗？”我告诉她列车暂时晚点，不过车站旁边的咖啡馆还开着，可以在那里等一会儿。“那我们先过去吧。”她一边说，一边拿起放",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-05-s2",
+        "text": "在门口的蓝色行李箱。走到站台的时候，广播里的发车信息又更新了。我们没有继续往前走，而是留在服务台附近，准备确认下一班车到底从哪个站台出发。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "她问：“我们现在就出发吗？”我告诉她列车暂时晚点，不过车站旁边的咖啡馆还开着，可以在那里等一会儿。“那我们先过去吧。”她一边说，一边拿起放在门口的蓝色行李箱。走到站台的时候，广播里的发车信息又更新了。我们没有继续往前走，而是留在服务台附近，准备确认下一班车到底从哪个站台出发。",
+    "reference_cuts": [
+      14,
+      25,
+      39,
+      49,
+      59,
+      64,
+      79,
+      87,
+      100,
+      110,
+      120,
+      128
+    ],
+    "protected_phrases": [
+      "行李箱",
+      "服务台",
+      "发车信息"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-06",
+    "language": "zh-Hans",
+    "topic": "长句稀疏标点",
+    "segments": [
+      {
+        "id": "zh-Hans-06-s1",
+        "text": "住在老图书馆后面的居民希望孩子们不必离开城市也能亲眼观察蔬菜从播种到成熟的整个过程，于是一起把空地改造成了社区花园。每个周六都有志愿者负责开门，",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-06-s2",
+        "text": "并且检查浇水设备是否正常。来访的人可以借用小工具，只要在离开之前把它们放回原来的架子。这种简单的安排持续了很久，也让更多邻居愿意参与。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "住在老图书馆后面的居民希望孩子们不必离开城市也能亲眼观察蔬菜从播种到成熟的整个过程，于是一起把空地改造成了社区花园。每个周六都有志愿者负责开门，并且检查浇水设备是否正常。来访的人可以借用小工具，只要在离开之前把它们放回原来的架子。这种简单的安排持续了很久，也让更多邻居愿意参与。",
+    "reference_cuts": [
+      11,
+      22,
+      30,
+      42,
+      49,
+      58,
+      72,
+      85,
+      97,
+      104,
+      115,
+      128
+    ],
+    "protected_phrases": [
+      "图书馆",
+      "社区花园",
+      "志愿者",
+      "浇水设备"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-07",
+    "language": "zh-Hans",
+    "topic": "口语自我纠正",
+    "segments": [
+      {
+        "id": "zh-Hans-07-s1",
+        "text": "我们星期四下午见，不对，应该是星期五下午，星期四还要等音响师过来检查。我已经把新的地址发给你了，不过第一封邮件里面的地图不对，请以刚刚发送的版本为",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-07-s2",
+        "text": "准。到了以后从面包店旁边进去，再沿着楼梯走到二楼。如果门没有打开，直接给我打电话就行。不要在楼下等太久，我可能正在里面整理设备，听不到走廊里的声音。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "我们星期四下午见，不对，应该是星期五下午，星期四还要等音响师过来检查。我已经把新的地址发给你了，不过第一封邮件里面的地图不对，请以刚刚发送的版本为准。到了以后从面包店旁边进去，再沿着楼梯走到二楼。如果门没有打开，直接给我打电话就行。不要在楼下等太久，我可能正在里面整理设备，听不到走廊里的声音。",
+    "reference_cuts": [
+      9,
+      21,
+      35,
+      48,
+      63,
+      75,
+      88,
+      98,
+      106,
+      116,
+      125,
+      137
+    ],
+    "protected_phrases": [
+      "星期五下午",
+      "音响师",
+      "面包店"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-08",
+    "language": "zh-Hans",
+    "topic": "列举流程",
+    "segments": [
+      {
+        "id": "zh-Hans-08-s1",
+        "text": "今天练习需要准备三样东西：一本笔记本、一支铅笔，以及桌面上随手能拿到的小物件。先描述它的外观，再说明平时可以怎样使用，最后想象一个特殊场景，",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-08-s2",
+        "text": "看看它还能发挥什么作用。这道练习没有唯一正确答案，重点是把细节表达清楚。等大家都写完以后，我们会挑几个例子一起讨论，也欢迎补充与自己经历有关的故事。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "今天练习需要准备三样东西：一本笔记本、一支铅笔，以及桌面上随手能拿到的小物件。先描述它的外观，再说明平时可以怎样使用，最后想象一个特殊场景，看看它还能发挥什么作用。这道练习没有唯一正确答案，重点是把细节表达清楚。等大家都写完以后，我们会挑几个例子一起讨论，也欢迎补充与自己经历有关的故事。",
+    "reference_cuts": [
+      13,
+      24,
+      39,
+      47,
+      59,
+      70,
+      82,
+      95,
+      106,
+      115,
+      128
+    ],
+    "protected_phrases": [
+      "笔记本",
+      "小物件",
+      "正确答案"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-09",
+    "language": "zh-Hans",
+    "topic": "专名地名",
+    "segments": [
+      {
+        "id": "zh-Hans-09-s1",
+        "text": "陈思远加入研究小组之前，曾经在圣保罗的一家博物馆工作。他接到的第一个任务，是整理一批从未公开展出的老照片。有些照片背面写着日期，有些却只留下一个姓氏，",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-09-s2",
+        "text": "无法直接确定拍摄地点。他没有急着给出答案，而是把存疑的信息单独列出来。后来附近的居民来到馆里，帮助工作人员认出了照片中的人物，也补充了许多当年的故事。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "陈思远加入研究小组之前，曾经在圣保罗的一家博物馆工作。他接到的第一个任务，是整理一批从未公开展出的老照片。有些照片背面写着日期，有些却只留下一个姓氏，无法直接确定拍摄地点。他没有急着给出答案，而是把存疑的信息单独列出来。后来附近的居民来到馆里，帮助工作人员认出了照片中的人物，也补充了许多当年的故事。",
+    "reference_cuts": [
+      12,
+      27,
+      37,
+      53,
+      64,
+      75,
+      86,
+      96,
+      110,
+      122,
+      138
+    ],
+    "protected_phrases": [
+      "陈思远",
+      "圣保罗",
+      "博物馆",
+      "工作人员"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-10",
+    "language": "zh-Hans",
+    "topic": "条件说明",
+    "segments": [
+      {
+        "id": "zh-Hans-10-s1",
+        "text": "如果录音在讲座结束前停止，请先保持设备原来的位置，然后记录刚才发生了什么。不要连续按下所有按钮，否则问题可能会更难排查。备用录音机应该继续运行，直到观众全部离开会场。",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-10-s2",
+        "text": "之后再把两张存储卡交到服务台，由负责整理素材的同事一起检查文件是否完整。确认没有遗漏以后，我们才开始复制，并且为每份文件注明来源。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "如果录音在讲座结束前停止，请先保持设备原来的位置，然后记录刚才发生了什么。不要连续按下所有按钮，否则问题可能会更难排查。备用录音机应该继续运行，直到观众全部离开会场。之后再把两张存储卡交到服务台，由负责整理素材的同事一起检查文件是否完整。确认没有遗漏以后，我们才开始复制，并且为每份文件注明来源。",
+    "reference_cuts": [
+      13,
+      25,
+      37,
+      48,
+      60,
+      72,
+      83,
+      98,
+      108,
+      119,
+      128,
+      136
+    ],
+    "protected_phrases": [
+      "录音机",
+      "存储卡",
+      "服务台"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-11",
+    "language": "zh-Hans",
+    "topic": "软件恢复",
+    "segments": [
+      {
+        "id": "zh-Hans-11-s1",
+        "text": "每次完成比较大的修改以后，应用都会保存一份临时副本，它和你自己命名的版本分开放置。重新打开项目时，恢复面板会说明哪份副本更新，请先读完提示再选择。文件体",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-11-s2",
+        "text": "积比较大，并不一定代表内容更加完整。如果两份文件看起来都有问题，先把它们全部保留，不要急着覆盖其中任何一份。我们可以继续检查修改记录，再决定使用哪个版本。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "每次完成比较大的修改以后，应用都会保存一份临时副本，它和你自己命名的版本分开放置。重新打开项目时，恢复面板会说明哪份副本更新，请先读完提示再选择。文件体积比较大，并不一定代表内容更加完整。如果两份文件看起来都有问题，先把它们全部保留，不要急着覆盖其中任何一份。我们可以继续检查修改记录，再决定使用哪个版本。",
+    "reference_cuts": [
+      13,
+      26,
+      41,
+      49,
+      63,
+      73,
+      81,
+      94,
+      108,
+      117,
+      130,
+      143
+    ],
+    "protected_phrases": [
+      "临时副本",
+      "恢复面板",
+      "并不一定"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-12",
+    "language": "zh-Hans",
+    "topic": "中英混合",
+    "segments": [
+      {
+        "id": "zh-Hans-12-s1",
+        "text": "客户把这次活动命名为“New Start”，我们在片头保留了英文标题，并且在下面加上中文说明。评审的时候有人建议，把原来的名字换成更短的口号，这样版面看起来会更整齐。",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-12-s2",
+        "text": "导演希望先听听本地团队的意见，因为相同的文字放在不同语境里，可能会让观众产生不同理解。最终的标题还没有确定，请暂时不要批量替换所有画面。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "客户把这次活动命名为“New Start”，我们在片头保留了英文标题，并且在下面加上中文说明。评审的时候有人建议，把原来的名字换成更短的口号，这样版面看起来会更整齐。导演希望先听听本地团队的意见，因为相同的文字放在不同语境里，可能会让观众产生不同理解。最终的标题还没有确定，请暂时不要批量替换所有画面。",
+    "reference_cuts": [
+      22,
+      35,
+      47,
+      57,
+      71,
+      83,
+      98,
+      113,
+      126,
+      137
+    ],
+    "protected_phrases": [
+      "New Start",
+      "英文标题",
+      "本地团队"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-13",
+    "language": "zh-Hans",
+    "topic": "小数百分比",
+    "segments": [
+      {
+        "id": "zh-Hans-13-s1",
+        "text": "报告里面写的是增长3.5%，不是增加了三十五个百分点。这两个说法看起来接近，实际表达的变化却不一样。我们先把原始数据放到同一张表，再确认比较的时间范围",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-13-s2",
+        "text": "，以及是否包含后来补录的记录。如果口径没有统一，直接比较总数就容易产生误解。图表做好以后，也请把单位标在读者容易看到的位置，不要只放在最后一页的说明里。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "报告里面写的是增长3.5%，不是增加了三十五个百分点。这两个说法看起来接近，实际表达的变化却不一样。我们先把原始数据放到同一张表，再确认比较的时间范围，以及是否包含后来补录的记录。如果口径没有统一，直接比较总数就容易产生误解。图表做好以后，也请把单位标在读者容易看到的位置，不要只放在最后一页的说明里。",
+    "reference_cuts": [
+      14,
+      27,
+      38,
+      50,
+      65,
+      76,
+      90,
+      99,
+      113,
+      120,
+      137
+    ],
+    "protected_phrases": [
+      "3.5%",
+      "三十五个百分点",
+      "原始数据"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-14",
+    "language": "zh-Hans",
+    "topic": "结果对比",
+    "segments": [
+      {
+        "id": "zh-Hans-14-s1",
+        "text": "墙面换成浅黄色以后，房间看起来明亮了一些，但实际使用面积没有增加。我们还移走了入口旁边的桌子，把指示牌放到接近视线的高度。这些调整花费不多，",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-14-s2",
+        "text": "却让第一次来的访客更容易找到自己要去的地方。下个月我们准备收集使用反馈，看看哪些变化确实有帮助，哪些地方仍然让人困惑，再安排下一轮小范围修改。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "墙面换成浅黄色以后，房间看起来明亮了一些，但实际使用面积没有增加。我们还移走了入口旁边的桌子，把指示牌放到接近视线的高度。这些调整花费不多，却让第一次来的访客更容易找到自己要去的地方。下个月我们准备收集使用反馈，看看哪些变化确实有帮助，哪些地方仍然让人困惑，再安排下一轮小范围修改。",
+    "reference_cuts": [
+      10,
+      21,
+      33,
+      47,
+      61,
+      70,
+      79,
+      92,
+      106,
+      118,
+      129
+    ],
+    "protected_phrases": [
+      "浅黄色",
+      "使用面积",
+      "指示牌"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-15",
+    "language": "zh-Hans",
+    "topic": "破折号括号",
+    "segments": [
+      {
+        "id": "zh-Hans-15-s1",
+        "text": "安装说明一共只有三步：打开包装，取下保护膜，再把面板放到平整的桌面上。旁边还有一句提醒——连接线必须保持干燥。我们读了两遍才开始操作，因为工",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-15-s2",
+        "text": "作台离水槽比较近。其余部分进行得很顺利；接头不需要额外用力就能插好。等指示灯变成绿色以后，我们把结果写进安装记录，并且保留包装盒上的型号标签。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "安装说明一共只有三步：打开包装，取下保护膜，再把面板放到平整的桌面上。旁边还有一句提醒——连接线必须保持干燥。我们读了两遍才开始操作，因为工作台离水槽比较近。其余部分进行得很顺利；接头不需要额外用力就能插好。等指示灯变成绿色以后，我们把结果写进安装记录，并且保留包装盒上的型号标签。",
+    "reference_cuts": [
+      11,
+      22,
+      35,
+      45,
+      55,
+      67,
+      79,
+      90,
+      104,
+      115,
+      127
+    ],
+    "protected_phrases": [
+      "保护膜",
+      "连接线",
+      "指示灯"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-16",
+    "language": "zh-Hans",
+    "topic": "动补结构",
+    "segments": [
+      {
+        "id": "zh-Hans-16-s1",
+        "text": "先把桌上的台灯关掉，再接上第二台显示器。柜子后面的插座有些松动，这次使用窗边的插线板。等演示结束以后，我会再查一下连接不稳定的原因。",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-16-s2",
+        "text": "现在如果看到错误提示，请按屏幕上的原文记下来，不要凭印象换一种说法。这些记录能帮助我们判断，问题到底出在线材、接口，还是设备当前的设置里面。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "先把桌上的台灯关掉，再接上第二台显示器。柜子后面的插座有些松动，这次使用窗边的插线板。等演示结束以后，我会再查一下连接不稳定的原因。现在如果看到错误提示，请按屏幕上的原文记下来，不要凭印象换一种说法。这些记录能帮助我们判断，问题到底出在线材、接口，还是设备当前的设置里面。",
+    "reference_cuts": [
+      10,
+      20,
+      32,
+      43,
+      51,
+      66,
+      77,
+      89,
+      100,
+      112,
+      124
+    ],
+    "protected_phrases": [
+      "关掉",
+      "显示器",
+      "插线板",
+      "记下来"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-17",
+    "language": "zh-Hans",
+    "topic": "括号补充",
+    "segments": [
+      {
+        "id": "zh-Hans-17-s1",
+        "text": "北侧入口（售票处旁边）在施工期间仍然开放。带着大件行李的访客请优先使用这扇门，因为另一条走廊比较狭窄。如果以前没有来过，工作人员可以指引临",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-17-s2",
+        "text": "时通道。展览本身的位置没有变化，只有少量标识正在更换。请给自己留出一点额外时间，慢慢走到楼上的展厅，也可以在出发前查看当天发布的参观说明。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "北侧入口（售票处旁边）在施工期间仍然开放。带着大件行李的访客请优先使用这扇门，因为另一条走廊比较狭窄。如果以前没有来过，工作人员可以指引临时通道。展览本身的位置没有变化，只有少量标识正在更换。请给自己留出一点额外时间，慢慢走到楼上的展厅，也可以在出发前查看当天发布的参观说明。",
+    "reference_cuts": [
+      11,
+      21,
+      30,
+      39,
+      51,
+      60,
+      73,
+      85,
+      96,
+      109,
+      119,
+      126
+    ],
+    "protected_phrases": [
+      "售票处",
+      "大件行李",
+      "临时通道"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-18",
+    "language": "zh-Hans",
+    "topic": "重复犹豫",
+    "segments": [
+      {
+        "id": "zh-Hans-18-s1",
+        "text": "一开始我以为那个声音是厨房门上面的风扇发出来的。后来又听了一遍，又听了一遍，才发现每个房间里都有同样规律的响动。原来是走廊上的旧时钟，比我印象中响得多。",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-18-s2",
+        "text": "我们把它挪到远离麦克风的位置，又录了一分钟安静的环境声。这次背景终于足够干净，可以继续原来安排的采访。刚才那段录音也先保留，方便后面比较两次的差别。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "一开始我以为那个声音是厨房门上面的风扇发出来的。后来又听了一遍，又听了一遍，才发现每个房间里都有同样规律的响动。原来是走廊上的旧时钟，比我印象中响得多。我们把它挪到远离麦克风的位置，又录了一分钟安静的环境声。这次背景终于足够干净，可以继续原来安排的采访。刚才那段录音也先保留，方便后面比较两次的差别。",
+    "reference_cuts": [
+      10,
+      24,
+      38,
+      46,
+      56,
+      67,
+      76,
+      91,
+      104,
+      115,
+      127,
+      138
+    ],
+    "protected_phrases": [
+      "又听了一遍",
+      "旧时钟",
+      "麦克风"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-19",
+    "language": "zh-Hans",
+    "topic": "型号符号",
+    "segments": [
+      {
+        "id": "zh-Hans-19-s1",
+        "text": "标签写着“USB-C，20 W”，但这不代表盒子里的每根线都适用于同一种设备。请先检查接头上的小字，再把器材分别装进不同袋子。一个袋子标着“A/B te",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-19-s2",
+        "text": "st”，另一个写着版本号v2.1。这些名称暂时保持原样，不要为了整齐而重新缩写。如果某件器材的标签脱落了，请放到待检查的桌面上，不要猜测它原来属于哪一套。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "标签写着“USB-C，20 W”，但这不代表盒子里的每根线都适用于同一种设备。请先检查接头上的小字，再把器材分别装进不同袋子。一个袋子标着“A/B test”，另一个写着版本号v2.1。这些名称暂时保持原样，不要为了整齐而重新缩写。如果某件器材的标签脱落了，请放到待检查的桌面上，不要猜测它原来属于哪一套。",
+    "reference_cuts": [
+      17,
+      29,
+      39,
+      50,
+      63,
+      80,
+      93,
+      104,
+      116,
+      129,
+      140
+    ],
+    "protected_phrases": [
+      "USB-C",
+      "20 W",
+      "A/B test",
+      "v2.1"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "zh-Hans-20",
+    "language": "zh-Hans",
+    "topic": "叙事",
+    "segments": [
+      {
+        "id": "zh-Hans-20-s1",
+        "text": "渡船靠近小岛的时候，早晨的雾已经开始散去。码头对面的店主正在把新出炉的面包摆进橱窗。我们买了两个面包，顺便询问通往东岸小路的方向。",
+        "speaker": "A"
+      },
+      {
+        "id": "zh-Hans-20-s2",
+        "text": "她拿起纸袋画了一张简单的地图，还在一片避风的沙滩旁边画了一颗小星星。这个小小的举动改变了我们的计划，我们没有继续赶路，而是在海边度过了整个下午。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "渡船靠近小岛的时候，早晨的雾已经开始散去。码头对面的店主正在把新出炉的面包摆进橱窗。我们买了两个面包，顺便询问通往东岸小路的方向。她拿起纸袋画了一张简单的地图，还在一片避风的沙滩旁边画了一颗小星星。这个小小的举动改变了我们的计划，我们没有继续赶路，而是在海边度过了整个下午。",
+    "reference_cuts": [
+      10,
+      21,
+      28,
+      42,
+      51,
+      65,
+      80,
+      91,
+      99,
+      115,
+      124
+    ],
+    "protected_phrases": [
+      "新出炉",
+      "小星星",
+      "整个下午"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "ja-01",
+    "language": "ja",
+    "topic": "動作説明",
+    "segments": [
+      {
+        "id": "ja-01-s1",
+        "text": "動きを始める前に、両足が床についていることを確認してください。肩の力を抜いて、正面をゆっくり見ます。首を前に引っ張るのではなく、無理のない範囲で動かしま",
+        "speaker": "A"
+      },
+      {
+        "id": "ja-01-s2",
+        "text": "す。椅子がぐらつく場合は、いったん中止して安定したものに替えてください。同じ動きを二回繰り返した後、左右で感じ方に違いがあるか落ち着いて確かめましょう。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "動きを始める前に、両足が床についていることを確認してください。肩の力を抜いて、正面をゆっくり見ます。首を前に引っ張るのではなく、無理のない範囲で動かします。椅子がぐらつく場合は、いったん中止して安定したものに替えてください。同じ動きを二回繰り返した後、左右で感じ方に違いがあるか落ち着いて確かめましょう。",
+    "reference_cuts": [
+      9,
+      22,
+      31,
+      39,
+      50,
+      64,
+      78,
+      89,
+      97,
+      112,
+      126,
+      139
+    ],
+    "protected_phrases": [
+      "確認してください",
+      "引っ張る",
+      "繰り返した",
+      "感じ方"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "ja-02",
+    "language": "ja",
+    "topic": "編集解説",
+    "segments": [
+      {
+        "id": "ja-02-s1",
+        "text": "明日プロジェクトを開いても、元の録画はそのまま残っています。最初にインタビューの素材を選び、一つ目の回答の直前まで再生位置を移動してください。誰も話していないからといって、静かな部分をすぐに削除する",
+        "speaker": "A"
+      },
+      {
+        "id": "ja-02-s2",
+        "text": "必要はありません。その間があることで、視聴者は質問の意味を理解しやすくなります。全体の構成ができてから、音楽を入れる位置を考えましょう。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "明日プロジェクトを開いても、元の録画はそのまま残っています。最初にインタビューの素材を選び、一つ目の回答の直前まで再生位置を移動してください。誰も話していないからといって、静かな部分をすぐに削除する必要はありません。その間があることで、視聴者は質問の意味を理解しやすくなります。全体の構成ができてから、音楽を入れる位置を考えましょう。",
+    "reference_cuts": [
+      14,
+      30,
+      46,
+      57,
+      71,
+      86,
+      99,
+      108,
+      118,
+      128,
+      139,
+      151
+    ],
+    "protected_phrases": [
+      "インタビュー",
+      "ありません",
+      "視聴者",
+      "理解しやすく"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "ja-03",
+    "language": "ja",
+    "topic": "数値と固有名詞",
+    "segments": [
+      {
+        "id": "ja-03-s1",
+        "text": "田中美咲さんは、午前九時三十分に届いた資料を会議の前に読み直しました。最初の試作品は3.5キログラムで、二つ目は三キログラム弱でした。どちらも同じ電子はかりで五回",
+        "speaker": "A"
+      },
+      {
+        "id": "ja-03-s2",
+        "text": "ずつ測定しています。ただし、今回の結果だけで今後のすべての製品を評価することはできません。次の試験では試料を増やし、測定方法を変えずに違いが再現されるか調べます。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "田中美咲さんは、午前九時三十分に届いた資料を会議の前に読み直しました。最初の試作品は3.5キログラムで、二つ目は三キログラム弱でした。どちらも同じ電子はかりで五回ずつ測定しています。ただし、今回の結果だけで今後のすべての製品を評価することはできません。次の試験では試料を増やし、測定方法を変えずに違いが再現されるか調べます。",
+    "reference_cuts": [
+      8,
+      22,
+      35,
+      52,
+      67,
+      79,
+      91,
+      103,
+      113,
+      126,
+      139,
+      148
+    ],
+    "protected_phrases": [
+      "田中美咲",
+      "3.5キログラム",
+      "電子はかり",
+      "できません"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "ja-04",
+    "language": "ja",
+    "topic": "言い直しと引用",
+    "segments": [
+      {
+        "id": "ja-04-s1",
+        "text": "「木曜日に会いましょう」と言いましたが、すみません、正しくは金曜日の午後です。木曜日は音響担当者が会場を確認する予定でした。新しい住所は送りましたが、最初のメールの地図には",
+        "speaker": "A"
+      },
+      {
+        "id": "ja-04-s2",
+        "text": "間違いがありました。パン屋の隣の入口を使い、階段で二階へ上がってください。到着したときに鍵がかかっていたら、電話をいただければすぐに下まで迎えに行きます。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "「木曜日に会いましょう」と言いましたが、すみません、正しくは金曜日の午後です。木曜日は音響担当者が会場を確認する予定でした。新しい住所は送りましたが、最初のメールの地図には間違いがありました。パン屋の隣の入口を使い、階段で二階へ上がってください。到着したときに鍵がかかっていたら、電話をいただければすぐに下まで迎えに行きます。",
+    "reference_cuts": [
+      13,
+      26,
+      39,
+      49,
+      62,
+      75,
+      86,
+      96,
+      108,
+      123,
+      140,
+      149
+    ],
+    "protected_phrases": [
+      "木曜日",
+      "金曜日",
+      "音響担当者",
+      "上がってください"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "ja-05",
+    "language": "ja",
+    "topic": "記号と条件",
+    "segments": [
+      {
+        "id": "ja-05-s1",
+        "text": "箱には「USB-C、20 W」と書かれていますが、すべてのケーブルが同じ機器に使えるわけではありません。袋に分ける前に、接続部分の小さな文字を一つずつ確認してください。「",
+        "speaker": "A"
+      },
+      {
+        "id": "ja-05-s2",
+        "text": "A/B test」というラベルやバージョン番号v2.1は、元の表記をそのまま残します。ラベルが外れている場合は、所属を推測して戻すのではなく、確認用の机に置いてください。",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "箱には「USB-C、20 W」と書かれていますが、すべてのケーブルが同じ機器に使えるわけではありません。袋に分ける前に、接続部分の小さな文字を一つずつ確認してください。「A/B test」というラベルやバージョン番号v2.1は、元の表記をそのまま残します。ラベルが外れている場合は、所属を推測して戻すのではなく、確認用の机に置いてください。",
+    "reference_cuts": [
+      16,
+      25,
+      39,
+      52,
+      60,
+      71,
+      84,
+      101,
+      114,
+      128,
+      141,
+      156
+    ],
+    "protected_phrases": [
+      "USB-C",
+      "20 W",
+      "A/B test",
+      "v2.1"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "de-01",
+    "language": "de",
+    "topic": "Bewegung",
+    "segments": [
+      {
+        "id": "de-01-s1",
+        "text": "Bevor wir mit der Bewegung beginnen, stellen Sie beide Füße auf den Boden. Lassen Sie die Schultern locker und schauen Sie geradeaus. Es geht darum, sich langsam zu bewegen, ohne den Kopf nach vorne z",
+        "speaker": "A"
+      },
+      {
+        "id": "de-01-s2",
+        "text": "u ziehen. Falls der Stuhl wackelt, unterbrechen Sie die Übung und wählen Sie einen stabileren Sitz. Wir wiederholen den Ablauf zweimal und vergleichen anschließend, wie sich die beiden Seiten anfühlen.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Bevor wir mit der Bewegung beginnen, stellen Sie beide Füße auf den Boden. Lassen Sie die Schultern locker und schauen Sie geradeaus. Es geht darum, sich langsam zu bewegen, ohne den Kopf nach vorne zu ziehen. Falls der Stuhl wackelt, unterbrechen Sie die Übung und wählen Sie einen stabileren Sitz. Wir wiederholen den Ablauf zweimal und vergleichen anschließend, wie sich die beiden Seiten anfühlen.",
+    "reference_cuts": [
+      36,
+      74,
+      106,
+      133,
+      173,
+      209,
+      234,
+      261,
+      299,
+      334,
+      364
+    ],
+    "protected_phrases": [
+      "beide Füße",
+      "die Schultern",
+      "nach vorne"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "de-02",
+    "language": "de",
+    "topic": "Schnitt",
+    "segments": [
+      {
+        "id": "de-02-s1",
+        "text": "Wenn Sie morgen das Projekt öffnen, sind die ursprünglichen Aufnahmen noch da. Wählen Sie zuerst das Interview aus und gehen Sie zum Beginn der ersten Antwort. Löschen Sie die stille Stelle nicht sofort, nur weil dort niemand spricht.",
+        "speaker": "A"
+      },
+      {
+        "id": "de-02-s2",
+        "text": " Die Zuschauer brauchen einen Moment, um die Frage richtig zu verstehen. Sobald der erste Schnitt fertig ist, entscheiden wir gemeinsam, an welcher Stelle die Musik einsetzen soll und ob der Schluss noch eine Erklärung braucht.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Wenn Sie morgen das Projekt öffnen, sind die ursprünglichen Aufnahmen noch da. Wählen Sie zuerst das Interview aus und gehen Sie zum Beginn der ersten Antwort. Löschen Sie die stille Stelle nicht sofort, nur weil dort niemand spricht. Die Zuschauer brauchen einen Moment, um die Frage richtig zu verstehen. Sobald der erste Schnitt fertig ist, entscheiden wir gemeinsam, an welcher Stelle die Musik einsetzen soll und ob der Schluss noch eine Erklärung braucht.",
+    "reference_cuts": [
+      35,
+      78,
+      114,
+      159,
+      203,
+      234,
+      271,
+      306,
+      343,
+      370,
+      413
+    ],
+    "protected_phrases": [
+      "die ursprünglichen Aufnahmen",
+      "ersten Antwort",
+      "die Musik"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "de-03",
+    "language": "de",
+    "topic": "Zahlen",
+    "segments": [
+      {
+        "id": "de-03-s1",
+        "text": "Dr. Weber hat die Messwerte geprüft, bevor wir sie an das Entwicklungsteam schickten. Der erste Prototyp wog 3,5 Kilogramm, der zweite etwas weniger als drei. Jede Probe wurde fünfmal gewogen, immer mit derselben digitalen Waa",
+        "speaker": "A"
+      },
+      {
+        "id": "de-03-s2",
+        "text": "ge. Die Ergebnisse gelten für diesen kleinen Test, nicht automatisch für alle späteren Produkte. Beim nächsten Versuch erhöhen wir die Anzahl, behalten aber die Messmethode bei. So lässt sich der Unterschied besser beurteilen.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Dr. Weber hat die Messwerte geprüft, bevor wir sie an das Entwicklungsteam schickten. Der erste Prototyp wog 3,5 Kilogramm, der zweite etwas weniger als drei. Jede Probe wurde fünfmal gewogen, immer mit derselben digitalen Waage. Die Ergebnisse gelten für diesen kleinen Test, nicht automatisch für alle späteren Produkte. Beim nächsten Versuch erhöhen wir die Anzahl, behalten aber die Messmethode bei. So lässt sich der Unterschied besser beurteilen.",
+    "reference_cuts": [
+      36,
+      85,
+      123,
+      158,
+      192,
+      229,
+      276,
+      322,
+      368,
+      403
+    ],
+    "protected_phrases": [
+      "Dr. Weber",
+      "3,5 Kilogramm",
+      "digitalen Waage",
+      "Entwicklungsteam"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "de-04",
+    "language": "de",
+    "topic": "Nebensatz",
+    "segments": [
+      {
+        "id": "de-04-s1",
+        "text": "Die Anwohner, die hinter der alten Bibliothek wohnen und schon lange einen Ort suchten, an dem Kinder etwas über Pflanzen lernen können, haben gemeinsam einen Garten angelegt. Jeden Samstag öffnet jemand das Tor und prüft die Bewässerungsanlage.",
+        "speaker": "A"
+      },
+      {
+        "id": "de-04-s2",
+        "text": " Kleine Werkzeuge können ausgeliehen werden, müssen aber vor dem Schließen zurück ins Regal. Diese einfache Regel hilft dabei, den Garten für alle zugänglich zu halten. Neue Besucher werden am Eingang begrüßt.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Die Anwohner, die hinter der alten Bibliothek wohnen und schon lange einen Ort suchten, an dem Kinder etwas über Pflanzen lernen können, haben gemeinsam einen Garten angelegt. Jeden Samstag öffnet jemand das Tor und prüft die Bewässerungsanlage. Kleine Werkzeuge können ausgeliehen werden, müssen aber vor dem Schließen zurück ins Regal. Diese einfache Regel hilft dabei, den Garten für alle zugänglich zu halten. Neue Besucher werden am Eingang begrüßt.",
+    "reference_cuts": [
+      45,
+      87,
+      136,
+      175,
+      211,
+      245,
+      289,
+      337,
+      371,
+      413
+    ],
+    "protected_phrases": [
+      "Bewässerungsanlage",
+      "ausgeliehen werden",
+      "alten Bibliothek"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "de-05",
+    "language": "de",
+    "topic": "Korrektur",
+    "segments": [
+      {
+        "id": "de-05-s1",
+        "text": "Wir treffen uns am Donnerstag, Entschuldigung, ich meine Freitag Nachmittag. Am Donnerstag kommt der Tontechniker, um den Raum vor der Veranstaltung zu prüfen. Die neue Adresse habe ich schon geschickt, aber die Karte in der ersten",
+        "speaker": "A"
+      },
+      {
+        "id": "de-05-s2",
+        "text": " E-Mail war falsch. Bitte benutzen Sie den Eingang neben der Bäckerei und gehen Sie über die Treppe in den zweiten Stock. Wenn die Tür bei Ihrer Ankunft verschlossen ist, rufen Sie mich an. Ich komme dann nach unten und öffne Ihnen.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Wir treffen uns am Donnerstag, Entschuldigung, ich meine Freitag Nachmittag. Am Donnerstag kommt der Tontechniker, um den Raum vor der Veranstaltung zu prüfen. Die neue Adresse habe ich schon geschickt, aber die Karte in der ersten E-Mail war falsch. Bitte benutzen Sie den Eingang neben der Bäckerei und gehen Sie über die Treppe in den zweiten Stock. Wenn die Tür bei Ihrer Ankunft verschlossen ist, rufen Sie mich an. Ich komme dann nach unten und öffne Ihnen.",
+    "reference_cuts": [
+      30,
+      76,
+      114,
+      159,
+      202,
+      250,
+      300,
+      352,
+      401,
+      420
+    ],
+    "protected_phrases": [
+      "Tontechniker",
+      "E-Mail",
+      "zweiten Stock"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "fr-01",
+    "language": "fr",
+    "topic": "Mouvement",
+    "segments": [
+      {
+        "id": "fr-01-s1",
+        "text": "Avant de commencer le mouvement, posez les deux pieds sur le sol. Relâchez les épaules et regardez tranquillement devant vous. L'objectif est de bouger lentement, sans tirer la tête vers l'avant. Si ",
+        "speaker": "A"
+      },
+      {
+        "id": "fr-01-s2",
+        "text": "la chaise n'est pas stable, interrompez l'exercice et choisissez un siège plus ferme. Nous répéterons la même séquence deux fois, puis nous comparerons les sensations du côté droit et du côté gauche.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Avant de commencer le mouvement, posez les deux pieds sur le sol. Relâchez les épaules et regardez tranquillement devant vous. L'objectif est de bouger lentement, sans tirer la tête vers l'avant. Si la chaise n'est pas stable, interrompez l'exercice et choisissez un siège plus ferme. Nous répéterons la même séquence deux fois, puis nous comparerons les sensations du côté droit et du côté gauche.",
+    "reference_cuts": [
+      32,
+      65,
+      86,
+      126,
+      162,
+      195,
+      226,
+      249,
+      284,
+      328,
+      365
+    ],
+    "protected_phrases": [
+      "les deux pieds",
+      "n'est pas",
+      "vers l'avant"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "fr-02",
+    "language": "fr",
+    "topic": "Montage",
+    "segments": [
+      {
+        "id": "fr-02-s1",
+        "text": "Quand vous ouvrirez le projet demain, les enregistrements d'origine seront disponibles. Sélectionnez d'abord l'entretien, puis placez la lecture avant la première réponse. Ne supprimez pas immédiatement le passage calme simplement parce que personne ne parle.",
+        "speaker": "A"
+      },
+      {
+        "id": "fr-02-s2",
+        "text": " Ce silence laisse au public le temps de comprendre la question. Une fois le premier montage terminé, nous déciderons où faire commencer la musique. Nous vérifierons aussi si la conclusion a besoin d'une courte explication supplémentaire.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Quand vous ouvrirez le projet demain, les enregistrements d'origine seront disponibles. Sélectionnez d'abord l'entretien, puis placez la lecture avant la première réponse. Ne supprimez pas immédiatement le passage calme simplement parce que personne ne parle. Ce silence laisse au public le temps de comprendre la question. Une fois le premier montage terminé, nous déciderons où faire commencer la musique. Nous vérifierons aussi si la conclusion a besoin d'une courte explication supplémentaire.",
+    "reference_cuts": [
+      37,
+      87,
+      121,
+      171,
+      219,
+      259,
+      296,
+      323,
+      360,
+      407,
+      447
+    ],
+    "protected_phrases": [
+      "Ne supprimez pas",
+      "la première réponse",
+      "d'origine"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "fr-03",
+    "language": "fr",
+    "topic": "Chiffres",
+    "segments": [
+      {
+        "id": "fr-03-s1",
+        "text": "La première version pesait 3,5 kilogrammes, et la deuxième un peu moins de trois. Nous avons pesé chaque échantillon cinq fois, toujours avec la même balance numérique. Mme Dupont a vérifié les résultats avant leur envoi à l'équipe de",
+        "speaker": "A"
+      },
+      {
+        "id": "fr-03-s2",
+        "text": " conception. Ces chiffres décrivent un essai limité, ils ne prédisent pas tous les futurs produits. La prochaine expérience utilisera plus de pièces, mais gardera la même méthode de mesure. Nous pourrons ainsi comparer les deux séries.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "La première version pesait 3,5 kilogrammes, et la deuxième un peu moins de trois. Nous avons pesé chaque échantillon cinq fois, toujours avec la même balance numérique. Mme Dupont a vérifié les résultats avant leur envoi à l'équipe de conception. Ces chiffres décrivent un essai limité, ils ne prédisent pas tous les futurs produits. La prochaine expérience utilisera plus de pièces, mais gardera la même méthode de mesure. Nous pourrons ainsi comparer les deux séries.",
+    "reference_cuts": [
+      43,
+      81,
+      127,
+      168,
+      203,
+      246,
+      286,
+      333,
+      383,
+      423
+    ],
+    "protected_phrases": [
+      "3,5 kilogrammes",
+      "Mme Dupont",
+      "balance numérique"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "fr-04",
+    "language": "fr",
+    "topic": "Récit",
+    "segments": [
+      {
+        "id": "fr-04-s1",
+        "text": "Elle a demandé : « On part maintenant ? » Je lui ai expliqué que le train avait du retard, mais que le café de la gare était encore ouvert. Nous pouvions y attendre un moment et consulter ensemble le tableau des départs. « C'est une bonne idée », a-t-elle répondu,",
+        "speaker": "A"
+      },
+      {
+        "id": "fr-04-s2",
+        "text": " en prenant la petite valise bleue. Lorsque nous sommes arrivés sur le quai, l'annonce venait encore de changer. Nous avons préféré rester près de l'accueil pour demander une confirmation avant de repartir.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Elle a demandé : « On part maintenant ? » Je lui ai expliqué que le train avait du retard, mais que le café de la gare était encore ouvert. Nous pouvions y attendre un moment et consulter ensemble le tableau des départs. « C'est une bonne idée », a-t-elle répondu, en prenant la petite valise bleue. Lorsque nous sommes arrivés sur le quai, l'annonce venait encore de changer. Nous avons préféré rester près de l'accueil pour demander une confirmation avant de repartir.",
+    "reference_cuts": [
+      41,
+      90,
+      139,
+      174,
+      220,
+      264,
+      299,
+      340,
+      376,
+      420
+    ],
+    "protected_phrases": [
+      "a-t-elle",
+      "petite valise bleue",
+      "tableau des départs"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "fr-05",
+    "language": "fr",
+    "topic": "Consigne",
+    "segments": [
+      {
+        "id": "fr-05-s1",
+        "text": "L'entrée nord, à côté de la billetterie, restera ouverte pendant les travaux. Les visiteurs avec de grands sacs doivent utiliser cette porte, car l'autre couloir est plutôt étroit. Notre équipe peut expliquer le trajet provisoire aux perso",
+        "speaker": "A"
+      },
+      {
+        "id": "fr-05-s2",
+        "text": "nnes qui découvrent le bâtiment. L'exposition n'a pas changé de place, même si quelques panneaux sont remplacés. Prévoyez simplement un peu plus de temps pour atteindre la galerie à l'étage. Le plan sera également affiché près de la porte.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "L'entrée nord, à côté de la billetterie, restera ouverte pendant les travaux. Les visiteurs avec de grands sacs doivent utiliser cette porte, car l'autre couloir est plutôt étroit. Notre équipe peut expliquer le trajet provisoire aux personnes qui découvrent le bâtiment. L'exposition n'a pas changé de place, même si quelques panneaux sont remplacés. Prévoyez simplement un peu plus de temps pour atteindre la galerie à l'étage. Le plan sera également affiché près de la porte.",
+    "reference_cuts": [
+      40,
+      77,
+      111,
+      141,
+      180,
+      229,
+      271,
+      309,
+      351,
+      392,
+      429
+    ],
+    "protected_phrases": [
+      "n'a pas",
+      "de grands sacs",
+      "la billetterie"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "es-01",
+    "language": "es",
+    "topic": "Movimiento",
+    "segments": [
+      {
+        "id": "es-01-s1",
+        "text": "Antes de empezar el movimiento, apoya los dos pies en el suelo. Relaja los hombros y mira despacio hacia delante. La idea es moverse con calma, sin tirar de la cabeza hacia el pecho. Si la",
+        "speaker": "A"
+      },
+      {
+        "id": "es-01-s2",
+        "text": " silla no está estable, interrumpe el ejercicio y busca un asiento más firme. Vamos a repetir la secuencia dos veces y después compararemos las sensaciones del lado derecho y del izquierdo.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Antes de empezar el movimiento, apoya los dos pies en el suelo. Relaja los hombros y mira despacio hacia delante. La idea es moverse con calma, sin tirar de la cabeza hacia el pecho. Si la silla no está estable, interrumpe el ejercicio y busca un asiento más firme. Vamos a repetir la secuencia dos veces y después compararemos las sensaciones del lado derecho y del izquierdo.",
+    "reference_cuts": [
+      31,
+      63,
+      82,
+      113,
+      143,
+      182,
+      211,
+      235,
+      265,
+      304,
+      343
+    ],
+    "protected_phrases": [
+      "los dos pies",
+      "los hombros",
+      "hacia delante"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "es-02",
+    "language": "es",
+    "topic": "Edición",
+    "segments": [
+      {
+        "id": "es-02-s1",
+        "text": "Cuando abras el proyecto mañana, las grabaciones originales seguirán disponibles. Selecciona primero la entrevista y lleva la reproducción al inicio de la respuesta. No borres enseguida el momento de silencio solo porque nadie está hablando.",
+        "speaker": "A"
+      },
+      {
+        "id": "es-02-s2",
+        "text": " Esa pausa permite que el público comprenda la pregunta antes de escuchar la respuesta. Cuando terminemos el primer montaje, decidiremos dónde debe comenzar la música. También revisaremos el final para comprobar si necesita una explicación adicional.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Cuando abras el proyecto mañana, las grabaciones originales seguirán disponibles. Selecciona primero la entrevista y lleva la reproducción al inicio de la respuesta. No borres enseguida el momento de silencio solo porque nadie está hablando. Esa pausa permite que el público comprenda la pregunta antes de escuchar la respuesta. Cuando terminemos el primer montaje, decidiremos dónde debe comenzar la música. También revisaremos el final para comprobar si necesita una explicación adicional.",
+    "reference_cuts": [
+      32,
+      81,
+      114,
+      165,
+      208,
+      241,
+      274,
+      328,
+      365,
+      408,
+      437
+    ],
+    "protected_phrases": [
+      "las grabaciones originales",
+      "No borres",
+      "primer montaje"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "es-03",
+    "language": "es",
+    "topic": "Cifras",
+    "segments": [
+      {
+        "id": "es-03-s1",
+        "text": "El primer prototipo pesaba 3,5 kilogramos, mientras que el segundo pesaba algo menos de tres. Medimos cada muestra cinco veces, siempre con la misma balanza digital. La Dra. García revisó los resultados antes de enviarlos al equipo de diseño. Estas cifr",
+        "speaker": "A"
+      },
+      {
+        "id": "es-03-s2",
+        "text": "as describen una prueba pequeña, así que no representan todos los productos futuros. En el siguiente ensayo aumentaremos las muestras, pero mantendremos el método de medición. Así podremos comparar los resultados sin cambiar varias condiciones a la vez.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "El primer prototipo pesaba 3,5 kilogramos, mientras que el segundo pesaba algo menos de tres. Medimos cada muestra cinco veces, siempre con la misma balanza digital. La Dra. García revisó los resultados antes de enviarlos al equipo de diseño. Estas cifras describen una prueba pequeña, así que no representan todos los productos futuros. En el siguiente ensayo aumentaremos las muestras, pero mantendremos el método de medición. Así podremos comparar los resultados sin cambiar varias condiciones a la vez.",
+    "reference_cuts": [
+      42,
+      93,
+      127,
+      165,
+      202,
+      242,
+      285,
+      337,
+      387,
+      428,
+      465
+    ],
+    "protected_phrases": [
+      "3,5 kilogramos",
+      "Dra. García",
+      "balanza digital"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "es-04",
+    "language": "es",
+    "topic": "Pregunta",
+    "segments": [
+      {
+        "id": "es-04-s1",
+        "text": "Ella preguntó: «¿Salimos ahora?» Le expliqué que el tren llevaba retraso, pero que la cafetería de la estación seguía abierta. Podíamos esperar allí un rato y consultar juntos el panel de salidas. «Me parece bien», respondió,",
+        "speaker": "A"
+      },
+      {
+        "id": "es-04-s2",
+        "text": " mientras recogía la pequeña maleta azul. Cuando llegamos al andén, el anuncio había cambiado otra vez. Decidimos quedarnos cerca del mostrador y pedir una confirmación al personal antes de caminar hacia el otro extremo.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Ella preguntó: «¿Salimos ahora?» Le expliqué que el tren llevaba retraso, pero que la cafetería de la estación seguía abierta. Podíamos esperar allí un rato y consultar juntos el panel de salidas. «Me parece bien», respondió, mientras recogía la pequeña maleta azul. Cuando llegamos al andén, el anuncio había cambiado otra vez. Decidimos quedarnos cerca del mostrador y pedir una confirmación al personal antes de caminar hacia el otro extremo.",
+    "reference_cuts": [
+      32,
+      73,
+      126,
+      156,
+      196,
+      225,
+      266,
+      292,
+      328,
+      368,
+      405
+    ],
+    "protected_phrases": [
+      "¿Salimos ahora?",
+      "pequeña maleta azul",
+      "panel de salidas"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "es-05",
+    "language": "es",
+    "topic": "Corrección",
+    "segments": [
+      {
+        "id": "es-05-s1",
+        "text": "Nos vemos el jueves, perdón, quería decir el viernes por la tarde. El jueves viene el técnico de sonido para comprobar la sala antes de la presentación. Ya te envié la dirección actualizada, pero el mapa del primer correo estaba equivoc",
+        "speaker": "A"
+      },
+      {
+        "id": "es-05-s2",
+        "text": "ado. Entra por la puerta junto a la panadería y sube por las escaleras hasta el segundo piso. Si encuentras la puerta cerrada cuando llegues, llámame por teléfono. Estaré dentro organizando el equipo y bajaré a buscarte en cuanto pueda.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Nos vemos el jueves, perdón, quería decir el viernes por la tarde. El jueves viene el técnico de sonido para comprobar la sala antes de la presentación. Ya te envié la dirección actualizada, pero el mapa del primer correo estaba equivocado. Entra por la puerta junto a la panadería y sube por las escaleras hasta el segundo piso. Si encuentras la puerta cerrada cuando llegues, llámame por teléfono. Estaré dentro organizando el equipo y bajaré a buscarte en cuanto pueda.",
+    "reference_cuts": [
+      20,
+      66,
+      103,
+      152,
+      190,
+      240,
+      281,
+      329,
+      377,
+      399,
+      435
+    ],
+    "protected_phrases": [
+      "técnico de sonido",
+      "segundo piso",
+      "por la tarde"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "pt-BR-01",
+    "language": "pt-BR",
+    "topic": "Movimento",
+    "segments": [
+      {
+        "id": "pt-BR-01-s1",
+        "text": "Antes de começar o movimento, apoie os dois pés no chão. Relaxe os ombros e olhe devagar para a frente. A ideia é se movimentar com calma, sem puxar a cabeça em direção ao peito. Se a cade",
+        "speaker": "A"
+      },
+      {
+        "id": "pt-BR-01-s2",
+        "text": "ira estiver balançando, interrompa o exercício e escolha um assento mais firme. Vamos repetir a mesma sequência duas vezes e depois comparar as sensações do lado direito e do lado esquerdo.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Antes de começar o movimento, apoie os dois pés no chão. Relaxe os ombros e olhe devagar para a frente. A ideia é se movimentar com calma, sem puxar a cabeça em direção ao peito. Se a cadeira estiver balançando, interrompa o exercício e escolha um assento mais firme. Vamos repetir a mesma sequência duas vezes e depois comparar as sensações do lado direito e do lado esquerdo.",
+    "reference_cuts": [
+      29,
+      56,
+      73,
+      103,
+      138,
+      178,
+      211,
+      234,
+      267,
+      310,
+      341
+    ],
+    "protected_phrases": [
+      "os dois pés",
+      "os ombros",
+      "para a frente"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "development"
+  },
+  {
+    "id": "pt-BR-02",
+    "language": "pt-BR",
+    "topic": "Edição",
+    "segments": [
+      {
+        "id": "pt-BR-02-s1",
+        "text": "Quando você abrir o projeto amanhã, as gravações originais ainda estarão disponíveis. Primeiro, selecione a entrevista e leve a reprodução para o início da resposta. Não apague logo o trecho silencioso só porque ninguém está falando.",
+        "speaker": "A"
+      },
+      {
+        "id": "pt-BR-02-s2",
+        "text": " Essa pausa dá ao público um tempo para entender a pergunta antes de ouvir a resposta. Quando o primeiro corte estiver pronto, vamos decidir onde a música deve começar. Também podemos rever o encerramento e verificar se falta alguma explicação.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Quando você abrir o projeto amanhã, as gravações originais ainda estarão disponíveis. Primeiro, selecione a entrevista e leve a reprodução para o início da resposta. Não apague logo o trecho silencioso só porque ninguém está falando. Essa pausa dá ao público um tempo para entender a pergunta antes de ouvir a resposta. Quando o primeiro corte estiver pronto, vamos decidir onde a música deve começar. Também podemos rever o encerramento e verificar se falta alguma explicação.",
+    "reference_cuts": [
+      35,
+      85,
+      118,
+      165,
+      201,
+      233,
+      267,
+      319,
+      359,
+      401,
+      437
+    ],
+    "protected_phrases": [
+      "as gravações originais",
+      "Não apague",
+      "primeiro corte"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "pt-BR-03",
+    "language": "pt-BR",
+    "topic": "Valores",
+    "segments": [
+      {
+        "id": "pt-BR-03-s1",
+        "text": "O primeiro protótipo pesava 3,5 quilogramas, enquanto o segundo ficou um pouco abaixo de três. Medimos cada amostra cinco vezes, sempre usando a mesma balança digital. A Dra. Oliveira conferiu os resultados antes de enviarmos os dados à equipe de c",
+        "speaker": "A"
+      },
+      {
+        "id": "pt-BR-03-s2",
+        "text": "riação. Esses números descrevem um teste pequeno, por isso não representam todos os produtos futuros. Na próxima etapa, vamos ampliar a amostra e manter o mesmo método de medição. Assim, a comparação entre os lotes ficará mais fácil de interpretar.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "O primeiro protótipo pesava 3,5 quilogramas, enquanto o segundo ficou um pouco abaixo de três. Medimos cada amostra cinco vezes, sempre usando a mesma balança digital. A Dra. Oliveira conferiu os resultados antes de enviarmos os dados à equipe de criação. Esses números descrevem um teste pequeno, por isso não representam todos os produtos futuros. Na próxima etapa, vamos ampliar a amostra e manter o mesmo método de medição. Assim, a comparação entre os lotes ficará mais fácil de interpretar.",
+    "reference_cuts": [
+      44,
+      94,
+      128,
+      167,
+      206,
+      255,
+      297,
+      349,
+      391,
+      427,
+      462
+    ],
+    "protected_phrases": [
+      "3,5 quilogramas",
+      "Dra. Oliveira",
+      "balança digital"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "pt-BR-04",
+    "language": "pt-BR",
+    "topic": "Conversa",
+    "segments": [
+      {
+        "id": "pt-BR-04-s1",
+        "text": "Ela perguntou: “A gente vai sair agora?” Expliquei que o trem estava atrasado, mas a cafeteria da estação continuava aberta. Dava para esperar um pouco por lá e olhar juntos o painel de partidas. “Então vamos”, ela respondeu,",
+        "speaker": "A"
+      },
+      {
+        "id": "pt-BR-04-s2",
+        "text": " pegando a pequena mala azul perto da porta. Quando chegamos à plataforma, o aviso tinha mudado de novo. Preferimos ficar perto do balcão de informações e confirmar o horário com um funcionário antes de seguir para o outro lado.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "Ela perguntou: “A gente vai sair agora?” Expliquei que o trem estava atrasado, mas a cafeteria da estação continuava aberta. Dava para esperar um pouco por lá e olhar juntos o painel de partidas. “Então vamos”, ela respondeu, pegando a pequena mala azul perto da porta. Quando chegamos à plataforma, o aviso tinha mudado de novo. Preferimos ficar perto do balcão de informações e confirmar o horário com um funcionário antes de seguir para o outro lado.",
+    "reference_cuts": [
+      40,
+      78,
+      124,
+      158,
+      195,
+      225,
+      269,
+      299,
+      329,
+      377,
+      418
+    ],
+    "protected_phrases": [
+      "A gente",
+      "pequena mala azul",
+      "painel de partidas"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  },
+  {
+    "id": "pt-BR-05",
+    "language": "pt-BR",
+    "topic": "Identificadores",
+    "segments": [
+      {
+        "id": "pt-BR-05-s1",
+        "text": "A etiqueta diz “USB-C, 20 W”, mas isso não descreve todos os cabos da caixa. Confira as letras pequenas nos conectores antes de separar o equipamento em sacolas. Uma sacola está marcada como “A/B test”, e outra traz o número de versão v2.1. Mantenha e",
+        "speaker": "A"
+      },
+      {
+        "id": "pt-BR-05-s2",
+        "text": "ssas etiquetas exatamente como estão. Se alguma delas tiver se soltado, coloque o item na mesa de conferência em vez de adivinhar a qual conjunto pertence. Depois vamos revisar tudo com a equipe e registrar os itens que ainda precisam de identificação.",
+        "speaker": "A"
+      }
+    ],
+    "join_policy": "exact_concatenation",
+    "text": "A etiqueta diz “USB-C, 20 W”, mas isso não descreve todos os cabos da caixa. Confira as letras pequenas nos conectores antes de separar o equipamento em sacolas. Uma sacola está marcada como “A/B test”, e outra traz o número de versão v2.1. Mantenha essas etiquetas exatamente como estão. Se alguma delas tiver se soltado, coloque o item na mesa de conferência em vez de adivinhar a qual conjunto pertence. Depois vamos revisar tudo com a equipe e registrar os itens que ainda precisam de identificação.",
+    "reference_cuts": [
+      29,
+      76,
+      118,
+      161,
+      202,
+      240,
+      288,
+      322,
+      360,
+      406,
+      445
+    ],
+    "protected_phrases": [
+      "USB-C",
+      "20 W",
+      "A/B test",
+      "v2.1"
+    ],
+    "provenance": "assistant-authored synthetic; references not human gold",
+    "split": "evaluation"
+  }
+]

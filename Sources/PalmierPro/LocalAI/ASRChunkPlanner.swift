@@ -26,7 +26,8 @@ enum ASRChunkPlanner {
     static func chunks(
         speechRanges: [ASRSpeechRange],
         audioDuration: Double,
-        configuration: ASRChunkPlannerConfiguration
+        configuration: ASRChunkPlannerConfiguration,
+        allowedRanges: [ASRSpeechRange]? = nil
     ) -> [ASRRecognitionChunk] {
         guard audioDuration.isFinite, audioDuration > 0,
               configuration.maximumWindowDuration.isFinite,
@@ -36,11 +37,25 @@ enum ASRChunkPlanner {
               configuration.maximumMergeGap.isFinite,
               configuration.maximumMergeGap >= 0 else { return [] }
 
-        let normalized = speechRanges.compactMap { range -> ASRSpeechRange? in
+        let normalizedInput = speechRanges.compactMap { range -> ASRSpeechRange? in
             guard range.start.isFinite, range.end.isFinite else { return nil }
             let start = min(audioDuration, max(0, range.start))
             let end = min(audioDuration, max(start, range.end))
             return end > start ? ASRSpeechRange(start: start, end: end) : nil
+        }
+        let allowed = allowedRanges?.compactMap { range -> ASRSpeechRange? in
+            guard range.start.isFinite, range.end.isFinite else { return nil }
+            let start = min(audioDuration, max(0, range.start))
+            let end = min(audioDuration, max(start, range.end))
+            return end > start ? ASRSpeechRange(start: start, end: end) : nil
+        }
+        let normalized = normalizedInput.flatMap { input -> [ASRSpeechRange] in
+            guard let allowed else { return [input] }
+            return allowed.compactMap { bound in
+                let start = max(input.start, bound.start)
+                let end = min(input.end, bound.end)
+                return end > start ? ASRSpeechRange(start: start, end: end) : nil
+            }
         }.sorted {
             $0.start == $1.start ? $0.end < $1.end : $0.start < $1.start
         }
@@ -69,9 +84,14 @@ enum ASRChunkPlanner {
         }
 
         return ownershipRanges.map { ownership in
-            ASRRecognitionChunk(
-                inputStart: max(0, ownership.start - configuration.boundaryContextDuration),
-                inputEnd: min(audioDuration, ownership.end + configuration.boundaryContextDuration),
+            let containingBounds = allowed?.filter {
+                ownership.end > $0.start && ownership.start < $0.end
+            }
+            let allowedStart = containingBounds?.map(\.start).min() ?? 0
+            let allowedEnd = containingBounds?.map(\.end).max() ?? audioDuration
+            return ASRRecognitionChunk(
+                inputStart: max(allowedStart, ownership.start - configuration.boundaryContextDuration),
+                inputEnd: min(allowedEnd, ownership.end + configuration.boundaryContextDuration),
                 ownershipStart: ownership.start,
                 ownershipEnd: ownership.end
             )

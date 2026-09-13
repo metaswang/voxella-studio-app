@@ -24,7 +24,7 @@ enum LocalTranscriptionResourcePolicy {
             case .emptySelection:
                 return "Choose at least one media file."
             case .tooManyFiles(let limit):
-                return "Select at most \(limit) files at a time so local models stay responsive."
+                return "Select at most \(limit) files at a time to keep local processing responsive."
             case .missingFile(let name):
                 return "“\(name)” could not be opened."
             case .thermalPressure:

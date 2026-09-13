@@ -1,0 +1,60 @@
+{
+  "id": "en-19",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language en.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: en\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nThe label reads “USB-C, 20 W,” but that does not describe every cable in the box. Check the small print on each connector before putting the equipment into separate bags. One bag is marked “A/B test,” and another carries the version number v2.1. Keep those labels exactly as they are. If a label has fallen off, place the item on the review table instead of guessing which kit it belongs to.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "d76ae2abdae6161d185f4b07f0e009edac3ab6584d841dc6c61fec711a243aff",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:16.541672+00:00",
+  "raw": "{\"lines\":[\"The label reads “USB-C, 20 W,” but that does not describe every cable in the box.\",\"Check the small print on each connector before putting the equipment into separate bags.\",\"One bag is marked “A/B test,” and another carries the version number v2.1.\",\"Keep those labels exactly as they are.\",\"If a label has fallen off, place the item on the review table instead of guessing which kit it belongs to.\"]}",
+  "usage": {
+    "promptTokenCount": 294,
+    "candidatesTokenCount": 102
+  },
+  "provider_usage": {
+    "prompt_tokens": 294,
+    "completion_tokens": 102,
+    "total_tokens": 396,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.535734584002057,
+  "transport_attempts": 1,
+  "lines": [
+    "The label reads “USB-C, 20 W,” but that does not describe every cable in the box.",
+    "Check the small print on each connector before putting the equipment into separate bags.",
+    "One bag is marked “A/B test,” and another carries the version number v2.1.",
+    "Keep those labels exactly as they are.",
+    "If a label has fallen off, place the item on the review table instead of guessing which kit it belongs to."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 9,
+    "f1": 0.6153846153846153,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 106
+  }
+}

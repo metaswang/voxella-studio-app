@@ -1,0 +1,100 @@
+[
+  {
+    "id": "de-01",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": false,
+    "second_valid": true
+  },
+  {
+    "id": "de-05",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": false,
+    "second_valid": false
+  },
+  {
+    "id": "en-01",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": true,
+    "second_valid": false
+  },
+  {
+    "id": "en-05",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": true,
+    "second_valid": true
+  },
+  {
+    "id": "es-01",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": false,
+    "second_valid": true
+  },
+  {
+    "id": "es-05",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": false,
+    "second_valid": false
+  },
+  {
+    "id": "fr-01",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": false,
+    "second_valid": true
+  },
+  {
+    "id": "fr-05",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": true,
+    "second_valid": true
+  },
+  {
+    "id": "ja-01",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": true,
+    "second_valid": false
+  },
+  {
+    "id": "ja-05",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": false,
+    "second_valid": false
+  },
+  {
+    "id": "pt-BR-01",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": false,
+    "second_valid": false
+  },
+  {
+    "id": "pt-BR-05",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": false,
+    "second_valid": false
+  },
+  {
+    "id": "zh-Hans-01",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": false,
+    "second_valid": false
+  },
+  {
+    "id": "zh-Hans-05",
+    "method": "L1_semantic",
+    "identical": false,
+    "first_valid": false,
+    "second_valid": false
+  }
+]

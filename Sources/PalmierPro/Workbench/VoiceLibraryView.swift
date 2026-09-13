@@ -32,13 +32,14 @@ struct VoiceLibraryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.Background.baseColor)
+        .onDisappear { store.stopPlayback() }
         .sheet(item: $editingReference) { reference in
             VoiceReferenceEditSheet(reference: reference)
         }
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 Text("Voice library")
                     .font(.system(size: AppTheme.FontSize.title2, weight: AppTheme.FontWeight.semibold))
@@ -46,13 +47,13 @@ struct VoiceLibraryView: View {
                     .font(.system(size: AppTheme.FontSize.md))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
-            Spacer()
             HStack(spacing: AppTheme.Spacing.smMd) {
                 summaryBadge("Custom \(store.references.count)", systemImage: "person.crop.circle.badge.checkmark")
                 summaryBadge(
                     "Default \(store.references.filter(\.isDefault).count)",
                     systemImage: "star"
                 )
+                Spacer(minLength: AppTheme.Spacing.sm)
                 Button {
                     withAnimation(.easeInOut(duration: AppTheme.Anim.transition)) {
                         showComposer.toggle()
@@ -150,7 +151,7 @@ struct VoiceLibraryView: View {
                     Text("Built-in")
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                         .foregroundStyle(AppTheme.Status.successColor)
-                    Text("Model default voice")
+                    Text("Default voice")
                         .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
                 }
                 Text("Used when no custom language default or session voice is selected.")
@@ -252,14 +253,19 @@ struct VoiceLibraryView: View {
 
 private struct NewVoiceReferenceComposer: View {
     @Bindable private var store = VoiceLibraryStore.shared
-    @State private var recorder = VoiceRecorderController()
+    @State private var recorder = SpeechInputRecorderController()
+    @State private var recognition = SpeechInputController()
     @State private var name = ""
-    @State private var language = WorkbenchDubLanguage.english
+    @State private var language = WorkbenchDubLanguage.automatic
     @State private var gender = VoiceReferenceGender.female
     @State private var transcript = ""
     @State private var audioURL: URL?
     @State private var audioSource: VoiceReferenceAudioSource = .importedFile
     @State private var avatarURL: URL?
+    @State private var fileSelectionTask: Task<Void, Never>?
+    @State private var generatedScript: String?
+    @State private var detectedLanguageCode: String?
+    @State private var usesRecognizedPrefix = false
     @State private var isSaving = false
 
     let onSaved: () -> Void
@@ -274,15 +280,10 @@ private struct NewVoiceReferenceComposer: View {
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
 
-            HStack(spacing: AppTheme.Spacing.mdLg) {
-                stepCard("STEP 1", title: "Capture reference audio", detail: "Import a clip or record until you choose to stop.")
-                stepCard("STEP 2", title: "Add the spoken script", detail: "Type the exact words or recognize them locally with ASR.")
-            }
-
             HStack(alignment: .top, spacing: AppTheme.Spacing.lgXl) {
                 field("Language") {
                     Picker("Language", selection: $language) {
-                        ForEach(WorkbenchDubLanguage.allCases.filter { $0 != .automatic }) { item in
+                        ForEach(WorkbenchDubLanguage.allCases) { item in
                             Text(item.label).tag(item)
                         }
                     }
@@ -301,11 +302,26 @@ private struct NewVoiceReferenceComposer: View {
                 }
             }
 
+            SpeechInputCaptureView(
+                recorder: recorder, isDisabled: isSaving, title: "Reference audio",
+                detail: "Empty scripts are transcribed locally, up to 10 seconds."
+            )
+
             ReferenceScriptEditor(
+                recognition: recognition,
                 transcript: $transcript,
                 audioURL: audioURL,
-                languageCode: language.rawValue,
-                isDisabled: recorder.isRecording || isSaving
+                onRecognized: { result in
+                    generatedScript = result.text
+                    usesRecognizedPrefix = true
+                    if language == .automatic {
+                        detectedLanguageCode = result.languageCode
+                        if let detected = WorkbenchDubLanguage.detected(from: result.languageCode) {
+                            language = detected
+                        }
+                    }
+                },
+                isDisabled: recorder.isRecording || recorder.isTransitioning || isSaving
             )
 
             HStack(spacing: AppTheme.Spacing.mdLg) {
@@ -333,6 +349,12 @@ private struct NewVoiceReferenceComposer: View {
                     .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
             }
 
+            if usesRecognizedPrefix {
+                Text("The first 10 seconds, or the full clip if shorter, will be saved with this script.")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+            }
+
             HStack(spacing: AppTheme.Spacing.md) {
                 Button {
                     chooseAudio()
@@ -340,20 +362,8 @@ private struct NewVoiceReferenceComposer: View {
                     Label(audioURL == nil ? "Choose file…" : "Replace file…", systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(.borderedProminent)
-                Button {
-                    recorder.isRecording ? recorder.stop() : recorder.start()
-                } label: {
-                    Label(
-                        recorder.isRecording ? "Stop and use recording" : "Start recording",
-                        systemImage: recorder.isRecording ? "stop.circle" : "mic"
-                    )
-                }
-                .buttonStyle(.bordered)
-                if recorder.isRecording {
-                    Text("\(recorder.duration.formatted(.number.precision(.fractionLength(1))))s")
-                        .font(.system(size: AppTheme.FontSize.sm, design: .monospaced))
-                        .foregroundStyle(AppTheme.Status.errorColor)
-                } else if let audioURL {
+                .disabled(isSaving || recorder.isTransitioning)
+                if let audioURL {
                     Label(audioURL.lastPathComponent, systemImage: "waveform")
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -362,20 +372,14 @@ private struct NewVoiceReferenceComposer: View {
                 Spacer()
                 Button("Save reference") { save() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(audioURL == nil || recorder.isRecording || isSaving)
+                    .disabled(audioURL == nil || recorder.isRecording || recorder.isTransitioning || recognition.isRecognizing || isSaving)
             }
 
-            if let error = recorder.errorMessage ?? store.errorMessage {
+            if let error = store.errorMessage {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Status.errorColor)
-                    if recorder.needsMicrophoneSettings {
-                        Button("Open System Settings") {
-                            recorder.openMicrophoneSettings()
-                        }
-                        .buttonStyle(.link)
-                    }
                 }
             }
         }
@@ -387,31 +391,16 @@ private struct NewVoiceReferenceComposer: View {
         }
         .onChange(of: recorder.recordedURL) { _, next in
             if let next {
-                audioURL = next
-                audioSource = .microphoneRecording
+                selectAudio(next, source: .microphoneRecording)
             }
         }
-        .onDisappear { recorder.cancel() }
-    }
-
-    private func stepCard(_ eyebrow: String, title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            Text(eyebrow)
-                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.bold))
-                .tracking(AppTheme.Tracking.wide)
-                .foregroundStyle(AppTheme.Text.mutedColor)
-            Text(title)
-                .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
-            Text(detail)
-                .font(.system(size: AppTheme.FontSize.sm))
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
+        .onChange(of: recorder.isRecording) { _, recording in
+            if recording { selectAudio(nil, source: .microphoneRecording) }
         }
-        .padding(AppTheme.Spacing.lgXl)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.Background.baseColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+        .onDisappear {
+            fileSelectionTask?.cancel()
+            recognition.cancel()
+            recorder.cancel()
         }
     }
 
@@ -425,18 +414,30 @@ private struct NewVoiceReferenceComposer: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private func selectAudio(_ url: URL?, source: VoiceReferenceAudioSource) {
+        recognition.cancel()
+        if transcript == generatedScript { transcript = "" }
+        generatedScript = nil
+        detectedLanguageCode = nil
+        usesRecognizedPrefix = false
+        audioURL = url
+        audioSource = source
+    }
+
     private func chooseAudio() {
-        Task {
+        fileSelectionTask?.cancel()
+        fileSelectionTask = Task {
             if let URL = await WorkbenchFilePicker.pickAudio(title: "Choose a clean voice reference") {
+                guard !Task.isCancelled else { return }
                 recorder.cancel()
-                audioURL = URL
-                audioSource = .importedFile
+                selectAudio(URL, source: .importedFile)
             }
         }
     }
 
     private func chooseAvatar() {
-        Task {
+        fileSelectionTask?.cancel()
+        fileSelectionTask = Task {
             let panel = NSOpenPanel()
             panel.title = "Choose an avatar"
             panel.allowsMultipleSelection = false
@@ -444,6 +445,7 @@ private struct NewVoiceReferenceComposer: View {
             let response = await withCheckedContinuation { continuation in
                 panel.begin { continuation.resume(returning: $0) }
             }
+            guard !Task.isCancelled else { return }
             if response == .OK { avatarURL = panel.url }
         }
     }
@@ -457,12 +459,13 @@ private struct NewVoiceReferenceComposer: View {
             do {
                 _ = try await store.create(VoiceReferenceDraft(
                     name: name,
-                    languageCode: language.rawValue,
+                    languageCode: language.resolvedCode(detectedLanguageCode: detectedLanguageCode),
                     gender: gender,
                     transcript: transcript,
                     sourceAudioURL: audioURL,
                     avatarURL: avatarURL,
-                    source: audioSource
+                    source: audioSource,
+                    usesRecognizedPrefix: usesRecognizedPrefix
                 ))
                 recorder.cancel()
                 onSaved()
@@ -473,92 +476,12 @@ private struct NewVoiceReferenceComposer: View {
     }
 }
 
-@Observable
-@MainActor
-private final class ReferenceScriptRecognitionController {
-    enum State: Equatable {
-        case idle
-        case recognizing(fraction: Double, message: String)
-        case recognized
-        case failed(String)
-    }
-
-    private(set) var state: State = .idle
-    private var task: Task<Void, Never>?
-    private var attemptID: UUID?
-
-    var isRecognizing: Bool {
-        if case .recognizing = state { return true }
-        return false
-    }
-
-    func start(
-        sourceURL: URL,
-        languageCode: String,
-        onRecognized: @escaping @MainActor (String) -> Void
-    ) {
-        guard !isRecognizing else { return }
-        let models = LocalModelManager.shared
-        guard models.hasRequiredTranscriptionModels(languageCode: languageCode, speakerCount: 1) else {
-            state = .failed("Install the local ASR, alignment, and voice-activity models to recognize this script.")
-            models.presentManager()
-            return
-        }
-
-        let currentAttemptID = UUID()
-        attemptID = currentAttemptID
-        state = .recognizing(fraction: 0, message: "Preparing local recognition…")
-        task = Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let text = try await VoiceReferenceScriptRecognizer.shared.recognize(
-                    sourceURL: sourceURL,
-                    languageCode: languageCode,
-                    progress: { [weak self] update in
-                        Task { @MainActor in
-                            guard let self, self.attemptID == currentAttemptID else { return }
-                            self.state = .recognizing(
-                                fraction: update.fraction,
-                                message: update.message
-                            )
-                        }
-                    }
-                )
-                try Task.checkCancellation()
-                guard attemptID == currentAttemptID else { return }
-                onRecognized(text)
-                state = .recognized
-                attemptID = nil
-                task = nil
-            } catch is CancellationError {
-                guard attemptID == currentAttemptID else { return }
-                state = .idle
-                attemptID = nil
-                task = nil
-            } catch {
-                guard attemptID == currentAttemptID else { return }
-                state = .failed(error.localizedDescription)
-                attemptID = nil
-                task = nil
-            }
-        }
-    }
-
-    func cancel(resetState: Bool = true) {
-        task?.cancel()
-        task = nil
-        attemptID = nil
-        if resetState { state = .idle }
-    }
-}
-
 private struct ReferenceScriptEditor: View {
+    @Bindable var recognition: SpeechInputController
     @Binding var transcript: String
     let audioURL: URL?
-    let languageCode: String
+    var onRecognized: (SpeechInputResult) -> Void = { _ in }
     var isDisabled = false
-
-    @State private var recognition = ReferenceScriptRecognitionController()
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
@@ -584,7 +507,7 @@ private struct ReferenceScriptEditor: View {
                         .allowsHitTesting(false)
                 }
             }
-            .frame(minHeight: 72, maxHeight: 120)
+            .frame(minHeight: AppTheme.EditorPanel.textEditorMinHeight, maxHeight: AppTheme.SpeechInput.scriptMaxHeight)
             .background(AppTheme.Background.baseColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
             .overlay {
                 RoundedRectangle(cornerRadius: AppTheme.Radius.md)
@@ -592,8 +515,17 @@ private struct ReferenceScriptEditor: View {
             }
 
             statusView
+                .font(.system(size: AppTheme.FontSize.xs))
         }
-        .onChange(of: audioURL) { _, _ in recognition.cancel() }
+        .onChange(of: audioURL) { _, next in
+            recognition.cancel()
+            if next != nil, transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                recognize()
+            }
+        }
+        .onChange(of: transcript) { _, _ in
+            if recognition.isRecognizing { recognition.cancel() }
+        }
         .onDisappear { recognition.cancel() }
     }
 
@@ -624,7 +556,7 @@ private struct ReferenceScriptEditor: View {
         case .idle:
             if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Label(
-                    "For higher-fidelity voice cloning, enter the spoken script or click Recognize.",
+                    "Enter the spoken words or choose Recognize.",
                     systemImage: "exclamationmark.circle.fill"
                 )
                 .foregroundStyle(AppTheme.Status.warningColor)
@@ -633,9 +565,14 @@ private struct ReferenceScriptEditor: View {
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
         case .recognizing(let fraction, let message):
+            if !recognition.partialText.isEmpty {
+                Text(recognition.partialText)
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                    .lineLimit(3)
+            }
             HStack(spacing: AppTheme.Spacing.smMd) {
                 ProgressView(value: fraction)
-                    .frame(width: 120)
+                    .frame(width: AppTheme.SpeechInput.progressWidth)
                 Text(message)
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
@@ -643,15 +580,22 @@ private struct ReferenceScriptEditor: View {
             Label("Recognized locally. Review the script before saving.", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(AppTheme.Status.successColor)
         case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(AppTheme.Status.errorColor)
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(AppTheme.Status.errorColor)
+                Button("Manage local features…") { SettingsWindowController.shared.show(tab: .models) }
+                    .buttonStyle(.link)
+            }
         }
     }
 
     private func recognize() {
         guard let audioURL else { return }
-        recognition.start(sourceURL: audioURL, languageCode: languageCode) { recognizedText in
-            transcript = recognizedText
+        let originalText = transcript
+        recognition.start(sourceURL: audioURL) { result in
+            guard transcript == originalText else { return }
+            transcript = result.text
+            onRecognized(result)
         }
     }
 }
@@ -664,10 +608,12 @@ private struct VoiceReferenceEditSheet: View {
     @State private var language: WorkbenchDubLanguage
     @State private var gender: VoiceReferenceGender
     @State private var transcript: String
+    @State private var recognition: SpeechInputController
     @State private var isSaving = false
 
     init(reference: LocalVoiceReference) {
         self.reference = reference
+        _recognition = State(initialValue: Self.recognitionController(languageCode: reference.languageCode))
         _name = State(initialValue: reference.name)
         _language = State(initialValue: WorkbenchDubLanguage(rawValue: reference.languageCode) ?? .english)
         _gender = State(initialValue: reference.gender)
@@ -680,7 +626,7 @@ private struct VoiceReferenceEditSheet: View {
                 .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.semibold))
             TextField("Name", text: $name)
             Picker("Language", selection: $language) {
-                ForEach(WorkbenchDubLanguage.allCases.filter { $0 != .automatic }) { item in
+                ForEach(WorkbenchDubLanguage.allCases) { item in
                     Text(item.label).tag(item)
                 }
             }
@@ -690,9 +636,9 @@ private struct VoiceReferenceEditSheet: View {
                 }
             }
             ReferenceScriptEditor(
+                recognition: recognition,
                 transcript: $transcript,
                 audioURL: store.audioURL(for: reference),
-                languageCode: language.rawValue,
                 isDisabled: isSaving
             )
             HStack {
@@ -717,19 +663,34 @@ private struct VoiceReferenceEditSheet: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(isSaving)
+                .disabled(isSaving || recognition.isRecognizing)
             }
         }
         .padding(AppTheme.Spacing.xlXxl)
         .frame(width: AppTheme.Workbench.compactPanelWidth)
+        .onChange(of: language) { _, next in
+            recognition.cancel()
+            recognition = Self.recognitionController(languageCode: next.rawValue)
+        }
     }
+    private static func recognitionController(languageCode: String) -> SpeechInputController {
+        SpeechInputController { url, progress in
+            let result = try await LocalSpeechPipeline.shared.transcribe(
+                sourceURL: url, languageCode: languageCode == "auto" ? nil : languageCode,
+                speakerCount: 1, progressUpdate: progress
+            )
+            guard let engine = result.asrEngine else { throw LocalAIError.emptyTranscript }
+            return SpeechInputResult(text: result.text, languageCode: result.language, engine: engine)
+        }
+    }
+
 }
 
 struct VoiceReferencePicker: View {
     @Bindable private var store = VoiceLibraryStore.shared
     @Binding var selection: UUID?
     var languageCode: String
-    var defaultLabel = "Model default voice"
+    var defaultLabel = "Default voice"
     var onManage: (() -> Void)?
 
     private var options: [LocalVoiceReference] {
@@ -840,7 +801,7 @@ struct VoiceReferenceSelectionPanel: View {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                         Text("Automatic voice")
                             .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
-                        Text(automaticReference.map { "Language default · \($0.name)" } ?? "Qwen model default voice")
+                        Text(automaticReference.map { "Language default · \($0.name)" } ?? "Default voice")
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.mutedColor)
                     }

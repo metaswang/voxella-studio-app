@@ -1,0 +1,28 @@
+{"done": 15, "total": 353, "id": "en-03", "method": "LW_worker", "valid": true, "error": null}
+{"done": 30, "total": 353, "id": "en-06", "method": "L0_app", "valid": true, "error": null}
+{"done": 45, "total": 353, "id": "en-09", "method": "L0_app", "valid": true, "error": null}
+{"done": 60, "total": 353, "id": "en-12", "method": "L0_app", "valid": true, "error": null}
+{"done": 75, "total": 353, "id": "en-15", "method": "L0_app", "valid": true, "error": null}
+{"done": 90, "total": 353, "id": "en-18", "method": "L0_app", "valid": true, "error": null}
+{"done": 105, "total": 353, "id": "zh-Hans-01", "method": "L0_app", "valid": true, "error": null}
+{"done": 120, "total": 353, "id": "zh-Hans-03", "method": "L2_ids", "valid": true, "error": null}
+{"done": 135, "total": 353, "id": "zh-Hans-06", "method": "L1_semantic", "valid": true, "error": null}
+{"done": 150, "total": 353, "id": "zh-Hans-09", "method": "LW_worker", "valid": true, "error": null}
+{"done": 165, "total": 353, "id": "zh-Hans-12", "method": "L1_semantic", "valid": true, "error": null}
+{"done": 180, "total": 353, "id": "zh-Hans-15", "method": "LW_worker", "valid": true, "error": null}
+{"done": 187, "total": 353, "id": "zh-Hans-16", "method": "L1_semantic", "valid": false, "error": null}
+{"done": 195, "total": 353, "id": "zh-Hans-18", "method": "L1_semantic", "valid": true, "error": null}
+{"done": 210, "total": 353, "id": "ja-01", "method": "LW_worker", "valid": false, "error": null}
+{"done": 222, "total": 353, "id": "ja-03", "method": "LW_worker", "valid": false, "error": null}
+{"done": 225, "total": 353, "id": "ja-03", "method": "L2_ids", "valid": true, "error": null}
+{"done": 240, "total": 353, "id": "de-01", "method": "L1_semantic", "valid": true, "error": null}
+{"done": 255, "total": 353, "id": "de-04", "method": "L0_app", "valid": true, "error": null}
+{"done": 270, "total": 353, "id": "fr-01", "method": "L2_ids", "valid": true, "error": null}
+{"done": 285, "total": 353, "id": "fr-04", "method": "LW_worker", "valid": true, "error": null}
+{"done": 300, "total": 353, "id": "es-01", "method": "L2_ids", "valid": true, "error": null}
+{"done": 315, "total": 353, "id": "es-04", "method": "L2_ids", "valid": true, "error": null}
+{"done": 327, "total": 353, "id": "pt-BR-01", "method": "LW_worker", "valid": false, "error": "Expecting ',' delimiter: line 1 column 81 (char 80)"}
+{"done": 330, "total": 353, "id": "pt-BR-01", "method": "L1_semantic", "valid": true, "error": null}
+{"done": 333, "total": 353, "id": "pt-BR-02", "method": "LW_worker", "valid": false, "error": null}
+{"done": 345, "total": 353, "id": "pt-BR-04", "method": "L2_ids", "valid": true, "error": null}
+{"finished": 353, "wall_s": 135.25049008300266}

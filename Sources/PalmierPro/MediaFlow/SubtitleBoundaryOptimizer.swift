@@ -80,6 +80,44 @@ enum SubtitleBoundaryOptimizer {
         let chars = Array(sourceText)
         let n = chars.count
         guard n > 0 else { return Result(lines: [], projection: projection, forcedBoundaries: 0) }
+
+        let proposed = proposedLines.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let displayCount: (String) -> Int = { line in
+            dense ? line.filter { !$0.isWhitespace }.count : line.count
+        }
+
+        // Preserve a valid single cue, including punctuation introduced by the
+        // correction pass. The optimizer should not manufacture a split merely
+        // because a terminal punctuation mark has a high score.
+        if proposed.count == 1, displayCount(proposed[0]) <= maximum {
+            return Result(lines: proposed, projection: projection, forcedBoundaries: 0)
+        }
+
+        // When every proposed boundary can be projected onto the source, keep
+        // those boundaries whenever they already satisfy the display budget.
+        // This retains the LLM's readable grouping while still repairing text
+        // changes by taking the corresponding source slices.
+        if proposed.count > 1,
+           projection.matchedLines == proposed.count,
+           projection.skippedLines == 0,
+           projection.offsets.count == proposed.count - 1 {
+            var projectedLines: [String] = []
+            var start = 0
+            for end in projection.offsets + [n] {
+                let line = String(chars[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !line.isEmpty, displayCount(line) <= maximum else {
+                    projectedLines.removeAll()
+                    break
+                }
+                projectedLines.append(line)
+                start = end
+            }
+            if projectedLines.count == proposed.count {
+                return Result(lines: projectedLines, projection: projection, forcedBoundaries: 0)
+            }
+        }
+
         var positions: [Int: Int] = [0: 0]
         var utf16Offset = 0
         for (index, char) in chars.enumerated() {

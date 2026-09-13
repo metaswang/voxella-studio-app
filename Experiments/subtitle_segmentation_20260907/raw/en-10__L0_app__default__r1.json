@@ -1,0 +1,65 @@
+{
+  "id": "en-10",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language en.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: en\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nIf the recording stops before the talk ends, leave the device where it is and write down what happened. Do not press every button at once, because that can make the problem harder to trace. The backup recorder should continue running until the audience has left the room. After that, bring both memory cards to the desk. We will check the files together before anyone starts copying them.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "9a35dee5f1e97871b2b0f40840d48ae98054ae4049b2d5ad0590edfd5b2460b0",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:05.074109+00:00",
+  "raw": "{\n  \"lines\": [\n    \"If the recording stops before the talk ends,\",\n    \"leave the device where it is and write down\",\n    \"what happened. Do not press every button at\",\n    \"once, because that can make the problem\",\n    \"harder to trace. The backup recorder should\",\n    \"continue running until the audience has left\",\n    \"the room. After that, bring both memory\",\n    \"cards to the desk. We will check the files\",\n    \"together before anyone starts copying them.\"\n  ]\n}",
+  "usage": {
+    "promptTokenCount": 295,
+    "candidatesTokenCount": 123,
+    "totalTokenCount": 418,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 295
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.0886727920005796,
+  "transport_attempts": 1,
+  "lines": [
+    "If the recording stops before the talk ends,",
+    "leave the device where it is and write down",
+    "what happened. Do not press every button at",
+    "once, because that can make the problem",
+    "harder to trace. The backup recorder should",
+    "continue running until the audience has left",
+    "the room. After that, bring both memory",
+    "cards to the desk. We will check the files",
+    "together before anyone starts copying them."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 9,
+    "boundaries": 8,
+    "tp": 1,
+    "ref_count": 9,
+    "f1": 0.11764705882352941,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 2,
+    "violations": [
+      {
+        "phrase": "memory cards",
+        "cut": 302
+      },
+      {
+        "phrase": "at once",
+        "cut": 133
+      }
+    ],
+    "punctuation_starts": 0,
+    "max_length": 44
+  }
+}

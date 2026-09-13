@@ -1,0 +1,61 @@
+{
+  "id": "ja-04",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language ja.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: ja\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n「木曜日に会いましょう」と言いましたが、すみません、正しくは金曜日の午後です。木曜日は音響担当者が会場を確認する予定でした。新しい住所は送りましたが、最初のメールの地図には間違いがありました。パン屋の隣の入口を使い、階段で二階へ上がってください。到着したときに鍵がかかっていたら、電話をいただければすぐに下まで迎えに行きます。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "c61a4d84526c0d9c913d4954c7159ae03aa09b354ac1f49bc53efaaa2d69fafe",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:12.285061+00:00",
+  "raw": "{\n  \"lines\": [\n    \"「木曜日に会いましょう」\",\n    \"と言いましたが、すみません、\",\n    \"正しくは金曜日の午後です。\",\n    \"木曜日は音響担当者が\",\n    \"会場を確認する予定でした。\",\n    \"新しい住所は送りましたが、\",\n    \"最初のメールの地図には\",\n    \"間違いがありました。\",\n    \"パン屋の隣の入口を使い、\",\n    \"階段で二階へ上がってください。\",\n    \"到着したときに\",\n    \"鍵がかかっていたら、\",\n    \"電話をいただければ\",\n    \"すぐに下まで迎えに行きます。\"\n  ]\n}",
+  "usage": {
+    "promptTokenCount": 304,
+    "candidatesTokenCount": 149,
+    "totalTokenCount": 453,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 304
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.216847791998589,
+  "transport_attempts": 1,
+  "lines": [
+    "「木曜日に会いましょう」",
+    "と言いましたが、すみません、",
+    "正しくは金曜日の午後です。",
+    "木曜日は音響担当者が",
+    "会場を確認する予定でした。",
+    "新しい住所は送りましたが、",
+    "最初のメールの地図には",
+    "間違いがありました。",
+    "パン屋の隣の入口を使い、",
+    "階段で二階へ上がってください。",
+    "到着したときに",
+    "鍵がかかっていたら、",
+    "電話をいただければ",
+    "すぐに下まで迎えに行きます。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 14,
+    "boundaries": 13,
+    "tp": 11,
+    "ref_count": 12,
+    "f1": 0.8799999999999999,
+    "overlong": 0,
+    "short": 1,
+    "protected_total": 5,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 15
+  }
+}

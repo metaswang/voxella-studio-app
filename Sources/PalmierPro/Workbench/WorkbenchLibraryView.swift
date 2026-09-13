@@ -4,22 +4,23 @@ import UniformTypeIdentifiers
 
 struct WorkbenchLibraryView: View {
     @Bindable private var store = WorkbenchStore.shared
+    @Bindable private var voiceInputShortcut = VoiceInputShortcutPreferences.shared
     @State private var sessionPendingDeletion: WorkbenchSession?
 
-    private let columns = [GridItem(.adaptive(minimum: 210, maximum: 320), spacing: 14)]
+    private let columns = [GridItem(.adaptive(minimum: 210, maximum: 320), spacing: AppTheme.Spacing.lg)]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                     Text(L10n.string("Create"))
-                        .font(.system(size: 28, weight: .light))
+                        .font(.system(size: AppTheme.FontSize.title2, weight: .light))
                     Text(L10n.string("Choose a task to turn media into text, voice, or a finished video."))
                         .font(.system(size: AppTheme.FontSize.md))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
 
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: AppTheme.Spacing.lg) {
                     actionCard(
                         title: L10n.string("Transcribe media"),
                         detail: L10n.string("Turn audio or video into an editable transcript, translation, and captions."),
@@ -65,6 +66,28 @@ struct WorkbenchLibraryView: View {
                     ) {
                         store.route = .videoEditor
                     }
+                    actionCard(
+                        title: L10n.string("Dictation"),
+                        detail: String(
+                            format: L10n.string("Press %@ to speak into any app."),
+                            voiceInputShortcut.option.label
+                        ),
+                        icon: "mic.fill",
+                        tint: .teal
+                    ) {
+                        VoiceInputCoordinator.shared.present()
+                    }
+                    actionCard(
+                        title: L10n.string("Meeting Recorder"),
+                        detail: String(
+                            format: L10n.string("Send a notetaker to Meet, Teams, or Zoom. Requires a %@ plan or higher."),
+                            AccountFeature.meetBot.minimumPlan.upgradeLabel
+                        ),
+                        icon: "calendar.badge.clock",
+                        tint: AppTheme.Accent.meetingBotBadge
+                    ) {
+                        store.route = .meetBot
+                    }
                 }
 
                 if !store.sessions.isEmpty {
@@ -108,10 +131,11 @@ struct WorkbenchLibraryView: View {
                         .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
                 }
             }
-            .padding(28)
-            .frame(maxWidth: 1180, alignment: .leading)
+            .padding(AppTheme.Spacing.xxl)
+            .frame(maxWidth: AppTheme.Workbench.contentMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(AppTheme.Background.baseColor)
         .alert(item: $sessionPendingDeletion) { session in
             Alert(

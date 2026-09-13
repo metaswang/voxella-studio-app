@@ -552,12 +552,11 @@ enum CompositionBuilder {
             }
         }
 
-        var vcConfig = AVVideoComposition.Configuration()
-        vcConfig.renderSize = renderSize
-        vcConfig.frameDuration = CMTime(value: 1, timescale: timescale)
-
-        vcConfig.customVideoCompositorClass = CustomVideoCompositor.self
-        vcConfig.instructions = compositorInstructions(
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.renderSize = renderSize
+        videoComposition.frameDuration = CMTime(value: 1, timescale: timescale)
+        videoComposition.customVideoCompositorClass = CustomVideoCompositor.self
+        videoComposition.instructions = compositorInstructions(
             timeline: timeline,
             trackMappings: trackMappings,
             clipNaturalSizes: clipNaturalSizes,
@@ -566,7 +565,7 @@ enum CompositionBuilder {
             compositionDuration: compositionDuration,
             renderSize: renderSize
         )
-        return (audioMix, AVVideoComposition(configuration: vcConfig))
+        return (audioMix, videoComposition)
     }
 
     /// One instruction per segment between clip boundaries, layers bottom → top.

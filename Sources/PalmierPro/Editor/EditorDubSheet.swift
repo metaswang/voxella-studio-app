@@ -9,7 +9,7 @@ struct EditorDubSheet: View {
     @State private var referenceVoiceID: UUID?
     @State private var referenceClipID: String?
     @State private var referenceRange: ClosedRange<Double> = 0...1
-    @State private var recorder = VoiceRecorderController()
+    @State private var recorder = SpeechInputRecorderController()
 
     private var audioClips: [Clip] {
         editor.timeline.tracks
@@ -38,14 +38,7 @@ struct EditorDubSheet: View {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 Text(L10n.string("Script"))
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
-                TextEditor(text: $script)
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .frame(minHeight: AppTheme.EditorPanel.textEditorMinHeight)
-                    .padding(AppTheme.Spacing.xs)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: AppTheme.Radius.xs)
-                            .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-                    }
+                DubScriptEditor(text: $script, minHeight: AppTheme.EditorPanel.textEditorMinHeight)
             }
 
             Picker(L10n.string("Reference"), selection: $referenceMode) {
@@ -83,29 +76,7 @@ struct EditorDubSheet: View {
                 languageCode: "auto"
             )
         case .recording:
-            HStack(spacing: AppTheme.Spacing.sm) {
-                Button {
-                    if recorder.isRecording {
-                        recorder.stop()
-                    } else {
-                        recorder.start()
-                    }
-                } label: {
-                    Label(
-                        recorder.isRecording ? L10n.string("Stop recording") : L10n.string("Record reference"),
-                        systemImage: recorder.isRecording ? "stop.fill" : "mic.fill"
-                    )
-                }
-                .buttonStyle(.bordered)
-                if recorder.isRecording {
-                    Text(recorder.duration, format: .number.precision(.fractionLength(1)))
-                        .monospacedDigit()
-                        .foregroundStyle(AppTheme.Text.secondaryColor)
-                } else if recorder.recordedURL != nil {
-                    Label(L10n.string("Reference recorded"), systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(AppTheme.Status.successColor)
-                }
-            }
+            SpeechInputCaptureView(recorder: recorder)
         case .timelineClip:
             Picker(L10n.string("Audio clip"), selection: $referenceClipID) {
                 Text(L10n.string("Choose an audio clip")).tag(nil as String?)
@@ -125,7 +96,7 @@ struct EditorDubSheet: View {
         case .library:
             return true
         case .recording:
-            return recorder.recordedURL != nil && !recorder.isRecording
+            return recorder.recordedURL != nil && !recorder.isRecording && !recorder.isTransitioning
         case .timelineClip:
             return selectedReferenceClip != nil && selectedReferenceURL != nil
         }

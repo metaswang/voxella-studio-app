@@ -25,6 +25,16 @@ struct ASRAudioPreprocessorTests {
         #expect(result.samples.allSatisfy { $0 == 0 })
     }
 
+    @Test func lowLevelVADRescueUsesBoundedConstantGain() {
+        let amplitude = Float(pow(10, -45.0 / 20.0))
+        let result = ASRAudioPreprocessor.prepareVADRescue(
+            samples: Array(repeating: amplitude, count: 16_000)
+        )
+
+        #expect(result.appliedGainDB == ASRAudioPreprocessor.maximumVADRescueGainDB)
+        #expect(result.processed.peakDBFS - result.original.peakDBFS < 12.01)
+    }
+
     @Test func healthyLevelIsLeftUnchanged() {
         let amplitude = Float(pow(10, -12.0 / 20.0))
         let samples = Array(repeating: amplitude, count: 16_000)

@@ -1,0 +1,236 @@
+[
+  {
+    "id": "de-01",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "en-01",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "en-02",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "en-03",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "en-04",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "es-01",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "fr-01",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "ja-01",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "pt-BR-01",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "zh-Hans-01",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": true
+  },
+  {
+    "id": "zh-Hans-02",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "zh-Hans-03",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": true
+  },
+  {
+    "id": "zh-Hans-04",
+    "method": "H1_sparse_ids",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "de-01",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "en-01",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "en-02",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "en-03",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": true
+  },
+  {
+    "id": "en-04",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "es-01",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "fr-01",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "ja-01",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "pt-BR-01",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "zh-Hans-01",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": true
+  },
+  {
+    "id": "zh-Hans-02",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": true
+  },
+  {
+    "id": "zh-Hans-03",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": true
+  },
+  {
+    "id": "zh-Hans-04",
+    "method": "H1_boundary_ratings",
+    "advice_all_identical": false,
+    "output_all_identical": true
+  },
+  {
+    "id": "de-01",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "en-01",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": true,
+    "output_all_identical": true
+  },
+  {
+    "id": "en-02",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "en-03",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "en-04",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": true,
+    "output_all_identical": true
+  },
+  {
+    "id": "es-01",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "fr-01",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "ja-01",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": true,
+    "output_all_identical": true
+  },
+  {
+    "id": "pt-BR-01",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": true,
+    "output_all_identical": true
+  },
+  {
+    "id": "zh-Hans-01",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "zh-Hans-02",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": true,
+    "output_all_identical": true
+  },
+  {
+    "id": "zh-Hans-03",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  },
+  {
+    "id": "zh-Hans-04",
+    "method": "H1_nbest_choice",
+    "advice_all_identical": false,
+    "output_all_identical": false
+  }
+]

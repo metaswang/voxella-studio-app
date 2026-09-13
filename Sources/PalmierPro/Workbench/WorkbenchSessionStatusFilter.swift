@@ -1,29 +1,35 @@
 enum WorkbenchSessionStatusFilter: String, CaseIterable, Identifiable, Sendable {
     case all
+    case notStarted
+    case queued
     case ready
     case processing
-    case completed
     case needsAttention
+    case cancelled
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
         case .all: "All statuses"
+        case .notStarted: "Not started"
+        case .queued: "Queued"
         case .ready: "Ready"
         case .processing: "Processing"
-        case .completed: "Completed"
         case .needsAttention: "Needs attention"
+        case .cancelled: "Cancelled"
         }
     }
 
-    func matches(_ state: WorkbenchJobState) -> Bool {
+    func matches(_ status: WorkbenchSessionStatus) -> Bool {
         switch self {
         case .all: true
-        case .ready: state == .ready
-        case .processing: state == .running || state == .cancelling
-        case .completed: state == .completed
-        case .needsAttention: state == .failed || state == .cancelled
+        case .notStarted: !status.hasUsableResult && status.displayTaskState == .notStarted
+        case .queued: status.showsQueued
+        case .ready: status.hasUsableResult
+        case .processing: status.showsProcessing
+        case .needsAttention: status.needsAttention
+        case .cancelled: status.displayTaskState == .cancelled
         }
     }
 }

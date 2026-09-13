@@ -1,0 +1,60 @@
+{
+  "id": "zh-Hans-17",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language zh-Hans.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: zh-Hans\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n北侧入口（售票处旁边）在施工期间仍然开放。带着大件行李的访客请优先使用这扇门，因为另一条走廊比较狭窄。如果以前没有来过，工作人员可以指引临时通道。展览本身的位置没有变化，只有少量标识正在更换。请给自己留出一点额外时间，慢慢走到楼上的展厅，也可以在出发前查看当天发布的参观说明。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "9fa7754f8d48a1b2ccfd9a09b35ff793a9ac9abc3c2082108b5644f574d71d44",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:58.085804+00:00",
+  "raw": "{\"lines\":[\"北侧入口（售票处旁边）\", \"在施工期间仍然开放。\", \"带着大件行李的访客\", \"请优先使用这扇门，\", \"因为另一条走廊比较狭窄。\", \"如果以前没有来过，\", \"工作人员可以指引临时通道。\", \"展览本身的位置没有变化，\", \"只有少量标识正在更换。\", \"请给自己留出一点额外时间，\", \"慢慢走到楼上的展厅，\", \"也可以在出发前\", \"查看当天发布的参观说明。\"]}",
+  "usage": {
+    "promptTokenCount": 310,
+    "candidatesTokenCount": 112,
+    "totalTokenCount": 422,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 310
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.227809249998245,
+  "transport_attempts": 1,
+  "lines": [
+    "北侧入口（售票处旁边）",
+    "在施工期间仍然开放。",
+    "带着大件行李的访客",
+    "请优先使用这扇门，",
+    "因为另一条走廊比较狭窄。",
+    "如果以前没有来过，",
+    "工作人员可以指引临时通道。",
+    "展览本身的位置没有变化，",
+    "只有少量标识正在更换。",
+    "请给自己留出一点额外时间，",
+    "慢慢走到楼上的展厅，",
+    "也可以在出发前",
+    "查看当天发布的参观说明。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 13,
+    "boundaries": 12,
+    "tp": 12,
+    "ref_count": 12,
+    "f1": 1.0,
+    "overlong": 0,
+    "short": 1,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 13
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "id": "zh-Hans-13",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language zh-Hans.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: zh-Hans\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n报告里面写的是增长3.5%，不是增加了三十五个百分点。这两个说法看起来接近，实际表达的变化却不一样。我们先把原始数据放到同一张表，再确认比较的时间范围，以及是否包含后来补录的记录。如果口径没有统一，直接比较总数就容易产生误解。图表做好以后，也请把单位标在读者容易看到的位置，不要只放在最后一页的说明里。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "eaf0597b73fedb66332a994a2af896c05893488f29d000da6e820b8fb73f3ea1",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:52.018837+00:00",
+  "raw": "{\"lines\":[\"报告里面写的是增长3.5%，不是增加了三十五个百分点。这\",\"两个说法看起来接近，实际表达的变化却不一样。我们先把原始数据放到同一张表，\",\"再确认比较的时间范围，以及是否包含后来补录的记录。如果口径没有统一，直接比较总数就容易产生误解。\",\"图表做好以后，也请把单位标在读者容易看到的位置，不要只放在最后一页的说明里。\"]}",
+  "usage": {
+    "promptTokenCount": 311,
+    "candidatesTokenCount": 119
+  },
+  "provider_usage": {
+    "prompt_tokens": 311,
+    "completion_tokens": 119,
+    "total_tokens": 430,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.6605919579960755,
+  "transport_attempts": 1,
+  "lines": [
+    "报告里面写的是增长3.5%，不是增加了三十五个百分点。这",
+    "两个说法看起来接近，实际表达的变化却不一样。我们先把原始数据放到同一张表，",
+    "再确认比较的时间范围，以及是否包含后来补录的记录。如果口径没有统一，直接比较总数就容易产生误解。",
+    "图表做好以后，也请把单位标在读者容易看到的位置，不要只放在最后一页的说明里。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 4,
+    "boundaries": 3,
+    "tp": 2,
+    "ref_count": 11,
+    "f1": 0.28571428571428575,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 48
+  }
+}

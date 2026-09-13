@@ -1,0 +1,56 @@
+{
+  "id": "zh-Hans-12",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language zh-Hans.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: zh-Hans\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n客户把这次活动命名为“New Start”，我们在片头保留了英文标题，并且在下面加上中文说明。评审的时候有人建议，把原来的名字换成更短的口号，这样版面看起来会更整齐。导演希望先听听本地团队的意见，因为相同的文字放在不同语境里，可能会让观众产生不同理解。最终的标题还没有确定，请暂时不要批量替换所有画面。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "4d416e3839a0d452e6cfa51922cd8f71eef5713a471e0dd35ef142cafc03371d",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:49.799043+00:00",
+  "raw": "{\"lines\":[\"客户把这次活动命名为“New Start”，我们在片头保留了英文标题，并且在下面加上中文说明。评审的时候有人建议，把原来的名字换成更短的口号，这样版面看起来会更整齐。导演希望先听听本地团队的意见，因为相同的文字放在不同语境里，可能会让观众产生不同理解。最终的标题还没有确定，请暂时不要批量替换所有画面。\"]}",
+  "usage": {
+    "promptTokenCount": 316,
+    "candidatesTokenCount": 120
+  },
+  "provider_usage": {
+    "prompt_tokens": 316,
+    "completion_tokens": 120,
+    "total_tokens": 436,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.5370701250067214,
+  "transport_attempts": 1,
+  "lines": [
+    "客户把这次活动命名为“New Start”，我们在片头保留了英文标题，并且在下面加上中文说明。评审的时候有人建议，把原来的名字换成更短的口号，这样版面看起来会更整齐。导演希望先听听本地团队的意见，因为相同的文字放在不同语境里，可能会让观众产生不同理解。最终的标题还没有确定，请暂时不要批量替换所有画面。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 1,
+    "boundaries": 0,
+    "tp": 0,
+    "ref_count": 10,
+    "f1": 0,
+    "overlong": 1,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 150
+  }
+}

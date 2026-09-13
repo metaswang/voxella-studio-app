@@ -6,6 +6,12 @@ struct AccountPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            if let promotion = account.lifetimePromotion, promotion.credits > 0,
+               let end = ISO8601DateFormatter().date(from: promotion.endsAt), end > .now {
+                Text("Lifetime includes \(promotion.credits.formatted()) bonus credits when purchased before \(end.formatted(date: .abbreviated, time: .shortened)).")
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+            }
             if account.isLoading {
                 Text("Loading…")
                     .font(.system(size: AppTheme.FontSize.sm))
@@ -27,9 +33,14 @@ struct AccountPane: View {
 
     private var signedInBody: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
-            if account.isPaid {
+            if account.isPaid || account.appAccess.license == .lifetime {
                 subscriptionSection
-                creditsSection
+#if MAC_APP_STORE
+                AppStoreOffersView(credits: false)
+#endif
+                if account.canPurchaseCredits {
+                    creditsSection
+                }
             } else {
                 unpaidSection
             }
@@ -45,12 +56,18 @@ struct AccountPane: View {
     @ViewBuilder
     private var unpaidSection: some View {
         SettingsGroup(title: "Subscription") {
+#if MAC_APP_STORE
+            AppStoreOffersView(credits: false)
+#else
             if account.availablePlans.isEmpty {
                 Text("No subscription plans are available.")
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             } else {
                 VStack(spacing: AppTheme.Spacing.md) {
+                    if account.isAppAccessEnforced {
+                        lifetimeCard
+                    }
                     ForEach(Array(account.availablePlans.enumerated()), id: \.element.id) { index, plan in
                         planCard(plan: plan, isPrimary: index == 0)
                     }
@@ -61,6 +78,27 @@ struct AccountPane: View {
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
+#endif
+        }
+    }
+
+#if !MAC_APP_STORE
+    private var lifetimeCard: some View {
+        card {
+            cardCaption("Lifetime")
+            Text("Own the Mac app permanently. AI credits are available separately.")
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+            Button("Buy Lifetime") {
+                Task { await account.purchaseLifetime() }
+            }
+            .buttonStyle(.capsule(.secondary, size: .regular))
+#if MAC_APP_STORE
+            Button("Restore purchases") {
+                Task { await account.restorePurchases() }
+            }
+            .buttonStyle(.borderless)
+#endif
         }
     }
 
@@ -111,12 +149,14 @@ struct AccountPane: View {
         .pointerStyle(.link)
     }
 
+#endif
+
     private var subscriptionSection: some View {
         SettingsGroup(title: "Subscription") {
             card {
                 HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                        Text(account.tier.planLabel)
+                        Text(account.appAccessLabel)
                             .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                             .foregroundStyle(AppTheme.Text.primaryColor)
 
@@ -144,6 +184,10 @@ struct AccountPane: View {
                         }
                     }
                     .buttonStyle(accountSecondaryButtonStyle)
+                    .disabled(!account.isPaid)
+#if MAC_APP_STORE
+                    .disabled(account.appAccess.subscriptionSource != .appStore)
+#endif
                     .pointerStyle(.link)
                 }
             }
@@ -181,6 +225,9 @@ struct AccountPane: View {
         card {
             cardCaption("Buy more")
 
+#if MAC_APP_STORE
+            AppStoreOffersView(credits: true)
+#else
             TopOffField(
                 dollars: $topOffDollars,
                 fieldFill: AppTheme.Background.raisedColor,
@@ -189,8 +236,9 @@ struct AccountPane: View {
             ) {
                 account.buyCredits(dollars: topOffDollars)
             }
+#endif
 
-            Text("$\(TopOffLimits.minDollars)–$\(TopOffLimits.maxDollars) · Credits expire at renewal.")
+            Text("Purchased credits never expire. Subscription credits reset at renewal.")
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .fixedSize(horizontal: false, vertical: true)

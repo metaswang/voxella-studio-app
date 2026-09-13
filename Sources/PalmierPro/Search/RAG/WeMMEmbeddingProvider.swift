@@ -1,63 +1,120 @@
+import CoreGraphics
+import CoreImage
 import Foundation
 
-#if BUNDLED_SPEECH
-
 actor WeMMEmbeddingProvider: TextEmbeddingProvider {
-    static let dimension = 256
+    static let shared = WeMMEmbeddingProvider()
+    static let dimension = SearchIndexConfig.embeddingDimension
     static let framesPerClip = 4
 
+    struct Availability: Sendable {
+        private(set) var generation = 0
+        private(set) var isAvailable = true
+
+        @discardableResult
+        mutating func update(isAvailable: Bool, generation: Int) -> Bool {
+            guard generation > self.generation else { return false }
+            self.generation = generation
+            self.isAvailable = isAvailable
+            return true
+        }
+
+        func accepts(_ generation: Int) -> Bool {
+            isAvailable && self.generation == generation
+        }
+    }
+
+    private var availability = Availability()
+    #if BUNDLED_SPEECH
     private var runtime: WeMMEmbeddingRuntime?
+    #endif
+
+    private init() {}
 
     func encodeText(_ text: String) async throws -> [Float] {
-        try Task.checkCancellation()
-        try await MLXRuntime.beginInference()
-        defer { MLXRuntime.endInference() }
-        let runtime = try await loaded()
-        try Task.checkCancellation()
-        let embedding = try await runtime.encode(text: text, dimension: Self.dimension)
-        try Task.checkCancellation()
-        return embedding
+        #if BUNDLED_SPEECH
+        return try await encode { runtime in
+            try await runtime.encode(text: text, dimension: Self.dimension)
+        }
+        #else
+        throw MLXRuntime.Unavailable()
+        #endif
+    }
+
+    func encodeImage(_ image: CGImage) async throws -> [Float] {
+        #if BUNDLED_SPEECH
+        return try await encode { runtime in
+            try await runtime.encode(image: CIImage(cgImage: image), dimension: Self.dimension)
+        }
+        #else
+        throw MLXRuntime.Unavailable()
+        #endif
     }
 
     func encodeVideo(url: URL, range: ClosedRange<Double>, text: String?) async throws -> [Float] {
-        try Task.checkCancellation()
-        try await MLXRuntime.beginInference()
-        defer { MLXRuntime.endInference() }
-        let runtime = try await loaded()
-        try Task.checkCancellation()
-        let embedding = try await runtime.encode(
-            videoURL: url,
-            timeRange: range,
-            text: text,
-            dimension: Self.dimension
-        )
-        try Task.checkCancellation()
-        return embedding
+        #if BUNDLED_SPEECH
+        return try await encode { runtime in
+            try await runtime.encode(
+                videoURL: url, timeRange: range, text: text, dimension: Self.dimension
+            )
+        }
+        #else
+        throw MLXRuntime.Unavailable()
+        #endif
     }
 
     func prepare() async throws {
-        guard let descriptor = LocalModelManager.catalog.first(where: { $0.id == .weMMEmbedding2B4Bit }),
-              LocalModelManager.isInstalled(descriptor),
-              runtime == nil else { return }
-        try Task.checkCancellation()
+        #if BUNDLED_SPEECH
+        guard availability.isAvailable, runtime == nil,
+              LocalModelManager.isInstalled(SearchIndexConfig.model) else { return }
+        _ = try await encodeText("warm up")
+        #endif
+    }
+
+    func resume(generation: Int) {
+        availability.update(isAvailable: true, generation: generation)
+    }
+
+    func suspend(generation: Int) async throws {
+        guard availability.update(isAvailable: false, generation: generation) else { return }
+        #if BUNDLED_SPEECH
+        guard MLXRuntime.isAvailable else { return }
         try await MLXRuntime.beginInference()
         defer { MLXRuntime.endInference() }
+        runtime = nil
+        #endif
+    }
+
+    #if BUNDLED_SPEECH
+    private func encode(
+        _ operation: @Sendable (WeMMEmbeddingRuntime) async throws -> [Float]
+    ) async throws -> [Float] {
+        let expectedGeneration = availability.generation
+        try validate(expectedGeneration)
+        try await MLXRuntime.beginInference()
+        defer { MLXRuntime.endInference() }
+        try validate(expectedGeneration)
         let runtime = try await loaded()
+        try validate(expectedGeneration)
+        let embedding = try await operation(runtime)
+        try validate(expectedGeneration)
+        return embedding
+    }
+
+    private func validate(_ expectedGeneration: Int) throws {
         try Task.checkCancellation()
-        _ = try await runtime.encode(text: "warm up", dimension: Self.dimension)
-        try Task.checkCancellation()
+        guard availability.accepts(expectedGeneration) else { throw CancellationError() }
     }
 
     private func loaded() async throws -> WeMMEmbeddingRuntime {
         if let runtime { return runtime }
-        let directory = try LocalModelManager.directory(for: .weMMEmbedding2B4Bit)
-        let loaded = try await WeMMEmbeddingRuntime.load(
-            from: directory,
-            maxFrames: Self.framesPerClip
-        )
+        guard LocalModelManager.isInstalled(SearchIndexConfig.model) else {
+            throw LocalAIError.incompleteModel(SearchIndexConfig.model.title)
+        }
+        let directory = try LocalModelManager.directory(for: SearchIndexConfig.modelID)
+        let loaded = try await WeMMEmbeddingRuntime.load(from: directory, maxFrames: Self.framesPerClip)
         runtime = loaded
         return loaded
     }
+    #endif
 }
-
-#endif

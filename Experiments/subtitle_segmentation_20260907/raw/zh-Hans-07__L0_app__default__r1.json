@@ -1,0 +1,70 @@
+{
+  "id": "zh-Hans-07",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language zh-Hans.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: zh-Hans\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n我们星期四下午见，不对，应该是星期五下午，星期四还要等音响师过来检查。我已经把新的地址发给你了，不过第一封邮件里面的地图不对，请以刚刚发送的版本为准。到了以后从面包店旁边进去，再沿着楼梯走到二楼。如果门没有打开，直接给我打电话就行。不要在楼下等太久，我可能正在里面整理设备，听不到走廊里的声音。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "450941398266def18fd041f2ff4a38e5a2257309fa40277c43057d269b534875",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:38.525909+00:00",
+  "raw": "{\"lines\":[\"我们星期四下午见，\", \"不对，应该是星期五\", \"下午，星期四还要\", \"等音响师过来检查。\", \"我已经把新的地址\", \"发给你了，不过第\", \"一封邮件里面的地图\", \"不对，请以刚刚发\", \"送的版本为准。到\", \"了以后从面包店旁\", \"边进去，再沿着楼\", \"梯走到二楼。如果\", \"门没有打开，直接\", \"给我打电话就行。\", \"不要在楼下等太久\", \"，我可能正在里面\", \"整理设备，听不到\", \"走廊里的声音。\"]}",
+  "usage": {
+    "promptTokenCount": 317,
+    "candidatesTokenCount": 135,
+    "totalTokenCount": 452,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 317
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.3825913340042462,
+  "transport_attempts": 1,
+  "lines": [
+    "我们星期四下午见，",
+    "不对，应该是星期五",
+    "下午，星期四还要",
+    "等音响师过来检查。",
+    "我已经把新的地址",
+    "发给你了，不过第",
+    "一封邮件里面的地图",
+    "不对，请以刚刚发",
+    "送的版本为准。到",
+    "了以后从面包店旁",
+    "边进去，再沿着楼",
+    "梯走到二楼。如果",
+    "门没有打开，直接",
+    "给我打电话就行。",
+    "不要在楼下等太久",
+    "，我可能正在里面",
+    "整理设备，听不到",
+    "走廊里的声音。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 18,
+    "boundaries": 17,
+    "tp": 3,
+    "ref_count": 12,
+    "f1": 0.20689655172413793,
+    "overlong": 0,
+    "short": 1,
+    "protected_total": 3,
+    "protected_breaks": 1,
+    "violations": [
+      {
+        "phrase": "星期五下午",
+        "cut": 18
+      }
+    ],
+    "punctuation_starts": 1,
+    "max_length": 9
+  }
+}

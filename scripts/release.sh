@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Usage: scripts/release.sh <version>       e.g. scripts/release.sh 0.1.3
+# Usage: scripts/release.sh
 #
 # Full release pipeline:
 #   1. Preflight (on main, tree clean, tag free, in sync with origin)
-#   2. Bump CFBundleShortVersionString + auto-increment CFBundleVersion
+#   2. Auto-bump the patch version and CFBundleVersion
 #   3. Prompt for release notes in $EDITOR (prefilled with recent commits)
 #   4. Run bundle.sh release --dist
 #   5. Commit + push version bump
@@ -15,13 +15,10 @@ set -euo pipefail
 #
 # Bails out before anything public-visible if a preflight check fails.
 
-if [ $# -ne 1 ]; then
-  echo "usage: $0 <version>  (e.g. 0.1.3)" >&2
+if [ $# -ne 0 ]; then
+  echo "usage: $0" >&2
   exit 1
 fi
-
-VERSION="$1"
-TAG="$VERSION"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="$ROOT/Sources/PalmierPro/Resources/Info.plist"
@@ -32,8 +29,31 @@ SPARKLE_ROOT="$ROOT/.build/artifacts/sparkle/Sparkle"
 EXPECTED_PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$PLIST")"
 cd "$ROOT"
 
-if ! python3 "$ROOT/scripts/release_version.py" validate "$VERSION"; then
-  exit 1
+if [ "${RELEASE_TARGET:-github}" = "huggingface" ] || [ "${RELEASE_TARGET:-github}" = "dmg" ]; then
+  if ! git diff-index --quiet HEAD -- && [ "${RELEASE_INCLUDE_WORKTREE:-0}" != "1" ]; then
+    echo "error: set RELEASE_INCLUDE_WORKTREE=1 to explicitly include pending work" >&2
+    exit 1
+  fi
+  test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$PLIST")" = "15.0"
+  rg -q 'platforms: \[\.macOS\(\.v15\)\]' "$ROOT/Package.swift"
+  LIVE_APPCAST="$(mktemp -t voxstudio-appcast.XXXXXX).xml"
+  trap 'rm -f "$LIVE_APPCAST"' EXIT
+  curl --fail --silent --show-error --location "$FEED_URL" --output "$LIVE_APPCAST"
+  CURRENT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
+  CURRENT_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
+  VERSION="$(uv run --no-project python "$ROOT/scripts/release_version.py" next --current "$CURRENT_VERSION" --appcast "$LIVE_APPCAST")"
+  NEW_BUILD="$(uv run --no-project python "$ROOT/scripts/release_version.py" plan \
+    --requested "$VERSION" --current "$CURRENT_VERSION" --current-build "$CURRENT_BUILD" --appcast "$LIVE_APPCAST")"
+  echo "==> $RELEASE_TARGET artifact: $CURRENT_VERSION ($CURRENT_BUILD) -> $VERSION ($NEW_BUILD)"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_BUILD" "$PLIST"
+  if [ "$RELEASE_TARGET" = "dmg" ]; then
+    SPARKLE_SIGN_UPDATE_REQUIRED=0 ./scripts/bundle.sh release --dist
+  else
+    ./scripts/bundle.sh release --dist
+  fi
+  echo "==> Artifact ready for verification: $DMG"
+  exit 0
 fi
 
 echo "==> Preflight"
@@ -50,17 +70,8 @@ if ! git diff-index --quiet HEAD --; then
   exit 1
 fi
 
-if git rev-parse "$TAG" >/dev/null 2>&1; then
-  echo "error: tag $TAG already exists locally" >&2
-  exit 1
-fi
-
 git fetch origin main --quiet
 git fetch origin --tags --quiet
-if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
-  echo "error: tag $TAG already exists on origin" >&2
-  exit 1
-fi
 if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
   echo "error: local main differs from origin/main. Push or pull first." >&2
   exit 1
@@ -81,6 +92,22 @@ if ! cmp -s "$APPCAST" "$LIVE_APPCAST"; then
   echo "error: local appcast.xml differs from the published feed; sync it before releasing" >&2
   exit 1
 fi
+
+CURRENT_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")"
+CURRENT_BUILD="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST")"
+VERSION="$(python3 "$ROOT/scripts/release_version.py" next \
+  --current "$CURRENT_VERSION" \
+  --appcast "$LIVE_APPCAST")"
+TAG="$VERSION"
+if git rev-parse "$TAG" >/dev/null 2>&1; then
+  echo "error: tag $TAG already exists locally" >&2
+  exit 1
+fi
+if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+  echo "error: tag $TAG already exists on origin" >&2
+  exit 1
+fi
+echo "==> Release version: $CURRENT_VERSION -> $VERSION (patch increment)"
 
 if [ ! -x "$SPARKLE_ROOT/bin/generate_keys" ]; then
   swift package resolve
@@ -111,8 +138,6 @@ LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo '')"
 echo "    (edit on GitHub later if you want to polish)"
 
 echo "==> Bumping version"
-CURRENT_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")"
-CURRENT_BUILD="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST")"
 if ! NEW_BUILD="$(python3 "$ROOT/scripts/release_version.py" plan \
     --requested "$VERSION" \
     --current "$CURRENT_VERSION" \
@@ -155,7 +180,8 @@ gh release create "$TAG" "$DMG" --title "$TAG" --notes-file "$NOTES_CLEAN"
 
 echo "==> Updating appcast.xml"
 PUBDATE="$(date -R)"
-export VERSION NEW_BUILD PUBDATE LENGTH SIGNATURE
+MINIMUM_SYSTEM_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$PLIST")"
+export VERSION NEW_BUILD PUBDATE LENGTH SIGNATURE MINIMUM_SYSTEM_VERSION
 python3 <<'PYEOF'
 import os
 v = os.environ["VERSION"]
@@ -163,6 +189,7 @@ b = os.environ["NEW_BUILD"]
 d = os.environ["PUBDATE"]
 l = os.environ["LENGTH"]
 s = os.environ["SIGNATURE"]
+minimum_system_version = os.environ["MINIMUM_SYSTEM_VERSION"]
 url = f"https://github.com/palmier-io/palmier-pro/releases/download/{v}/VoxStudio.dmg"
 
 item = f"""        <item>
@@ -170,7 +197,7 @@ item = f"""        <item>
             <pubDate>{d}</pubDate>
             <sparkle:version>{b}</sparkle:version>
             <sparkle:shortVersionString>{v}</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0.0</sparkle:minimumSystemVersion>
+            <sparkle:minimumSystemVersion>{minimum_system_version}</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure
                 url="{url}"

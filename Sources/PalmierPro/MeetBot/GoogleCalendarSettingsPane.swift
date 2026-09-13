@@ -23,7 +23,6 @@ struct GoogleCalendarSettingsPane: View {
                     access: store.access,
                     onRetry: { retryAccess() }
                 )
-                .themedSurface(AppTheme.Background.prominentColor, cornerRadius: AppTheme.Radius.mdLg)
             }
         }
         .task {

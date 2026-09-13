@@ -1,0 +1,59 @@
+{
+  "id": "en-12",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=en\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nThe client called the campaign “新生活,” which means a new life in Chinese. We kept that title on the opening card and used an English subtitle below it. During the review, someone suggested replacing the title with a shorter slogan. The director asked us to wait until the local team had checked the wording. A phrase that looks neat in the layout may carry a different meaning in another language.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "8d197b724d9414431006e4d02333804d440f7fd277245a8b07d4f531baa2b3f9",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:00.312555+00:00",
+  "raw": "{\"subtitles\":[\"The client called the campaign “新生活,” which means a new life in Chinese. We kept that title on the opening card and used an English subtitle below it.\",\"During the review, someone suggested replacing the title with a shorter slogan.\",\"The director asked us to wait until the local team had checked the wording.\",\"A phrase that looks neat in the layout may carry a different meaning in another language.\"],\"batch_summary\":\"Subtitle segmentation of finalized_transcript without altering content.\"}",
+  "usage": {
+    "promptTokenCount": 294,
+    "candidatesTokenCount": 107
+  },
+  "provider_usage": {
+    "prompt_tokens": 294,
+    "completion_tokens": 107,
+    "total_tokens": 401,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.4587254159996519,
+  "transport_attempts": 1,
+  "lines": [
+    "The client called the campaign “新生活,” which means a new life in Chinese. We kept that title on the opening card and used an English subtitle below it.",
+    "During the review, someone suggested replacing the title with a shorter slogan.",
+    "The director asked us to wait until the local team had checked the wording.",
+    "A phrase that looks neat in the layout may carry a different meaning in another language."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 4,
+    "boundaries": 3,
+    "tp": 3,
+    "ref_count": 9,
+    "f1": 0.5,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 150
+  }
+}

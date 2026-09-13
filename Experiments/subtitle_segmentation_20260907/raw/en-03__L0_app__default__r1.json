@@ -1,0 +1,57 @@
+{
+  "id": "en-03",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language en.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: en\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nThe first prototype weighed 3.5 kilograms, while the second came in at just under three. We measured each sample five times, using the same digital scale. Dr. Patel checked the results before we sent them to the design team. These figures describe our small trial, so they should not be treated as a prediction for every future unit. The next test will use a larger batch.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "aa1c544feb66132b128cc11b7cfc0cdbe6b728c01f380cb6887817dce0230fcd",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:08:51.379409+00:00",
+  "raw": "{\"lines\":[\n  \"The first prototype weighed 3.5 kilograms,\",\n  \"while the second came in at just under three.\",\n  \"We measured each sample five times,\",\n  \"using the same digital scale.\",\n  \"Dr. Patel checked the results\",\n  \"before we sent them to the design team.\",\n  \"These figures describe our small trial,\",\n  \"so they should not be treated as a prediction\",\n  \"for every future unit.\",\n  \"The next test will use a larger batch.\"\n]}",
+  "usage": {
+    "promptTokenCount": 297,
+    "candidatesTokenCount": 115,
+    "totalTokenCount": 412,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 297
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2111575829985668,
+  "transport_attempts": 1,
+  "lines": [
+    "The first prototype weighed 3.5 kilograms,",
+    "while the second came in at just under three.",
+    "We measured each sample five times,",
+    "using the same digital scale.",
+    "Dr. Patel checked the results",
+    "before we sent them to the design team.",
+    "These figures describe our small trial,",
+    "so they should not be treated as a prediction",
+    "for every future unit.",
+    "The next test will use a larger batch."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 10,
+    "boundaries": 9,
+    "tp": 8,
+    "ref_count": 9,
+    "f1": 0.8888888888888888,
+    "overlong": 0,
+    "short": 1,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 45
+  }
+}

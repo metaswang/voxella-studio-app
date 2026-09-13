@@ -169,6 +169,7 @@ enum AppTheme {
     // MARK: - Authentication
 
     enum Auth {
+        static let purchaseWindowHeight: CGFloat = 640
         static let contentWidth: CGFloat = 380
         static let providerButtonHeight: CGFloat = 44
         static let fieldHeight: CGFloat = 42
@@ -458,6 +459,19 @@ enum AppTheme {
         static let posterDash: [CGFloat] = [Spacing.md, Spacing.sm]
     }
 
+    enum SpeechInput {
+        static let scriptMaxHeight: CGFloat = 144
+        static let progressWidth: CGFloat = 120
+        static let quickInputWidth: CGFloat = 560
+        static let quickInputMinimumHeight: CGFloat = 180
+        static let quickInputMaximumHeightRatio: CGFloat = 0.6
+        static let quickInputEditorMinimumHeight: CGFloat = 72
+        static let quickInputEditorLineHeight: CGFloat = 22
+        static let quickInputEstimatedLineWidth: CGFloat = 44
+        static let quickInputRecordingWaveformWidth: CGFloat = 220
+        static let quickInputPanelLevelOffset: Int = 1
+    }
+
     enum Settings {
         static let sidebarWidth: CGFloat = 220
         static let contentMaxWidth: CGFloat = 640
@@ -507,14 +521,10 @@ enum AppTheme {
         static let sidebarCollapsedWidth: CGFloat = 64
         static let sidebarExpandedWidth: CGFloat = 216
         static let sidebarRowHeight: CGFloat = 38
-        /// Edge strip that reveals the workbench sidebar while the editor is active.
-        static let editorSidebarHotZoneWidth: CGFloat = 10
         /// Compact top chrome for the main canvas (titlebar strip, not stacked under it).
         static let toolbarHeight: CGFloat = 32
         /// Vertical clearance for traffic lights in the sidebar under fullSizeContentView.
         static let windowControlsInset: CGFloat = 28
-        /// Horizontal clearance past traffic lights when chrome spans the full titlebar width.
-        static let windowControlsLeadingInset: CGFloat = 78
         static let contentMaxWidth: CGFloat = 1180
         static let composerMaxWidth: CGFloat = 1040
         static let translationSheetWidth: CGFloat = 420
@@ -525,10 +535,10 @@ enum AppTheme {
         static let sessionSplitDefaultRatio: CGFloat = 0.5
         static let sessionSplitMinimumRatio: CGFloat = 0.3
         static let sessionSplitMaximumRatio: CGFloat = 0.7
+        static let sessionSummaryDefaultRatio: CGFloat = 0.5
         static let sessionSplitMinimumRightWidth: CGFloat = 400
         static let sessionSplitDividerHitWidth: CGFloat = 12
         static let sessionVideoMinHeight: CGFloat = 360
-        static let sessionVideoIdealHeight: CGFloat = 480
         static let netVideoCardWidth: CGFloat = 360
         static let netVideoCardHeight: CGFloat = 260
         static let netVideoCardCollapsedHeight: CGFloat = 48
@@ -544,6 +554,10 @@ enum AppTheme {
         static let recordingInfoPopoverWidth: CGFloat = 280
         static let recordingRegionMinSize: CGFloat = 48
         static let recordingRegionHandleSize: CGFloat = 8
+        static let recordingControlsWidth: CGFloat = 264
+        static let recordingControlsHeight: CGFloat = 52
+        static let recordingControlsButtonSize: CGFloat = 32
+        static let recordingControlsTimerWidth: CGFloat = 72
         static let recordingWaveformHeight: CGFloat = 22
         static let recordingWaveformBarWidth: CGFloat = 3
         static let recordingWaveformBarSpacing: CGFloat = 2
@@ -572,6 +586,7 @@ enum AppTheme {
         static let revisionPickerWidth: CGFloat = 190
         static let sessionIconSize: CGFloat = 44
         static let sessionStatusWidth: CGFloat = 238
+        static let sessionStatusHelpWidth: CGFloat = 320
         static let sessionStatusProgressHeight: CGFloat = 4
         static let sessionStatusPulseScale: CGFloat = 1.06
         static let recentSessionThumbnailWidth: CGFloat = 76
@@ -668,12 +683,54 @@ enum AppTheme {
 
     // MARK: - Animation durations
 
+    enum Onboarding {
+        static let windowSize = CGSize(width: 1000, height: 680)
+        static let panelWidth: CGFloat = 920
+        static let panelHeight: CGFloat = 570
+        static let showcaseWidth: CGFloat = 430
+        static let panelRadius: CGFloat = 28
+        static let cardWidth: CGFloat = 204
+        static let cardHeight: CGFloat = 166
+        static let smallCardHeight: CGFloat = 134
+        static let cardPitch: CGFloat = 196
+        static let columnOffset: CGFloat = 94
+        static let cardRestingScale: CGFloat = 0.94
+        static let cardFocusedScale: CGFloat = 1.24
+        static let cardTilt: Double = 3.5
+        static let waveHeight: CGFloat = 40
+        static let waveBarWidth: CGFloat = 4
+        static let focalRadius: CGFloat = 140
+        static let fadeEdge: CGFloat = 0.12
+        static let laneInset: CGFloat = 10
+        static let resourceWindow = CGSize(width: 820, height: 680)
+        static let canvas = Color(AppTheme.adaptive(
+            light: NSColor(red: 0.91, green: 0.92, blue: 0.98, alpha: 1),
+            dark: NSColor(red: 0.10, green: 0.11, blue: 0.16, alpha: 1)
+        ))
+        static let paper = Color(AppTheme.adaptive(
+            light: NSColor(red: 0.99, green: 0.99, blue: 1, alpha: 1),
+            dark: NSColor(red: 0.15, green: 0.16, blue: 0.20, alpha: 1)
+        ))
+        static let ink = Color(AppTheme.adaptive(
+            light: NSColor(red: 0.28, green: 0.25, blue: 0.64, alpha: 1),
+            dark: NSColor(red: 0.72, green: 0.68, blue: 1, alpha: 1)
+        ))
+        static let mint = Color(AppTheme.adaptive(
+            light: NSColor(red: 0.15, green: 0.48, blue: 0.40, alpha: 1),
+            dark: NSColor(red: 0.42, green: 0.80, blue: 0.65, alpha: 1)
+        ))
+        static let coral = Color(AppTheme.adaptive(
+            light: NSColor(red: 0.72, green: 0.30, blue: 0.26, alpha: 1),
+            dark: NSColor(red: 0.98, green: 0.57, blue: 0.49, alpha: 1)
+        ))
+    }
+
     enum Anim {
+        static let showcaseFrameInterval: Double = 1 / 30
+        static let showcasePointsPerSecond: Double = 17
         static let hover: Double = 0.15
         static let transition: Double = 0.2
         static let pulse: Double = 0.8
-        /// Delay before auto-hiding the editor-mode workbench sidebar after pointer exit.
-        static let editorSidebarHideDelay: Double = 0.35
         static let slipPreviewRefresh: Duration = .milliseconds(67)
     }
 }

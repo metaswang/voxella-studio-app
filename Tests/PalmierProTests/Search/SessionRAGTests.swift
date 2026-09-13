@@ -362,7 +362,9 @@ struct SessionIndexEligibilityTests {
             words: [word("脚底", 0.5, 0.9)],
             segments: [TranscriptionSegment(text: "脚底很痛", start: 0, end: 2, speaker: "Speaker 1")]
         )
-        for state: WorkbenchJobState in [.ready, .running, .cancelling, .cancelled, .failed] {
+        for state: WorkbenchJobState in [
+            .notStarted, .queued, .running, .cancelling, .cancelled, .failed, .interrupted, .unknown,
+        ] {
             let job = indexJob(state: state, result: result)
             #expect(SessionIndexSnapshot.from(job) == nil)
         }

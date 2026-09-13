@@ -29,7 +29,7 @@ struct SearchLatencyBenchmarkTests {
         }
 
         let store = try SessionIndexStore(url: URL(fileURLWithPath: databasePath))
-        let provider = WeMMEmbeddingProvider()
+        let provider = WeMMEmbeddingProvider.shared
         let hybrid = SearchService(store: store, embeddings: provider)
         let lexicalOnly = SearchService(store: store, embeddings: nil)
 

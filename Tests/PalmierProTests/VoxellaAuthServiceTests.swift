@@ -4,6 +4,56 @@ import Testing
 
 @Suite("Voxella desktop auth")
 struct VoxellaAuthServiceTests {
+    @Test func appStoreDeliveryUsesDurableOperationBeforeAccess() async throws {
+        let auth = VoxellaAuthService(tokens: MockTokenClient(onEmail: { _, _ in
+            VoxellaAuthTokens(accessToken: "test-access", refreshToken: "test-refresh", expiresAt: .distantFuture, userID: nil)
+        }), loadRefresh: { nil }, saveRefresh: { _ in }, deleteRefresh: {})
+        try await auth.signInWithEmail(email: "fixture@example.invalid", password: "test-only")
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [BillingOperationURLProtocol.self]
+        let client = VoxellaAPIClient(auth: auth, session: URLSession(configuration: config))
+        let response = try await client.syncAppStoreTransaction(signedTransaction: "test-jws", appAccountToken: UUID())
+        #expect(response.license == .lifetime)
+    }
+
+    @Test func lateRefreshCannotRestoreSessionAfterSignOut() async throws {
+        let started = Gate()
+        let release = Gate()
+        let store = MemoryRefreshStore(value: "old-refresh")
+        let auth = VoxellaAuthService(tokens: MockTokenClient(onRefresh: { _ in
+            await started.open()
+            await release.wait()
+            return VoxellaAuthTokens(accessToken: "late-access", refreshToken: "late-refresh",
+                                    expiresAt: .distantFuture, userID: nil)
+        }), loadRefresh: { store.value }, saveRefresh: { store.value = $0 }, deleteRefresh: { store.value = nil })
+        let refresh = Task { try await auth.refreshAccessToken() }
+        await started.wait()
+        await auth.signOut()
+        await release.open()
+        await #expect(throws: CancellationError.self) { try await refresh.value }
+        #expect(store.value == nil)
+        #expect(await auth.currentAccessToken() == nil)
+    }
+
+    @Test func lateLoginCannotRestoreSessionAfterSignOut() async throws {
+        let started = Gate()
+        let release = Gate()
+        let store = MemoryRefreshStore()
+        let auth = VoxellaAuthService(tokens: MockTokenClient(onEmail: { _, _ in
+            await started.open()
+            await release.wait()
+            return VoxellaAuthTokens(accessToken: "late-access", refreshToken: "late-refresh",
+                                    expiresAt: .distantFuture, userID: nil)
+        }), loadRefresh: { store.value }, saveRefresh: { store.value = $0 }, deleteRefresh: { store.value = nil })
+        let login = Task { try await auth.signInWithEmail(email: "test@example.invalid", password: "fixture") }
+        await started.wait()
+        await auth.signOut()
+        await release.open()
+        await #expect(throws: CancellationError.self) { try await login.value }
+        #expect(store.value == nil)
+        #expect(await auth.currentAccessToken() == nil)
+    }
+
     @Test func authorizationURLUsesVoxStudioProductionHost() throws {
         let url = try VoxellaAPIConfiguration.authorizationURL(
             state: "state",
@@ -127,6 +177,7 @@ struct VoxellaAuthServiceTests {
     @Test func signOutDeletesPersistedRefreshToken() async {
         let store = MemoryRefreshStore(value: "persisted-refresh")
         let auth = VoxellaAuthService(
+            tokens: MockTokenClient(),
             loadRefresh: { store.value },
             saveRefresh: { store.value = $0 },
             deleteRefresh: { store.value = nil }
@@ -136,6 +187,16 @@ struct VoxellaAuthServiceTests {
 
         #expect(store.value == nil)
         #expect(await auth.currentAccessToken() == nil)
+    }
+
+    @Test func offlineIdentityRequiresAnExistingSessionAndClearsOnSignOut() async throws {
+        let store = MemoryRefreshStore(value: "refresh")
+        let identity = UUID()
+        let auth = VoxellaAuthService(tokens: MockTokenClient(), loadRefresh: { store.value },
+            saveRefresh: { store.value = $0 }, deleteRefresh: { store.value = nil }, loadOwner: { identity })
+        #expect(try await auth.offlineAccountID() == identity)
+        await auth.signOut()
+        #expect(try await auth.offlineAccountID() == nil)
     }
 
     @Test func callbackWithAccessTokenIsRejected() async {
@@ -533,4 +594,35 @@ private struct MockTokenClient: VoxellaAuthTokenExchanging {
     func revoke(refreshToken: String) async throws {
         try await onRevoke?(refreshToken)
     }
+}
+
+private final class BillingOperationURLProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let status: Int
+        let body: String
+        switch request.url!.path {
+        case "/api/v1/app-access/app-store/transactions":
+            #expect(request.httpMethod == "POST")
+            #expect(UUID(uuidString: request.value(forHTTPHeaderField: "Idempotency-Key") ?? "") != nil)
+            status = 202
+            body = #"{"operation_id":"11111111-1111-4111-8111-111111111111","status":"pending"}"#
+        case "/api/v1/billing/operations/11111111-1111-4111-8111-111111111111":
+            #expect(request.httpMethod == "GET")
+            status = 200
+            body = #"{"operation_id":"11111111-1111-4111-8111-111111111111","status":"succeeded"}"#
+        case "/api/v1/app-access":
+            status = 200
+            body = #"{"license":"lifetime"}"#
+        default:
+            Issue.record("Unexpected billing operation route: \(request.url!.path)")
+            status = 404
+            body = "{}"
+        }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type":"application/json"])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

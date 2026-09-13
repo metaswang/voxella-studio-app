@@ -1,0 +1,57 @@
+{
+  "id": "en-01",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=en\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nBefore we begin the movement, make sure both feet are resting on the floor. Keep your shoulders relaxed and look straight ahead. The aim is to move slowly, without pulling your neck forward. If the chair feels unstable, stop and choose a firmer seat. We will repeat the same sequence twice, then compare how the two sides feel.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "7d167c3a9a294c2b963d06e3031688490a1b02399de2ba64e875eb0a25a145f8",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:08:47.033245+00:00",
+  "raw": "{\"subtitles\":[\"Before we begin the movement,\", \"make sure both feet are resting on the floor.\", \"Keep your shoulders relaxed\", \"and look straight ahead.\", \"The aim is to move slowly,\", \"without pulling your neck forward.\", \"If the chair feels unstable,\", \"stop and choose a firmer seat.\", \"We will repeat the same sequence twice,\", \"then compare how the two sides feel.\"],\"batch_summary\":\"Instructions for a gentle movement exercise focusing on posture, stability, and repetition.\"}",
+  "usage": {
+    "promptTokenCount": 271,
+    "candidatesTokenCount": 102,
+    "totalTokenCount": 373,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 271
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2408323749987176,
+  "transport_attempts": 1,
+  "lines": [
+    "Before we begin the movement,",
+    "make sure both feet are resting on the floor.",
+    "Keep your shoulders relaxed",
+    "and look straight ahead.",
+    "The aim is to move slowly,",
+    "without pulling your neck forward.",
+    "If the chair feels unstable,",
+    "stop and choose a firmer seat.",
+    "We will repeat the same sequence twice,",
+    "then compare how the two sides feel."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 10,
+    "boundaries": 9,
+    "tp": 9,
+    "ref_count": 9,
+    "f1": 1.0,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 45
+  }
+}

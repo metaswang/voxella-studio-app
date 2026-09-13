@@ -253,18 +253,6 @@ enum RecordingPermission {
         throw RecordingError.noDisplay
     }
 
-    @concurrent
-    static func canAccessShareableContent() async -> Bool {
-        do {
-            return try await shareableContent().displays.isEmpty == false
-        } catch {
-            Log.recording.notice(
-                "shareable content probe failed preflight=\(CGPreflightScreenCaptureAccess()) error=\(Log.detail(error)) \(diagnosticContext())"
-            )
-            return false
-        }
-    }
-
     static func requestMicrophone() async throws {
         let initialStatus = microphoneStatus()
         Log.recording.notice(
@@ -292,39 +280,7 @@ enum RecordingPermission {
     }
 
     static func requestScreenCapture() async throws {
-        if await canAccessShareableContent() {
-            Log.recording.notice(
-                "screen capture authorization status=authorized preflight=\(tccAllowsScreenCapture()) \(diagnosticContext())"
-            )
-            return
-        }
-
-        if tccAllowsScreenCapture() {
-            Log.recording.notice(
-                "screen capture TCC granted; shareable content probe failed \(diagnosticContext())"
-            )
-            return
-        }
-
-        Log.recording.notice(
-            "screen capture authorization status=denied preflight=false; requesting access \(diagnosticContext())"
-        )
-        let requested = await MainActor.run { CGRequestScreenCaptureAccess() }
-        if await canAccessShareableContent() {
-            Log.recording.notice(
-                "screen capture authorization request returned=\(requested) final=authorized preflight=\(tccAllowsScreenCapture()) \(diagnosticContext())"
-            )
-            return
-        }
-
-        let preflight = tccAllowsScreenCapture()
-        Log.recording.notice(
-            "screen capture authorization request returned=\(requested) final=denied preflight=\(preflight) \(diagnosticContext())"
-        )
-        if requested || preflight {
-            return
-        }
-        throw RecordingError.screenCaptureDenied
+        try await RecordingScreenCaptureAuthorization.shared.requireAccess()
     }
 
     private static func error(for status: RecordingMicrophoneAuthorizationStatus) -> RecordingError {

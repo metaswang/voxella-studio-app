@@ -52,7 +52,8 @@ extension EditSubmitter {
         }
 
         let sourceAssetId = asset.id
-        return editor.generationService.generate(
+        do {
+        return try editor.generationService.generate(
             genInput: genInput,
             assetType: asset.type,
             placeholderDuration: placeholderDuration,
@@ -80,5 +81,10 @@ extension EditSubmitter {
             onComplete: onComplete,
             onFailure: onFailure
         )
+        } catch {
+            editor.mediaPanelToast = MediaPanelToast(message: error.localizedDescription)
+            onFailure?()
+            return nil
+        }
     }
 }

@@ -1,0 +1,59 @@
+{
+  "id": "zh-Hans-05",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language zh-Hans.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: zh-Hans\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n她问：“我们现在就出发吗？”我告诉她列车暂时晚点，不过车站旁边的咖啡馆还开着，可以在那里等一会儿。“那我们先过去吧。”她一边说，一边拿起放在门口的蓝色行李箱。走到站台的时候，广播里的发车信息又更新了。我们没有继续往前走，而是留在服务台附近，准备确认下一班车到底从哪个站台出发。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "f085cc9831f328ca269542c756e6554fa68777edc5858a471b507bc7461f4d08",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:31.649627+00:00",
+  "raw": "{\"lines\":[\"她问：“我们现在就出发吗？”我告诉她列车暂时晚点，不过车站旁边的咖啡馆还开着，可以在那里等一会儿。\",\"“那我们先过去吧。”她一边说，一边拿起放在门口的蓝色行李箱。\",\"走到站台的时候，广播里的发车信息又更新了。\",\"我们没有继续往前走，而是留在服务台附近，准备确认下一班车到底从哪个站台出发。\"]}",
+  "usage": {
+    "promptTokenCount": 316,
+    "candidatesTokenCount": 124
+  },
+  "provider_usage": {
+    "prompt_tokens": 316,
+    "completion_tokens": 124,
+    "total_tokens": 440,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.6172317500022473,
+  "transport_attempts": 1,
+  "lines": [
+    "她问：“我们现在就出发吗？”我告诉她列车暂时晚点，不过车站旁边的咖啡馆还开着，可以在那里等一会儿。",
+    "“那我们先过去吧。”她一边说，一边拿起放在门口的蓝色行李箱。",
+    "走到站台的时候，广播里的发车信息又更新了。",
+    "我们没有继续往前走，而是留在服务台附近，准备确认下一班车到底从哪个站台出发。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 4,
+    "boundaries": 3,
+    "tp": 3,
+    "ref_count": 12,
+    "f1": 0.4,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 49
+  }
+}

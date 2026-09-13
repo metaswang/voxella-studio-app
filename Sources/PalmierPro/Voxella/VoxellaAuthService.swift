@@ -135,7 +135,11 @@ final class ASWebAuthenticationSessionController: NSObject, ASWebAuthenticationP
 }
 
 actor VoxellaAuthService {
-    static let shared = VoxellaAuthService()
+    static let shared = VoxellaAuthService(
+        loadOwner: { try KeychainStore.loadThisDeviceOnly(account: "voxella.auth.owner").flatMap(UUID.init(uuidString:)) },
+        saveOwner: { try KeychainStore.saveThisDeviceOnly($0.uuidString, account: "voxella.auth.owner") },
+        deleteOwner: { try KeychainStore.deleteThisDeviceOnly(account: "voxella.auth.owner") }
+    )
 
     static let clientID = "voxella-studio-desktop"
     static let callbackScheme = "voxella-studio"
@@ -149,6 +153,9 @@ actor VoxellaAuthService {
     private let loadRefresh: @Sendable () throws -> String?
     private let saveRefresh: @Sendable (String) throws -> Void
     private let deleteRefresh: @Sendable () throws -> Void
+    private let loadOwner: @Sendable () throws -> UUID?
+    private let saveOwner: @Sendable (UUID) throws -> Void
+    private let deleteOwner: @Sendable () throws -> Void
 
     private var accessToken: String?
     private var accessExpiresAt: Date?
@@ -156,6 +163,7 @@ actor VoxellaAuthService {
     private var signInWaiters: [CheckedContinuation<String, Error>] = []
     private var isInteractiveSignInRunning = false
     private var pendingPKCE: PendingPKCE?
+    private var sessionGeneration = UUID()
 
     private struct PendingPKCE: Sendable {
         var state: String
@@ -175,7 +183,10 @@ actor VoxellaAuthService {
         },
         deleteRefresh: @escaping @Sendable () throws -> Void = {
             try KeychainStore.deleteThisDeviceOnly(account: VoxellaAuthService.refreshAccount)
-        }
+        },
+        loadOwner: @escaping @Sendable () throws -> UUID? = { nil },
+        saveOwner: @escaping @Sendable (UUID) throws -> Void = { _ in },
+        deleteOwner: @escaping @Sendable () throws -> Void = {}
     ) {
         self.browser = browser
         self.tokens = tokens
@@ -183,6 +194,9 @@ actor VoxellaAuthService {
         self.loadRefresh = loadRefresh
         self.saveRefresh = saveRefresh
         self.deleteRefresh = deleteRefresh
+        self.loadOwner = loadOwner
+        self.saveOwner = saveOwner
+        self.deleteOwner = deleteOwner
     }
 
     func hasValidAccessToken(leeway: TimeInterval = 60) -> Bool {
@@ -190,8 +204,20 @@ actor VoxellaAuthService {
         return accessExpiresAt.timeIntervalSince(now()) > leeway
     }
 
+    func currentSessionGeneration() -> UUID { sessionGeneration }
+
     func currentAccessToken() -> String? {
         accessToken
+    }
+
+    func offlineAccountID() throws -> UUID? {
+        guard let refresh = try loadRefresh(), !refresh.isEmpty else { return nil }
+        return try loadOwner()
+    }
+
+    func bindAccount(_ id: UUID, token: String) throws {
+        guard accessToken == token else { return }
+        try saveOwner(id)
     }
 
     func ensureSignedIn(anchorNow: Date? = nil) async throws -> String {
@@ -205,12 +231,14 @@ actor VoxellaAuthService {
             }
         }
         isInteractiveSignInRunning = true
+        let generation = sessionGeneration
         do {
             let token = try await performInteractiveSignIn()
+            guard sessionGeneration == generation else { throw CancellationError() }
             finishInteractiveSignIn(.success(token))
             return token
         } catch {
-            finishInteractiveSignIn(.failure(error))
+            if sessionGeneration == generation { finishInteractiveSignIn(.failure(error)) }
             throw error
         }
     }
@@ -260,11 +288,15 @@ actor VoxellaAuthService {
     }
 
     func signInWithEmail(email: String, password: String) async throws -> String {
+        let generation = sessionGeneration
         let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedEmail.isEmpty, !password.isEmpty else {
             throw VoxellaAuthError.tokenExchangeFailed("Enter your email and password.")
         }
+        try deleteOwner()
         let pair = try await tokens.signInWithEmail(email: normalizedEmail, password: password)
+        guard sessionGeneration == generation else { throw CancellationError() }
+        try Task.checkCancellation()
         try store(pair)
         Log.account.notice(
             "voxstudio sign-in completed",
@@ -275,6 +307,8 @@ actor VoxellaAuthService {
     }
 
     func signIn() async throws -> String {
+        let generation = sessionGeneration
+        try deleteOwner()
         let verifier = Self.randomURLSafe(32)
         let state = Self.randomURLSafe(24)
         let nonce = Self.randomURLSafe(24)
@@ -291,9 +325,10 @@ actor VoxellaAuthService {
                 callbackScheme: Self.callbackScheme
             )
         } catch {
-            pendingPKCE = nil
+            if sessionGeneration == generation { pendingPKCE = nil }
             throw error
         }
+        guard sessionGeneration == generation else { throw CancellationError() }
         guard let pending = pendingPKCE else {
             throw VoxellaAuthError.invalidCallback
         }
@@ -318,6 +353,8 @@ actor VoxellaAuthService {
             verifier: pending.verifier,
             redirectURI: Self.redirectURI
         )
+        guard sessionGeneration == generation else { throw CancellationError() }
+        try Task.checkCancellation()
         try store(pair)
         Log.account.notice("voxstudio sign-in completed", telemetry: "VoxStudio sign-in completed")
         return pair.accessToken
@@ -327,19 +364,25 @@ actor VoxellaAuthService {
         if let refreshTask {
             return try await refreshTask.value
         }
+        let generation = sessionGeneration
         let task = Task<String, Error> {
             guard let refreshToken = try self.loadRefresh(), !refreshToken.isEmpty else {
                 throw VoxellaAuthError.missingRefreshToken
             }
             do {
                 let pair = try await self.tokens.refresh(refreshToken: refreshToken)
+                guard self.sessionGeneration == generation else { throw CancellationError() }
+                try Task.checkCancellation()
                 try self.store(pair)
                 return pair.accessToken
             } catch VoxellaAuthError.unauthorized {
+                guard self.sessionGeneration == generation else { throw CancellationError() }
                 try? self.deleteRefresh()
+                try? self.deleteOwner()
                 self.clearMemoryTokens()
                 throw VoxellaAuthError.refreshFailed
             } catch VoxellaAuthError.refreshFailed {
+                guard self.sessionGeneration == generation else { throw CancellationError() }
                 self.clearMemoryTokens()
                 throw VoxellaAuthError.refreshFailed
             } catch is CancellationError {
@@ -349,17 +392,23 @@ actor VoxellaAuthService {
             }
         }
         refreshTask = task
-        defer { refreshTask = nil }
+        defer { if sessionGeneration == generation { refreshTask = nil } }
         return try await task.value
     }
 
     func signOut() async {
         let refreshToken = try? loadRefresh()
+        sessionGeneration = UUID()
+        refreshTask?.cancel()
+        refreshTask = nil
+        pendingPKCE = nil
+        finishInteractiveSignIn(.failure(CancellationError()))
+        try? deleteRefresh()
+        try? deleteOwner()
+        clearMemoryTokens()
         if let refreshToken, !refreshToken.isEmpty {
             try? await tokens.revoke(refreshToken: refreshToken)
         }
-        try? deleteRefresh()
-        clearMemoryTokens()
     }
 
     func authorizedAccessToken() async throws -> String {
@@ -370,6 +419,7 @@ actor VoxellaAuthService {
     }
 
     private func store(_ pair: VoxellaAuthTokens) throws {
+        if let owner = pair.userID { try saveOwner(owner) }
         if let refresh = pair.refreshToken, !refresh.isEmpty {
             try saveRefresh(refresh)
         }

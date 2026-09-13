@@ -10,7 +10,7 @@
   <img src="../../assets/macos-badge.png" alt="下載 macOS 版 Palmier Pro" width="180" />
 </a>
 
-<sub><i>需要搭載 Apple Silicon 的 macOS 26 (Tahoe)</i></sub>
+<sub><i>需要搭載 Apple Silicon 的 macOS 15 (Sequoia)</i></sub>
 
 <a href="https://x.com/Palmier_io"><img src="https://img.shields.io/badge/Follow-%40Palmier__io-000000?style=flat&logo=x&logoColor=white" alt="在 X 上追蹤" /></a>
 <a href="https://discord.com/invite/SMVW6pKYmg"><img src="https://img.shields.io/badge/Join-Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="加入 Discord" /></a>
@@ -103,7 +103,7 @@ app 內建一個 [mcpb](https://github.com/modelcontextprotocol/mcpb)，可在 C
 
 **支援哪些平台？**
 
-僅支援搭載 Apple Silicon 的 macOS 26 (Tahoe)。
+僅支援搭載 Apple Silicon 的 macOS 15 (Sequoia)。
 
 更多內容請查看 [FAQ.md](../../FAQ.md)。
 

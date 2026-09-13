@@ -17,9 +17,7 @@ struct SearchIndexPreflightTests {
     private let spec = VisualEmbedder.Spec(
         model: "preflight-test",
         version: 1,
-        embeddingDim: 4,
-        imageSize: 8,
-        contextLength: 8
+        embeddingDim: 4
     )
 
     @Test func transcriptEligibilityMatchesMediaAudio() async throws {

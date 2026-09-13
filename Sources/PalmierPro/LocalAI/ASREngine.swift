@@ -39,10 +39,15 @@ enum ASREngine: String, Codable, CaseIterable, Sendable {
 
 enum ASREngineRouteReason: String, Sendable {
     case userLocked
-    case confident
-    case qwenParakeetAmbiguous
-    case whisperDominant
-    case topEngine
+    case weightedEvidence
+    case insufficientSpeech
+    case mixedLanguages
+    case noReliableLanguageAnchor
+    case insufficientWeightedEvidence
+    case invalidLanguageEvidence
+    case engineCoverage
+    case chineseEnglishConflict
+    case insufficientEngineCoverage
 }
 
 struct ASREngineScores: Equatable, Sendable {
@@ -82,4 +87,5 @@ struct ASREngineRouteDecision: Equatable, Sendable {
     var whisperHint: String?
     var routeConfidence: Float
     var speechDuration: Double
+    var languageVote: ASRLanguageVoteResult? = nil
 }

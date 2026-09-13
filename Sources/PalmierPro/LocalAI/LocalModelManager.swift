@@ -16,6 +16,7 @@ enum LocalModelID: String, Codable, CaseIterable, Identifiable, Sendable {
     case spokenLanguageID
     case forcedAligner
     case sileroVAD
+    case sileroVADMLX
     case sortformerDiarization
     case weSpeaker
     case qwenTTS17B
@@ -359,6 +360,21 @@ final class LocalModelManager {
             storage: .coreMLBundle(directoryName: LocalSpeechVAD.coreMLBundleName)
         ),
         .init(
+            id: .sileroVADMLX,
+            title: "Silero VAD v6 MLX",
+            purpose: "32 ms ASR speech-probability detection",
+            repository: "mlx-community/silero-vad-v6",
+            revision: "2ebf4a5e10726a2e78ddd4d70eedfb6f1c33eb06",
+            weightByteSize: 1_237_860,
+            weightSHA256: "65b6c5f0293cbc44d109e58bef78b474d9c65dedbee814cf0b90ef5f0d9150ff",
+            byteSize: 1_238_323,
+            sizeLabel: "~ 1.3 MB",
+            license: "MIT",
+            licenseURL: URL(string: "https://github.com/snakers4/silero-vad/blob/master/LICENSE"),
+            requiredFor: [.transcribe],
+            isRecommended: true
+        ),
+        .init(
             id: .sortformerDiarization,
             title: "Streaming Sortformer v2.1 MLX",
             purpose: "Streaming speaker diarization with overlap detection",
@@ -405,7 +421,7 @@ final class LocalModelManager {
         .init(
             id: .weMMEmbedding2B4Bit,
             title: "WeMM Embedding 2B 4-bit",
-            purpose: "On-device multimodal search over session video and transcript",
+            purpose: "On-device semantic search over sessions, videos, and images",
             repository: "hfadam/WeMM-Embedding-2B-MLX-4bit",
             revision: "5ce6966e8b62135f771f22104bf9c0d1b6a4c075",
             weightByteSize: 2_007_778_681,
@@ -429,13 +445,21 @@ final class LocalModelManager {
     var states: [LocalModelID: LocalModelDownloadState] = [:]
     private(set) var activeASRModelID: LocalModelID
     private var activeDownloads: [LocalModelID: Task<Void, Never>] = [:]
+    private var queuedDownloads: [LocalModelID] = []
+    private var waiters: [LocalModelID: [UUID: CheckedContinuation<Void, Error>]] = [:]
+    private var preparationObservers: [UUID: (ids: [LocalModelID], handler: (String) -> Void)] = [:]
     private var pendingASRActivation: Set<LocalModelID> = []
     private var refreshTask: Task<Void, Never>?
     private var refreshGeneration = 0
+    private var removals: [LocalModelID: Task<Void, Never>] = [:]
+    private var searchModelGeneration = 0
 
     private init() {
         activeASRModelID = Self.preferredASRModelID()
         refreshInstallationStates()
+        Task { [weak self] in
+            await self?.restoreAuthorizedDownloads()
+        }
     }
 
     func presentManager() {
@@ -510,6 +534,165 @@ final class LocalModelManager {
         }
     }
 
+    func ensureTranscriptionModels(
+        languageCode: String?,
+        speakerCount: Int?,
+        onProgress: ((String) -> Void)? = nil
+    ) async throws {
+        let required = LocalModelInstallPlan.requiredModelIDs(
+            languageCode: languageCode,
+            speakerCount: speakerCount,
+            whisperFallbackModelID: activeASRModelID
+        )
+        try await ensureModels(required, onProgress: onProgress)
+    }
+
+    func ensureDubModels(
+        modelID: LocalModelID,
+        onProgress: ((String) -> Void)? = nil
+    ) async throws {
+        try await ensureModels([modelID, .forcedAligner], onProgress: onProgress)
+    }
+
+    private func transcriptionDownloadProgress(for ids: [LocalModelID]) -> Double {
+        guard !ids.isEmpty else { return 1 }
+        let sum = ids.reduce(0.0) { partial, id in
+            switch state(for: id) {
+            case .installed:
+                return partial + 1
+            case .downloading(let progress, _):
+                return partial + min(max(progress, 0), 1)
+            default:
+                return partial
+            }
+        }
+        return sum / Double(ids.count)
+    }
+
+    private func ensureModels(
+        _ ids: [LocalModelID],
+        onProgress: ((String) -> Void)?
+    ) async throws {
+        let required = Array(Set(ids)).sorted { $0.rawValue < $1.rawValue }
+        let missing = required.filter { !state(for: $0).isInstalled }
+        guard !missing.isEmpty else { return }
+        for id in missing {
+            let model = descriptor(for: id)
+            guard !model.needsLicenseAcceptance(accepted: isLicenseAccepted(id)) else {
+                throw LocalAIError.modelLicenseAcceptanceRequired(model.title)
+            }
+        }
+
+        let observerID = UUID()
+        if let onProgress {
+            preparationObservers[observerID] = (required, onProgress)
+            notifyPreparationObserver(observerID)
+        }
+        defer { preparationObservers.removeValue(forKey: observerID) }
+
+        for id in missing {
+            try Task.checkCancellation()
+            if !state(for: id).isBusy {
+                let model = descriptor(for: id)
+                try await LocalModelDownloadAuthorizationStore.shared.authorize(
+                    .init(id: id, revision: model.revision)
+                )
+                enqueueAuthorizedDownload(id)
+            }
+        }
+        for id in missing {
+            try Task.checkCancellation()
+            try await waitForModel(id)
+        }
+    }
+
+    private func waitForModel(_ id: LocalModelID) async throws {
+        if state(for: id).isInstalled { return }
+        if case .failed(let message) = state(for: id) {
+            throw LocalAIError.modelPreparationFailed(message)
+        }
+        let waiterID = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if state(for: id).isInstalled {
+                    continuation.resume()
+                } else if case .failed(let message) = state(for: id) {
+                    continuation.resume(throwing: LocalAIError.modelPreparationFailed(message))
+                } else if !state(for: id).isBusy {
+                    continuation.resume(throwing: LocalAIError.speechModelsDownloadFailed)
+                } else {
+                    waiters[id, default: [:]][waiterID] = continuation
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelWaiter(waiterID, for: id)
+            }
+        }
+    }
+
+    private func cancelWaiter(_ waiterID: UUID, for id: LocalModelID) {
+        guard let continuation = waiters[id]?.removeValue(forKey: waiterID) else { return }
+        if waiters[id]?.isEmpty == true { waiters[id] = nil }
+        continuation.resume(throwing: CancellationError())
+    }
+
+    private func settleWaiters(for id: LocalModelID) {
+        guard let continuations = waiters.removeValue(forKey: id)?.values else { return }
+        let result: Result<Void, Error>
+        switch state(for: id) {
+        case .installed:
+            result = .success(())
+        case .failed(let message):
+            result = .failure(LocalAIError.modelPreparationFailed(message))
+        default:
+            result = .failure(CancellationError())
+        }
+        for continuation in continuations {
+            continuation.resume(with: result)
+        }
+    }
+
+    private func notifyPreparationObservers() {
+        for id in preparationObservers.keys {
+            notifyPreparationObserver(id)
+        }
+    }
+
+    private func notifyPreparationObserver(_ observerID: UUID) {
+        guard let observer = preparationObservers[observerID] else { return }
+        let percent = Int((transcriptionDownloadProgress(for: observer.ids) * 100).rounded())
+        observer.handler("Preparing local resources… \(percent)%")
+    }
+
+    private func restoreAuthorizedDownloads() async {
+        let records: [LocalModelDownloadAuthorizationStore.Record]
+        do {
+            records = try await LocalModelDownloadAuthorizationStore.shared.records()
+        } catch {
+            Log.transcription.error("model download recovery failed error=\(error.localizedDescription)")
+            return
+        }
+        let recoveredModels = records.compactMap { record in
+            Self.catalog.first { $0.id == record.id }
+        }
+        let installedIDs = await Task.detached(priority: .utility) {
+            Set(recoveredModels.filter { Self.isInstalled($0) }.map(\.id))
+        }.value
+        var valid: [LocalModelDownloadAuthorizationStore.Record] = []
+        for record in records {
+            guard let model = Self.catalog.first(where: { $0.id == record.id }),
+                  model.revision == record.revision,
+                  !model.needsLicenseAcceptance(accepted: isLicenseAccepted(record.id)),
+                  !installedIDs.contains(record.id) else { continue }
+            valid.append(record)
+        }
+        try? await LocalModelDownloadAuthorizationStore.shared.replace(with: valid)
+        for record in valid {
+            enqueueAuthorizedDownload(record.id)
+        }
+    }
+
     func hasRequiredDubModels(modelID: LocalModelID) -> Bool {
         state(for: modelID).isInstalled && state(for: .forcedAligner).isInstalled
     }
@@ -525,14 +708,36 @@ final class LocalModelManager {
                 return Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, Self.isInstalled($0)) })
             }.value
             guard let self, !Task.isCancelled, generation == self.refreshGeneration else { return }
-            for model in catalog where self.activeDownloads[model.id] == nil {
+            let searchWasInstalled = self.state(for: SearchIndexConfig.modelID).isInstalled
+            if self.removals[SearchIndexConfig.modelID] == nil,
+               self.activeDownloads[SearchIndexConfig.modelID] == nil,
+               !searchWasInstalled,
+               installed[SearchIndexConfig.modelID] == true {
+                await WeMMEmbeddingProvider.shared.resume(generation: self.nextSearchModelGeneration())
+            }
+            guard !Task.isCancelled, generation == self.refreshGeneration else { return }
+            for model in catalog
+                where self.activeDownloads[model.id] == nil && !self.queuedDownloads.contains(model.id)
+                    && self.removals[model.id] == nil {
                 self.states[model.id] = installed[model.id] == true ? .installed : .notInstalled
+            }
+            if !searchWasInstalled, self.state(for: SearchIndexConfig.modelID).isInstalled {
+                SearchIndexCoordinator.sweepAll()
             }
         }
     }
 
+    func waitForInstallationRefresh() async {
+        await refreshTask?.value
+    }
+
+    private func nextSearchModelGeneration() -> Int {
+        searchModelGeneration += 1
+        return searchModelGeneration
+    }
+
     func download(_ id: LocalModelID) {
-        download(id, activateWhenInstalled: false)
+        authorizeAndQueue(id, activateWhenInstalled: false)
     }
 
     func downloadAndUseASRModel(_ id: LocalModelID) {
@@ -540,22 +745,53 @@ final class LocalModelManager {
             download(id)
             return
         }
-        download(id, activateWhenInstalled: true)
+        authorizeAndQueue(id, activateWhenInstalled: true)
     }
 
-    private func download(_ id: LocalModelID, activateWhenInstalled: Bool) {
-        guard activeDownloads[id] == nil else { return }
+    private func authorizeAndQueue(_ id: LocalModelID, activateWhenInstalled: Bool) {
+        guard removals[id] == nil else { return }
+        guard !state(for: id).isInstalled else {
+            if activateWhenInstalled { _ = useASRModel(id) }
+            return
+        }
         let model = descriptor(for: id)
         guard !model.needsLicenseAcceptance(accepted: isLicenseAccepted(id)) else {
             states[id] = .failed("Review and accept the model license before downloading.")
             return
         }
         if activateWhenInstalled { pendingASRActivation.insert(id) }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await LocalModelDownloadAuthorizationStore.shared.authorize(
+                    .init(id: id, revision: model.revision)
+                )
+                self.enqueueAuthorizedDownload(id)
+            } catch {
+                self.states[id] = .failed(error.localizedDescription)
+                self.pendingASRActivation.remove(id)
+            }
+        }
+    }
+
+    private func enqueueAuthorizedDownload(_ id: LocalModelID) {
+        guard removals[id] == nil, !state(for: id).isInstalled, !state(for: id).isBusy else { return }
         states[id] = .queued
+        queuedDownloads.append(id)
+        notifyPreparationObservers()
+        startNextDownloadIfNeeded()
+    }
+
+    private func startNextDownloadIfNeeded() {
+        guard activeDownloads.isEmpty, !queuedDownloads.isEmpty else { return }
+        let id = queuedDownloads.removeFirst()
         activeDownloads[id] = Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.performDownload(id)
+                try await LocalModelInstallationGate.shared.withPermit { [weak self] in
+                    guard let self else { throw CancellationError() }
+                    try await self.performDownload(id)
+                }
                 let model = self.descriptor(for: id)
                 let installed = await Task.detached(priority: .utility) {
                     Self.isInstalled(model)
@@ -563,13 +799,20 @@ final class LocalModelManager {
                 guard installed else {
                     throw LocalAIError.incompleteModel(model.title)
                 }
+                try Task.checkCancellation()
+                if id == SearchIndexConfig.modelID {
+                    await WeMMEmbeddingProvider.shared.resume(generation: self.nextSearchModelGeneration())
+                    try Task.checkCancellation()
+                }
                 self.states[id] = .installed
                 if self.pendingASRActivation.remove(id) != nil {
                     self.useASRModel(id)
                 }
                 if id == .weMMEmbedding2B4Bit {
                     SessionIndexCoordinator.shared.resumeEmbeddings()
+                    SearchIndexCoordinator.sweepAll()
                 }
+                try? await LocalModelDownloadAuthorizationStore.shared.revoke(id)
             } catch let error where error is CancellationError || Task.isCancelled
                 || (error as? URLError)?.code == .cancelled {
                 self.pendingASRActivation.remove(id)
@@ -577,7 +820,10 @@ final class LocalModelManager {
                 let installed = await Task.detached(priority: .utility) {
                     Self.isInstalled(model)
                 }.value
-                self.states[id] = installed ? .installed : .notInstalled
+                if self.removals[id] == nil {
+                    self.states[id] = installed ? .installed : .notInstalled
+                }
+                try? await LocalModelDownloadAuthorizationStore.shared.revoke(id)
             } catch {
                 self.pendingASRActivation.remove(id)
                 let message = Self.userFacingDownloadError(error)
@@ -585,26 +831,36 @@ final class LocalModelManager {
                     "local model download failed id=\(id.rawValue) error=\(message)"
                 )
                 self.states[id] = .failed(message)
+                try? await LocalModelDownloadAuthorizationStore.shared.revoke(id)
             }
             self.activeDownloads[id] = nil
+            self.settleWaiters(for: id)
+            self.notifyPreparationObservers()
+            self.startNextDownloadIfNeeded()
         }
     }
 
     func downloadRecommended() {
-        Task {
-            for model in Self.catalog where model.isRecommended && !state(for: model.id).isInstalled {
-                download(model.id)
-                while state(for: model.id).isBusy {
-                    try? await Task.sleep(for: .milliseconds(250))
-                }
-                if case .failed = state(for: model.id) { break }
-            }
+        Task { [weak self] in
+            guard let self else { return }
+            let ids = Self.catalog.filter(\.isRecommended).map(\.id)
+            try? await self.ensureModels(ids, onProgress: nil)
         }
     }
 
     func cancel(_ id: LocalModelID) {
         pendingASRActivation.remove(id)
-        activeDownloads[id]?.cancel()
+        if let index = queuedDownloads.firstIndex(of: id) {
+            queuedDownloads.remove(at: index)
+            states[id] = .notInstalled
+            settleWaiters(for: id)
+            notifyPreparationObservers()
+        } else {
+            activeDownloads[id]?.cancel()
+        }
+        Task {
+            try? await LocalModelDownloadAuthorizationStore.shared.revoke(id)
+        }
     }
 
     func isLicenseAccepted(_ id: LocalModelID) -> Bool {
@@ -616,23 +872,39 @@ final class LocalModelManager {
     }
 
     func remove(_ id: LocalModelID) {
+        guard removals[id] == nil else { return }
         guard !isActiveASRModel(id) else {
             states[id] = .failed("Select another speech recognition model before removing this one.")
             return
         }
         cancel(id)
         let model = descriptor(for: id)
+        let download = activeDownloads[id]
+        let searchGeneration = id == SearchIndexConfig.modelID ? nextSearchModelGeneration() : 0
+        refreshGeneration += 1
         states[id] = .queued
-        Task { [weak self] in
+        removals[id] = Task { [weak self] in
             guard let self else { return }
+            defer { self.removals[id] = nil }
+            await download?.value
             do {
-                let directory = try Self.directory(for: model)
-                try await Self.removeDirectoryIfPresent(directory)
+                if id == SearchIndexConfig.modelID {
+                    try await WeMMEmbeddingProvider.shared.suspend(generation: searchGeneration)
+                    await SearchIndexCoordinator.resetAll()
+                }
+                try await LocalModelInstallationGate.shared.withPermit {
+                    try await Self.removeModelFiles(model)
+                }
                 self.states[id] = .notInstalled
             } catch {
                 self.states[id] = .failed(error.localizedDescription)
             }
         }
+    }
+
+    @concurrent private static func removeModelFiles(_ model: LocalModelDescriptor) async throws {
+        let directory = try directory(for: model)
+        try await removeDirectoryIfPresent(directory)
     }
 
     nonisolated static func directory(for id: LocalModelID) throws -> URL {
@@ -959,6 +1231,8 @@ final class LocalModelManager {
             ["vocab.json", "merges.txt", "tokenizer_config.json"]
         case .sileroVAD:
             LocalSpeechVAD.requiredBundleFiles.map { "\(LocalSpeechVAD.coreMLBundleName)/\($0)" }
+        case .sileroVADMLX:
+            []
         case .spokenLanguageID, .sortformerDiarization, .weSpeaker:
             []
         }
@@ -1033,6 +1307,7 @@ final class LocalModelManager {
             progress: range.lowerBound + normalized * (range.upperBound - range.lowerBound),
             message: message
         )
+        notifyPreparationObservers()
     }
 
     private nonisolated static func writeManifest(
@@ -1206,15 +1481,18 @@ enum LocalAIError: LocalizedError {
     case vadNoSpeech
     case asrNoSpeech
     case noAudioOutput
+    case speechModelsDownloadFailed
+    case modelLicenseAcceptanceRequired(String)
+    case modelPreparationFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .modelsUnavailable:
-            "This build does not include the local MLX speech runtime."
-        case .missingModels(let names):
-            "Download the required local models first: \(names)."
-        case .incompleteModel(let name):
-            "The downloaded \(name) files failed local integrity checks. Try downloading the model again."
+            "Local speech processing is unavailable in this build. Install the full app to use this feature."
+        case .missingModels:
+            "Local transcription is not ready. Retry to download the required resources."
+        case .incompleteModel:
+            "Downloaded speech resources could not be verified. Download them again."
         case .emptyTranscript:
             "No speech was recognized in this file."
         case .noAudioSamples:
@@ -1226,7 +1504,13 @@ enum LocalAIError: LocalizedError {
         case .asrNoSpeech:
             "Speech recognition did not produce a transcript from the detected audio."
         case .noAudioOutput:
-            "The speech model did not produce audio."
+            "Voice generation did not produce audio."
+        case .speechModelsDownloadFailed:
+            "Speech resources could not be downloaded. Check the network and retry."
+        case .modelLicenseAcceptanceRequired:
+            "Review and accept the additional terms in Local Features before downloading."
+        case .modelPreparationFailed(let message):
+            message
         }
     }
 }

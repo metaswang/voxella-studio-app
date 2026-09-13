@@ -4,6 +4,11 @@
 "or use your own Anthropic key" = "ou use sua própria chave da Anthropic";
 "Subscribe" = "Assinar";
 "Open Settings" = "Abrir configurações";
+"Appearance" = "Aparência";
+"Dark" = "Escuro";
+"Light" = "Claro";
+"System" = "Sistema";
+"Match macOS appearance automatically." = "Ajustar automaticamente à aparência do macOS.";
 
 "Language" = "Idioma";
 "Application Language" = "Idioma do app";
@@ -31,6 +36,9 @@
 "Turn a script into a voiceover with a selected reference voice." = "Transforme um roteiro em narração com a voz de referência escolhida.";
 "Edit a video" = "Editar um vídeo";
 "Arrange video, audio, images, and captions into a finished project." = "Organize vídeo, áudio, imagens e legendas em um projeto finalizado.";
+"Dictation" = "Ditação";
+"Press %@ to speak into any app." = "Pressione %@ para ditar em qualquer app.";
+"Send a notetaker to Meet, Teams, or Zoom. Requires a %@ plan or higher." = "Envie um anotador para Meet, Teams ou Zoom. Requer o plano %@ ou superior.";
 "Recent tasks" = "Tarefas recentes";
 "Video projects" = "Projetos de vídeo";
 "Voiceover language" = "Idioma da narração";

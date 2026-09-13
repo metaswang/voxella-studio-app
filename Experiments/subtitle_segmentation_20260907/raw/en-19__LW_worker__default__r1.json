@@ -1,0 +1,59 @@
+{
+  "id": "en-19",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=en\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nThe label reads “USB-C, 20 W,” but that does not describe every cable in the box. Check the small print on each connector before putting the equipment into separate bags. One bag is marked “A/B test,” and another carries the version number v2.1. Keep those labels exactly as they are. If a label has fallen off, place the item on the review table instead of guessing which kit it belongs to.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "bb5c073298e7c650a8582a23bf2069c09502d6501133e7c824992f25ccc2c07f",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:22.140799+00:00",
+  "raw": "{\"subtitles\":[\"The label reads “USB-C, 20 W,”\",\" but that does not describe\",\" every cable in the box.\", \"Check the small print on each connector\",\" before putting the equipment\",\" into separate bags.\", \"One bag is marked “A/B test,”\",\" and another carries the version number v2.1.\", \"Keep those labels exactly as they are.\", \"If a label has fallen off,\", \"place the item on the review table\",\" instead of guessing which kit it belongs to.\"],\"batch_summary\":\"Categorizing and sorting cables and equipment based on labels and placing unidentified items on the review table.\"}",
+  "usage": {
+    "promptTokenCount": 295,
+    "candidatesTokenCount": 131,
+    "totalTokenCount": 426,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 295
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.1640590410024743,
+  "transport_attempts": 1,
+  "lines": [
+    "The label reads “USB-C, 20 W,”",
+    " but that does not describe",
+    " every cable in the box.",
+    "Check the small print on each connector",
+    " before putting the equipment",
+    " into separate bags.",
+    "One bag is marked “A/B test,”",
+    " and another carries the version number v2.1.",
+    "Keep those labels exactly as they are.",
+    "If a label has fallen off,",
+    "place the item on the review table",
+    " instead of guessing which kit it belongs to."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 12,
+    "boundaries": 11,
+    "tp": 9,
+    "ref_count": 9,
+    "f1": 0.9,
+    "overlong": 0,
+    "short": 2,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 44
+  }
+}

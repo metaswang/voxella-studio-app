@@ -1,0 +1,61 @@
+{
+  "id": "es-02",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language es.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: es\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nCuando abras el proyecto mañana, las grabaciones originales seguirán disponibles. Selecciona primero la entrevista y lleva la reproducción al inicio de la respuesta. No borres enseguida el momento de silencio solo porque nadie está hablando. Esa pausa permite que el público comprenda la pregunta antes de escuchar la respuesta. Cuando terminemos el primer montaje, decidiremos dónde debe comenzar la música. También revisaremos el final para comprobar si necesita una explicación adicional.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "6f2a41052bca227d172a5e1ed49615a0818e49ab264cfd6e4533694467023547",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:41.449823+00:00",
+  "raw": "{\n  \"lines\": [\n    \"Cuando abras el proyecto mañana,\",\n    \"las grabaciones originales seguirán disponibles.\",\n    \"Selecciona primero la entrevista\",\n    \"y lleva la reproducción al inicio\",\n    \"de la respuesta.\",\n    \"No borres enseguida el momento de silencio\",\n    \"solo porque nadie está hablando.\",\n    \"Esa pausa permite que el público comprenda\",\n    \"la pregunta antes de escuchar la respuesta.\",\n    \"Cuando terminemos el primer montaje,\",\n    \"decidiremos dónde debe comenzar la música.\",\n    \"También revisaremos el final\",\n    \"para comprobar si necesita\",\n    \"una explicación adicional.\"\n  ]\n}",
+  "usage": {
+    "promptTokenCount": 308,
+    "candidatesTokenCount": 151,
+    "totalTokenCount": 459,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 308
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.213271166998311,
+  "transport_attempts": 1,
+  "lines": [
+    "Cuando abras el proyecto mañana,",
+    "las grabaciones originales seguirán disponibles.",
+    "Selecciona primero la entrevista",
+    "y lleva la reproducción al inicio",
+    "de la respuesta.",
+    "No borres enseguida el momento de silencio",
+    "solo porque nadie está hablando.",
+    "Esa pausa permite que el público comprenda",
+    "la pregunta antes de escuchar la respuesta.",
+    "Cuando terminemos el primer montaje,",
+    "decidiremos dónde debe comenzar la música.",
+    "También revisaremos el final",
+    "para comprobar si necesita",
+    "una explicación adicional."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 14,
+    "boundaries": 13,
+    "tp": 10,
+    "ref_count": 11,
+    "f1": 0.8333333333333333,
+    "overlong": 0,
+    "short": 1,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 48
+  }
+}

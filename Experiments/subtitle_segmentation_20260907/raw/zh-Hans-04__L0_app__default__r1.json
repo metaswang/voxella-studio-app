@@ -1,0 +1,60 @@
+{
+  "id": "zh-Hans-04",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language zh-Hans.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: zh-Hans\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n我不是说这台相机不能使用，而是说我们还没有测试过它在大雨中的表现。明天的采访可以照常进行，前提是现场有合适的室内位置。如果天气突然变化，请先联系负责协调的同事，不要到了拍摄地点才临时决定。我们宁可提前调整安排，也不希望唯一一次采访因为准备不足而无法保留。设备清单我已经发到群里，出发前再核对一遍。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "eec7a4ab894ffd0fadbbc0339eee96cb5be05672377345f1916dde16f80a3b23",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:32.218120+00:00",
+  "raw": "{\"lines\":[\"我不是说这台相机不能使用，\", \"而是说我们还没有测试过它\", \"在大雨中的表现。\", \"明天的采访可以照常进行，\", \"前提是现场有合适的室内位置。\", \"如果天气突然变化，\", \"请先联系负责协调的同事，\", \"不要到了拍摄地点才临时决定。\", \"我们宁可提前调整安排，\", \"也不希望唯一一次采访\", \"因为准备不足而无法保留。\", \"设备清单我已经发到群里，\", \"出发前再核对一遍。\"]}",
+  "usage": {
+    "promptTokenCount": 314,
+    "candidatesTokenCount": 116,
+    "totalTokenCount": 430,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 314
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2097018749991548,
+  "transport_attempts": 1,
+  "lines": [
+    "我不是说这台相机不能使用，",
+    "而是说我们还没有测试过它",
+    "在大雨中的表现。",
+    "明天的采访可以照常进行，",
+    "前提是现场有合适的室内位置。",
+    "如果天气突然变化，",
+    "请先联系负责协调的同事，",
+    "不要到了拍摄地点才临时决定。",
+    "我们宁可提前调整安排，",
+    "也不希望唯一一次采访",
+    "因为准备不足而无法保留。",
+    "设备清单我已经发到群里，",
+    "出发前再核对一遍。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 13,
+    "boundaries": 12,
+    "tp": 11,
+    "ref_count": 12,
+    "f1": 0.9166666666666666,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 14
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "id": "ja-05",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language ja.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: ja\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n箱には「USB-C、20 W」と書かれていますが、すべてのケーブルが同じ機器に使えるわけではありません。袋に分ける前に、接続部分の小さな文字を一つずつ確認してください。「A/B test」というラベルやバージョン番号v2.1は、元の表記をそのまま残します。ラベルが外れている場合は、所属を推測して戻すのではなく、確認用の机に置いてください。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "4eec7172cd54dc2f250a06262cb3ec103ecc452e5c30f57cc6dc400cbb6cc29a",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:22.606411+00:00",
+  "raw": "{\"lines\":[\"箱には「USB-C、20 W」と書かれていますが、\",\"すべてのケーブルが同じ機器に使えるわけではありません。\",\"袋に分ける前に、接続部分の小さな文字を一つずつ確認してください。\",\"「A/B test」というラベルやバージョン番号v2.1は、元の表記をそのまま残します。\",\"ラベルが外れている場合は、所属を推測して戻すのではなく、確認用の机に置いてください。\"]}",
+  "usage": {
+    "promptTokenCount": 322,
+    "candidatesTokenCount": 135
+  },
+  "provider_usage": {
+    "prompt_tokens": 322,
+    "completion_tokens": 135,
+    "total_tokens": 457,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.771287083000061,
+  "transport_attempts": 1,
+  "lines": [
+    "箱には「USB-C、20 W」と書かれていますが、",
+    "すべてのケーブルが同じ機器に使えるわけではありません。",
+    "袋に分ける前に、接続部分の小さな文字を一つずつ確認してください。",
+    "「A/B test」というラベルやバージョン番号v2.1は、元の表記をそのまま残します。",
+    "ラベルが外れている場合は、所属を推測して戻すのではなく、確認用の机に置いてください。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 12,
+    "f1": 0.5,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 43
+  }
+}

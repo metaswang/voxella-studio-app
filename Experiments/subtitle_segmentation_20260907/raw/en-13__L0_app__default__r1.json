@@ -1,0 +1,57 @@
+{
+  "id": "en-13",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language en.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: en\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nThe U.S. office sent its notes at 9:30 a.m., just before our weekly planning call. Most comments concerned the final paragraph, not the overall direction of the article. We agreed to check the figures again and explain where the estimates came from. Prof. Lewis offered to review the revised draft, provided that we sent it before Friday. That gave the editor enough time to prepare the next version for discussion.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "0bd57d184aecee482a73c03a4240a71d3d1dafbcd22c6fe85236320a53adf52a",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:11.016658+00:00",
+  "raw": "{\"lines\": [\n  \"The U.S. office sent its notes at 9:30 a.m.,\",\n  \"just before our weekly planning call.\",\n  \"Most comments concerned the final paragraph,\",\n  \"not the overall direction of the article.\",\n  \"We agreed to check the figures again and\",\n  \"explain where the estimates came from.\",\n  \"Prof. Lewis offered to review the revised draft,\",\n  \"provided that we sent it before Friday.\",\n  \"That gave the editor enough time to prepare\",\n  \"the next version for discussion.\"\n]}",
+  "usage": {
+    "promptTokenCount": 307,
+    "candidatesTokenCount": 127,
+    "totalTokenCount": 434,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 307
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.1154485420047422,
+  "transport_attempts": 1,
+  "lines": [
+    "The U.S. office sent its notes at 9:30 a.m.,",
+    "just before our weekly planning call.",
+    "Most comments concerned the final paragraph,",
+    "not the overall direction of the article.",
+    "We agreed to check the figures again and",
+    "explain where the estimates came from.",
+    "Prof. Lewis offered to review the revised draft,",
+    "provided that we sent it before Friday.",
+    "That gave the editor enough time to prepare",
+    "the next version for discussion."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 10,
+    "boundaries": 9,
+    "tp": 7,
+    "ref_count": 9,
+    "f1": 0.7777777777777778,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 48
+  }
+}

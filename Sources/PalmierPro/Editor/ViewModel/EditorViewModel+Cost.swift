@@ -39,8 +39,14 @@ struct GenerationLogEntry: Codable, Sendable, Equatable, Identifiable {
 
 @MainActor
 extension GenerationLogEntry {
-    var modelDisplayName: String {
-        ModelRegistry.displayName(for: model)
+    var activityTitle: String {
+        switch ModelRegistry.byId[model] {
+        case .video?: "Video generation"
+        case .image?: "Image generation"
+        case .audio?: "Audio generation"
+        case .upscale?: "Media enhancement"
+        case nil: "AI generation"
+        }
     }
 
     var sfSymbolName: String {

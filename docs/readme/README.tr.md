@@ -10,7 +10,7 @@
   <img src="../../assets/macos-badge.png" alt="Palmier Pro'yu macOS için indir" width="180" />
 </a>
 
-<sub><i>Apple Silicon işlemcili cihazlarda macOS 26 (Tahoe) sürümü gerektirir</i></sub>
+<sub><i>Apple Silicon işlemcili cihazlarda macOS 15 (Sequoia) sürümü gerektirir</i></sub>
 
 <a href="https://x.com/Palmier_io"><img src="https://img.shields.io/badge/Takip Et-%40Palmier__io-000000?style=flat&logo=x&logoColor=white" alt="X'te takip et" /></a>
 <a href="https://discord.com/invite/SMVW6pKYmg"><img src="https://img.shields.io/badge/Katıl -Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord'a katıl" /></a>
@@ -105,7 +105,7 @@ Editör ücretsizdir. Herhangi bir giriş (login) gerektirmeden indirebilir ve C
 
 **Hangi platformları destekliyor?**
 
-Yalnızca Apple Silicon işlemcili ve macOS 26 (Tahoe) işletim sistemli cihazlarda çalışır.
+Yalnızca Apple Silicon işlemcili ve macOS 15 (Sequoia) işletim sistemli cihazlarda çalışır.
 
 Daha fazlası için [FAQ.md](../../FAQ.md) dosyasına bakın.
 

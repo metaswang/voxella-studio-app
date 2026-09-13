@@ -1,0 +1,60 @@
+{
+  "id": "zh-Hans-16",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language zh-Hans.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: zh-Hans\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n先把桌上的台灯关掉，再接上第二台显示器。柜子后面的插座有些松动，这次使用窗边的插线板。等演示结束以后，我会再查一下连接不稳定的原因。现在如果看到错误提示，请按屏幕上的原文记下来，不要凭印象换一种说法。这些记录能帮助我们判断，问题到底出在线材、接口，还是设备当前的设置里面。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "d54b18e8b6f9fed032189530166c6f722db5a433f35aaf1c75875c3671f05729",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:56.018203+00:00",
+  "raw": "{\"lines\":[\"先把桌上的台灯关掉，\", \"再接上第二台显示器。\", \"柜子后面的插座有些松动，\", \"这次使用窗边的插线板。\", \"等演示结束以后，\", \"我会再查一下\", \"连接不稳定的原因。\", \"现在如果看到错误提示，\", \"请按屏幕上的原文记下来，\", \"不要凭印象换一种说法。\", \"这些记录能帮助我们判断，\", \"问题到底出在线材、接口，\", \"还是设备当前的设置里面。\"]}",
+  "usage": {
+    "promptTokenCount": 311,
+    "candidatesTokenCount": 113,
+    "totalTokenCount": 424,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 311
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.0355771250033285,
+  "transport_attempts": 1,
+  "lines": [
+    "先把桌上的台灯关掉，",
+    "再接上第二台显示器。",
+    "柜子后面的插座有些松动，",
+    "这次使用窗边的插线板。",
+    "等演示结束以后，",
+    "我会再查一下",
+    "连接不稳定的原因。",
+    "现在如果看到错误提示，",
+    "请按屏幕上的原文记下来，",
+    "不要凭印象换一种说法。",
+    "这些记录能帮助我们判断，",
+    "问题到底出在线材、接口，",
+    "还是设备当前的设置里面。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 13,
+    "boundaries": 12,
+    "tp": 11,
+    "ref_count": 11,
+    "f1": 0.9565217391304348,
+    "overlong": 0,
+    "short": 1,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 12
+  }
+}

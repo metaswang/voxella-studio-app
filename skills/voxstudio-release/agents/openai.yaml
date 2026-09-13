@@ -1,4 +1,4 @@
 interface:
   display_name: "VoxStudio Release"
-  short_description: "Build, notarize, verify, and publish VoxStudio DMG"
-  default_prompt: "Use $voxstudio-release to build and publish a verified VoxStudio DMG."
+  short_description: "Build and verify a macOS 15+ VoxStudio release"
+  default_prompt: "Use $voxstudio-release to auto-bump and record the next patch version, build, verify macOS 15 compatibility, and publish a VoxStudio DMG."

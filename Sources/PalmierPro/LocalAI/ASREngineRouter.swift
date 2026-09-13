@@ -8,38 +8,31 @@ struct ASRLanguageIdentificationWindow: Equatable, Sendable {
 }
 
 enum ASREngineRouter {
-    static let minimumSpeechDuration: Double = 2.5
-    static let shortWindowDuration: Double = 3
-    static let extendedWindowDuration: Double = 5
     static let identificationWindowCount = 3
-    static let minimumIdentificationWindowDuration: Double = 3
-    static let maximumIdentificationWindowDuration: Double = 5
-    static let confidentScore: Float = 0.80
-    static let confidentMargin: Float = 0.25
-    static let whisperDominantScore: Float = 0.50
-    static let whisperHintConfidence: Float = 0.80
+    static let targetIdentificationWindowDuration = 3.0
+    static let maximumIdentificationWindowDuration = ASRLanguageVotePolicy.standard.maximumSpeechDuration
 
     static func scores(from posterior: [String: Float]) -> ASREngineScores {
         var qwen: Float = 0
         var parakeet: Float = 0
         for (language, probability) in posterior {
             let iso = ASREngineLanguagePolicy.ecapaRoutingCode(language)
-            if ASREngineLanguagePolicy.qwenLanguages.contains(iso) {
+            if ASREngineLanguagePolicy.qwenSupportedLanguages.contains(iso) {
                 qwen += probability
-            } else if ASREngineLanguagePolicy.parakeetLanguages.contains(iso) {
+            }
+            if ASREngineLanguagePolicy.parakeetLanguages.contains(iso) {
                 parakeet += probability
             }
         }
-        let whisper = max(0, 1 - qwen - parakeet)
+        let covered = ASREngineLanguagePolicy.qwenSupportedLanguages.union(ASREngineLanguagePolicy.parakeetLanguages)
+        let whisper = posterior.reduce(Float(0)) { total, entry in
+            total + (covered.contains(ASREngineLanguagePolicy.ecapaRoutingCode(entry.key)) ? 0 : entry.value)
+        }
         return ASREngineScores(qwen: qwen, parakeet: parakeet, whisper: whisper)
     }
 
-    static func isConfident(_ scores: ASREngineScores) -> Bool {
-        scores.leading.score >= confidentScore && scores.margin >= confidentMargin
-    }
-
     static func topLanguage(in posterior: [String: Float]) -> (language: String, confidence: Float)? {
-        posterior.max { $0.value < $1.value }.map { ($0.key, $0.value) }
+        posterior.max { $0.value == $1.value ? $0.key > $1.key : $0.value < $1.value }.map { ($0.key, $0.value) }
     }
 
     static func rankedLanguages(_ posterior: [String: Float], limit: Int = 5) -> [(language: String, confidence: Float)] {
@@ -49,32 +42,10 @@ enum ASREngineRouter {
             .map { (ASREngineLanguagePolicy.ecapaRoutingCode($0.key), $0.value) }
     }
 
-    static func averagePosteriors(_ posteriors: [[String: Float]]) -> [String: Float] {
-        guard !posteriors.isEmpty else { return [:] }
-        var sums: [String: Float] = [:]
-        for posterior in posteriors {
-            for (language, probability) in posterior {
-                sums[language, default: 0] += probability
-            }
-        }
-        let count = Float(posteriors.count)
-        return sums.mapValues { $0 / count }
-    }
-
     static func summary(of posterior: [String: Float], limit: Int = 5) -> String {
         rankedLanguages(posterior, limit: limit)
             .map { "\($0.language):\(String(format: "%.2f", $0.confidence))" }
             .joined(separator: ",")
-    }
-
-    static func highestLanguage(
-        in posterior: [String: Float],
-        belongingTo languages: Set<String>
-    ) -> String? {
-        posterior
-            .filter { languages.contains(ASREngineLanguagePolicy.ecapaRoutingCode($0.key)) }
-            .max { $0.value < $1.value }?
-            .key
     }
 
     static func identificationWindows(
@@ -85,19 +56,11 @@ enum ASREngineRouter {
         let totalSpeech = ranges.reduce(0.0) { $0 + $1.duration }
         guard totalSpeech > 0 else { return [] }
 
-        let windowLength = min(
-            maximumIdentificationWindowDuration,
-            max(minimumIdentificationWindowDuration, min(totalSpeech, maximumIdentificationWindowDuration))
-        )
+        let count = min(identificationWindowCount, max(1, Int(min(
+            Double(identificationWindowCount), totalSpeech / targetIdentificationWindowDuration
+        ))))
+        let windowLength = min(maximumIdentificationWindowDuration, totalSpeech / Double(count))
         let lastOrigin = max(0, totalSpeech - windowLength)
-        let count: Int
-        if lastOrigin < windowLength * 0.5 {
-            count = 1
-        } else if lastOrigin < windowLength * 1.5 {
-            count = 2
-        } else {
-            count = identificationWindowCount
-        }
 
         return (0..<count).compactMap { index in
             let origin = count == 1 ? 0 : lastOrigin * Double(index) / Double(count - 1)
@@ -107,10 +70,58 @@ enum ASREngineRouter {
     }
 
     static func decide(
-        windowPosteriors: [[String: Float]],
-        speechDuration: Double
+        evidence: [ASRLanguageEvidence],
+        policy: ASRLanguageVotePolicy = .standard
     ) -> ASREngineRouteDecision {
-        decide(posterior: averagePosteriors(windowPosteriors), speechDuration: speechDuration)
+        let vote = ASRLanguageVote.pool(evidence, policy: policy)
+        let top = topLanguage(in: vote.posterior)?.language
+        let coverage = scores(from: vote.posterior)
+        let selection = selectEngine(vote: vote, coverage: coverage)
+        let engine = selection.engine
+        return ASREngineRouteDecision(
+            engine: engine,
+            scores: coverage,
+            reason: selection.reason,
+            topLanguage: top,
+            parakeetDomainLanguage: engine == .parakeet ? topLanguage(in: vote.posterior.filter {
+                ASREngineLanguagePolicy.parakeetLanguages.contains($0.key)
+            })?.language : nil,
+            whisperHint: nil,
+            routeConfidence: engine == .whisper ? vote.confidence : coverage[engine],
+            speechDuration: vote.speechDuration,
+            languageVote: vote
+        )
+    }
+
+    private static func selectEngine(
+        vote: ASRLanguageVoteResult,
+        coverage: ASREngineScores
+    ) -> (engine: ASREngine, reason: ASREngineRouteReason) {
+        if vote.reason == .invalidLanguageEvidence || vote.reason == .insufficientSpeech {
+            return (.whisper, vote.reason)
+        }
+        let policy = vote.policy
+        let anchors = Set(vote.anchorLanguages)
+        let windowScores = vote.windowPosteriors.map { scores(from: $0) }
+        func qualifies(_ engine: ASREngine, languages: Set<String>) -> Bool {
+            let score = Double(coverage[engine])
+            return score > policy.minimumPooledConfidence
+                && score - (1 - score) >= policy.minimumMargin
+                && anchors.isSubset(of: languages)
+                && windowScores.allSatisfy { Double($0[engine]) > policy.minimumWindowCoverage }
+        }
+        let qwen = qualifies(.qwen, languages: ASREngineLanguagePolicy.qwenSupportedLanguages)
+        let parakeet = qualifies(.parakeet, languages: ASREngineLanguagePolicy.parakeetLanguages)
+        let bilingual = anchors.isSuperset(of: ["zh", "en"]) || vote.windowPosteriors.contains {
+            let chinese = Double($0["zh", default: 0])
+            let english = Double($0["en", default: 0])
+            return min(chinese, english) >= policy.minimumBilingualEvidence
+                && chinese + english >= policy.minimumAnchorConfidence
+        }
+        if qwen && bilingual { return (.qwen, .chineseEnglishConflict) }
+        if parakeet { return (.parakeet, .engineCoverage) }
+        if qwen { return (.qwen, .engineCoverage) }
+        return (.whisper, .insufficientEngineCoverage)
     }
 
     static func decide(
@@ -135,59 +146,10 @@ enum ASREngineRouter {
             )
         }
 
-        let engineScores = scores(from: posterior)
-        let top = topLanguage(in: posterior)
-        let parakeetLanguage = highestLanguage(
-            in: posterior,
-            belongingTo: ASREngineLanguagePolicy.parakeetLanguages
-        )
-        let ranked = engineScores.ranked
-        let leading = ranked[0]
-        let reason: ASREngineRouteReason
-        let engine: ASREngine
-
-        if speechDuration >= minimumSpeechDuration, isConfident(engineScores) {
-            engine = leading.engine
-            reason = .confident
-        } else if leading.engine == .whisper, leading.score >= whisperDominantScore {
-            engine = .whisper
-            reason = .whisperDominant
-        } else if shouldResolveAsQwen(engineScores) {
-            engine = .qwen
-            reason = .qwenParakeetAmbiguous
-        } else {
-            engine = leading.engine
-            reason = .topEngine
-        }
-
-        let whisperHint: String?
-        if engine == .whisper,
-           let top,
-           top.confidence >= whisperHintConfidence,
-           ASREngineLanguagePolicy.engine(forLanguageCode: top.language) == .whisper {
-            whisperHint = ASREngineLanguagePolicy.whisperLanguageCode(from: top.language)
-        } else if engine == .whisper, reason == .userLocked {
-            whisperHint = ASREngineLanguagePolicy.whisperLanguageCode(from: top?.language)
-        } else {
-            whisperHint = nil
-        }
-
-        return ASREngineRouteDecision(
-            engine: engine,
-            scores: engineScores,
-            reason: reason,
-            topLanguage: top.map { ASREngineLanguagePolicy.ecapaRoutingCode($0.language) },
-            parakeetDomainLanguage: parakeetLanguage.map(ASREngineLanguagePolicy.ecapaRoutingCode),
-            whisperHint: whisperHint,
-            routeConfidence: leading.score,
-            speechDuration: speechDuration
-        )
-    }
-
-    private static func shouldResolveAsQwen(_ scores: ASREngineScores) -> Bool {
-        let qwenParakeetGap = abs(scores.qwen - scores.parakeet)
-        return qwenParakeetGap < confidentMargin
-            && max(scores.qwen, scores.parakeet) >= scores.whisper
+        return decide(evidence: [ASRLanguageEvidence(
+            window: .init(slices: [.init(start: 0, end: speechDuration)]),
+            posterior: posterior
+        )])
     }
 
     private static func normalizedSpeechRanges(
@@ -195,7 +157,7 @@ enum ASREngineRouter {
         audioDuration: Double
     ) -> [ASRSpeechRange] {
         guard audioDuration.isFinite, audioDuration > 0 else { return [] }
-        return speechRanges.compactMap { range in
+        let sorted: [ASRSpeechRange] = speechRanges.compactMap { range -> ASRSpeechRange? in
             guard range.start.isFinite, range.end.isFinite else { return nil }
             let start = min(audioDuration, max(0, range.start))
             let end = min(audioDuration, max(start, range.end))
@@ -203,6 +165,15 @@ enum ASREngineRouter {
         }.sorted {
             $0.start == $1.start ? $0.end < $1.end : $0.start < $1.start
         }
+        var merged: [ASRSpeechRange] = []
+        for range in sorted {
+            if let last = merged.last, range.start <= last.end {
+                merged[merged.count - 1] = .init(start: last.start, end: max(last.end, range.end))
+            } else {
+                merged.append(range)
+            }
+        }
+        return merged
     }
 
     private static func concatenatedSlices(

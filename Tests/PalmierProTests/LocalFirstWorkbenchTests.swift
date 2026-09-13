@@ -303,7 +303,7 @@ struct LocalFirstWorkbenchTests {
 
     @Test func modelCatalogIsPinnedAndFitsM5InstallBudget() {
         let catalog = LocalModelManager.catalog
-        #expect(catalog.count == 11)
+        #expect(catalog.count == 12)
         #expect(Set(catalog.map(\.repository)).count == catalog.count)
         #expect(catalog.allSatisfy { $0.revision.count == 40 })
         #expect(catalog.allSatisfy {
@@ -312,7 +312,7 @@ struct LocalFirstWorkbenchTests {
         })
         #expect(catalog.allSatisfy { $0.byteSize > 0 })
         #expect(catalog.flatMap(\.requiredArtifacts).allSatisfy { $0.byteSize > 0 && $0.sha256.count == 64 })
-        #expect(catalog.filter(\.isRecommended).count == 8)
+        #expect(catalog.filter(\.isRecommended).count == 9)
         #expect(catalog.filter(\.isLegacy).map(\.id) == [.whisperLargeV3TurboFP16])
 
         let coreMLVAD = catalog.first { $0.id == .sileroVAD }!
@@ -322,6 +322,12 @@ struct LocalFirstWorkbenchTests {
         #expect(coreMLVAD.repository == "FluidInference/silero-vad-coreml")
         #expect(LocalSpeechVAD.requiredBundleFiles.allSatisfy { !$0.contains("*") })
         #expect(LocalSpeechVAD.requiredBundleFiles.contains("weights/weight.bin"))
+
+        let mlxVAD = catalog.first { $0.id == .sileroVADMLX }!
+        #expect(mlxVAD.weightByteSize == 1_237_860)
+        #expect(mlxVAD.weightSHA256.count == 64)
+        #expect(mlxVAD.storage == .safetensors)
+        #expect(mlxVAD.repository == "mlx-community/silero-vad-v6")
 
         let qwenASR = catalog.first { $0.id == .qwen3ASR17B8Bit }!
         let parakeetASR = catalog.first { $0.id == .parakeetTDT06Bv3 }!
@@ -510,18 +516,18 @@ struct LocalFirstWorkbenchTests {
         transcription.errorMessage = "stale"
 
         let recoveredTranscription = WorkbenchStore.recoveredForLaunch(transcription)
-        #expect(recoveredTranscription.state == .ready)
+        #expect(recoveredTranscription.state == .interrupted)
         #expect(recoveredTranscription.progress == 0)
         #expect(recoveredTranscription.progressMessage == "Interrupted — ready to retry")
         #expect(recoveredTranscription.errorMessage == nil)
 
         var dub = WorkbenchDubJob()
-        dub.state = .ready
+        dub.state = .queued
         dub.progress = 0.51
         dub.progressMessage = "Generating local speech…"
 
         let recoveredDub = WorkbenchStore.recoveredForLaunch(dub)
-        #expect(recoveredDub.state == .ready)
+        #expect(recoveredDub.state == .interrupted)
         #expect(recoveredDub.progress == 0)
         #expect(recoveredDub.progressMessage == "Interrupted — ready to retry")
     }

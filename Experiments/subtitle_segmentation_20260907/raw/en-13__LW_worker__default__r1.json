@@ -1,0 +1,57 @@
+{
+  "id": "en-13",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=en\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nThe U.S. office sent its notes at 9:30 a.m., just before our weekly planning call. Most comments concerned the final paragraph, not the overall direction of the article. We agreed to check the figures again and explain where the estimates came from. Prof. Lewis offered to review the revised draft, provided that we sent it before Friday. That gave the editor enough time to prepare the next version for discussion.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "6fbb8903c1f49d93aaf810c58fcf201b73ecb3e4d7d2fa2056d3bdc78612c5ed",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:11.137172+00:00",
+  "raw": "{\n  \"subtitles\": [\n    \"The U.S. office sent its notes at 9:30 a.m.,\",\n    \"just before our weekly planning call.\",\n    \"Most comments concerned the final paragraph,\",\n    \"not the overall direction of the article.\",\n    \"We agreed to check the figures again\",\n    \"and explain where the estimates came from.\",\n    \"Prof. Lewis offered to review the revised draft,\",\n    \"provided that we sent it before Friday.\",\n    \"That gave the editor enough time to prepare\",\n    \"the next version for discussion.\"\n  ],\n  \"batch_summary\": \"The U.S. office sent notes before the weekly call, focusing on the final paragraph, and Prof. Lewis agreed to review the revision by Friday.\"\n}",
+  "usage": {
+    "promptTokenCount": 292,
+    "candidatesTokenCount": 173,
+    "totalTokenCount": 465,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 292
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2557394160030526,
+  "transport_attempts": 1,
+  "lines": [
+    "The U.S. office sent its notes at 9:30 a.m.,",
+    "just before our weekly planning call.",
+    "Most comments concerned the final paragraph,",
+    "not the overall direction of the article.",
+    "We agreed to check the figures again",
+    "and explain where the estimates came from.",
+    "Prof. Lewis offered to review the revised draft,",
+    "provided that we sent it before Friday.",
+    "That gave the editor enough time to prepare",
+    "the next version for discussion."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 10,
+    "boundaries": 9,
+    "tp": 8,
+    "ref_count": 9,
+    "f1": 0.8888888888888888,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 48
+  }
+}

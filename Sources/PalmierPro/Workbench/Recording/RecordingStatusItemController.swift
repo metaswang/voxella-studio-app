@@ -12,90 +12,134 @@ final class RecordingStatusItemController: NSObject {
     }
 
     func update() {
-        guard let session, session.phase.isCapturing else {
-            remove()
-            return
-        }
+        guard let session else { return }
         if statusItem == nil {
             rebuild()
         }
-        statusItem?.button?.title = buttonTitle(for: session)
+        configureButton(for: session)
         rebuildMenu()
-    }
-
-    func remove() {
-        if let statusItem {
-            NSStatusBar.system.removeStatusItem(statusItem)
-        }
-        statusItem = nil
     }
 
     private func rebuild() {
         if statusItem == nil {
-            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         }
-        statusItem?.button?.image = NSImage(
-            systemSymbolName: "record.circle.fill",
-            accessibilityDescription: "Recording"
-        )
-        statusItem?.button?.imagePosition = .imageLeading
-        statusItem?.button?.contentTintColor = AppTheme.Status.error
+        guard let session else { return }
+        configureButton(for: session)
         rebuildMenu()
     }
 
     private func rebuildMenu() {
-        guard let session, session.phase.isCapturing else { return }
+        guard let session else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        let header = NSMenuItem(
-            title: session.isPaused
-                ? "Paused  \(RecordingTimeFormat.clock(session.elapsed))"
-                : "Recording  \(RecordingTimeFormat.clock(session.elapsed))",
-            action: nil,
-            keyEquivalent: ""
-        )
-        header.isEnabled = false
-        menu.addItem(header)
-        menu.addItem(.separator())
-
-        let stop = NSMenuItem(title: "Stop Recording", action: #selector(stopRecording), keyEquivalent: "")
-        stop.target = self
-        stop.isEnabled = true
-        menu.addItem(stop)
-
-        let pause = NSMenuItem(
-            title: session.isPaused ? "Resume Recording" : "Pause Recording",
-            action: #selector(togglePause),
-            keyEquivalent: ""
-        )
-        pause.target = self
-        pause.isEnabled = true
-        menu.addItem(pause)
-
-        if session.configuration.microphone.isEnabled {
-            let mute = NSMenuItem(
-                title: session.isMicrophoneMuted ? "Unmute Microphone" : "Mute Microphone",
-                action: #selector(toggleMute),
-                keyEquivalent: ""
+        switch session.phase {
+        case .idle:
+            addHeader("VoxStudio Recording", to: menu)
+            menu.addItem(.separator())
+            addItem("Record Screen", action: #selector(recordDisplay), to: menu)
+            addItem("Record Window", action: #selector(recordWindow), to: menu)
+            addItem("Record Selected Area", action: #selector(recordRegion), to: menu)
+            addItem("Record Audio Only", action: #selector(recordAudio), to: menu)
+            addItem(
+                "Voice Input…",
+                action: #selector(showVoiceInput),
+                to: menu,
+                keyEquivalent: VoiceInputShortcutPreferences.shared.option
             )
-            mute.target = self
-            mute.isEnabled = true
-            menu.addItem(mute)
-        }
+            menu.addItem(.separator())
+            addItem("Recording Setup…", action: #selector(showRecordingSetup), to: menu)
 
-        menu.addItem(.separator())
-        let discard = NSMenuItem(title: "Discard Recording", action: #selector(discardRecording), keyEquivalent: "")
-        discard.target = self
-        discard.isEnabled = true
-        menu.addItem(discard)
+        case .preparing, .picking, .finishing:
+            addHeader(session.phase == .finishing ? "Finishing Recording…" : "Preparing Recording…", to: menu)
+            menu.addItem(.separator())
+            addItem("Cancel Recording", action: #selector(discardRecording), to: menu)
+            addItem("Show Recording Controls", action: #selector(showRecordingSetup), to: menu)
+
+        case .recording, .paused:
+            addHeader(
+                session.isPaused
+                    ? "Paused  \(RecordingTimeFormat.clock(session.elapsed))"
+                    : "Recording  \(RecordingTimeFormat.clock(session.elapsed))",
+                to: menu
+            )
+            menu.addItem(.separator())
+            addItem("Stop Recording", action: #selector(stopRecording), to: menu)
+            addItem(
+                session.isPaused ? "Resume Recording" : "Pause Recording",
+                action: #selector(togglePause),
+                to: menu
+            )
+            if session.configuration.microphone.isEnabled {
+                addItem(
+                    session.isMicrophoneMuted ? "Unmute Microphone" : "Mute Microphone",
+                    action: #selector(toggleMute),
+                    to: menu
+                )
+            }
+            menu.addItem(.separator())
+            addItem("Show Recording Controls", action: #selector(showRecordingSetup), to: menu)
+            addItem("Discard Recording", action: #selector(discardRecording), to: menu)
+        }
 
         statusItem?.menu = menu
     }
 
-    private func buttonTitle(for session: RecordingSessionController) -> String {
-        let prefix = session.isPaused ? "❚❚" : "●"
-        return " \(prefix) \(RecordingTimeFormat.clock(session.elapsed))"
+    private func configureButton(for session: RecordingSessionController) {
+        guard let statusItem else { return }
+        let isCapturing = session.phase.isCapturing
+        statusItem.button?.image = WorkbenchBrandIcon.statusBarImage()
+        statusItem.button?.imagePosition = .imageLeading
+        statusItem.button?.contentTintColor = nil
+        statusItem.button?.toolTip = isCapturing ? "Recording controls" : "Start a recording"
+        statusItem.button?.title = isCapturing ? " \(RecordingTimeFormat.clock(session.elapsed))" : ""
+        statusItem.length = isCapturing ? NSStatusItem.variableLength : NSStatusItem.squareLength
+    }
+
+    private func addHeader(_ title: String, to menu: NSMenu) {
+        let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+    }
+
+    private func addItem(
+        _ title: String,
+        action: Selector,
+        to menu: NSMenu,
+        keyEquivalent: VoiceInputShortcutOption? = nil
+    ) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent == nil ? "" : " ")
+        if let keyEquivalent {
+            item.keyEquivalentModifierMask = keyEquivalent.menuModifiers
+        }
+        item.target = self
+        item.isEnabled = true
+        menu.addItem(item)
+    }
+
+    @objc private func recordDisplay() {
+        session?.start(mode: .display)
+    }
+
+    @objc private func recordWindow() {
+        session?.start(mode: .window)
+    }
+
+    @objc private func recordRegion() {
+        session?.start(mode: .region)
+    }
+
+    @objc private func recordAudio() {
+        session?.start(mode: .audioOnly)
+    }
+
+    @objc private func showVoiceInput() {
+        VoiceInputCoordinator.shared.present()
+    }
+
+    @objc private func showRecordingSetup() {
+        session?.showRecordingSetup()
     }
 
     @objc private func stopRecording() {

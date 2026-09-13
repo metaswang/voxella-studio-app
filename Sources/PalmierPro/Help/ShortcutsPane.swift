@@ -75,7 +75,7 @@ struct ShortcutsPane: View {
             .padding(.bottom, AppTheme.Spacing.xxl)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        .appScrollEdgeEffect(.top)
     }
 
     private func shortcutColumn(groups: [ShortcutGroup]) -> some View {

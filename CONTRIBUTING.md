@@ -9,7 +9,7 @@ With AI coding, human reviews are the bottleneck. We don't have the bandwidth to
 ## Getting Started
 
 ### Prerequisites
-- macOS 26+
+- macOS 15+
 - Xcode 16+
 - Swift 6.2 toolchain
 

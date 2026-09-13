@@ -1,0 +1,57 @@
+{
+  "id": "en-17",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language en.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: en\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nThe north entrance (beside the ticket office) will remain open during the renovation. Visitors with large bags should use that door, since the other corridor is quite narrow. Our staff can show you the temporary route if you have not visited the building before. The exhibition itself has not moved, although a few signs are being replaced. Please allow a little extra time to reach the gallery on the upper floor.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "06d90adafb03275cb7a6ab843b29d13b62985e7038c39dedc10da0c4038d41ee",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:18.367541+00:00",
+  "raw": "{\"lines\":[\"The north entrance (beside the ticket office)\", \"will remain open during the renovation.\", \"Visitors with large bags should use that door,\", \"since the other corridor is quite narrow.\", \"Our staff can show you the temporary route\", \"if you have not visited the building before.\", \"The exhibition itself has not moved,\", \"although a few signs are being replaced.\", \"Please allow a little extra time\", \"to reach the gallery on the upper floor.\"]}",
+  "usage": {
+    "promptTokenCount": 300,
+    "candidatesTokenCount": 96,
+    "totalTokenCount": 396,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 300
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2041675840009702,
+  "transport_attempts": 1,
+  "lines": [
+    "The north entrance (beside the ticket office)",
+    "will remain open during the renovation.",
+    "Visitors with large bags should use that door,",
+    "since the other corridor is quite narrow.",
+    "Our staff can show you the temporary route",
+    "if you have not visited the building before.",
+    "The exhibition itself has not moved,",
+    "although a few signs are being replaced.",
+    "Please allow a little extra time",
+    "to reach the gallery on the upper floor."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 10,
+    "boundaries": 9,
+    "tp": 9,
+    "ref_count": 9,
+    "f1": 1.0,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 46
+  }
+}

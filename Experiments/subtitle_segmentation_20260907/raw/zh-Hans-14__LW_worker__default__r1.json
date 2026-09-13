@@ -1,0 +1,59 @@
+{
+  "id": "zh-Hans-14",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n墙面换成浅黄色以后，房间看起来明亮了一些，但实际使用面积没有增加。我们还移走了入口旁边的桌子，把指示牌放到接近视线的高度。这些调整花费不多，却让第一次来的访客更容易找到自己要去的地方。下个月我们准备收集使用反馈，看看哪些变化确实有帮助，哪些地方仍然让人困惑，再安排下一轮小范围修改。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "af6e426f74d45c9cb7f9a6eb19278418ebdb339c3832c2cf25e39b58ed604082",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:52.421731+00:00",
+  "raw": "{\"subtitles\":[\"墙面换成浅黄色以后，\",\"房间看起来明亮了一些，\",\"但实际使用面积没有增加。\",\"我们还移走了入口旁边的桌子，\",\"把指示牌放到接近视线的高度。\",\"这些调整花费不多，\",\"却让第一次来的访客\",\"更容易找到自己要去的地方。\",\"下个月我们准备收集使用反馈，\",\"看看哪些变化确实有帮助，\",\"哪些地方仍然让人困惑，\",\"再安排下一轮小范围修改。\"],\"batch_summary\":\"通过墙面颜色、家具调整和标识优化改善空间体验，并计划收集反馈进行下一轮修改。\"}",
+  "usage": {
+    "promptTokenCount": 293,
+    "candidatesTokenCount": 131,
+    "totalTokenCount": 424,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 293
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2582385830028215,
+  "transport_attempts": 1,
+  "lines": [
+    "墙面换成浅黄色以后，",
+    "房间看起来明亮了一些，",
+    "但实际使用面积没有增加。",
+    "我们还移走了入口旁边的桌子，",
+    "把指示牌放到接近视线的高度。",
+    "这些调整花费不多，",
+    "却让第一次来的访客",
+    "更容易找到自己要去的地方。",
+    "下个月我们准备收集使用反馈，",
+    "看看哪些变化确实有帮助，",
+    "哪些地方仍然让人困惑，",
+    "再安排下一轮小范围修改。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 12,
+    "boundaries": 11,
+    "tp": 11,
+    "ref_count": 11,
+    "f1": 1.0,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 14
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "id": "fr-04",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language fr.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: fr\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nElle a demandé : « On part maintenant ? » Je lui ai expliqué que le train avait du retard, mais que le café de la gare était encore ouvert. Nous pouvions y attendre un moment et consulter ensemble le tableau des départs. « C'est une bonne idée », a-t-elle répondu, en prenant la petite valise bleue. Lorsque nous sommes arrivés sur le quai, l'annonce venait encore de changer. Nous avons préféré rester près de l'accueil pour demander une confirmation avant de repartir.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "97d2be59b6577884578394c10a4346c2003a7b183f7abb3986e99f99dc71d9ac",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:47.252195+00:00",
+  "raw": "{\"lines\":[\"Elle a demandé : « On part maintenant ? » Je lui ai expliqué que le train avait du retard, mais que le café de la gare était encore ouvert.\",\"Nous pouvions y attendre un moment et consulter ensemble le tableau des départs.\",\"« C'est une bonne idée », a-t-elle répondu, en prenant la petite valise bleue.\",\"Lorsque nous sommes arrivés sur le quai, l'annonce venait encore de changer.\",\"Nous avons préféré rester près de l'accueil pour demander une confirmation avant de repartir.\"]}",
+  "usage": {
+    "promptTokenCount": 307,
+    "candidatesTokenCount": 115
+  },
+  "provider_usage": {
+    "prompt_tokens": 307,
+    "completion_tokens": 115,
+    "total_tokens": 422,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.906723542000691,
+  "transport_attempts": 1,
+  "lines": [
+    "Elle a demandé : « On part maintenant ? » Je lui ai expliqué que le train avait du retard, mais que le café de la gare était encore ouvert.",
+    "Nous pouvions y attendre un moment et consulter ensemble le tableau des départs.",
+    "« C'est une bonne idée », a-t-elle répondu, en prenant la petite valise bleue.",
+    "Lorsque nous sommes arrivés sur le quai, l'annonce venait encore de changer.",
+    "Nous avons préféré rester près de l'accueil pour demander une confirmation avant de repartir."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 10,
+    "f1": 0.5714285714285715,
+    "overlong": 5,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 139
+  }
+}

@@ -101,13 +101,13 @@ extension GenerationView {
             }
             Divider()
             Button {
-                SettingsWindowController.shared.show(tab: .models)
+                SettingsWindowController.shared.show(tab: .ai)
             } label: {
-                Label("Add models…", systemImage: "plus")
+                Label(L10n.string("AI service settings…"), systemImage: "gearshape")
             }
         } label: {
             HStack(spacing: AppTheme.Spacing.xs) {
-                Text(currentModelName)
+                Text(L10n.string("Advanced AI options"))
                     .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .lineLimit(1)

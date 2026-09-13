@@ -1,0 +1,63 @@
+{
+  "id": "pt-BR-05",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=pt-BR\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nA etiqueta diz “USB-C, 20 W”, mas isso não descreve todos os cabos da caixa. Confira as letras pequenas nos conectores antes de separar o equipamento em sacolas. Uma sacola está marcada como “A/B test”, e outra traz o número de versão v2.1. Mantenha essas etiquetas exatamente como estão. Se alguma delas tiver se soltado, coloque o item na mesa de conferência em vez de adivinhar a qual conjunto pertence. Depois vamos revisar tudo com a equipe e registrar os itens que ainda precisam de identificação.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "c5c7f1e95da86b456246c42b6a13eecc42e61e8cded49eee15b1b6f16195b171",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:58.905318+00:00",
+  "raw": "{\"subtitles\":[\"A etiqueta diz “USB-C, 20 W”,\", \"mas isso não descreve\", \"todos os cabos da caixa.\", \"Confira as letras pequenas nos conectores\", \"antes de separar o equipamento em sacolas.\", \"Uma sacola está marcada como “A/B test”,\", \"e outra traz o número de versão v2.1.\", \"Mantenha essas etiquetas\", \"exatamente como estão.\", \"Se alguma delas tiver se soltado,\", \"coloque o item na mesa de conferência\", \"em vez de adivinhar\", \"a qual conjunto pertence.\", \"Depois vamos revisar tudo com a equipe\", \"e registrar os itens\", \"que ainda precisam de identificação.\"],\"batch_summary\":\"Instruções para organização e etiquetagem de cabos e equipamentos.\"}",
+  "usage": {
+    "promptTokenCount": 326,
+    "candidatesTokenCount": 172,
+    "totalTokenCount": 498,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 326
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2580705829968792,
+  "transport_attempts": 1,
+  "lines": [
+    "A etiqueta diz “USB-C, 20 W”,",
+    "mas isso não descreve",
+    "todos os cabos da caixa.",
+    "Confira as letras pequenas nos conectores",
+    "antes de separar o equipamento em sacolas.",
+    "Uma sacola está marcada como “A/B test”,",
+    "e outra traz o número de versão v2.1.",
+    "Mantenha essas etiquetas",
+    "exatamente como estão.",
+    "Se alguma delas tiver se soltado,",
+    "coloque o item na mesa de conferência",
+    "em vez de adivinhar",
+    "a qual conjunto pertence.",
+    "Depois vamos revisar tudo com a equipe",
+    "e registrar os itens",
+    "que ainda precisam de identificação."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 16,
+    "boundaries": 15,
+    "tp": 11,
+    "ref_count": 11,
+    "f1": 0.846153846153846,
+    "overlong": 0,
+    "short": 4,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 42
+  }
+}

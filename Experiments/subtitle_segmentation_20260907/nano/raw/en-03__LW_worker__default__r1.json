@@ -1,0 +1,60 @@
+{
+  "id": "en-03",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=en\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nThe first prototype weighed 3.5 kilograms, while the second came in at just under three. We measured each sample five times, using the same digital scale. Dr. Patel checked the results before we sent them to the design team. These figures describe our small trial, so they should not be treated as a prediction for every future unit. The next test will use a larger batch.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "6f15f82a40fda1e0f802e51f2c8911af9215f32c785a104e952ce7f01adeb57c",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:18:38.380738+00:00",
+  "raw": "{\"subtitles\":[\"The first prototype weighed 3.5 kilograms, while the second came in at just under three.\",\"We measured each sample five times, using the same digital scale.\",\"Dr. Patel checked the results before we sent them to the design team.\",\"These figures describe our small trial, so they should not be treated as a prediction for every future unit.\",\"The next test will use a larger batch.\"],\"batch_summary\":\" Five sentences from finalized_transcript split into subtitle lines without altering text.\"}",
+  "usage": {
+    "promptTokenCount": 293,
+    "candidatesTokenCount": 110
+  },
+  "provider_usage": {
+    "prompt_tokens": 293,
+    "completion_tokens": 110,
+    "total_tokens": 403,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.6791875830022036,
+  "transport_attempts": 1,
+  "lines": [
+    "The first prototype weighed 3.5 kilograms, while the second came in at just under three.",
+    "We measured each sample five times, using the same digital scale.",
+    "Dr. Patel checked the results before we sent them to the design team.",
+    "These figures describe our small trial, so they should not be treated as a prediction for every future unit.",
+    "The next test will use a larger batch."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 9,
+    "f1": 0.6153846153846153,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 108
+  }
+}

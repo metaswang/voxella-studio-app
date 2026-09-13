@@ -10,7 +10,7 @@
   <img src="../../assets/macos-badge.png" alt="Tải Palmier Pro cho macOS" width="180" />
 </a>
 
-<sub><i>Yêu cầu macOS 26 (Tahoe) trên Apple Silicon</i></sub>
+<sub><i>Yêu cầu macOS 15 (Sequoia) trên Apple Silicon</i></sub>
 
 <a href="https://x.com/Palmier_io"><img src="https://img.shields.io/badge/Follow-%40Palmier__io-000000?style=flat&logo=x&logoColor=white" alt="Theo dõi trên X" /></a>
 <a href="https://discord.com/invite/SMVW6pKYmg"><img src="https://img.shields.io/badge/Join-Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Tham gia Discord" /></a>
@@ -103,7 +103,7 @@ Các tính năng AI tạo sinh yêu cầu đăng nhập và gói đăng ký.
 
 **Hỗ trợ nền tảng nào?**
 
-Chỉ hỗ trợ macOS 26 (Tahoe) trên Apple Silicon.
+Chỉ hỗ trợ macOS 15 (Sequoia) trên Apple Silicon.
 
 Xem thêm tại [FAQ.md](../../FAQ.md).
 

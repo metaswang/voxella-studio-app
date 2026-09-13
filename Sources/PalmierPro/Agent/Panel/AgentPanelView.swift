@@ -56,7 +56,7 @@ struct AgentPanelView: View {
     }
 
     private var floatingTabBar: some View {
-        GlassEffectContainer {
+        AppGlassEffectContainer {
             HStack(spacing: AppTheme.Spacing.xs) {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -84,7 +84,7 @@ struct AgentPanelView: View {
             .padding(.horizontal, AppTheme.Spacing.sm)
             .frame(maxWidth: .infinity)
             .frame(height: Layout.panelHeaderHeight)
-            .glassEffect(.regular, in: .rect(cornerRadius: AppTheme.Radius.lg))
+            .appGlassEffect(in: .rect(cornerRadius: AppTheme.Radius.lg))
         }
         .padding(.horizontal, AppTheme.Spacing.mdLg)
         .padding(.top, AppTheme.Spacing.sm)
@@ -134,7 +134,10 @@ struct AgentPanelView: View {
                 Button {
                     service.model = model
                 } label: {
-                    Text(verbatim: model.displayName)
+                    menuOptionLabel(
+                        model.displayName,
+                        selected: model == service.model
+                    )
                 }
                 .disabled(!service.canSelectModel(model))
             }
@@ -276,7 +279,7 @@ struct AgentPanelView: View {
                 .background(AgentOverlayScrollerStyle())
             }
             .scrollIndicators(.automatic)
-            .scrollEdgeEffectStyle(.soft, for: .bottom)
+            .appScrollEdgeEffect(.bottom)
             .onScrollGeometryChange(for: Bool.self) { geo in
                 let distance = geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height
                 return distance > 80
@@ -304,7 +307,7 @@ struct AgentPanelView: View {
                 .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
                 .frame(width: AppTheme.IconSize.lgXl, height: AppTheme.IconSize.lgXl)
-                .glassEffect(.regular, in: .circle)
+                .appGlassEffect(in: .circle)
         }
         .buttonStyle(.plain)
         .focusable(false)
@@ -531,7 +534,7 @@ private struct AgentStarterPromptButton: View {
             .padding(.vertical, AppTheme.Spacing.xs)
             .frame(maxWidth: .infinity, alignment: .leading)
             .hoverHighlight(cornerRadius: AppTheme.Radius.lg)
-            .glassEffect(.regular, in: .rect(cornerRadius: AppTheme.Radius.lg))
+            .appGlassEffect(in: .rect(cornerRadius: AppTheme.Radius.lg))
         }
         .buttonStyle(.plain)
         .focusable(false)

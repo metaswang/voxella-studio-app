@@ -4,7 +4,6 @@ struct StoragePane: View {
     @State private var cacheBytes: Int64 = 0
     @State private var isClearing = false
     @State private var indexBytes: Int64 = 0
-    @State private var modelBytes: Int64 = 0
     @State private var searchEnabled = SearchIndexConfig.enabled
 
     var body: some View {
@@ -90,19 +89,8 @@ struct StoragePane: View {
             }
             .padding(.top, AppTheme.Spacing.xs)
 
-            if modelBytes > 0 {
-                HStack(spacing: AppTheme.Spacing.sm) {
-                    Text("Model")
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
-                    Text("\(SearchIndexConfig.manifest.model) · \(ByteCountFormatter.string(fromByteCount: modelBytes, countStyle: .file))")
-                        .font(.system(size: AppTheme.FontSize.xs).monospacedDigit())
-                        .foregroundStyle(AppTheme.Text.secondaryColor)
-                    Spacer(minLength: AppTheme.Spacing.md)
-                    Button("Remove model") { removeModel() }
-                        .buttonStyle(actionButtonStyle)
-                }
-            }
+            Button("Manage search resources") { LocalModelManager.shared.presentManager() }
+                .buttonStyle(actionButtonStyle)
         }
     }
 
@@ -147,23 +135,14 @@ struct StoragePane: View {
         }
     }
 
-    private func removeModel() {
-        Task {
-            await VisualModelLoader.shared.remove()
-            await refresh()
-        }
-    }
-
     private func refresh() async {
         let sizes = await Task.detached {
             (
                 cache: Self.caches.reduce(0) { $0 + $1.size() },
-                index: DiskCache.bytes(at: EmbeddingStore.directory),
-                model: DiskCache.bytes(at: ModelDownloader.modelsDir)
+                index: DiskCache.bytes(at: EmbeddingStore.directory)
             )
         }.value
         cacheBytes = sizes.cache
         indexBytes = sizes.index
-        modelBytes = sizes.model
     }
 }

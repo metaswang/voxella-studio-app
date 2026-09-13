@@ -115,7 +115,7 @@ struct CaptionTab: View {
                 HStack(spacing: AppTheme.Spacing.xs) {
                     Image(systemName: "lock.shield.fill")
                         .foregroundStyle(AppTheme.Status.successColor)
-                    Text("Local MLX")
+                    Text("On this Mac")
                         .foregroundStyle(AppTheme.Text.secondaryColor)
                     Spacer()
                 }
@@ -326,7 +326,7 @@ struct CaptionTab: View {
                     .focusable(false)
                     .disabled(!canGenerateCaptions)
                 } else {
-                    Button("Download Local Models…") { models.presentManager() }
+                    Button("Prepare Local Features…") { models.presentManager() }
                         .buttonStyle(.editorPrimary)
                         .frame(maxWidth: .infinity)
                 }

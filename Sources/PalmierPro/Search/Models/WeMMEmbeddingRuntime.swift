@@ -82,7 +82,7 @@ actor WeMMEmbeddingRuntime {
         self.hiddenSize = hiddenSize
     }
 
-    static func load(
+    @concurrent static func load(
         from directory: URL,
         maxFrames: Int = 8,
         resizeEdge: Int = 512

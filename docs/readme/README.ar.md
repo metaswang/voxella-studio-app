@@ -10,7 +10,7 @@
   <img src="../../assets/macos-badge.png" alt="تنزيل Palmier Pro لنظام macOS" width="180" />
 </a>
 
-<sub><i>يتطلب macOS 26 (Tahoe) على Apple Silicon لتحميله</i></sub>
+<sub><i>يتطلب macOS 15 (Sequoia) على Apple Silicon لتحميله</i></sub>
 
 <a href="https://x.com/Palmier_io"><img src="https://img.shields.io/badge/Follow-%40Palmier__io-000000?style=flat&logo=x&logoColor=white" alt="تابع على X" /></a>
 <a href="https://discord.com/invite/SMVW6pKYmg"><img src="https://img.shields.io/badge/Join-Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="انضم إلى Discord" /></a>
@@ -103,7 +103,7 @@ codex mcp add palmier-pro --url http://127.0.0.1:19789/mcp
 **ما المنصات المدعومة؟**
 
 يدعم Palmier Pro حاليًا:
-* macOS 26 (Tahoe)
+* macOS 15 (Sequoia)
 * أجهزة Apple Silicon فقط
   
 راجع [FAQ.md](../../FAQ.md) للمزيد.

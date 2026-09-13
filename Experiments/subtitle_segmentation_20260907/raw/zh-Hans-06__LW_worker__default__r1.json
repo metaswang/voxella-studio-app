@@ -1,0 +1,60 @@
+{
+  "id": "zh-Hans-06",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=zh-Hans\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n住在老图书馆后面的居民希望孩子们不必离开城市也能亲眼观察蔬菜从播种到成熟的整个过程，于是一起把空地改造成了社区花园。每个周六都有志愿者负责开门，并且检查浇水设备是否正常。来访的人可以借用小工具，只要在离开之前把它们放回原来的架子。这种简单的安排持续了很久，也让更多邻居愿意参与。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "9e781275e0842a995476039502b2eda089cca88869bca638f441383c68d18201",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:37.185551+00:00",
+  "raw": "{\n  \"subtitles\": [\n    \"住在老图书馆后面的居民\",\n    \"希望孩子们不必离开城市\",\n    \"也能亲眼观察蔬菜从播种\",\n    \"到成熟的整个过程，\",\n    \"于是一起把空地\",\n    \"改造成了社区花园。\",\n    \"每个周六都有志愿者负责开门，\",\n    \"并且检查浇水设备是否正常。\",\n    \"来访的人可以借用小工具，\",\n    \"只要在离开之前\",\n    \"把它们放回原来的架子。\",\n    \"这种简单的安排持续了很久，\",\n    \"也让更多邻居愿意参与。\"\n  ],\n  \"batch_summary\": \"记述老图书馆后居民改造社区花园的经过、管理方式及其产生的积极影响。\"\n}",
+  "usage": {
+    "promptTokenCount": 295,
+    "candidatesTokenCount": 177,
+    "totalTokenCount": 472,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 295
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.339695707996725,
+  "transport_attempts": 1,
+  "lines": [
+    "住在老图书馆后面的居民",
+    "希望孩子们不必离开城市",
+    "也能亲眼观察蔬菜从播种",
+    "到成熟的整个过程，",
+    "于是一起把空地",
+    "改造成了社区花园。",
+    "每个周六都有志愿者负责开门，",
+    "并且检查浇水设备是否正常。",
+    "来访的人可以借用小工具，",
+    "只要在离开之前",
+    "把它们放回原来的架子。",
+    "这种简单的安排持续了很久，",
+    "也让更多邻居愿意参与。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 13,
+    "boundaries": 12,
+    "tp": 11,
+    "ref_count": 12,
+    "f1": 0.9166666666666666,
+    "overlong": 0,
+    "short": 2,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 14
+  }
+}

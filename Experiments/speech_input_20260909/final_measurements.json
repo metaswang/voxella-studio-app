@@ -1,0 +1,134 @@
+[
+  {
+    "file": "chinese-long.wav",
+    "mode": "timed",
+    "passIndex": 0,
+    "seconds": 5.53624375,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢？我们开始上传。"
+  },
+  {
+    "file": "chinese-long.wav",
+    "mode": "text",
+    "passIndex": 0,
+    "seconds": 1.38378825,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢？我们开始上传。",
+    "firstPreviewSeconds": 0.878595375
+  },
+  {
+    "file": "chinese-long.wav",
+    "mode": "text",
+    "passIndex": 1,
+    "seconds": 1.046837458,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢？我们开始上传。",
+    "firstPreviewSeconds": 0.544578333
+  },
+  {
+    "file": "chinese-long.wav",
+    "mode": "timed",
+    "passIndex": 1,
+    "seconds": 1.528644208,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢？我们开始上传。"
+  },
+  {
+    "file": "chinese-long.wav",
+    "mode": "timed",
+    "passIndex": 2,
+    "seconds": 1.534515792,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢？我们开始上传。"
+  },
+  {
+    "file": "chinese-long.wav",
+    "mode": "text",
+    "passIndex": 2,
+    "seconds": 1.021416584,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢？我们开始上传。",
+    "firstPreviewSeconds": 0.52771375
+  },
+  {
+    "file": "chinese.wav",
+    "mode": "timed",
+    "passIndex": 0,
+    "seconds": 1.206466541,
+    "text": "这是一个测试。这个音色会被用作参考。"
+  },
+  {
+    "file": "chinese.wav",
+    "mode": "text",
+    "passIndex": 0,
+    "seconds": 0.745811833,
+    "text": "这是一个测试。这个音色会被用作参考。",
+    "firstPreviewSeconds": 0.367029208
+  },
+  {
+    "file": "chinese.wav",
+    "mode": "text",
+    "passIndex": 1,
+    "seconds": 0.763161209,
+    "text": "这是一个测试。这个音色会被用作参考。",
+    "firstPreviewSeconds": 0.377438917
+  },
+  {
+    "file": "chinese.wav",
+    "mode": "timed",
+    "passIndex": 1,
+    "seconds": 1.195957417,
+    "text": "这是一个测试。这个音色会被用作参考。"
+  },
+  {
+    "file": "chinese.wav",
+    "mode": "timed",
+    "passIndex": 2,
+    "seconds": 1.146997792,
+    "text": "这是一个测试。这个音色会被用作参考。"
+  },
+  {
+    "file": "chinese.wav",
+    "mode": "text",
+    "passIndex": 2,
+    "seconds": 0.749235958,
+    "text": "这是一个测试。这个音色会被用作参考。",
+    "firstPreviewSeconds": 0.366327041
+  },
+  {
+    "file": "english.wav",
+    "mode": "timed",
+    "passIndex": 0,
+    "seconds": 2.093849958,
+    "text": "transcribe meetings, recordings, and online video. Dub them into new languages with lifelike voices."
+  },
+  {
+    "file": "english.wav",
+    "mode": "text",
+    "passIndex": 0,
+    "seconds": 0.827103417,
+    "text": "transcribe meetings, recordings and online video. Dub them into new languages with lifelike voices."
+  },
+  {
+    "file": "english.wav",
+    "mode": "text",
+    "passIndex": 1,
+    "seconds": 0.818168542,
+    "text": "transcribe meetings, recordings and online video. Dub them into new languages with lifelike voices."
+  },
+  {
+    "file": "english.wav",
+    "mode": "timed",
+    "passIndex": 1,
+    "seconds": 1.571193709,
+    "text": "transcribe meetings, recordings, and online video. Dub them into new languages with lifelike voices."
+  },
+  {
+    "file": "english.wav",
+    "mode": "timed",
+    "passIndex": 2,
+    "seconds": 1.497466041,
+    "text": "transcribe meetings, recordings, and online video. Dub them into new languages with lifelike voices."
+  },
+  {
+    "file": "english.wav",
+    "mode": "text",
+    "passIndex": 2,
+    "seconds": 0.852490542,
+    "text": "transcribe meetings, recordings and online video. Dub them into new languages with lifelike voices."
+  }
+]

@@ -625,6 +625,7 @@ final class LLMSettingsStore {
     private static let subtitleRouteMigrationKey = "voxella.llm.migration.subtitle-route.v1"
     private static let useBYOKKey = "voxella.llm.use-byok.v1"
     private static let useBYOKMigrationKey = "voxella.llm.migration.use-byok.v1"
+    private static let credentialAvailabilityDefaultsKey = "voxella.llm.credential-availability.v1"
 
     private(set) var providers: [LLMProviderProfile]
     private(set) var routes: [LLMUseCase: LLMModelRoute]
@@ -717,7 +718,7 @@ final class LLMSettingsStore {
         if shouldPersist, configurationError == nil {
             persist()
         }
-        refreshCredentialStatus()
+        restoreCredentialAvailability()
     }
 
     func provider(id: UUID) -> LLMProviderProfile? {
@@ -772,7 +773,8 @@ final class LLMSettingsStore {
         )
         providers.append(profile)
         persist()
-        refreshCredentialStatus()
+        credentialAvailability[profile.id] = false
+        persistCredentialAvailability()
         return profile.id
     }
 
@@ -790,7 +792,6 @@ final class LLMSettingsStore {
         providers[index] = validated
         _ = normalizeRoutesForProviderRouting()
         persist()
-        refreshCredentialStatus()
     }
 
     func removeProvider(id: UUID) async throws {
@@ -807,6 +808,7 @@ final class LLMSettingsStore {
         credentialSaveStates[id] = nil
         credentialSaveGeneration[id] = nil
         persist()
+        persistCredentialAvailability()
     }
 
     func updateRoute(_ route: LLMModelRoute, for useCase: LLMUseCase) throws {
@@ -847,6 +849,7 @@ final class LLMSettingsStore {
             guard generation == credentialGeneration else { return }
             credentialAvailability = statuses
             credentialError = statusError
+            persistCredentialAvailability()
             if self.defaults.object(forKey: Self.useBYOKMigrationKey) == nil {
                 // Existing installs with a stored provider key keep their old
                 // behavior. New installs remain hosted by default.
@@ -1002,6 +1005,7 @@ final class LLMSettingsStore {
         try await credentialSaver(value, profile)
         guard provider(id: providerID)?.credentialAccount == profile.credentialAccount else { return }
         credentialAvailability[providerID] = true
+        persistCredentialAvailability()
         credentialError = nil
     }
 
@@ -1016,32 +1020,33 @@ final class LLMSettingsStore {
         }.value
         guard provider(id: providerID)?.credentialAccount == profile.credentialAccount else { return }
         credentialAvailability[providerID] = false
+        persistCredentialAvailability()
         credentialSaveStates[providerID] = .idle
         credentialError = nil
     }
 
     private func loadCredential(for profile: LLMProviderProfile) async throws -> String? {
-        do {
-            return try await Task.detached(priority: .utility) {
-                try Self.loadCredentialSynchronously(for: profile)
-            }.value
-        } catch let error as KeychainStoreError where error.isInteractionNotAllowed {
-            return try await MainActor.run {
-                try Self.loadCredentialSynchronously(for: profile)
-            }
-        }
+        try await Task.detached(priority: .utility) {
+            try Self.loadCredentialSynchronously(for: profile)
+        }.value
     }
 
     private nonisolated static func loadCredentialSynchronously(for profile: LLMProviderProfile) throws -> String? {
-        if let value = try KeychainStore.loadProtected(account: profile.credentialAccount) {
-            return value
-        }
-        guard let value = try KeychainStore.loadProtected(account: profile.legacyCredentialAccount)
-        else { return nil }
+        try KeychainStore.loadProtected(account: profile.credentialAccount, legacyAccount: profile.legacyCredentialAccount)
+    }
 
-        try KeychainStore.saveProtected(value, account: profile.credentialAccount)
-        try? KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
-        return value
+    private func restoreCredentialAvailability() {
+        let cached = defaults.dictionary(forKey: Self.credentialAvailabilityDefaultsKey) ?? [:]
+        credentialAvailability = Dictionary(uniqueKeysWithValues: providers.map { profile in
+            (profile.id, cached[profile.id.uuidString] as? Bool ?? false)
+        })
+    }
+
+    private func persistCredentialAvailability() {
+        let cached = Dictionary(uniqueKeysWithValues: providers.map { profile in
+            (profile.id.uuidString, credentialAvailability[profile.id] == true)
+        })
+        defaults.set(cached, forKey: Self.credentialAvailabilityDefaultsKey)
     }
 
     func runtimeRoute(for useCase: LLMUseCase) async throws -> LLMRuntimeRoute {

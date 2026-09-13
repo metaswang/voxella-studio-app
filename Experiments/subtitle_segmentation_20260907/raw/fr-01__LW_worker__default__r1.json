@@ -1,0 +1,60 @@
+{
+  "id": "fr-01",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=fr\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nAvant de commencer le mouvement, posez les deux pieds sur le sol. Relâchez les épaules et regardez tranquillement devant vous. L'objectif est de bouger lentement, sans tirer la tête vers l'avant. Si la chaise n'est pas stable, interrompez l'exercice et choisissez un siège plus ferme. Nous répéterons la même séquence deux fois, puis nous comparerons les sensations du côté droit et du côté gauche.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "3d92be129c6f8f8000a4bb7ca6164be2da0f471f1b13d47be4eef8a5c4566c1c",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:28.153777+00:00",
+  "raw": "{\n  \"subtitles\": [\n    \"Avant de commencer le mouvement,\",\n    \"posez les deux pieds sur le sol.\",\n    \"Relâchez les épaules\",\n    \"et regardez tranquillement devant vous.\",\n    \"L'objectif est de bouger lentement,\",\n    \"sans tirer la tête vers l'avant.\",\n    \"Si la chaise n'est pas stable,\",\n    \"interrompez l'exercice\",\n    \"et choisissez un siège plus ferme.\",\n    \"Nous répéterons la même séquence deux fois,\",\n    \"puis nous comparerons\",\n    \"les sensations du côté droit\",\n    \"et du côté gauche.\"\n  ],\n  \"batch_summary\": \"Instructions for a movement exercise, focusing on posture, stability, and comparison of bodily sensations.\"\n}",
+  "usage": {
+    "promptTokenCount": 295,
+    "candidatesTokenCount": 175,
+    "totalTokenCount": 470,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 295
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.266993041994283,
+  "transport_attempts": 1,
+  "lines": [
+    "Avant de commencer le mouvement,",
+    "posez les deux pieds sur le sol.",
+    "Relâchez les épaules",
+    "et regardez tranquillement devant vous.",
+    "L'objectif est de bouger lentement,",
+    "sans tirer la tête vers l'avant.",
+    "Si la chaise n'est pas stable,",
+    "interrompez l'exercice",
+    "et choisissez un siège plus ferme.",
+    "Nous répéterons la même séquence deux fois,",
+    "puis nous comparerons",
+    "les sensations du côté droit",
+    "et du côté gauche."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 13,
+    "boundaries": 12,
+    "tp": 10,
+    "ref_count": 11,
+    "f1": 0.8695652173913043,
+    "overlong": 0,
+    "short": 4,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 43
+  }
+}

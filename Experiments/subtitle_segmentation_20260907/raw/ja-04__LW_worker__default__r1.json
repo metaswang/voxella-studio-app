@@ -1,0 +1,58 @@
+{
+  "id": "ja-04",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=ja\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\n「木曜日に会いましょう」と言いましたが、すみません、正しくは金曜日の午後です。木曜日は音響担当者が会場を確認する予定でした。新しい住所は送りましたが、最初のメールの地図には間違いがありました。パン屋の隣の入口を使い、階段で二階へ上がってください。到着したときに鍵がかかっていたら、電話をいただければすぐに下まで迎えに行きます。\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "76b26eac393dbc6990c8a83fca26e7b0444dc945dcc7ee41c970b63296e91443",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:12.401533+00:00",
+  "raw": "{\"subtitles\":[\"「木曜日に会いましょう」と言いましたが、\",\"すみません、正しくは金曜日の午後です。\",\"木曜日は音響担当者が\",\"会場を確認する予定でした。\",\"新しい住所は送りましたが、\",\"最初のメールの地図には間違いがありました。\",\"パン屋の隣の入口を使い、\",\"階段で二階へ上がってください。\",\"到着したときに鍵がかかっていたら、\",\"電話をいただければ\",\"すぐに下まで迎えに行きます。\"],\"batch_summary\":\"日程変更と会場へのアクセス方法に関する案内。\"}",
+  "usage": {
+    "promptTokenCount": 290,
+    "candidatesTokenCount": 116,
+    "totalTokenCount": 406,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 290
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.1012476659961976,
+  "transport_attempts": 1,
+  "lines": [
+    "「木曜日に会いましょう」と言いましたが、",
+    "すみません、正しくは金曜日の午後です。",
+    "木曜日は音響担当者が",
+    "会場を確認する予定でした。",
+    "新しい住所は送りましたが、",
+    "最初のメールの地図には間違いがありました。",
+    "パン屋の隣の入口を使い、",
+    "階段で二階へ上がってください。",
+    "到着したときに鍵がかかっていたら、",
+    "電話をいただければ",
+    "すぐに下まで迎えに行きます。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 11,
+    "boundaries": 10,
+    "tp": 9,
+    "ref_count": 12,
+    "f1": 0.8181818181818182,
+    "overlong": 3,
+    "short": 0,
+    "protected_total": 5,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 21
+  }
+}

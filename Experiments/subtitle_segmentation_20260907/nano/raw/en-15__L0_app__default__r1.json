@@ -1,0 +1,60 @@
+{
+  "id": "en-15",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language en.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: en\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nThe instructions were simple: open the box, remove the protective sheet, and place the panel on a flat surface. There was one warning—keep the cable dry. We read it twice before starting, because the workspace was close to a sink. Everything else went smoothly; the connectors fitted without extra pressure. Once the indicator light turned green, we recorded the result in the installation log.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "9bfcd1a597f4f51b2000fdc5283de3b21a8d749ddf695efded3d00a9b11ad6ab",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:06.617447+00:00",
+  "raw": "{\"lines\":[\"The instructions were simple: open the box, remove the protective sheet, and place the panel on a flat surface.\",\"There was one warning—keep the cable dry.\",\"We read it twice before starting, because the workspace was close to a sink.\",\"Everything else went smoothly; the connectors fitted without extra pressure.\",\"Once the indicator light turned green, we recorded the result in the installation log.\"]}",
+  "usage": {
+    "promptTokenCount": 283,
+    "candidatesTokenCount": 91
+  },
+  "provider_usage": {
+    "prompt_tokens": 283,
+    "completion_tokens": 91,
+    "total_tokens": 374,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.3759660419964348,
+  "transport_attempts": 1,
+  "lines": [
+    "The instructions were simple: open the box, remove the protective sheet, and place the panel on a flat surface.",
+    "There was one warning—keep the cable dry.",
+    "We read it twice before starting, because the workspace was close to a sink.",
+    "Everything else went smoothly; the connectors fitted without extra pressure.",
+    "Once the indicator light turned green, we recorded the result in the installation log."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 5,
+    "boundaries": 4,
+    "tp": 4,
+    "ref_count": 9,
+    "f1": 0.6153846153846153,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 111
+  }
+}

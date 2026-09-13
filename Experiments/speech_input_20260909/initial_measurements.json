@@ -1,0 +1,299 @@
+[
+  {
+    "kind": "QWEN_STREAM",
+    "file": "chinese",
+    "mode": "offline",
+    "passIndex": 0,
+    "seconds": 1.096194375,
+    "text": "这是一个测试，这个音色会被用作参考。"
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "chinese",
+    "mode": "stream",
+    "passIndex": 0,
+    "seconds": 0.483668,
+    "firstTokenSeconds": 0.202199083,
+    "text": "这是一个测试，这个音色会被用作参考。"
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "chinese",
+    "mode": "stream",
+    "passIndex": 1,
+    "seconds": 0.472028041,
+    "firstTokenSeconds": 0.20738225,
+    "text": "这是一个测试，这个音色会被用作参考。"
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "chinese",
+    "mode": "offline",
+    "passIndex": 1,
+    "seconds": 0.47053875,
+    "text": "这是一个测试，这个音色会被用作参考。"
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "chinese",
+    "mode": "offline",
+    "passIndex": 2,
+    "seconds": 0.492118292,
+    "text": "这是一个测试，这个音色会被用作参考。"
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "chinese",
+    "mode": "stream",
+    "passIndex": 2,
+    "seconds": 0.465682,
+    "firstTokenSeconds": 0.203594875,
+    "text": "这是一个测试，这个音色会被用作参考。"
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "chinese-long",
+    "mode": "offline",
+    "passIndex": 0,
+    "seconds": 0.662533417,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢，我们开始上传。"
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "chinese-long",
+    "mode": "stream",
+    "passIndex": 0,
+    "seconds": 0.682000417,
+    "firstTokenSeconds": 0.276759917,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢，我们开始上传。"
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "chinese-long",
+    "mode": "stream",
+    "passIndex": 1,
+    "seconds": 0.647563,
+    "firstTokenSeconds": 0.275539416,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢，我们开始上传。"
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "chinese-long",
+    "mode": "offline",
+    "passIndex": 1,
+    "seconds": 0.664939708,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢，我们开始上传。"
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "chinese-long",
+    "mode": "offline",
+    "passIndex": 2,
+    "seconds": 0.665725084,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢，我们开始上传。"
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "chinese-long",
+    "mode": "stream",
+    "passIndex": 2,
+    "seconds": 0.645063333,
+    "firstTokenSeconds": 0.2720845,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢，我们开始上传。"
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "english",
+    "mode": "offline",
+    "passIndex": 0,
+    "seconds": 0.778383917,
+    "text": "Transcribe meetings, recordings, and online video, dub them into new languages with lifelike voices."
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "english",
+    "mode": "stream",
+    "passIndex": 0,
+    "seconds": 0.757638125,
+    "firstTokenSeconds": 0.26832075,
+    "text": "Transcribe meetings, recordings, and online video, dub them into new languages with lifelike voices."
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "english",
+    "mode": "stream",
+    "passIndex": 1,
+    "seconds": 0.781611958,
+    "firstTokenSeconds": 0.277623,
+    "text": "Transcribe meetings, recordings, and online video, dub them into new languages with lifelike voices."
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "english",
+    "mode": "offline",
+    "passIndex": 1,
+    "seconds": 0.790914375,
+    "text": "Transcribe meetings, recordings, and online video, dub them into new languages with lifelike voices."
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "english",
+    "mode": "offline",
+    "passIndex": 2,
+    "seconds": 0.781913125,
+    "text": "Transcribe meetings, recordings, and online video, dub them into new languages with lifelike voices."
+  },
+  {
+    "kind": "QWEN_STREAM",
+    "file": "english",
+    "mode": "stream",
+    "passIndex": 2,
+    "seconds": 0.783317625,
+    "firstTokenSeconds": 0.282863584,
+    "text": "Transcribe meetings, recordings, and online video, dub them into new languages with lifelike voices."
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "chinese-long.wav",
+    "mode": "timed",
+    "passIndex": 0,
+    "seconds": 17.903117333,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢？我们开始上传。"
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "chinese-long.wav",
+    "mode": "text",
+    "passIndex": 0,
+    "seconds": 1.376268709,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢？我们开始上传。"
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "chinese-long.wav",
+    "mode": "text",
+    "passIndex": 1,
+    "seconds": 1.03058125,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢？我们开始上传。"
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "chinese-long.wav",
+    "mode": "timed",
+    "passIndex": 1,
+    "seconds": 1.445011583,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢？我们开始上传。"
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "chinese-long.wav",
+    "mode": "timed",
+    "passIndex": 2,
+    "seconds": 1.49758575,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢？我们开始上传。"
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "chinese-long.wav",
+    "mode": "text",
+    "passIndex": 2,
+    "seconds": 1.065529708,
+    "text": "这是一个测试，我们要看看测试效果怎么样。然后呢？我们开始上传。"
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "chinese.wav",
+    "mode": "timed",
+    "passIndex": 0,
+    "seconds": 1.085824208,
+    "text": "这是一个测试。这个音色会被用作参考。"
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "chinese.wav",
+    "mode": "text",
+    "passIndex": 0,
+    "seconds": 0.745502917,
+    "text": "这是一个测试。这个音色会被用作参考。"
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "chinese.wav",
+    "mode": "text",
+    "passIndex": 1,
+    "seconds": 0.750218875,
+    "text": "这是一个测试。这个音色会被用作参考。"
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "chinese.wav",
+    "mode": "timed",
+    "passIndex": 1,
+    "seconds": 1.059340125,
+    "text": "这是一个测试。这个音色会被用作参考。"
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "chinese.wav",
+    "mode": "timed",
+    "passIndex": 2,
+    "seconds": 1.042175583,
+    "text": "这是一个测试。这个音色会被用作参考。"
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "chinese.wav",
+    "mode": "text",
+    "passIndex": 2,
+    "seconds": 0.735036792,
+    "text": "这是一个测试。这个音色会被用作参考。"
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "english.wav",
+    "mode": "timed",
+    "passIndex": 0,
+    "seconds": 1.9370505,
+    "text": "transcribe meetings, recordings, and online video. Dub them into new languages with lifelike voices."
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "english.wav",
+    "mode": "text",
+    "passIndex": 0,
+    "seconds": 0.866280417,
+    "text": "transcribe meetings, recordings and online video. Dub them into new languages with lifelike voices."
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "english.wav",
+    "mode": "text",
+    "passIndex": 1,
+    "seconds": 0.822236291,
+    "text": "transcribe meetings, recordings and online video. Dub them into new languages with lifelike voices."
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "english.wav",
+    "mode": "timed",
+    "passIndex": 1,
+    "seconds": 1.29098875,
+    "text": "transcribe meetings, recordings, and online video. Dub them into new languages with lifelike voices."
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "english.wav",
+    "mode": "timed",
+    "passIndex": 2,
+    "seconds": 1.285364125,
+    "text": "transcribe meetings, recordings, and online video. Dub them into new languages with lifelike voices."
+  },
+  {
+    "kind": "SPEECH_INPUT",
+    "file": "english.wav",
+    "mode": "text",
+    "passIndex": 2,
+    "seconds": 0.834528459,
+    "text": "transcribe meetings, recordings and online video. Dub them into new languages with lifelike voices."
+  }
+]

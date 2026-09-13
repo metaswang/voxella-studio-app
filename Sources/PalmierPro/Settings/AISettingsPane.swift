@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct AISettingsPane: View {
     @Bindable private var settings = LLMSettingsStore.shared
+    @State private var isAdvancedExpanded = false
     @State private var selectedProviderID: UUID?
     @State private var providerDraft = LLMProviderProfile.defaultOpenAI
     @State private var extraBodyJSONDraft = "{}"
@@ -33,14 +34,19 @@ struct AISettingsPane: View {
             SettingsSection(title: L10n.string("AI access")) {
                 transportConfiguration
             }
-            SettingsSection(title: "Providers") {
-                providerConfiguration
-            }
-            SettingsSection(title: L10n.string("Agent Chat BYOK")) {
-                agentCredentialsConfiguration
-            }
-            SettingsSection(title: "Task Models") {
-                taskModelConfiguration
+            DisclosureGroup(L10n.string("Advanced AI service configuration"), isExpanded: $isAdvancedExpanded) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
+                    SettingsSection(title: "Providers") {
+                        providerConfiguration
+                    }
+                    SettingsSection(title: L10n.string("Agent Chat BYOK")) {
+                        agentCredentialsConfiguration
+                    }
+                    SettingsSection(title: "Task Models") {
+                        taskModelConfiguration
+                    }
+                }
+                .padding(.top, AppTheme.Spacing.lg)
             }
         }
         .onAppear {
@@ -71,7 +77,7 @@ struct AISettingsPane: View {
 
     private var transportConfiguration: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
-            Toggle(L10n.string("Use BYOK"), isOn: $settings.useBYOK)
+            Toggle(L10n.string("Use your own API key(BYOK)"), isOn: $settings.useBYOK)
                 .toggleStyle(.switch)
                 .controlSize(.small)
 

@@ -1,0 +1,57 @@
+{
+  "id": "en-18",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=en\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nAt first, I thought the sound was coming from the fan above the kitchen door. Then I listened again, and again, until I noticed the same pattern in every room. It was the old clock in the hallway, ticking much louder than I remembered. We moved it away from the microphone and recorded another minute of silence. This time, the background was quiet enough for the interview we had planned.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "6ac46da9191b680904026ed12f1e32e8a59004947a63c84c92a3d0d9fce740b8",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:20.726824+00:00",
+  "raw": "{\"subtitles\":[\"At first, I thought the sound was coming\",\"from the fan above the kitchen door.\",\"Then I listened again, and again,\",\"until I noticed the same pattern in every room.\",\"It was the old clock in the hallway,\",\"ticking much louder than I remembered.\",\"We moved it away from the microphone\",\"and recorded another minute of silence.\",\"This time, the background was quiet enough\",\"for the interview we had planned.\"],\"batch_summary\":\"The narrator investigates a ticking sound, discovers it's an old clock, and removes it to ensure quiet for an interview.\"}",
+  "usage": {
+    "promptTokenCount": 284,
+    "candidatesTokenCount": 125,
+    "totalTokenCount": 409,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 284
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2779233339970233,
+  "transport_attempts": 1,
+  "lines": [
+    "At first, I thought the sound was coming",
+    "from the fan above the kitchen door.",
+    "Then I listened again, and again,",
+    "until I noticed the same pattern in every room.",
+    "It was the old clock in the hallway,",
+    "ticking much louder than I remembered.",
+    "We moved it away from the microphone",
+    "and recorded another minute of silence.",
+    "This time, the background was quiet enough",
+    "for the interview we had planned."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 10,
+    "boundaries": 9,
+    "tp": 9,
+    "ref_count": 9,
+    "f1": 1.0,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 47
+  }
+}

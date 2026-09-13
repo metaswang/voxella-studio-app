@@ -1,0 +1,57 @@
+{
+  "id": "en-09",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=en\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nMaria da Silva joined the research group after working with a museum in São Paulo. Her first task was to catalogue photographs that had never been shown to the public. Some images had dates on the back, while others carried only a family name. Instead of guessing where they belonged, she kept a separate list of uncertain records. Local residents later helped the museum identify several people in those pictures.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "39a472add69afc819bffb3c692fe16b0fd8bef9fe8d4e9746dfcf96c0238f72b",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:09:03.795663+00:00",
+  "raw": "{\n  \"subtitles\": [\n    \"Maria da Silva joined the research group\",\n    \"after working with a museum in São Paulo.\",\n    \"Her first task was to catalogue photographs\",\n    \"that had never been shown to the public.\",\n    \"Some images had dates on the back,\",\n    \"while others carried only a family name.\",\n    \"Instead of guessing where they belonged,\",\n    \"she kept a separate list of uncertain records.\",\n    \"Local residents later helped the museum\",\n    \"identify several people in those pictures.\"\n  ],\n  \"batch_summary\": \"Maria da Silva catalogues unshown photographs at a museum, using uncertain lists and local help to identify people.\"\n}",
+  "usage": {
+    "promptTokenCount": 281,
+    "candidatesTokenCount": 152,
+    "totalTokenCount": 433,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 281
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2774172499994165,
+  "transport_attempts": 1,
+  "lines": [
+    "Maria da Silva joined the research group",
+    "after working with a museum in São Paulo.",
+    "Her first task was to catalogue photographs",
+    "that had never been shown to the public.",
+    "Some images had dates on the back,",
+    "while others carried only a family name.",
+    "Instead of guessing where they belonged,",
+    "she kept a separate list of uncertain records.",
+    "Local residents later helped the museum",
+    "identify several people in those pictures."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 10,
+    "boundaries": 9,
+    "tp": 9,
+    "ref_count": 9,
+    "f1": 1.0,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 46
+  }
+}

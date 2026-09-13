@@ -769,7 +769,14 @@ enum Transcription {
     }
 
     static func supportedLocales() async -> [Locale] {
-        await SpeechTranscriber.supportedLocales
+        #if BUNDLED_SPEECH
+        return WorkbenchTranscriptionLanguage.allCases.compactMap(\.languageCode).map(Locale.init(identifier:))
+        #else
+        if #available(macOS 26.0, *) {
+            return await SpeechTranscriber.supportedLocales
+        }
+        return []
+        #endif
     }
 
     static func bestSupportedLocale(from supported: [Locale]) -> Locale? {
@@ -813,15 +820,19 @@ enum Transcription {
             progress: { _, _ in }
         )
         #else
-        return try await transcribeWithApple(
-            fileURL: fileURL,
-            censorProfanity: censorProfanity,
-            preferredLocale: preferredLocale,
-            sourceRange: sourceRange
-        )
+        if #available(macOS 26.0, *) {
+            return try await transcribeWithApple(
+                fileURL: fileURL,
+                censorProfanity: censorProfanity,
+                preferredLocale: preferredLocale,
+                sourceRange: sourceRange
+            )
+        }
+        throw TranscriptionError.analysisFailed("Apple Speech transcription requires macOS 26 or later.")
         #endif
     }
 
+    @available(macOS 26.0, *)
     private static func transcribeWithApple(fileURL: URL, censorProfanity: Bool = false, preferredLocale: Locale? = nil, sourceRange: ClosedRange<Double>? = nil) async throws -> TranscriptionResult {
         if let sourceRange {
             let tempURL = try await extractAudioTrack(from: fileURL, range: sourceRange)
@@ -990,6 +1001,7 @@ enum Transcription {
 
     /// Each `Result` is one endpointed segment; emit it as a TranscriptionSegment
     /// (text + time range) and walk its runs into per-token TranscriptionWords.
+    @available(macOS 26.0, *)
     private static func decodeResults(
         _ results: [SpeechTranscriber.Result],
         locale: Locale,

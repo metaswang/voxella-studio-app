@@ -10,7 +10,7 @@
   <img src="../../assets/macos-badge.png" alt="macOS के लिए Palmier Pro डाउनलोड करें" width="180" />
 </a>
 
-<sub><i>Apple Silicon पर macOS 26 (Tahoe) आवश्यक</i></sub>
+<sub><i>Apple Silicon पर macOS 15 (Sequoia) आवश्यक</i></sub>
 
 <a href="https://x.com/Palmier_io"><img src="https://img.shields.io/badge/Follow-%40Palmier__io-000000?style=flat&logo=x&logoColor=white" alt="X पर फॉलो करें" /></a>
 <a href="https://discord.com/invite/SMVW6pKYmg"><img src="https://img.shields.io/badge/Join-Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord से जुड़ें" /></a>
@@ -103,7 +103,7 @@ Generative AI features के लिए login और subscription चाहि�
 
 **यह किन platforms को support करता है?**
 
-सिर्फ Apple Silicon पर macOS 26 (Tahoe)।
+सिर्फ Apple Silicon पर macOS 15 (Sequoia)।
 
 और जानकारी के लिए [FAQ.md](../../FAQ.md) देखें।
 

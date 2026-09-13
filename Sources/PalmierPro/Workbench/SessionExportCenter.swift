@@ -129,7 +129,6 @@ struct SessionExportCenter: View {
             height: AppTheme.Workbench.exportSheetHeight
         )
         .background(AppTheme.Background.surfaceColor)
-        .colorScheme(.dark)
         .disabled(isExporting)
     }
 

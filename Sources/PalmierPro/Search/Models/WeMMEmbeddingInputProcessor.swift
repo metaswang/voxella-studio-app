@@ -75,7 +75,7 @@ struct WeMMEmbeddingInputProcessor {
     func imageInput(_ image: CIImage, text: String? = nil) throws -> LMInput {
         let normalized = normalize(image)
         let (pixels, frame) = try patchify(images: [MediaProcessing.asMLXArray(normalized)])
-        let tokens = try makePromptTokens(kind: .image, text: text)
+        let tokens = try makePromptTokens(kind: .image, text: text, visualFrame: frame)
         return LMInput(
             text: .init(tokens: tokens, mask: ones(like: tokens).asType(.int8)),
             image: .init(pixels: pixels, frames: [frame]))

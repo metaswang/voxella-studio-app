@@ -22,6 +22,7 @@ wwdc/
 # Secrets
 .env
 .env.*
+.secrets/
 *.pem
 *.p12
 *.p8

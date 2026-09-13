@@ -1,0 +1,69 @@
+{
+  "id": "ja-01",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language ja.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: ja\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n動きを始める前に、両足が床についていることを確認してください。肩の力を抜いて、正面をゆっくり見ます。首を前に引っ張るのではなく、無理のない範囲で動かします。椅子がぐらつく場合は、いったん中止して安定したものに替えてください。同じ動きを二回繰り返した後、左右で感じ方に違いがあるか落ち着いて確かめましょう。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "25d47dee27dfcb215749cffdc372574ddad5218322c60877b66df62a8bcdb8fd",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:05.449714+00:00",
+  "raw": "{\"lines\": [\"動きを始める前に、\", \"両足が床に\", \"ついていることを\", \"確認してください。\", \"肩の力を抜いて、\", \"正面をゆっくり\", \"見ます。\", \"首を前に\", \"引っ張るのではなく、\", \"無理のない範囲で\", \"動かします。\", \"椅子がぐらつく\", \"場合は、いったん\", \"中止して\", \"安定したものに\", \"替えてください。\", \"同じ動きを二回\", \"繰り返した後、\", \"左右で感じ方に\", \"違いがあるか\", \"落ち着いて\", \"確かめましょう。\"]}",
+  "usage": {
+    "promptTokenCount": 300,
+    "candidatesTokenCount": 126,
+    "totalTokenCount": 426,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 300
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.3059734999987995,
+  "transport_attempts": 1,
+  "lines": [
+    "動きを始める前に、",
+    "両足が床に",
+    "ついていることを",
+    "確認してください。",
+    "肩の力を抜いて、",
+    "正面をゆっくり",
+    "見ます。",
+    "首を前に",
+    "引っ張るのではなく、",
+    "無理のない範囲で",
+    "動かします。",
+    "椅子がぐらつく",
+    "場合は、いったん",
+    "中止して",
+    "安定したものに",
+    "替えてください。",
+    "同じ動きを二回",
+    "繰り返した後、",
+    "左右で感じ方に",
+    "違いがあるか",
+    "落ち着いて",
+    "確かめましょう。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 22,
+    "boundaries": 21,
+    "tp": 11,
+    "ref_count": 12,
+    "f1": 0.6666666666666667,
+    "overlong": 0,
+    "short": 13,
+    "protected_total": 4,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 10
+  }
+}

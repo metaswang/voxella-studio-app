@@ -1,0 +1,61 @@
+{
+  "id": "es-02",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language es.\nTarget 42 characters per line and never exceed 56.",
+  "user": "language: es\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":24,\"preferredCharactersPerCue\":42,\"maximumCharactersPerCue\":56}\n<corrected_transcript>\nCuando abras el proyecto mañana, las grabaciones originales seguirán disponibles. Selecciona primero la entrevista y lleva la reproducción al inicio de la respuesta. No borres enseguida el momento de silencio solo porque nadie está hablando. Esa pausa permite que el público comprenda la pregunta antes de escuchar la respuesta. Cuando terminemos el primer montaje, decidiremos dónde debe comenzar la música. También revisaremos el final para comprobar si necesita una explicación adicional.\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "4dd3b363032db06c818e61779e852f092de3549a99653a701dc5d898af2528ad",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:20:55.566888+00:00",
+  "raw": "{\"lines\":[\"Cuando abras el proyecto mañana, las grabaciones originales seguirán disponibles.\",\"Selecciona primero la entrevista y lleva la reproducción al inicio de la respuesta.\",\"No borres enseguida el momento de silencio solo porque nadie está hablando.\",\"Esa pausa permite que el público comprenda la pregunta antes de escuchar la respuesta.\",\"Cuando terminemos el primer montaje, decidiremos dónde debe comenzar la música.\",\"También revisaremos el final para comprobar si necesita una explicación adicional.\"]}",
+  "usage": {
+    "promptTokenCount": 296,
+    "candidatesTokenCount": 104
+  },
+  "provider_usage": {
+    "prompt_tokens": 296,
+    "completion_tokens": 104,
+    "total_tokens": 400,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.399597999996331,
+  "transport_attempts": 1,
+  "lines": [
+    "Cuando abras el proyecto mañana, las grabaciones originales seguirán disponibles.",
+    "Selecciona primero la entrevista y lleva la reproducción al inicio de la respuesta.",
+    "No borres enseguida el momento de silencio solo porque nadie está hablando.",
+    "Esa pausa permite que el público comprenda la pregunta antes de escuchar la respuesta.",
+    "Cuando terminemos el primer montaje, decidiremos dónde debe comenzar la música.",
+    "También revisaremos el final para comprobar si necesita una explicación adicional."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 6,
+    "boundaries": 5,
+    "tp": 5,
+    "ref_count": 11,
+    "f1": 0.625,
+    "overlong": 6,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 86
+  }
+}

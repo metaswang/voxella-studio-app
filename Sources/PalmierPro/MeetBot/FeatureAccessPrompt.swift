@@ -9,6 +9,7 @@ struct FeatureAccessPrompt: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable private var account = AccountService.shared
     @State private var isWorking = false
+    @State private var workingTier: AccountTier?
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
@@ -35,9 +36,9 @@ struct FeatureAccessPrompt: View {
 
             actions
         }
-        .padding(AppTheme.Spacing.xxl)
-        .frame(maxWidth: AppTheme.Settings.contentMaxWidth)
-        .background(AppTheme.Background.surfaceColor)
+        .padding(AppTheme.Spacing.xlXxl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .themedSurface(AppTheme.Background.prominentColor, cornerRadius: AppTheme.Radius.mdLg)
     }
 
     @ViewBuilder
@@ -63,24 +64,29 @@ struct FeatureAccessPrompt: View {
                 .buttonStyle(.capsule(.secondary, size: .regular))
                 .disabled(isWorking || account.isSigningIn)
 
-                cancelButton
+                if feature != .meetBot {
+                    cancelButton
+                }
             }
         case .upgradeRequired:
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Button {
-                    Task { @MainActor in
-                        isWorking = true
-                        await account.subscribeToMinimumPlan(for: feature)
-                        isWorking = false
-                        SettingsWindowController.shared.show(tab: .account)
-                        dismiss()
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                if eligiblePlans.isEmpty {
+                    Text(L10n.string("No subscription plans are available right now."))
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(L10n.string("Choose a plan. Every option unlocks Meet Bot and Google Calendar."))
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+                        ForEach(Array(eligiblePlans.enumerated()), id: \.element.id) { index, plan in
+                            planCard(plan, isPrimary: index == 0)
+                        }
                     }
-                } label: {
-                    Label(L10n.string("Upgrade to Starter"), systemImage: "arrow.up.circle.fill")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.capsule(.prominent, size: .regular))
-                .disabled(isWorking)
 
                 Button {
                     SettingsWindowController.shared.show(tab: .account)
@@ -91,11 +97,107 @@ struct FeatureAccessPrompt: View {
                 }
                 .buttonStyle(.capsule(.secondary, size: .regular))
                 .disabled(isWorking)
-
-                cancelButton
             }
         case .allowed:
             EmptyView()
+        }
+    }
+
+    private var eligiblePlans: [AvailablePlan] {
+        guard case let .upgradeRequired(minimumPlan) = access else { return [] }
+        return account.availablePlans
+            .filter { $0.tier.satisfies(minimumPlan) }
+            .sorted {
+                if $0.tier.subscriptionRank != $1.tier.subscriptionRank {
+                    return $0.tier.subscriptionRank < $1.tier.subscriptionRank
+                }
+                return $0.effectiveMonthlyPriceUsd < $1.effectiveMonthlyPriceUsd
+            }
+    }
+
+    private func planCard(_ plan: AvailablePlan, isPrimary: Bool) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.sm) {
+                Text(plan.tier.planLabel)
+                    .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+
+                Spacer(minLength: AppTheme.Spacing.sm)
+
+                if plan.hasDiscount {
+                    Text("$\(plan.monthlyPriceUsd)")
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                        .strikethrough()
+                        .monospacedDigit()
+                }
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.xs) {
+                Text("$\(plan.effectiveMonthlyPriceUsd)")
+                    .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+                    .monospacedDigit()
+                Text(L10n.string("per month"))
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+            }
+
+            if let credits = plan.monthlyBudgetCredits {
+                Label(
+                    String(
+                        format: L10n.string("%@ credits each month"),
+                        credits.formatted()
+                    ),
+                    systemImage: "sparkles"
+                )
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+            }
+
+            Button {
+                subscribe(to: plan.tier)
+            } label: {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    if workingTier == plan.tier {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.up.circle.fill")
+                    }
+                    Text(String(
+                        format: L10n.string("Upgrade to %@"),
+                        plan.tier.upgradeLabel
+                    ))
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.capsule(
+                isPrimary ? .prominent : .secondary,
+                size: .regular,
+                fill: isPrimary ? nil : AnyShapeStyle(AppTheme.Background.surfaceColor)
+            ))
+            .disabled(isWorking || plan.planID == nil)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(AppTheme.Spacing.lg)
+        .themedSurface(
+            AppTheme.Background.raisedColor,
+            cornerRadius: AppTheme.Radius.md,
+            border: isPrimary ? AppTheme.Border.primaryColor : AppTheme.Border.subtleColor
+        )
+    }
+
+    private func subscribe(to tier: AccountTier) {
+        Task { @MainActor in
+            isWorking = true
+            workingTier = tier
+            await account.subscribe(tier: tier)
+            isWorking = false
+            workingTier = nil
+            guard account.lastError == nil else { return }
+            SettingsWindowController.shared.show(tab: .account)
+            dismiss()
         }
     }
 

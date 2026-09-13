@@ -4,7 +4,7 @@ import Testing
 
 @Suite("ASR engine routing")
 struct ASREngineRouterTests {
-    @Test func languageSetsAreExclusiveAndCoverVoxLingua107() {
+    @Test func preferredLanguageSetsAreExclusiveAndCoverVoxLingua107() {
         let qwen = ASREngineLanguagePolicy.qwenLanguages
         let parakeet = ASREngineLanguagePolicy.parakeetLanguages
         let whisper = ASREngineLanguagePolicy.whisperLanguages
@@ -19,14 +19,14 @@ struct ASREngineRouterTests {
         #expect(qwen.contains("zh"))
         #expect(qwen.contains("vi"))
         #expect(qwen.contains("yue"))
-        #expect(whisper.contains("fa"))
-        #expect(whisper.contains("mk"))
-        #expect(whisper.contains("tl"))
+        #expect(qwen.contains("fa"))
+        #expect(qwen.contains("mk"))
+        #expect(qwen.contains("tl"))
         #expect(parakeet.contains("en"))
         #expect(parakeet.contains("fr"))
     }
 
-    @Test func europeanConfusionStaysInParakeet() {
+    @Test func europeanConfusionUsesSharedEngineCoverage() {
         let posterior: [String: Float] = [
             "en": 0.41,
             "de": 0.27,
@@ -37,14 +37,13 @@ struct ASREngineRouterTests {
         ]
         let scores = ASREngineRouter.scores(from: posterior)
         #expect(scores.parakeet > 0.90)
-        #expect(ASREngineRouter.isConfident(scores))
         let decision = ASREngineRouter.decide(posterior: posterior, speechDuration: 3)
         #expect(decision.engine == .parakeet)
-        #expect(decision.reason == .confident)
+        #expect(decision.reason == .engineCoverage)
         #expect(decision.parakeetDomainLanguage == "en")
     }
 
-    @Test func eastAsianConfusionStaysInQwen() {
+    @Test func eastAsianConfusionUsesSharedEngineCoverage() {
         let posterior: [String: Float] = [
             "ja": 0.43,
             "ko": 0.31,
@@ -55,10 +54,10 @@ struct ASREngineRouterTests {
         #expect(scores.qwen > 0.85)
         let decision = ASREngineRouter.decide(posterior: posterior, speechDuration: 3)
         #expect(decision.engine == .qwen)
-        #expect(decision.reason == .confident)
+        #expect(decision.reason == .engineCoverage)
     }
 
-    @Test func cantoneseLeakageThroughChineseOrVietnameseStillSelectsQwen() {
+    @Test func relatedLanguageMassCanSupportAnEngine() {
         let posterior: [String: Float] = [
             "zh": 0.62,
             "vi": 0.21,
@@ -66,10 +65,10 @@ struct ASREngineRouterTests {
         ]
         let decision = ASREngineRouter.decide(posterior: posterior, speechDuration: 3)
         #expect(decision.engine == .qwen)
-        #expect(decision.reason == .confident)
+        #expect(decision.reason == .engineCoverage)
     }
 
-    @Test func qwenParakeetAmbiguityResolvesToQwen() {
+    @Test func chineseEnglishAmbiguityPrefersQwen() {
         let posterior: [String: Float] = [
             "zh": 0.45,
             "en": 0.43,
@@ -77,7 +76,7 @@ struct ASREngineRouterTests {
         ]
         let decision = ASREngineRouter.decide(posterior: posterior, speechDuration: 3)
         #expect(decision.engine == .qwen)
-        #expect(decision.reason == .qwenParakeetAmbiguous)
+        #expect(decision.reason == .chineseEnglishConflict)
     }
 
     @Test func whisperDominantSelectsWhisper() {
@@ -88,11 +87,11 @@ struct ASREngineRouterTests {
         ]
         let decision = ASREngineRouter.decide(posterior: posterior, speechDuration: 3)
         #expect(decision.engine == .whisper)
-        #expect(decision.reason == .whisperDominant)
+        #expect(decision.reason == .insufficientEngineCoverage)
         #expect(decision.whisperHint == nil)
     }
 
-    @Test func highConfidenceWhisperLanguageBecomesHint() {
+    @Test func highConfidenceWhisperLanguageOnlySelectsEngine() {
         var posterior: [String: Float] = [:]
         for language in ASREngineLanguagePolicy.voxLingua107Languages {
             posterior[language] = 0.001
@@ -100,7 +99,30 @@ struct ASREngineRouterTests {
         posterior["sw"] = 0.92
         let decision = ASREngineRouter.decide(posterior: posterior, speechDuration: 3)
         #expect(decision.engine == .whisper)
-        #expect(decision.reason == .confident)
+        #expect(decision.reason == .insufficientEngineCoverage)
+        #expect(decision.topLanguage == "sw")
+        #expect(decision.whisperHint == nil)
+    }
+
+    @Test func unanimousLanguageEvidenceDoesNotPromptWhisper() {
+        let evidence: [ASRLanguageEvidence] = (0..<3).map { index in
+            .init(
+                window: .init(slices: [.init(start: Double(index * 5), end: Double((index + 1) * 5))]),
+                posterior: ["sw": 0.99, "en": 0.01]
+            )
+        }
+        let decision = ASREngineRouter.decide(evidence: evidence)
+        #expect(decision.engine == .whisper)
+        #expect(decision.reason == .insufficientEngineCoverage)
+        #expect(decision.whisperHint == nil)
+    }
+
+    @Test func explicitlySelectedWhisperLanguageRemainsAuthoritative() {
+        let decision = ASREngineRouter.decide(
+            posterior: ["en": 1], speechDuration: 5, userLanguageCode: "sw"
+        )
+        #expect(decision.engine == .whisper)
+        #expect(decision.reason == .userLocked)
         #expect(decision.whisperHint == "sw")
     }
 
@@ -111,7 +133,7 @@ struct ASREngineRouterTests {
         #expect(ASREngineLanguagePolicy.qwenPromptLanguage(from: "zh-CN") == "Chinese")
         #expect(ASREngineLanguagePolicy.engine(forLanguageCode: "en") == .parakeet)
         #expect(ASREngineLanguagePolicy.engine(forLanguageCode: "ja") == .qwen)
-        #expect(ASREngineLanguagePolicy.engine(forLanguageCode: "fa") == .whisper)
+        #expect(ASREngineLanguagePolicy.engine(forLanguageCode: "fa") == .qwen)
         #expect(ASREngineLanguagePolicy.whisperLanguageCode(from: "iw") == "he")
         #expect(ASREngineLanguagePolicy.isEnglish("en-US"))
         #expect(ASREngineLanguagePolicy.isEnglish("en"))
@@ -134,7 +156,7 @@ struct ASREngineRouterTests {
         #expect(ASREngineLanguagePolicy.qwenLockLanguage(fromDetected: "Cantonese") == "Cantonese")
     }
 
-    @Test func aggregatedWindowsRecoverEnglishFromSpuriousOpeningWhisperID() {
+    @Test func conflictingStrongOpeningCannotBeOverruledByLaterEnglish() {
         let opening: [String: Float] = [
             "hy": 0.87,
             "en": 0.08,
@@ -149,16 +171,15 @@ struct ASREngineRouterTests {
         #expect(openingOnly.engine == .whisper)
         #expect(openingOnly.topLanguage == "hy")
 
-        let aggregated = ASREngineRouter.averagePosteriors([opening, later, later])
-        #expect(aggregated["en", default: 0] > aggregated["hy", default: 0])
-
         let decision = ASREngineRouter.decide(
-            windowPosteriors: [opening, later, later],
-            speechDuration: 15
+            evidence: [opening, later, later].enumerated().map { index, posterior in
+                .init(window: .init(slices: [.init(start: Double(index) * 5, end: Double(index + 1) * 5)]), posterior: posterior)
+            }
         )
-        #expect(decision.engine == .parakeet)
-        #expect(decision.topLanguage == "en")
-        #expect(decision.parakeetDomainLanguage == "en")
+        #expect(decision.engine == .whisper)
+        #expect(decision.reason == .insufficientEngineCoverage)
+        #expect(decision.whisperHint == nil)
+        #expect(decision.parakeetDomainLanguage == nil)
     }
 
     @Test func identificationWindowsSpreadAcrossLongSpeech() {

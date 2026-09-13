@@ -1977,7 +1977,7 @@ struct MediaFlowTests {
         completedDub.state = .completed
         var pendingDub = WorkbenchDubJob()
         pendingDub.sourceTranscriptionID = transcriptionID
-        pendingDub.state = .ready
+        pendingDub.state = .notStarted
         var unrelatedDub = WorkbenchDubJob()
         unrelatedDub.sourceTranscriptionID = UUID()
         unrelatedDub.state = .completed

@@ -10,7 +10,7 @@
   <img src="../../assets/macos-badge.png" alt="Palmier Pro for macOS をダウンロード" width="180" />
 </a>
 
-<sub><i>Apple Silicon 搭載の macOS 26 (Tahoe) が必要</i></sub>
+<sub><i>Apple Silicon 搭載の macOS 15 (Sequoia) が必要</i></sub>
 
 <a href="https://x.com/Palmier_io"><img src="https://img.shields.io/badge/Follow-%40Palmier__io-000000?style=flat&logo=x&logoColor=white" alt="X でフォロー" /></a>
 <a href="https://discord.com/invite/SMVW6pKYmg"><img src="https://img.shields.io/badge/Join-Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord に参加" /></a>
@@ -103,7 +103,7 @@ codex mcp add palmier-pro --url http://127.0.0.1:19789/mcp
 
 **対応プラットフォームは？**
 
-Apple Silicon 搭載の macOS 26 (Tahoe) のみです。
+Apple Silicon 搭載の macOS 15 (Sequoia) のみです。
 
 詳細は [FAQ.md](../../FAQ.md) を参照してください。
 

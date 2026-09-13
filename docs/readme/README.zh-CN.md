@@ -10,7 +10,7 @@
   <img src="../../assets/macos-badge.png" alt="下载 macOS 版 Palmier Pro" width="180" />
 </a>
 
-<sub><i>需要搭载 Apple Silicon 的 macOS 26 (Tahoe)</i></sub>
+<sub><i>需要搭载 Apple Silicon 的 macOS 15 (Sequoia)</i></sub>
 
 <a href="https://x.com/Palmier_io"><img src="https://img.shields.io/badge/Follow-%40Palmier__io-000000?style=flat&logo=x&logoColor=white" alt="在 X 上关注" /></a>
 <a href="https://discord.com/invite/SMVW6pKYmg"><img src="https://img.shields.io/badge/Join-Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="加入 Discord" /></a>
@@ -103,7 +103,7 @@ codex mcp add palmier-pro --url http://127.0.0.1:19789/mcp
 
 **支持哪些平台？**
 
-仅支持搭载 Apple Silicon 的 macOS 26 (Tahoe)。
+仅支持搭载 Apple Silicon 的 macOS 15 (Sequoia)。
 
 更多内容请查看 [FAQ.md](../../FAQ.md)。
 

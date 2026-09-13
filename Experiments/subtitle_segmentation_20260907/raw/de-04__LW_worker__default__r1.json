@@ -1,0 +1,69 @@
+{
+  "id": "de-04",
+  "method": "LW_worker",
+  "budget": "default",
+  "repeat": 1,
+  "system": "你是字幕切分引擎。输入文本已经完成纠错和标点恢复。\n严格输出 JSON：{\"subtitles\":[\"<line>\",\"...\"],\"batch_summary\":\"<brief summary>\"}。\n本步骤只能插入字幕行边界；不得纠错、规范化、翻译、增删、替换或重排任何字符和标点。\n按原顺序拼接 subtitles 后，除行间空白外，必须精确还原 finalized_transcript。\n优先在短语、已有标点和自然停顿处切分；字幕行不必以标点结尾。\nsource_language=de\nCJK 建议 8~14 字，硬上限 18 字。\n非 CJK 建议 24~42 字符，硬上限 56 字符。\n不要 Markdown，不要解释。",
+  "user": "<finalized_transcript>\nDie Anwohner, die hinter der alten Bibliothek wohnen und schon lange einen Ort suchten, an dem Kinder etwas über Pflanzen lernen können, haben gemeinsam einen Garten angelegt. Jeden Samstag öffnet jemand das Tor und prüft die Bewässerungsanlage. Kleine Werkzeuge können ausgeliehen werden, müssen aber vor dem Schließen zurück ins Regal. Diese einfache Regel hilft dabei, den Garten für alle zugänglich zu halten. Neue Besucher werden am Eingang begrüßt.\n</finalized_transcript>\n只切分 finalized_transcript，完整保留其文本与标点。",
+  "fingerprint": "3bdc815b51eb93ab440748268f9e235b6e6dde0a8892d87a4af962027eda63b5",
+  "requested_model": "gemini-3.5-flash-lite",
+  "temperature": 0,
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:10:23.472333+00:00",
+  "raw": "{\n  \"subtitles\": [\n    \"Die Anwohner, die hinter der alten\",\n    \"Bibliothek wohnen und schon lange\",\n    \"einen Ort suchten, an dem Kinder\",\n    \"etwas über Pflanzen lernen können,\",\n    \"haben gemeinsam einen Garten angelegt.\",\n    \"Jeden Samstag öffnet jemand das Tor\",\n    \"und prüft die Bewässerungsanlage.\",\n    \"Kleine Werkzeuge können ausgeliehen\",\n    \"werden, müssen aber vor dem Schließen\",\n    \"zurück ins Regal. Diese einfache\",\n    \"Regel hilft dabei, den Garten\",\n    \"für alle zugänglich zu halten.\",\n    \"Neue Besucher werden am Eingang begrüßt.\"\n  ],\n  \"batch_summary\": \"Anwohner haben einen Gemeinschaftsgarten angelegt und regeln dessen Nutzung und Pflege.\"\n}",
+  "usage": {
+    "promptTokenCount": 297,
+    "candidatesTokenCount": 185,
+    "totalTokenCount": 482,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 297
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "model": "gemini-3.5-flash-lite",
+  "finish_reason": "STOP",
+  "latency_s": 1.2000142079996294,
+  "transport_attempts": 1,
+  "lines": [
+    "Die Anwohner, die hinter der alten",
+    "Bibliothek wohnen und schon lange",
+    "einen Ort suchten, an dem Kinder",
+    "etwas über Pflanzen lernen können,",
+    "haben gemeinsam einen Garten angelegt.",
+    "Jeden Samstag öffnet jemand das Tor",
+    "und prüft die Bewässerungsanlage.",
+    "Kleine Werkzeuge können ausgeliehen",
+    "werden, müssen aber vor dem Schließen",
+    "zurück ins Regal. Diese einfache",
+    "Regel hilft dabei, den Garten",
+    "für alle zugänglich zu halten.",
+    "Neue Besucher werden am Eingang begrüßt."
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 13,
+    "boundaries": 12,
+    "tp": 5,
+    "ref_count": 10,
+    "f1": 0.45454545454545453,
+    "overlong": 0,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 2,
+    "violations": [
+      {
+        "phrase": "ausgeliehen werden",
+        "cut": 282
+      },
+      {
+        "phrase": "alten Bibliothek",
+        "cut": 35
+      }
+    ],
+    "punctuation_starts": 0,
+    "max_length": 40
+  }
+}

@@ -1,8 +1,19 @@
 import AppKit
 import SwiftUI
 
-/// Brand mark used in the workbench sidebar, loaded from the bundled app icon.
+/// Brand images used by the workbench and recording status item.
 enum WorkbenchBrandIcon {
+    static func statusBarImage(size: CGFloat = AppTheme.IconSize.sm) -> NSImage? {
+        let source = statusBarNSImage
+            ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: nil)
+        guard let image = source?.copy() as? NSImage else {
+            return nil
+        }
+        image.size = NSSize(width: size, height: size)
+        image.isTemplate = true
+        return image
+    }
+
     @ViewBuilder
     static func image(size: CGFloat = 32) -> some View {
         Group {
@@ -32,6 +43,11 @@ enum WorkbenchBrandIcon {
             return image
         }
         return NSImage(named: "AppIcon")
+    }()
+
+    private static let statusBarNSImage: NSImage? = {
+        guard let url = BundledResource.url("StatusBarIcon.svg") else { return nil }
+        return NSImage(contentsOf: url)
     }()
 }
 

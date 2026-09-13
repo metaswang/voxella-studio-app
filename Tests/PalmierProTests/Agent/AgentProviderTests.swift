@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Agent providers")
 struct AgentProviderTests {
-    @Test func modelCatalogContainsExactlySupportedModels() {
+    @Test func builtInModelCatalogContainsFallbackModels() {
         #expect(AgentModel.allCases.map { [$0.rawValue, $0.displayName] } == [
             ["claude-sonnet-5", "Sonnet 5"],
             ["claude-opus-5", "Opus 5"],
@@ -21,12 +21,32 @@ struct AgentProviderTests {
         ])
         #expect(AgentModel.allCases.filter(\.requiresPaidHostedPlan) == [.fable5, .sol])
         let anthropicEfforts: [AgentReasoningEffort] = [.low, .medium, .high, .xHigh, .max]
-        let openAIEfforts = AgentReasoningEffort.allCases
+        let openAIEfforts: [AgentReasoningEffort] = [.none, .low, .medium, .high, .xHigh, .max]
         #expect(AgentModel.allCases.filter { $0.provider == .anthropic }
             .allSatisfy { $0.supportedReasoningEfforts == anthropicEfforts })
         #expect(AgentModel.allCases.filter { $0.provider == .openAI }
             .allSatisfy { $0.supportedReasoningEfforts == openAIEfforts })
-        #expect(openAIEfforts == [.none, .minimal, .low, .medium, .high, .xHigh, .max])
+    }
+
+    @Test func discoveredOpenAIModelsKeepOnlySupportedChatVersionsAndEfforts() throws {
+        let data = Data(#"{"data":[{"id":"gpt-5.6-sol"},{"id":"gpt-6-astra"},{"id":"gpt-5.5"},{"id":"gpt-image-2.5"},{"id":"gpt-realtime-2"},{"id":"ft:gpt-5.6-terra:example"}]}"#.utf8)
+        let models = try OpenAIModelDiscovery.models(from: data)
+
+        #expect(models == [.sol, AgentModel.persisted("gpt-6-astra")!])
+        #expect(AgentModel.persisted("gpt-5.6-sol")?.supportedReasoningEfforts
+            == [.none, .low, .medium, .high, .xHigh, .max])
+        #expect(AgentModel.persisted("gpt-6-astra")?.supportedReasoningEfforts
+            == [.low, .medium, .high, .xHigh, .max])
+        #expect(OpenAIChatModelID("gpt-5.10") != nil)
+        #expect(OpenAIChatModelID("gpt-5.5") == nil)
+        #expect(OpenAIChatModelID("gpt-image-2.5") == nil)
+    }
+
+    @Test func dynamicOpenAIModelsUseTheExistingSingleValuePersistenceFormat() throws {
+        let model = try #require(AgentModel.persisted("gpt-6-astra"))
+        let encoded = try JSONEncoder().encode(model)
+        #expect(String(decoding: encoded, as: UTF8.self) == #""gpt-6-astra""#)
+        #expect(try JSONDecoder().decode(AgentModel.self, from: encoded) == model)
     }
 
     @Test func routingUsesOnlyTheSelectedProvidersKey() {
@@ -192,6 +212,16 @@ struct AgentProviderTests {
 @Suite("Agent provider persistence")
 @MainActor
 struct AgentProviderPersistenceTests {
+    @Test func hostedModelsCanBeSelectedWithoutProviderAPIKeys() throws {
+        try withDefaults { defaults in
+            let service = AgentService(userDefaults: defaults)
+
+            #expect(service.canSelectModel(.sonnet5, transport: .hosted))
+            #expect(service.canSelectModel(.terra, transport: .hosted))
+            #expect(!service.canSelectModel(.terra, transport: .unavailable))
+        }
+    }
+
     @Test func reasoningDefaultsToMediumForEveryModel() throws {
         try withDefaults { defaults in
             for model in AgentModel.allCases {
@@ -204,7 +234,7 @@ struct AgentProviderPersistenceTests {
         try withDefaults { defaults in
             let service = AgentService(userDefaults: defaults)
             let selections: [(AgentModel, AgentReasoningEffort)] = [
-                (.sol, .high), (.sonnet5, .max), (.terra, .minimal),
+                (.sol, .high), (.sonnet5, .max), (.terra, .none),
             ]
             for (model, effort) in selections {
                 service.model = model
@@ -216,7 +246,7 @@ struct AgentProviderPersistenceTests {
             }
             let restored = AgentService(userDefaults: defaults)
             #expect(restored.model == .terra)
-            #expect(restored.reasoningEffort == .minimal)
+            #expect(restored.reasoningEffort == .none)
             restored.model = .sol
             #expect(restored.reasoningEffort == .high)
         }

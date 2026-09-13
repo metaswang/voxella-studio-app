@@ -4,6 +4,11 @@
 "or use your own Anthropic key" = "または自分のAnthropic APIキーを使用";
 "Subscribe" = "登録する";
 "Open Settings" = "設定を開く";
+"Appearance" = "外観";
+"Dark" = "ダーク";
+"Light" = "ライト";
+"System" = "システム";
+"Match macOS appearance automatically." = "macOSの外観に自動的に合わせます。";
 
 "Language" = "言語";
 "Application Language" = "アプリの言語";
@@ -31,6 +36,9 @@
 "Turn a script into a voiceover with a selected reference voice." = "選択した参照音声で台本をナレーションに変換します。";
 "Edit a video" = "動画を編集";
 "Arrange video, audio, images, and captions into a finished project." = "動画、音声、画像、字幕を並べて完成プロジェクトを作ります。";
+"Dictation" = "ディクテーション";
+"Press %@ to speak into any app." = "%@ で、どのアプリにも音声入力できます。";
+"Send a notetaker to Meet, Teams, or Zoom. Requires a %@ plan or higher." = "Meet、Teams、Zoom に議事録ボットを送ります。%@ 以上のプランが必要です。";
 "Recent tasks" = "最近のタスク";
 "Video projects" = "動画プロジェクト";
 "Voiceover language" = "ナレーションの言語";

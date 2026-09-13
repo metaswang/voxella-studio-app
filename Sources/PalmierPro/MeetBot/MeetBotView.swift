@@ -3,7 +3,6 @@ import SwiftUI
 @MainActor
 struct MeetBotView: View {
     @State private var store = MeetBotStore()
-    @State private var showAccessPrompt = false
 
     var body: some View {
         @Bindable var store = store
@@ -32,22 +31,6 @@ struct MeetBotView: View {
         .background(AppTheme.Background.baseColor)
         .task {
             await store.load()
-            showAccessPrompt = store.access != .allowed
-        }
-        .onChange(of: store.access) { _, access in
-            if access == .allowed {
-                showAccessPrompt = false
-            } else if !store.isLoading {
-                showAccessPrompt = true
-            }
-        }
-        .sheet(isPresented: $showAccessPrompt) {
-            FeatureAccessPrompt(
-                feature: .meetBot,
-                access: store.access,
-                onRetry: { retryAccess() }
-            )
-            .frame(minWidth: AppTheme.Settings.contentMaxWidth)
         }
     }
 
@@ -192,13 +175,11 @@ struct MeetBotView: View {
     }
 
     private var accessCard: some View {
-        MeetBotCard {
-            FeatureAccessPrompt(
-                feature: .meetBot,
-                access: store.access,
-                onRetry: { retryAccess() }
-            )
-        }
+        FeatureAccessPrompt(
+            feature: .meetBot,
+            access: store.access,
+            onRetry: { retryAccess() }
+        )
     }
 
     private func meetingRow(_ meeting: VoxellaGoogleCalendarMeeting) -> some View {

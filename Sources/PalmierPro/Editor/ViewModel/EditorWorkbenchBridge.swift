@@ -264,11 +264,11 @@ extension EditorViewModel {
         let sourceClip = timeline.tracks[location.trackIndex].clips[location.clipIndex]
         let startFrame = sourceClip.startFrame
         let store = WorkbenchStore.shared
-        let dubID = store.addDub(
+        guard let dubID = store.addDub(
             script: normalizedScript,
             title: "",
             openRoute: false
-        )
+        ) else { return }
         store.updateDub(dubID) { job in
             job.referenceVoiceID = referenceMode == .library ? referenceVoiceID : nil
             job.referenceAudioPath = referenceMode == .recording ? recordedURL?.path : nil
@@ -367,9 +367,9 @@ extension EditorViewModel {
                 return nil
             }
             switch job.state {
-            case .completed, .failed, .cancelled:
+            case .completed, .failed, .cancelled, .interrupted, .unknown:
                 return job
-            case .ready, .running, .cancelling:
+            case .notStarted, .queued, .running, .cancelling:
                 try? await Task.sleep(for: .milliseconds(250))
             }
         }
@@ -385,9 +385,9 @@ extension EditorViewModel {
                 return nil
             }
             switch job.state {
-            case .completed, .failed, .cancelled:
+            case .completed, .failed, .cancelled, .interrupted, .unknown:
                 return job
-            case .ready, .running, .cancelling:
+            case .notStarted, .queued, .running, .cancelling:
                 try? await Task.sleep(for: .milliseconds(250))
             }
         }

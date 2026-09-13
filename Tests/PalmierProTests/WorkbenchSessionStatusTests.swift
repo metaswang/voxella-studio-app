@@ -1,8 +1,44 @@
+import Foundation
 import Testing
 @testable import PalmierPro
 
 @Suite("Workbench session status")
 struct WorkbenchSessionStatusTests {
+    @Test func completedTaskWithoutCommittedResultIsNotReady() {
+        let status = WorkbenchSessionStatus(
+            hasUsableResult: false,
+            taskState: .completed,
+            hasAdditionalFailure: false
+        )
+
+        #expect(status.primaryLabel == "Status unknown")
+        #expect(!status.hasUsableResult)
+        #expect(status.needsAttention)
+    }
+
+    @Test func stateMachineRejectsSkippingQueueAndRestartsThroughQueue() {
+        #expect(WorkbenchJobState.notStarted.canTransition(to: .queued))
+        #expect(!WorkbenchJobState.notStarted.canTransition(to: .running))
+        #expect(WorkbenchJobState.failed.canTransition(to: .queued))
+        #expect(!WorkbenchJobState.failed.canTransition(to: .completed))
+    }
+
+    @Test func legacyReadyDecodesAsNotStarted() throws {
+        let decoded = try JSONDecoder().decode(
+            WorkbenchJobState.self,
+            from: #""ready""#.data(using: .utf8)!
+        )
+
+        #expect(decoded == .notStarted)
+    }
+
+    @Test func remoteStateRequiresRecognizedReadiness() {
+        #expect(WorkbenchStore.remoteState(status: "completed", resultReady: true) == .completed)
+        #expect(WorkbenchStore.remoteState(status: "completed", resultReady: false) == .running)
+        #expect(WorkbenchStore.remoteState(status: "completed", resultReady: nil) == .unknown)
+        #expect(WorkbenchStore.remoteState(status: "mystery", resultReady: nil) == .unknown)
+    }
+
     @Test func translationSnapshotShowsStageProgressAndTarget() {
         let job = WorkbenchTranscriptionJob(
             sourcePath: "/tmp/recording.m4a",

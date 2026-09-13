@@ -51,27 +51,67 @@ enum WorkbenchRoute: String, Codable, CaseIterable, Identifiable {
     }
 
     static let sidebarRoutes: [WorkbenchRoute] = [
-        .recent, .dashboard, .transcribe, .meetBot, .dub, .voiceLibrary, .videoEditor,
+        .recent, .dashboard, .transcribe, .meetBot, .dub, .videoEditor,
     ]
 }
 
 enum WorkbenchJobState: String, Codable, Hashable, Sendable {
-    case ready
+    case notStarted = "not_started"
+    case queued
     case running
     case cancelling
     case completed
     case cancelled
     case failed
+    case interrupted
+    case unknown
 
     var label: String {
         switch self {
-        case .ready: "Ready"
+        case .notStarted: "Not started"
+        case .queued: "Queued"
         case .running: "Processing"
         case .cancelling: "Cancelling"
-        case .completed: "Completed"
+        case .completed: "Succeeded"
         case .cancelled: "Cancelled"
         case .failed: "Needs attention"
+        case .interrupted: "Interrupted"
+        case .unknown: "Status unknown"
         }
+    }
+
+    var isActive: Bool {
+        self == .queued || self == .running || self == .cancelling
+    }
+
+    var needsAttention: Bool {
+        self == .failed || self == .interrupted || self == .unknown
+    }
+
+    func canTransition(to next: Self) -> Bool {
+        if self == next { return true }
+        switch self {
+        case .notStarted:
+            return next == .queued || next == .failed
+        case .queued:
+            return [.running, .cancelled, .failed, .interrupted].contains(next)
+        case .running:
+            return [.cancelling, .completed, .cancelled, .failed, .interrupted].contains(next)
+        case .cancelling:
+            return [.completed, .cancelled, .failed, .interrupted].contains(next)
+        case .completed, .cancelled, .failed, .interrupted, .unknown:
+            return next == .queued || next == .failed
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = value == "ready" ? .notStarted : Self(rawValue: value) ?? .unknown
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }
 
@@ -160,7 +200,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var customTitle: String?
     var createdAt = Date()
     var modifiedAt = Date()
-    var state: WorkbenchJobState = .ready
+    var state: WorkbenchJobState = .notStarted
     var languageCode: String?
     var speakerCount: SpeakerCountOption = .auto
     var clipStartMs: Int?
@@ -339,7 +379,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     }
 
     var isActivelyProcessing: Bool {
-        state == .running || state == .cancelling
+        state.isActive
     }
 
     enum CodingKeys: String, CodingKey {
@@ -368,7 +408,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         customTitle: String? = nil,
         createdAt: Date = Date(),
         modifiedAt: Date = Date(),
-        state: WorkbenchJobState = .ready,
+        state: WorkbenchJobState = .notStarted,
         languageCode: String? = nil,
         speakerCount: SpeakerCountOption = .auto,
         clipStartMs: Int? = nil,
@@ -467,6 +507,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyReady = try container.decodeIfPresent(String.self, forKey: .state) == "ready"
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         sourcePath = try container.decode(String.self, forKey: .sourcePath)
         netVideoSourceURL = try container.decodeIfPresent(String.self, forKey: .netVideoSourceURL)
@@ -475,7 +516,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         customTitle = try container.decodeIfPresent(String.self, forKey: .customTitle)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? Date()
-        state = try container.decodeIfPresent(WorkbenchJobState.self, forKey: .state) ?? .ready
+        state = try container.decodeIfPresent(WorkbenchJobState.self, forKey: .state) ?? .notStarted
         languageCode = try container.decodeIfPresent(String.self, forKey: .languageCode)
         speakerCount = try container.decodeIfPresent(SpeakerCountOption.self, forKey: .speakerCount) ?? .auto
         clipStartMs = try container.decodeIfPresent(Int.self, forKey: .clipStartMs)
@@ -542,6 +583,9 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         isRecordedCapture = try container.decodeIfPresent(Bool.self, forKey: .isRecordedCapture) ?? false
         listenAudioPath = try container.decodeIfPresent(String.self, forKey: .listenAudioPath)
         listenEnhanceState = try container.decodeIfPresent(ListenEnhanceState.self, forKey: .listenEnhanceState) ?? .idle
+        if legacyReady && progress > 0 {
+            state = .queued
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -611,7 +655,7 @@ enum DubModelChoice: String, Codable, CaseIterable, Identifiable, Sendable {
     static var allCases: [DubModelChoice] { [.medium] }
 
     var id: String { rawValue }
-    var label: String { "1.7B · 8-bit" }
+    var label: String { "Local voice" }
     var modelID: LocalModelID { .qwenTTS17B }
 }
 
@@ -628,7 +672,7 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     var title = ""
     var createdAt = Date()
     var modifiedAt = Date()
-    var state: WorkbenchJobState = .ready
+    var state: WorkbenchJobState = .notStarted
     var script = ""
     var language = "auto"
     var model: DubModelChoice = .medium
@@ -692,7 +736,7 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     }
 
     var isActivelyProcessing: Bool {
-        state == .running || state == .cancelling
+        state.isActive
     }
 
     var placement: TaskPlacement {
@@ -731,11 +775,12 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyReady = try container.decodeIfPresent(String.self, forKey: .state) == "ready"
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? Date()
-        state = try container.decodeIfPresent(WorkbenchJobState.self, forKey: .state) ?? .ready
+        state = try container.decodeIfPresent(WorkbenchJobState.self, forKey: .state) ?? .notStarted
         script = try container.decodeIfPresent(String.self, forKey: .script) ?? ""
         language = try container.decodeIfPresent(String.self, forKey: .language) ?? "auto"
         model = try container.decodeIfPresent(DubModelChoice.self, forKey: .model) ?? .medium
@@ -786,6 +831,9 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
         cloudSyncState = try container.decodeIfPresent(DubCloudSyncState.self, forKey: .cloudSyncState)
         remoteResultVersion = try container.decodeIfPresent(String.self, forKey: .remoteResultVersion)
         pendingCloudSyncError = try container.decodeIfPresent(String.self, forKey: .pendingCloudSyncError)
+        if legacyReady && progress > 0 {
+            state = .queued
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -973,6 +1021,22 @@ struct WorkbenchSession: Identifiable, Sendable {
     /// can keep the original picture and swap only its audio track.
     var remoteEnhancedSourcePlaybackURL: URL? = nil
 
+    var hasUsableResult: Bool {
+        transcript != nil || outputURL != nil || (isRemoteOnly && state == .completed)
+    }
+
+    var status: WorkbenchSessionStatus {
+        WorkbenchSessionStatus(
+            hasUsableResult: hasUsableResult,
+            taskState: state,
+            hasAdditionalFailure: summaryState?.needsAttention == true
+                || cloudSyncState == .failed
+                || cloudSyncError != nil,
+            hasAdditionalActivity: summaryState?.isActive == true
+                || cloudSyncState == .pending
+        )
+    }
+
     var showsFloatingNetVideoPreview: Bool {
         netVideoSource != nil
     }
@@ -1056,6 +1120,44 @@ struct WorkbenchSession: Identifiable, Sendable {
         guard let url else { return false }
         let ext = url.pathExtension.lowercased()
         return ["mp4", "mov", "m4v", "avi", "mkv", "webm"].contains(ext)
+    }
+}
+
+struct WorkbenchSessionStatus: Equatable, Sendable {
+    let hasUsableResult: Bool
+    let taskState: WorkbenchJobState
+    let hasAdditionalFailure: Bool
+    var hasAdditionalActivity = false
+
+    var displayTaskState: WorkbenchJobState {
+        !hasUsableResult && taskState == .completed ? .unknown : taskState
+    }
+
+    var primaryLabel: String {
+        hasUsableResult ? "Ready" : displayTaskState.label
+    }
+
+    var showsProcessing: Bool {
+        displayTaskState == .running || displayTaskState == .cancelling || hasAdditionalActivity
+    }
+
+    var showsQueued: Bool {
+        displayTaskState == .queued
+    }
+
+    var needsAttention: Bool {
+        displayTaskState.needsAttention || hasAdditionalFailure
+    }
+
+    var secondaryLabel: String? {
+        guard hasUsableResult else { return nil }
+        if displayTaskState.needsAttention || hasAdditionalFailure { return "Needs attention" }
+        if hasAdditionalActivity { return "Processing" }
+        if displayTaskState == .queued { return "Queued" }
+        if displayTaskState == .running { return "Processing" }
+        if displayTaskState == .cancelling { return "Cancelling" }
+        if displayTaskState == .cancelled { return "Cancelled" }
+        return nil
     }
 }
 
@@ -1407,6 +1509,7 @@ final class WorkbenchStore {
             )
         }
         let standaloneDubs = dubs.filter { job in
+            guard Self.shouldIncludeStandaloneDubInSessions(job) else { return false }
             guard let sourceID = job.sourceTranscriptionID else { return true }
             return !transcriptions.contains { $0.id == sourceID }
         }.map { job in
@@ -1478,7 +1581,8 @@ final class WorkbenchStore {
         }
 
         if let dubID = session.dubID,
-           dubs.first(where: { $0.id == dubID })?.isActivelyProcessing == true {
+           let dub = dubs.first(where: { $0.id == dubID }),
+           (dub.isActivelyProcessing || Self.shouldOpenStandaloneDubComposer(dub)) {
             selectedDubID = dubID
             selectedTranscriptionID = nil
             route = .dub
@@ -1713,7 +1817,7 @@ final class WorkbenchStore {
             route = .dub
             return existing.id
         }
-        let id = addDub()
+        guard let id = addDub() else { return nil }
         updateDub(id) { $0.sourceTranscriptionID = sessionID }
         useTranscript(sessionID, forDub: id, track: track)
         return id
@@ -1728,6 +1832,7 @@ final class WorkbenchStore {
     var preferRecordEntry = false
 
     func stageMediaImport(_ urls: [URL]) {
+        guard admitNewContent() else { return }
         transcriptionAdmissionError = nil
         pendingNetVideoSource = nil
         pendingMediaImportOrigin = .files
@@ -1742,6 +1847,7 @@ final class WorkbenchStore {
         videoID: String,
         title: String?
     ) {
+        guard admitNewContent() else { return }
         transcriptionAdmissionError = nil
         pendingNetVideoSource = WorkbenchNetVideoSource(
             sourceURL: sourceURL,
@@ -1772,6 +1878,7 @@ final class WorkbenchStore {
     }
 
     func stageRecordedMedia(_ url: URL) {
+        guard admitNewContent() else { return }
         transcriptionAdmissionError = nil
         pendingNetVideoSource = nil
         pendingMediaImportOrigin = .recording
@@ -1865,6 +1972,7 @@ final class WorkbenchStore {
         netVideoSource: WorkbenchNetVideoSource? = nil,
         isRecordedCapture: Bool = false
     ) -> UUID? {
+        guard admitNewContent() else { return nil }
         transcriptionAdmissionError = nil
         if submission.placement.compute == .local {
             do {
@@ -1891,7 +1999,7 @@ final class WorkbenchStore {
             job.clipEndMs = sourceURLs.count == 1 ? submission.options.clipEndMs : nil
             job.useLLMSubtitleProcessing = submission.options.useLLMSubtitleProcessing
             job.targetLanguageCode = submission.options.normalizedTargetLanguageCode
-            job.cloudVocalRepairEnabled = submission.options.cloudVocalRepairEnabled
+            job.cloudVocalRepairEnabled = Self.cloudVocalRepairEnabled(isRecordedCapture: isRecordedCapture)
             if sourceURLs.count == 1 {
                 job.customTitle = SessionTitlePolicy.normalizedUserTitle(submission.options.customTitle)
             }
@@ -1914,7 +2022,7 @@ final class WorkbenchStore {
             job.progressMessage = submission.placement.compute == .local
                 ? "Queued"
                 : "Queued for VoxStudio Cloud"
-            job.state = .ready
+            job.state = .queued
             created.append(job)
         }
         let jobIDs = created.map(\.id)
@@ -1931,6 +2039,19 @@ final class WorkbenchStore {
             enqueueTranscription(id, openSessionWhenBatchCompletes: openSessionWhenDone)
         }
         return batchID
+    }
+
+    private func admitNewContent() -> Bool {
+        do {
+            try AccountService.shared.requireNewContentAccess()
+            return true
+        } catch is AppAccessError {
+            transcriptionAdmissionError = nil
+            return false
+        } catch {
+            transcriptionAdmissionError = error.localizedDescription
+            return false
+        }
     }
 
     func clearTranscriptionAdmissionError() {
@@ -1959,7 +2080,7 @@ final class WorkbenchStore {
         if job.compute == .cloud {
             selectedTranscriptionID = id
             updateTranscription(id) {
-                if $0.state == .ready {
+                if $0.state == .queued {
                     $0.progressMessage = "Connecting to VoxStudio Cloud…"
                 }
             }
@@ -1971,7 +2092,7 @@ final class WorkbenchStore {
               flowTasks[id] == nil else { return }
         pendingTranscriptionQueue.append(id)
         updateTranscription(id) {
-            if $0.state == .ready {
+            if $0.state == .queued {
                 $0.progressMessage = "Queued — waiting for the local ASR slot"
             }
         }
@@ -2063,7 +2184,8 @@ final class WorkbenchStore {
         script: String = "",
         title: String = "",
         openRoute: Bool = true
-    ) -> UUID {
+    ) -> UUID? {
+        guard admitNewContent() else { return nil }
         var job = Self.newDubJob(
             from: dubs,
             preferredLanguage: Self.preferredDubLanguage
@@ -2082,6 +2204,7 @@ final class WorkbenchStore {
 
     /// Starts a blank Dub workspace while preserving the most recently used settings.
     func startNewDubDraft() {
+        guard admitNewContent() else { return }
         guard hasHydrated else {
             pendingNewDubDraft = true
             selectedDubID = nil
@@ -2164,13 +2287,23 @@ final class WorkbenchStore {
     }
 
     private nonisolated static func isEmptyDubDraft(_ job: WorkbenchDubJob) -> Bool {
-        job.state == .ready
+        job.state == .notStarted
             && job.sourceTranscriptionID == nil
             && job.outputPath == nil
             && job.script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && (job.segments ?? []).allSatisfy {
                 $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
+    }
+
+    nonisolated static func shouldIncludeStandaloneDubInSessions(_ job: WorkbenchDubJob) -> Bool {
+        !isEmptyDubDraft(job)
+    }
+
+    nonisolated static func shouldOpenStandaloneDubComposer(_ job: WorkbenchDubJob) -> Bool {
+        job.state == .notStarted
+            && job.sourceTranscriptionID == nil
+            && job.outputURL == nil
     }
 
     func normalizeDubSegments(_ id: UUID) {
@@ -2998,13 +3131,17 @@ final class WorkbenchStore {
     }
 
     func runTranscription(_ id: UUID) {
+        guard admitNewContent() else { return }
         guard let job = transcriptions.first(where: { $0.id == id }) else { return }
-        guard flowTasks[id] == nil,
-              job.state != .running,
-              job.state != .cancelling else { return }
-        if job.state == .completed || job.state == .cancelled || job.state == .failed {
+        guard flowTasks[id] == nil, !job.state.isActive else { return }
+        if job.state == .completed
+            || job.state == .cancelled
+            || job.state == .failed
+            || job.state == .interrupted
+            || job.state == .unknown
+            || job.state == .notStarted {
             updateTranscription(id) {
-                $0.state = .ready
+                $0.state = .queued
                 $0.progress = 0
                 $0.progressMessage = job.compute == .cloud
                     ? "Queued for VoxStudio Cloud"
@@ -3028,8 +3165,10 @@ final class WorkbenchStore {
     }
 
     func retranscribe(_ id: UUID, submission: TranscriptionSubmission) {
+        guard admitNewContent() else { return }
         guard let job = transcriptions.first(where: { $0.id == id }) else { return }
-        guard job.state != .running, job.state != .cancelling else { return }
+        guard !job.state.isActive else { return }
+        let applyCloudVocalRepair = Self.cloudVocalRepairEnabled(isRecordedCapture: job.isRecordedCapture)
         updateTranscription(id) {
             $0.languageCode = submission.options.languageCode
             $0.speakerCount = submission.options.speakerCount
@@ -3037,11 +3176,18 @@ final class WorkbenchStore {
             $0.clipEndMs = submission.options.clipEndMs
             $0.useLLMSubtitleProcessing = submission.options.useLLMSubtitleProcessing
             $0.targetLanguageCode = submission.options.normalizedTargetLanguageCode
-            $0.cloudVocalRepairEnabled = submission.options.cloudVocalRepairEnabled
+            $0.cloudVocalRepairEnabled = applyCloudVocalRepair
             $0.customTitle = SessionTitlePolicy.normalizedUserTitle(submission.options.customTitle)
             $0.placement = submission.placement
         }
         runTranscription(id)
+    }
+
+    private static func cloudVocalRepairEnabled(isRecordedCapture: Bool) -> Bool {
+        isRecordedCapture
+            && CloudVocalRepairSettings.isEnabled
+            && AccountService.shared.isSignedIn
+            && AccountService.shared.isPaid
     }
 
     private func startTranscriptionPipeline(_ id: UUID) {
@@ -3083,6 +3229,51 @@ final class WorkbenchStore {
                 }
                 discardStagedTranscription(id)
                 return
+            }
+            guard let preparationJob = transcriptions.first(where: { $0.id == id }) else { return }
+            if preparationJob.compute != .cloud {
+                do {
+                    try await LocalModelManager.shared.ensureTranscriptionModels(
+                        languageCode: preparationJob.languageCode,
+                        speakerCount: preparationJob.speakerCount.count
+                    ) { [weak self] message in
+                        self?.updateTranscription(id) {
+                            $0.progressMessage = message
+                            $0.progressStep = "preparing_models"
+                        }
+                    }
+                    try Task.checkCancellation()
+                    guard let current = transcriptions.first(where: { $0.id == id }),
+                          current.languageCode == preparationJob.languageCode,
+                          current.speakerCount == preparationJob.speakerCount,
+                          current.compute == preparationJob.compute else {
+                        updateTranscription(id) {
+                            $0.state = .cancelled
+                            $0.errorMessage = nil
+                            $0.progressMessage = "Options changed — ready to retry"
+                        }
+                        discardStagedTranscription(id)
+                        return
+                    }
+                } catch is CancellationError {
+                    updateTranscription(id) {
+                        $0.state = .cancelled
+                        $0.errorMessage = nil
+                        $0.progressMessage = "Cancelled — resource download continues"
+                    }
+                    discardStagedTranscription(id)
+                    return
+                } catch {
+                    updateTranscription(id) {
+                        $0.state = .failed
+                        $0.errorMessage = error.localizedDescription
+                        $0.progressMessage = "Local transcription preparation failed"
+                        $0.flowProgressStage = nil
+                        $0.progressStep = nil
+                    }
+                    discardStagedTranscription(id)
+                    return
+                }
             }
             let input: MaterializedTranscriptionInput
             do {
@@ -3419,7 +3610,7 @@ final class WorkbenchStore {
         }
         guard flowTasks[id] != nil else {
             updateTranscription(id) {
-                if $0.state == .ready {
+                if $0.state == .queued {
                     $0.state = .cancelled
                     $0.progressMessage = "Cancelled — ready to retry"
                 }
@@ -3480,14 +3671,16 @@ final class WorkbenchStore {
     }
 
     func runTranslation(_ id: UUID) {
+        guard admitNewContent() else { return }
         guard flowTasks[id] == nil,
               let index = transcriptions.firstIndex(where: { $0.id == id }),
+              !transcriptions[index].state.isActive,
               let transcript = transcriptions[index].result,
               transcriptions[index].normalizedTargetLanguageCode != nil else { return }
         let snapshot = transcriptions[index]
-        transcriptions[index].state = .running
-        transcriptions[index].progress = 0.01
-        transcriptions[index].progressMessage = "Preparing translation…"
+        transcriptions[index].state = .queued
+        transcriptions[index].progress = 0
+        transcriptions[index].progressMessage = "Queued for translation"
         transcriptions[index].flowProgressStage = .translation
         transcriptions[index].progressStep = "flow_started"
         transcriptions[index].errorMessage = nil
@@ -3505,6 +3698,12 @@ final class WorkbenchStore {
         let task = Task { [weak self] in
             guard let self else { return }
             defer { flowTasks[id] = nil }
+            guard transcriptions.first(where: { $0.id == id })?.state == .queued else { return }
+            updateTranscription(id) {
+                $0.state = .running
+                $0.progress = 0.01
+                $0.progressMessage = "Preparing translation…"
+            }
             for await event in MediaFlowExecutor.shared.events(for: request) {
                 if Task.isCancelled { break }
                 await consumeTranslationEvent(event, jobID: id)
@@ -3521,8 +3720,10 @@ final class WorkbenchStore {
     }
 
     func runDub(_ id: UUID) {
+        guard admitNewContent() else { return }
         guard flowTasks[id] == nil,
-              let index = dubs.firstIndex(where: { $0.id == id }) else { return }
+              let index = dubs.firstIndex(where: { $0.id == id }),
+              !dubs[index].state.isActive else { return }
         let snapshot = dubs[index]
         let voiceLibrary = VoiceLibraryStore.shared
         voiceLibrary.stopPlayback()
@@ -3561,11 +3762,9 @@ final class WorkbenchStore {
             .appendingPathComponent(id.uuidString, isDirectory: true)
             .appendingPathComponent("dub-\(generationID)")
             .appendingPathExtension("m4a")
-        dubs[index].state = .running
-        dubs[index].progress = 0.02
-        dubs[index].progressMessage = snapshot.placement.compute == .cloud
-            ? "Preparing VoxStudio Cloud…"
-            : "Loading local voice model…"
+        dubs[index].state = .queued
+        dubs[index].progress = 0
+        dubs[index].progressMessage = "Queued for dubbing"
         dubs[index].flowProgressStage = .dubPreprocessing
         dubs[index].progressStep = "flow_started"
         dubs[index].progressCompleted = nil
@@ -3598,7 +3797,40 @@ final class WorkbenchStore {
         let task = Task { [weak self] in
             guard let self else { return }
             defer { flowTasks[id] = nil }
+            guard dubs.first(where: { $0.id == id })?.state == .queued else { return }
+            updateDub(id) {
+                guard $0.remoteGenerationID == generationID else { return }
+                $0.state = .running
+                $0.progress = 0.02
+                $0.progressMessage = snapshot.placement.compute == .cloud
+                    ? "Preparing VoxStudio Cloud…"
+                    : "Preparing local voice…"
+            }
             do {
+                if snapshot.placement.compute == .local {
+                    try await LocalModelManager.shared.ensureDubModels(
+                        modelID: snapshot.model.modelID
+                    ) { [weak self] message in
+                        self?.updateDub(id) {
+                            guard $0.remoteGenerationID == generationID else { return }
+                            $0.progressMessage = message
+                            $0.progressStep = "preparing_models"
+                        }
+                    }
+                    try Task.checkCancellation()
+                    guard let current = dubs.first(where: { $0.id == id }),
+                          current.remoteGenerationID == generationID,
+                          current.model.modelID == snapshot.model.modelID,
+                          current.placement == snapshot.placement else {
+                        updateDub(id) {
+                            guard $0.remoteGenerationID == generationID else { return }
+                            $0.state = .cancelled
+                            $0.errorMessage = nil
+                            $0.progressMessage = "Options changed — ready to retry"
+                        }
+                        return
+                    }
+                }
                 if snapshot.placement.needsAuthentication {
                     switch await AccountService.shared.ensureCloudAccess() {
                     case .ready:
@@ -3705,9 +3937,12 @@ final class WorkbenchStore {
             } catch is CancellationError {
                 updateDub(id) {
                     guard $0.remoteGenerationID == generationID else { return }
+                    let wasPreparingModels = $0.progressStep == "preparing_models"
                     $0.state = .cancelled
                     $0.errorMessage = nil
-                    $0.progressMessage = "Cancelled — ready to retry"
+                    $0.progressMessage = wasPreparingModels
+                        ? "Cancelled — resource download continues"
+                        : "Cancelled — ready to retry"
                 }
             } catch {
                 updateDub(id) {
@@ -3742,6 +3977,15 @@ final class WorkbenchStore {
     func cancelDub(_ id: UUID) {
         guard flowTasks[id] != nil,
               let snapshot = dubs.first(where: { $0.id == id }) else { return }
+        if snapshot.state == .queued {
+            flowTasks[id]?.cancel()
+            updateDub(id) {
+                $0.state = .cancelled
+                $0.errorMessage = nil
+                $0.progressMessage = "Cancelled — ready to retry"
+            }
+            return
+        }
         let shouldReturnToSession = TranscriptionPlacementRouter.shouldReturnToSessionAfterCancellation(
             snapshot.placement,
             hasRemoteSession: snapshot.remoteSessionID != nil
@@ -3815,7 +4059,7 @@ final class WorkbenchStore {
             if !SessionTitlePolicy.isUserProvided($0.title) {
                 $0.title = ""
             }
-            $0.state = .ready
+            $0.state = .notStarted
             $0.progress = 0
             $0.progressMessage = $0.outputURL == nil
                 ? "Ready to synthesize"
@@ -5538,7 +5782,7 @@ final class WorkbenchStore {
         var repaired = job
         let recoverFlow = needsFlowLaunchRecovery(job)
         if recoverFlow {
-            repaired.state = .ready
+            repaired.state = .interrupted
             repaired.progress = 0
             repaired.progressMessage = "Interrupted — ready to retry"
             repaired.progressStage = nil
@@ -5572,7 +5816,7 @@ final class WorkbenchStore {
         var repaired = job
         let recoverFlow = needsFlowLaunchRecovery(job)
         if recoverFlow {
-            repaired.state = .ready
+            repaired.state = .interrupted
             repaired.progress = 0
             repaired.progressMessage = "Interrupted — ready to retry"
             repaired.flowProgressStage = nil
@@ -5612,12 +5856,12 @@ final class WorkbenchStore {
         _ job: WorkbenchTranscriptionJob
     ) -> Bool {
         job.state == .running || job.state == .cancelling
-            || (job.state == .ready && job.result == nil && job.progress > 0)
+            || job.state == .queued
     }
 
     private nonisolated static func needsFlowLaunchRecovery(_ job: WorkbenchDubJob) -> Bool {
         job.state == .running || job.state == .cancelling
-            || (job.state == .ready && job.outputPath == nil && job.progress > 0)
+            || job.state == .queued
     }
 
     private nonisolated static func recoveredSummaryState(
@@ -5636,8 +5880,8 @@ final class WorkbenchStore {
     ) -> WorkbenchJobState {
         guard let secondary else { return primary }
         let priority: [WorkbenchJobState: Int] = [
-            .failed: 6, .cancelling: 5, .running: 4, .ready: 3,
-            .cancelled: 2, .completed: 1,
+            .failed: 8, .interrupted: 7, .unknown: 6, .cancelling: 5,
+            .running: 4, .queued: 3, .notStarted: 2, .cancelled: 1, .completed: 0,
         ]
         return (priority[secondary] ?? 0) > (priority[primary] ?? 0) ? secondary : primary
     }
@@ -5979,16 +6223,20 @@ final class WorkbenchStore {
         return parts.count >= 2 && ["embed", "shorts", "live"].contains(parts[0]) ? parts[1] : nil
     }
 
-    private nonisolated static func remoteState(
+    nonisolated static func remoteState(
         status: String?,
         resultReady: Bool?
     ) -> WorkbenchJobState {
         switch (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "failed", "error": .failed
         case "cancelled", "canceled", "stopped": .cancelled
-        case "completed": resultReady == false ? .running : .completed
+        case "completed": switch resultReady {
+            case true: .completed
+            case false: .running
+            case nil: .unknown
+            }
         case "queued", "processing", "running", "pending": .running
-        default: .ready
+        default: .unknown
         }
     }
 

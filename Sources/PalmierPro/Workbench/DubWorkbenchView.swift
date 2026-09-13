@@ -4,8 +4,6 @@ import SwiftUI
 /// Dub creation workspace aligned with `voxella-web` `DubPanel.tsx`.
 struct DubWorkbenchView: View {
     @Bindable private var store = WorkbenchStore.shared
-    @Bindable private var models = LocalModelManager.shared
-    @State private var showAdvanced = false
     @State private var rewriteSegmentIndex: Int?
     @State private var showProcessingOptions = false
 
@@ -13,6 +11,7 @@ struct DubWorkbenchView: View {
         Group {
             if let index = store.selectedDubIndex {
                 builder(index: index)
+                    .id(store.dubs[index].id)
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -39,7 +38,7 @@ struct DubWorkbenchView: View {
                         segmentCard(job: job, displayIndex: displayIndex, segment: segment)
                     }
                     addSegmentButton(job.id)
-                    if job.state == .running || job.state == .cancelling {
+                    if job.state.isActive {
                         progressCard(job)
                     }
                     if let error = job.errorMessage {
@@ -108,11 +107,14 @@ struct DubWorkbenchView: View {
                 }
 
                 fieldColumn(title: L10n.string("Task name")) {
-                    TextField(
-                        SessionTitlePolicy.autoGeneratePlaceholder,
-                        text: titleBinding(job.id)
-                    )
-                    .textFieldStyle(.roundedBorder)
+                    HStack(spacing: AppTheme.Spacing.xs) {
+                        TextField(
+                            SessionTitlePolicy.autoGeneratePlaceholder,
+                            text: titleBinding(job.id)
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        InlineVoiceInputControl(text: titleBinding(job.id), multiline: false)
+                    }
                 }
 
                 fieldColumn(title: L10n.string("Reference voice")) {
@@ -123,7 +125,7 @@ struct DubWorkbenchView: View {
                             defaultLabel: L10n.string("Select a reference voice…")
                         )
                         Button {
-                            store.route = .voiceLibrary
+                            SettingsWindowController.shared.show(tab: .voiceLibrary)
                         } label: {
                             Image(systemName: "ellipsis")
                         }
@@ -131,48 +133,6 @@ struct DubWorkbenchView: View {
                         .help("Manage reference voices")
                     }
                 }
-            }
-
-            Button {
-                withAnimation(.easeInOut(duration: AppTheme.Anim.transition)) {
-                    showAdvanced.toggle()
-                }
-            } label: {
-                Label(
-                    showAdvanced ? "Hide advanced settings" : "Advanced settings",
-                    systemImage: "gearshape"
-                )
-                .font(.system(size: AppTheme.FontSize.xs))
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
-            }
-            .buttonStyle(.plain)
-
-            if showAdvanced {
-                HStack(alignment: .top, spacing: AppTheme.Spacing.lg) {
-                    fieldColumn(title: "Model") {
-                        Picker("Model", selection: modelBinding(job.id)) {
-                            ForEach(DubModelChoice.allCases) { choice in
-                                Text(choice.label).tag(choice)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                    }
-                    .frame(maxWidth: 320)
-
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                        Text(job.model == .small ? "Fast · recommended for this Mac" : "Higher fidelity · more memory")
-                            .font(.system(size: AppTheme.FontSize.xs))
-                            .foregroundStyle(AppTheme.Text.tertiaryColor)
-                        modelStatus(job.model)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(AppTheme.Spacing.md)
-                .background(
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.md)
-                        .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-                )
             }
 
             HStack {
@@ -227,9 +187,6 @@ struct DubWorkbenchView: View {
                     .frame(minWidth: 22, minHeight: 22)
                     .background(AppTheme.Background.raisedColor, in: Capsule())
 
-                Image(systemName: "mic")
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Text.mutedColor)
 
                 VoiceReferencePicker(
                     selection: segmentVoiceBinding(job.id, segmentIndex: segment.index),
@@ -246,7 +203,8 @@ struct DubWorkbenchView: View {
                     Image(systemName: "sparkles")
                 }
                 .buttonStyle(.borderless)
-                .help("Rewrite")
+                .help("Edit script with AI")
+                .disabled(segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                 Button(role: .destructive) {
                     store.deleteDubSegment(job.id, segmentIndex: segment.index)
@@ -310,7 +268,7 @@ struct DubWorkbenchView: View {
                     .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
             }
             Spacer(minLength: 0)
-            if job.state == .running || job.state == .cancelling {
+            if job.state.isActive {
                 Button(role: .cancel) {
                     store.cancelDub(job.id)
                 } label: {
@@ -411,30 +369,13 @@ struct DubWorkbenchView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private func modelStatus(_ choice: DubModelChoice) -> some View {
-        if models.hasRequiredDubModels(modelID: choice.modelID) {
-            Label("Installed", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(AppTheme.Status.successColor)
-                .font(.system(size: AppTheme.FontSize.xs))
-        } else {
-            Button("Download") { models.presentManager() }
-                .buttonStyle(.borderless)
-        }
-    }
-
     private func start(_ job: WorkbenchDubJob) {
         guard canGenerate(job) else { return }
         showProcessingOptions = true
     }
 
     private func continueGeneration(jobID: UUID, placement: TaskPlacement) {
-        guard let job = store.dubs.first(where: { $0.id == jobID }) else { return }
-        if placement.compute == .local,
-           !models.hasRequiredDubModels(modelID: job.model.modelID) {
-            models.presentManager()
-            return
-        }
+        guard store.dubs.contains(where: { $0.id == jobID }) else { return }
         store.updateDub(jobID) { $0.placement = placement }
         store.normalizeDubSegments(jobID)
         showProcessingOptions = false
@@ -534,13 +475,6 @@ struct DubWorkbenchView: View {
         )
     }
 
-    private func modelBinding(_ id: UUID) -> Binding<DubModelChoice> {
-        Binding(
-            get: { store.dubs.first { $0.id == id }?.model ?? .small },
-            set: { value in store.updateDub(id) { $0.model = value } }
-        )
-    }
-
     private func segmentUsage(_ text: String, language: String) -> (count: Int, unit: String) {
         let primary = language.split(separator: "-").first.map(String.init)?.lowercased() ?? ""
         if ["zh", "ja", "ko", "yue"].contains(primary) {
@@ -582,20 +516,22 @@ private struct DubRewriteSheet: View {
 
     @Bindable private var store = WorkbenchStore.shared
     @State private var draft = ""
+    @State private var rewrite = DubRewriteController()
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Rewrite")
-                        .font(.system(size: AppTheme.FontSize.lg, weight: .semibold))
-                    Text("Edit this segment script, then replace the current text.")
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                    Text("AI edit")
+                        .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
+                    Text("Describe how AI should revise this segment.")
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
                 Spacer()
                 Button {
+                    rewrite.cancel()
                     dismiss()
                     onDismiss()
                 } label: {
@@ -604,60 +540,56 @@ private struct DubRewriteSheet: View {
                 .buttonStyle(.borderless)
             }
 
-            Text("Segment script")
-                .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
+            Text("Editing instructions")
+                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
-            DubScriptEditor(text: $draft)
+            DubScriptEditor(text: $draft, placeholder: "Make it shorter, more conversational, or change the tone…")
+                .disabled(rewrite.isRunning)
+            if let error = rewrite.errorMessage {
+                Text(error).foregroundStyle(AppTheme.Status.errorColor)
+            }
 
             HStack {
                 Spacer()
                 Button("Cancel") {
+                    rewrite.cancel()
                     dismiss()
                     onDismiss()
                 }
                 .keyboardShortcut(.cancelAction)
-                Button("Replace existing") {
-                    store.updateDubSegmentText(jobID, segmentIndex: segmentIndex, text: draft)
-                    dismiss()
-                    onDismiss()
+                Button(rewrite.isRunning ? "Rewriting…" : "Apply AI edit") {
+                    rewrite.start(store: store, jobID: jobID, segmentIndex: segmentIndex, instruction: draft) {
+                        dismiss()
+                        onDismiss()
+                    }
                 }
+                .disabled(rewrite.isRunning || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
             }
         }
         .padding(AppTheme.Spacing.xl)
-        .frame(width: 520)
-        .onAppear {
-            draft = store.dubs.first { $0.id == jobID }?
-                .segments?.first { $0.index == segmentIndex }?.text ?? ""
-        }
+        .frame(width: AppTheme.Workbench.dubSheetWidth)
+        .onDisappear { rewrite.cancel() }
     }
 }
 
-private struct DubScriptEditor: View {
+struct DubScriptEditor: View {
     @Binding var text: String
     var placeholder: String = "Enter dub script here..."
     var minHeight: CGFloat = AppTheme.Workbench.dubScriptMinHeight
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            TextEditor(text: $text)
-                .font(.system(size: AppTheme.FontSize.md))
-                .foregroundStyle(AppTheme.Text.primaryColor)
-                .scrollContentBackground(.hidden)
-                .scrollIndicators(.automatic)
-                .padding(AppTheme.Spacing.md)
-
-            if text.isEmpty {
-                Text(placeholder)
-                    .font(.system(size: AppTheme.FontSize.md))
-                    .foregroundStyle(AppTheme.Text.mutedColor)
-                    .padding(.horizontal, AppTheme.Spacing.lgXl)
-                    .padding(.vertical, AppTheme.Spacing.lgXl)
-                    .allowsHitTesting(false)
+        VStack(spacing: AppTheme.Spacing.xs) {
+            NativePlaceholderTextEditor(text: $text, placeholder: placeholder)
+                .frame(minHeight: minHeight)
+            HStack {
+                Spacer()
+                InlineVoiceInputControl(text: $text)
             }
+            .padding(.horizontal, AppTheme.Spacing.sm)
+            .padding(.bottom, AppTheme.Spacing.sm)
         }
-        .frame(minHeight: minHeight)
         .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.md)

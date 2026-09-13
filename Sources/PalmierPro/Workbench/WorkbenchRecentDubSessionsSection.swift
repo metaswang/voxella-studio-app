@@ -11,7 +11,7 @@ struct WorkbenchRecentDubSessionsSection: View {
     private var filteredSessions: [WorkbenchSession] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return store.recentDubSessions.filter { session in
-            guard statusFilter.matches(session.state) else { return false }
+            guard statusFilter.matches(session.status) else { return false }
             guard !query.isEmpty else { return true }
             return session.title.localizedCaseInsensitiveContains(query)
                 || session.dubTranscript?.text.localizedCaseInsensitiveContains(query) == true
@@ -49,12 +49,13 @@ struct WorkbenchRecentDubSessionsSection: View {
     }
 
     private var filterToolbar: some View {
-        HStack(spacing: AppTheme.Spacing.md) {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
             HStack(spacing: AppTheme.Spacing.smMd) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(AppTheme.Text.mutedColor)
                 TextField("Search", text: $searchText)
                     .textFieldStyle(.plain)
+                InlineVoiceInputControl(text: $searchText, multiline: false)
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""
@@ -67,7 +68,8 @@ struct WorkbenchRecentDubSessionsSection: View {
                 }
             }
             .padding(.horizontal, AppTheme.Spacing.lg)
-            .frame(height: AppTheme.Workbench.recentSessionControlHeight)
+            .padding(.vertical, AppTheme.Spacing.sm)
+            .frame(minHeight: AppTheme.Workbench.recentSessionControlHeight)
             .frame(maxWidth: .infinity)
             .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
             .overlay {
@@ -81,9 +83,9 @@ struct WorkbenchRecentDubSessionsSection: View {
                         statusFilter = filter
                     } label: {
                         if statusFilter == filter {
-                            Label(filter.label, systemImage: "checkmark")
+                            Label(LocalizedStringKey(filter.label), systemImage: "checkmark")
                         } else {
-                            Text(filter.label)
+                            Text(LocalizedStringKey(filter.label))
                         }
                     }
                 }
@@ -285,7 +287,7 @@ struct WorkbenchRecentDubSessionsSection: View {
 
     private func canRegenerate(_ id: UUID) -> Bool {
         guard let job = store.dubs.first(where: { $0.id == id }) else { return false }
-        guard job.state != .running, job.state != .cancelling else { return false }
+        guard !job.state.isActive else { return false }
         return (job.segments ?? []).contains {
             !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }

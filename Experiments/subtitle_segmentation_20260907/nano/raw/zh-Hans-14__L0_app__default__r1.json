@@ -1,0 +1,59 @@
+{
+  "id": "zh-Hans-14",
+  "method": "L0_app",
+  "budget": "default",
+  "repeat": 1,
+  "system": "Split the supplied finalized transcript into readable subtitle lines.\nReturn JSON only: {\"lines\":[\"<line>\", \"...\"]}.\nThis is segmentation-only.\nDo not correct, normalize, translate, add, remove, or reorder any character or punctuation.\nJoining the lines must reproduce the supplied transcript apart from line whitespace.\nKeep lexical compounds, names, and bound particles intact.\nPrefer phrase, punctuation, and pause boundaries over fixed cuts.\nA subtitle line does not need to end with punctuation.\nUse the stated line limits as hard constraints.\nDo not break immediately before an existing punctuation mark.\nPreserve all existing punctuation exactly, including places with no punctuation.\nKeep language zh-Hans.\nTarget 14 characters per line and never exceed 18.",
+  "user": "language: zh-Hans\nspeaker: A\ncue_limits: {\"minimumCharactersPerCue\":8,\"preferredCharactersPerCue\":14,\"maximumCharactersPerCue\":18}\n<corrected_transcript>\n墙面换成浅黄色以后，房间看起来明亮了一些，但实际使用面积没有增加。我们还移走了入口旁边的桌子，把指示牌放到接近视线的高度。这些调整花费不多，却让第一次来的访客更容易找到自己要去的地方。下个月我们准备收集使用反馈，看看哪些变化确实有帮助，哪些地方仍然让人困惑，再安排下一轮小范围修改。\n</corrected_transcript>\nReturn only the unchanged transcript split into lines.",
+  "fingerprint": "3a11c5d4b9fcfb61ffbec7641a38a34398ed10c6c62bf51d90f16444dc8d5565",
+  "requested_model": "gpt-5-nano-2025-08-07",
+  "temperature": null,
+  "reasoning_effort": "minimal",
+  "max_output_tokens": 4096,
+  "utc": "2026-09-07T03:19:54.835843+00:00",
+  "raw": "{\"lines\":[\"墙面换成浅黄色以后，房间看起来明亮了一些，但实际使用面积没有增加。\",\"我们还移走了入口旁边的桌子，把指示牌放到接近视线的高度。\",\"这些调整花费不多，却让第一次来的访客更容易找到自己要去的地方。\",\"下个月我们准备收集使用反馈，看看哪些变化确实有帮助，哪些地方仍然让人困惑，再安排下一轮小范围修改。\"]}",
+  "usage": {
+    "promptTokenCount": 311,
+    "candidatesTokenCount": 118
+  },
+  "provider_usage": {
+    "prompt_tokens": 311,
+    "completion_tokens": 118,
+    "total_tokens": 429,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "model": "gpt-5-nano-2025-08-07",
+  "finish_reason": "stop",
+  "latency_s": 1.6718698749973555,
+  "transport_attempts": 1,
+  "lines": [
+    "墙面换成浅黄色以后，房间看起来明亮了一些，但实际使用面积没有增加。",
+    "我们还移走了入口旁边的桌子，把指示牌放到接近视线的高度。",
+    "这些调整花费不多，却让第一次来的访客更容易找到自己要去的地方。",
+    "下个月我们准备收集使用反馈，看看哪些变化确实有帮助，哪些地方仍然让人困惑，再安排下一轮小范围修改。"
+  ],
+  "metrics": {
+    "valid": true,
+    "count": 4,
+    "boundaries": 3,
+    "tp": 3,
+    "ref_count": 11,
+    "f1": 0.42857142857142855,
+    "overlong": 4,
+    "short": 0,
+    "protected_total": 3,
+    "protected_breaks": 0,
+    "violations": [],
+    "punctuation_starts": 0,
+    "max_length": 49
+  }
+}
