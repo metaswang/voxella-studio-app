@@ -48,23 +48,34 @@ API 配置模板是 `../voxella-api/mac-app-access.env.example`。先执行 Mac 
 
 PR1 功能可合入开发分支做联调，但**不可标为可发行/验收通过**，直至下列项关闭：
 
-### B1 — 未登录试用可被本地重置（Critical）
+### B1 — 未登录试用可被本地重置（Critical）→ **已定 Solution**
 当前 `DeviceTrialClock` 仅 Keychain 存明文 `startedAt`，无服务端登记。删除 Keychain / 重装 / 新用户目录后会 `ensureStarted()` 重开 14 天。
+
+**B1 实现方案（已定 = PR1.1）：匿名设备试用 = 签名 license**
+
+适用：无 VoxStudio 登录也可试用，且允许联网校验。
+
+| 步骤 | 行为 |
+| --- | --- |
+| 指纹 | 客户端取 `IOPlatformUUID`，本地算 `device_fingerprint = HMAC-SHA256(uuid, app_pepper)`，**只上传哈希** |
+| 登记 | 首次受控功能且可联网时 `POST /api/v1/app-access/device-trial`（无需 user JWT）；body: `{ fingerprint, client_started_at? }` |
+| 签发 | 服务端对指纹 `UPSERT`：新指纹写入 `trial_started_at`；已存在则返回原开始时间。签发 **Ed25519 JWT（EdDSA）**：`{ typ: device_trial, fp, started_at, ends_at=started+14d, iat, jti }` |
+| 本地 | Keychain `ThisDeviceOnly` 存签名 token（取代明文 `startedAt` 作为权威）；平时门禁只验本地公钥 + `ends_at` + 时钟不早于 `started_at`/`iat` |
+| 复检 | **不要每次启动、不要每次 `prepareNewContentAccess`。** 仅当距上次成功校验 **≥24h**（对照登录态 `AppAccessRefreshSchedule` 的 6h）或 **token 将过期前 24h** 才 `POST .../device-trial/verify`。首次受控功能可联网时登记一次 `POST /device-trial`。同指纹已过期 → 拒绝重开 |
+| 离线 | 上次成功校验后 grace **7d**（`lastVerifiedAt + 7d`，且不超过 `ends_at`）；超 grace 且无网 → `verificationRequired`，不重开试用 |
+| 登录合并 | PR4：账号 `trial_started_at` 与设备 token 取 **earliest**；换机同账号继承剩余天数 |
+
+明确不做：仅靠多锚点本地文件/Keychain 当最终防滥用；不默认绑 iCloud `CKRecord`（可作后续增强）。
+
+**B1 验收关闭条件**：清 Keychain 后再次联网仍拿到同一 `ends_at`；篡改 token 验签失败；过期指纹不能新开 14 天。实现归属 **PR1.1**（优先于把试用防滥用押在生产门禁上）。
+
+**PR1.1 调度（已实现）**
+
+- 首次受控功能且可联网：`POST /api/v1/app-access/device-trial` 一次（无需 user JWT）。
+- 之后平时门禁只验 Keychain 签名 token；`configure()` / 启动不打 verify。
+- `POST /device-trial/verify` 仅当 `lastVerifiedAt` 已满 24h，或 `now + 24h >= ends_at`。失败重试间隔 5 分钟，避免连点 `prepareNewContentAccess` 打爆接口。
+- 离线 grace = 7 天；超 grace 无网 → `verificationRequired`。
+- 清 Keychain 后再联网走登记 UPSERT，服务端返回原 `trial_started_at`，因此 `ends_at` 不变。
 
 ### B2 — Lifetime stub 曾可伪造（Critical，已收紧）
 原 stub 对任意非空 Keychain blob 返回 true。PR1 已改为 **`isPresent()` 恒为 false**：拒绝未签名/未校验凭证，直至 PR2 落地真实签名校验后再按 verified credential 返回 true。
-
-### 推荐补强（适合「无 VoxStudio 登录、可联网」）
-行业常见模式（Keygen/Keyforge/Paddle 类 desktop licensing、Tessera 文档对照）：
-
-1. **匿名设备试用 = license state**：首次能联网时 `POST` 登记  
-   `device_fingerprint = HMAC-SHA256(IOPlatformUUID, app_pepper)`（只上传哈希）  
-2. 服务端写入 `fingerprint + trial_started_at`，返回 **Ed25519 / JWT 签名试用 token**（含 `ends_at`）  
-3. 客户端 Keychain 存签名 token；离线验公钥 + 到期；联网周期复检；同指纹已过期拒重开  
-4. 离线 grace（如 24h–7d）避免断网误锁；时钟回退检测  
-5. 登录后与账号试用取 **earliest**（PR4）
-
-**不作为最终方案**：仅多锚点本地存储（Keychain + 隐藏文件）——挡普通人，挡不住清干净/VM。  
-**不默认采用**：iCloud `CKRecord` userRecordID（需 Apple ID，与「无 VoxStudio 登录」不完全同构，可作后续增强）。
-
-关闭路径：将「匿名签名试用 token + 服务端 fingerprint 登记」前移为 **PR1.1**，或并入 **PR3** 且在此之前不开启生产 `VoxStudioPaidAccessEnabled` 依赖本地试用防滥用。

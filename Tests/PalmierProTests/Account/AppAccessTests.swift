@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import PalmierPro
@@ -197,40 +198,189 @@ struct AppAccessTests {
         #expect(AppAccessGate.label(enforced: false, access: access, tier: .none) == "Free")
     }
 
-    @Test func deviceTrialClockStartsOnceAndSurvivesReload() throws {
+    @Test func fingerprintHashesUUIDAndDoesNotEqualRawUUID() {
+        let uuid = "A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+        let fingerprint = DeviceFingerprint.hash(uuid: uuid)
+        #expect(fingerprint.count == 64)
+        #expect(fingerprint != uuid)
+        #expect(fingerprint == DeviceFingerprint.hash(uuid: uuid))
+        #expect(fingerprint != DeviceFingerprint.hash(uuid: uuid, pepper: "other"))
+    }
+
+    @Test func signedDeviceTrialIsAuthorityAndSurvivesReload() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "device-a")
+        let ends = now.addingTimeInterval(14 * 86_400)
+        let token = try keys.token(fingerprint: fingerprint, startedAt: now, endsAt: ends, issuedAt: now)
         var stored: String?
-        let started = try DeviceTrialClock.ensureStarted(
-            at: now,
-            read: { stored },
+        let record = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: fingerprint,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
             write: { stored = $0 }
         )
-        #expect(started.startedAt == now)
-        #expect(started.endsAt == now.addingTimeInterval(14 * 86_400))
+        #expect(record.startedAt == Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.towardZero)))
+        #expect(record.endsAt == Date(timeIntervalSince1970: ends.timeIntervalSince1970.rounded(.towardZero)))
 
-        let again = try DeviceTrialClock.ensureStarted(
-            at: now.addingTimeInterval(3600),
-            read: { stored },
+        let loaded = try DeviceTrialClock.load(
+            fingerprint: fingerprint,
+            publicKeyRaw: keys.publicKeyRaw,
+            read: { stored }
+        )
+        #expect(loaded?.endsAt == record.endsAt)
+        #expect(loaded?.snapshot(at: now)?.policy(at: now) == .allowed)
+    }
+
+    @Test func wipeKeychainReregisterKeepsSameEndsAt() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "device-b")
+        let ends = now.addingTimeInterval(14 * 86_400)
+        let token = try keys.token(fingerprint: fingerprint, startedAt: now, endsAt: ends, issuedAt: now)
+        var stored: String?
+        let first = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: fingerprint,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
             write: { stored = $0 }
         )
-        #expect(again.startedAt == now)
+        stored = nil
+        let again = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: fingerprint,
+            verifiedAt: now.addingTimeInterval(3600),
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        #expect(again.endsAt == first.endsAt)
+    }
 
-        let snapshot = try DeviceTrialClock.load(read: { stored })?.snapshot(at: now)
-        #expect(snapshot?.license == .trial)
-        #expect(snapshot?.policy(at: now) == .allowed)
+    @Test func tamperedDeviceTrialTokenFailsVerify() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "device-c")
+        let token = try keys.token(
+            fingerprint: fingerprint,
+            startedAt: now,
+            endsAt: now.addingTimeInterval(14 * 86_400),
+            issuedAt: now
+        )
+        let parts = token.split(separator: ".")
+        let tampered = "\(parts[0]).\(parts[1].dropLast(2))ab.\(parts[2])"
+        #expect(throws: DeviceTrialLicenseError.self) {
+            try DeviceTrialLicense.verify(tampered, fingerprint: fingerprint, publicKeyRaw: keys.publicKeyRaw)
+        }
     }
 
     @Test func deviceTrialRejectsClockRollback() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "device-d")
+        let token = try keys.token(
+            fingerprint: fingerprint,
+            startedAt: now,
+            endsAt: now.addingTimeInterval(14 * 86_400),
+            issuedAt: now
+        )
         var stored: String?
-        _ = try DeviceTrialClock.ensureStarted(at: now, read: { stored }, write: { stored = $0 })
-        let snapshot = try DeviceTrialClock.load(read: { stored })?.snapshot(at: now.addingTimeInterval(-1))
+        _ = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: fingerprint,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        let snapshot = try DeviceTrialClock.load(
+            fingerprint: fingerprint,
+            publicKeyRaw: keys.publicKeyRaw,
+            read: { stored }
+        )?.snapshot(at: now.addingTimeInterval(-1))
         #expect(snapshot == nil)
     }
 
+    @Test func offlineGraceRequiresVerificationWithoutReopeningTrial() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "device-e")
+        let ends = now.addingTimeInterval(14 * 86_400)
+        let token = try keys.token(fingerprint: fingerprint, startedAt: now, endsAt: ends, issuedAt: now)
+        var stored: String?
+        let record = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: fingerprint,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        let overdue = now.addingTimeInterval(DeviceTrialClock.offlineGrace + 1)
+        #expect(record.evaluation(at: overdue) == .verificationRequired)
+        let snapshot = record.snapshot(at: overdue)
+        #expect(snapshot?.policy(at: overdue) == .verificationRequired)
+        #expect(throws: AppAccessError.verificationRequired) {
+            try AppAccessGate.requireNewContent(
+                enforced: true,
+                signedIn: false,
+                access: snapshot ?? .init(),
+                hasLocalLifetimeCredential: false,
+                at: overdue
+            )
+        }
+        #expect(record.endsAt == ends.roundedToUnix)
+    }
+
+    @Test func deviceTrialVerifyIsDueOnlyAfter24hOrNearExpiry() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "device-f")
+        let ends = now.addingTimeInterval(14 * 86_400)
+        let token = try keys.token(fingerprint: fingerprint, startedAt: now, endsAt: ends, issuedAt: now)
+        var stored: String?
+        let record = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: fingerprint,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        #expect(!record.refreshIsDue(at: now.addingTimeInterval(23 * 3_600)))
+        #expect(record.refreshIsDue(at: now.addingTimeInterval(24 * 3_600)))
+        #expect(record.refreshIsDue(at: ends.addingTimeInterval(-23 * 3_600)))
+        #expect(!record.refreshIsDue(
+            at: now.addingTimeInterval(24 * 3_600),
+            lastAttempt: now.addingTimeInterval(24 * 3_600 - 60)
+        ))
+    }
+
     @Test func lifetimeLocalCredentialStubRejectsUnverifiedBlobs() {
-        // PR1: no signed verify yet — any blob (including non-empty) must not count as Lifetime.
+        // PR1/PR1.1: no signed verify yet — any blob (including non-empty) must not count as Lifetime.
         #expect(LifetimeLocalCredential.isPresent(load: { nil }) == false)
         #expect(LifetimeLocalCredential.isPresent(load: { "cred" }) == false)
         #expect(LifetimeLocalCredential.isPresent(load: { "" }) == false)
         #expect(LifetimeLocalCredential.isPresent(load: { "eyJhbGciOiJFZERTQSJ9.fake.sig" }) == false)
     }
+}
+
+private struct DeviceTrialTestKeys {
+    let privateKey = Curve25519.Signing.PrivateKey()
+    var publicKeyRaw: Data { privateKey.publicKey.rawRepresentation }
+
+    func token(fingerprint: String, startedAt: Date, endsAt: Date, issuedAt: Date) throws -> String {
+        let header = DeviceTrialLicense.base64URLEncode(
+            try JSONSerialization.data(withJSONObject: ["alg": "EdDSA", "typ": "JWT", "kid": "device-trial-v1"])
+        )
+        let payload = DeviceTrialLicense.base64URLEncode(
+            try JSONSerialization.data(withJSONObject: [
+                "typ": "device_trial",
+                "fp": fingerprint,
+                "started_at": Int(startedAt.timeIntervalSince1970),
+                "ends_at": Int(endsAt.timeIntervalSince1970),
+                "iat": Int(issuedAt.timeIntervalSince1970),
+                "jti": "test-jti",
+            ])
+        )
+        let signingInput = Data("\(header).\(payload)".utf8)
+        let signature = try privateKey.signature(for: signingInput)
+        return "\(header).\(payload).\(DeviceTrialLicense.base64URLEncode(signature))"
+    }
+}
+
+private extension Date {
+    var roundedToUnix: Date { Date(timeIntervalSince1970: timeIntervalSince1970.rounded(.towardZero)) }
 }

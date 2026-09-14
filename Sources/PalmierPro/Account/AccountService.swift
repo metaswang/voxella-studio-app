@@ -221,6 +221,7 @@ final class AccountService {
     @ObservationIgnored private var accessRequestID = UUID()
     @ObservationIgnored private var cacheRevision: UInt64 = 0
     @ObservationIgnored private var didBecomeActiveObserver: NSObjectProtocol?
+    @ObservationIgnored private var deviceTrialVerifyAttempt: Date?
 
     private init() {}
 
@@ -602,8 +603,9 @@ final class AccountService {
             }
         }
 #else
-        // DMG: start or resume device-local trial without forcing sign-in (PR1).
-        // Server account trial merge is PR4; Lifetime credential issue/verify is PR2–PR3.
+        // DMG: first gated feature registers a signed device trial without sign-in (PR1.1).
+        // Verify only when ≥24h since last success or the token is near expiry — not on launch
+        // and not on every prepareNewContentAccess. PR4 account merge; PR2–PR3 Lifetime.
         do {
             try await ensureDeviceTrialStarted()
         } catch {
@@ -642,14 +644,105 @@ final class AccountService {
     }
 
     private func ensureDeviceTrialStarted() async throws {
-        let record = try DeviceTrialClock.ensureStarted()
-        guard let snapshot = record.snapshot() else {
+        let fingerprint = try DeviceFingerprint.current()
+        if let record = try? DeviceTrialClock.load(fingerprint: fingerprint) {
+            applyDeviceTrialRecord(record)
+            switch record.evaluation() {
+            case .allowed:
+                if record.refreshIsDue(at: .now, lastAttempt: deviceTrialVerifyAttempt) {
+                    deviceTrialVerifyAttempt = .now
+                    do {
+                        try await syncDeviceTrial(
+                            fingerprint: fingerprint,
+                            preferVerify: true,
+                            clientStartedAt: nil
+                        )
+                    } catch AppAccessError.trialExpired {
+                        throw AppAccessError.trialExpired
+                    } catch {
+                        // Still inside 7d grace: keep the local signed token.
+                    }
+                }
+                return
+            case .expired:
+                throw AppAccessError.trialExpired
+            case .verificationRequired:
+                try await syncDeviceTrial(
+                    fingerprint: fingerprint,
+                    preferVerify: true,
+                    clientStartedAt: nil
+                )
+                return
+            case .invalid:
+                break
+            }
+        }
+        // First gated feature (or wiped Keychain): register once. Not on launch.
+        try await syncDeviceTrial(
+            fingerprint: fingerprint,
+            preferVerify: false,
+            clientStartedAt: DeviceTrialClock.legacyStartedAtHint()
+        )
+    }
+
+    private func applyDeviceTrialRecord(_ record: DeviceTrialClock.Record) {
+        accessRequestID = UUID()
+        if let snapshot = record.snapshot() {
+            appAccess = snapshot
+        }
+    }
+
+    private func syncDeviceTrial(
+        fingerprint: String,
+        preferVerify: Bool,
+        clientStartedAt: Date?
+    ) async throws {
+        do {
+            let response: DeviceTrialAPIResponse
+            if preferVerify {
+                do {
+                    response = try await api.verifyDeviceTrial(fingerprint: fingerprint)
+                } catch let error as VoxellaAPIError {
+                    if case .http(let code, _) = error, code == 404 {
+                        response = try await api.registerDeviceTrial(
+                            fingerprint: fingerprint,
+                            clientStartedAt: clientStartedAt
+                        )
+                    } else {
+                        throw error
+                    }
+                }
+            } else {
+                response = try await api.registerDeviceTrial(
+                    fingerprint: fingerprint,
+                    clientStartedAt: clientStartedAt
+                )
+            }
+            try applyDeviceTrialResponse(response, fingerprint: fingerprint)
+        } catch let error as AppAccessError {
+            throw error
+        } catch {
             throw AppAccessError.verificationRequired
         }
-        accessRequestID = UUID()
-        appAccess = snapshot
-        entitlementSchedule.succeeded(at: .now)
-        // Do not persist device trial into AppAccessCache (that cache clears on logout).
+    }
+
+    private func applyDeviceTrialResponse(_ response: DeviceTrialAPIResponse, fingerprint: String) throws {
+        guard !response.token.isEmpty else { throw AppAccessError.verificationRequired }
+        let record = try DeviceTrialClock.store(
+            token: response.token,
+            fingerprint: fingerprint,
+            verifiedAt: .now
+        )
+        deviceTrialVerifyAttempt = .now
+        applyDeviceTrialRecord(record)
+        switch record.evaluation() {
+        case .allowed:
+            return
+        case .expired:
+            throw AppAccessError.trialExpired
+        case .verificationRequired, .invalid:
+            throw AppAccessError.verificationRequired
+        }
     }
 
     func requireNewContentAccess() throws {

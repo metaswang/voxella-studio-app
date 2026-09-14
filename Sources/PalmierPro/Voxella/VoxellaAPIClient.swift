@@ -830,6 +830,55 @@ struct VoxellaPortalSession: Decodable, Sendable {
     let url: String
 }
 
+struct DeviceTrialAPIResponse: Decodable, Sendable {
+    let token: String
+    let fingerprint: String?
+    let startedAt: Date?
+    let endsAt: Date?
+    let status: String?
+
+    enum CodingKeys: String, CodingKey {
+        case token
+        case fingerprint
+        case startedAt = "started_at"
+        case endsAt = "ends_at"
+        case status
+        case detail
+        case code
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let nested = try? container.nestedContainer(keyedBy: CodingKeys.self, forKey: .detail) {
+            token = try nested.decodeIfPresent(String.self, forKey: .token)
+                ?? container.decodeIfPresent(String.self, forKey: .token)
+                ?? ""
+            fingerprint = try nested.decodeIfPresent(String.self, forKey: .fingerprint)
+            startedAt = Self.decodeDate(nested, .startedAt) ?? Self.decodeDate(container, .startedAt)
+            endsAt = Self.decodeDate(nested, .endsAt) ?? Self.decodeDate(container, .endsAt)
+            status = try nested.decodeIfPresent(String.self, forKey: .status)
+                ?? nested.decodeIfPresent(String.self, forKey: .code)
+                ?? container.decodeIfPresent(String.self, forKey: .status)
+            return
+        }
+        token = try container.decodeIfPresent(String.self, forKey: .token) ?? ""
+        fingerprint = try container.decodeIfPresent(String.self, forKey: .fingerprint)
+        startedAt = Self.decodeDate(container, .startedAt)
+        endsAt = Self.decodeDate(container, .endsAt)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+            ?? container.decodeIfPresent(String.self, forKey: .code)
+    }
+
+    var isExpired: Bool { status == "expired" || status == "trial_expired" }
+
+    private static func decodeDate(_ container: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Date? {
+        guard let value = try? container.decodeIfPresent(String.self, forKey: key) else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    }
+}
+
 actor VoxellaAPIClient {
     static let shared = VoxellaAPIClient()
 
@@ -854,6 +903,26 @@ actor VoxellaAPIClient {
             url: VoxellaAPIConfiguration.apiURL("api/v1/billing/plans"),
             method: "GET",
             as: VoxellaUserPlans.self
+        )
+    }
+
+    func registerDeviceTrial(fingerprint: String, clientStartedAt: Date? = nil) async throws -> DeviceTrialAPIResponse {
+        var body: [String: Any] = ["fingerprint": fingerprint]
+        if let clientStartedAt {
+            body["client_started_at"] = ISO8601DateFormatter().string(from: clientStartedAt)
+        }
+        return try await unauthenticatedJSON(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/device-trial"),
+            method: "POST",
+            json: body
+        )
+    }
+
+    func verifyDeviceTrial(fingerprint: String) async throws -> DeviceTrialAPIResponse {
+        try await unauthenticatedJSON(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/device-trial/verify"),
+            method: "POST",
+            json: ["fingerprint": fingerprint]
         )
     }
 
@@ -2106,6 +2175,36 @@ actor VoxellaAPIClient {
         }
         do {
             return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw VoxellaAPIError.decoding
+        }
+    }
+
+    private func unauthenticatedJSON(
+        url: URL,
+        method: String,
+        json: [String: Any]
+    ) async throws -> DeviceTrialAPIResponse {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: json)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw VoxellaAPIError.http(0, "No response")
+        }
+        if http.statusCode == 409 {
+            if let decoded = try? JSONDecoder().decode(DeviceTrialAPIResponse.self, from: data),
+               !decoded.token.isEmpty {
+                return decoded
+            }
+            throw VoxellaAPIError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw VoxellaAPIError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            return try JSONDecoder().decode(DeviceTrialAPIResponse.self, from: data)
         } catch {
             throw VoxellaAPIError.decoding
         }

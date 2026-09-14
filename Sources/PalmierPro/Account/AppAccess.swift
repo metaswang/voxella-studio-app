@@ -120,7 +120,15 @@ enum AppAccessGate {
             return
         }
         if access.hasLocalFeatureEntitlement(at: date) {
-            return
+            // Device-trial grace uses offlineValidUntil; over grace requires verify, not a new 14d.
+            switch access.policy(at: date) {
+            case .allowed:
+                return
+            case .verificationRequired:
+                throw AppAccessError.verificationRequired
+            case .expired:
+                throw AppAccessError.trialExpired
+            }
         }
         if access.hasActiveSubscription(at: date) {
             guard signedIn else { throw AppAccessError.signInRequired }

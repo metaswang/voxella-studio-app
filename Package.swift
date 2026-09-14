@@ -148,6 +148,7 @@ let package = Package(
                 .linkedFramework("Carbon"),
                 .linkedFramework("SoundAnalysis"),
                 .linkedFramework("AuthenticationServices"),
+                .linkedFramework("IOKit"),
                 .linkedLibrary("sqlite3"),
             ],
             plugins: ["MetalCIKernelPlugin"]
