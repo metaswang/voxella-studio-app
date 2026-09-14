@@ -222,6 +222,7 @@ final class AccountService {
     @ObservationIgnored private var cacheRevision: UInt64 = 0
     @ObservationIgnored private var didBecomeActiveObserver: NSObjectProtocol?
     @ObservationIgnored private var deviceTrialVerifyAttempt: Date?
+    @ObservationIgnored private var lifetimeDeviceVerifyAttempt: Date?
 
     private init() {}
 
@@ -316,6 +317,7 @@ final class AccountService {
             lifetimePromotion = response.appAccess?.lifetimePromotion
             entitlementSchedule.succeeded(at: .now)
             try await persistAppAccess()
+            await syncLifetimeDeviceCredentialIfNeeded()
         } catch {
             guard isCurrentSession(generation), accessRequestID == requestID else { return }
             if AppAccessRefreshSchedule.invalidatesSession(error) { await rejectSession(); return }
@@ -429,6 +431,7 @@ final class AccountService {
                 entitlementSchedule.succeeded(at: .now)
             }
             // Free / unsigned-capable path: fill from device trial when server has no entitlement (PR1).
+            applyLifetimeCredentialOverlayIfNeeded()
             applyDeviceTrialOverlayIfNeeded()
         } else {
             appAccess = .init()
@@ -448,6 +451,8 @@ final class AccountService {
         if Self.paidAccessEnabled, plansResponse?.appAccess != nil {
             do { try await persistAppAccess() }
             catch { lastError = "Offline access could not be saved: \(error.localizedDescription)" }
+            guard isCurrentSession(generation) else { return }
+            await syncLifetimeDeviceCredentialIfNeeded()
             guard isCurrentSession(generation) else { return }
         }
         Telemetry.setUser(id: profileResponse.id.uuidString)
@@ -487,7 +492,8 @@ final class AccountService {
         appAccess = .init()
         availablePlans = []
         isBuyingCredits = false
-        // Device trial is device-local and must survive logout / account clear (PR1).
+        // Device trial + Lifetime device credential survive logout / account clear (PR1 / PR2).
+        applyLifetimeCredentialOverlayIfNeeded()
         applyDeviceTrialOverlayIfNeeded()
     }
 
@@ -556,6 +562,7 @@ final class AccountService {
 
     private func performAppAccessPreparation() async throws {
         guard Self.paidAccessEnabled else { return }
+        applyLifetimeCredentialOverlayIfNeeded()
         applyDeviceTrialOverlayIfNeeded()
         if LifetimeLocalCredential.isPresent() { return }
         if appAccess.policy() == .allowed { return }
@@ -631,6 +638,14 @@ final class AccountService {
         try requireNewContentAccess()
     }
 
+    /// Overlay verified Lifetime device credential (independent Keychain; survives logout).
+    private func applyLifetimeCredentialOverlayIfNeeded() {
+        guard Self.paidAccessEnabled else { return }
+        guard let snapshot = try? LifetimeLocalCredential.activeSnapshot() else { return }
+        accessRequestID = UUID()
+        appAccess = snapshot
+    }
+
     /// Overlay device-local trial onto `appAccess` when no stronger entitlement is present.
     private func applyDeviceTrialOverlayIfNeeded() {
         guard Self.paidAccessEnabled else { return }
@@ -641,6 +656,53 @@ final class AccountService {
         if appAccess.hasLocalFeatureEntitlement { return }
         guard let snapshot = try? DeviceTrialClock.currentSnapshot() else { return }
         appAccess = snapshot
+    }
+
+    /// After Lifetime purchase (or account refresh), issue/store signed device credential.
+    private func syncLifetimeDeviceCredentialIfNeeded() async {
+        guard Self.paidAccessEnabled, isSignedIn, let owner = userID else { return }
+        guard appAccess.license == .lifetime else { return }
+        let fingerprint: String
+        do {
+            fingerprint = try DeviceFingerprint.current()
+        } catch {
+            return
+        }
+        if let existing = try? LifetimeLocalCredential.load(fingerprint: fingerprint),
+           existing.userID == owner {
+            if existing.refreshIsDue(at: .now, lastAttempt: lifetimeDeviceVerifyAttempt) {
+                lifetimeDeviceVerifyAttempt = .now
+                do {
+                    let response = try await api.verifyLifetimeDevice(fingerprint: fingerprint)
+                    try applyLifetimeDeviceResponse(response, fingerprint: fingerprint, userID: owner)
+                } catch {
+                    // Keep previously verified local credential.
+                }
+            }
+            return
+        }
+        do {
+            let response = try await api.issueLifetimeDevice(fingerprint: fingerprint)
+            try applyLifetimeDeviceResponse(response, fingerprint: fingerprint, userID: owner)
+        } catch {
+            Log.account.warning("Lifetime device credential issue unavailable")
+        }
+    }
+
+    private func applyLifetimeDeviceResponse(
+        _ response: LifetimeDeviceAPIResponse,
+        fingerprint: String,
+        userID: UUID
+    ) throws {
+        guard !response.token.isEmpty else { throw AppAccessError.verificationRequired }
+        _ = try LifetimeLocalCredential.store(
+            token: response.token,
+            fingerprint: fingerprint,
+            userID: userID,
+            verifiedAt: .now
+        )
+        lifetimeDeviceVerifyAttempt = .now
+        applyLifetimeCredentialOverlayIfNeeded()
     }
 
     private func ensureDeviceTrialStarted() async throws {
@@ -1143,11 +1205,12 @@ final class AccountService {
 
     func purchaseLifetime() async {
         lastError = nil
-#if MAC_APP_STORE
-        guard let userID else {
+        // Lifetime checkout binds the account and issues a device credential (PR2) — login required.
+        guard userID != nil else {
             lastError = AppAccessError.signInRequired.localizedDescription
             return
         }
+#if MAC_APP_STORE
         await purchaseAppStoreProduct(AppStoreProductID.lifetime.rawValue)
 #else
         do {

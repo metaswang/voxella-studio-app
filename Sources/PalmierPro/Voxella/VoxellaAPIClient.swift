@@ -879,6 +879,38 @@ struct DeviceTrialAPIResponse: Decodable, Sendable {
     }
 }
 
+
+struct LifetimeDeviceAPIResponse: Decodable, Sendable {
+    let token: String
+    let userID: String?
+    let fingerprint: String?
+    let status: String?
+    let issuedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case token
+        case userID = "user_id"
+        case fingerprint
+        case status
+        case issuedAt = "issued_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        token = try container.decodeIfPresent(String.self, forKey: .token) ?? ""
+        userID = try container.decodeIfPresent(String.self, forKey: .userID)
+        fingerprint = try container.decodeIfPresent(String.self, forKey: .fingerprint)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        if let raw = try container.decodeIfPresent(String.self, forKey: .issuedAt) {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            issuedAt = formatter.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+        } else {
+            issuedAt = nil
+        }
+    }
+}
+
 actor VoxellaAPIClient {
     static let shared = VoxellaAPIClient()
 
@@ -923,6 +955,24 @@ actor VoxellaAPIClient {
             url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/device-trial/verify"),
             method: "POST",
             json: ["fingerprint": fingerprint]
+        )
+    }
+
+    func issueLifetimeDevice(fingerprint: String) async throws -> LifetimeDeviceAPIResponse {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/lifetime-device"),
+            method: "POST",
+            json: ["fingerprint": fingerprint],
+            as: LifetimeDeviceAPIResponse.self
+        )
+    }
+
+    func verifyLifetimeDevice(fingerprint: String) async throws -> LifetimeDeviceAPIResponse {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/lifetime-device/verify"),
+            method: "POST",
+            json: ["fingerprint": fingerprint],
+            as: LifetimeDeviceAPIResponse.self
         )
     }
 

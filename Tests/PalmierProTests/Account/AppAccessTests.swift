@@ -348,14 +348,118 @@ struct AppAccessTests {
         ))
     }
 
-    @Test func lifetimeLocalCredentialStubRejectsUnverifiedBlobs() {
-        // PR1/PR1.1: no signed verify yet — any blob (including non-empty) must not count as Lifetime.
-        #expect(LifetimeLocalCredential.isPresent(load: { nil }) == false)
-        #expect(LifetimeLocalCredential.isPresent(load: { "cred" }) == false)
-        #expect(LifetimeLocalCredential.isPresent(load: { "" }) == false)
-        #expect(LifetimeLocalCredential.isPresent(load: { "eyJhbGciOiJFZERTQSJ9.fake.sig" }) == false)
+    @Test func lifetimeLocalCredentialRejectsUnverifiedBlobs() {
+        #expect(LifetimeLocalCredential.isPresent(read: { nil }) == false)
+        #expect(LifetimeLocalCredential.isPresent(read: { "cred" }) == false)
+        #expect(LifetimeLocalCredential.isPresent(read: { "" }) == false)
+        #expect(LifetimeLocalCredential.isPresent(read: { "eyJhbGciOiJFZERTQSJ9.fake.sig" }) == false)
+    }
+
+    @Test func signedLifetimeDeviceCredentialIsPresentAndSurvivesReload() throws {
+        let keys = LifetimeDeviceTestKeys()
+        let userID = UUID()
+        let fingerprint = DeviceFingerprint.hash(uuid: "lifetime-device-a")
+        let token = try keys.token(userID: userID, fingerprint: fingerprint, issuedAt: now)
+        var stored: String?
+        let record = try LifetimeLocalCredential.store(
+            token: token,
+            fingerprint: fingerprint,
+            userID: userID,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        #expect(record.userID == userID)
+        #expect(LifetimeLocalCredential.isPresent(
+            fingerprint: fingerprint,
+            read: { stored },
+            publicKeyRaw: keys.publicKeyRaw
+        ))
+        let loaded = try LifetimeLocalCredential.load(
+            fingerprint: fingerprint,
+            publicKeyRaw: keys.publicKeyRaw,
+            read: { stored }
+        )
+        #expect(loaded?.userID == userID)
+        #expect(loaded?.snapshot(at: now)?.license == .lifetime)
+        #expect(loaded?.snapshot(at: now)?.policy(at: now) == .allowed)
+    }
+
+    @Test func lifetimeDeviceCredentialBindsUserAndFingerprint() throws {
+        let keys = LifetimeDeviceTestKeys()
+        let userID = UUID()
+        let fingerprint = DeviceFingerprint.hash(uuid: "lifetime-device-b")
+        let token = try keys.token(userID: userID, fingerprint: fingerprint, issuedAt: now)
+        #expect(throws: LifetimeDeviceLicenseError.self) {
+            try LifetimeDeviceLicense.verify(
+                token,
+                fingerprint: DeviceFingerprint.hash(uuid: "other"),
+                publicKeyRaw: keys.publicKeyRaw
+            )
+        }
+        #expect(throws: LifetimeDeviceLicenseError.self) {
+            try LifetimeDeviceLicense.verify(
+                token,
+                fingerprint: fingerprint,
+                userID: UUID(),
+                publicKeyRaw: keys.publicKeyRaw
+            )
+        }
+    }
+
+    @Test func lifetimeLocalCredentialAllowsGateWithoutLogin() throws {
+        let keys = LifetimeDeviceTestKeys()
+        let userID = UUID()
+        let fingerprint = DeviceFingerprint.hash(uuid: "lifetime-device-c")
+        let token = try keys.token(userID: userID, fingerprint: fingerprint, issuedAt: now)
+        var stored: String?
+        _ = try LifetimeLocalCredential.store(
+            token: token,
+            fingerprint: fingerprint,
+            userID: userID,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        let present = LifetimeLocalCredential.isPresent(
+            fingerprint: fingerprint,
+            read: { stored },
+            publicKeyRaw: keys.publicKeyRaw
+        )
+        #expect(present)
+        try AppAccessGate.requireNewContent(
+            enforced: true,
+            signedIn: false,
+            access: .init(),
+            hasLocalLifetimeCredential: present,
+            at: now
+        )
     }
 }
+
+private struct LifetimeDeviceTestKeys {
+    let privateKey = Curve25519.Signing.PrivateKey()
+    var publicKeyRaw: Data { privateKey.publicKey.rawRepresentation }
+
+    func token(userID: UUID, fingerprint: String, issuedAt: Date) throws -> String {
+        let header = DeviceTrialLicense.base64URLEncode(
+            try JSONSerialization.data(withJSONObject: ["alg": "EdDSA", "typ": "JWT", "kid": "lifetime-device-v1"])
+        )
+        let payload = DeviceTrialLicense.base64URLEncode(
+            try JSONSerialization.data(withJSONObject: [
+                "typ": "lifetime_device",
+                "uid": userID.uuidString,
+                "fp": fingerprint,
+                "iat": Int(issuedAt.timeIntervalSince1970),
+                "jti": "lifetime-test-jti",
+            ])
+        )
+        let input = Data((header + "." + payload).utf8)
+        let signature = try privateKey.signature(for: input)
+        return header + "." + payload + "." + DeviceTrialLicense.base64URLEncode(signature)
+    }
+}
+
 
 private struct DeviceTrialTestKeys {
     let privateKey = Curve25519.Signing.PrivateKey()

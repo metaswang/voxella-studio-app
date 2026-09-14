@@ -60,11 +60,19 @@ struct AppAccessSnapshot: Codable, Equatable, Sendable {
     }
 
     func policy(at date: Date = .now) -> AppAccessPolicy {
-        let entitled = license == .lifetime
-            || hasActiveSubscription(at: date)
+        // Lifetime: nil offlineValidUntil => local device credential (PR2), always allowed locally.
+        // When offlineValidUntil is set (account AppAccessCache lease), honor expiry for refresh UX;
+        // AppAccessGate still allows if hasLocalLifetimeCredential.
+        if license == .lifetime {
+            if let offlineValidUntil {
+                return offlineValidUntil > date ? .allowed : .verificationRequired
+            }
+            return .allowed
+        }
+        let entitled = hasActiveSubscription(at: date)
             || (license == .trial && trialEndsAt.map { $0 > date } == true)
         guard entitled else { return .expired }
-        // Device-local trial pins offlineValidUntil to trial end; lifetime/sub still need lease.
+        // Device-local trial pins offlineValidUntil to trial end; subscription still needs lease.
         if license == .trial, hasLocalFeatureEntitlement(at: date),
            offlineValidUntil == nil || offlineValidUntil.map({ $0 > date }) == true {
             return .allowed
@@ -113,7 +121,7 @@ enum AppAccessGate {
     ) throws {
         guard enforced else { return }
         if hasLocalLifetimeCredential || access.license == .lifetime {
-            // PR2 will verify the device credential; PR1 accepts presence / server lifetime.
+            // Local Lifetime credential (PR2 verified JWT) or server lifetime license.
             if access.license == .lifetime, access.policy(at: date) == .verificationRequired, !hasLocalLifetimeCredential {
                 throw AppAccessError.verificationRequired
             }

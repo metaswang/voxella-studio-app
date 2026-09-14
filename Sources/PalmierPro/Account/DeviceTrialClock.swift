@@ -131,22 +131,3 @@ enum DeviceTrialClock {
         let startedAt: Date
     }
 }
-
-/// PR2 hook: Lifetime device credential presence (issue/verify not implemented in PR1/PR1.1).
-enum LifetimeLocalCredential {
-    static let keychainAccount = "voxstudio.app-access.lifetime-credential"
-
-    /// PR1 stub: always false until PR2 signed-license verify lands.
-    /// Must NOT treat any non-empty Keychain blob as Lifetime (unsigned/unverified → reject).
-    /// Full issue/verify lands in PR2–PR3; device transfer / N-device caps in later PRs.
-    static func isPresent(
-        load: () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: LifetimeLocalCredential.keychainAccount)
-        }
-    ) -> Bool {
-        // Intentionally ignore `load` until cryptographic verify exists.
-        // Any present blob is unsigned/unverified in PR1 and must not grant access.
-        _ = try? load()
-        return false
-    }
-}
