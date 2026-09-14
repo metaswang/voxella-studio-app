@@ -9,7 +9,7 @@ struct TrialSidebarStatus: View {
     var body: some View {
         // Countdown only while trial is actively remaining. Lifetime / expired / verify: no trial clock.
         if account.trialPresentation != nil {
-            TimelineView(.periodic(from: .now, by: 60.0)) { context in
+            SwiftUI.TimelineView(.periodic(from: .now, by: 60.0)) { context in
                 if case let .active(active)? = account.trialPresentation {
                     if isExpanded {
                         expandedStatus(.active(active))

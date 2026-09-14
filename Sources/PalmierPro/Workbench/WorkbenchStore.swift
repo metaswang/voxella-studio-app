@@ -1305,25 +1305,54 @@ enum WorkbenchMediaFlowPlanner {
     }
 }
 
+enum WorkbenchSnapshotLoadOutcome: Equatable, Sendable {
+    case missing
+    case loaded
+    case corrupt
+}
+
+/// Pure policy for hydrate/save: a corrupt on-disk snapshot must never be replaced by an empty write.
+enum WorkbenchPersistenceGuard {
+    static func denyOverwrite(after outcome: WorkbenchSnapshotLoadOutcome) -> Bool {
+        outcome == .corrupt
+    }
+}
+
 private actor WorkbenchPersistence {
     private let URL: URL
     private var latestRevision = 0
+    /// After a decode failure, refuse to write so we never clobber a corrupt/unreadable workbench with an empty snapshot.
+    private var denyOverwriteAfterCorruptLoad = false
 
     init(URL: URL) {
         self.URL = URL
     }
 
-    func load() -> WorkbenchSnapshot? {
-        guard let data = try? Data(contentsOf: URL) else { return nil }
+    func load() -> (WorkbenchSnapshot?, WorkbenchSnapshotLoadOutcome) {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: URL.path) else {
+            return (nil, .missing)
+        }
+        guard let data = try? Data(contentsOf: URL) else {
+            return (nil, .missing)
+        }
         do {
-            return try JSONDecoder().decode(WorkbenchSnapshot.self, from: data)
+            let snapshot = try JSONDecoder().decode(WorkbenchSnapshot.self, from: data)
+            return (snapshot, .loaded)
         } catch {
-            Log.project.error("workbench load failed: \(error.localizedDescription)")
-            return nil
+            denyOverwriteAfterCorruptLoad = true
+            Log.project.error(
+                "workbench load failed (refusing empty overwrite): \(error.localizedDescription)"
+            )
+            return (nil, .corrupt)
         }
     }
 
     func save(_ snapshot: WorkbenchSnapshot, revision: Int) {
+        guard !denyOverwriteAfterCorruptLoad else {
+            Log.project.error("workbench save skipped: prior load failed to decode")
+            return
+        }
         guard revision >= latestRevision,
               let data = try? JSONEncoder().encode(snapshot) else { return }
         do {
@@ -5643,7 +5672,7 @@ final class WorkbenchStore {
     }
 
     private func hydrate() async {
-        let snapshot = await persistence.load()
+        let (snapshot, loadOutcome) = await persistence.load()
         let resumableCloudDubs = snapshot?.dubs.filter { job in
             job.state == .running
                 && job.placement.needsAuthentication
@@ -5667,6 +5696,13 @@ final class WorkbenchStore {
         if pendingNewDubDraft {
             pendingNewDubDraft = false
             startNewDubDraft()
+            return
+        }
+        // Corrupt on-disk snapshot: never persist an empty in-memory state over it.
+        if WorkbenchPersistenceGuard.denyOverwrite(after: loadOutcome) {
+            saveRequestedBeforeHydration = false
+            Log.project.error("workbench hydrate: decode failed; skipping save to preserve on-disk file")
+            SessionIndexCoordinator.shared.reconcile(transcriptions)
             return
         }
         if saveRequestedBeforeHydration

@@ -89,7 +89,7 @@ struct AccountPopoverCard: View {
             }
 
             if activeTrialPresentation != nil {
-                TimelineView(.periodic(from: .now, by: 60.0)) { _ in
+                SwiftUI.TimelineView(.periodic(from: .now, by: 60.0)) { _ in
                     if let active = activeTrialPresentation {
                         trialCountdownBlock(active: active)
                     }

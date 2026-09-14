@@ -7,6 +7,23 @@ enum AppIdentity {
 enum AppSupportPaths {
     static let folderName = "VoxStudio"
     static let legacyFolderName = "Voxella Studio"
+    /// Relative items copied from legacy Application Support when the new folder
+    /// exists but has no usable workbench (empty rename stub must not orphan data).
+    static let migratableRelativeItems: [String] = [
+        "workbench.json",
+        "Clips",
+        "Dubs",
+        "Recordings",
+        "Search",
+        "VoiceLibrary",
+        "NetVideo",
+        "Diagnostics",
+        "ModelDownloads",
+        "KnowledgeChat",
+        "Samples",
+    ]
+
+    private static let migrateLock = NSLock()
 
     nonisolated static func applicationSupport() -> URL {
         resolved(in: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0])
@@ -27,17 +44,102 @@ enum AppSupportPaths {
         )
     }
 
+    /// Prefer `VoxStudio` when present. If it exists without a usable workbench but
+    /// legacy `Voxella Studio` has `workbench.json`, one-shot **copy** migrate into
+    /// `VoxStudio` (legacy left intact), then return the current folder.
     nonisolated static func resolved(in base: URL) -> URL {
         let current = base.appendingPathComponent(folderName, isDirectory: true)
         let legacy = base.appendingPathComponent(legacyFolderName, isDirectory: true)
         let fileManager = FileManager.default
-        if fileManager.fileExists(atPath: current.path) {
+        let currentExists = fileManager.fileExists(atPath: current.path)
+        let legacyExists = fileManager.fileExists(atPath: legacy.path)
+
+        if currentExists {
+            if legacyExists {
+                migrateLegacyWorkbenchIfNeeded(from: legacy, to: current, fileManager: fileManager)
+            }
             return current
         }
-        if fileManager.fileExists(atPath: legacy.path) {
+        if legacyExists {
             return legacy
         }
         return current
+    }
+
+    /// Exposed for tests: true when `workbench.json` exists and is non-empty.
+    nonisolated static func hasUsableWorkbench(in directory: URL, fileManager: FileManager = .default) -> Bool {
+        let url = directory.appendingPathComponent("workbench.json")
+        guard let attrs = try? fileManager.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? NSNumber else {
+            return false
+        }
+        return size.intValue > 0
+    }
+
+    /// Copy-only migrate when current lacks usable workbench and legacy has one.
+    /// Never deletes or moves legacy data.
+    nonisolated static func migrateLegacyWorkbenchIfNeeded(
+        from legacy: URL,
+        to current: URL,
+        fileManager: FileManager = .default
+    ) {
+        migrateLock.lock()
+        defer { migrateLock.unlock() }
+
+        guard !hasUsableWorkbench(in: current, fileManager: fileManager),
+              hasUsableWorkbench(in: legacy, fileManager: fileManager) else {
+            return
+        }
+
+        do {
+            try fileManager.createDirectory(at: current, withIntermediateDirectories: true)
+        } catch {
+            return
+        }
+
+        for relative in migratableRelativeItems {
+            let source = legacy.appendingPathComponent(relative)
+            let destination = current.appendingPathComponent(relative)
+            guard fileManager.fileExists(atPath: source.path) else { continue }
+            copyMissingItem(from: source, to: destination, fileManager: fileManager)
+        }
+    }
+
+    /// Copy `source` to `destination` when missing; if both are directories, merge
+    /// by copying only missing children (never overwrite existing destination files).
+    nonisolated static func copyMissingItem(
+        from source: URL,
+        to destination: URL,
+        fileManager: FileManager = .default
+    ) {
+        var isSourceDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: source.path, isDirectory: &isSourceDir) else { return }
+
+        if !fileManager.fileExists(atPath: destination.path) {
+            try? fileManager.copyItem(at: source, to: destination)
+            return
+        }
+
+        guard isSourceDir.boolValue else { return }
+
+        var isDestDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: destination.path, isDirectory: &isDestDir),
+              isDestDir.boolValue else {
+            return
+        }
+
+        guard let children = try? fileManager.contentsOfDirectory(
+            at: source,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        for child in children {
+            let destChild = destination.appendingPathComponent(child.lastPathComponent)
+            copyMissingItem(from: child, to: destChild, fileManager: fileManager)
+        }
     }
 }
 
