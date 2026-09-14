@@ -588,6 +588,153 @@ struct AppAccessTests {
         #expect(record.isChronologicallyValid(at: now))
     }
 
+
+    @Test func unusedAccessIsNotReportedAsAnEndedTrial() {
+        let access = AppAccessSnapshot()
+        #expect(access.trialPresentation(at: now) == nil)
+    }
+
+    @Test func trialPresentationRoundsDaysAndHoursAndWarnsAtThreeDays() {
+        let threeDays = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(3 * 86_400),
+            offlineValidUntil: now.addingTimeInterval(3 * 86_400)
+        )
+        guard case let .active(presentation)? = threeDays.trialPresentation(at: now) else {
+            Issue.record("expected active trial presentation")
+            return
+        }
+        #expect(presentation.sidebarLabel == "3 days left")
+        #expect(presentation.usesWarningColor)
+        #expect(presentation.isReminderEligible)
+
+        let hours = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(2 * 3_600),
+            offlineValidUntil: now.addingTimeInterval(2 * 3_600)
+        )
+        guard case let .active(hourPresentation)? = hours.trialPresentation(at: now) else {
+            Issue.record("expected hour presentation")
+            return
+        }
+        #expect(hourPresentation.sidebarLabel == "2 hours left")
+
+        let underOneHour = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(30 * 60),
+            offlineValidUntil: now.addingTimeInterval(30 * 60)
+        )
+        guard case let .active(underOneHourPresentation)? = underOneHour.trialPresentation(at: now) else {
+            Issue.record("expected under-one-hour presentation")
+            return
+        }
+        #expect(underOneHourPresentation.sidebarLabel == "Less than 1 hour left")
+
+        let oneDay = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(86_400),
+            offlineValidUntil: now.addingTimeInterval(86_400)
+        )
+        guard case let .active(oneDayPresentation)? = oneDay.trialPresentation(at: now) else {
+            Issue.record("expected 1 day presentation")
+            return
+        }
+        #expect(oneDayPresentation.sidebarLabel == "1 day left")
+
+        let fourteenDays = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(14 * 86_400),
+            offlineValidUntil: now.addingTimeInterval(14 * 86_400)
+        )
+        guard case let .active(fourteenDayPresentation)? = fourteenDays.trialPresentation(at: now) else {
+            Issue.record("expected 14 day presentation")
+            return
+        }
+        #expect(fourteenDayPresentation.sidebarLabel == "14 days left")
+        #expect(!fourteenDayPresentation.usesWarningColor)
+    }
+
+    @Test func expiredAndUnverifiedTrialsHaveDistinctPresentationStates() {
+        let expired = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now,
+            offlineValidUntil: now.addingTimeInterval(86_400)
+        )
+        #expect(expired.trialPresentation(at: now) == .expired)
+
+        let unverified = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(86_400),
+            offlineValidUntil: now
+        )
+        #expect(unverified.trialPresentation(at: now) == .verificationRequired)
+    }
+
+    @Test func paidEntitlementSuppressesTrialPresentation() {
+        let access = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(86_400),
+            subscriptionTier: AccountTier(rawValue: "pro"),
+            subscriptionEndsAt: now.addingTimeInterval(30 * 86_400),
+            offlineValidUntil: now.addingTimeInterval(86_400)
+        )
+        #expect(access.trialPresentation(at: now) == nil)
+    }
+
+    @Test func lifetimeLicenseSuppressesTrialPresentation() {
+        let access = AppAccessSnapshot(
+            license: .lifetime,
+            trialEndsAt: now.addingTimeInterval(86_400),
+            offlineValidUntil: nil
+        )
+        #expect(access.trialPresentation(at: now) == nil)
+    }
+
+    @Test func trialReminderStoreClaimsEachTrialOnlyOnce() async {
+        let store = TrialReminderStore()
+        let userID = UUID()
+        let reminderKey = TrialReminderStore.key(userID: userID, endsAt: now)
+        let startedKey = TrialReminderStore.startedKey(userID: userID, endsAt: now)
+
+        #expect(await store.claim(key: reminderKey))
+        #expect(!(await store.claim(key: reminderKey)))
+        #expect(await store.claim(key: startedKey))
+        #expect(!(await store.claim(key: startedKey)))
+        await store.remove(key: reminderKey)
+        await store.remove(key: startedKey)
+    }
+
+    @Test func activeSnapshotOmitsExpiredDeviceTrial() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "expired-overlay-device")
+        let started = now.addingTimeInterval(-20 * 86_400)
+        let ends = now.addingTimeInterval(-1 * 86_400)
+        let token = try keys.token(fingerprint: fingerprint, startedAt: started, endsAt: ends, issuedAt: started)
+        var stored: String?
+        _ = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: fingerprint,
+            verifiedAt: started,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        let loaded = try DeviceTrialClock.load(
+            fingerprint: fingerprint,
+            publicKeyRaw: keys.publicKeyRaw,
+            read: { stored }
+        )
+        #expect(loaded?.evaluation(at: now) == .expired)
+        #expect(loaded?.snapshot(at: now)?.trialPresentation(at: now) == .expired)
+        // Overlay path uses activeSnapshot — expired / invalid tokens must not become license=.trial.
+        let active = try DeviceTrialClock.activeSnapshot(
+            at: now,
+            fingerprint: fingerprint,
+            publicKeyRaw: keys.publicKeyRaw,
+            read: { stored }
+        )
+        #expect(active == nil)
+    }
+
     @Test func deviceTrialOverlayOnlyAppliesWhenLicenseIsNone() throws {
         let keys = DeviceTrialTestKeys()
         let fingerprint = DeviceFingerprint.hash(uuid: "overlay-test-device")

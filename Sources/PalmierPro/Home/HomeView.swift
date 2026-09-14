@@ -7,6 +7,7 @@ struct HomeView: View {
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var tips = WorkbenchTipCenter.shared
     @Bindable private var appState = AppState.shared
+    @Bindable private var account = AccountService.shared
 
     private var isEditorActive: Bool { appState.editorPresentation == .active }
 
@@ -64,6 +65,9 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: .voxellaPresentSessionSearch)) { _ in
             presentSessionSearch()
         }
+        .task(id: trialNoticeIdentity) {
+            await presentTrialNoticesWhenEligible()
+        }
         .onChange(of: appState.editorPresentation) { _, presentation in
             HomeWindowController.shared.applyEditorMode(presentation == .active)
         }
@@ -72,6 +76,79 @@ struct HomeView: View {
     private func presentSessionSearch() {
         sessionSearch.reset()
         isSessionSearchPresented = true
+    }
+
+    private var trialNoticeIdentity: String? {
+        guard let presentation = account.trialPresentation else { return nil }
+        switch presentation {
+        case let .active(trial):
+            return "active.\(Int64(trial.endsAt.timeIntervalSince1970))"
+        case .expired:
+            return "expired"
+        case .verificationRequired:
+            return "verify"
+        }
+    }
+
+    private var trialReminderWakeDate: Date? {
+        guard case let .active(trial)? = account.trialPresentation else { return nil }
+        return trial.endsAt.addingTimeInterval(-(72 * 60 * 60))
+    }
+
+    private func presentTrialNoticesWhenEligible() async {
+        guard !Task.isCancelled, !isEditorActive else { return }
+
+        if let trial = await AccountService.shared.consumeTrialStartedPresentation() {
+            await waitForExistingTipToClear()
+            guard !Task.isCancelled, !isEditorActive, tips.tip == nil else { return }
+            tips.show(
+                WorkbenchTip(
+                    id: "trial-started.\(Int64(trial.endsAt.timeIntervalSince1970))",
+                    message: "Your 14-day trial has started. \(trial.sidebarLabel).",
+                    kind: .info,
+                    actionLabel: trialPurchaseActionLabel,
+                    action: .openAppAccess,
+                    autoDismiss: false
+                )
+            )
+            return
+        }
+
+        if let wakeDate = trialReminderWakeDate, wakeDate > .now {
+            do { try await Task.sleep(for: .seconds(wakeDate.timeIntervalSinceNow)) }
+            catch { return }
+        }
+        guard !Task.isCancelled, !isEditorActive else { return }
+
+        await waitForExistingTipToClear()
+        guard !Task.isCancelled, !isEditorActive, tips.tip == nil,
+              let trial = await AccountService.shared.consumeTrialReminderPresentation()
+        else { return }
+
+        tips.show(
+            WorkbenchTip(
+                id: "trial-reminder.\(Int64(trial.endsAt.timeIntervalSince1970))",
+                message: "Your trial ends in \(trial.sidebarLabel). Existing projects remain available.",
+                kind: .warning,
+                actionLabel: trialPurchaseActionLabel,
+                action: .openAppAccess,
+                autoDismiss: false
+            )
+        )
+    }
+
+    private var trialPurchaseActionLabel: String {
+#if MAC_APP_STORE
+        "Buy Lifetime"
+#else
+        "View plans"
+#endif
+    }
+
+    private func waitForExistingTipToClear() async {
+        guard tips.tip != nil else { return }
+        do { try await Task.sleep(for: AppTheme.Workbench.tipAutoDismiss) }
+        catch { return }
     }
 
     @ViewBuilder
@@ -179,6 +256,7 @@ private struct WorkbenchSidebar: View {
     let onOpenSearch: () -> Void
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var appState = AppState.shared
+    @Bindable private var account = AccountService.shared
 
     var body: some View {
         VStack(spacing: AppTheme.Spacing.sm) {
@@ -245,6 +323,12 @@ private struct WorkbenchSidebar: View {
             }
 
             Spacer()
+
+            TrialSidebarStatus(isExpanded: isExpanded)
+
+            if case .active(_)? = account.trialPresentation {
+                Divider().overlay(AppTheme.Border.subtleColor)
+            }
 
             Button {
                 SettingsWindowController.shared.show()

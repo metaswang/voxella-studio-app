@@ -193,6 +193,42 @@ final class AccountService {
         )
     }
 
+    /// Trial remaining-time UI. Does NOT require login (device trial survives sign-out).
+    var trialPresentation: TrialPresentation? {
+        guard isAppAccessEnforced else { return nil }
+        return appAccess.trialPresentation()
+    }
+
+    func consumeTrialStartedPresentation() async -> TrialPresentation.Active? {
+        await consumeTrialPresentation(
+            key: { TrialReminderStore.startedKey(userID: $0, endsAt: $1.endsAt) },
+            isEligible: { _ in true }
+        )
+    }
+
+    func consumeTrialReminderPresentation() async -> TrialPresentation.Active? {
+        await consumeTrialPresentation(
+            key: { TrialReminderStore.key(userID: $0, endsAt: $1.endsAt) },
+            isEligible: \.isReminderEligible
+        )
+    }
+
+    private func consumeTrialPresentation(
+        key: (UUID, TrialPresentation.Active) -> String,
+        isEligible: (TrialPresentation.Active) -> Bool
+    ) async -> TrialPresentation.Active? {
+        guard case let .active(presentation)? = trialPresentation,
+              isEligible(presentation),
+              let userID
+        else { return nil }
+        guard await trialReminderStore.claim(key: key(userID, presentation)) else { return nil }
+        guard case let .active(current)? = trialPresentation,
+              current.endsAt == presentation.endsAt,
+              isEligible(current)
+        else { return nil }
+        return current
+    }
+
     var spentCredits: Int { account?.user.spentCreditsThisPeriod ?? 0 }
     var budgetCredits: Int? {
         guard let user = account?.user else { return nil }
@@ -223,6 +259,7 @@ final class AccountService {
     @ObservationIgnored private var didBecomeActiveObserver: NSObjectProtocol?
     @ObservationIgnored private var deviceTrialVerifyAttempt: Date?
     @ObservationIgnored private var lifetimeDeviceVerifyAttempt: Date?
+    @ObservationIgnored private let trialReminderStore = TrialReminderStore()
 
     private init() {}
 
@@ -651,6 +688,8 @@ final class AccountService {
     }
 
     /// Overlay device-local trial onto `appAccess` when no stronger entitlement is present.
+    /// Only when a signed device-trial token is still valid (active). Expired / missing token
+    /// leaves license at `.none` — do not fabricate a trial clock.
     private func applyDeviceTrialOverlayIfNeeded() {
         guard Self.paidAccessEnabled else { return }
         if LifetimeLocalCredential.isPresent() { return }
@@ -658,7 +697,7 @@ final class AccountService {
         if appAccess.hasActiveSubscription { return }
         // Only overlay when license is .none (no existing server entitlement).
         if appAccess.license != .none { return }
-        guard let snapshot = try? DeviceTrialClock.currentSnapshot() else { return }
+        guard let snapshot = try? DeviceTrialClock.activeSnapshot() else { return }
         appAccess = snapshot
     }
 
@@ -1132,6 +1171,10 @@ final class AccountService {
         clearAccount()
         do { try await clearOfflineAccess() }
         catch { lastError = "Offline access could not be removed: \(error.localizedDescription)" }
+        // Priority after sign-out: Lifetime device credential first; else active device trial only.
+        // Expired / missing trial token stays `.none` (no fabricated countdown).
+        applyLifetimeCredentialOverlayIfNeeded()
+        applyDeviceTrialOverlayIfNeeded()
         await VoxellaAuthService.shared.signOut()
         guard sessionGeneration == generation else { return }
         await convex?.logout()

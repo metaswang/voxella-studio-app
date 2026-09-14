@@ -33,6 +33,10 @@ struct AccountPane: View {
 
     private var signedInBody: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
+            if case let .active(active)? = account.trialPresentation {
+                trialSection(.active(active))
+            }
+
             if account.isPaid || account.appAccess.license == .lifetime {
                 subscriptionSection
 #if MAC_APP_STORE
@@ -51,6 +55,17 @@ struct AccountPane: View {
             .buttonStyle(.capsule(.secondary, size: .regular))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func trialSection(_ presentation: TrialPresentation) -> some View {
+        SettingsGroup(title: "Free trial") {
+            TrialDetailsView(presentation: presentation)
+                .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+                .overlay {
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.md)
+                        .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.hairline)
+                }
+        }
     }
 
     @ViewBuilder
@@ -277,6 +292,12 @@ struct AccountPane: View {
     }
 
     private var signedOutBody: some View {
-        AccountSignInView()
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
+            if case let .active(active)? = account.trialPresentation {
+                trialSection(.active(active))
+            }
+            AccountSignInView()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
