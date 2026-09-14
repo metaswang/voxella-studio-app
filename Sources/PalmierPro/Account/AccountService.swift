@@ -691,8 +691,8 @@ final class AccountService {
     }
 
     /// Overlay device-local trial onto `appAccess` when no stronger entitlement is present.
-    /// Only when a signed device-trial token is still valid (active). Expired / missing token
-    /// leaves license at `.none` — do not fabricate a trial clock.
+    /// Signed mid-trial token (even past offline grace) or provisional local 14d clock.
+    /// Expired / missing leaves license at `.none` — do not fabricate a trial clock.
     private func applyDeviceTrialOverlayIfNeeded() {
         guard Self.paidAccessEnabled else { return }
         if LifetimeLocalCredential.isPresent() { return }
@@ -849,28 +849,91 @@ final class AccountService {
                     } catch AppAccessError.trialExpired {
                         throw AppAccessError.trialExpired
                     } catch {
-                        // Still inside 7d grace: keep the local signed token.
+                        // Mid-trial signed token: offline / verify failure must still allow recording.
                     }
                 }
                 return
             case .expired:
                 throw AppAccessError.trialExpired
             case .verificationRequired:
-                try await syncDeviceTrial(
-                    fingerprint: fingerprint,
-                    preferVerify: true,
-                    clientStartedAt: nil
-                )
+                // Soft verify state (legacy): try online, but do not block mid-trial on failure.
+                do {
+                    try await syncDeviceTrial(
+                        fingerprint: fingerprint,
+                        preferVerify: true,
+                        clientStartedAt: nil
+                    )
+                } catch AppAccessError.trialExpired {
+                    throw AppAccessError.trialExpired
+                } catch {
+                    applyDeviceTrialRecord(record)
+                }
                 return
             case .invalid:
                 break
             }
         }
+
+        // Prefer upgrading an existing provisional clock, else register from earliest hint.
+        let clientStartedAt = DeviceTrialClock.earliestClientStartedAtHint()
+        if let provisional = try? DeviceTrialClock.loadProvisional(fingerprint: fingerprint) {
+            switch provisional.evaluation() {
+            case .expired:
+                throw AppAccessError.trialExpired
+            case .invalid:
+                try? DeviceTrialClock.clearProvisional()
+            case .allowed, .verificationRequired:
+                applyProvisionalTrialRecord(provisional)
+                do {
+                    try await syncDeviceTrial(
+                        fingerprint: fingerprint,
+                        preferVerify: false,
+                        clientStartedAt: provisional.startedAt
+                    )
+                    return
+                } catch AppAccessError.trialExpired {
+                    throw AppAccessError.trialExpired
+                } catch {
+                    // Keep provisional local 14d; tip to activate when network returns.
+                    presentTrialActivationTip()
+                    return
+                }
+            }
+        }
+
         // First gated feature (or wiped Keychain): register once. Not on launch.
-        try await syncDeviceTrial(
-            fingerprint: fingerprint,
-            preferVerify: false,
-            clientStartedAt: DeviceTrialClock.legacyStartedAtHint()
+        do {
+            try await syncDeviceTrial(
+                fingerprint: fingerprint,
+                preferVerify: false,
+                clientStartedAt: clientStartedAt
+            )
+        } catch AppAccessError.trialExpired {
+            throw AppAccessError.trialExpired
+        } catch {
+            // Network / register failure with no signed token yet → provisional local 14d.
+            let startedAt = clientStartedAt ?? .now
+            let provisional = try DeviceTrialClock.storeProvisional(
+                startedAt: startedAt,
+                fingerprint: fingerprint
+            )
+            applyProvisionalTrialRecord(provisional)
+            presentTrialActivationTip()
+        }
+    }
+
+    private func applyProvisionalTrialRecord(_ record: DeviceTrialClock.ProvisionalRecord) {
+        accessRequestID = UUID()
+        if let snapshot = record.snapshot() {
+            appAccess = snapshot
+        }
+    }
+
+    private func presentTrialActivationTip() {
+        WorkbenchTipCenter.shared.show(
+            AppAccessError.trialActivationRequired.localizedDescription,
+            kind: .warning,
+            id: "app-access.\(AppAccessError.trialActivationRequired.receiptCode)"
         )
     }
 
@@ -897,6 +960,8 @@ final class AccountService {
                             fingerprint: fingerprint,
                             clientStartedAt: clientStartedAt
                         )
+                    } else if case .http(let code, _) = error, code == 409 {
+                        throw AppAccessError.trialExpired
                     } else {
                         throw error
                     }
@@ -910,6 +975,12 @@ final class AccountService {
             try applyDeviceTrialResponse(response, fingerprint: fingerprint)
         } catch let error as AppAccessError {
             throw error
+        } catch let error as VoxellaAPIError {
+            if case .http(let code, _) = error, code == 409 {
+                throw AppAccessError.trialExpired
+            }
+            // Network / unreachable → caller may keep signed or provisional local trial.
+            throw AppAccessError.verificationRequired
         } catch {
             throw AppAccessError.verificationRequired
         }

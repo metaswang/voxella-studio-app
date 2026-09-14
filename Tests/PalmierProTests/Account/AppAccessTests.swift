@@ -289,15 +289,22 @@ struct AppAccessTests {
             publicKeyRaw: keys.publicKeyRaw,
             write: { stored = $0 }
         )
+        // Within 5m skew: still valid. Beyond skew: reject clock rollback.
+        let withinSkew = try DeviceTrialClock.load(
+            fingerprint: fingerprint,
+            publicKeyRaw: keys.publicKeyRaw,
+            read: { stored }
+        )?.snapshot(at: now.addingTimeInterval(-60))
+        #expect(withinSkew != nil)
         let snapshot = try DeviceTrialClock.load(
             fingerprint: fingerprint,
             publicKeyRaw: keys.publicKeyRaw,
             read: { stored }
-        )?.snapshot(at: now.addingTimeInterval(-1))
+        )?.snapshot(at: now.addingTimeInterval(-6 * 60))
         #expect(snapshot == nil)
     }
 
-    @Test func offlineGraceRequiresVerificationWithoutReopeningTrial() throws {
+    @Test func offlinePastGraceStillAllowsRecordingWithoutReopeningTrial() throws {
         let keys = DeviceTrialTestKeys()
         let fingerprint = DeviceFingerprint.hash(uuid: "device-e")
         let ends = now.addingTimeInterval(14 * 86_400)
@@ -311,19 +318,26 @@ struct AppAccessTests {
             write: { stored = $0 }
         )
         let overdue = now.addingTimeInterval(DeviceTrialClock.offlineGrace + 1)
-        #expect(record.evaluation(at: overdue) == .verificationRequired)
+        // Soft grace: mid-trial signed token still allows local recording; endsAt unchanged.
+        #expect(record.evaluation(at: overdue) == .allowed)
+        #expect(record.refreshIsDue(at: overdue, lastAttempt: nil))
         let snapshot = record.snapshot(at: overdue)
-        #expect(snapshot?.policy(at: overdue) == .verificationRequired)
-        #expect(throws: AppAccessError.verificationRequired) {
-            try AppAccessGate.requireNewContent(
-                enforced: true,
-                signedIn: false,
-                access: snapshot ?? .init(),
-                hasLocalLifetimeCredential: false,
-                at: overdue
-            )
+        #expect(snapshot?.policy(at: overdue) == .allowed)
+        #expect(snapshot?.trialPresentation(at: overdue) != nil)
+        if case let .active(active)? = snapshot?.trialPresentation(at: overdue) {
+            #expect(active.endsAt == ends.roundedToUnix)
+        } else {
+            Issue.record("expected active trial presentation past offline grace")
         }
+        try AppAccessGate.requireNewContent(
+            enforced: true,
+            signedIn: false,
+            access: snapshot ?? .init(),
+            hasLocalLifetimeCredential: false,
+            at: overdue
+        )
         #expect(record.endsAt == ends.roundedToUnix)
+        _ = stored
     }
 
     @Test func deviceTrialVerifyIsDueOnlyAfter24hOrNearExpiry() throws {
@@ -662,12 +676,18 @@ struct AppAccessTests {
         )
         #expect(expired.trialPresentation(at: now) == .expired)
 
+        // Mid-trial with expired offline lease still shows remaining time (not verify-only).
         let unverified = AppAccessSnapshot(
             license: .trial,
             trialEndsAt: now.addingTimeInterval(86_400),
             offlineValidUntil: now
         )
-        #expect(unverified.trialPresentation(at: now) == .verificationRequired)
+        guard case let .active(active)? = unverified.trialPresentation(at: now) else {
+            Issue.record("expected active presentation for mid-trial past offline lease")
+            return
+        }
+        #expect(active.endsAt == now.addingTimeInterval(86_400))
+        #expect(unverified.policy(at: now) == .allowed)
     }
 
     @Test func paidEntitlementSuppressesTrialPresentation() {
@@ -702,6 +722,94 @@ struct AppAccessTests {
         #expect(!(await store.claim(key: startedKey)))
         await store.remove(key: reminderKey)
         await store.remove(key: startedKey)
+    }
+
+    @Test func provisionalTrialAllowsOfflineRecordingAndKeepsEarliestStart() throws {
+        let fingerprint = DeviceFingerprint.hash(uuid: "provisional-device")
+        var stored: String?
+        let started = now.addingTimeInterval(-2 * 86_400)
+        let provisional = try DeviceTrialClock.storeProvisional(
+            startedAt: started,
+            fingerprint: fingerprint,
+            write: { stored = $0 }
+        )
+        #expect(provisional.evaluation(at: now) == .allowed)
+        let snapshot = provisional.snapshot(at: now)
+        #expect(snapshot?.policy(at: now) == .allowed)
+        #expect(snapshot?.license == .trial)
+        #expect(snapshot?.trialEndsAt == started.addingTimeInterval(14 * 86_400))
+        try AppAccessGate.requireNewContent(
+            enforced: true,
+            signedIn: false,
+            access: snapshot ?? .init(),
+            hasLocalLifetimeCredential: false,
+            at: now
+        )
+        guard case .active? = snapshot?.trialPresentation(at: now) else {
+            Issue.record("provisional mid-trial must show remaining time")
+            return
+        }
+        let loaded = try DeviceTrialClock.loadProvisional(
+            fingerprint: fingerprint,
+            read: { stored }
+        )
+        #expect(loaded?.startedAt == started)
+        #expect(AppAccessError.trialActivationRequired.receiptCode == "trial_activation_required")
+        #expect(
+            AppAccessError.trialActivationRequired.localizedDescription
+                == "Connect to the internet to activate your free trial."
+        )
+    }
+
+    @Test func provisionalExpiresAfterFourteenDays() throws {
+        let fingerprint = DeviceFingerprint.hash(uuid: "provisional-expired")
+        let started = now.addingTimeInterval(-15 * 86_400)
+        let provisional = DeviceTrialClock.ProvisionalRecord(startedAt: started, fingerprint: fingerprint)
+        #expect(provisional.evaluation(at: now) == .expired)
+        #expect(provisional.snapshot(at: now) == nil)
+        #expect(throws: AppAccessError.trialExpired) {
+            try AppAccessGate.requireNewContent(
+                enforced: true,
+                signedIn: false,
+                access: AppAccessSnapshot(
+                    license: .trial,
+                    trialEndsAt: provisional.endsAt
+                ),
+                hasLocalLifetimeCredential: false,
+                at: now
+            )
+        }
+    }
+
+    @Test func midTrialSignedTokenAllowsWhenOfflineValidUntilNilOrExpired() {
+        let mid = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(5 * 86_400),
+            offlineValidUntil: now.addingTimeInterval(-1)
+        )
+        #expect(mid.policy(at: now) == .allowed)
+        try? AppAccessGate.requireNewContent(
+            enforced: true,
+            signedIn: false,
+            access: mid,
+            hasLocalLifetimeCredential: false,
+            at: now
+        )
+        #expect(
+            AppAccessGate.canCreateNewContent(
+                enforced: true,
+                signedIn: false,
+                access: mid,
+                hasLocalLifetimeCredential: false,
+                at: now
+            )
+        )
+        let noLease = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(5 * 86_400),
+            offlineValidUntil: nil
+        )
+        #expect(noLease.policy(at: now) == .allowed)
     }
 
     @Test func activeSnapshotOmitsExpiredDeviceTrial() throws {
@@ -787,15 +895,16 @@ struct AppAccessTests {
             publicKeyRaw: trialKeys.publicKeyRaw,
             write: { trialStored = $0 }
         )
-        // Lifetime overlay takes priority
-        let lifetimeSnapshot = try LifetimeLocalCredential.activeSnapshot(
-            at: now,
+        // Lifetime overlay takes priority (injectable load — activeSnapshot has no test hooks).
+        let lifetimeRecord = try LifetimeLocalCredential.load(
             fingerprint: fingerprint,
             publicKeyRaw: lifetimeKeys.publicKeyRaw,
             read: { lifetimeStored }
         )
+        let lifetimeSnapshot = lifetimeRecord?.snapshot(at: now)
         #expect(lifetimeSnapshot?.license == .lifetime)
         #expect(lifetimeSnapshot?.trialPresentation(at: now) == nil)
+        _ = trialStored
     }
 
     @Test func activeTrialSurvivesSignOutOverlay() throws {

@@ -67,9 +67,9 @@ struct AccountPopoverCard: View {
             return account.appAccessLabel
         }
 #if MAC_APP_STORE
-        account.appAccessLabel
+        return account.appAccessLabel
 #else
-        account.isSignedIn ? account.tier.planLabel : account.appAccessLabel
+        return account.isSignedIn ? account.tier.planLabel : account.appAccessLabel
 #endif
     }
 

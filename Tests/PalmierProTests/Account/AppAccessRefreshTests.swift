@@ -26,12 +26,19 @@ struct AppAccessRefreshTests {
         #expect(AppAccessRefreshSchedule.invalidatesSession(VoxellaAuthError.refreshFailed))
     }
 
-    @Test func missingLeaseCannotGrantPermanentAccess() throws {
+    @Test func missingLeaseOnLifetimeFollowsLocalCredentialSemantics() throws {
+        // PR2: lifetime with nil offlineValidUntil is treated like a local device credential
+        // (allowed for local features). Expired leases still require verification.
         let response = try JSONDecoder().decode(AppAccessResponse.self, from: Data(#"{"license":"lifetime"}"#.utf8))
-        #expect(response.snapshot.policy(at: now) == .verificationRequired)
-        #expect(!response.snapshot.canPurchaseCredits(at: now))
+        #expect(response.snapshot.policy(at: now) == .allowed)
+        #expect(response.snapshot.canPurchaseCredits(at: now))
+        try response.snapshot.policy(at: now).requireNewContent()
+
+        let expiredLease = AppAccessSnapshot(license: .lifetime, offlineValidUntil: now)
+        #expect(expiredLease.policy(at: now) == .verificationRequired)
+        #expect(!expiredLease.canPurchaseCredits(at: now))
         #expect(throws: AppAccessError.verificationRequired) {
-            try response.snapshot.policy(at: now).requireNewContent()
+            try expiredLease.policy(at: now).requireNewContent()
         }
     }
 

@@ -29,7 +29,7 @@ enum LifetimeLocalCredential {
         /// Allows ~5 min skew on iat so client clock behind server does not invalidate.
         func isChronologicallyValid(at date: Date) -> Bool {
             let iatSkewTolerance: TimeInterval = 5 * 60
-            date >= claims.issuedAt.addingTimeInterval(-iatSkewTolerance) && date < claims.expiresAt
+            return date >= claims.issuedAt.addingTimeInterval(-iatSkewTolerance) && date < claims.expiresAt
         }
 
         func snapshot(at date: Date = .now) -> AppAccessSnapshot? {

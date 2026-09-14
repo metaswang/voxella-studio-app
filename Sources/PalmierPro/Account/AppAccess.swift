@@ -72,9 +72,9 @@ struct AppAccessSnapshot: Codable, Equatable, Sendable {
         let entitled = hasActiveSubscription(at: date)
             || (license == .trial && trialEndsAt.map { $0 > date } == true)
         guard entitled else { return .expired }
-        // Device-local trial pins offlineValidUntil to trial end; subscription still needs lease.
-        if license == .trial, hasLocalFeatureEntitlement(at: date),
-           offlineValidUntil == nil || offlineValidUntil.map({ $0 > date }) == true {
+        // Device / provisional trial: endsAt is the hard gate. Offline lease expiry must not
+        // block mid-trial local recording (verify is soft / background).
+        if license == .trial, hasLocalFeatureEntitlement(at: date) {
             return .allowed
         }
         guard let offlineValidUntil, offlineValidUntil > date else { return .verificationRequired }
@@ -95,7 +95,8 @@ struct AppAccessSnapshot: Codable, Equatable, Sendable {
         else { return nil }
 
         guard trialEndsAt > date else { return .expired }
-        guard offlineValidUntil.map({ $0 > date }) == true else { return .verificationRequired }
+        // Show remaining time whenever trial is mid-period — do not hide the clock behind
+        // offline verify state (signed-out / unsigned mid-trial must see countdown).
         return .active(TrialPresentation.Active(endsAt: trialEndsAt, now: date))
     }
 }
@@ -177,11 +178,15 @@ enum AppAccessGate {
             return
         }
         if access.hasLocalFeatureEntitlement(at: date) {
-            // Device-trial grace uses offlineValidUntil; over grace requires verify, not a new 14d.
+            // Mid-trial (signed or provisional): allow local recording even if offline verify
+            // failed. Policy for trial is endsAt-based; expired trial falls through below.
             switch access.policy(at: date) {
             case .allowed:
                 return
             case .verificationRequired:
+                // Should not happen for trial after endsAt-based policy; keep as soft deny only
+                // for non-trial entitlements that somehow report local entitlement.
+                if access.license == .trial { return }
                 throw AppAccessError.verificationRequired
             case .expired:
                 throw AppAccessError.trialExpired
@@ -239,6 +244,8 @@ enum AppAccessError: LocalizedError, Equatable, Sendable {
     case signInRequired
     case trialExpired
     case verificationRequired
+    /// Soft / tip: need network to activate (register) device trial — not a login prompt.
+    case trialActivationRequired
 
     var errorDescription: String? {
         switch self {
@@ -248,6 +255,8 @@ enum AppAccessError: LocalizedError, Equatable, Sendable {
             "Your trial has ended. Choose Lifetime, Starter, or Pro to create new content."
         case .verificationRequired:
             "Connect to the internet to verify your app access."
+        case .trialActivationRequired:
+            "Connect to the internet to activate your free trial."
         }
     }
 
@@ -256,6 +265,7 @@ enum AppAccessError: LocalizedError, Equatable, Sendable {
         case .signInRequired: "sign_in_required"
         case .trialExpired: "trial_expired"
         case .verificationRequired: "entitlement_verification_required"
+        case .trialActivationRequired: "trial_activation_required"
         }
     }
 

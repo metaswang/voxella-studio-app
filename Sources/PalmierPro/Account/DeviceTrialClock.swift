@@ -2,6 +2,7 @@ import Foundation
 
 /// Device-local 14-day trial clock (PR1.1).
 /// Keychain stores a signed Ed25519 JWT as the authority (not plaintext startedAt).
+/// Offline first-run may store a provisional local 14d clock until register succeeds.
 /// Account-level trial merge across devices is deferred to PR4.
 enum DeviceTrialClock {
     static let durationDays = 14
@@ -29,7 +30,9 @@ enum DeviceTrialClock {
         /// Allows ~5 min skew on iat so client clock behind server does not invalidate.
         func isChronologicallyValid(at date: Date) -> Bool {
             let iatSkewTolerance: TimeInterval = 5 * 60
-            date >= claims.startedAt && date >= claims.issuedAt.addingTimeInterval(-iatSkewTolerance)
+            // Client clock may lag server iat/started_at by a few minutes.
+            return date >= claims.startedAt.addingTimeInterval(-iatSkewTolerance)
+                && date >= claims.issuedAt.addingTimeInterval(-iatSkewTolerance)
         }
 
         func graceEndsAt(at date: Date = .now) -> Date {
@@ -39,7 +42,8 @@ enum DeviceTrialClock {
         func evaluation(at date: Date = .now) -> Evaluation {
             guard isChronologicallyValid(at: date) else { return .invalid }
             if claims.endsAt <= date { return .expired }
-            if graceEndsAt(at: date) <= date { return .verificationRequired }
+            // Offline grace is soft: mid-trial local recording stays allowed; refreshIsDue
+            // forces a verify attempt. Hard block only after endsAt.
             return .allowed
         }
 
@@ -56,6 +60,8 @@ enum DeviceTrialClock {
             if let lastAttempt, date.timeIntervalSince(lastAttempt) < DeviceTrialClock.verifyRetryInterval {
                 return false
             }
+            // Past offline grace: still allow locally, but prefer online verify when reachable.
+            if graceEndsAt(at: date) <= date { return true }
             if date.addingTimeInterval(DeviceTrialClock.expiryLead) >= claims.endsAt { return true }
             return date.timeIntervalSince(envelope.lastVerifiedAt) >= DeviceTrialClock.verifyInterval
         }
@@ -115,7 +121,80 @@ enum DeviceTrialClock {
         let envelope = Envelope(token: token, fingerprint: fingerprint, lastVerifiedAt: verifiedAt)
         let data = try JSONEncoder().encode(envelope)
         try write(data.base64EncodedString())
+        // Signed token supersedes any provisional local clock.
+        try? clearProvisional()
         return Record(envelope: envelope, claims: claims)
+    }
+
+    /// Provisional local 14d clock used when first-run register is offline.
+    /// Not cryptographic authority — upgraded to a signed token at earliest start when online.
+    struct ProvisionalRecord: Codable, Equatable, Sendable {
+        let startedAt: Date
+        let fingerprint: String
+
+        var endsAt: Date {
+            startedAt.addingTimeInterval(TimeInterval(DeviceTrialClock.durationDays) * 86_400)
+        }
+
+        func evaluation(at date: Date = .now) -> Evaluation {
+            if date < startedAt.addingTimeInterval(-5 * 60) { return .invalid }
+            if endsAt <= date { return .expired }
+            return .allowed
+        }
+
+        func snapshot(at date: Date = .now) -> AppAccessSnapshot? {
+            guard evaluation(at: date) == .allowed else { return nil }
+            return AppAccessSnapshot(
+                license: .trial,
+                trialEndsAt: endsAt,
+                offlineValidUntil: nil
+            )
+        }
+    }
+
+    static let provisionalKeychainAccount = "voxstudio.app-access.device-trial.provisional"
+
+    static func storeProvisional(
+        startedAt: Date,
+        fingerprint: String,
+        write: (String) throws -> Void = {
+            try KeychainStore.saveThisDeviceOnly($0, account: DeviceTrialClock.provisionalKeychainAccount)
+        }
+    ) throws -> ProvisionalRecord {
+        let record = ProvisionalRecord(startedAt: startedAt, fingerprint: fingerprint)
+        let data = try JSONEncoder().encode(record)
+        try write(data.base64EncodedString())
+        return record
+    }
+
+    static func loadProvisional(
+        fingerprint: String? = nil,
+        read: () throws -> String? = {
+            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.provisionalKeychainAccount)
+        }
+    ) throws -> ProvisionalRecord? {
+        guard let value = try read(),
+              let data = Data(base64Encoded: value),
+              let record = try? JSONDecoder().decode(ProvisionalRecord.self, from: data)
+        else { return nil }
+        if let fingerprint, record.fingerprint != fingerprint { return nil }
+        return record
+    }
+
+    static func clearProvisional(
+        delete: () throws -> Void = {
+            try KeychainStore.deleteThisDeviceOnly(account: DeviceTrialClock.provisionalKeychainAccount)
+        }
+    ) throws {
+        try delete()
+    }
+
+    /// Earliest local start hint for register: provisional, else legacy plaintext PR1 clock.
+    static func earliestClientStartedAtHint() -> Date? {
+        if let provisional = try? loadProvisional() {
+            return provisional.startedAt
+        }
+        return legacyStartedAtHint()
     }
 
     static func activeSnapshot(
@@ -126,11 +205,20 @@ enum DeviceTrialClock {
             try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
         }
     ) throws -> AppAccessSnapshot? {
-        guard let record = try load(fingerprint: fingerprint, publicKeyRaw: publicKeyRaw, read: read),
-              record.evaluation(at: date) == .allowed,
-              let snapshot = record.snapshot(at: date),
-              snapshot.policy(at: date) == .allowed else { return nil }
-        return snapshot
+        if let record = try load(fingerprint: fingerprint, publicKeyRaw: publicKeyRaw, read: read) {
+            // Signed token present: never fall back to provisional (expired must stay blocked).
+            guard record.evaluation(at: date) == .allowed,
+                  let snapshot = record.snapshot(at: date),
+                  snapshot.policy(at: date) == .allowed else { return nil }
+            return snapshot
+        }
+        // No signed token yet — provisional local 14d until online register upgrades it.
+        if let provisional = try loadProvisional(fingerprint: fingerprint),
+           let snapshot = provisional.snapshot(at: date),
+           snapshot.policy(at: date) == .allowed {
+            return snapshot
+        }
+        return nil
     }
 
     static func currentSnapshot(
@@ -141,7 +229,10 @@ enum DeviceTrialClock {
             try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
         }
     ) throws -> AppAccessSnapshot? {
-        try load(fingerprint: fingerprint, publicKeyRaw: publicKeyRaw, read: read)?.snapshot(at: date)
+        if let snapshot = try load(fingerprint: fingerprint, publicKeyRaw: publicKeyRaw, read: read)?.snapshot(at: date) {
+            return snapshot
+        }
+        return try loadProvisional(fingerprint: fingerprint)?.snapshot(at: date)
     }
 
     private struct LegacyRecord: Codable {
