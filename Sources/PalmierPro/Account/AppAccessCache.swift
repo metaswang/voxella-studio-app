@@ -27,7 +27,7 @@ actor AppAccessCache {
 
         func isValid(at date: Date) -> Bool {
             access.policy(at: date) == .allowed && date >= verifiedAt &&
-                access.offlineValidUntil.map { date < $0 && $0.timeIntervalSince(verifiedAt) <= 30 * 86400 + 60 } == true
+                access.offlineValidUntil.map { date < $0 && $0.timeIntervalSince(verifiedAt) <= TimeInterval(LifetimeDeviceLicense.leaseDays) * 86400 + 60 } == true
         }
     }
 

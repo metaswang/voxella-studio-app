@@ -10,6 +10,7 @@ enum DeviceTrialLicenseError: Error {
 
 enum DeviceTrialLicense {
     /// Raw 32-byte Ed25519 public key (base64). Matches API MAC_ACCESS_DEVICE_TRIAL_PRIVATE_KEY v1.
+    /// RELEASE CHECKLIST: Verify this embedded public key matches the server's private key before shipping.
     static let publicKeyRaw = Data(base64Encoded: "OvARTwsbVp9+TDACZeBcUoSvv2KU8gd/LTl3Jy0i1h4=") ?? Data()
 
     struct Claims: Equatable, Sendable {
