@@ -110,3 +110,9 @@ PR1 功能可合入开发分支做联调，但**不可标为可发行/验收通�
 ### PR4 — 登录合并试用 earliest
 
 登录 / 账户刷新时 `POST /trial` 携带本地 device-trial `started_at`（或 token）。服务端与账户 `trial_started_at` 取 **earliest**；换机同账号继承剩余天数，不重开 14 天。
+
+### PR5 — 退款吊销 + 多设备上限
+
+- 退款/拒付 webhook：`mac_app_purchases.revoked` 且 `mac_lifetime_devices.revoked=true`（billing worker）。
+- 默认最多 **3** 台（`MAC_ACCESS_LIFETIME_MAX_DEVICES`）；签发新设备时踢掉 `last_verified_at` 最旧的一台；账户页可 `POST /lifetime-device/deactivate`。
+- 客户端续期收到 403 时清除本地 Lifetime Keychain。

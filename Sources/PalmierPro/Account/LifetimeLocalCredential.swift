@@ -113,6 +113,14 @@ enum LifetimeLocalCredential {
         return record.isChronologicallyValid(at: date)
     }
 
+    static func clear(
+        delete: () throws -> Void = {
+            try KeychainStore.deleteThisDeviceOnly(account: LifetimeLocalCredential.keychainAccount)
+        }
+    ) throws {
+        try delete()
+    }
+
     static func activeSnapshot(at date: Date = .now) throws -> AppAccessSnapshot? {
         guard let record = try load(),
               let snapshot = record.snapshot(at: date) else { return nil }

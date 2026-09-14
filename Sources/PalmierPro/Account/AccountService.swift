@@ -705,6 +705,14 @@ final class AccountService {
         do {
             let response = try await api.renewLifetimeLease(token: record.token)
             try applyLifetimeDeviceResponse(response, fingerprint: record.fingerprint, userID: record.userID)
+        } catch let error as VoxellaAPIError {
+            if case .http(let code, _) = error, code == 403 {
+                // PR5: refund/revoke — drop local credential.
+                try? LifetimeLocalCredential.clear()
+                applyDeviceTrialOverlayIfNeeded()
+            } else {
+                Log.account.warning("Lifetime lease renew unavailable while signed out")
+            }
         } catch {
             // Keep previously verified local credential until lease expires.
             Log.account.warning("Lifetime lease renew unavailable while signed out")

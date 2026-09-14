@@ -880,6 +880,45 @@ struct DeviceTrialAPIResponse: Decodable, Sendable {
 }
 
 
+struct LifetimeDevicesListResponse: Decodable, Sendable {
+    let maxDevices: Int
+    let devices: [LifetimeDeviceEntry]
+
+    enum CodingKeys: String, CodingKey {
+        case maxDevices = "max_devices"
+        case devices
+    }
+
+    struct LifetimeDeviceEntry: Decodable, Sendable {
+        let fingerprint: String
+        let issuedAt: Date?
+        let lastVerifiedAt: Date?
+        let revoked: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case fingerprint
+            case issuedAt = "issued_at"
+            case lastVerifiedAt = "last_verified_at"
+            case revoked
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            fingerprint = try container.decode(String.self, forKey: .fingerprint)
+            revoked = try container.decodeIfPresent(Bool.self, forKey: .revoked) ?? false
+            issuedAt = Self.decodeDate(container, .issuedAt)
+            lastVerifiedAt = Self.decodeDate(container, .lastVerifiedAt)
+        }
+
+        private static func decodeDate(_ container: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Date? {
+            guard let value = try? container.decodeIfPresent(String.self, forKey: key) else { return nil }
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        }
+    }
+}
+
 struct LifetimeDeviceAPIResponse: Decodable, Sendable {
     let token: String
     let userID: String?
@@ -998,6 +1037,24 @@ actor VoxellaAPIClient {
         } catch {
             throw VoxellaAPIError.decoding
         }
+    }
+
+    func listLifetimeDevices() async throws -> LifetimeDevicesListResponse {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/lifetime-device"),
+            method: "GET",
+            as: LifetimeDevicesListResponse.self
+        )
+    }
+
+    func deactivateLifetimeDevice(fingerprint: String) async throws {
+        struct Ok: Decodable, Sendable { let revoked: Bool?; let fingerprint: String? }
+        _ = try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/lifetime-device/deactivate"),
+            method: "POST",
+            json: ["fingerprint": fingerprint],
+            as: Ok.self
+        )
     }
 
     func billingBalance() async throws -> VoxellaBillingBalance {
