@@ -656,8 +656,8 @@ final class AccountService {
         if LifetimeLocalCredential.isPresent() { return }
         if appAccess.license == .lifetime { return }
         if appAccess.hasActiveSubscription { return }
-        // Keep an existing server/device trial snapshot; only fill `.none`.
-        if appAccess.hasLocalFeatureEntitlement { return }
+        // Only overlay when license is .none (no existing server entitlement).
+        if appAccess.license != .none { return }
         guard let snapshot = try? DeviceTrialClock.currentSnapshot() else { return }
         appAccess = snapshot
     }
@@ -707,8 +707,11 @@ final class AccountService {
             try applyLifetimeDeviceResponse(response, fingerprint: record.fingerprint, userID: record.userID)
         } catch let error as VoxellaAPIError {
             if case .http(let code, _) = error, code == 403 {
-                // PR5: refund/revoke — drop local credential.
+                // PR5: refund/revoke — drop local credential and clear in-memory Lifetime.
                 try? LifetimeLocalCredential.clear()
+                if appAccess.license == .lifetime {
+                    appAccess = .init()
+                }
                 applyDeviceTrialOverlayIfNeeded()
             } else {
                 Log.account.warning("Lifetime lease renew unavailable while signed out")
@@ -751,9 +754,18 @@ final class AccountService {
                 deviceStartedAt: deviceStartedAt,
                 deviceTrialToken: deviceToken
             )
+            let serverTrialEndsAt = access.snapshot.trialEndsAt
             appAccess = access.snapshot
             entitlementSchedule.succeeded(at: .now)
             try? await persistAppAccess()
+            // After merge: if device local trial ends_at is later than server trial_ends_at,
+            // truncate or clear device token to prevent extension past account trial.
+            if let deviceRecord = try? DeviceTrialClock.load(),
+               let serverEndsAt = serverTrialEndsAt,
+               deviceRecord.endsAt > serverEndsAt {
+                // Device trial would extend past merged account trial — clear it.
+                try? KeychainStore.deleteThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+            }
             applyDeviceTrialOverlayIfNeeded()
         } catch {
             Log.account.warning("Trial merge on login unavailable")

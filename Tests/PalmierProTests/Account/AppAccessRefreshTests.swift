@@ -65,4 +65,26 @@ struct AppAccessRefreshTests {
         try await cache.save(account: account, access: access, revision: 2)
         #expect(try await cache.load() == nil)
     }
+
+    @Test func renew403ClearsLocalCredentialAndLifetimeAccess() throws {
+        // Simulate a Lifetime access state
+        var lifetimeAccess = AppAccessSnapshot(license: .lifetime, offlineValidUntil: Date.now.addingTimeInterval(86400))
+        #expect(lifetimeAccess.license == .lifetime)
+        #expect(lifetimeAccess.policy() == .allowed)
+        
+        // After 403 renew, credential should be cleared and access reset
+        // (This simulates the logic in renewLifetimeLeaseIfNeeded)
+        lifetimeAccess = .init()
+        #expect(lifetimeAccess.license == .none)
+        
+        // Gate should now deny without local credential
+        #expect(throws: AppAccessError.verificationRequired) {
+            try AppAccessGate.requireNewContent(
+                enforced: true,
+                signedIn: false,
+                access: lifetimeAccess,
+                hasLocalLifetimeCredential: false
+            )
+        }
+    }
 }

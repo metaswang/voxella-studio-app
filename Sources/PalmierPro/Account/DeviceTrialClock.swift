@@ -26,8 +26,10 @@ enum DeviceTrialClock {
         var lastVerifiedAt: Date { envelope.lastVerifiedAt }
 
         /// Reject local clock rollback earlier than started_at / iat.
+        /// Allows ~5 min skew on iat so client clock behind server does not invalidate.
         func isChronologicallyValid(at date: Date) -> Bool {
-            date >= claims.startedAt && date >= claims.issuedAt
+            let iatSkewTolerance: TimeInterval = 5 * 60
+            date >= claims.startedAt && date >= claims.issuedAt.addingTimeInterval(-iatSkewTolerance)
         }
 
         func graceEndsAt(at date: Date = .now) -> Date {
@@ -76,9 +78,10 @@ enum DeviceTrialClock {
         guard let value = try read(),
               let data = Data(base64Encoded: value) else { return nil }
         if let envelope = try? JSONDecoder().decode(Envelope.self, from: data) {
+            let liveFingerprint = fingerprint ?? (try? DeviceFingerprint.current()) ?? envelope.fingerprint
             let claims = try DeviceTrialLicense.verify(
                 envelope.token,
-                fingerprint: fingerprint ?? envelope.fingerprint,
+                fingerprint: liveFingerprint,
                 publicKeyRaw: publicKeyRaw
             )
             return Record(envelope: envelope, claims: claims)

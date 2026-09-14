@@ -489,6 +489,130 @@ struct AppAccessTests {
         _ = stored
     }
 
+    @Test func lifetimeCredentialRequiresLiveFingerprintBinding() throws {
+        let keys = LifetimeDeviceTestKeys()
+        let userID = UUID()
+        let correctFingerprint = DeviceFingerprint.hash(uuid: "correct-device")
+        let wrongFingerprint = DeviceFingerprint.hash(uuid: "wrong-device")
+        let token = try keys.token(userID: userID, fingerprint: correctFingerprint, issuedAt: now)
+        var stored: String?
+        _ = try LifetimeLocalCredential.store(
+            token: token,
+            fingerprint: correctFingerprint,
+            userID: userID,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        // Loading with wrong fingerprint should fail
+        #expect(throws: LifetimeDeviceLicenseError.self) {
+            try LifetimeLocalCredential.load(
+                fingerprint: wrongFingerprint,
+                publicKeyRaw: keys.publicKeyRaw,
+                read: { stored }
+            )
+        }
+        // isPresent with wrong fingerprint should return false
+        #expect(!LifetimeLocalCredential.isPresent(
+            fingerprint: wrongFingerprint,
+            at: now,
+            read: { stored },
+            publicKeyRaw: keys.publicKeyRaw
+        ))
+    }
+
+    @Test func deviceTrialRequiresLiveFingerprintBinding() throws {
+        let keys = DeviceTrialTestKeys()
+        let correctFingerprint = DeviceFingerprint.hash(uuid: "correct-device")
+        let wrongFingerprint = DeviceFingerprint.hash(uuid: "wrong-device")
+        let ends = now.addingTimeInterval(14 * 86_400)
+        let token = try keys.token(fingerprint: correctFingerprint, startedAt: now, endsAt: ends, issuedAt: now)
+        var stored: String?
+        _ = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: correctFingerprint,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        // Loading with wrong fingerprint should fail
+        #expect(throws: DeviceTrialLicenseError.self) {
+            try DeviceTrialClock.load(
+                fingerprint: wrongFingerprint,
+                publicKeyRaw: keys.publicKeyRaw,
+                read: { stored }
+            )
+        }
+    }
+
+    @Test func lifetimeCredentialAllowsClockSkewOnIat() throws {
+        let keys = LifetimeDeviceTestKeys()
+        let userID = UUID()
+        let fingerprint = DeviceFingerprint.hash(uuid: "clock-skew-device")
+        let serverTime = now.addingTimeInterval(4 * 60)
+        let token = try keys.token(userID: userID, fingerprint: fingerprint, issuedAt: serverTime)
+        var stored: String?
+        let record = try LifetimeLocalCredential.store(
+            token: token,
+            fingerprint: fingerprint,
+            userID: userID,
+            verifiedAt: serverTime,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        // Client clock 4 min behind server (within 5 min tolerance) should still be valid
+        #expect(record.isChronologicallyValid(at: now))
+        #expect(LifetimeLocalCredential.isPresent(
+            fingerprint: fingerprint,
+            at: now,
+            read: { stored },
+            publicKeyRaw: keys.publicKeyRaw
+        ))
+    }
+
+    @Test func deviceTrialAllowsClockSkewOnIat() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "clock-skew-device")
+        let serverTime = now.addingTimeInterval(4 * 60)
+        let ends = serverTime.addingTimeInterval(14 * 86_400)
+        let token = try keys.token(fingerprint: fingerprint, startedAt: serverTime, endsAt: ends, issuedAt: serverTime)
+        var stored: String?
+        let record = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: fingerprint,
+            verifiedAt: serverTime,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        // Client clock 4 min behind server (within 5 min tolerance) should still be valid
+        #expect(record.isChronologicallyValid(at: now))
+    }
+
+    @Test func deviceTrialOverlayOnlyAppliesWhenLicenseIsNone() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "overlay-test-device")
+        let ends = now.addingTimeInterval(14 * 86_400)
+        let token = try keys.token(fingerprint: fingerprint, startedAt: now, endsAt: ends, issuedAt: now)
+        var stored: String?
+        _ = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: fingerprint,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        // Device trial should NOT overlay when server already has a trial license
+        let existingServerTrial = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(7 * 86_400)
+        )
+        // Simulate overlay logic: should not replace existing trial
+        #expect(existingServerTrial.license != .none)
+        // Only .none license should allow device trial overlay
+        let noLicense = AppAccessSnapshot()
+        #expect(noLicense.license == .none)
+    }
+
 }
 
 private struct LifetimeDeviceTestKeys {

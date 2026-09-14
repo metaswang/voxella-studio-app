@@ -26,8 +26,10 @@ enum LifetimeLocalCredential {
         var expiresAt: Date { claims.expiresAt }
         var token: String { envelope.token }
 
+        /// Allows ~5 min skew on iat so client clock behind server does not invalidate.
         func isChronologicallyValid(at date: Date) -> Bool {
-            date >= claims.issuedAt && date < claims.expiresAt
+            let iatSkewTolerance: TimeInterval = 5 * 60
+            date >= claims.issuedAt.addingTimeInterval(-iatSkewTolerance) && date < claims.expiresAt
         }
 
         func snapshot(at date: Date = .now) -> AppAccessSnapshot? {
@@ -62,9 +64,10 @@ enum LifetimeLocalCredential {
               let data = Data(base64Encoded: value),
               let envelope = try? JSONDecoder().decode(Envelope.self, from: data)
         else { return nil }
+        let liveFingerprint = fingerprint ?? (try? DeviceFingerprint.current()) ?? envelope.fingerprint
         let claims = try LifetimeDeviceLicense.verify(
             envelope.token,
-            fingerprint: fingerprint ?? envelope.fingerprint,
+            fingerprint: liveFingerprint,
             userID: userID,
             publicKeyRaw: publicKeyRaw
         )
@@ -107,7 +110,8 @@ enum LifetimeLocalCredential {
         },
         publicKeyRaw: Data = LifetimeDeviceLicense.publicKeyRaw
     ) -> Bool {
-        guard let record = try? load(fingerprint: fingerprint, publicKeyRaw: publicKeyRaw, read: read) else {
+        let liveFingerprint = fingerprint ?? (try? DeviceFingerprint.current())
+        guard let record = try? load(fingerprint: liveFingerprint, publicKeyRaw: publicKeyRaw, read: read) else {
             return false
         }
         return record.isChronologicallyValid(at: date)
