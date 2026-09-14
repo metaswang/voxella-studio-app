@@ -199,6 +199,8 @@ struct HomeView: View {
                 MeetBotView()
             case .dub:
                 DubWorkbenchView()
+            case .knowledge:
+                KnowledgeBaseView()
             case .voiceLibrary:
                 RecentSessionsView()
                     .onAppear {

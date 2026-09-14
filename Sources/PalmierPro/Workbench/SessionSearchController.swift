@@ -221,7 +221,7 @@ final class SessionSearchController {
     private func localLexical(query: String, transcriptOnly: Bool) async throws -> [Result] {
         let localSessions = indexedSessions()
         let service = SessionIndexCoordinator.shared.searchService
-        let filter = SessionSearchFilter(limit: 30)
+        let filter = SessionSearchFilter.visible(isSignedIn: AccountService.shared.isSignedIn, limit: 30)
         if transcriptOnly {
             async let transcripts = service.transcriptLexicalSearch(query: query, filter: filter)
             async let clips = service.clipLexicalSearch(query: query, filter: filter)
@@ -249,7 +249,7 @@ final class SessionSearchController {
     private func localHybrid(query: String, transcriptOnly: Bool) async throws -> [Result] {
         let localSessions = indexedSessions()
         let service = SessionIndexCoordinator.shared.searchService
-        let filter = SessionSearchFilter(limit: 30)
+        let filter = SessionSearchFilter.visible(isSignedIn: AccountService.shared.isSignedIn, limit: 30)
         if transcriptOnly {
             async let transcripts = service.transcriptSearch(query: query, filter: filter)
             async let clips = service.clipSearch(query: query, filter: filter)

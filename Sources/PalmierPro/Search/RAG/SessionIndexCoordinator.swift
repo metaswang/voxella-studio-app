@@ -72,6 +72,33 @@ final class SessionIndexCoordinator {
         pump()
     }
 
+    /// Upsert cloud-origin sessions into the local index (login sync). Does not delete on logout.
+    func syncCloudSessions(_ sessions: [WorkbenchSession], ownerUserID: String?) {
+        for session in sessions {
+            guard let snapshot = SessionIndexSnapshot.from(
+                session: session,
+                sourceOrigin: .cloud,
+                ownerUserID: ownerUserID
+            ) else { continue }
+            pending[snapshot.sessionID] = snapshot
+        }
+        pump()
+    }
+
+    /// P0: Unused. Reserved for logout/sync cleanup when cloud session retention policy is defined.
+    /// Call when sign-out should prune stale cloud sessions not in the current server session list.
+    func removeCloudSessions(except retainedIDs: Set<UUID>) {
+        Task { [weak self] in
+            guard let self else { return }
+            let indexed = (try? await self.store.sessionIDs()) ?? []
+            for id in indexed {
+                guard !retainedIDs.contains(id) else { continue }
+                guard (try? await self.store.sourceOrigin(sessionID: id)) == .cloud else { continue }
+                await MainActor.run { self.remove(id) }
+            }
+        }
+    }
+
     func reconcile(_ jobs: [WorkbenchTranscriptionJob]) {
         var snapshots: [UUID: SessionIndexSnapshot] = [:]
         for job in jobs {
@@ -137,6 +164,10 @@ final class SessionIndexCoordinator {
             do {
                 let indexed = try await store.sessionIDs()
                 for id in indexed where !retainIDs.contains(id) {
+                    // Cloud rows stay until explicit remove (logout must not wipe them).
+                    if (try? await store.sourceOrigin(sessionID: id)) == .cloud {
+                        continue
+                    }
                     pendingRemovals.insert(id)
                 }
             } catch {
@@ -276,6 +307,10 @@ extension SessionIndexSnapshot {
             segments.map(\.end).max() ?? 0,
             cues.map(\.end).max() ?? 0
         )
+        let origin = KnowledgeSourceOrigin.resolve(
+            isCloudStorage: job.storage == .cloud,
+            hasRemoteSessionID: job.remoteSessionID != nil
+        )
         return SessionIndexSnapshot(
             sessionID: job.id,
             title: job.sessionTitle,
@@ -291,7 +326,60 @@ extension SessionIndexSnapshot {
             segments: segments,
             words: transcript?.words ?? [],
             cues: cues,
-            shotBounds: []
+            shotBounds: [],
+            sourceOrigin: origin,
+            remoteSessionID: job.remoteSessionID,
+            ownerUserID: nil
+        )
+    }
+
+    /// Cloud Recent / opened remote session → local index with `source_origin=cloud`.
+    static func from(
+        session: WorkbenchSession,
+        sourceOrigin: KnowledgeSourceOrigin = .cloud,
+        ownerUserID: String?
+    ) -> SessionIndexSnapshot? {
+        let transcript = session.transcript ?? session.dubTranscript
+        let cues = session.subtitleTrack?.cues ?? []
+        let segments = transcript?.segments ?? []
+        let summary = session.summaryMarkdown
+        // List metadata may only have title/summary; still index a session card for Recent sync.
+        let hasBody = transcript != nil || !cues.isEmpty || (summary?.isEmpty == false)
+        let hasTitle = !session.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard hasBody || hasTitle else { return nil }
+        let duration = max(
+            session.duration ?? 0,
+            segments.map(\.end).max() ?? 0,
+            cues.map(\.end).max() ?? 0
+        )
+        let mediaPath = session.sourceURL?.path
+            ?? session.remoteSourcePlaybackURL?.absoluteString
+            ?? "cloud://\(session.remoteSessionID?.uuidString ?? session.id.uuidString)"
+        var labels: [String] = []
+        var seen = Set<String>()
+        for label in (segments.compactMap(\.speaker) + cues.compactMap(\.speaker))
+        where seen.insert(label).inserted {
+            labels.append(label)
+        }
+        return SessionIndexSnapshot(
+            sessionID: session.id,
+            title: session.title.isEmpty ? "Untitled session" : session.title,
+            tag: session.sessionTag,
+            summaryMarkdown: summary,
+            language: transcript?.language,
+            duration: duration,
+            hasVideo: session.remoteSourceHasVideo == true || Self.isVideo(mediaPath),
+            mediaPath: mediaPath,
+            sourceMTime: session.modifiedAt.timeIntervalSince1970,
+            generation: SessionIndexSnapshot.generation(modifiedAt: session.modifiedAt),
+            speakers: labels.map { SessionSpeaker(label: $0, displayName: $0) },
+            segments: segments,
+            words: transcript?.words ?? [],
+            cues: cues,
+            shotBounds: [],
+            sourceOrigin: sourceOrigin,
+            remoteSessionID: session.remoteSessionID ?? session.id,
+            ownerUserID: ownerUserID
         )
     }
 

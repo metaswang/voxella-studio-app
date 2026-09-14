@@ -554,6 +554,18 @@ final class LocalModelManager {
         try await ensureModels([modelID, .forcedAligner], onProgress: onProgress)
     }
 
+    func ensureKnowledgeQAModels(
+        answerModelID: LocalModelID? = nil,
+        includeReranker: Bool = false,
+        onProgress: ((String) -> Void)? = nil
+    ) async throws {
+        let ids = LocalModelInstallPlan.knowledgeQARequiredIDs(
+            answerModelID: answerModelID,
+            includeReranker: includeReranker
+        )
+        try await ensureModels(ids, onProgress: onProgress)
+    }
+
     private func transcriptionDownloadProgress(for ids: [LocalModelID]) -> Double {
         guard !ids.isEmpty else { return 1 }
         let sum = ids.reduce(0.0) { partial, id in

@@ -131,6 +131,31 @@ struct LocalModelInstallPlanTests {
         #expect(plan.missingItems.contains { $0.id == .sileroVADMLX } == false)
     }
 
+    @Test func knowledgeQAPlanAlwaysIncludesWeMMEvenForCloudAnswer() {
+        let catalog = [
+            Self.descriptor(.weMMEmbedding2B4Bit, bytes: 2_000_000_000, license: false),
+            Self.descriptor(.qwenTTS17B, bytes: 2_400_000_000, license: false),
+        ]
+        let cloudAnswer = LocalModelInstallPlan.knowledgeQAPlan(
+            answerModelID: nil,
+            includeReranker: false,
+            catalog: catalog,
+            isInstalled: { _ in false }
+        )
+        #expect(cloudAnswer.items.map(\.id) == [.weMMEmbedding2B4Bit])
+        #expect(cloudAnswer.missingItems.map(\.id) == [.weMMEmbedding2B4Bit])
+
+        let localAnswer = LocalModelInstallPlan.knowledgeQAPlan(
+            answerModelID: .qwenTTS17B,
+            includeReranker: true,
+            catalog: catalog,
+            isInstalled: { $0 == .weMMEmbedding2B4Bit }
+        )
+        #expect(localAnswer.items.map(\.id) == [.weMMEmbedding2B4Bit, .qwenTTS17B])
+        #expect(localAnswer.missingItems.map(\.id) == [.qwenTTS17B])
+        #expect(LocalModelInstallPlan.knowledgeQARequiredIDs(answerModelID: nil, includeReranker: true) == [.weMMEmbedding2B4Bit])
+    }
+
     @Test func dubbingPlanIncludesSelectedVoiceModelAndAlignerWithPinnedRevisions() {
         let plan = LocalModelInstallPlan.dubPlan(
             modelID: .qwenTTS17B,

@@ -8,6 +8,7 @@ enum WorkbenchRoute: String, Codable, CaseIterable, Identifiable {
     case transcribe
     case meetBot
     case dub
+    case knowledge
     case voiceLibrary
     case videoEditor
     case session
@@ -21,6 +22,7 @@ enum WorkbenchRoute: String, Codable, CaseIterable, Identifiable {
         case .transcribe: "Transcribe"
         case .meetBot: "Meeting Recorder"
         case .dub: "Voiceover"
+        case .knowledge: "Knowledge"
         case .voiceLibrary: "Voice Library"
         case .videoEditor: "Video Editor"
         case .session: "Session"
@@ -34,6 +36,7 @@ enum WorkbenchRoute: String, Codable, CaseIterable, Identifiable {
         case .transcribe: "text.bubble"
         case .meetBot: "calendar.badge.clock"
         case .dub: "waveform.and.mic"
+        case .knowledge: "books.vertical"
         case .voiceLibrary: "waveform.badge.magnifyingglass"
         case .videoEditor: "timeline.selection"
         case .session: "doc.text.magnifyingglass"
@@ -46,12 +49,13 @@ enum WorkbenchRoute: String, Codable, CaseIterable, Identifiable {
         case .transcribe: .transcription
         case .meetBot: .meetBot
         case .dub: .voiceover
+        case .knowledge: .system("books.vertical")
         default: .system(systemImage)
         }
     }
 
     static let sidebarRoutes: [WorkbenchRoute] = [
-        .recent, .dashboard, .transcribe, .meetBot, .dub, .videoEditor,
+        .recent, .dashboard, .transcribe, .meetBot, .dub, .knowledge, .videoEditor,
     ]
 }
 
@@ -1693,10 +1697,35 @@ final class WorkbenchStore {
                 transcriptions.compactMap(\.remoteSessionID)
                     + dubs.compactMap(\.remoteSessionID)
             )
-            remoteSessions = Dictionary(
+            let previousCloudIDs = Set(remoteSessions.keys)
+            let mapped = Dictionary(
                 uniqueKeysWithValues: summaries
                     .filter { !localRemoteIDs.contains($0.id) }
                     .map { ($0.id, Self.remoteSession(from: $0)) }
+            )
+            // Preserve already-loaded transcripts/cues when refresh only returns list metadata.
+            var merged: [UUID: WorkbenchSession] = [:]
+            for (id, session) in mapped {
+                if let existing = remoteSessions[id],
+                   existing.transcript != nil || existing.subtitleTrack != nil {
+                    var kept = session
+                    kept.transcript = existing.transcript
+                    kept.subtitleTrack = existing.subtitleTrack
+                    kept.summaryMarkdown = existing.summaryMarkdown ?? session.summaryMarkdown
+                    kept.dubTranscript = existing.dubTranscript
+                    kept.dubSegments = existing.dubSegments.isEmpty ? session.dubSegments : existing.dubSegments
+                    kept.remoteSourcePlaybackURL = existing.remoteSourcePlaybackURL ?? session.remoteSourcePlaybackURL
+                    kept.remoteEnhancedSourcePlaybackURL =
+                        existing.remoteEnhancedSourcePlaybackURL ?? session.remoteEnhancedSourcePlaybackURL
+                    merged[id] = kept
+                } else {
+                    merged[id] = session
+                }
+            }
+            remoteSessions = merged
+            syncCloudIndexAfterRemoteRefresh(
+                previousCloudIDs: previousCloudIDs,
+                currentCloudIDs: Set(merged.keys)
             )
         } catch is CancellationError {
         } catch VoxellaAPIError.cancelled {
@@ -1719,6 +1748,25 @@ final class WorkbenchStore {
         remoteSessionsError = nil
         isLoadingRemoteSessions = false
         remoteSessionLoadingID = nil
+        // Keep cloud index rows; runtime search/KB filters hide them while signed out.
+    }
+
+    /// After cloud Recent refresh: drop deleted remotes from index; upsert searchable cloud sessions.
+    private func syncCloudIndexAfterRemoteRefresh(
+        previousCloudIDs: Set<UUID>,
+        currentCloudIDs: Set<UUID>
+    ) {
+        let removed = previousCloudIDs.subtracting(currentCloudIDs)
+        for id in removed {
+            SessionIndexCoordinator.shared.remove(id)
+        }
+        let owner = AccountService.shared.userID?.uuidString
+        let indexable = remoteSessions.values.filter {
+            $0.transcript != nil
+                || $0.subtitleTrack != nil
+                || ($0.summaryMarkdown?.isEmpty == false)
+        }
+        SessionIndexCoordinator.shared.syncCloudSessions(Array(indexable), ownerUserID: owner)
     }
 
     /// Refreshes the optional cloud-repaired audio URL without changing the
@@ -1757,7 +1805,7 @@ final class WorkbenchStore {
                 let rendering = try await self.voxellaAPI.sessionRenderingData(id)
                 try Task.checkCancellation()
                 guard self.selectedSessionID == id else { return }
-                self.remoteSessions[id] = Self.remoteSession(
+                let opened = Self.remoteSession(
                     from: rendering.detail,
                     transcriptSegments: rendering.transcriptSegments,
                     subtitleCues: rendering.subtitleCues,
@@ -1765,7 +1813,12 @@ final class WorkbenchStore {
                     enhancedMediaPlaybackURL: rendering.enhancedMediaPlaybackURL,
                     mediaHasVideo: rendering.mediaHasVideo
                 )
+                self.remoteSessions[id] = opened
                 self.remoteSessionLoadingID = nil
+                SessionIndexCoordinator.shared.syncCloudSessions(
+                    [opened],
+                    ownerUserID: AccountService.shared.userID?.uuidString
+                )
                 await self.ensureRemoteSessionSummary(id)
             } catch is CancellationError {
             } catch VoxellaAPIError.cancelled {
@@ -2504,6 +2557,7 @@ final class WorkbenchStore {
             for remoteID in remoteIDs {
                 remoteSessions.removeValue(forKey: remoteID)
                 enhancedAudioURLs.removeValue(forKey: remoteID)
+                SessionIndexCoordinator.shared.remove(remoteID)
             }
             deletingRemoteSessionIDs.subtract(remoteIDs)
             if let selectedSessionID,
@@ -5208,6 +5262,11 @@ final class WorkbenchStore {
         guard var session = remoteSessions[id] else { return }
         mutate(&session)
         remoteSessions[id] = session
+        // Keep local Index in sync when cloud Recent rows are edited (summary/transcript).
+        SessionIndexCoordinator.shared.syncCloudSessions(
+            [session],
+            ownerUserID: AccountService.shared.userID?.uuidString
+        )
     }
 
     private func commitCloudSummary(

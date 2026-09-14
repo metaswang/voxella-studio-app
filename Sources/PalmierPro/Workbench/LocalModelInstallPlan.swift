@@ -112,9 +112,56 @@ struct LocalModelInstallPlan: Equatable, Sendable {
         catalog: [LocalModelDescriptor] = LocalModelManager.catalog,
         isInstalled: (LocalModelID) -> Bool
     ) -> LocalModelInstallPlan {
-        let requiredIDs = [modelID, .forcedAligner]
+        plan(
+            ids: [modelID, .forcedAligner],
+            asrModelID: modelID,
+            catalog: catalog,
+            isInstalled: isInstalled
+        )
+    }
+
+    /// P0 Knowledge QA: always WeMM (local hybrid/RAG). Local answer LLM is optional
+    /// (`answerModelID`); nil = hosted/BYOK answer. Cloud answer still requires WeMM.
+    /// `includeReranker` is reserved for P1+ (no catalog ID yet).
+    static func knowledgeQARequiredIDs(
+        answerModelID: LocalModelID?,
+        includeReranker: Bool
+    ) -> [LocalModelID] {
+        var ids: [LocalModelID] = [.weMMEmbedding2B4Bit]
+        if let answerModelID {
+            ids.append(answerModelID)
+        }
+        // P1+: append Qwen3-Reranker MLX when LocalModelID exists.
+        _ = includeReranker
+        var seen = Set<LocalModelID>()
+        return ids.filter { seen.insert($0).inserted }
+    }
+
+    static func knowledgeQAPlan(
+        answerModelID: LocalModelID?,
+        includeReranker: Bool,
+        catalog: [LocalModelDescriptor] = LocalModelManager.catalog,
+        isInstalled: (LocalModelID) -> Bool
+    ) -> LocalModelInstallPlan {
+        plan(
+            ids: knowledgeQARequiredIDs(
+                answerModelID: answerModelID,
+                includeReranker: includeReranker
+            ),
+            asrModelID: .weMMEmbedding2B4Bit,
+            catalog: catalog,
+            isInstalled: isInstalled
+        )
+    }
+
+    static func plan(
+        ids: [LocalModelID],
+        asrModelID: LocalModelID,
+        catalog: [LocalModelDescriptor] = LocalModelManager.catalog,
+        isInstalled: (LocalModelID) -> Bool
+    ) -> LocalModelInstallPlan {
         let descriptors = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
-        let items = requiredIDs.compactMap { id -> Item? in
+        let items = ids.compactMap { id -> Item? in
             guard let model = descriptors[id] else { return nil }
             return Item(
                 id: model.id,
@@ -129,7 +176,7 @@ struct LocalModelInstallPlan: Equatable, Sendable {
             )
         }
         return LocalModelInstallPlan(
-            asrModelID: modelID,
+            asrModelID: asrModelID,
             languageCode: nil,
             speakerCount: nil,
             items: items
@@ -168,6 +215,18 @@ extension LocalModelManager {
 
     func dubInstallPlan(modelID: LocalModelID) -> LocalModelInstallPlan {
         LocalModelInstallPlan.dubPlan(modelID: modelID) { id in
+            state(for: id).isInstalled
+        }
+    }
+
+    func knowledgeQAInstallPlan(
+        answerModelID: LocalModelID? = nil,
+        includeReranker: Bool = false
+    ) -> LocalModelInstallPlan {
+        LocalModelInstallPlan.knowledgeQAPlan(
+            answerModelID: answerModelID,
+            includeReranker: includeReranker
+        ) { id in
             state(for: id).isInstalled
         }
     }

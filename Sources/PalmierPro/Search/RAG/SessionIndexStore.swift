@@ -10,18 +10,35 @@ actor SessionIndexStore {
     init(url: URL) throws {
         sqlite = try SessionSQLite(url: url)
         try sqlite.execute(Self.schemaSQL)
+        // Existing DBs created before origin columns: additive migration (DEFAULT local).
+        let columns = try sqlite.query("PRAGMA table_info(sessions)").compactMap { $0.text("name") }
+        if !columns.contains("source_origin") {
+            try sqlite.execute(
+                "ALTER TABLE sessions ADD COLUMN source_origin TEXT NOT NULL DEFAULT 'local'"
+            )
+        }
+        if !columns.contains("remote_session_id") {
+            try sqlite.execute("ALTER TABLE sessions ADD COLUMN remote_session_id TEXT")
+        }
+        if !columns.contains("owner_user_id") {
+            try sqlite.execute("ALTER TABLE sessions ADD COLUMN owner_user_id TEXT")
+        }
+        if !columns.contains("indexed_at") {
+            try sqlite.execute("ALTER TABLE sessions ADD COLUMN indexed_at REAL")
+        }
     }
 
     func replaceLexical(snapshot: SessionIndexSnapshot, clips: [CuePacker.Clip]) throws {
         try sqlite.transaction {
             try deleteSessionRows(snapshot.sessionID)
+            let now = Date().timeIntervalSince1970
             try sqlite.run(
                 """
                 INSERT INTO sessions(
                     id, title, tag, summary_markdown, language, duration_sec, has_video,
                     media_path, source_mtime, ingest_generation, lexical_ready, embedding_ready,
-                    created_at, modified_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+                    created_at, modified_at, source_origin, remote_session_id, owner_user_id, indexed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?)
                 """,
                 binds: [
                     .text(snapshot.sessionID.uuidString),
@@ -34,8 +51,12 @@ actor SessionIndexStore {
                     .text(snapshot.mediaPath),
                     .optional(snapshot.sourceMTime),
                     .int(snapshot.generation),
-                    .double(Date().timeIntervalSince1970),
-                    .double(Date().timeIntervalSince1970),
+                    .double(now),
+                    .double(now),
+                    .text(snapshot.sourceOrigin.rawValue),
+                    .optional(snapshot.remoteSessionID?.uuidString),
+                    .optional(snapshot.ownerUserID),
+                    .double(now),
                 ]
             )
             for speaker in snapshot.speakers {
@@ -234,6 +255,15 @@ actor SessionIndexStore {
             "INSERT INTO \(table)(unit_id, embedding) VALUES (?, ?)",
             binds: [.int(unitID), .blob(Self.packed(vector))]
         )
+    }
+
+    func sourceOrigin(sessionID: UUID) throws -> KnowledgeSourceOrigin? {
+        let rows = try sqlite.query(
+            "SELECT source_origin FROM sessions WHERE id = ?",
+            binds: [.text(sessionID.uuidString)]
+        )
+        guard let raw = rows.first?.text("source_origin") else { return nil }
+        return KnowledgeSourceOrigin(rawValue: raw) ?? .local
     }
 
     func sessionIDs() throws -> [UUID] {
@@ -484,6 +514,7 @@ actor SessionIndexStore {
               let title = row.text("title")
         else { return nil }
         let speakers = try speakers(sessionID: sessionID)
+        let origin = row.text("source_origin").flatMap(KnowledgeSourceOrigin.init(rawValue:)) ?? .local
         return SessionCard(
             sessionID: sessionID,
             title: title,
@@ -498,7 +529,10 @@ actor SessionIndexStore {
             matchSource: nil,
             snippet: nil,
             lexicalReady: row.bool("lexical_ready"),
-            embeddingReady: row.bool("embedding_ready")
+            embeddingReady: row.bool("embedding_ready"),
+            sourceOrigin: origin,
+            remoteSessionID: row.text("remote_session_id").flatMap(UUID.init(uuidString:)),
+            ownerUserID: row.text("owner_user_id")
         )
     }
 
@@ -628,7 +662,14 @@ actor SessionIndexStore {
 
     private static func filterSQL(_ filter: SessionSearchFilter, binds: inout [SessionSQLiteValue]) -> String {
         var sql = ""
-        if let sessionID = filter.sessionID {
+        if let sessionIDs = filter.sessionIDs, !sessionIDs.isEmpty {
+            let sorted = sessionIDs.map(\.uuidString).sorted()
+            let placeholders = Array(repeating: "?", count: sorted.count).joined(separator: ",")
+            sql += " AND u.session_id IN (\(placeholders))"
+            for id in sorted {
+                binds.append(.text(id))
+            }
+        } else if let sessionID = filter.sessionID {
             sql += " AND u.session_id = ?"
             binds.append(.text(sessionID.uuidString))
         }
@@ -660,6 +701,13 @@ actor SessionIndexStore {
             sql += " AND u.modality = ?"
             binds.append(.text(modality.rawValue))
         }
+        if let origins = filter.sourceOrigins, !origins.isEmpty {
+            let placeholders = Array(repeating: "?", count: origins.count).joined(separator: ",")
+            sql += " AND COALESCE(s.source_origin, 'local') IN (\(placeholders))"
+            for origin in origins.sorted(by: { $0.rawValue < $1.rawValue }) {
+                binds.append(.text(origin.rawValue))
+            }
+        }
         return sql
     }
 
@@ -687,7 +735,11 @@ actor SessionIndexStore {
         lexical_ready INTEGER NOT NULL,
         embedding_ready INTEGER NOT NULL,
         created_at REAL NOT NULL,
-        modified_at REAL NOT NULL
+        modified_at REAL NOT NULL,
+        source_origin TEXT NOT NULL DEFAULT 'local',
+        remote_session_id TEXT,
+        owner_user_id TEXT,
+        indexed_at REAL
     );
     CREATE TABLE IF NOT EXISTS speakers (
         session_id TEXT NOT NULL,
