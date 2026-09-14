@@ -452,6 +452,8 @@ final class AccountService {
             do { try await persistAppAccess() }
             catch { lastError = "Offline access could not be saved: \(error.localizedDescription)" }
             guard isCurrentSession(generation) else { return }
+            await mergeDeviceTrialOnLoginIfNeeded()
+            guard isCurrentSession(generation) else { return }
             await syncLifetimeDeviceCredentialIfNeeded()
             guard isCurrentSession(generation) else { return }
         }
@@ -723,6 +725,31 @@ final class AccountService {
         )
         lifetimeDeviceVerifyAttempt = .now
         applyLifetimeCredentialOverlayIfNeeded()
+    }
+
+    /// PR4: on login/account refresh, merge device trial start into the account (earliest wins).
+    private func mergeDeviceTrialOnLoginIfNeeded() async {
+        guard Self.paidAccessEnabled, isSignedIn else { return }
+        // Lifetime / paid subscription: server skips trial merge.
+        if appAccess.license == .lifetime || appAccess.hasActiveSubscription { return }
+        var deviceStartedAt: Date?
+        var deviceToken: String?
+        if let record = try? DeviceTrialClock.load() {
+            deviceStartedAt = record.startedAt
+            deviceToken = record.envelope.token
+        }
+        do {
+            let access = try await api.startAppTrial(
+                deviceStartedAt: deviceStartedAt,
+                deviceTrialToken: deviceToken
+            )
+            appAccess = access.snapshot
+            entitlementSchedule.succeeded(at: .now)
+            try? await persistAppAccess()
+            applyDeviceTrialOverlayIfNeeded()
+        } catch {
+            Log.account.warning("Trial merge on login unavailable")
+        }
     }
 
     private func ensureDeviceTrialStarted() async throws {

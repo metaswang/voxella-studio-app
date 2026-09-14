@@ -1008,11 +1008,23 @@ actor VoxellaAPIClient {
         )
     }
 
-    func startAppTrial() async throws -> AppAccessResponse {
-        try await request(
+    func startAppTrial(
+        deviceStartedAt: Date? = nil,
+        deviceTrialToken: String? = nil
+    ) async throws -> AppAccessResponse {
+        var body: [String: Any] = [:]
+        if let deviceStartedAt {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            body["device_started_at"] = formatter.string(from: deviceStartedAt)
+        }
+        if let deviceTrialToken, !deviceTrialToken.isEmpty {
+            body["device_trial_token"] = deviceTrialToken
+        }
+        return try await request(
             url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/trial"),
             method: "POST",
-            json: [:],
+            json: body,
             as: AppAccessResponse.self
         )
     }
