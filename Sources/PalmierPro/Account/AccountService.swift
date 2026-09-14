@@ -193,6 +193,41 @@ final class AccountService {
         )
     }
 
+    /// Trial remaining-time UI. Does NOT require login (device trial survives sign-out).
+    var trialPresentation: TrialPresentation? {
+        guard isAppAccessEnforced else { return nil }
+        return appAccess.trialPresentation()
+    }
+
+    func consumeTrialStartedPresentation() async -> TrialPresentation.Active? {
+        await consumeTrialPresentation(
+            key: { TrialReminderStore.startedKey(userID: $0, endsAt: $1.endsAt) },
+            isEligible: { _ in true }
+        )
+    }
+
+    func consumeTrialReminderPresentation() async -> TrialPresentation.Active? {
+        await consumeTrialPresentation(
+            key: { TrialReminderStore.key(userID: $0, endsAt: $1.endsAt) },
+            isEligible: \.isReminderEligible
+        )
+    }
+
+    private func consumeTrialPresentation(
+        key: (UUID?, TrialPresentation.Active) -> String,
+        isEligible: (TrialPresentation.Active) -> Bool
+    ) async -> TrialPresentation.Active? {
+        guard case let .active(presentation)? = trialPresentation,
+              isEligible(presentation)
+        else { return nil }
+        guard await trialReminderStore.claim(key: key(userID, presentation)) else { return nil }
+        guard case let .active(current)? = trialPresentation,
+              current.endsAt == presentation.endsAt,
+              isEligible(current)
+        else { return nil }
+        return current
+    }
+
     var spentCredits: Int { account?.user.spentCreditsThisPeriod ?? 0 }
     var budgetCredits: Int? {
         guard let user = account?.user else { return nil }
@@ -223,6 +258,7 @@ final class AccountService {
     @ObservationIgnored private var didBecomeActiveObserver: NSObjectProtocol?
     @ObservationIgnored private var deviceTrialVerifyAttempt: Date?
     @ObservationIgnored private var lifetimeDeviceVerifyAttempt: Date?
+    @ObservationIgnored private let trialReminderStore = TrialReminderStore()
 
     private init() {}
 
@@ -271,7 +307,7 @@ final class AccountService {
                 "convex": !isMisconfigured,
             ]
         )
-        applyDeviceTrialOverlayIfNeeded()
+        reapplyLocalEntitlementOverlays()
         restoreSession()
         didBecomeActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
@@ -431,8 +467,7 @@ final class AccountService {
                 entitlementSchedule.succeeded(at: .now)
             }
             // Free / unsigned-capable path: fill from device trial when server has no entitlement (PR1).
-            applyLifetimeCredentialOverlayIfNeeded()
-            applyDeviceTrialOverlayIfNeeded()
+            reapplyLocalEntitlementOverlays()
         } else {
             appAccess = .init()
         }
@@ -495,8 +530,7 @@ final class AccountService {
         availablePlans = []
         isBuyingCredits = false
         // Device trial + Lifetime device credential survive logout / account clear (PR1 / PR2).
-        applyLifetimeCredentialOverlayIfNeeded()
-        applyDeviceTrialOverlayIfNeeded()
+        reapplyLocalEntitlementOverlays()
     }
 
     func signInWithGoogle() async {
@@ -564,20 +598,19 @@ final class AccountService {
 
     private func performAppAccessPreparation() async throws {
         guard Self.paidAccessEnabled else { return }
-        applyLifetimeCredentialOverlayIfNeeded()
+        reapplyLocalEntitlementOverlays()
         await renewLifetimeLeaseIfNeeded()
-        applyLifetimeCredentialOverlayIfNeeded()
-        applyDeviceTrialOverlayIfNeeded()
+        reapplyLocalEntitlementOverlays()
         if LifetimeLocalCredential.isPresent() { return }
         if appAccess.policy() == .allowed { return }
 
         if isLoading, userID == nil {
             _ = await restoreOfflineAccess(generation: sessionGeneration)
-            applyDeviceTrialOverlayIfNeeded()
+            reapplyLocalEntitlementOverlays()
             if appAccess.policy() == .allowed { return }
         }
         await waitForSessionRestore()
-        applyDeviceTrialOverlayIfNeeded()
+        reapplyLocalEntitlementOverlays()
         if appAccess.policy() == .allowed { return }
 
 #if MAC_APP_STORE
@@ -643,6 +676,13 @@ final class AccountService {
     }
 
     /// Overlay verified Lifetime device credential (independent Keychain; survives logout).
+    /// Apply local entitlement overlays in priority order: Lifetime first, then device trial.
+    /// Cold start, sign-out, and account-clear paths must show Lifetime over trial over .none.
+    private func reapplyLocalEntitlementOverlays() {
+        applyLifetimeCredentialOverlayIfNeeded()
+        applyDeviceTrialOverlayIfNeeded()
+    }
+
     private func applyLifetimeCredentialOverlayIfNeeded() {
         guard Self.paidAccessEnabled else { return }
         guard let snapshot = try? LifetimeLocalCredential.activeSnapshot() else { return }
@@ -651,6 +691,8 @@ final class AccountService {
     }
 
     /// Overlay device-local trial onto `appAccess` when no stronger entitlement is present.
+    /// Only when a signed device-trial token is still valid (active). Expired / missing token
+    /// leaves license at `.none` — do not fabricate a trial clock.
     private func applyDeviceTrialOverlayIfNeeded() {
         guard Self.paidAccessEnabled else { return }
         if LifetimeLocalCredential.isPresent() { return }
@@ -658,7 +700,7 @@ final class AccountService {
         if appAccess.hasActiveSubscription { return }
         // Only overlay when license is .none (no existing server entitlement).
         if appAccess.license != .none { return }
-        guard let snapshot = try? DeviceTrialClock.currentSnapshot() else { return }
+        guard let snapshot = try? DeviceTrialClock.activeSnapshot() else { return }
         appAccess = snapshot
     }
 
@@ -712,7 +754,7 @@ final class AccountService {
                 if appAccess.license == .lifetime {
                     appAccess = .init()
                 }
-                applyDeviceTrialOverlayIfNeeded()
+                reapplyLocalEntitlementOverlays()
             } else {
                 Log.account.warning("Lifetime lease renew unavailable while signed out")
             }
@@ -759,14 +801,32 @@ final class AccountService {
             entitlementSchedule.succeeded(at: .now)
             try? await persistAppAccess()
             // After merge: if device local trial ends_at is later than server trial_ends_at,
-            // truncate or clear device token to prevent extension past account trial.
+            // re-issue a truncated device token so sign-out still shows correct remaining time.
             if let deviceRecord = try? DeviceTrialClock.load(),
                let serverEndsAt = serverTrialEndsAt,
                deviceRecord.endsAt > serverEndsAt {
-                // Device trial would extend past merged account trial — clear it.
-                try? KeychainStore.deleteThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+                let fingerprint = try? DeviceFingerprint.current()
+                guard let fingerprint else {
+                    try? KeychainStore.deleteThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+                    reapplyLocalEntitlementOverlays()
+                    return
+                }
+                // Server expired: delete device token.
+                if serverEndsAt <= .now {
+                    try? KeychainStore.deleteThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+                    reapplyLocalEntitlementOverlays()
+                    return
+                }
+                // Re-verify to get truncated token from server.
+                do {
+                    let response = try await api.verifyDeviceTrial(fingerprint: fingerprint)
+                    try applyDeviceTrialResponse(response, fingerprint: fingerprint)
+                } catch {
+                    // Fallback: delete stale device token on verification failure.
+                    try? KeychainStore.deleteThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+                }
             }
-            applyDeviceTrialOverlayIfNeeded()
+            reapplyLocalEntitlementOverlays()
         } catch {
             Log.account.warning("Trial merge on login unavailable")
         }
@@ -1132,6 +1192,9 @@ final class AccountService {
         clearAccount()
         do { try await clearOfflineAccess() }
         catch { lastError = "Offline access could not be removed: \(error.localizedDescription)" }
+        // Priority after sign-out: Lifetime device credential first; else active device trial only.
+        // Expired / missing trial token stays `.none` (no fabricated countdown).
+        reapplyLocalEntitlementOverlays()
         await VoxellaAuthService.shared.signOut()
         guard sessionGeneration == generation else { return }
         await convex?.logout()
@@ -1214,7 +1277,7 @@ final class AccountService {
                   userID == nil || userID == entry.account.user.id else { return false }
             account = entry.account
             appAccess = entry.access
-            applyDeviceTrialOverlayIfNeeded()
+            reapplyLocalEntitlementOverlays()
             isOfflineAccount = true
             lastError = nil
             return true

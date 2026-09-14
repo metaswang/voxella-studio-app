@@ -118,16 +118,30 @@ enum DeviceTrialClock {
         return Record(envelope: envelope, claims: claims)
     }
 
-    static func activeSnapshot(at date: Date = .now) throws -> AppAccessSnapshot? {
-        guard let record = try load(),
+    static func activeSnapshot(
+        at date: Date = .now,
+        fingerprint: String? = nil,
+        publicKeyRaw: Data = DeviceTrialLicense.publicKeyRaw,
+        read: () throws -> String? = {
+            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+        }
+    ) throws -> AppAccessSnapshot? {
+        guard let record = try load(fingerprint: fingerprint, publicKeyRaw: publicKeyRaw, read: read),
               record.evaluation(at: date) == .allowed,
               let snapshot = record.snapshot(at: date),
               snapshot.policy(at: date) == .allowed else { return nil }
         return snapshot
     }
 
-    static func currentSnapshot(at date: Date = .now) throws -> AppAccessSnapshot? {
-        try load()?.snapshot(at: date)
+    static func currentSnapshot(
+        at date: Date = .now,
+        fingerprint: String? = nil,
+        publicKeyRaw: Data = DeviceTrialLicense.publicKeyRaw,
+        read: () throws -> String? = {
+            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+        }
+    ) throws -> AppAccessSnapshot? {
+        try load(fingerprint: fingerprint, publicKeyRaw: publicKeyRaw, read: read)?.snapshot(at: date)
     }
 
     private struct LegacyRecord: Codable {

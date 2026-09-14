@@ -88,6 +88,55 @@ struct AppAccessSnapshot: Codable, Equatable, Sendable {
     func canPurchaseCredits(at date: Date) -> Bool {
         policy(at: date) == .allowed && (license == .lifetime || subscriptionTier.isPaid)
     }
+
+    func trialPresentation(at date: Date = .now) -> TrialPresentation? {
+        guard license == .trial, let trialEndsAt else { return nil }
+        guard !(subscriptionTier.isPaid && subscriptionEndsAt.map({ $0 > date }) == true)
+        else { return nil }
+
+        guard trialEndsAt > date else { return .expired }
+        guard offlineValidUntil.map({ $0 > date }) == true else { return .verificationRequired }
+        return .active(TrialPresentation.Active(endsAt: trialEndsAt, now: date))
+    }
+}
+
+enum TrialPresentation: Equatable, Sendable {
+    static let reminderLeadHours: TimeInterval = 72 * 60 * 60
+
+    struct Active: Equatable, Sendable {
+        let endsAt: Date
+        let remaining: TimeInterval
+
+        init(endsAt: Date, now: Date) {
+            self.endsAt = endsAt
+            remaining = max(0, endsAt.timeIntervalSince(now))
+        }
+
+        var isReminderEligible: Bool { remaining <= TrialPresentation.reminderLeadHours }
+        var usesWarningColor: Bool { isReminderEligible }
+
+        var sidebarLabel: String {
+            if remaining < 60 * 60 { return "Less than 1 hour left" }
+            if remaining < 24 * 60 * 60 { return "\(countLabel(hoursRemaining, unit: "hour")) left" }
+            return "\(countLabel(daysRemaining, unit: "day")) left"
+        }
+
+        var collapsedLabel: String {
+            if remaining < 24 * 60 * 60 { return "<1d" }
+            return "\(daysRemaining)d"
+        }
+
+        private var hoursRemaining: Int { Int(ceil(remaining / 3_600)) }
+        private var daysRemaining: Int { Int(ceil(remaining / 86_400)) }
+
+        private func countLabel(_ count: Int, unit: String) -> String {
+            "\(count) \(unit)\(count == 1 ? "" : "s")"
+        }
+    }
+
+    case active(Active)
+    case expired
+    case verificationRequired
 }
 
 enum AppAccessGate {

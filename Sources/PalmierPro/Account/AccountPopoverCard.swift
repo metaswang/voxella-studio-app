@@ -11,7 +11,11 @@ struct AccountPopoverCard: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             identityBlock
 
-            if account.isSignedIn {
+            // Signed-in plan, Lifetime device credential, or active trial countdown (signed-out OK).
+            if account.isSignedIn
+                || account.appAccess.license == .lifetime
+                || LifetimeLocalCredential.isPresent()
+                || activeTrialPresentation != nil {
                 Divider().overlay(AppTheme.Border.subtleColor)
                 planBlock
             }
@@ -58,10 +62,21 @@ struct AccountPopoverCard: View {
 
     // MARK: - Plan + credit info
 
+    private var planTitle: String {
+        if account.appAccess.license == .lifetime || LifetimeLocalCredential.isPresent() {
+            return account.appAccessLabel
+        }
+#if MAC_APP_STORE
+        account.appAccessLabel
+#else
+        account.isSignedIn ? account.tier.planLabel : account.appAccessLabel
+#endif
+    }
+
     private var planBlock: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             HStack {
-                Text(account.tier.planLabel)
+                Text(planTitle)
                     .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                 Spacer(minLength: 0)
@@ -73,12 +88,56 @@ struct AccountPopoverCard: View {
                 }
             }
 
-            creditsBlock
+            if activeTrialPresentation != nil {
+                TimelineView(.periodic(from: .now, by: 60.0)) { _ in
+                    if let active = activeTrialPresentation {
+                        trialCountdownBlock(active: active)
+                    }
+                }
+            }
 
-            if !account.isPaid {
+            if account.isSignedIn {
+                creditsBlock
+            }
+
+            if account.isSignedIn, !account.isPaid {
                 upgradeBlock
             }
         }
+    }
+
+    @ViewBuilder
+    private func trialCountdownBlock(active: TrialPresentation.Active) -> some View {
+        Button { AppAccessWindow.shared.present() } label: {
+            HStack(spacing: AppTheme.Spacing.xs) {
+                Image(systemName: "clock")
+                Text("Trial: \(active.sidebarLabel)")
+                Spacer(minLength: 0)
+                Text(trialActionLabel)
+            }
+            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+            .foregroundStyle(active.usesWarningColor ? AppTheme.Status.warningColor : AppTheme.Text.secondaryColor)
+        }
+        .buttonStyle(.plain)
+        .help(trialActionLabel)
+
+        Text("Ends \(active.endsAt.formatted(date: .abbreviated, time: .shortened))")
+            .font(.system(size: AppTheme.FontSize.xxs))
+            .foregroundStyle(AppTheme.Text.tertiaryColor)
+    }
+
+    /// Countdown UI only — expired / verify / Lifetime must not show a trial clock.
+    private var activeTrialPresentation: TrialPresentation.Active? {
+        if case let .active(active)? = account.trialPresentation { return active }
+        return nil
+    }
+
+    private var trialActionLabel: String {
+#if MAC_APP_STORE
+        "Buy Lifetime"
+#else
+        "View plans"
+#endif
     }
 
     @ViewBuilder

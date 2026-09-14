@@ -10,6 +10,7 @@ enum WorkbenchTipKind: Equatable, Sendable {
 
 enum WorkbenchTipAction: Equatable, Sendable {
     case openAISettings
+    case openAppAccess
 }
 
 struct WorkbenchTip: Equatable, Identifiable, Sendable {
@@ -18,19 +19,22 @@ struct WorkbenchTip: Equatable, Identifiable, Sendable {
     let kind: WorkbenchTipKind
     let actionLabel: String?
     let action: WorkbenchTipAction?
+    let autoDismiss: Bool
 
     init(
         id: String? = nil,
         message: String,
         kind: WorkbenchTipKind = .info,
         actionLabel: String? = nil,
-        action: WorkbenchTipAction? = nil
+        action: WorkbenchTipAction? = nil,
+        autoDismiss: Bool = true
     ) {
         self.id = id ?? "\(kind):\(message)"
         self.message = message
         self.kind = kind
         self.actionLabel = actionLabel
         self.action = action
+        self.autoDismiss = autoDismiss
     }
 }
 
@@ -50,7 +54,8 @@ final class WorkbenchTipCenter {
         kind: WorkbenchTipKind = .info,
         id: String? = nil,
         actionLabel: String? = nil,
-        action: WorkbenchTipAction? = nil
+        action: WorkbenchTipAction? = nil,
+        autoDismiss: Bool = true
     ) {
         show(
             WorkbenchTip(
@@ -58,7 +63,8 @@ final class WorkbenchTipCenter {
                 message: message,
                 kind: kind,
                 actionLabel: actionLabel,
-                action: action
+                action: action,
+                autoDismiss: autoDismiss
             )
         )
     }
@@ -74,10 +80,12 @@ final class WorkbenchTipCenter {
 
         hideTask?.cancel()
         self.tip = tip
-        hideTask = Task { [weak self] in
-            try? await Task.sleep(for: AppTheme.Workbench.tipAutoDismiss)
-            guard !Task.isCancelled else { return }
-            self?.hide()
+        if tip.autoDismiss {
+            hideTask = Task { [weak self] in
+                try? await Task.sleep(for: AppTheme.Workbench.tipAutoDismiss)
+                guard !Task.isCancelled else { return }
+                self?.hide()
+            }
         }
     }
 
@@ -92,6 +100,8 @@ final class WorkbenchTipCenter {
         switch tip.action {
         case .openAISettings:
             SettingsWindowController.shared.show(tab: .ai)
+        case .openAppAccess:
+            AppAccessWindow.shared.present()
         case .none:
             break
         }
