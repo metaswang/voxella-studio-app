@@ -92,7 +92,7 @@ struct HomeView: View {
 
     private var trialReminderWakeDate: Date? {
         guard case let .active(trial)? = account.trialPresentation else { return nil }
-        return trial.endsAt.addingTimeInterval(-(72 * 60 * 60))
+        return trial.endsAt.addingTimeInterval(-TrialPresentation.reminderLeadHours)
     }
 
     private func presentTrialNoticesWhenEligible() async {
@@ -104,7 +104,7 @@ struct HomeView: View {
             tips.show(
                 WorkbenchTip(
                     id: "trial-started.\(Int64(trial.endsAt.timeIntervalSince1970))",
-                    message: "Your 14-day trial has started. \(trial.sidebarLabel).",
+                    message: "Your trial has started. \(trial.sidebarLabel).",
                     kind: .info,
                     actionLabel: trialPurchaseActionLabel,
                     action: .openAppAccess,
@@ -128,7 +128,7 @@ struct HomeView: View {
         tips.show(
             WorkbenchTip(
                 id: "trial-reminder.\(Int64(trial.endsAt.timeIntervalSince1970))",
-                message: "Your trial ends in \(trial.sidebarLabel). Existing projects remain available.",
+                message: "Your trial has \(trial.sidebarLabel). Existing projects remain available.",
                 kind: .warning,
                 actionLabel: trialPurchaseActionLabel,
                 action: .openAppAccess,
@@ -146,9 +146,14 @@ struct HomeView: View {
     }
 
     private func waitForExistingTipToClear() async {
-        guard tips.tip != nil else { return }
-        do { try await Task.sleep(for: AppTheme.Workbench.tipAutoDismiss) }
-        catch { return }
+        while tips.tip != nil {
+            do {
+                try await Task.sleep(for: .seconds(0.5))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+        }
     }
 
     @ViewBuilder

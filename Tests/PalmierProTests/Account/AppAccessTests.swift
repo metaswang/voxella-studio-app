@@ -760,6 +760,163 @@ struct AppAccessTests {
         #expect(noLicense.license == .none)
     }
 
+    @Test func lifetimePlusActiveTrialShowsLifetimeWithoutClock() throws {
+        let lifetimeKeys = LifetimeDeviceTestKeys()
+        let trialKeys = DeviceTrialTestKeys()
+        let userID = UUID()
+        let fingerprint = DeviceFingerprint.hash(uuid: "acceptance-1")
+        // Store Lifetime credential
+        let lifetimeToken = try lifetimeKeys.token(userID: userID, fingerprint: fingerprint, issuedAt: now)
+        var lifetimeStored: String?
+        _ = try LifetimeLocalCredential.store(
+            token: lifetimeToken,
+            fingerprint: fingerprint,
+            userID: userID,
+            verifiedAt: now,
+            publicKeyRaw: lifetimeKeys.publicKeyRaw,
+            write: { lifetimeStored = $0 }
+        )
+        // Store device trial
+        let trialEnds = now.addingTimeInterval(5 * 86_400)
+        let trialToken = try trialKeys.token(fingerprint: fingerprint, startedAt: now, endsAt: trialEnds, issuedAt: now)
+        var trialStored: String?
+        _ = try DeviceTrialClock.store(
+            token: trialToken,
+            fingerprint: fingerprint,
+            verifiedAt: now,
+            publicKeyRaw: trialKeys.publicKeyRaw,
+            write: { trialStored = $0 }
+        )
+        // Lifetime overlay takes priority
+        let lifetimeSnapshot = try LifetimeLocalCredential.activeSnapshot(
+            at: now,
+            fingerprint: fingerprint,
+            publicKeyRaw: lifetimeKeys.publicKeyRaw,
+            read: { lifetimeStored }
+        )
+        #expect(lifetimeSnapshot?.license == .lifetime)
+        #expect(lifetimeSnapshot?.trialPresentation(at: now) == nil)
+    }
+
+    @Test func activeTrialSurvivesSignOutOverlay() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "acceptance-2")
+        let trialEnds = now.addingTimeInterval(7 * 86_400)
+        let token = try keys.token(fingerprint: fingerprint, startedAt: now, endsAt: trialEnds, issuedAt: now)
+        var stored: String?
+        let stored1 = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: fingerprint,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        // Before sign-out: active trial
+        #expect(stored1.endsAt == trialEnds.roundedToUnix)
+        // After sign-out simulation: clear appAccess, then overlay device trial
+        var appAccess = AppAccessSnapshot()
+        #expect(appAccess.license == .none)
+        // Simulate device trial overlay (only when license is .none)
+        if let overlay = try DeviceTrialClock.activeSnapshot(
+            at: now,
+            fingerprint: fingerprint,
+            publicKeyRaw: keys.publicKeyRaw,
+            read: { stored }
+        ) {
+            appAccess = overlay
+        }
+        #expect(appAccess.license == .trial)
+        #expect(appAccess.trialEndsAt == trialEnds.roundedToUnix)
+        if case let .active(presentation)? = appAccess.trialPresentation(at: now) {
+            #expect(presentation.endsAt == trialEnds.roundedToUnix)
+        } else {
+            Issue.record("Expected active trial presentation")
+        }
+    }
+
+    @Test func expiredDeviceTrialHasNoActiveSnapshot() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "acceptance-3")
+        let started = now.addingTimeInterval(-20 * 86_400)
+        let ended = now.addingTimeInterval(-1 * 86_400)
+        let token = try keys.token(fingerprint: fingerprint, startedAt: started, endsAt: ended, issuedAt: started)
+        var stored: String?
+        _ = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: fingerprint,
+            verifiedAt: started,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        let active = try DeviceTrialClock.activeSnapshot(
+            at: now,
+            fingerprint: fingerprint,
+            publicKeyRaw: keys.publicKeyRaw,
+            read: { stored }
+        )
+        #expect(active == nil)
+        // Sign-out overlay should not fabricate a trial clock
+        var appAccess = AppAccessSnapshot()
+        if let overlay = active {
+            appAccess = overlay
+        }
+        #expect(appAccess.license == .none)
+        #expect(appAccess.trialPresentation(at: now) == nil)
+    }
+
+    @Test func deviceTrialTruncateAfterMerge() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "pr4-truncate")
+        // Device trial: started earlier, ends later
+        let deviceStarted = now.addingTimeInterval(-5 * 86_400)
+        let deviceEnds = now.addingTimeInterval(9 * 86_400)
+        let deviceToken = try keys.token(
+            fingerprint: fingerprint,
+            startedAt: deviceStarted,
+            endsAt: deviceEnds,
+            issuedAt: deviceStarted
+        )
+        var storedDevice: String?
+        let deviceRecord = try DeviceTrialClock.store(
+            token: deviceToken,
+            fingerprint: fingerprint,
+            verifiedAt: deviceStarted,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { storedDevice = $0 }
+        )
+        #expect(deviceRecord.endsAt == deviceEnds.roundedToUnix)
+        // Server merged trial: earlier endsAt (server trial started later)
+        let serverEnds = now.addingTimeInterval(5 * 86_400)
+        // After merge, server should have re-issued a truncated device token
+        let truncatedToken = try keys.token(
+            fingerprint: fingerprint,
+            startedAt: deviceStarted,
+            endsAt: serverEnds,
+            issuedAt: now
+        )
+        let truncatedRecord = try DeviceTrialClock.store(
+            token: truncatedToken,
+            fingerprint: fingerprint,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { storedDevice = $0 }
+        )
+        #expect(truncatedRecord.endsAt == serverEnds.roundedToUnix)
+        // Sign-out overlay should show truncated endsAt
+        let overlaySnapshot = try DeviceTrialClock.activeSnapshot(
+            at: now,
+            fingerprint: fingerprint,
+            publicKeyRaw: keys.publicKeyRaw,
+            read: { storedDevice }
+        )
+        #expect(overlaySnapshot?.trialEndsAt == serverEnds.roundedToUnix)
+        if case let .active(presentation)? = overlaySnapshot?.trialPresentation(at: now) {
+            #expect(presentation.endsAt == serverEnds.roundedToUnix)
+        } else {
+            Issue.record("Expected active trial presentation with truncated endsAt")
+        }
+    }
+
 }
 
 private struct LifetimeDeviceTestKeys {

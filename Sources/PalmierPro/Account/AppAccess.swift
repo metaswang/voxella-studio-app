@@ -101,6 +101,8 @@ struct AppAccessSnapshot: Codable, Equatable, Sendable {
 }
 
 enum TrialPresentation: Equatable, Sendable {
+    static let reminderLeadHours: TimeInterval = 72 * 60 * 60
+
     struct Active: Equatable, Sendable {
         let endsAt: Date
         let remaining: TimeInterval
@@ -110,7 +112,7 @@ enum TrialPresentation: Equatable, Sendable {
             remaining = max(0, endsAt.timeIntervalSince(now))
         }
 
-        var isReminderEligible: Bool { remaining <= 72 * 60 * 60 }
+        var isReminderEligible: Bool { remaining <= TrialPresentation.reminderLeadHours }
         var usesWarningColor: Bool { isReminderEligible }
 
         var sidebarLabel: String {

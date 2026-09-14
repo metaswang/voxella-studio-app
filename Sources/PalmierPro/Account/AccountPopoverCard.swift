@@ -88,25 +88,13 @@ struct AccountPopoverCard: View {
                 }
             }
 
-            if let active = activeTrialPresentation {
-                Button { AppAccessWindow.shared.present() } label: {
-                    HStack(spacing: AppTheme.Spacing.xs) {
-                        Image(systemName: "clock")
-                        Text("Trial: \(active.sidebarLabel)")
-                        Spacer(minLength: 0)
-                        Text(trialActionLabel)
+            if activeTrialPresentation != nil {
+                TimelineView(.periodic(from: .now, by: 60.0)) { _ in
+                    if let active = activeTrialPresentation {
+                        trialCountdownBlock(active: active)
                     }
-                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
-                    .foregroundStyle(active.usesWarningColor ? AppTheme.Status.warningColor : AppTheme.Text.secondaryColor)
                 }
-                .buttonStyle(.plain)
-                .help(trialActionLabel)
-
-                Text("Ends \(active.endsAt.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.system(size: AppTheme.FontSize.xxs))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
-
 
             if account.isSignedIn {
                 creditsBlock
@@ -116,6 +104,26 @@ struct AccountPopoverCard: View {
                 upgradeBlock
             }
         }
+    }
+
+    @ViewBuilder
+    private func trialCountdownBlock(active: TrialPresentation.Active) -> some View {
+        Button { AppAccessWindow.shared.present() } label: {
+            HStack(spacing: AppTheme.Spacing.xs) {
+                Image(systemName: "clock")
+                Text("Trial: \(active.sidebarLabel)")
+                Spacer(minLength: 0)
+                Text(trialActionLabel)
+            }
+            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+            .foregroundStyle(active.usesWarningColor ? AppTheme.Status.warningColor : AppTheme.Text.secondaryColor)
+        }
+        .buttonStyle(.plain)
+        .help(trialActionLabel)
+
+        Text("Ends \(active.endsAt.formatted(date: .abbreviated, time: .shortened))")
+            .font(.system(size: AppTheme.FontSize.xxs))
+            .foregroundStyle(AppTheme.Text.tertiaryColor)
     }
 
     /// Countdown UI only — expired / verify / Lifetime must not show a trial clock.
@@ -131,9 +139,6 @@ struct AccountPopoverCard: View {
         "View plans"
 #endif
     }
-
-
-
 
     @ViewBuilder
     private var upgradeBlock: some View {

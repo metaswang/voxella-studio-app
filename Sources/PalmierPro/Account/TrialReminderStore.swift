@@ -9,12 +9,21 @@ actor TrialReminderStore {
         self.defaults = defaults
     }
 
-    static func key(userID: UUID, endsAt: Date) -> String {
-        "\(reminderPrefix)\(userID.uuidString).\(Int64(endsAt.timeIntervalSince1970))"
+    static func key(userID: UUID?, endsAt: Date) -> String {
+        let identifier = userID?.uuidString ?? deviceIdentifier()
+        return "\(reminderPrefix)\(identifier).\(Int64(endsAt.timeIntervalSince1970))"
     }
 
-    static func startedKey(userID: UUID, endsAt: Date) -> String {
-        "\(startedPrefix)\(userID.uuidString).\(Int64(endsAt.timeIntervalSince1970))"
+    static func startedKey(userID: UUID?, endsAt: Date) -> String {
+        let identifier = userID?.uuidString ?? deviceIdentifier()
+        return "\(startedPrefix)\(identifier).\(Int64(endsAt.timeIntervalSince1970))"
+    }
+
+    private static func deviceIdentifier() -> String {
+        guard let fingerprint = try? DeviceFingerprint.current() else {
+            return "device"
+        }
+        return fingerprint
     }
 
     func claim(key: String) -> Bool {

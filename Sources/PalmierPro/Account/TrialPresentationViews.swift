@@ -8,11 +8,15 @@ struct TrialSidebarStatus: View {
 
     var body: some View {
         // Countdown only while trial is actively remaining. Lifetime / expired / verify: no trial clock.
-        if case let .active(active)? = account.trialPresentation {
-            if isExpanded {
-                expandedStatus(.active(active))
-            } else {
-                collapsedStatus(.active(active))
+        if account.trialPresentation != nil {
+            TimelineView(.periodic(from: .now, by: 60.0)) { context in
+                if case let .active(active)? = account.trialPresentation {
+                    if isExpanded {
+                        expandedStatus(.active(active))
+                    } else {
+                        collapsedStatus(.active(active))
+                    }
+                }
             }
         }
     }
@@ -67,36 +71,23 @@ struct TrialSidebarStatus: View {
     }
 
     private func sidebarText(for presentation: TrialPresentation) -> String {
-        switch presentation {
-        case let .active(active): "Trial: \(active.sidebarLabel)"
-        case .expired: "Trial ended"
-        case .verificationRequired: "Verify trial access"
-        }
+        guard case let .active(active) = presentation else { return "" }
+        return "Trial: \(active.sidebarLabel)"
     }
 
     private func collapsedText(for presentation: TrialPresentation) -> String {
-        if case let .active(active) = presentation { return active.collapsedLabel }
-        return "—"
+        guard case let .active(active) = presentation else { return "" }
+        return active.collapsedLabel
     }
 
     private func helpText(for presentation: TrialPresentation) -> String {
-        switch presentation {
-        case let .active(active):
-            "Trial ends \(active.endsAt.formatted(date: .abbreviated, time: .shortened))"
-        case .expired: "Trial ended. \(trialPurchaseLabel)."
-        case .verificationRequired: "Connect to the internet to verify trial access."
-        }
+        guard case let .active(active) = presentation else { return "" }
+        return "Trial ends \(active.endsAt.formatted(date: .abbreviated, time: .shortened))"
     }
 
     private func foreground(for presentation: TrialPresentation) -> Color {
-        switch presentation {
-        case let .active(active) where active.usesWarningColor:
-            AppTheme.Status.warningColor
-        case .expired, .verificationRequired:
-            AppTheme.Status.warningColor
-        case .active:
-            AppTheme.Text.secondaryColor
-        }
+        guard case let .active(active) = presentation else { return AppTheme.Text.secondaryColor }
+        return active.usesWarningColor ? AppTheme.Status.warningColor : AppTheme.Text.secondaryColor
     }
 }
 
