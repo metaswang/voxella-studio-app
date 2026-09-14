@@ -1,6 +1,8 @@
 import Foundation
 
 actor AppAccessCache {
+    // Account-bound offline lease cache. Cleared on logout.
+    // Device-local trial lives in DeviceTrialClock (separate ThisDeviceOnly key) and must not be cleared here.
     static let shared = AppAccessCache()
     private var writeRevision: UInt64 = 0
     private let readValue: @Sendable () throws -> String?

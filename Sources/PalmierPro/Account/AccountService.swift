@@ -179,12 +179,18 @@ final class AccountService {
         AppAccessGate.canCreateNewContent(
             enforced: isAppAccessEnforced,
             signedIn: isSignedIn,
-            access: appAccess
+            access: appAccess,
+            hasLocalLifetimeCredential: LifetimeLocalCredential.isPresent()
         )
     }
     var canPurchaseCredits: Bool { isSignedIn && (!isAppAccessEnforced || appAccess.canPurchaseCredits) }
     var appAccessLabel: String {
-        AppAccessGate.label(enforced: isAppAccessEnforced, access: appAccess, tier: tier)
+        AppAccessGate.label(
+            enforced: isAppAccessEnforced,
+            access: appAccess,
+            tier: tier,
+            hasLocalLifetimeCredential: LifetimeLocalCredential.isPresent()
+        )
     }
 
     var spentCredits: Int { account?.user.spentCreditsThisPeriod ?? 0 }
@@ -263,6 +269,7 @@ final class AccountService {
                 "convex": !isMisconfigured,
             ]
         )
+        applyDeviceTrialOverlayIfNeeded()
         restoreSession()
         didBecomeActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
@@ -420,6 +427,8 @@ final class AccountService {
                 appAccess = reportedAccess
                 entitlementSchedule.succeeded(at: .now)
             }
+            // Free / unsigned-capable path: fill from device trial when server has no entitlement (PR1).
+            applyDeviceTrialOverlayIfNeeded()
         } else {
             appAccess = .init()
         }
@@ -477,6 +486,8 @@ final class AccountService {
         appAccess = .init()
         availablePlans = []
         isBuyingCredits = false
+        // Device trial is device-local and must survive logout / account clear (PR1).
+        applyDeviceTrialOverlayIfNeeded()
     }
 
     func signInWithGoogle() async {
@@ -544,13 +555,21 @@ final class AccountService {
 
     private func performAppAccessPreparation() async throws {
         guard Self.paidAccessEnabled else { return }
-        if isSignedIn, appAccess.policy() == .allowed { return }
+        applyDeviceTrialOverlayIfNeeded()
+        if LifetimeLocalCredential.isPresent() { return }
+        if appAccess.policy() == .allowed { return }
+
         if isLoading, userID == nil {
             _ = await restoreOfflineAccess(generation: sessionGeneration)
-            if isSignedIn, appAccess.policy() == .allowed { return }
+            applyDeviceTrialOverlayIfNeeded()
+            if appAccess.policy() == .allowed { return }
         }
         await waitForSessionRestore()
-        if isSignedIn, appAccess.policy() == .allowed { return }
+        applyDeviceTrialOverlayIfNeeded()
+        if appAccess.policy() == .allowed { return }
+
+#if MAC_APP_STORE
+        // MAS trial remains StoreKit + account-bound.
         if !isSignedIn {
             let preparation = await ensureCloudAccess()
             switch preparation {
@@ -562,21 +581,16 @@ final class AccountService {
                 throw AppAccessError.verificationRequired
             }
         }
-
         await refreshAccountForFeatureAccess()
         if appAccess.license == .none, !tier.isPaid {
             let generation = sessionGeneration
             let owner = userID
             do {
-#if MAC_APP_STORE
                 guard let userID else { throw AppAccessError.signInRequired }
                 guard let access = try await AppStorePurchaseProvider.shared.purchase(.trial, appAccountToken: userID) else {
                     throw AppAccessError.verificationRequired
                 }
-#else
-                let access = try await api.startAppTrial().snapshot
-#endif
-                guard isCurrentSession(generation), userID == owner else { throw CancellationError() }
+                guard isCurrentSession(generation), self.userID == owner else { throw CancellationError() }
                 accessRequestID = UUID()
                 appAccess = access
                 entitlementSchedule.succeeded(at: .now)
@@ -587,7 +601,55 @@ final class AccountService {
                 throw (error as? AppAccessError) ?? AppAccessError.verificationRequired
             }
         }
+#else
+        // DMG: start or resume device-local trial without forcing sign-in (PR1).
+        // Server account trial merge is PR4; Lifetime credential issue/verify is PR2–PR3.
+        do {
+            try await ensureDeviceTrialStarted()
+        } catch {
+            lastError = error.localizedDescription
+            throw (error as? AppAccessError) ?? AppAccessError.verificationRequired
+        }
+        if appAccess.policy() == .allowed { return }
+
+        // Subscription / paid cloud still need a signed-in session when trial is exhausted.
+        if appAccess.hasActiveSubscription, !isSignedIn {
+            let preparation = await ensureCloudAccess()
+            switch preparation {
+            case .ready:
+                break
+            case .cancelled:
+                throw AppAccessError.signInRequired
+            case .failed:
+                throw AppAccessError.verificationRequired
+            }
+            await refreshAccountForFeatureAccess()
+        }
+#endif
         try requireNewContentAccess()
+    }
+
+    /// Overlay device-local trial onto `appAccess` when no stronger entitlement is present.
+    private func applyDeviceTrialOverlayIfNeeded() {
+        guard Self.paidAccessEnabled else { return }
+        if LifetimeLocalCredential.isPresent() { return }
+        if appAccess.license == .lifetime { return }
+        if appAccess.hasActiveSubscription { return }
+        // Keep an existing server/device trial snapshot; only fill `.none`.
+        if appAccess.hasLocalFeatureEntitlement { return }
+        guard let snapshot = try? DeviceTrialClock.currentSnapshot() else { return }
+        appAccess = snapshot
+    }
+
+    private func ensureDeviceTrialStarted() async throws {
+        let record = try DeviceTrialClock.ensureStarted()
+        guard let snapshot = record.snapshot() else {
+            throw AppAccessError.verificationRequired
+        }
+        accessRequestID = UUID()
+        appAccess = snapshot
+        entitlementSchedule.succeeded(at: .now)
+        // Do not persist device trial into AppAccessCache (that cache clears on logout).
     }
 
     func requireNewContentAccess() throws {
@@ -596,7 +658,8 @@ final class AccountService {
             try AppAccessGate.requireNewContent(
                 enforced: Self.paidAccessEnabled,
                 signedIn: isSignedIn,
-                access: appAccess
+                access: appAccess,
+                hasLocalLifetimeCredential: LifetimeLocalCredential.isPresent()
             )
         } catch let error as AppAccessError {
             presentAppAccessNotice(for: error)
@@ -929,6 +992,7 @@ final class AccountService {
                   userID == nil || userID == entry.account.user.id else { return false }
             account = entry.account
             appAccess = entry.access
+            applyDeviceTrialOverlayIfNeeded()
             isOfflineAccount = true
             lastError = nil
             return true

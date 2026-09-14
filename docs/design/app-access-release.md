@@ -32,3 +32,39 @@ API 配置模板是 `../voxella-api/mac-app-access.env.example`。先执行 Mac 
 默认 DMG 构建的 `AppAccessTests` 与 `VoxellaAuthServiceTests` 共 32 项通过。实际发行还需验证 Stripe test 支付、取消、支付后断网、退款、账户切换和 webhook 重放，确认交付唯一且不能绑定其他账户。
 
 检查试用到期后的新建门禁、既有项目操作、重复激活、登出和重新打开购买窗口。挂载签名并公证的 DMG 验证 Developer ID、麦克风权限、最低系统版本及 Gatekeeper；不把 SwiftPM 测试视为完整安装或登录验收。
+
+## 访问门禁矩阵（PR1 起）
+
+产品规则（已定）：
+
+1. **Lifetime**：购买结账需登录（绑定账户并发放设备凭证）；之后本机本地功能可不登录使用。设备凭证签发/校验见 PR2–PR3；换机与 N 台设备见后续 PR。
+2. **14 天试用**：首次使用 Mac 应用时在本机 `ThisDeviceOnly` Keychain 启动；未登录或免费登录均可使用本地功能（付费云/积分仍需登录）。跨设备账户试用合并见 PR4。
+3. **付费订阅**：登录与离线租期逻辑不变；订阅路径仍要求登录。
+4. **退款 / 设备上限**：PR5。
+
+`AppAccessGate` / `prepareNewContentAccess`：未登录用户可进入试用；订阅与付费云路径仍走登录。试用时钟不因登出清除（与 `AppAccessCache` 账户离线缓存分离）。
+
+## PR1 验收 Blocker（2026-09-14 Research）
+
+PR1 功能可合入开发分支做联调，但**不可标为可发行/验收通过**，直至下列项关闭：
+
+### B1 — 未登录试用可被本地重置（Critical）
+当前 `DeviceTrialClock` 仅 Keychain 存明文 `startedAt`，无服务端登记。删除 Keychain / 重装 / 新用户目录后会 `ensureStarted()` 重开 14 天。
+
+### B2 — Lifetime stub 曾可伪造（Critical，已收紧）
+原 stub 对任意非空 Keychain blob 返回 true。PR1 已改为 **`isPresent()` 恒为 false**：拒绝未签名/未校验凭证，直至 PR2 落地真实签名校验后再按 verified credential 返回 true。
+
+### 推荐补强（适合「无 VoxStudio 登录、可联网」）
+行业常见模式（Keygen/Keyforge/Paddle 类 desktop licensing、Tessera 文档对照）：
+
+1. **匿名设备试用 = license state**：首次能联网时 `POST` 登记  
+   `device_fingerprint = HMAC-SHA256(IOPlatformUUID, app_pepper)`（只上传哈希）  
+2. 服务端写入 `fingerprint + trial_started_at`，返回 **Ed25519 / JWT 签名试用 token**（含 `ends_at`）  
+3. 客户端 Keychain 存签名 token；离线验公钥 + 到期；联网周期复检；同指纹已过期拒重开  
+4. 离线 grace（如 24h–7d）避免断网误锁；时钟回退检测  
+5. 登录后与账号试用取 **earliest**（PR4）
+
+**不作为最终方案**：仅多锚点本地存储（Keychain + 隐藏文件）——挡普通人，挡不住清干净/VM。  
+**不默认采用**：iCloud `CKRecord` userRecordID（需 Apple ID，与「无 VoxStudio 登录」不完全同构，可作后续增强）。
+
+关闭路径：将「匿名签名试用 token + 服务端 fingerprint 登记」前移为 **PR1.1**，或并入 **PR3** 且在此之前不开启生产 `VoxStudioPaidAccessEnabled` 依赖本地试用防滥用。

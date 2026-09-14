@@ -38,11 +38,37 @@ struct AppAccessSnapshot: Codable, Equatable, Sendable {
         self.offlineValidUntil = offlineValidUntil
     }
 
+    /// Local-feature entitlement without requiring a server offline lease.
+    /// Lifetime (incl. PR2 local credential) and active trial work signed-out.
+    /// Paid subscription still needs a valid offline lease when enforced via policy().
+    var hasLocalFeatureEntitlement: Bool {
+        hasLocalFeatureEntitlement(at: .now)
+    }
+
+    func hasLocalFeatureEntitlement(at date: Date) -> Bool {
+        if license == .lifetime { return true }
+        if license == .trial, let trialEndsAt, trialEndsAt > date { return true }
+        return false
+    }
+
+    var hasActiveSubscription: Bool {
+        hasActiveSubscription(at: .now)
+    }
+
+    func hasActiveSubscription(at date: Date) -> Bool {
+        subscriptionTier.isPaid && subscriptionEndsAt.map { $0 > date } == true
+    }
+
     func policy(at date: Date = .now) -> AppAccessPolicy {
         let entitled = license == .lifetime
-            || (subscriptionTier.isPaid && subscriptionEndsAt.map { $0 > date } == true)
+            || hasActiveSubscription(at: date)
             || (license == .trial && trialEndsAt.map { $0 > date } == true)
         guard entitled else { return .expired }
+        // Device-local trial pins offlineValidUntil to trial end; lifetime/sub still need lease.
+        if license == .trial, hasLocalFeatureEntitlement(at: date),
+           offlineValidUntil == nil || offlineValidUntil.map({ $0 > date }) == true {
+            return .allowed
+        }
         guard let offlineValidUntil, offlineValidUntil > date else { return .verificationRequired }
         return .allowed
     }
@@ -57,29 +83,71 @@ struct AppAccessSnapshot: Codable, Equatable, Sendable {
 }
 
 enum AppAccessGate {
+    /// Access matrix (PR1):
+    /// - Lifetime: local features allowed when license/credential present (no login).
+    /// - Active device/server trial: local features allowed signed-out or free signed-in.
+    /// - Paid subscription: still requires a signed-in session with a valid lease.
+    /// - Purchase checkout / paid cloud / credits: callers keep requiring sign-in separately.
     static func canCreateNewContent(
         enforced: Bool,
         signedIn: Bool,
         access: AppAccessSnapshot,
+        hasLocalLifetimeCredential: Bool = false,
         at date: Date = .now
     ) -> Bool {
-        !enforced || (signedIn && access.policy(at: date) == .allowed)
+        (try? requireNewContent(
+            enforced: enforced,
+            signedIn: signedIn,
+            access: access,
+            hasLocalLifetimeCredential: hasLocalLifetimeCredential,
+            at: date
+        )) != nil
     }
 
     static func requireNewContent(
         enforced: Bool,
         signedIn: Bool,
         access: AppAccessSnapshot,
+        hasLocalLifetimeCredential: Bool = false,
         at date: Date = .now
     ) throws {
         guard enforced else { return }
-        guard signedIn else { throw AppAccessError.signInRequired }
-        try access.policy(at: date).requireNewContent()
+        if hasLocalLifetimeCredential || access.license == .lifetime {
+            // PR2 will verify the device credential; PR1 accepts presence / server lifetime.
+            if access.license == .lifetime, access.policy(at: date) == .verificationRequired, !hasLocalLifetimeCredential {
+                throw AppAccessError.verificationRequired
+            }
+            return
+        }
+        if access.hasLocalFeatureEntitlement(at: date) {
+            return
+        }
+        if access.hasActiveSubscription(at: date) {
+            guard signedIn else { throw AppAccessError.signInRequired }
+            switch access.policy(at: date) {
+            case .allowed:
+                return
+            case .verificationRequired:
+                throw AppAccessError.verificationRequired
+            case .expired:
+                throw AppAccessError.verificationRequired
+            }
+        }
+        if access.license == .trial {
+            throw AppAccessError.trialExpired
+        }
+        // No entitlement yet — `prepareNewContentAccess` starts the device trial clock (signed-out OK).
+        throw AppAccessError.verificationRequired
     }
 
-    static func label(enforced: Bool, access: AppAccessSnapshot, tier: AccountTier) -> String {
+    static func label(
+        enforced: Bool,
+        access: AppAccessSnapshot,
+        tier: AccountTier,
+        hasLocalLifetimeCredential: Bool = false
+    ) -> String {
         guard enforced else { return tier.planLabel }
-        if access.license == .lifetime { return "Lifetime" }
+        if access.license == .lifetime || hasLocalLifetimeCredential { return "Lifetime" }
         if access.subscriptionTier.isPaid, access.subscriptionEndsAt.map({ $0 > .now }) == true {
             return access.subscriptionTier.planLabel
         }
@@ -110,7 +178,7 @@ enum AppAccessError: LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .signInRequired:
-            "Sign in to start your 14-day trial."
+            "Sign in to use subscription and cloud features."
         case .trialExpired:
             "Your trial has ended. Choose Lifetime, Starter, or Pro to create new content."
         case .verificationRequired:
