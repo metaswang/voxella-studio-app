@@ -563,6 +563,8 @@ final class AccountService {
     private func performAppAccessPreparation() async throws {
         guard Self.paidAccessEnabled else { return }
         applyLifetimeCredentialOverlayIfNeeded()
+        await renewLifetimeLeaseIfNeeded()
+        applyLifetimeCredentialOverlayIfNeeded()
         applyDeviceTrialOverlayIfNeeded()
         if LifetimeLocalCredential.isPresent() { return }
         if appAccess.policy() == .allowed { return }
@@ -676,7 +678,8 @@ final class AccountService {
                     let response = try await api.verifyLifetimeDevice(fingerprint: fingerprint)
                     try applyLifetimeDeviceResponse(response, fingerprint: fingerprint, userID: owner)
                 } catch {
-                    // Keep previously verified local credential.
+                    // Keep previously verified local credential; try token renew as fallback.
+                    await renewLifetimeLeaseIfNeeded(force: true)
                 }
             }
             return
@@ -686,6 +689,23 @@ final class AccountService {
             try applyLifetimeDeviceResponse(response, fingerprint: fingerprint, userID: owner)
         } catch {
             Log.account.warning("Lifetime device credential issue unavailable")
+        }
+    }
+
+    /// PR3: refresh Lifetime lease while signed out using the stored license token.
+    private func renewLifetimeLeaseIfNeeded(force: Bool = false) async {
+        guard Self.paidAccessEnabled else { return }
+        guard let record = try? LifetimeLocalCredential.load() else { return }
+        if !force, !record.refreshIsDue(at: .now, lastAttempt: lifetimeDeviceVerifyAttempt) {
+            return
+        }
+        lifetimeDeviceVerifyAttempt = .now
+        do {
+            let response = try await api.renewLifetimeLease(token: record.token)
+            try applyLifetimeDeviceResponse(response, fingerprint: record.fingerprint, userID: record.userID)
+        } catch {
+            // Keep previously verified local credential until lease expires.
+            Log.account.warning("Lifetime lease renew unavailable while signed out")
         }
     }
 

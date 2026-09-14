@@ -7,16 +7,20 @@ enum LifetimeDeviceLicenseError: Error {
     case invalidType
     case fingerprintMismatch
     case userMismatch
+    case leaseExpired
 }
 
 enum LifetimeDeviceLicense {
     /// Same Ed25519 public key as device-trial (MAC_ACCESS_DEVICE_TRIAL_PRIVATE_KEY).
     static let publicKeyRaw = DeviceTrialLicense.publicKeyRaw
+    /// Offline lease length matching server LEASE_DAYS (PR3).
+    static let leaseDays = 30
 
     struct Claims: Equatable, Sendable {
         let userID: UUID
         let fingerprint: String
         let issuedAt: Date
+        let expiresAt: Date
         let jti: String
     }
 
@@ -24,7 +28,9 @@ enum LifetimeDeviceLicense {
         _ token: String,
         fingerprint: String? = nil,
         userID: UUID? = nil,
-        publicKeyRaw: Data = publicKeyRaw
+        publicKeyRaw: Data = publicKeyRaw,
+        now: Date = .now,
+        requireUnexpired: Bool = false
     ) throws -> Claims {
         let parts = token.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 3 else { throw LifetimeDeviceLicenseError.malformed }
@@ -55,10 +61,22 @@ enum LifetimeDeviceLicense {
         if let userID, userID != uid {
             throw LifetimeDeviceLicenseError.userMismatch
         }
+        let issuedAt = try date(payload["iat"])
+        // PR2 tokens omit exp; treat as issuedAt + leaseDays so renew can tighten.
+        let expiresAt: Date
+        if payload["exp"] != nil {
+            expiresAt = try date(payload["exp"])
+        } else {
+            expiresAt = issuedAt.addingTimeInterval(TimeInterval(leaseDays * 24 * 3_600))
+        }
+        if requireUnexpired, now >= expiresAt {
+            throw LifetimeDeviceLicenseError.leaseExpired
+        }
         return Claims(
             userID: uid,
             fingerprint: fp,
-            issuedAt: try date(payload["iat"]),
+            issuedAt: issuedAt,
+            expiresAt: expiresAt,
             jti: payload["jti"] as? String ?? ""
         )
     }

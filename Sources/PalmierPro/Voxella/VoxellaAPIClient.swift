@@ -886,6 +886,7 @@ struct LifetimeDeviceAPIResponse: Decodable, Sendable {
     let fingerprint: String?
     let status: String?
     let issuedAt: Date?
+    let leaseEndsAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case token
@@ -893,6 +894,7 @@ struct LifetimeDeviceAPIResponse: Decodable, Sendable {
         case fingerprint
         case status
         case issuedAt = "issued_at"
+        case leaseEndsAt = "lease_ends_at"
     }
 
     init(from decoder: Decoder) throws {
@@ -901,13 +903,15 @@ struct LifetimeDeviceAPIResponse: Decodable, Sendable {
         userID = try container.decodeIfPresent(String.self, forKey: .userID)
         fingerprint = try container.decodeIfPresent(String.self, forKey: .fingerprint)
         status = try container.decodeIfPresent(String.self, forKey: .status)
-        if let raw = try container.decodeIfPresent(String.self, forKey: .issuedAt) {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            issuedAt = formatter.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
-        } else {
-            issuedAt = nil
-        }
+        issuedAt = Self.decodeDate(container, .issuedAt)
+        leaseEndsAt = Self.decodeDate(container, .leaseEndsAt)
+    }
+
+    private static func decodeDate(_ container: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Date? {
+        guard let value = try? container.decodeIfPresent(String.self, forKey: key) else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 }
 
@@ -974,6 +978,26 @@ actor VoxellaAPIClient {
             json: ["fingerprint": fingerprint],
             as: LifetimeDeviceAPIResponse.self
         )
+    }
+
+    /// PR3: renew ≤30d lease while signed out using the stored license token (no user JWT).
+    func renewLifetimeLease(token: String) async throws -> LifetimeDeviceAPIResponse {
+        var request = URLRequest(url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/lifetime/verify"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["token": token])
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw VoxellaAPIError.http(0, "No response")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw VoxellaAPIError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+        }
+        do {
+            return try JSONDecoder().decode(LifetimeDeviceAPIResponse.self, from: data)
+        } catch {
+            throw VoxellaAPIError.decoding
+        }
     }
 
     func billingBalance() async throws -> VoxellaBillingBalance {

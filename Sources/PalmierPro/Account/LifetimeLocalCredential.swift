@@ -1,12 +1,13 @@
 import Foundation
 
-/// Lifetime device credential (PR2).
+/// Lifetime device credential (PR2/PR3).
 /// Independent ThisDeviceOnly Keychain account — must survive logout / AppAccessCache clear.
-/// Authority is a signed Ed25519 JWT bound to user_id + device fingerprint.
+/// Authority is a signed Ed25519 JWT bound to user_id + device fingerprint with ≤30d lease (exp).
 enum LifetimeLocalCredential {
     static let keychainAccount = "voxstudio.app-access.lifetime-credential"
     static let verifyInterval: TimeInterval = 24 * 3_600
     static let verifyRetryInterval: TimeInterval = 5 * 60
+    static let expiryLead: TimeInterval = 24 * 3_600
 
     struct Envelope: Codable, Equatable, Sendable {
         let token: String
@@ -22,24 +23,28 @@ enum LifetimeLocalCredential {
         var userID: UUID { claims.userID }
         var fingerprint: String { claims.fingerprint }
         var lastVerifiedAt: Date { envelope.lastVerifiedAt }
+        var expiresAt: Date { claims.expiresAt }
+        var token: String { envelope.token }
 
         func isChronologicallyValid(at date: Date) -> Bool {
-            date >= claims.issuedAt
+            date >= claims.issuedAt && date < claims.expiresAt
         }
 
         func snapshot(at date: Date = .now) -> AppAccessSnapshot? {
             guard isChronologicallyValid(at: date) else { return nil }
-            // Local Lifetime credential unlocks local features without an online lease.
             return AppAccessSnapshot(
                 license: .lifetime,
                 trialEndsAt: nil,
-                offlineValidUntil: nil
+                offlineValidUntil: claims.expiresAt
             )
         }
 
         func refreshIsDue(at date: Date = .now, lastAttempt: Date? = nil) -> Bool {
             if let lastAttempt, date.timeIntervalSince(lastAttempt) < LifetimeLocalCredential.verifyRetryInterval {
                 return false
+            }
+            if date.addingTimeInterval(LifetimeLocalCredential.expiryLead) >= claims.expiresAt {
+                return true
             }
             return date.timeIntervalSince(envelope.lastVerifiedAt) >= LifetimeLocalCredential.verifyInterval
         }
@@ -93,15 +98,19 @@ enum LifetimeLocalCredential {
         return Record(envelope: envelope, claims: claims)
     }
 
-    /// True only when a cryptographically verified Lifetime device credential is present.
+    /// True only when a cryptographically verified, unexpired Lifetime device credential is present.
     static func isPresent(
         fingerprint: String? = nil,
+        at date: Date = .now,
         read: () throws -> String? = {
             try KeychainStore.loadThisDeviceOnly(account: LifetimeLocalCredential.keychainAccount)
         },
         publicKeyRaw: Data = LifetimeDeviceLicense.publicKeyRaw
     ) -> Bool {
-        (try? load(fingerprint: fingerprint, publicKeyRaw: publicKeyRaw, read: read)) != nil
+        guard let record = try? load(fingerprint: fingerprint, publicKeyRaw: publicKeyRaw, read: read) else {
+            return false
+        }
+        return record.isChronologicallyValid(at: date)
     }
 
     static func activeSnapshot(at date: Date = .now) throws -> AppAccessSnapshot? {

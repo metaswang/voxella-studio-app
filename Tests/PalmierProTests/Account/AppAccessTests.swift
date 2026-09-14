@@ -372,6 +372,7 @@ struct AppAccessTests {
         #expect(record.userID == userID)
         #expect(LifetimeLocalCredential.isPresent(
             fingerprint: fingerprint,
+            at: now,
             read: { stored },
             publicKeyRaw: keys.publicKeyRaw
         ))
@@ -423,6 +424,7 @@ struct AppAccessTests {
         )
         let present = LifetimeLocalCredential.isPresent(
             fingerprint: fingerprint,
+            at: now,
             read: { stored },
             publicKeyRaw: keys.publicKeyRaw
         )
@@ -435,13 +437,66 @@ struct AppAccessTests {
             at: now
         )
     }
+
+    @Test func lifetimeLeaseExpiryBlocksAccess() throws {
+        let keys = LifetimeDeviceTestKeys()
+        let userID = UUID()
+        let fingerprint = DeviceFingerprint.hash(uuid: "lifetime-device-lease")
+        let issued = now.addingTimeInterval(-31 * 24 * 3_600)
+        let expired = now.addingTimeInterval(-24 * 3_600)
+        let token = try keys.token(userID: userID, fingerprint: fingerprint, issuedAt: issued, expiresAt: expired)
+        var stored: String?
+        _ = try LifetimeLocalCredential.store(
+            token: token,
+            fingerprint: fingerprint,
+            userID: userID,
+            verifiedAt: issued,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        #expect(LifetimeLocalCredential.isPresent(
+            fingerprint: fingerprint,
+            at: now,
+            read: { stored },
+            publicKeyRaw: keys.publicKeyRaw
+        ) == false)
+        let loaded = try LifetimeLocalCredential.load(
+            fingerprint: fingerprint,
+            publicKeyRaw: keys.publicKeyRaw,
+            read: { stored }
+        )
+        #expect(loaded?.snapshot(at: now) == nil)
+        #expect(loaded?.refreshIsDue(at: now) == true)
+    }
+
+    @Test func lifetimeRefreshDueNearLeaseExpiry() throws {
+        let keys = LifetimeDeviceTestKeys()
+        let userID = UUID()
+        let fingerprint = DeviceFingerprint.hash(uuid: "lifetime-device-near-exp")
+        let expires = now.addingTimeInterval(12 * 3_600)
+        let token = try keys.token(userID: userID, fingerprint: fingerprint, issuedAt: now, expiresAt: expires)
+        var stored: String?
+        let record = try LifetimeLocalCredential.store(
+            token: token,
+            fingerprint: fingerprint,
+            userID: userID,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { stored = $0 }
+        )
+        #expect(record.refreshIsDue(at: now))
+        #expect(record.expiresAt == expires)
+        _ = stored
+    }
+
 }
 
 private struct LifetimeDeviceTestKeys {
     let privateKey = Curve25519.Signing.PrivateKey()
     var publicKeyRaw: Data { privateKey.publicKey.rawRepresentation }
 
-    func token(userID: UUID, fingerprint: String, issuedAt: Date) throws -> String {
+    func token(userID: UUID, fingerprint: String, issuedAt: Date, expiresAt: Date? = nil) throws -> String {
+        let exp = expiresAt ?? issuedAt.addingTimeInterval(TimeInterval(LifetimeDeviceLicense.leaseDays * 24 * 3_600))
         let header = DeviceTrialLicense.base64URLEncode(
             try JSONSerialization.data(withJSONObject: ["alg": "EdDSA", "typ": "JWT", "kid": "lifetime-device-v1"])
         )
@@ -451,6 +506,7 @@ private struct LifetimeDeviceTestKeys {
                 "uid": userID.uuidString,
                 "fp": fingerprint,
                 "iat": Int(issuedAt.timeIntervalSince1970),
+                "exp": Int(exp.timeIntervalSince1970),
                 "jti": "lifetime-test-jti",
             ])
         )

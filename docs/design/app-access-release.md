@@ -93,3 +93,16 @@ PR1 功能可合入开发分支做联调，但**不可标为可发行/验收通�
 | 复检 | 登录态下 ≥24h 调 `POST .../lifetime-device/verify`；失败保留已验签本地凭证（PR3 可加强吊销） |
 
 **验收**：购买后 Keychain 有签名 token；登出后本地功能仍可用；篡改 token 验签失败；未购买账户签发返回 403。
+
+### B2 续（PR3）— 未登录 Lifetime lease 续期 ≤30d
+
+购买后签发的 Lifetime JWT 含 `exp`（租期最长 30 天）。客户端可在**未登录**时用本地 license token 续租：
+
+| 步骤 | 行为 |
+| --- | --- |
+| 签发 | `POST /lifetime-device`（需登录）返回 token + `lease_ends_at`（≤30d） |
+| 未登录续期 | `POST /api/v1/app-access/lifetime/verify`（**无需 user JWT**）；body `{ token }`；验签后确认购买与设备行未撤销，再签发新 ≤30d lease |
+| 本地 | Keychain 存新 token；门禁要求 `now < exp`；登出不删除 |
+| 复检 | 距上次成功校验 ≥24h，或 `now + 24h >= exp` 时续期；失败保留未过期本地凭证 |
+
+**验收**：登出后联网可续期；退款/撤销后续期 403；篡改 token 失败；租期不超过 30 天。
