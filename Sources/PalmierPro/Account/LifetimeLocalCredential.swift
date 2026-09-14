@@ -2,7 +2,7 @@ import Foundation
 
 /// Lifetime device credential (PR2/PR3).
 /// Independent ThisDeviceOnly Keychain account — must survive logout / AppAccessCache clear.
-/// Authority is a signed Ed25519 JWT bound to user_id + device fingerprint with ≤30d lease (exp).
+/// Authority is a signed Ed25519 JWT bound to user_id + device fingerprint with server-issued lease (exp; default 14d).
 enum LifetimeLocalCredential {
     static let keychainAccount = "voxstudio.app-access.lifetime-credential"
     static let verifyInterval: TimeInterval = 24 * 3_600

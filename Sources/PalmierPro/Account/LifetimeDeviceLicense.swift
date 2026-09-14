@@ -13,8 +13,9 @@ enum LifetimeDeviceLicenseError: Error {
 enum LifetimeDeviceLicense {
     /// Same Ed25519 public key as device-trial (MAC_ACCESS_DEVICE_TRIAL_PRIVATE_KEY).
     static let publicKeyRaw = DeviceTrialLicense.publicKeyRaw
-    /// Offline lease length matching server LEASE_DAYS (PR3).
-    static let leaseDays = 30
+    /// Fallback when a legacy PR2 token omits `exp`. Prefer server-provided `exp` / `lease_ends_at`.
+    /// Matches API default MAC_ACCESS_LIFETIME_LEASE_DAYS (14).
+    static let leaseDays = 14
 
     struct Claims: Equatable, Sendable {
         let userID: UUID

@@ -1019,7 +1019,7 @@ actor VoxellaAPIClient {
         )
     }
 
-    /// PR3: renew ≤30d lease while signed out using the stored license token (no user JWT).
+    /// PR3: renew lease (server exp / lease_ends_at; default 14d) while signed out using the stored license token (no user JWT).
     func renewLifetimeLease(token: String) async throws -> LifetimeDeviceAPIResponse {
         var request = URLRequest(url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/lifetime/verify"))
         request.httpMethod = "POST"
