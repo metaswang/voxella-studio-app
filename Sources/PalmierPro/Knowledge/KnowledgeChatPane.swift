@@ -3,7 +3,7 @@ import SwiftUI
 struct KnowledgeChatPane: View {
     @Bindable var controller: KnowledgeBaseController
     @Bindable private var models = LocalModelManager.shared
-    @FocusState private var inputFocused: Bool
+    @State private var composerHeight: CGFloat = 22
 
     private var livePlan: LocalModelInstallPlan {
         models.knowledgeQAInstallPlan(
@@ -231,12 +231,18 @@ struct KnowledgeChatPane: View {
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: AppTheme.Spacing.md) {
-            TextField(L10n.string("Ask a question…"), text: $controller.draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...5)
-                .focused($inputFocused)
-                .onSubmit { controller.send() }
-                .disabled(controller.accessBlockedMessage != nil || !controller.canAskCurrentScope)
+            KnowledgeComposerTextEditor(
+                text: $controller.draft,
+                height: $composerHeight,
+                placeholder: L10n.string("Ask a question…"),
+                fontSize: AppTheme.FontSize.md,
+                minLines: 1,
+                maxLines: 8,
+                onSubmit: { controller.send() }
+            )
+            .frame(minWidth: 0, maxWidth: .infinity)
+            .frame(height: composerHeight)
+            .disabled(controller.accessBlockedMessage != nil || !controller.canAskCurrentScope)
 
             Button {
                 controller.send()
@@ -246,6 +252,7 @@ struct KnowledgeChatPane: View {
                     .foregroundStyle(canSend ? AppTheme.Accent.primary : AppTheme.Text.tertiaryColor)
             }
             .buttonStyle(.plain)
+            .fixedSize()
             .disabled(!canSend)
             .help(L10n.string("Send"))
         }
