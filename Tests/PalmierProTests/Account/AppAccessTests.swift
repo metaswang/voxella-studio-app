@@ -761,6 +761,84 @@ struct AppAccessTests {
         )
     }
 
+    @Test func provisionalLoginMergePayloadPrefersHintWithoutSignedToken() throws {
+        let fingerprint = DeviceFingerprint.hash(uuid: "provisional-login-merge")
+        var provisionalStored: String?
+        let started = now.addingTimeInterval(-1 * 86_400)
+        let provisional = try DeviceTrialClock.storeProvisional(
+            startedAt: started,
+            fingerprint: fingerprint,
+            write: { provisionalStored = $0 }
+        )
+        #expect(
+            DeviceTrialLoginMerge.shouldUpgradeProvisionalBeforeMerge(
+                hasSignedToken: false,
+                provisional: provisional,
+                at: now
+            )
+        )
+        // Resolve payload as merge does when upgrade failed / no signed token yet.
+        let payload = DeviceTrialLoginMerge.resolvePayload(
+            signedStartedAt: nil,
+            signedToken: nil,
+            earliestHint: provisional.startedAt
+        )
+        #expect(payload.deviceTrialToken == nil)
+        #expect(payload.deviceStartedAt == started)
+        let expectedEnds = DeviceTrialLoginMerge.expectedEndsPreservingProvisional(
+            provisionalStartedAt: started
+        )
+        #expect(expectedEnds == started.addingTimeInterval(14 * 86_400))
+        #expect(expectedEnds == provisional.endsAt)
+        #expect(
+            DeviceTrialLoginMerge.shouldClearProvisional(
+                serverTrialEndsAt: expectedEnds,
+                provisionalEndsAt: provisional.endsAt
+            )
+        )
+        // Reopen would be now+14d — must not match preserved provisional ends.
+        let reopenedEnds = now.addingTimeInterval(14 * 86_400)
+        #expect(expectedEnds != reopenedEnds)
+        _ = provisionalStored
+    }
+
+    @Test func signedLoginMergePayloadKeepsTokenAndEarliestRegression() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "signed-login-merge")
+        let started = now.addingTimeInterval(-3 * 86_400)
+        let ends = started.addingTimeInterval(14 * 86_400)
+        let token = try keys.token(
+            fingerprint: fingerprint,
+            startedAt: started,
+            endsAt: ends,
+            issuedAt: started
+        )
+        #expect(
+            !DeviceTrialLoginMerge.shouldUpgradeProvisionalBeforeMerge(
+                hasSignedToken: true,
+                provisional: DeviceTrialClock.ProvisionalRecord(
+                    startedAt: started.addingTimeInterval(-86_400),
+                    fingerprint: fingerprint
+                ),
+                at: now
+            )
+        )
+        let payload = DeviceTrialLoginMerge.resolvePayload(
+            signedStartedAt: started,
+            signedToken: token,
+            earliestHint: started.addingTimeInterval(-86_400)
+        )
+        #expect(payload.deviceTrialToken == token)
+        #expect(payload.deviceStartedAt == started)
+        // Server ending later than provisional must not clear provisional clock.
+        #expect(
+            !DeviceTrialLoginMerge.shouldClearProvisional(
+                serverTrialEndsAt: ends.addingTimeInterval(86_400),
+                provisionalEndsAt: ends
+            )
+        )
+    }
+
     @Test func provisionalExpiresAfterFourteenDays() throws {
         let fingerprint = DeviceFingerprint.hash(uuid: "provisional-expired")
         let started = now.addingTimeInterval(-15 * 86_400)

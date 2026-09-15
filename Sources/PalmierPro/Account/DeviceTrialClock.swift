@@ -239,3 +239,57 @@ enum DeviceTrialClock {
         let startedAt: Date
     }
 }
+
+
+/// Login merge helpers: provisional → signed upgrade, payload, and provisional clear.
+enum DeviceTrialLoginMerge {
+    struct Payload: Equatable, Sendable {
+        var deviceStartedAt: Date?
+        var deviceTrialToken: String?
+    }
+
+    /// When only a valid provisional clock exists, upgrade via register before `/trial` merge.
+    static func shouldUpgradeProvisionalBeforeMerge(
+        hasSignedToken: Bool,
+        provisional: DeviceTrialClock.ProvisionalRecord?,
+        at date: Date = .now
+    ) -> Bool {
+        guard !hasSignedToken, let provisional else { return false }
+        switch provisional.evaluation(at: date) {
+        case .allowed, .verificationRequired:
+            return true
+        case .expired, .invalid:
+            return false
+        }
+    }
+
+    /// Prefer signed token; else authenticated earliest local hint (provisional / legacy).
+    static func resolvePayload(
+        signedStartedAt: Date?,
+        signedToken: String?,
+        earliestHint: Date?
+    ) -> Payload {
+        if let signedToken, !signedToken.isEmpty {
+            return Payload(deviceStartedAt: signedStartedAt, deviceTrialToken: signedToken)
+        }
+        return Payload(deviceStartedAt: earliestHint, deviceTrialToken: nil)
+    }
+
+    /// After successful account merge, drop provisional when server absorbed it
+    /// (server ends ≤ provisional ends ⇒ start was earliest-or-equal).
+    static func shouldClearProvisional(
+        serverTrialEndsAt: Date?,
+        provisionalEndsAt: Date?
+    ) -> Bool {
+        guard let serverTrialEndsAt, let provisionalEndsAt else { return false }
+        return serverTrialEndsAt <= provisionalEndsAt
+    }
+
+    /// Expected account trial end when merge preserves provisional start (no reopen).
+    static func expectedEndsPreservingProvisional(
+        provisionalStartedAt: Date,
+        durationDays: Int = DeviceTrialClock.durationDays
+    ) -> Date {
+        provisionalStartedAt.addingTimeInterval(TimeInterval(durationDays) * 86_400)
+    }
+}
