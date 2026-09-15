@@ -781,25 +781,48 @@ final class AccountService {
     }
 
     /// PR4: on login/account refresh, merge device trial start into the account (earliest wins).
+    /// Provisional-only devices must upgrade (or send earliest hint) so `/trial` does not reopen 14d.
     private func mergeDeviceTrialOnLoginIfNeeded() async {
         guard Self.paidAccessEnabled, isSignedIn else { return }
         // Lifetime / paid subscription: server skips trial merge.
         if appAccess.license == .lifetime || appAccess.hasActiveSubscription { return }
-        var deviceStartedAt: Date?
-        var deviceToken: String?
-        if let record = try? DeviceTrialClock.load() {
-            deviceStartedAt = record.startedAt
-            deviceToken = record.envelope.token
+
+        let provisionalBeforeMerge = try? DeviceTrialClock.loadProvisional()
+        let hadSignedBefore = (try? DeviceTrialClock.load()) != nil
+        if DeviceTrialLoginMerge.shouldUpgradeProvisionalBeforeMerge(
+            hasSignedToken: hadSignedBefore,
+            provisional: provisionalBeforeMerge
+        ) {
+            do {
+                // Prefer signed token via register(clientStartedAt: provisional.startedAt).
+                try await ensureDeviceTrialStarted()
+            } catch {
+                // Network / register failure: still merge with earliestClientStartedAtHint below.
+                Log.account.warning("Provisional device trial upgrade before login merge unavailable")
+            }
         }
+
+        let signed = try? DeviceTrialClock.load()
+        let payload = DeviceTrialLoginMerge.resolvePayload(
+            signedStartedAt: signed?.startedAt,
+            signedToken: signed?.envelope.token,
+            earliestHint: DeviceTrialClock.earliestClientStartedAtHint()
+        )
         do {
             let access = try await api.startAppTrial(
-                deviceStartedAt: deviceStartedAt,
-                deviceTrialToken: deviceToken
+                deviceStartedAt: payload.deviceStartedAt,
+                deviceTrialToken: payload.deviceTrialToken
             )
             let serverTrialEndsAt = access.snapshot.trialEndsAt
             appAccess = access.snapshot
             entitlementSchedule.succeeded(at: .now)
             try? await persistAppAccess()
+            if DeviceTrialLoginMerge.shouldClearProvisional(
+                serverTrialEndsAt: serverTrialEndsAt,
+                provisionalEndsAt: provisionalBeforeMerge?.endsAt
+            ) {
+                try? DeviceTrialClock.clearProvisional()
+            }
             // After merge: if device local trial ends_at is later than server trial_ends_at,
             // re-issue a truncated device token so sign-out still shows correct remaining time.
             if let deviceRecord = try? DeviceTrialClock.load(),
