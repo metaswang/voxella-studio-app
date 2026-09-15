@@ -20,6 +20,7 @@ struct SkillCategory: Hashable, Identifiable, Sendable {
     static let recording = SkillCategory("recording")
     static let transcription = SkillCategory("transcription")
     static let dubbing = SkillCategory("dubbing")
+    static let knowledge = SkillCategory("knowledge")
     static let local = SkillCategory("local")
 
     let id: String
@@ -34,6 +35,7 @@ struct SkillCategory: Hashable, Identifiable, Sendable {
         case Self.recording.id: "Recording"
         case Self.transcription.id: "Transcription"
         case Self.dubbing.id: "Dubbing"
+        case Self.knowledge.id: "Knowledge"
         case Self.local.id: "Local"
         default: id.split(separator: "-").map(\.capitalized).joined(separator: " ")
         }
@@ -45,6 +47,7 @@ struct SkillCategory: Hashable, Identifiable, Sendable {
         case Self.recording.id: "record.circle"
         case Self.transcription.id: "text.bubble"
         case Self.dubbing.id: "waveform.and.person.filled"
+        case Self.knowledge.id: "brain"
         case Self.local.id: "folder"
         default: "square.grid.2x2"
         }
@@ -56,8 +59,9 @@ struct SkillCategory: Hashable, Identifiable, Sendable {
         case Self.transcription.id: 1
         case Self.dubbing.id: 2
         case Self.videoEditing.id: 3
-        case Self.local.id: 4
-        default: 5
+        case Self.knowledge.id: 4
+        case Self.local.id: 5
+        default: 6
         }
     }
 }

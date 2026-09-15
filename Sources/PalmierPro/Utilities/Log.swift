@@ -21,6 +21,7 @@ enum Log {
     static let recording = CategoryLog("recording")
     static let llm        = CategoryLog("llm")
     static let search     = CategoryLog("search")
+    static let knowledge  = CategoryLog("knowledge")
 
     static let crashLogURL = AppSupportPaths.logs().appendingPathComponent("crash.log")
 

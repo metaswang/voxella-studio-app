@@ -134,6 +134,7 @@ let package = Package(
                 .copy("Resources/Images"),
                 .copy("Resources/Localization"),
                 .copy("Resources/Models"),
+                .copy("Resources/KnowledgeSkills"),
             ],
             swiftSettings: [
                 .define("BUNDLED_SPEECH", .when(traits: ["BundledSpeech"])),

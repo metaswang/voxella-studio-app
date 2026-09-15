@@ -10,8 +10,22 @@ struct KnowledgeQAService: Sendable {
     var topK: Int = 8
     var maxContextChars: Int = 10_000
     var chatStore: KnowledgeChatStore = .shared
+    var useAgentRuntime: Bool = true
 
     func answer(_ request: KnowledgeQARequest) -> AsyncStream<KnowledgeAnswerEvent> {
+        if useAgentRuntime {
+            let runtime = KnowledgeAgentRuntime(
+                scope: request.scope,
+                originFilter: request.originFilter,
+                allowCloud: request.allowCloud
+            )
+            return runtime.answer(request)
+        } else {
+            return legacyAnswer(request)
+        }
+    }
+    
+    func legacyAnswer(_ request: KnowledgeQARequest) -> AsyncStream<KnowledgeAnswerEvent> {
         AsyncStream { continuation in
             let task = Task {
                 do {
@@ -176,7 +190,7 @@ struct KnowledgeQAService: Sendable {
     /// Retrieval still requires local WeMM even when the answer LLM is hosted.
     /// P0: allowCloud = true when hosted transport is available (no settings toggle yet).
     @MainActor
-    private static func makeTextClient(allowCloud: Bool) async throws -> any LLMTextClient {
+    static func makeTextClient(allowCloud: Bool) async throws -> any LLMTextClient {
         switch AITransportPolicy.current {
         case .unavailable:
             throw KnowledgeQAError.llmUnavailable

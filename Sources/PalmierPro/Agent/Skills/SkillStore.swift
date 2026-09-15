@@ -89,11 +89,15 @@ final class SkillStore {
 
     nonisolated private static func parseSkill(id: String, path: URL, text: String) -> ParsedSkill? {
         guard let parsed = SkillFrontmatter.requiredFields(text) else { return nil }
-        return ParsedSkill(
-            skill: Skill(id: id, name: parsed.name, description: parsed.description, path: path),
-            body: parsed.body,
-            sha: sha12(Data(text.utf8))
+        let skill = Skill(
+            id: id,
+            name: parsed.name,
+            description: parsed.description,
+            path: path,
+            category: parsed.category,
+            metadata: parsed.metadata
         )
+        return ParsedSkill(skill: skill, body: parsed.body, sha: sha12(Data(text.utf8)))
     }
 
     nonisolated static func scan() -> SkillScan {
@@ -195,6 +199,36 @@ final class SkillStore {
     /// One-line list of skills; full content loads on demand.
     var skillIndex: String {
         skills.map { "- \($0.id): \($0.description)" }.joined(separator: "\n")
+    }
+
+    /// Filters installed skills to those with category ∈ {knowledge, knowledge-qa}.
+    /// Includes built-in bundled skills from app resources (P0 only; community KB skills also supported).
+    func knowledgeSkills() -> [Skill] {
+        let installed = skills.filter { skill in
+            skill.category == "knowledge" || skill.category == "knowledge-qa"
+        }
+        let builtIn = Self.loadBuiltInKnowledgeSkills()
+        return (installed + builtIn).sorted { $0.id < $1.id }
+    }
+
+    /// P0: Loads built-in KB skills from app Resources/KnowledgeSkills/.
+    /// Each skill is a directory with SKILL.md; all must parse successfully.
+    nonisolated private static func loadBuiltInKnowledgeSkills() -> [Skill] {
+        guard let resourceURL = Bundle.main.resourceURL else { return [] }
+        let skillsURL = resourceURL.appendingPathComponent("KnowledgeSkills", isDirectory: true)
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: skillsURL,
+            includingPropertiesForKeys: nil
+        ) else { return [] }
+        var found: [Skill] = []
+        for dir in entries {
+            let md = dir.appendingPathComponent("SKILL.md")
+            guard let text = try? String(contentsOf: md, encoding: .utf8) else { continue }
+            let id = dir.lastPathComponent
+            guard let parsed = parseSkill(id: id, path: md, text: text) else { continue }
+            found.append(parsed.skill)
+        }
+        return found.sorted { $0.id < $1.id }
     }
 
     func openFolder() {
