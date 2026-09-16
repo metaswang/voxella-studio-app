@@ -24,13 +24,18 @@ struct HelpView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-                .frame(width: 220)
+                .frame(width: AppTheme.zoomed(220))
 
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(AppTheme.Background.surfaceColor)
         }
-        .frame(minWidth: 820, idealWidth: 900, minHeight: 520, idealHeight: 560)
+        .frame(
+            minWidth: AppTheme.zoomed(820),
+            idealWidth: AppTheme.zoomed(900),
+            minHeight: AppTheme.zoomed(520),
+            idealHeight: AppTheme.zoomed(560)
+        )
         .background(.ultraThinMaterial)
         .focusEffectDisabled()
     }
@@ -53,7 +58,7 @@ struct HelpView: View {
             HStack(spacing: 10) {
                 Image(systemName: tab.icon)
                     .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
-                    .frame(width: 16)
+                    .frame(width: AppTheme.zoomed(16))
                 Text(tab.rawValue)
                     .font(.system(size: AppTheme.FontSize.md, weight: isActive ? .medium : .regular))
                 Spacer()
@@ -94,13 +99,17 @@ final class HelpWindowController: NSWindowController {
     static let shared = HelpWindowController()
 
     private var hosting: NSHostingController<AnyView>?
+    private var lastAppliedZoomScale = AppZoomScale.shared.scale
+    private var zoomObserver: NSObjectProtocol?
 
     private init() {
-        let initialView = HelpView().tint(AppTheme.Accent.primary)
+        let initialView = HelpView()
+            .appZoomEnvironment()
+            .tint(AppTheme.Accent.primary)
         let hosting = NSHostingController(rootView: AnyView(initialView))
         let window = NSWindow(contentViewController: hosting)
-        window.setContentSize(NSSize(width: 900, height: 560))
-        window.minSize = NSSize(width: 820, height: 520)
+        window.setContentSize(AppTheme.zoomed(NSSize(width: 900, height: 560)))
+        window.minSize = AppTheme.zoomed(NSSize(width: 820, height: 520))
         window.title = "Help"
         window.setFrameAutosaveName("VoxellaStudioHelp-v1")
         window.backgroundColor = AppTheme.Background.base.withAlphaComponent(0.4)
@@ -112,6 +121,21 @@ final class HelpWindowController: NSWindowController {
         window.center()
         self.hosting = hosting
         super.init(window: window)
+        zoomObserver = NotificationCenter.default.addObserver(
+            forName: .voxellaZoomScaleDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.applyZoomScale()
+            }
+        }
+    }
+
+    isolated deinit {
+        if let zoomObserver {
+            NotificationCenter.default.removeObserver(zoomObserver)
+        }
     }
 
     @available(*, unavailable)
@@ -121,11 +145,28 @@ final class HelpWindowController: NSWindowController {
         hosting?.rootView = AnyView(
             HelpView(initialTab: tab)
                 .id(UUID())
+                .appZoomEnvironment()
                 .tint(AppTheme.Accent.primary)
         )
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func applyZoomScale() {
+        guard let window else { return }
+        let currentScale = AppZoomScale.shared.scale
+        let previousScale = lastAppliedZoomScale
+        guard currentScale != previousScale else { return }
+        lastAppliedZoomScale = currentScale
+
+        let current = window.contentRect(forFrameRect: window.frame).size
+        let factor = currentScale / previousScale
+        window.setContentSizePreservingCenter(NSSize(
+            width: current.width * factor,
+            height: current.height * factor
+        ))
+        window.minSize = AppTheme.zoomed(NSSize(width: 820, height: 520))
     }
 }
 

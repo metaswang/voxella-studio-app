@@ -218,7 +218,7 @@ private final class NetVideoFullscreenWindowController: NSWindowController, NSWi
         super.init(window: window)
         window.contentView = NSHostingView(rootView: NetVideoFullscreenView(source: source) { [weak self] in
             self?.closeFullscreen()
-        })
+        }.appZoomEnvironment())
         window.delegate = self
     }
 

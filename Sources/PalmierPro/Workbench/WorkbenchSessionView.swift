@@ -181,6 +181,7 @@ struct WorkbenchSessionDetailView: View {
                         store.runTranslation(transcriptionID)
                     }
                 )
+                .appZoomEnvironment(presentationBoundary: true)
             }
         }
         .sheet(isPresented: $showExportSheet) {
@@ -190,6 +191,7 @@ struct WorkbenchSessionDetailView: View {
                     preferredContent: selectedTab == .subtitles ? .subtitle : .transcript,
                     onCancel: { showExportSheet = false }
                 )
+                .appZoomEnvironment(presentationBoundary: true)
             }
         }
         .sheet(isPresented: $showDubOptionsSheet) {
@@ -213,6 +215,7 @@ struct WorkbenchSessionDetailView: View {
                         showDubOptionsSheet = false
                     }
                 )
+                .appZoomEnvironment(presentationBoundary: true)
             }
         }
         .sheet(isPresented: $showSummaryRefinementSheet) {
@@ -232,6 +235,7 @@ struct WorkbenchSessionDetailView: View {
                         }
                     }
                 )
+                .appZoomEnvironment(presentationBoundary: true)
             }
         }
         .sheet(isPresented: $showTemplateSheet) {
@@ -244,6 +248,7 @@ struct WorkbenchSessionDetailView: View {
                         store.applySummaryTemplate(template, to: session)
                     }
                 )
+                .appZoomEnvironment(presentationBoundary: true)
             }
         }
         .sheet(isPresented: $showRetranscribeSheet) {
@@ -264,6 +269,7 @@ struct WorkbenchSessionDetailView: View {
                         store.retranscribe(transcriptionID, submission: submission)
                     }
                 )
+                .appZoomEnvironment(presentationBoundary: true)
             }
         }
         .alert("My Template", isPresented: $showTemplateLoginAlert) {
@@ -1326,7 +1332,7 @@ private struct SessionDubOptionsSheet: View {
             }
         }
         .padding(AppTheme.Spacing.xl)
-        .frame(width: 620)
+        .frame(width: AppTheme.zoomed(620))
     }
 }
 
@@ -1360,7 +1366,7 @@ private struct SessionTranslateSheet: View {
                 }
                 .labelsHidden()
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 8)
+                .padding(.top, AppTheme.Spacing.smMd)
             }
 
             HStack {
@@ -1376,7 +1382,7 @@ private struct SessionTranslateSheet: View {
             }
         }
         .padding(AppTheme.Spacing.xl)
-        .frame(width: 520)
+        .frame(width: AppTheme.zoomed(520))
     }
 }
 

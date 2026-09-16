@@ -180,6 +180,7 @@ struct MediaTab: View {
         }
         .sheet(isPresented: $showMatteSheet) {
             MatteSheet(isPresented: $showMatteSheet)
+                .appZoomEnvironment(presentationBoundary: true)
         }
     }
 

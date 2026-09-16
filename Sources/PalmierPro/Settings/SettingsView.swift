@@ -260,9 +260,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private var hosting: NSHostingController<AnyView>?
     private var escapeMonitor: Any?
+    private var lastAppliedZoomScale = AppZoomScale.shared.scale
+    private var zoomObserver: NSObjectProtocol?
 
     private init() {
-        let initialView = SettingsView().appLocalization().tint(AppTheme.Accent.primary)
+        let initialView = SettingsView()
+            .appZoomEnvironment()
+            .appLocalization()
+            .tint(AppTheme.Accent.primary)
         let hosting = NSHostingController(rootView: AnyView(initialView))
         hosting.sizingOptions = .minSize
         let window = NSWindow(contentViewController: hosting)
@@ -279,6 +284,22 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         self.hosting = hosting
         super.init(window: window)
         window.delegate = self
+        zoomObserver = NotificationCenter.default.addObserver(
+            forName: .voxellaZoomScaleDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.applyZoomScale()
+            }
+        }
+    }
+
+    isolated deinit {
+        removeEscapeMonitor()
+        if let zoomObserver {
+            NotificationCenter.default.removeObserver(zoomObserver)
+        }
     }
 
     @available(*, unavailable)
@@ -289,6 +310,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             hosting?.rootView = AnyView(
                 SettingsView(initialTab: tab)
                     .id(UUID())
+                    .appZoomEnvironment()
                     .appLocalization()
                     .tint(AppTheme.Accent.primary)
             )
@@ -317,6 +339,22 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         removeEscapeMonitor()
+    }
+
+    private func applyZoomScale() {
+        guard let window else { return }
+        let currentScale = AppZoomScale.shared.scale
+        let previousScale = lastAppliedZoomScale
+        guard currentScale != previousScale else { return }
+        lastAppliedZoomScale = currentScale
+
+        let current = window.contentRect(forFrameRect: window.frame).size
+        let factor = currentScale / previousScale
+        window.setContentSizePreservingCenter(NSSize(
+            width: current.width * factor,
+            height: current.height * factor
+        ))
+        window.minSize = AppTheme.Window.settingsMin
     }
 }
 

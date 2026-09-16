@@ -56,6 +56,7 @@ struct SkillsPane: View {
         }
         .sheet(item: $presentedSkill) { item in
             SkillDetailSheet(skillID: item.id)
+                .appZoomEnvironment(presentationBoundary: true)
         }
     }
 

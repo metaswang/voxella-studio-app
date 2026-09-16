@@ -1,12 +1,12 @@
 import SwiftUI
 
 private enum GenerationSettingsLayout {
-    static let popoverWidth: CGFloat = 220
-    static let imagePopoverWidth: CGFloat = 270
-    static let upscalePopoverWidth: CGFloat = 280
-    static let upscalePopoverMaxHeight: CGFloat = 500
-    static let imageAspectGridMinWidth: CGFloat = 78
-    static let gridButtonMinHeight: CGFloat = 30
+    static var popoverWidth: CGFloat { AppTheme.zoomed(220) }
+    static var imagePopoverWidth: CGFloat { AppTheme.zoomed(270) }
+    static var upscalePopoverWidth: CGFloat { AppTheme.zoomed(280) }
+    static var upscalePopoverMaxHeight: CGFloat { AppTheme.zoomed(500) }
+    static var imageAspectGridMinWidth: CGFloat { AppTheme.zoomed(78) }
+    static var gridButtonMinHeight: CGFloat { AppTheme.zoomed(30) }
 }
 
 // Type tabs, model/voice pickers, and the settings popover.

@@ -48,9 +48,14 @@ struct LocalModelManagerView: View {
 @MainActor
 final class LocalModelManagerWindowController: NSWindowController {
     static let shared = LocalModelManagerWindowController()
+    private var lastAppliedZoomScale = AppZoomScale.shared.scale
+    private var zoomObserver: NSObjectProtocol?
 
     private init() {
-        let content = LocalModelManagerView().appLocalization().tint(AppTheme.Accent.primary)
+        let content = LocalModelManagerView()
+            .appZoomEnvironment()
+            .appLocalization()
+            .tint(AppTheme.Accent.primary)
         let hosting = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hosting)
         window.setContentSize(AppTheme.Onboarding.resourceWindow)
@@ -60,6 +65,21 @@ final class LocalModelManagerWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.center()
         super.init(window: window)
+        zoomObserver = NotificationCenter.default.addObserver(
+            forName: .voxellaZoomScaleDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.applyZoomScale()
+            }
+        }
+    }
+
+    isolated deinit {
+        if let zoomObserver {
+            NotificationCenter.default.removeObserver(zoomObserver)
+        }
     }
 
     @available(*, unavailable)
@@ -69,5 +89,21 @@ final class LocalModelManagerWindowController: NSWindowController {
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func applyZoomScale() {
+        guard let window else { return }
+        let currentScale = AppZoomScale.shared.scale
+        let previousScale = lastAppliedZoomScale
+        guard currentScale != previousScale else { return }
+        lastAppliedZoomScale = currentScale
+
+        let current = window.contentRect(forFrameRect: window.frame).size
+        let factor = currentScale / previousScale
+        window.setContentSizePreservingCenter(NSSize(
+            width: current.width * factor,
+            height: current.height * factor
+        ))
+        window.minSize = AppTheme.Window.settingsMin
     }
 }

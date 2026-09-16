@@ -3,8 +3,8 @@ import SwiftUI
 
 struct KnowledgeBaseView: View {
     private static let defaultRatio: CGFloat = 0.28
-    private static let minLeftWidth: CGFloat = 220
-    private static let minRightWidth: CGFloat = 400
+    private static var minLeftWidth: CGFloat { AppTheme.Knowledge.minimumSourceWidth }
+    private static var minRightWidth: CGFloat { AppTheme.Knowledge.minimumChatWidth }
     private static let panelRatioKey = "voxella.kb.panel-ratio.v1"
 
     @State private var controller = KnowledgeBaseController()

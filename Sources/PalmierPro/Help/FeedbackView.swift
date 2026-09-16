@@ -51,7 +51,12 @@ struct FeedbackView: View {
         }
         .padding(.horizontal, AppTheme.Spacing.xlXxl)
         .padding(.vertical, AppTheme.Spacing.xlXxl)
-        .frame(minWidth: 480, idealWidth: 480, minHeight: 420, idealHeight: 480)
+        .frame(
+            minWidth: AppTheme.zoomed(480),
+            idealWidth: AppTheme.zoomed(480),
+            minHeight: AppTheme.zoomed(420),
+            idealHeight: AppTheme.zoomed(480)
+        )
         .background(.ultraThinMaterial)
         .focusEffectDisabled()
     }
@@ -93,7 +98,7 @@ struct FeedbackView: View {
                 .scrollContentBackground(.hidden)
                 .padding(.horizontal, AppTheme.Spacing.smMd)
                 .padding(.vertical, AppTheme.Spacing.smMd)
-                .frame(height: 160)
+                .frame(height: AppTheme.zoomed(160))
                 .background(
                     RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
                         .fill(AppTheme.Background.surfaceColor)
@@ -152,7 +157,7 @@ struct FeedbackView: View {
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: 88, height: 56)
+                    .frame(width: AppTheme.zoomed(88), height: AppTheme.zoomed(56))
                     .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xsSm))
                     .overlay(
                         RoundedRectangle(cornerRadius: AppTheme.Radius.xsSm)
@@ -280,13 +285,17 @@ final class FeedbackWindowController: NSWindowController {
     static let shared = FeedbackWindowController()
 
     private var hosting: NSHostingController<AnyView>?
+    private var lastAppliedZoomScale = AppZoomScale.shared.scale
+    private var zoomObserver: NSObjectProtocol?
 
     private init() {
-        let initialView = FeedbackView(screenshot: nil).tint(AppTheme.Accent.primary)
+        let initialView = FeedbackView(screenshot: nil)
+            .appZoomEnvironment()
+            .tint(AppTheme.Accent.primary)
         let hosting = NSHostingController(rootView: AnyView(initialView))
         let window = NSWindow(contentViewController: hosting)
-        window.setContentSize(NSSize(width: 480, height: 480))
-        window.minSize = NSSize(width: 480, height: 420)
+        window.setContentSize(AppTheme.zoomed(NSSize(width: 480, height: 480)))
+        window.minSize = AppTheme.zoomed(NSSize(width: 480, height: 420))
         window.title = "Send feedback"
         window.backgroundColor = AppTheme.Background.base.withAlphaComponent(0.4)
         window.isOpaque = false
@@ -298,6 +307,21 @@ final class FeedbackWindowController: NSWindowController {
         window.center()
         self.hosting = hosting
         super.init(window: window)
+        zoomObserver = NotificationCenter.default.addObserver(
+            forName: .voxellaZoomScaleDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.applyZoomScale()
+            }
+        }
+    }
+
+    isolated deinit {
+        if let zoomObserver {
+            NotificationCenter.default.removeObserver(zoomObserver)
+        }
     }
 
     @available(*, unavailable)
@@ -309,12 +333,29 @@ final class FeedbackWindowController: NSWindowController {
         hosting?.rootView = AnyView(
             FeedbackView(screenshot: screenshot, prefill: prefill)
                 .id(UUID())
+                .appZoomEnvironment()
                 .tint(AppTheme.Accent.primary)
         )
         showWindow(nil)
         window?.center()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func applyZoomScale() {
+        guard let window else { return }
+        let currentScale = AppZoomScale.shared.scale
+        let previousScale = lastAppliedZoomScale
+        guard currentScale != previousScale else { return }
+        lastAppliedZoomScale = currentScale
+
+        let current = window.contentRect(forFrameRect: window.frame).size
+        let factor = currentScale / previousScale
+        window.setContentSizePreservingCenter(NSSize(
+            width: current.width * factor,
+            height: current.height * factor
+        ))
+        window.minSize = AppTheme.zoomed(NSSize(width: 480, height: 420))
     }
 }
 

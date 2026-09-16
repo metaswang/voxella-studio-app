@@ -100,10 +100,10 @@ struct KnowledgeSourceListView: View {
             HStack(spacing: AppTheme.Spacing.md) {
                 Image(systemName: "square.stack.3d.up.fill")
                     .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
-                    .frame(width: 28, height: 28)
+                    .frame(width: AppTheme.IconSize.lgXl, height: AppTheme.IconSize.lgXl)
                     .foregroundStyle(selected ? AppTheme.Text.primaryColor : AppTheme.Text.secondaryColor)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                     Text(L10n.string("All knowledge"))
                         .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
                         .foregroundStyle(AppTheme.Text.primaryColor)
@@ -130,10 +130,10 @@ struct KnowledgeSourceListView: View {
         } label: {
             HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
                 row.sessionType.navGlyph.view(size: 18)
-                    .frame(width: 28, height: 28)
+                    .frame(width: AppTheme.IconSize.lgXl, height: AppTheme.IconSize.lgXl)
                     .foregroundStyle(selected ? AppTheme.Text.primaryColor : AppTheme.Text.secondaryColor)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                     HStack(spacing: AppTheme.Spacing.xs) {
                         Text(row.title)
                             .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
@@ -145,8 +145,8 @@ struct KnowledgeSourceListView: View {
                         Text(L10n.string(row.originBadge))
                             .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold))
                             .foregroundStyle(AppTheme.Text.tertiaryColor)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
+                            .padding(.horizontal, AppTheme.Spacing.sm)
+                            .padding(.vertical, AppTheme.Spacing.xxs)
                             .background(
                                 Capsule(style: .continuous)
                                     .fill(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.medium))
@@ -211,16 +211,16 @@ private struct KnowledgeSelectionChrome: ViewModifier {
                     if isSelected {
                         Capsule(style: .continuous)
                             .fill(AppTheme.Accent.primary)
-                            .frame(width: 3)
-                            .padding(.vertical, 8)
-                            .padding(.leading, 3)
+                            .frame(width: AppTheme.BorderWidth.thick)
+                            .padding(.vertical, AppTheme.Spacing.smMd)
+                            .padding(.leading, AppTheme.Spacing.xs)
                     }
                 }
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
-                    .strokeBorder(AppTheme.Accent.primary.opacity(ringOpacity), lineWidth: 1)
-                    .padding(1)
+                    .strokeBorder(AppTheme.Accent.primary.opacity(ringOpacity), lineWidth: AppTheme.BorderWidth.thin)
+                    .padding(AppTheme.Spacing.xxs / 2)
             )
             .onHover { isHovered = $0 }
             .animation(.easeOut(duration: AppTheme.Anim.hover), value: isHovered)

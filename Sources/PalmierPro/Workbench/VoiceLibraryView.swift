@@ -35,6 +35,7 @@ struct VoiceLibraryView: View {
         .onDisappear { store.stopPlayback() }
         .sheet(item: $editingReference) { reference in
             VoiceReferenceEditSheet(reference: reference)
+                .appZoomEnvironment(presentationBoundary: true)
         }
     }
 

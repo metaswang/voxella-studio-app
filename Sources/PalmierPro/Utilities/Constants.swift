@@ -145,23 +145,23 @@ enum AppSupportPaths {
 
 enum Layout {
     // Media panel
-    static let mediaPanelDefault: CGFloat = 500
-    static let mediaPanelMin: CGFloat = 280 + AppTheme.GenerationPanel.minimumWidthAdjustment
+    static var mediaPanelDefault: CGFloat { AppTheme.zoomed(500) }
+    static var mediaPanelMin: CGFloat { AppTheme.zoomed(280) + AppTheme.GenerationPanel.minimumWidthAdjustment }
 
     // Inspector
-    static let inspectorDefault: CGFloat = AppTheme.EditorPanel.defaultWidth
-    static let inspectorMin: CGFloat = AppTheme.EditorPanel.minimumWidth
+    static var inspectorDefault: CGFloat { AppTheme.EditorPanel.defaultWidth }
+    static var inspectorMin: CGFloat { AppTheme.EditorPanel.minimumWidth }
 
     // Agent panel
-    static let agentPanelMin: CGFloat = 240
-    static let agentPanelMax: CGFloat = 640
-    static let chatColumnMax: CGFloat = 640
+    static var agentPanelMin: CGFloat { AppTheme.zoomed(240) }
+    static var agentPanelMax: CGFloat { AppTheme.zoomed(640) }
+    static var chatColumnMax: CGFloat { AppTheme.zoomed(640) }
 
     // Headers & toolbars
-    static let panelHeaderHeight: CGFloat = 28
-    static let toolbarHeight: CGFloat = 38
+    static var panelHeaderHeight: CGFloat { AppTheme.zoomed(28) }
+    static var toolbarHeight: CGFloat { AppTheme.zoomed(38) }
 
-    static let panelGap: CGFloat = 5
+    static var panelGap: CGFloat { AppTheme.zoomed(5) }
 
     // Timeline
     static let timelineMinHeight: CGFloat = 100
@@ -174,8 +174,8 @@ enum Layout {
     static let dragThreshold: CGFloat = 3
 
     // Preview
-    static let previewMinWidth: CGFloat = 400
-    static let previewMinHeight: CGFloat = 320
+    static var previewMinWidth: CGFloat { AppTheme.zoomed(400) }
+    static var previewMinHeight: CGFloat { AppTheme.zoomed(320) }
 }
 
 enum Defaults {

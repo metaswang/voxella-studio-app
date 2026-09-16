@@ -107,8 +107,8 @@ struct DubProcessingOptionsSheet: View {
             footer
         }
         .frame(
-            width: 620,
-            height: !cloudComputeSelected && !localModelPlan.missingItems.isEmpty ? 730 : 610
+            width: AppTheme.zoomed(620),
+            height: AppTheme.zoomed(!cloudComputeSelected && !localModelPlan.missingItems.isEmpty ? 730 : 610)
         )
         .background(AppTheme.Background.surfaceColor)
         .task(id: estimateTaskID) {

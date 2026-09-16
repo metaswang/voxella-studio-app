@@ -4,6 +4,25 @@ import SwiftUI
 @MainActor
 final class RecordingFloatingControlsController {
     private var panel: NSPanel?
+    private var zoomObserver: NSObjectProtocol?
+
+    init() {
+        zoomObserver = NotificationCenter.default.addObserver(
+            forName: .voxellaZoomScaleDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.applyZoomScale()
+            }
+        }
+    }
+
+    isolated deinit {
+        if let zoomObserver {
+            NotificationCenter.default.removeObserver(zoomObserver)
+        }
+    }
 
     func present(session: RecordingSessionController, displayID: UInt32? = nil) {
         guard panel == nil else { return }
@@ -25,7 +44,7 @@ final class RecordingFloatingControlsController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.contentView = RecordingControlsHostingView(rootView: RecordingFloatingControlsView(session: session))
+        panel.contentView = RecordingControlsHostingView(rootView: AnyView(RecordingFloatingControlsView(session: session).appZoomEnvironment()))
         let screen = NSScreen.screens.first { $0.displayID == displayID }
             ?? NSScreen.main ?? NSScreen.screens.first
         if let frame = screen?.visibleFrame {
@@ -52,9 +71,17 @@ final class RecordingFloatingControlsController {
         panel?.close()
         panel = nil
     }
+
+    private func applyZoomScale() {
+        guard let panel else { return }
+        panel.setContentSizePreservingCenter(NSSize(
+            width: AppTheme.Workbench.recordingControlsWidth,
+            height: AppTheme.Workbench.recordingControlsHeight
+        ))
+    }
 }
 
-private final class RecordingControlsHostingView: NSHostingView<RecordingFloatingControlsView> {
+private final class RecordingControlsHostingView: NSHostingView<AnyView> {
     override var mouseDownCanMoveWindow: Bool { true }
 }
 

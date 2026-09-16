@@ -5,9 +5,27 @@ import SwiftUI
 final class VoiceInputPanelController: NSObject, NSWindowDelegate {
     private weak var coordinator: VoiceInputCoordinator?
     private var panel: VoiceInputPanel?
+    private var lastAppliedZoomScale = AppZoomScale.shared.scale
+    private var zoomObserver: NSObjectProtocol?
 
     init(coordinator: VoiceInputCoordinator) {
         self.coordinator = coordinator
+        super.init()
+        zoomObserver = NotificationCenter.default.addObserver(
+            forName: .voxellaZoomScaleDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.applyZoomScale()
+            }
+        }
+    }
+
+    isolated deinit {
+        if let zoomObserver {
+            NotificationCenter.default.removeObserver(zoomObserver)
+        }
     }
 
     func present() {
@@ -17,7 +35,7 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
             ?? NSScreen.screens.first
         let visibleFrame = screen?.visibleFrame ?? .zero
         let maximumHeight = visibleFrame.height * AppTheme.SpeechInput.quickInputMaximumHeightRatio
-        coordinator?.updateEditorMaximumHeight(maximumHeight - AppTheme.SpeechInput.quickInputMinimumHeight)
+        coordinator?.updateEditorMaximumHeight(max(0, maximumHeight - AppTheme.SpeechInput.quickInputMinimumHeight))
         panel.setContentSize(NSSize(
             width: AppTheme.SpeechInput.quickInputWidth,
             height: AppTheme.SpeechInput.quickInputMinimumHeight
@@ -39,10 +57,10 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
         guard let panel, let screen = panel.screen ?? NSScreen.main else { return }
         let maximum = screen.visibleFrame.height * AppTheme.SpeechInput.quickInputMaximumHeightRatio
         let height = min(maximum, max(AppTheme.SpeechInput.quickInputMinimumHeight, requestedHeight))
-        guard abs(panel.frame.height - height) > AppTheme.BorderWidth.thin else { return }
-        let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
-        panel.setContentSize(NSSize(width: AppTheme.SpeechInput.quickInputWidth, height: height))
-        panel.setFrameOrigin(NSPoint(x: center.x - panel.frame.width / 2, y: center.y - panel.frame.height / 2))
+        let current = panel.contentRect(forFrameRect: panel.frame).size
+        guard abs(current.width - AppTheme.SpeechInput.quickInputWidth) > AppTheme.BorderWidth.thin
+            || abs(current.height - height) > AppTheme.BorderWidth.thin else { return }
+        panel.setContentSizePreservingCenter(NSSize(width: AppTheme.SpeechInput.quickInputWidth, height: height))
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -71,7 +89,7 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
         panel.hasShadow = false
         panel.isReleasedWhenClosed = false
         panel.delegate = self
-        let contentView = NSHostingView(rootView: VoiceInputPanelView(coordinator: coordinator!))
+        let contentView = NSHostingView(rootView: VoiceInputPanelView(coordinator: coordinator!).appZoomEnvironment())
         contentView.wantsLayer = true
         contentView.layer?.backgroundColor = NSColor.clear.cgColor
         contentView.layer?.cornerRadius = AppTheme.Radius.xl
@@ -79,6 +97,25 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
         panel.contentView = contentView
         self.panel = panel
         return panel
+    }
+
+    private func applyZoomScale() {
+        let currentScale = AppZoomScale.shared.scale
+        let previousScale = lastAppliedZoomScale
+        guard currentScale != previousScale else { return }
+        lastAppliedZoomScale = currentScale
+        guard let panel, panel.isVisible else { return }
+
+        let screen = panel.screen ?? NSScreen.main
+        let maximum = (screen?.visibleFrame.height ?? 0) * AppTheme.SpeechInput.quickInputMaximumHeightRatio
+        coordinator?.updateEditorMaximumHeight(max(0, maximum - AppTheme.SpeechInput.quickInputMinimumHeight))
+
+        let current = panel.contentRect(forFrameRect: panel.frame).size
+        let factor = currentScale / previousScale
+        panel.setContentSizePreservingCenter(NSSize(
+            width: current.width * factor,
+            height: current.height * factor
+        ))
     }
 }
 

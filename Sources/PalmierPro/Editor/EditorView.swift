@@ -3,6 +3,7 @@ import SwiftUI
 
 struct EditorView: NSViewControllerRepresentable {
     @Environment(EditorViewModel.self) var editor
+    @Environment(\.appZoomScale) private var appZoomScale
     @Bindable private var workspaceLayout = WorkspaceLayoutStore.shared
 
     func makeNSViewController(context: Context) -> EditorSplitViewController {
@@ -10,6 +11,8 @@ struct EditorView: NSViewControllerRepresentable {
     }
 
     func updateNSViewController(_ controller: EditorSplitViewController, context: Context) {
+        _ = appZoomScale
+        controller.applyZoomScale()
         controller.applyLayoutIfNeeded(workspaceLayout.selection)
         controller.applyAgentVisibility(editor.agentPanelVisible)
         controller.applyMediaVisibility(editor.mediaPanelVisible)
@@ -79,6 +82,7 @@ final class EditorSplitViewController: PaddedDividerSplitViewController {
     private weak var previewSplitItem: NSSplitViewItem?
     private weak var inspectorSplitItem: NSSplitViewItem?
     private weak var timelineSplitItem: NSSplitViewItem?
+    private weak var presetSplitItem: NSSplitViewItem?
 
     private lazy var mediaHC: NSViewController     = makeHosting(MediaPanelView(), panel: .media)
     private lazy var previewHC: NSViewController   = makeHosting(PreviewContainerView(), panel: .preview)
@@ -113,6 +117,20 @@ final class EditorSplitViewController: PaddedDividerSplitViewController {
         splitView.dividerStyle = .thin
         splitView.autosaveName = SplitAutosave.root
         buildLayout(WorkspaceLayoutStore.shared.selection)
+    }
+
+    /// Refresh AppKit split constraints when the metric zoom changes. The
+    /// hosted SwiftUI panels refresh their own layout through the same
+    /// environment modifier; these constraints are the surrounding hit-test
+    /// geometry that SwiftUI cannot update by itself.
+    func applyZoomScale() {
+        agentSplitItem?.minimumThickness = Layout.agentPanelMin
+        agentSplitItem?.maximumThickness = Layout.agentPanelMax
+        mediaSplitItem?.minimumThickness = Layout.mediaPanelMin + AppTheme.MediaPanel.tabRailWidth
+        previewSplitItem?.minimumThickness = Layout.previewMinWidth
+        inspectorSplitItem?.minimumThickness = Layout.inspectorMin
+        timelineSplitItem?.minimumThickness = Layout.timelineMinHeight
+        presetSplitItem?.minimumThickness = AppTheme.zoomed(400)
     }
 
     // MARK: - Layout switching
@@ -219,6 +237,7 @@ final class EditorSplitViewController: PaddedDividerSplitViewController {
         previewSplitItem = nil
         inspectorSplitItem = nil
         timelineSplitItem = nil
+        presetSplitItem = nil
 
         currentPreset = preset
         splitView.isVertical = true
@@ -244,8 +263,9 @@ final class EditorSplitViewController: PaddedDividerSplitViewController {
         agentSplitItem = agentItem
 
         let presetItem = NSSplitViewItem(viewController: presetRoot)
-        presetItem.minimumThickness = 400
+        presetItem.minimumThickness = AppTheme.zoomed(400)
         addSplitViewItem(presetItem)
+        presetSplitItem = presetItem
     }
 
     // MARK: - Default layout
@@ -387,6 +407,7 @@ final class EditorSplitViewController: PaddedDividerSplitViewController {
         let hc = NSHostingController(
             rootView: content
                 .environment(editor)
+                .appZoomEnvironment()
                 .appLocalization()
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 .background(AppTheme.Background.surfaceColor)
@@ -408,6 +429,7 @@ final class EditorSplitViewController: PaddedDividerSplitViewController {
         let hc = NSHostingController(
             rootView: content
                 .environment(editor)
+                .appZoomEnvironment()
                 .appLocalization()
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         )

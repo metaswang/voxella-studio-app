@@ -61,6 +61,7 @@ struct HomeView: View {
         .focusEffectDisabled()
         .sheet(isPresented: $isSessionSearchPresented) {
             SessionSearchPalette(controller: sessionSearch)
+                .appZoomEnvironment(presentationBoundary: true)
         }
         .onReceive(NotificationCenter.default.publisher(for: .voxellaPresentSessionSearch)) { _ in
             presentSessionSearch()
@@ -165,18 +166,22 @@ struct HomeView: View {
             .sheet(isPresented: Bindable(editor).showExportDialog) {
                 ExportView()
                     .environment(editor)
+                    .appZoomEnvironment(presentationBoundary: true)
             }
             .sheet(item: Bindable(editor).pendingSettingsMismatch) { mismatch in
                 ProjectSettingsMismatchView(mismatch: mismatch)
                     .environment(editor)
+                    .appZoomEnvironment(presentationBoundary: true)
             }
             .sheet(item: Bindable(editor).pendingEditorTranslationRequest) { request in
                 EditorTranslationSheet(request: request)
                     .environment(editor)
+                    .appZoomEnvironment(presentationBoundary: true)
             }
             .sheet(item: Bindable(editor).pendingEditorDubRequest) { request in
                 EditorDubSheet(request: request)
                     .environment(editor)
+                    .appZoomEnvironment(presentationBoundary: true)
             }
             .overlay {
                 TourOverlay()
@@ -283,7 +288,8 @@ private struct WorkbenchSidebar: View {
 
             Button(action: onOpenSearch) {
                 HStack(spacing: AppTheme.Spacing.md) {
-                    Image(systemName: "magnifyingglass").frame(width: 24, height: 24)
+                    Image(systemName: "magnifyingglass")
+                        .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
                     if isExpanded {
                         Text(L10n.string("Search")).font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
                         Spacer(minLength: 0)
@@ -304,7 +310,7 @@ private struct WorkbenchSidebar: View {
                 } label: {
                     HStack(spacing: AppTheme.Spacing.md) {
                         route.navGlyph.view(size: 18)
-                            .frame(width: 24, height: 24)
+                            .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
                         if isExpanded {
                             Text(L10n.string(route.title))
                                 .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
@@ -406,13 +412,20 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
 
     private var isEditorMode = false
     private var hasAppliedInitialWindowState = false
+    private var lastAppliedZoomScale = AppZoomScale.shared.scale
+    private var zoomObserver: NSObjectProtocol?
 
     private init() {
-        let hostingController = NSHostingController(rootView: FirstRunRootView().appLocalization().tint(AppTheme.Accent.primary))
+        let hostingController = NSHostingController(
+            rootView: FirstRunRootView()
+                .appZoomEnvironment()
+                .appLocalization()
+                .tint(AppTheme.Accent.primary)
+        )
         hostingController.sizingOptions = .minSize
         let window = NSWindow(contentViewController: hostingController)
         window.setContentSize(OnboardingState.shared.isComplete ? AppTheme.Window.homeDefault : AppTheme.Onboarding.windowSize)
-        window.minSize = NSSize(width: 960, height: 640)
+        window.minSize = AppTheme.zoomed(NSSize(width: 960, height: 640))
         window.title = " "
         window.backgroundColor = AppTheme.Background.base
         window.styleMask.insert(.fullSizeContentView)
@@ -420,7 +433,22 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
         window.center()
         super.init(window: window)
         window.delegate = self
+        zoomObserver = NotificationCenter.default.addObserver(
+            forName: .voxellaZoomScaleDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.applyZoomScale()
+            }
+        }
         hideNativeTitlebarTitle()
+    }
+
+    isolated deinit {
+        if let zoomObserver {
+            NotificationCenter.default.removeObserver(zoomObserver)
+        }
     }
 
     @available(*, unavailable)
@@ -470,9 +498,29 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
             if window.styleMask.contains(.fullScreen) {
                 window.toggleFullScreen(nil)
             }
-            window.minSize = NSSize(width: 960, height: 640)
+            window.minSize = AppTheme.zoomed(NSSize(width: 960, height: 640))
             window.collectionBehavior = [.fullScreenNone]
         }
+    }
+
+    private func applyZoomScale() {
+        guard let window else { return }
+        let currentScale = AppZoomScale.shared.scale
+        let previousScale = lastAppliedZoomScale
+        guard currentScale != previousScale else { return }
+        lastAppliedZoomScale = currentScale
+
+        if !window.isZoomed && !window.styleMask.contains(.fullScreen) {
+            let current = window.contentRect(forFrameRect: window.frame).size
+            let factor = currentScale / previousScale
+            window.setContentSizePreservingCenter(NSSize(
+                width: current.width * factor,
+                height: current.height * factor
+            ))
+        }
+        window.minSize = isEditorMode
+            ? AppTheme.Window.projectMin
+            : AppTheme.zoomed(NSSize(width: 960, height: 640))
     }
 
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {

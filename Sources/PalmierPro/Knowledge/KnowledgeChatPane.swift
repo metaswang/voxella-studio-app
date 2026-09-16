@@ -37,7 +37,7 @@ struct KnowledgeChatPane: View {
 
     private var header: some View {
         HStack(spacing: AppTheme.Spacing.md) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                 Text(controller.scopeTitle)
                     .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
                     .foregroundStyle(AppTheme.Text.primaryColor)
@@ -103,7 +103,7 @@ struct KnowledgeChatPane: View {
     private var emptyState: some View {
         VStack(spacing: AppTheme.Spacing.md) {
             Image(systemName: "text.bubble")
-                .font(.system(size: 28, weight: .medium))
+                .font(.system(size: AppTheme.FontSize.title2, weight: .medium))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
             Text(L10n.string("Ask your knowledge base"))
                 .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
@@ -112,7 +112,7 @@ struct KnowledgeChatPane: View {
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
+                .frame(maxWidth: AppTheme.Knowledge.emptyStateMaxWidth)
         }
         .frame(maxWidth: .infinity)
     }
@@ -120,7 +120,7 @@ struct KnowledgeChatPane: View {
     private func messageBubble(_ message: KnowledgeMessage) -> some View {
         let isUser = message.role == .user
         return HStack {
-            if isUser { Spacer(minLength: 48) }
+            if isUser { Spacer(minLength: AppTheme.Spacing.xxl) }
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 if isUser {
                     Text(message.content)
@@ -146,7 +146,7 @@ struct KnowledgeChatPane: View {
                             : AppTheme.Background.surfaceColor
                     )
             )
-            if !isUser { Spacer(minLength: 48) }
+            if !isUser { Spacer(minLength: AppTheme.Spacing.xxl) }
         }
     }
 
@@ -248,7 +248,7 @@ struct KnowledgeChatPane: View {
                 controller.send()
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 26))
+                    .font(.system(size: AppTheme.FontSize.title1))
                     .foregroundStyle(canSend ? AppTheme.Accent.primary : AppTheme.Text.tertiaryColor)
             }
             .buttonStyle(.plain)

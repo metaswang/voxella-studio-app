@@ -658,7 +658,7 @@ final class SessionFullscreenWindowController: NSWindowController, NSWindowDeleg
     private let chromeState = SessionFullscreenChromeState()
     private let playerView = SessionPlayerView(frame: .zero)
     private let containerView = SessionFullscreenContainerView()
-    private var hostingView: NSHostingView<SessionFullscreenChrome>?
+    private var hostingView: NSHostingView<AnyView>?
     private let previousPresentationOptions: NSApplication.PresentationOptions
     private var didRestorePresentationOptions = false
     private var keyMonitor: Any?
@@ -695,7 +695,7 @@ final class SessionFullscreenWindowController: NSWindowController, NSWindowDeleg
         playerView.frame = screen.frame
 
         let chrome = SessionFullscreenChrome(playback: playback, chrome: chromeState)
-        let hosting = NSHostingView(rootView: chrome)
+        let hosting = NSHostingView(rootView: AnyView(chrome.appZoomEnvironment()))
         hosting.frame = screen.frame
         hosting.autoresizingMask = [.width, .height]
         hostingView = hosting

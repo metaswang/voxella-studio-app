@@ -95,6 +95,7 @@ struct InspectorView: View {
         }
         .sheet(item: $customAspectRatioContext) { context in
             CustomAspectRatioSheet(context: context)
+                .appZoomEnvironment(presentationBoundary: true)
         }
     }
 

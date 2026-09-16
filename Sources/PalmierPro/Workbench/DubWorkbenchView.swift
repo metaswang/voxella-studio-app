@@ -55,7 +55,7 @@ struct DubWorkbenchView: View {
                         outputCard(output: output)
                     }
                     WorkbenchRecentDubSessionsSection()
-                    Color.clear.frame(height: 88)
+                    Color.clear.frame(height: AppTheme.zoomed(88))
                 }
                 .padding(AppTheme.Spacing.xxl)
                 .frame(maxWidth: AppTheme.Workbench.composerMaxWidth, alignment: .leading)
@@ -73,6 +73,7 @@ struct DubWorkbenchView: View {
             DubRewriteSheet(jobID: job.id, segmentIndex: target.segmentIndex) {
                 rewriteSegmentIndex = nil
             }
+            .appZoomEnvironment(presentationBoundary: true)
         }
         .sheet(isPresented: $showProcessingOptions) {
             if let current = store.dubs.first(where: { $0.id == job.id }) {
@@ -86,9 +87,10 @@ struct DubWorkbenchView: View {
                         continueGeneration(jobID: job.id, placement: submission.placement)
                     }
                 )
+                .appZoomEnvironment(presentationBoundary: true)
             } else {
                 ProgressView()
-                    .frame(width: 620, height: 610)
+                    .frame(width: AppTheme.zoomed(620), height: AppTheme.zoomed(610))
             }
         }
     }
@@ -184,7 +186,7 @@ struct DubWorkbenchView: View {
             HStack(spacing: AppTheme.Spacing.smMd) {
                 Text("\(displayIndex + 1)")
                     .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
-                    .frame(minWidth: 22, minHeight: 22)
+                    .frame(minWidth: AppTheme.zoomed(22), minHeight: AppTheme.zoomed(22))
                     .background(AppTheme.Background.raisedColor, in: Capsule())
 
 
@@ -193,7 +195,7 @@ struct DubWorkbenchView: View {
                     languageCode: job.language,
                     defaultLabel: "Use default voice"
                 )
-                .frame(maxWidth: 260)
+                .frame(maxWidth: AppTheme.zoomed(260))
 
                 Spacer(minLength: 0)
 
@@ -286,7 +288,7 @@ struct DubWorkbenchView: View {
                     )
                     .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
                     .padding(.horizontal, AppTheme.Spacing.md)
-                    .padding(.vertical, 2)
+                    .padding(.vertical, AppTheme.Spacing.xxs)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AppTheme.Accent.primary)
@@ -295,7 +297,7 @@ struct DubWorkbenchView: View {
             }
         }
         .padding(AppTheme.Spacing.mdLg)
-        .frame(maxWidth: 720)
+        .frame(maxWidth: AppTheme.zoomed(720))
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
@@ -363,7 +365,7 @@ struct DubWorkbenchView: View {
             Text(title)
                 .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
-                .frame(height: 16, alignment: .leading)
+                    .frame(height: AppTheme.zoomed(16), alignment: .leading)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)

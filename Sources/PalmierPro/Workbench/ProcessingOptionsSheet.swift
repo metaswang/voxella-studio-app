@@ -131,7 +131,7 @@ struct ProcessingOptionsSheet: View {
             }
             footer
         }
-        .frame(width: 620, height: sheetHeight)
+        .frame(width: AppTheme.zoomed(620), height: sheetHeight)
         .background(AppTheme.Background.surfaceColor)
         .onAppear { applyInitialOptionsIfNeeded() }
         .task(id: mediaDurationTaskID) { await loadMediaDuration() }
@@ -143,18 +143,22 @@ struct ProcessingOptionsSheet: View {
                     permitsBasicTranscription = true
                     Task { await prepareAndSubmit() }
                 }
+                .appZoomEnvironment(presentationBoundary: true)
             }
         }
     }
 
     private var sheetHeight: CGFloat {
+        let designHeight: CGFloat
         if isSingleFile, enableClip, showAdvanced {
-            return 720
+            designHeight = 720
+        } else {
+            let base = isSingleFile ? 560.0 : 520.0
+            designHeight = computeDestination == .local && !localModelPlan.missingItems.isEmpty
+                ? base + 140
+                : base
         }
-        let base = isSingleFile ? 560.0 : 520.0
-        return computeDestination == .local && !localModelPlan.missingItems.isEmpty
-            ? base + 140
-            : base
+        return AppTheme.zoomed(designHeight)
     }
 
     private var header: some View {
@@ -171,8 +175,8 @@ struct ProcessingOptionsSheet: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(AppTheme.Text.mutedColor)
-                    .frame(width: 28, height: 28)
-                    .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: 8))
+                    .frame(width: AppTheme.zoomed(28), height: AppTheme.zoomed(28))
+                    .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.zoomed(8)))
             }
             .buttonStyle(.plain)
         }
@@ -410,7 +414,7 @@ struct ProcessingOptionsSheet: View {
         .background(AppTheme.Background.raisedColor.opacity(0.45), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: 1)
+                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
         }
         .onChange(of: enableTranslation) { _, enabled in
             if !enabled { targetLanguageCode = "" }

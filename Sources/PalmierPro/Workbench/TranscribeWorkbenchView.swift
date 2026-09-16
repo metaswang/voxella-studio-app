@@ -93,16 +93,19 @@ struct TranscribeWorkbenchView: View {
                     )
                 }
             )
+            .appZoomEnvironment(presentationBoundary: true)
         }
         .sheet(item: $speakerEditRequest) { request in
             SpeakerNameEditor(request: request) { name in
                 commitSpeakerEdit(request, name: name)
             }
+            .appZoomEnvironment(presentationBoundary: true)
         }
         .sheet(item: $pendingBasicStart) { request in
             TranscriptionAIUpgradePrompt {
                 store.runTranscription(request.jobID)
             }
+            .appZoomEnvironment(presentationBoundary: true)
         }
     }
 
@@ -173,26 +176,30 @@ struct TranscribeWorkbenchView: View {
                     .keyboardShortcut(.return, modifiers: [.command])
                 }
             }
-            .padding(16)
+            .padding(AppTheme.Spacing.lgXl)
 
             Divider()
 
             HStack(spacing: 0) {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: AppTheme.zoomed(18)) {
                         configuration(job)
                         processingState(job)
                         diagnostics(job)
                         transcriptEditor(job)
                     }
-                    .padding(20)
+                    .padding(AppTheme.Spacing.xl)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(minWidth: 520, maxWidth: .infinity)
+                .frame(minWidth: AppTheme.zoomed(520), maxWidth: .infinity)
 
                 Divider()
                 timeline(job)
-                    .frame(minWidth: 360, idealWidth: 430, maxWidth: 480)
+                    .frame(
+                        minWidth: AppTheme.zoomed(360),
+                        idealWidth: AppTheme.zoomed(430),
+                        maxWidth: AppTheme.zoomed(480)
+                    )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -201,13 +208,13 @@ struct TranscribeWorkbenchView: View {
     @ViewBuilder
     private func diagnostics(_ job: WorkbenchTranscriptionJob) -> some View {
         if let diagnostics = job.diarizationDiagnostics {
-            HStack(spacing: 10) {
+            HStack(spacing: AppTheme.Spacing.md) {
                 Image(systemName: "waveform.badge.checkmark")
                     .foregroundStyle(AppTheme.Status.successColor)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: AppTheme.zoomed(3)) {
                     Text(diagnostics.backend.title)
                         .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
-                    HStack(spacing: 8) {
+                    HStack(spacing: AppTheme.Spacing.smMd) {
                         Text("\(diagnostics.detectedSpeakerCount) detected")
                         if let rtf = diagnostics.realTimeFactor {
                             Text("RTF \(rtf.formatted(.number.precision(.fractionLength(2))))")
@@ -236,13 +243,13 @@ struct TranscribeWorkbenchView: View {
                 }
                 .buttonStyle(.borderless)
             }
-            .padding(12)
+            .padding(AppTheme.Spacing.mdLg)
             .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
         }
     }
 
     private func configuration(_ job: WorkbenchTranscriptionJob) -> some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.lg) {
             recognitionCard(job)
             subtitleFlowCard(job)
         }
@@ -250,7 +257,7 @@ struct TranscribeWorkbenchView: View {
 
     private func recognitionCard(_ job: WorkbenchTranscriptionJob) -> some View {
         GroupBox("Recognition") {
-            VStack(spacing: 12) {
+            VStack(spacing: AppTheme.Spacing.mdLg) {
                 HStack {
                     Text("Language")
                     Spacer()
@@ -261,7 +268,7 @@ struct TranscribeWorkbenchView: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 150)
+                    .frame(width: AppTheme.zoomed(150))
                 }
                 HStack {
                     Text("Speakers")
@@ -272,7 +279,7 @@ struct TranscribeWorkbenchView: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 220)
+                    .frame(width: AppTheme.zoomed(220))
                 }
                 HStack(alignment: .top) {
                     Image(systemName: job.compute == .local ? "lock.shield.fill" : "icloud")
@@ -283,7 +290,7 @@ struct TranscribeWorkbenchView: View {
                     Spacer()
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, AppTheme.Spacing.smMd)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
@@ -294,7 +301,7 @@ struct TranscribeWorkbenchView: View {
 
     private func subtitleFlowCard(_ job: WorkbenchTranscriptionJob) -> some View {
         GroupBox("Subtitle flow") {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
                 Toggle(
                     "Clean and segment subtitles with the configured LLM",
                     isOn: subtitleProcessingBinding(job.id)
@@ -320,10 +327,10 @@ struct TranscribeWorkbenchView: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 180)
+                    .frame(width: AppTheme.zoomed(180))
                 }
 
-                HStack(alignment: .center, spacing: 8) {
+                HStack(alignment: .center, spacing: AppTheme.Spacing.smMd) {
                     let useCase: LLMUseCase = job.normalizedTargetLanguageCode == nil
                         ? .subtitleProcessing
                         : .translation
@@ -363,7 +370,7 @@ struct TranscribeWorkbenchView: View {
                     }
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, AppTheme.Spacing.smMd)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
@@ -371,9 +378,9 @@ struct TranscribeWorkbenchView: View {
     @ViewBuilder
     private func processingState(_ job: WorkbenchTranscriptionJob) -> some View {
         if job.state.isActive {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
                 HStack {
-                    HStack(spacing: 7) {
+                    HStack(spacing: AppTheme.zoomed(7)) {
                         if let stage = job.flowProgressStage {
                             Text(stage.title.uppercased())
                                 .font(.system(size: AppTheme.FontSize.xxs, weight: .bold))
@@ -398,7 +405,7 @@ struct TranscribeWorkbenchView: View {
             Label(error, systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Status.errorColor)
-                .padding(12)
+                .padding(AppTheme.Spacing.mdLg)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(AppTheme.Status.errorColor.opacity(0.10), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
         }
@@ -424,7 +431,7 @@ struct TranscribeWorkbenchView: View {
     }
 
     private func transcriptEditor(_ job: WorkbenchTranscriptionJob) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
             HStack {
                 Text(job.currentTrack == .translation ? "Translation" : "Transcript")
                     .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
@@ -436,7 +443,7 @@ struct TranscribeWorkbenchView: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    .frame(width: 190)
+                    .frame(width: AppTheme.zoomed(190))
                 }
                 if let result = job.displayedResult {
                     Text("\(result.words.count) timed words")
@@ -450,39 +457,39 @@ struct TranscribeWorkbenchView: View {
                         .font(.system(size: AppTheme.FontSize.md, design: .rounded))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
-                        .padding(10)
+                        .padding(AppTheme.Spacing.md)
                 }
-                .frame(minHeight: 220)
+                .frame(minHeight: AppTheme.zoomed(220))
                 .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
                 .overlay(
                     RoundedRectangle(cornerRadius: AppTheme.Radius.md)
-                        .strokeBorder(AppTheme.Border.subtleColor, lineWidth: 1)
+                        .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
                 )
             } else if job.result != nil {
                 TextEditor(text: transcriptTextBinding(job.id))
                     .font(.system(size: AppTheme.FontSize.md, design: .rounded))
                     .scrollContentBackground(.hidden)
-                    .padding(10)
-                    .frame(minHeight: 220)
+                    .padding(AppTheme.Spacing.md)
+                    .frame(minHeight: AppTheme.zoomed(220))
                     .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
                     .overlay(
                         RoundedRectangle(cornerRadius: AppTheme.Radius.md)
-                            .strokeBorder(AppTheme.Border.subtleColor, lineWidth: 1)
+                            .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
                     )
             } else {
-                VStack(spacing: 8) {
+                VStack(spacing: AppTheme.Spacing.smMd) {
                     Image(systemName: "text.alignleft")
-                        .font(.system(size: 22, weight: .light))
+                        .font(.system(size: AppTheme.FontSize.lg, weight: .light))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                     Text("Your editable transcript will appear here")
                         .font(.system(size: AppTheme.FontSize.smMd))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
-                .frame(maxWidth: .infinity, minHeight: 220)
+                .frame(maxWidth: .infinity, minHeight: AppTheme.zoomed(220))
                 .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
                 .overlay(
                     RoundedRectangle(cornerRadius: AppTheme.Radius.md)
-                        .strokeBorder(AppTheme.Border.subtleColor, lineWidth: 1)
+                        .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
                 )
                 .accessibilityElement(children: .combine)
             }
@@ -502,13 +509,13 @@ struct TranscribeWorkbenchView: View {
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
             }
-            .padding(14)
+            .padding(AppTheme.Spacing.lg)
             Divider()
             if !segments.isEmpty {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                         HStack {
                             Menu {
                                 ForEach(job.speakerLabels, id: \.self) { speaker in
@@ -574,8 +581,8 @@ struct TranscribeWorkbenchView: View {
                             .font(.system(size: AppTheme.FontSize.smMd))
                             .textSelection(.enabled)
                     }
-                            .padding(.vertical, 10)
-                            .padding(.horizontal, 12)
+                            .padding(.vertical, AppTheme.Spacing.md)
+                            .padding(.horizontal, AppTheme.Spacing.mdLg)
                             .overlay(alignment: .bottom) {
                                 Divider()
                             }
@@ -583,9 +590,9 @@ struct TranscribeWorkbenchView: View {
                     }
                 }
             } else {
-                VStack(spacing: 10) {
+                VStack(spacing: AppTheme.Spacing.md) {
                     Image(systemName: "captions.bubble")
-                        .font(.system(size: 28, weight: .light))
+                        .font(.system(size: AppTheme.FontSize.title2, weight: .light))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                     Text("Word-aligned segments appear here")
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -616,7 +623,7 @@ struct TranscribeWorkbenchView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
                 if let message = store.transcriptionAdmissionError {
-                    HStack(alignment: .top, spacing: 10) {
+                    HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(AppTheme.Status.warningColor)
                         Text(message)
@@ -626,7 +633,7 @@ struct TranscribeWorkbenchView: View {
                         Button("Dismiss") { store.clearTranscriptionAdmissionError() }
                             .buttonStyle(.borderless)
                     }
-                    .padding(12)
+                    .padding(AppTheme.Spacing.mdLg)
                     .background(AppTheme.Status.warningColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
                 }
                 transcriptionEntryBar
@@ -651,7 +658,7 @@ struct TranscribeWorkbenchView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
 
                         quickStartCard
-                            .frame(width: 300)
+                            .frame(width: AppTheme.zoomed(300))
                     }
                     .padding(AppTheme.Spacing.xlXxl)
                     .background(
@@ -693,10 +700,10 @@ struct TranscribeWorkbenchView: View {
                                 title: "Keep the workflow moving",
                                 detail: "Once a session is created, edit, translate, export, and prepare a dub without leaving this workspace.",
                                 systemImage: "arrow.up.circle"
-                            )
-                        }
-                    }
+                    )
                 }
+            }
+        }
 
                 WorkbenchRecentTranscriptSessionsSection(
                     modeTitle: recentSessionsTitle,
@@ -849,7 +856,7 @@ struct TranscribeWorkbenchView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: AppTheme.FontSize.md))
                     .padding(.horizontal, AppTheme.Spacing.mdLg)
-                    .frame(height: 44)
+                    .frame(height: AppTheme.zoomed(44))
                     .background(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.soft), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
                     .overlay {
                         RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
@@ -975,7 +982,7 @@ struct TranscribeWorkbenchView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(AppTheme.Spacing.lgXl)
-        .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: AppTheme.zoomed(150), alignment: .topLeading)
         .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xl)

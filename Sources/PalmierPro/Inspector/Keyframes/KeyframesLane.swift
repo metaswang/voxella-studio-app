@@ -2,14 +2,14 @@ import AppKit
 import SwiftUI
 
 enum KeyframesMetrics {
-    static let rulerHeight: CGFloat = 18
-    static let stripHeight: CGFloat = 14
-    static let headerHeight: CGFloat = rulerHeight + stripHeight
-    static let rowHeight: CGFloat = 22
-    static let stampButtonWidth: CGFloat = 22
-    static let navButtonWidth: CGFloat = 6
-    static let controlsColumnWidth: CGFloat = navButtonWidth * 2 + stampButtonWidth
-    static let diamondSize: CGFloat = 8
+    static var rulerHeight: CGFloat { AppTheme.zoomed(18) }
+    static var stripHeight: CGFloat { AppTheme.zoomed(14) }
+    static var headerHeight: CGFloat { rulerHeight + stripHeight }
+    static var rowHeight: CGFloat { AppTheme.zoomed(22) }
+    static var stampButtonWidth: CGFloat { AppTheme.zoomed(22) }
+    static var navButtonWidth: CGFloat { AppTheme.zoomed(6) }
+    static var controlsColumnWidth: CGFloat { navButtonWidth * 2 + stampButtonWidth }
+    static var diamondSize: CGFloat { AppTheme.zoomed(8) }
 
     /// Map a timeline frame into the lane's local x. Inverse of `frameAt(...)`.
     static func xForFrame(_ f: Int, clipStart: Int, span: Int, width: CGFloat) -> CGFloat {
@@ -82,7 +82,7 @@ struct KeyframesLaneRow: View {
         var currentFrame: Int
     }
 
-    private static let hitTolerance: CGFloat = 7
+    private static var hitTolerance: CGFloat { AppTheme.zoomed(7) }
     private static let snapThresholdPixels: Double = 4
     private var span: Int { max(1, clip.endFrame - clip.startFrame) }
 

@@ -2,6 +2,25 @@ import AppKit
 import SwiftUI
 
 enum AppTheme {
+    /// Live UI zoom factor for metric (layout == hit-target) scaling.
+    /// Posture 3: prefer this over `scaleEffect` so frames match painting.
+    static var appZoomScaleFactor: CGFloat { AppZoomScale.shared.scale }
+
+    /// Converts a design-space measurement into the active app layout space.
+    /// Every value returned here is used by SwiftUI layout and therefore also
+    /// participates in the same hit-testing geometry.
+    static func zoomed(_ value: CGFloat) -> CGFloat {
+        value * appZoomScaleFactor
+    }
+
+    static func zoomed(_ size: CGSize) -> CGSize {
+        CGSize(width: zoomed(size.width), height: zoomed(size.height))
+    }
+
+    static func zoomed(_ values: [CGFloat]) -> [CGFloat] {
+        values.map(zoomed)
+    }
+
 
     private static func adaptive(light: NSColor, dark: NSColor) -> NSColor {
         NSColor(name: nil) { appearance in
@@ -67,10 +86,10 @@ enum AppTheme {
     // MARK: - Border widths
 
     enum BorderWidth {
-        static let hairline: CGFloat = 0.5
-        static let thin: CGFloat = 1
-        static let medium: CGFloat = 1.5
-        static let thick: CGFloat = 2
+        static var hairline: CGFloat { AppTheme.zoomed(0.5) }
+        static var thin: CGFloat { AppTheme.zoomed(1) }
+        static var medium: CGFloat { AppTheme.zoomed(1.5) }
+        static var thick: CGFloat { AppTheme.zoomed(2) }
     }
 
     // MARK: - Accent
@@ -107,9 +126,9 @@ enum AppTheme {
     // MARK: - Adjust sliders
 
     enum Slider {
-        static let trackHeight: CGFloat = 4
-        static let thumbSize: CGFloat = 10
-        static let labelColumn: CGFloat = 106
+        static var trackHeight: CGFloat { AppTheme.zoomed(4) }
+        static var thumbSize: CGFloat { AppTheme.zoomed(10) }
+        static var labelColumn: CGFloat { AppTheme.zoomed(106) }
         /// Temperature track: cool blue (low) → warm amber (high).
         static let tempGradient = [Color(red: 0.32, green: 0.55, blue: 0.92), Color(red: 0.95, green: 0.72, blue: 0.32)]
         /// Tint track: green (low) → magenta (high).
@@ -119,8 +138,8 @@ enum AppTheme {
     }
 
     enum AudioMeter {
-        static let panelWidth: CGFloat = 32
-        static let barWidth: CGFloat = 8
+        static var panelWidth: CGFloat { AppTheme.zoomed(32) }
+        static var barWidth: CGFloat { AppTheme.zoomed(8) }
         static let refreshInterval: Double = 1.0 / 30.0
         static let accessibilityRefreshInterval: Duration = .milliseconds(250)
         static let rulerStepDb: Float = 6
@@ -136,17 +155,17 @@ enum AppTheme {
     // MARK: - Color wheels
 
     enum Wheels {
-        static let padSize: CGFloat = 96
-        static let puckSize: CGFloat = 10
-        static let ringWidth: CGFloat = 1
+        static var padSize: CGFloat { AppTheme.zoomed(96) }
+        static var puckSize: CGFloat { AppTheme.zoomed(10) }
+        static var ringWidth: CGFloat { AppTheme.zoomed(1) }
         static let crosshairColor = Color.white.opacity(AppTheme.Opacity.faint)
     }
 
     enum Curve {
-        static let editorHeight: CGFloat = 180
-        static let pointDiameter: CGFloat = 9
+        static var editorHeight: CGFloat { AppTheme.zoomed(180) }
+        static var pointDiameter: CGFloat { AppTheme.zoomed(9) }
         /// Invisible grab target around each point — much larger than the dot so it's easy to hit.
-        static let pointHitDiameter: CGFloat = 30
+        static var pointHitDiameter: CGFloat { AppTheme.zoomed(30) }
         static var lumaColor: Color { AppTheme.Text.primaryColor }
         static let redColor = Color(red: 1, green: 0.22, blue: 0.18)
         static let greenColor = Color(red: 0.32, green: 0.82, blue: 0.36)
@@ -169,10 +188,10 @@ enum AppTheme {
     // MARK: - Authentication
 
     enum Auth {
-        static let purchaseWindowHeight: CGFloat = 640
-        static let contentWidth: CGFloat = 380
-        static let providerButtonHeight: CGFloat = 44
-        static let fieldHeight: CGFloat = 42
+        static var purchaseWindowHeight: CGFloat { AppTheme.zoomed(640) }
+        static var contentWidth: CGFloat { AppTheme.zoomed(380) }
+        static var providerButtonHeight: CGFloat { AppTheme.zoomed(44) }
+        static var fieldHeight: CGFloat { AppTheme.zoomed(42) }
         static let pressedScale: CGFloat = 0.98
         static let fieldBackground = Background.raisedColor
         static let fieldBorder = Border.primaryColor
@@ -344,13 +363,13 @@ enum AppTheme {
     // MARK: - Corner radii
 
     enum Radius {
-        static let xs: CGFloat = 3
-        static let xsSm: CGFloat = 4
-        static let sm: CGFloat = 6
-        static let md: CGFloat = 10
-        static let mdLg: CGFloat = 12
-        static let lg: CGFloat = 14
-        static let xl: CGFloat = 20
+        static var xs: CGFloat { AppTheme.zoomed(3) }
+        static var xsSm: CGFloat { AppTheme.zoomed(4) }
+        static var sm: CGFloat { AppTheme.zoomed(6) }
+        static var md: CGFloat { AppTheme.zoomed(10) }
+        static var mdLg: CGFloat { AppTheme.zoomed(12) }
+        static var lg: CGFloat { AppTheme.zoomed(14) }
+        static var xl: CGFloat { AppTheme.zoomed(20) }
 
         static func concentric(outer: CGFloat, padding: CGFloat) -> CGFloat {
             max(outer - padding, 0)
@@ -360,35 +379,35 @@ enum AppTheme {
     // MARK: - Spacing
 
     enum Spacing {
-        static let zero: CGFloat = 0
-        static let xxs: CGFloat = 2
-        static let xs: CGFloat = 4
-        static let sm: CGFloat = 6
-        static let smMd: CGFloat = 8
-        static let md: CGFloat = 10
-        static let mdLg: CGFloat = 12
-        static let lg: CGFloat = 14
-        static let lgXl: CGFloat = 16
-        static let xl: CGFloat = 20
-        static let xlXxl: CGFloat = 24
-        static let xxl: CGFloat = 28
+        static var zero: CGFloat { 0 }
+        static var xxs: CGFloat { AppTheme.zoomed(2) }
+        static var xs: CGFloat { AppTheme.zoomed(4) }
+        static var sm: CGFloat { AppTheme.zoomed(6) }
+        static var smMd: CGFloat { AppTheme.zoomed(8) }
+        static var md: CGFloat { AppTheme.zoomed(10) }
+        static var mdLg: CGFloat { AppTheme.zoomed(12) }
+        static var lg: CGFloat { AppTheme.zoomed(14) }
+        static var lgXl: CGFloat { AppTheme.zoomed(16) }
+        static var xl: CGFloat { AppTheme.zoomed(20) }
+        static var xlXxl: CGFloat { AppTheme.zoomed(24) }
+        static var xxl: CGFloat { AppTheme.zoomed(28) }
     }
 
     // MARK: - Font sizes
 
     enum FontSize {
-        static let micro: CGFloat = 8
-        static let xxs: CGFloat = 9
-        static let xs: CGFloat = 10
-        static let sm: CGFloat = 11
-        static let smMd: CGFloat = 12
-        static let md: CGFloat = 13
-        static let mdLg: CGFloat = 14
-        static let lg: CGFloat = 15
-        static let xl: CGFloat = 18
-        static let title1: CGFloat = 22
-        static let title2: CGFloat = 28
-        static let display: CGFloat = 36
+        static var micro: CGFloat { AppTheme.zoomed(8) }
+        static var xxs: CGFloat { AppTheme.zoomed(9) }
+        static var xs: CGFloat { AppTheme.zoomed(10) }
+        static var sm: CGFloat { AppTheme.zoomed(11) }
+        static var smMd: CGFloat { AppTheme.zoomed(12) }
+        static var md: CGFloat { AppTheme.zoomed(13) }
+        static var mdLg: CGFloat { AppTheme.zoomed(14) }
+        static var lg: CGFloat { AppTheme.zoomed(15) }
+        static var xl: CGFloat { AppTheme.zoomed(18) }
+        static var title1: CGFloat { AppTheme.zoomed(22) }
+        static var title2: CGFloat { AppTheme.zoomed(28) }
+        static var display: CGFloat { AppTheme.zoomed(36) }
     }
 
     // MARK: - Font weights
@@ -404,225 +423,241 @@ enum AppTheme {
     // MARK: - Tracking (letter-spacing)
 
     enum Tracking {
-        static let tight: CGFloat = -0.5
-        static let normal: CGFloat = 0
-        static let wide: CGFloat = 1.5
+        static var tight: CGFloat { AppTheme.zoomed(-0.5) }
+        static var normal: CGFloat { 0 }
+        static var wide: CGFloat { AppTheme.zoomed(1.5) }
     }
 
     // MARK: - Icon sizes (square frame dimensions)
 
     enum IconSize {
-        static let xxs: CGFloat = 12
-        static let xs: CGFloat = 14
-        static let sm: CGFloat = 18
-        static let smMd: CGFloat = 20
-        static let md: CGFloat = 22
-        static let mdLg: CGFloat = 24
-        static let lg: CGFloat = 26
-        static let lgXl: CGFloat = 28
-        static let xl: CGFloat = 30
+        static var xxs: CGFloat { AppTheme.zoomed(12) }
+        static var xs: CGFloat { AppTheme.zoomed(14) }
+        static var sm: CGFloat { AppTheme.zoomed(18) }
+        static var smMd: CGFloat { AppTheme.zoomed(20) }
+        static var md: CGFloat { AppTheme.zoomed(22) }
+        static var mdLg: CGFloat { AppTheme.zoomed(24) }
+        static var lg: CGFloat { AppTheme.zoomed(26) }
+        static var lgXl: CGFloat { AppTheme.zoomed(28) }
+        static var xl: CGFloat { AppTheme.zoomed(30) }
     }
 
     enum ComponentSize {
-        static let captionPreviewMaxHeight: CGFloat = 150
+        static var captionPreviewMaxHeight: CGFloat { AppTheme.zoomed(150) }
         static let captionPreviewMaxTextWidthRatio: CGFloat = 0.9
-        static let toolImagePreviewMaxHeight: CGFloat = 50
-        static let razorHintMaxTextWidth: CGFloat = 220
-        static let razorHintMaxWidth: CGFloat = 560
-        static let projectCardWidth: CGFloat = 150
-        static let projectCardHeight: CGFloat = 120
-        static let projectSearchWidth: CGFloat = 260
-        static let timelineClipBorderMinWidth: CGFloat = 8
-        static let timelineClipDetailMinWidth: CGFloat = 32
-        static let timelineTabRenameWidth: CGFloat = 120
-        static let timelineClipLabelMinWidth: CGFloat = 56
-        static let timelineBadgePadH: CGFloat = 4
-        static let timelineBadgePadV: CGFloat = 1
-        static let timelineBadgeMinWidth: CGFloat = 16
-        static let timelineDotSize: CGFloat = 5
-        static let speakerEditorWidth: CGFloat = 320
+        static var toolImagePreviewMaxHeight: CGFloat { AppTheme.zoomed(50) }
+        static var razorHintMaxTextWidth: CGFloat { AppTheme.zoomed(220) }
+        static var razorHintMaxWidth: CGFloat { AppTheme.zoomed(560) }
+        static var projectCardWidth: CGFloat { AppTheme.zoomed(150) }
+        static var projectCardHeight: CGFloat { AppTheme.zoomed(120) }
+        static var projectSearchWidth: CGFloat { AppTheme.zoomed(260) }
+        static var timelineClipBorderMinWidth: CGFloat { AppTheme.zoomed(8) }
+        static var timelineClipDetailMinWidth: CGFloat { AppTheme.zoomed(32) }
+        static var timelineTabRenameWidth: CGFloat { AppTheme.zoomed(120) }
+        static var timelineClipLabelMinWidth: CGFloat { AppTheme.zoomed(56) }
+        static var timelineBadgePadH: CGFloat { AppTheme.zoomed(4) }
+        static var timelineBadgePadV: CGFloat { AppTheme.zoomed(1) }
+        static var timelineBadgeMinWidth: CGFloat { AppTheme.zoomed(16) }
+        static var timelineDotSize: CGFloat { AppTheme.zoomed(5) }
+        static var speakerEditorWidth: CGFloat { AppTheme.zoomed(320) }
     }
 
     enum VideoEditorHome {
-        static let posterMinWidth: CGFloat = 248
+        static var posterMinWidth: CGFloat { AppTheme.zoomed(248) }
         static let posterAspect: CGFloat = 16.0 / 9.0
         static let posterThumbnailMaxPixelSize: Int = 960
-        static let listPosterWidth: CGFloat = 112
+        static var listPosterWidth: CGFloat { AppTheme.zoomed(112) }
         static var listPosterHeight: CGFloat { listPosterWidth / posterAspect }
-        static let listOpenedColumnWidth: CGFloat = 160
-        static let listRowMinHeight: CGFloat = 76
-        static let resumePosterWidth: CGFloat = 168
-        static let searchWidth: CGFloat = 240
-        static let layoutPickerWidth: CGFloat = 88
-        static let newBadgeSize: CGFloat = 44
+        static var listOpenedColumnWidth: CGFloat { AppTheme.zoomed(160) }
+        static var listRowMinHeight: CGFloat { AppTheme.zoomed(76) }
+        static var resumePosterWidth: CGFloat { AppTheme.zoomed(168) }
+        static var searchWidth: CGFloat { AppTheme.zoomed(240) }
+        static var layoutPickerWidth: CGFloat { AppTheme.zoomed(88) }
+        static var newBadgeSize: CGFloat { AppTheme.zoomed(44) }
         static let hoverOpenOverlay: Double = Opacity.strong
-        static let posterDash: [CGFloat] = [Spacing.md, Spacing.sm]
+        static var posterDash: [CGFloat] { [Spacing.md, Spacing.sm] }
     }
 
     enum SpeechInput {
-        static let scriptMaxHeight: CGFloat = 144
-        static let progressWidth: CGFloat = 120
-        static let quickInputWidth: CGFloat = 560
-        static let quickInputMinimumHeight: CGFloat = 180
+        static var scriptMaxHeight: CGFloat { AppTheme.zoomed(144) }
+        static var progressWidth: CGFloat { AppTheme.zoomed(120) }
+        static var quickInputWidth: CGFloat { AppTheme.zoomed(560) }
+        static var quickInputMinimumHeight: CGFloat { AppTheme.zoomed(180) }
         static let quickInputMaximumHeightRatio: CGFloat = 0.6
-        static let quickInputEditorMinimumHeight: CGFloat = 72
-        static let quickInputEditorLineHeight: CGFloat = 22
-        static let quickInputEstimatedLineWidth: CGFloat = 44
-        static let quickInputRecordingWaveformWidth: CGFloat = 220
+        static var quickInputEditorMinimumHeight: CGFloat { AppTheme.zoomed(72) }
+        static var quickInputEditorLineHeight: CGFloat { AppTheme.zoomed(22) }
+        static var quickInputEstimatedLineWidth: CGFloat { AppTheme.zoomed(44) }
+        static var quickInputRecordingWaveformWidth: CGFloat { AppTheme.zoomed(220) }
+        static var inlineRecordingWaveformWidth: CGFloat { AppTheme.zoomed(132) }
         static let quickInputPanelLevelOffset: Int = 1
     }
 
     enum Settings {
-        static let sidebarWidth: CGFloat = 220
-        static let contentMaxWidth: CGFloat = 640
-        static let creditInputWidth: CGFloat = 56
-        static let skillsSearchWidth: CGFloat = 260
-        static let skillRowIconFrame: CGFloat = 42
-        static let skillStatusWidth: CGFloat = 124
-        static let skillActionWidth: CGFloat = 72
-        static let skillDetailWidth: CGFloat = 720
-        static let skillDetailMinHeight: CGFloat = 600
-        static let skillToastWidth: CGFloat = 380
-        static let skillMenuWidth: CGFloat = 168
+        static var sidebarWidth: CGFloat { AppTheme.zoomed(220) }
+        static var contentMaxWidth: CGFloat { AppTheme.zoomed(640) }
+        static var creditInputWidth: CGFloat { AppTheme.zoomed(56) }
+        static var skillsSearchWidth: CGFloat { AppTheme.zoomed(260) }
+        static var skillRowIconFrame: CGFloat { AppTheme.zoomed(42) }
+        static var skillStatusWidth: CGFloat { AppTheme.zoomed(124) }
+        static var skillActionWidth: CGFloat { AppTheme.zoomed(72) }
+        static var skillDetailWidth: CGFloat { AppTheme.zoomed(720) }
+        static var skillDetailMinHeight: CGFloat { AppTheme.zoomed(600) }
+        static var skillToastWidth: CGFloat { AppTheme.zoomed(380) }
+        static var skillMenuWidth: CGFloat { AppTheme.zoomed(168) }
         static let skillToastDuration: Duration = .seconds(5)
-        static let fieldLabelWidth: CGFloat = 84
-        static let providerListWidth: CGFloat = 152
-        static let providerOrderListMinHeight: CGFloat = 72
-        static let extraBodyEditorMinHeight: CGFloat = 128
+        static var fieldLabelWidth: CGFloat { AppTheme.zoomed(84) }
+        static var providerListWidth: CGFloat { AppTheme.zoomed(152) }
+        static var providerOrderListMinHeight: CGFloat { AppTheme.zoomed(72) }
+        static var extraBodyEditorMinHeight: CGFloat { AppTheme.zoomed(128) }
     }
 
     enum EditorPanel {
-        static let defaultWidth: CGFloat = 340
-        static let minimumWidth: CGFloat = 300
-        static let labelColumnWidth: CGFloat = 88
-        static let rowMinHeight: CGFloat = 22
-        static let groupHeaderHeight: CGFloat = 28
-        static let fieldMinHeight: CGFloat = 22
-        static let numericFieldWidth: CGFloat = 56
-        static let compactNumericFieldWidth: CGFloat = 36
-        static let fontMenuWidth: CGFloat = 160
-        static let fontPickerWidth: CGFloat = 280
-        static let fontPickerHeight: CGFloat = 360
-        static let textEditorMinHeight: CGFloat = 96
+        static var defaultWidth: CGFloat { AppTheme.zoomed(340) }
+        static var minimumWidth: CGFloat { AppTheme.zoomed(300) }
+        static var labelColumnWidth: CGFloat { AppTheme.zoomed(88) }
+        static var rowMinHeight: CGFloat { AppTheme.zoomed(22) }
+        static var groupHeaderHeight: CGFloat { AppTheme.zoomed(28) }
+        static var fieldMinHeight: CGFloat { AppTheme.zoomed(22) }
+        static var numericFieldWidth: CGFloat { AppTheme.zoomed(56) }
+        static var compactNumericFieldWidth: CGFloat { AppTheme.zoomed(36) }
+        static var fontMenuWidth: CGFloat { AppTheme.zoomed(160) }
+        static var fontPickerWidth: CGFloat { AppTheme.zoomed(280) }
+        static var fontPickerHeight: CGFloat { AppTheme.zoomed(360) }
+        static var textEditorMinHeight: CGFloat { AppTheme.zoomed(96) }
     }
 
     enum Window {
-        static let homeDefault = NSSize(width: 1200, height: 800)
-        static let homeMin = NSSize(width: 760, height: 480)
-        static let projectMin = NSSize(
-            width: 960 + GenerationPanel.minimumWidthAdjustment,
-            height: 600
-        )
-        static let settingsDefault = NSSize(width: 1200, height: 800)
-        static let settingsMin = NSSize(width: 860, height: 640)
+        static var homeDefault: NSSize { AppTheme.zoomed(NSSize(width: 1200, height: 800)) }
+        static var homeMin: NSSize { AppTheme.zoomed(NSSize(width: 760, height: 480)) }
+        static var projectMin: NSSize {
+            NSSize(
+                width: AppTheme.zoomed(960) + GenerationPanel.minimumWidthAdjustment,
+                height: AppTheme.zoomed(600)
+            )
+        }
+        static var settingsDefault: NSSize { AppTheme.zoomed(NSSize(width: 1200, height: 800)) }
+        static var settingsMin: NSSize { AppTheme.zoomed(NSSize(width: 860, height: 640)) }
     }
 
     enum Workbench {
-        static let sidebarCollapsedWidth: CGFloat = 64
-        static let sidebarExpandedWidth: CGFloat = 216
-        static let sidebarRowHeight: CGFloat = 38
+        static var sidebarCollapsedWidth: CGFloat { AppTheme.zoomed(64) }
+        static var sidebarExpandedWidth: CGFloat { AppTheme.zoomed(216) }
+        static var sidebarRowHeight: CGFloat { AppTheme.zoomed(38) }
         /// Compact top chrome for the main canvas (titlebar strip, not stacked under it).
-        static let toolbarHeight: CGFloat = 32
+        static var toolbarHeight: CGFloat { AppTheme.zoomed(32) }
         /// Vertical clearance for traffic lights in the sidebar under fullSizeContentView.
-        static let windowControlsInset: CGFloat = 28
-        static let contentMaxWidth: CGFloat = 1180
-        static let composerMaxWidth: CGFloat = 1040
-        static let translationSheetWidth: CGFloat = 420
-        static let dubSheetWidth: CGFloat = 520
-        static let voiceRowMinHeight: CGFloat = 92
-        static let sessionHeaderMinHeight: CGFloat = 92
-        static let sessionTabBarMinHeight: CGFloat = 34
+        static var windowControlsInset: CGFloat { AppTheme.zoomed(28) }
+        static var contentMaxWidth: CGFloat { AppTheme.zoomed(1180) }
+        static var composerMaxWidth: CGFloat { AppTheme.zoomed(1040) }
+        static var translationSheetWidth: CGFloat { AppTheme.zoomed(420) }
+        static var dubSheetWidth: CGFloat { AppTheme.zoomed(520) }
+        static var voiceRowMinHeight: CGFloat { AppTheme.zoomed(92) }
+        static var sessionHeaderMinHeight: CGFloat { AppTheme.zoomed(92) }
+        static var sessionTabBarMinHeight: CGFloat { AppTheme.zoomed(34) }
         static let sessionSplitDefaultRatio: CGFloat = 0.5
         static let sessionSplitMinimumRatio: CGFloat = 0.3
         static let sessionSplitMaximumRatio: CGFloat = 0.7
         static let sessionSummaryDefaultRatio: CGFloat = 0.5
-        static let sessionSplitMinimumRightWidth: CGFloat = 400
-        static let sessionSplitDividerHitWidth: CGFloat = 12
-        static let sessionVideoMinHeight: CGFloat = 360
-        static let netVideoCardWidth: CGFloat = 360
-        static let netVideoCardHeight: CGFloat = 260
-        static let netVideoCardCollapsedHeight: CGFloat = 48
-        static let clipPreviewMaxHeight: CGFloat = 220
-        static let clipTimelineHeight: CGFloat = 28
-        static let clipHandleSize: CGFloat = 14
-        static let clipHandleHitWidth: CGFloat = 16
+        static var sessionSplitMinimumRightWidth: CGFloat { AppTheme.zoomed(400) }
+        static var sessionSplitDividerHitWidth: CGFloat { AppTheme.zoomed(12) }
+        static var sessionVideoMinHeight: CGFloat { AppTheme.zoomed(360) }
+        static var netVideoCardWidth: CGFloat { AppTheme.zoomed(360) }
+        static var netVideoCardHeight: CGFloat { AppTheme.zoomed(260) }
+        static var netVideoCardCollapsedHeight: CGFloat { AppTheme.zoomed(48) }
+        static var clipPreviewMaxHeight: CGFloat { AppTheme.zoomed(220) }
+        static var clipTimelineHeight: CGFloat { AppTheme.zoomed(28) }
+        static var clipHandleSize: CGFloat { AppTheme.zoomed(14) }
+        static var clipHandleHitWidth: CGFloat { AppTheme.zoomed(16) }
         static let playbackRates: [Double] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
-        static let transcriptCardMinHeight: CGFloat = 76
-        static let filterWidth: CGFloat = 170
-        static let pickerWidth: CGFloat = 190
-        static let recordingDevicePickerWidth: CGFloat = 220
-        static let recordingInfoPopoverWidth: CGFloat = 280
-        static let recordingRegionMinSize: CGFloat = 48
-        static let recordingRegionHandleSize: CGFloat = 8
-        static let recordingControlsWidth: CGFloat = 264
-        static let recordingControlsHeight: CGFloat = 52
-        static let recordingControlsButtonSize: CGFloat = 32
-        static let recordingControlsTimerWidth: CGFloat = 72
-        static let recordingWaveformHeight: CGFloat = 22
-        static let recordingWaveformBarWidth: CGFloat = 3
-        static let recordingWaveformBarSpacing: CGFloat = 2
-        static let recordingWaveformMinimumBarHeight: CGFloat = 2
+        static var transcriptCardMinHeight: CGFloat { AppTheme.zoomed(76) }
+        static var filterWidth: CGFloat { AppTheme.zoomed(170) }
+        static var pickerWidth: CGFloat { AppTheme.zoomed(190) }
+        static var recordingDevicePickerWidth: CGFloat { AppTheme.zoomed(220) }
+        static var recordingInfoPopoverWidth: CGFloat { AppTheme.zoomed(280) }
+        static var recordingRegionMinSize: CGFloat { AppTheme.zoomed(48) }
+        static var recordingRegionHandleSize: CGFloat { AppTheme.zoomed(8) }
+        static var recordingControlsWidth: CGFloat { AppTheme.zoomed(264) }
+        static var recordingControlsHeight: CGFloat { AppTheme.zoomed(52) }
+        static var recordingControlsButtonSize: CGFloat { AppTheme.zoomed(32) }
+        static var recordingControlsTimerWidth: CGFloat { AppTheme.zoomed(72) }
+        static var recordingWaveformHeight: CGFloat { AppTheme.zoomed(22) }
+        static var recordingWaveformBarWidth: CGFloat { AppTheme.zoomed(3) }
+        static var recordingWaveformBarSpacing: CGFloat { AppTheme.zoomed(2) }
+        static var recordingWaveformMinimumBarHeight: CGFloat { AppTheme.zoomed(2) }
         static let recordingWaveformRefreshInterval: Double = 1.0 / 30.0
         static let recordingWaveformFloorDb: Float = -48
         static let recordingWaveformCeilingDb: Float = -3
         static let cloudClipAnchor = "cloudClipLimit"
-        static let compactPanelWidth: CGFloat = 420
-        static let summaryRefinementSheetWidth: CGFloat = 520
-        static let summaryRefinementEditorHeight: CGFloat = 140
-        static let summaryTemplateSheetWidth: CGFloat = 920
-        static let summaryTemplateSheetHeight: CGFloat = 640
-        static let summaryTemplateSidebarWidth: CGFloat = 280
-        static let summaryTemplateEditorMinHeight: CGFloat = 280
-        static let exportSheetWidth: CGFloat = 920
-        static let exportSheetHeight: CGFloat = 720
-        static let exportSummaryWidth: CGFloat = 280
-        static let exportChoiceMinHeight: CGFloat = 112
-        static let searchWidth: CGFloat = 260
-        static let searchPaletteWidth: CGFloat = 600
-        static let searchPaletteHeight: CGFloat = 560
-        static let searchPaletteFieldHeight: CGFloat = 46
-        static let searchPaletteRowHeight: CGFloat = 42
+        static var compactPanelWidth: CGFloat { AppTheme.zoomed(420) }
+        static var summaryRefinementSheetWidth: CGFloat { AppTheme.zoomed(520) }
+        static var summaryRefinementEditorHeight: CGFloat { AppTheme.zoomed(140) }
+        static var summaryTemplateSheetWidth: CGFloat { AppTheme.zoomed(920) }
+        static var summaryTemplateSheetHeight: CGFloat { AppTheme.zoomed(640) }
+        static var summaryTemplateSidebarWidth: CGFloat { AppTheme.zoomed(280) }
+        static var summaryTemplateEditorMinHeight: CGFloat { AppTheme.zoomed(280) }
+        static var exportSheetWidth: CGFloat { AppTheme.zoomed(920) }
+        static var exportSheetHeight: CGFloat { AppTheme.zoomed(720) }
+        static var exportSummaryWidth: CGFloat { AppTheme.zoomed(280) }
+        static var exportChoiceMinHeight: CGFloat { AppTheme.zoomed(112) }
+        static var searchWidth: CGFloat { AppTheme.zoomed(260) }
+        static var searchPaletteWidth: CGFloat { AppTheme.zoomed(600) }
+        static var searchPaletteHeight: CGFloat { AppTheme.zoomed(560) }
+        static var searchPaletteFieldHeight: CGFloat { AppTheme.zoomed(46) }
+        static var searchPaletteRowHeight: CGFloat { AppTheme.zoomed(42) }
         static let searchPaletteRecentLimit = 6
-        static let revisionPickerWidth: CGFloat = 190
-        static let sessionIconSize: CGFloat = 44
-        static let sessionStatusWidth: CGFloat = 238
-        static let sessionStatusHelpWidth: CGFloat = 320
-        static let sessionStatusProgressHeight: CGFloat = 4
+        static var revisionPickerWidth: CGFloat { AppTheme.zoomed(190) }
+        static var sessionIconSize: CGFloat { AppTheme.zoomed(44) }
+        static var sessionStatusWidth: CGFloat { AppTheme.zoomed(238) }
+        static var sessionStatusHelpWidth: CGFloat { AppTheme.zoomed(320) }
+        static var sessionStatusProgressHeight: CGFloat { AppTheme.zoomed(4) }
         static let sessionStatusPulseScale: CGFloat = 1.06
-        static let recentSessionThumbnailWidth: CGFloat = 76
-        static let recentSessionThumbnailHeight: CGFloat = 52
-        static let fullscreenControlSize: CGFloat = 48
+        static var recentSessionThumbnailWidth: CGFloat { AppTheme.zoomed(76) }
+        static var recentSessionThumbnailHeight: CGFloat { AppTheme.zoomed(52) }
+        static var fullscreenControlSize: CGFloat { AppTheme.zoomed(48) }
         static let fullscreenChromeIdle: Duration = .seconds(3)
         static let fullscreenSeekStepSeconds: Double = 5
         static let dubSeekStepSeconds: Double = 10
         static let tipAutoDismiss: Duration = .seconds(15)
         static let tipDedupeWindow: Duration = .seconds(10)
-        static let tipHorizontalInset: CGFloat = 16
-        static let tipVerticalInset: CGFloat = 12
-        static let emptyStateMinHeight: CGFloat = 260
-        static let summaryPanelMinHeight: CGFloat = 160
-        static let waveformHeight: CGFloat = 54
-        static let sessionAudioCanvasHeight: CGFloat =
+        static var tipHorizontalInset: CGFloat { AppTheme.zoomed(16) }
+        static var tipVerticalInset: CGFloat { AppTheme.zoomed(12) }
+        static var emptyStateMinHeight: CGFloat { AppTheme.zoomed(260) }
+        static var summaryPanelMinHeight: CGFloat { AppTheme.zoomed(160) }
+        static var waveformHeight: CGFloat { AppTheme.zoomed(54) }
+        static var sessionAudioCanvasHeight: CGFloat {
             AppTheme.Spacing.lgXl
-            + waveformHeight
-            + AppTheme.Spacing.smMd
-            + AppTheme.IconSize.xl
-            + AppTheme.Spacing.md
-            + AppTheme.Spacing.lgXl
-        static let waveformBarStep: CGFloat = 5
-        static let waveformBarSpacing: CGFloat = 2
-        static let waveformBarWidth: CGFloat = 3
-        static let waveformMinimumBarHeight: CGFloat = 3
+                + waveformHeight
+                + AppTheme.Spacing.smMd
+                + AppTheme.IconSize.xl
+                + AppTheme.Spacing.md
+                + AppTheme.Spacing.lgXl
+        }
+        static var waveformBarStep: CGFloat { AppTheme.zoomed(5) }
+        static var waveformBarSpacing: CGFloat { AppTheme.zoomed(2) }
+        static var waveformBarWidth: CGFloat { AppTheme.zoomed(3) }
+        static var waveformMinimumBarHeight: CGFloat { AppTheme.zoomed(3) }
         static let waveformMinimumLoudness: CGFloat = 0.08
         static let playerRefreshInterval: Double = 0.2
         static let playerEndTolerance: Double = 0.05
         static let playerTimescale: Int32 = 600
-        static let dubScriptMinHeight: CGFloat = 190
-        static let recentSessionControlHeight: CGFloat = 44
-        static let recentSessionUpdatedColumnWidth: CGFloat = 132
-        static let recentSessionTagColumnWidth: CGFloat = 160
-        static let recentSessionMenuWidth: CGFloat = 36
-        static let recentSessionEmptyTextMaxWidth: CGFloat = 520
+        static var dubScriptMinHeight: CGFloat { AppTheme.zoomed(190) }
+        static var recentSessionControlHeight: CGFloat { AppTheme.zoomed(44) }
+        static var recentSessionUpdatedColumnWidth: CGFloat { AppTheme.zoomed(132) }
+        static var recentSessionTagColumnWidth: CGFloat { AppTheme.zoomed(160) }
+        static var recentSessionMenuWidth: CGFloat { AppTheme.zoomed(36) }
+        static var recentSessionEmptyTextMaxWidth: CGFloat { AppTheme.zoomed(520) }
+    }
+
+    enum Knowledge {
+        static let defaultPanelRatio: CGFloat = 0.32
+        static var minimumSourceWidth: CGFloat { AppTheme.zoomed(248) }
+        static var minimumChatWidth: CGFloat { AppTheme.zoomed(420) }
+        static let minimumPanelRatio: CGFloat = 0.22
+        static let maximumPanelRatio: CGFloat = 0.68
+        static var messageMaxWidth: CGFloat { AppTheme.zoomed(720) }
+        static var emptyStateMaxWidth: CGFloat { AppTheme.zoomed(560) }
+        static var starterPromptMinHeight: CGFloat { AppTheme.zoomed(44) }
+        static let transcriptAutoScrollCooldown: TimeInterval = 1.25
     }
 
     enum Caption {
@@ -637,33 +672,33 @@ enum AppTheme {
     }
 
     enum GenerationPanel {
-        static let typeTabWidth: CGFloat = IconSize.xl + Spacing.lg
-        static let minimumWidthAdjustment: CGFloat = typeTabWidth + Spacing.xxl
-        static let loadingHeight: CGFloat = 180
-        static let promptMinHeight: CGFloat = 40
-        static let referenceTileWidth: CGFloat = 80
-        static let referenceTileHeight: CGFloat = 56
+        static var typeTabWidth: CGFloat { IconSize.xl + Spacing.lg }
+        static var minimumWidthAdjustment: CGFloat { typeTabWidth + Spacing.xxl }
+        static var loadingHeight: CGFloat { AppTheme.zoomed(180) }
+        static var promptMinHeight: CGFloat { AppTheme.zoomed(40) }
+        static var referenceTileWidth: CGFloat { AppTheme.zoomed(80) }
+        static var referenceTileHeight: CGFloat { AppTheme.zoomed(56) }
     }
 
     enum MediaPanel {
-        static let tabRailWidth: CGFloat = IconSize.lg + Spacing.sm * 2
-        static let contextRowHeight: CGFloat = IconSize.md
+        static var tabRailWidth: CGFloat { IconSize.lg + Spacing.sm * 2 }
+        static var contextRowHeight: CGFloat { IconSize.md }
     }
 
     enum Export {
-        static let sheetWidth: CGFloat = 600
-        static let sheetHeight: CGFloat = 600
-        static let logPaneWidth: CGFloat = 420
-        static let queueTimestampWidth: CGFloat = 56
-        static let activityDotSize: CGFloat = 6
-        static let queueProgressBarWidth: CGFloat = 96
-        static let queueProgressWidth: CGFloat = 32
-        static let sheetWidthWithLog: CGFloat = sheetWidth + logPaneWidth + BorderWidth.hairline
+        static var sheetWidth: CGFloat { AppTheme.zoomed(600) }
+        static var sheetHeight: CGFloat { AppTheme.zoomed(600) }
+        static var logPaneWidth: CGFloat { AppTheme.zoomed(420) }
+        static var queueTimestampWidth: CGFloat { AppTheme.zoomed(56) }
+        static var activityDotSize: CGFloat { AppTheme.zoomed(6) }
+        static var queueProgressBarWidth: CGFloat { AppTheme.zoomed(96) }
+        static var queueProgressWidth: CGFloat { AppTheme.zoomed(32) }
+        static var sheetWidthWithLog: CGFloat { sheetWidth + logPaneWidth + BorderWidth.hairline }
     }
 
     enum Matte {
-        static let sheetWidth: CGFloat = 280
-        static let controlWidth: CGFloat = 116
+        static var sheetWidth: CGFloat { AppTheme.zoomed(280) }
+        static var controlWidth: CGFloat { AppTheme.zoomed(116) }
     }
 
     // MARK: - Shadows
@@ -676,33 +711,33 @@ enum AppTheme {
     }
 
     enum Shadow {
-        static let sm = ShadowStyle(color: .black.opacity(0.3), radius: 1, x: 0, y: 0.5)
-        static let md = ShadowStyle(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
-        static let lg = ShadowStyle(color: .black.opacity(0.25), radius: 24, x: 0, y: 8)
+        static var sm: ShadowStyle { ShadowStyle(color: .black.opacity(0.3), radius: AppTheme.zoomed(1), x: 0, y: AppTheme.zoomed(0.5)) }
+        static var md: ShadowStyle { ShadowStyle(color: .black.opacity(0.3), radius: AppTheme.zoomed(4), x: 0, y: AppTheme.zoomed(2)) }
+        static var lg: ShadowStyle { ShadowStyle(color: .black.opacity(0.25), radius: AppTheme.zoomed(24), x: 0, y: AppTheme.zoomed(8)) }
     }
 
     // MARK: - Animation durations
 
     enum Onboarding {
-        static let windowSize = CGSize(width: 1000, height: 680)
-        static let panelWidth: CGFloat = 920
-        static let panelHeight: CGFloat = 570
-        static let showcaseWidth: CGFloat = 430
-        static let panelRadius: CGFloat = 28
-        static let cardWidth: CGFloat = 204
-        static let cardHeight: CGFloat = 166
-        static let smallCardHeight: CGFloat = 134
-        static let cardPitch: CGFloat = 196
-        static let columnOffset: CGFloat = 94
+        static var windowSize: CGSize { AppTheme.zoomed(CGSize(width: 1000, height: 680)) }
+        static var panelWidth: CGFloat { AppTheme.zoomed(920) }
+        static var panelHeight: CGFloat { AppTheme.zoomed(570) }
+        static var showcaseWidth: CGFloat { AppTheme.zoomed(430) }
+        static var panelRadius: CGFloat { AppTheme.zoomed(28) }
+        static var cardWidth: CGFloat { AppTheme.zoomed(204) }
+        static var cardHeight: CGFloat { AppTheme.zoomed(166) }
+        static var smallCardHeight: CGFloat { AppTheme.zoomed(134) }
+        static var cardPitch: CGFloat { AppTheme.zoomed(196) }
+        static var columnOffset: CGFloat { AppTheme.zoomed(94) }
         static let cardRestingScale: CGFloat = 0.94
         static let cardFocusedScale: CGFloat = 1.24
         static let cardTilt: Double = 3.5
-        static let waveHeight: CGFloat = 40
-        static let waveBarWidth: CGFloat = 4
-        static let focalRadius: CGFloat = 140
+        static var waveHeight: CGFloat { AppTheme.zoomed(40) }
+        static var waveBarWidth: CGFloat { AppTheme.zoomed(4) }
+        static var focalRadius: CGFloat { AppTheme.zoomed(140) }
         static let fadeEdge: CGFloat = 0.12
-        static let laneInset: CGFloat = 10
-        static let resourceWindow = CGSize(width: 820, height: 680)
+        static var laneInset: CGFloat { AppTheme.zoomed(10) }
+        static var resourceWindow: CGSize { AppTheme.zoomed(CGSize(width: 820, height: 680)) }
         static let canvas = Color(AppTheme.adaptive(
             light: NSColor(red: 0.91, green: 0.92, blue: 0.98, alpha: 1),
             dark: NSColor(red: 0.10, green: 0.11, blue: 0.16, alpha: 1)

@@ -1,6 +1,6 @@
 import AppKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var isTerminating = false
     private var didFinishLaunching = false
     private var pendingOpenURLs: [URL] = []
@@ -122,6 +122,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc func showSettings(_ sender: Any?) {
         SettingsWindowController.shared.show()
+    }
+
+    @MainActor
+    @objc func zoomIn(_ sender: Any?) {
+        AppZoomScale.shared.increase()
+    }
+
+    @MainActor
+    @objc func zoomOut(_ sender: Any?) {
+        AppZoomScale.shared.decrease()
+    }
+
+    @MainActor
+    @objc func resetZoom(_ sender: Any?) {
+        AppZoomScale.shared.reset()
+    }
+
+    @MainActor
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(zoomIn(_:)):
+            return !AppZoomScale.shared.isAtMaximum
+        case #selector(zoomOut(_:)):
+            return !AppZoomScale.shared.isAtMinimum
+        case #selector(resetZoom(_:)):
+            return !AppZoomScale.shared.isDefault
+        default:
+            return true
+        }
     }
 
     @MainActor

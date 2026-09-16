@@ -141,6 +141,34 @@ enum MainMenuBuilder {
         let item = NSMenuItem()
         let menu = NSMenu(title: "View")
 
+        let increaseZoomItem = NSMenuItem(
+            title: "Zoom In",
+            action: #selector(AppDelegate.zoomIn(_:)),
+            keyEquivalent: "+"
+        )
+        increaseZoomItem.keyEquivalentModifierMask = [.command]
+        increaseZoomItem.target = NSApp.delegate
+        menu.addItem(increaseZoomItem)
+
+        let decreaseZoomItem = NSMenuItem(
+            title: "Zoom Out",
+            action: #selector(AppDelegate.zoomOut(_:)),
+            keyEquivalent: "-"
+        )
+        decreaseZoomItem.keyEquivalentModifierMask = [.command]
+        decreaseZoomItem.target = NSApp.delegate
+        menu.addItem(decreaseZoomItem)
+
+        let resetZoomItem = NSMenuItem(
+            title: "Reset Zoom",
+            action: #selector(AppDelegate.resetZoom(_:)),
+            keyEquivalent: "0"
+        )
+        resetZoomItem.keyEquivalentModifierMask = [.command]
+        resetZoomItem.target = NSApp.delegate
+        menu.addItem(resetZoomItem)
+        menu.addItem(.separator())
+
         let searchItem = NSMenuItem(
             title: "Search Sessions…",
             action: #selector(AppDelegate.showSessionSearch(_:)),
