@@ -205,7 +205,7 @@ struct TranscriptionProcessingView: View {
                     .frame(width: 22, height: 22)
                 if state == .done {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: AppTheme.FontSize.xs, weight: .bold))
                         .foregroundStyle(.white)
                 } else if state == .active {
                     Circle()

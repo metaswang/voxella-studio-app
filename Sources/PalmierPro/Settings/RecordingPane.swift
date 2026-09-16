@@ -47,7 +47,7 @@ struct RecordingPane: View {
         }
     }
 
-    private var canUseCloudRepair: Bool { account.isSignedIn && account.isPaid }
+    private var canUseCloudRepair: Bool { account.canUseCloudHighFidelityVoiceRepair }
 
     private var cloudRepairSubtitle: String {
         if !account.isSignedIn { return "Sign in to enable cloud high-fidelity voice repair." }

@@ -2,15 +2,13 @@ import AppKit
 import SwiftUI
 
 struct KnowledgeBaseView: View {
-    private static let defaultRatio: CGFloat = 0.28
-    private static var minLeftWidth: CGFloat { AppTheme.Knowledge.minimumSourceWidth }
-    private static var minRightWidth: CGFloat { AppTheme.Knowledge.minimumChatWidth }
-    private static let panelRatioKey = "voxella.kb.panel-ratio.v1"
+    private static let panelRatioKey = "voxella.kb.panel-ratio.v2"
 
     @State private var controller = KnowledgeBaseController()
-    @State private var splitRatio: CGFloat = Self.defaultRatio
+    @State private var splitRatio: CGFloat = AppTheme.Knowledge.defaultPanelRatio
     @State private var dragStartRatio: CGFloat?
     @State private var isDraggingSplitter = false
+    @Bindable private var account = AccountService.shared
 
     var body: some View {
         GeometryReader { geo in
@@ -26,9 +24,33 @@ struct KnowledgeBaseView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .background(AppTheme.Background.baseColor)
         .onAppear {
             splitRatio = Self.loadPersistedRatio()
             controller.onAppear()
+        }
+        .task {
+            do {
+                try await account.prepareNewContentAccess()
+            } catch is CancellationError {
+                return
+            } catch {
+                controller.refreshAccessGate()
+                return
+            }
+            controller.refreshAccessGate()
+        }
+        .onChange(of: account.appAccess) { _, _ in
+            controller.refreshAccessGate()
+        }
+        .onChange(of: account.isSignedIn) { _, _ in
+            controller.refreshAccessGate()
+        }
+        .onChange(of: account.isPaid) { _, _ in
+            controller.refreshAccessGate()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiConfigurationDidChange)) { _ in
+            controller.refreshAccessGate()
         }
     }
 
@@ -79,24 +101,30 @@ struct KnowledgeBaseView: View {
     // MARK: - Ratio helpers
 
     static func clampedLeftWidth(total: CGFloat, ratio: CGFloat) -> CGFloat {
-        let minLeft = minLeftWidth
-        let maxLeft = max(total - minRightWidth, minLeft)
+        let minLeft = AppTheme.Knowledge.minimumSourceWidth
+        let maxLeft = max(total - AppTheme.Knowledge.minimumChatWidth, minLeft)
         return min(max(total * ratio, minLeft), maxLeft)
     }
 
     static func clampedRatio(left: CGFloat, total: CGFloat) -> CGFloat {
         let width = clampedLeftWidth(total: total, ratio: left / max(total, 1))
-        return min(max(width / max(total, 1), 0.05), 0.95)
+        return min(
+            max(width / max(total, 1), AppTheme.Knowledge.minimumPanelRatio),
+            AppTheme.Knowledge.maximumPanelRatio
+        )
     }
 
     static func loadPersistedRatio() -> CGFloat {
         let defaults = UserDefaults.standard
         guard defaults.object(forKey: panelRatioKey) != nil else {
-            return defaultRatio
+            return AppTheme.Knowledge.defaultPanelRatio
         }
         let value = defaults.double(forKey: panelRatioKey)
-        guard value.isFinite, value > 0.05, value < 0.95 else {
-            return defaultRatio
+        guard value.isFinite,
+              value > AppTheme.Knowledge.minimumPanelRatio,
+              value < AppTheme.Knowledge.maximumPanelRatio
+        else {
+            return AppTheme.Knowledge.defaultPanelRatio
         }
         return CGFloat(value)
     }

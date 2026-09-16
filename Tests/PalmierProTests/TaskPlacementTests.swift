@@ -15,6 +15,11 @@ struct TaskPlacementTests {
         #expect(TranscriptionPlacementRouter.remoteClientCompute(placement) == nil)
     }
 
+    @Test func transcriptionDefaultsToAutomaticSpeakerDiarization() {
+        #expect(TranscriptionProcessingOptions().speakerCount == .auto)
+        #expect(WorkbenchTranscriptionJob(sourcePath: "/tmp/sample.m4a").speakerCount == .auto)
+    }
+
     @Test func routesAllFourStorageAndComputeCombinations() {
         let localLocal = TranscriptionPlacement(storage: .local, compute: .local)
         #expect(TranscriptionPlacementRouter.shouldRunLocalPipeline(localLocal))
@@ -131,12 +136,12 @@ struct TaskPlacementTests {
         )
         #expect(CloudTranscriptionNoticePolicy.notice(
             isSignedIn: true,
-            isPaid: true,
+            hasFeatureAccess: true,
             quota: ample
         ) == .none)
         #expect(CloudTranscriptionNoticePolicy.notice(
             isSignedIn: true,
-            isPaid: false,
+            hasFeatureAccess: false,
             quota: ample
         ) == .freeUpgrade)
     }
@@ -151,7 +156,7 @@ struct TaskPlacementTests {
         )
         #expect(CloudTranscriptionNoticePolicy.notice(
             isSignedIn: true,
-            isPaid: false,
+            hasFeatureAccess: false,
             quota: insufficient
         ) == .insufficientCredits)
 
@@ -164,7 +169,7 @@ struct TaskPlacementTests {
         )
         #expect(CloudTranscriptionNoticePolicy.notice(
             isSignedIn: true,
-            isPaid: true,
+            hasFeatureAccess: true,
             quota: low
         ) == .lowBalance(remainingSeconds: 750))
     }
@@ -210,7 +215,7 @@ struct TaskPlacementTests {
     @Test func dubCreditNoticePolicyCoversSignInFreeLowAndBlockedStates() {
         #expect(CloudCreditNoticePolicy.notice(
             isSignedIn: false,
-            isPaid: false,
+            hasFeatureAccess: false,
             estimate: nil
         ) == .signIn)
 
@@ -223,7 +228,7 @@ struct TaskPlacementTests {
         )
         #expect(CloudCreditNoticePolicy.notice(
             isSignedIn: true,
-            isPaid: false,
+            hasFeatureAccess: false,
             estimate: freeEstimate
         ) == .freeUpgrade)
 
@@ -236,7 +241,7 @@ struct TaskPlacementTests {
         )
         #expect(CloudCreditNoticePolicy.notice(
             isSignedIn: true,
-            isPaid: true,
+            hasFeatureAccess: true,
             estimate: lowEstimate
         ) == .lowBalance(remainingSeconds: 750))
 
@@ -249,7 +254,7 @@ struct TaskPlacementTests {
         )
         #expect(CloudCreditNoticePolicy.notice(
             isSignedIn: true,
-            isPaid: true,
+            hasFeatureAccess: true,
             estimate: blockedEstimate
         ) == .insufficient(mediaDuration: 900, availableDuration: 300))
     }

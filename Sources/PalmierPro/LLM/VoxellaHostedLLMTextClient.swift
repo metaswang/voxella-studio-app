@@ -43,9 +43,12 @@ struct VoxellaHostedLLMTextClient: LLMTextClient {
     }
 
     func complete(system: String, user: String) async throws -> String {
+        var shouldRefreshAccount = true
         defer {
-            Task { @MainActor in
-                await AccountService.shared.refreshAccountForFeatureAccess()
+            if shouldRefreshAccount {
+                Task { @MainActor in
+                    await AccountService.shared.refreshAccountForFeatureAccess()
+                }
             }
         }
         let body: [String: Any] = [
@@ -72,6 +75,12 @@ struct VoxellaHostedLLMTextClient: LLMTextClient {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
+                if let clientError = error as? LLMClientError,
+                   case .insufficientCredits = clientError
+                {
+                    shouldRefreshAccount = false
+                    await MainActor.run { HostedCreditAvailability.shared.markExhausted() }
+                }
                 lastError = error
                 let elapsedMilliseconds = max(0, Int(Date().timeIntervalSince(startedAt) * 1_000))
                 let retryable = Self.isRetryable(error)

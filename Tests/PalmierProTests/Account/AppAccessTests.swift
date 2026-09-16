@@ -7,6 +7,28 @@ import Testing
 struct AppAccessTests {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
 
+    @Test(arguments: [
+        (false, false, false, false),
+        (true, false, false, false),
+        (true, true, false, true),
+        (true, true, true, false),
+        (false, true, false, false),
+    ])
+    func trialActivationTipRequiresSignedInNonLifetimeAccess(
+        enforced: Bool,
+        signedIn: Bool,
+        hasLocalLifetimeCredential: Bool,
+        expected: Bool
+    ) {
+        #expect(
+            AppAccessGate.shouldPresentTrialActivationTip(
+                enforced: enforced,
+                signedIn: signedIn,
+                hasLocalLifetimeCredential: hasLocalLifetimeCredential
+            ) == expected
+        )
+    }
+
     @Test func activeTrialCanCreateButCannotBuyCredits() throws {
         let access = AppAccessSnapshot(
             license: .trial,
@@ -17,6 +39,33 @@ struct AppAccessTests {
         #expect(access.policy(at: now) == .allowed)
         #expect(!access.canPurchaseCredits)
         try access.policy(at: now).requireNewContent()
+    }
+
+    @Test func activeTrialSatisfiesPlanGatedFeaturesButExpiredTrialDoesNot() {
+        let activeTrial = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(1)
+        )
+        let expiredTrial = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now
+        )
+
+        #expect(AppAccessGate.hasFeatureAccess(
+            hasPaidPlan: false,
+            access: activeTrial,
+            at: now
+        ))
+        #expect(!AppAccessGate.hasFeatureAccess(
+            hasPaidPlan: false,
+            access: expiredTrial,
+            at: now
+        ))
+        #expect(AppAccessGate.hasFeatureAccess(
+            hasPaidPlan: true,
+            access: expiredTrial,
+            at: now
+        ))
     }
 
     @Test func expiredTrialBlocksNewContent() {
@@ -799,6 +848,18 @@ struct AppAccessTests {
         // Reopen would be now+14d — must not match preserved provisional ends.
         let reopenedEnds = now.addingTimeInterval(14 * 86_400)
         #expect(expectedEnds != reopenedEnds)
+        #expect(
+            !DeviceTrialLoginMerge.shouldPostAccountTrialMerge(
+                hasSignedToken: false,
+                provisional: provisional
+            )
+        )
+        #expect(
+            DeviceTrialLoginMerge.shouldPostAccountTrialMerge(
+                hasSignedToken: false,
+                provisional: nil
+            )
+        )
         _ = provisionalStored
     }
 
@@ -830,6 +891,15 @@ struct AppAccessTests {
         )
         #expect(payload.deviceTrialToken == token)
         #expect(payload.deviceStartedAt == started)
+        #expect(
+            DeviceTrialLoginMerge.shouldPostAccountTrialMerge(
+                hasSignedToken: true,
+                provisional: DeviceTrialClock.ProvisionalRecord(
+                    startedAt: started.addingTimeInterval(-86_400),
+                    fingerprint: fingerprint
+                )
+            )
+        )
         // Server ending later than provisional must not clear provisional clock.
         #expect(
             !DeviceTrialLoginMerge.shouldClearProvisional(

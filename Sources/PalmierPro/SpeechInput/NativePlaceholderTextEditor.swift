@@ -1,5 +1,11 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
+
+@MainActor
+protocol VoiceInputFocusTarget: AnyObject {
+    func requestFocus()
+}
 
 struct NativePlaceholderTextEditor: NSViewRepresentable {
     @Binding var text: String
@@ -7,7 +13,8 @@ struct NativePlaceholderTextEditor: NSViewRepresentable {
     var fontSize = AppTheme.FontSize.md
     var textInset = NSSize(width: AppTheme.Spacing.md, height: AppTheme.Spacing.md)
     var showsVerticalScroller = true
-    var autofocus = false
+    var onReturn: (() -> Bool)? = nil
+    var onEscape: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -31,6 +38,13 @@ struct NativePlaceholderTextEditor: NSViewRepresentable {
         editor.drawsBackground = false
         editor.delegate = context.coordinator
         editor.allowsUndo = true
+        let coordinator = context.coordinator
+        editor.onReturn = { [weak coordinator] in
+            coordinator?.handleReturn() ?? false
+        }
+        editor.onEscape = { [weak coordinator] in
+            coordinator?.handleEscape()
+        }
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = showsVerticalScroller
         scroll.documentView = editor
@@ -47,14 +61,20 @@ struct NativePlaceholderTextEditor: NSViewRepresentable {
         editor.placeholder = placeholder
         editor.isEditable = context.environment.isEnabled
         editor.needsDisplay = true
-        if autofocus, scroll.window?.firstResponder !== editor {
-            DispatchQueue.main.async { scroll.window?.makeFirstResponder(editor) }
-        }
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: NativePlaceholderTextEditor
         init(parent: NativePlaceholderTextEditor) { self.parent = parent }
+
+        func handleReturn() -> Bool {
+            parent.onReturn?() ?? false
+        }
+
+        func handleEscape() {
+            parent.onEscape?()
+        }
 
         func textDidChange(_ notification: Notification) {
             guard let editor = notification.object as? NSTextView else { return }
@@ -64,8 +84,43 @@ struct NativePlaceholderTextEditor: NSViewRepresentable {
     }
 }
 
-private final class PlaceholderTextView: NSTextView {
+@MainActor
+private final class PlaceholderTextView: NSTextView, VoiceInputFocusTarget {
     var placeholder = ""
+    var onReturn: (() -> Bool)?
+    var onEscape: (() -> Void)?
+
+    private var wantsFocus = false
+    private var focusRequestScheduled = false
+
+    override var needsPanelToBecomeKey: Bool { true }
+
+    func requestFocus() {
+        wantsFocus = true
+        requestFocusIfNeeded()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        requestFocusIfNeeded()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let isReturn = event.keyCode == UInt16(kVK_Return)
+            || event.keyCode == UInt16(kVK_ANSI_KeypadEnter)
+
+        if isReturn, !modifiers.contains(.shift), onReturn?() == true {
+            return
+        }
+
+        if event.keyCode == UInt16(kVK_Escape) {
+            onEscape?()
+            return
+        }
+
+        super.keyDown(with: event)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
@@ -80,5 +135,24 @@ private final class PlaceholderTextView: NSTextView {
         storage.addLayoutManager(layout)
         layout.addTextContainer(container)
         layout.drawGlyphs(forGlyphRange: layout.glyphRange(for: container), at: textContainerOrigin)
+    }
+
+    private func requestFocusIfNeeded() {
+        guard wantsFocus,
+              let window,
+              window.isKeyWindow,
+              window.firstResponder !== self,
+              !focusRequestScheduled else { return }
+
+        focusRequestScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            focusRequestScheduled = false
+            guard wantsFocus,
+                  let currentWindow = self.window,
+                  currentWindow.isKeyWindow,
+                  currentWindow.firstResponder !== self else { return }
+            _ = currentWindow.makeFirstResponder(self)
+        }
     }
 }

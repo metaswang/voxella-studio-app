@@ -222,6 +222,30 @@ struct SessionIndexStoreTests {
         #expect(try await store.freshness(sessionID: snapshot.sessionID)?.embeddingReady == true)
     }
 
+    @Test func graphEvidenceIsReplacedWhenTheSourceChanges() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("session-graph-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = try SessionIndexStore(url: url)
+        var snapshot = indexSnapshot(generation: 1)
+        try await store.replaceLexical(snapshot: snapshot, clips: [])
+        let source = try #require(try await store.graphSource(sessionID: snapshot.sessionID))
+        let chunkID = try #require(source.chunks.first?.unitID)
+        let extraction = KnowledgeGraphExtraction(
+            entities: [KnowledgeGraphEntity(name: "Alice", type: "person", chunkIDs: [chunkID])],
+            relations: []
+        )
+
+        #expect(try await store.replaceGraph(source: source, extraction: extraction))
+        #expect(
+            try await store.graphEntities(matching: ["Alice"], scopes: ["local"]).count == 1
+        )
+
+        snapshot.generation = 2
+        try await store.replaceLexical(snapshot: snapshot, clips: [])
+        #expect(try await store.graphEntities(matching: ["Alice"], scopes: ["local"]).isEmpty)
+    }
+
     @Test func cardPatchInvalidatesSessionCardEmbedding() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("session-index-\(UUID().uuidString).sqlite")
@@ -244,6 +268,44 @@ struct SessionIndexStoreTests {
         #expect(freshness?.embeddingReady == false)
         let needed = try await store.unitsNeedingEmbedding(sessionID: snapshot.sessionID)
         #expect(needed.contains { $0.kind == .sessionCard && $0.id == card.id })
+    }
+
+    @Test func sessionCatalogReturnsSourceMetadataAndEnforcesCloudOwner() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("session-catalog-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = try SessionIndexStore(url: url)
+        var snapshot = indexSnapshot(generation: 1)
+        snapshot.sessionType = .record
+        snapshot.sourceOrigin = .cloud
+        snapshot.ownerUserID = "owner-a"
+        snapshot.sourceCreatedAt = 1_700_000_000
+        snapshot.sourceModifiedAt = 1_700_000_123
+        try await store.replaceLexical(snapshot: snapshot, clips: [])
+
+        let visible = try await store.sessionCatalog(
+            filter: SessionSearchFilter.visible(
+                isSignedIn: true,
+                uiFilter: [.cloud],
+                cloudOwnerUserID: "owner-a",
+                limit: 50
+            )
+        )
+        let entry = try #require(visible.first)
+        #expect(entry.sessionType == .record)
+        #expect(entry.sourceOrigin == .cloud)
+        #expect(entry.sourceCreatedAt == 1_700_000_000)
+        #expect(entry.sourceModifiedAt == 1_700_000_123)
+
+        let hidden = try await store.sessionCatalog(
+            filter: SessionSearchFilter.visible(
+                isSignedIn: true,
+                uiFilter: [.cloud],
+                cloudOwnerUserID: "owner-b",
+                limit: 50
+            )
+        )
+        #expect(hidden.isEmpty)
     }
 
     @Test func packsShortTurnsAndDoesNotIndexSubtitleCues() async throws {

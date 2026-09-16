@@ -28,7 +28,7 @@ final class GoogleCalendarSettingsStore {
         errorMessage = nil
         defer { isLoading = false }
 
-        access = await AccountService.shared.prepareFeatureAccess(.calendarSettings)
+        _ = await prepareFeatureAccess()
         guard access == .allowed else { return }
         do {
             status = try await api.googleCalendarStatus()
@@ -41,7 +41,7 @@ final class GoogleCalendarSettingsStore {
     }
 
     func connect() async {
-        guard access == .allowed, !isConnecting else { return }
+        guard !isConnecting, await prepareFeatureAccess() else { return }
         isConnecting = true
         errorMessage = nil
         defer { isConnecting = false }
@@ -56,7 +56,7 @@ final class GoogleCalendarSettingsStore {
     }
 
     func save(rules: VoxellaGoogleCalendarRules) async {
-        guard access == .allowed, !isSaving else { return }
+        guard !isSaving, await prepareFeatureAccess() else { return }
         isSaving = true
         errorMessage = nil
         defer { isSaving = false }
@@ -71,7 +71,7 @@ final class GoogleCalendarSettingsStore {
     }
 
     func disconnect() async {
-        guard access == .allowed, status?.connected == true else { return }
+        guard !isSaving, await prepareFeatureAccess(), status?.connected == true else { return }
         isSaving = true
         errorMessage = nil
         defer { isSaving = false }
@@ -90,5 +90,10 @@ final class GoogleCalendarSettingsStore {
             return
         }
         errorMessage = MeetBotErrorPresentation.message(for: error)
+    }
+
+    private func prepareFeatureAccess() async -> Bool {
+        access = await AccountService.shared.prepareFeatureAccess(.calendarSettings)
+        return access == .allowed
     }
 }

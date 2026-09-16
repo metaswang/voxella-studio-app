@@ -23,6 +23,8 @@ final class KnowledgeBaseController {
     var statusText: String?
     var errorMessage: String?
     var accessBlockedMessage: String?
+    var answerBlockedMessage: String?
+    var answerRecoveryActions: [KnowledgeRecoveryAction] = []
     var pendingQuery: String?
     var modelPlan: LocalModelInstallPlan = .knowledgeQAPlan(
         answerModelID: nil,
@@ -31,10 +33,16 @@ final class KnowledgeBaseController {
     )
     var isPreparingModels = false
     var showModelGate = false
+    var transcriptSessionID: UUID?
+    var transcriptTarget: KnowledgeTranscriptTarget?
+    var isClearingHistory = false
 
     private var answerTask: Task<Void, Never>?
     private var prepareTask: Task<Void, Never>?
+    private var clearHistoryTask: Task<Void, Never>?
+    private var clearHistoryGeneration = UUID()
     private var loadGeneration = UUID()
+    private var activeRequestID: UUID?
     private let chatStore = KnowledgeChatStore.shared
     private var qaService = KnowledgeQAService()
     private let models = LocalModelManager.shared
@@ -242,6 +250,9 @@ final class KnowledgeBaseController {
     var scopeSubtitle: String {
         switch selectedScope {
         case .all:
+            if WorkbenchStore.shared.isHydrating {
+                return "Loading saved sessions…"
+            }
             let count = searchableSessionCount
             return "Ask across \(count) session\(count == 1 ? "" : "s")"
         case .session:
@@ -287,11 +298,10 @@ final class KnowledgeBaseController {
     }
 
     func refreshAccessGate() {
-        if AccountService.shared.canCreateNewContent {
-            accessBlockedMessage = nil
-        } else {
-            accessBlockedMessage = "Trial or Lifetime access is required to use the local Knowledge Base."
-        }
+        let availability = KnowledgeAnswerAvailability.current()
+        accessBlockedMessage = availability == .localAccessRequired ? availability.message : nil
+        answerBlockedMessage = availability == .localAccessRequired ? nil : availability.message
+        answerRecoveryActions = availability.recoveryActions
     }
 
     func selectAll() {
@@ -300,6 +310,114 @@ final class KnowledgeBaseController {
 
     func selectSession(_ id: UUID) {
         handleSessionClick(id, forceReplace: true)
+    }
+
+    func moveListSelection(by delta: Int) -> Bool {
+        guard delta != 0 else { return false }
+        let itemCount = rows.count + 1
+        guard itemCount > 0 else { return false }
+
+        let currentIndex: Int = switch selectedScope {
+        case .all:
+            0
+        case let .session(id):
+            rows.firstIndex(where: { $0.id == id }).map { $0 + 1 } ?? 0
+        case let .sessions(ids):
+            ids.last.flatMap { id in rows.firstIndex(where: { $0.id == id }) }.map { $0 + 1 } ?? 0
+        }
+        let nextIndex = min(itemCount - 1, max(0, currentIndex + delta))
+        if nextIndex == 0 {
+            selectAll()
+        } else if rows.indices.contains(nextIndex - 1) {
+            selectSession(rows[nextIndex - 1].id)
+        }
+        return true
+    }
+
+    func openSelectedTranscript() -> Bool {
+        let id: UUID?
+        switch selectedScope {
+        case .all:
+            id = nil
+        case let .session(sessionID):
+            id = sessionID
+        case let .sessions(ids):
+            id = ids.last
+        }
+        guard let id else { return false }
+        openTranscript(for: id)
+        return transcriptSessionID == id
+    }
+
+    func openTranscript(for id: UUID, target: KnowledgeTranscriptTarget? = nil) {
+        guard let session = session(for: id), session.transcript != nil else { return }
+        transcriptSessionID = id
+        transcriptTarget = target
+    }
+
+    func openCitation(_ ref: KnowledgeSourceRef) {
+        CitationResolver.open(ref, in: self)
+    }
+
+    func closeTranscript() {
+        transcriptSessionID = nil
+        transcriptTarget = nil
+    }
+
+    func session(for id: UUID) -> WorkbenchSession? {
+        WorkbenchStore.shared.sessions.first(where: { $0.id == id })
+    }
+
+    func openAppSession(for id: UUID) {
+        guard session(for: id) != nil else { return }
+        WorkbenchStore.shared.openSession(id)
+    }
+
+    func clearHistory() {
+        guard !isClearingHistory else { return }
+        guard let conversationID = conversation?.id else {
+            messages = []
+            return
+        }
+
+        // Clearing history invalidates any in-flight answer before the store
+        // operation starts, so late events cannot repopulate the cleared UI.
+        activeRequestID = nil
+        answerTask?.cancel()
+        answerTask = nil
+        isAnswering = false
+        statusText = nil
+        isClearingHistory = true
+        errorMessage = nil
+        clearHistoryTask?.cancel()
+        let generation = UUID()
+        let scope = selectedScope
+        clearHistoryGeneration = generation
+        loadGeneration = UUID()
+        let chatStore = chatStore
+        clearHistoryTask = Task { [weak self] in
+            do {
+                try await chatStore.clear(conversationID: conversationID)
+                guard let self, self.clearHistoryGeneration == generation else { return }
+                if !Task.isCancelled, self.selectedScope == scope, self.conversation?.id == conversationID {
+                    self.loadGeneration = UUID()
+                    self.messages = []
+                }
+                self.isClearingHistory = false
+                self.clearHistoryTask = nil
+            } catch is CancellationError {
+                guard let self, self.clearHistoryGeneration == generation else { return }
+                self.isClearingHistory = false
+                self.clearHistoryTask = nil
+            } catch {
+                guard let self, self.clearHistoryGeneration == generation else { return }
+                self.isClearingHistory = false
+                self.clearHistoryTask = nil
+                if self.selectedScope == scope, self.conversation?.id == conversationID {
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
     }
 
     /// Click / ⌘-click / ⇧-click selection (no checkboxes).
@@ -350,8 +468,11 @@ final class KnowledgeBaseController {
         selectionAnchorID = anchor
         guard scopeChanged else { return }
         selectedScope = scope
+        activeRequestID = nil
         answerTask?.cancel()
         prepareTask?.cancel()
+        isAnswering = false
+        statusText = nil
         pendingQuery = nil
         Task { await loadConversation(for: scope) }
     }
@@ -359,6 +480,7 @@ final class KnowledgeBaseController {
     func loadConversation(for scope: KnowledgeQAScope) async {
         let currentGeneration = UUID()
         loadGeneration = currentGeneration
+        activeRequestID = nil
         answerTask?.cancel()
         isAnswering = false
         statusText = nil
@@ -399,20 +521,20 @@ final class KnowledgeBaseController {
 
     func send(query: String) {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isAnswering, !isPreparingKnowledgeModels else { return }
+        guard !text.isEmpty, !isAnswering, !isPreparingKnowledgeModels,
+              activeRequestID == nil
+        else { return }
         refreshAccessGate()
         guard accessBlockedMessage == nil else { return }
+        guard answerBlockedMessage == nil else { return }
         guard canAskCurrentScope else {
             errorMessage = qaBlockedMessage
             return
         }
-        do {
-            try AccountService.shared.requireNewContentAccess()
-        } catch {
-            refreshAccessGate()
-            return
-        }
 
+        // Reserve the request slot before model preparation or task creation;
+        // repeated submissions cannot replace the accepted round silently.
+        activeRequestID = UUID()
         pendingQuery = text
         errorMessage = nil
         refreshModelPlan()
@@ -429,6 +551,9 @@ final class KnowledgeBaseController {
     func downloadAndAsk() {
         let text = (pendingQuery ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isAnswering else { return }
+        refreshAccessGate()
+        guard accessBlockedMessage == nil, answerBlockedMessage == nil else { return }
+        activeRequestID = activeRequestID ?? UUID()
         pendingQuery = text
         refreshModelPlan()
         guard needsModelDownload else {
@@ -451,10 +576,12 @@ final class KnowledgeBaseController {
         prepareTask?.cancel()
         prepareTask = nil
         isPreparingModels = false
+        activeRequestID = nil
         // Keep pendingQuery; do not auto-ask after cancel.
     }
 
     func cancelAnswer() {
+        activeRequestID = nil
         answerTask?.cancel()
         answerTask = nil
         isAnswering = false
@@ -484,6 +611,11 @@ final class KnowledgeBaseController {
             missingCount: modelPlan.missingItems.count,
             isAnswering: isAnswering
         ) else { return }
+        refreshAccessGate()
+        guard accessBlockedMessage == nil, answerBlockedMessage == nil else {
+            pendingQuery = nil
+            return
+        }
         let text = pendingQuery?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let pinnedScope = selectedScope
         guard let pinnedConversationID = conversation?.id else { return }
@@ -492,8 +624,19 @@ final class KnowledgeBaseController {
         isPreparingModels = false
         draft = ""
         errorMessage = nil
+        let requestID = activeRequestID ?? UUID()
+        activeRequestID = requestID
+        isAnswering = true
+        statusText = "Starting…"
         answerTask?.cancel()
-        answerTask = Task { await ask(text, scope: pinnedScope, conversationID: pinnedConversationID) }
+        answerTask = Task {
+            await ask(
+                text,
+                scope: pinnedScope,
+                conversationID: pinnedConversationID,
+                requestID: requestID
+            )
+        }
     }
 
     private func ask(_ text: String) async {
@@ -504,15 +647,32 @@ final class KnowledgeBaseController {
             return
         }
         let pinnedScope = selectedScope
-        await ask(text, scope: pinnedScope, conversationID: conversation.id)
+        let requestID = UUID()
+        activeRequestID = requestID
+        isAnswering = true
+        statusText = "Starting…"
+        await ask(text, scope: pinnedScope, conversationID: conversation.id, requestID: requestID)
     }
 
-    private func ask(_ text: String, scope: KnowledgeQAScope, conversationID: UUID) async {
+    private func ask(
+        _ text: String,
+        scope: KnowledgeQAScope,
+        conversationID: UUID,
+        requestID: UUID
+    ) async {
+        refreshAccessGate()
+        guard accessBlockedMessage == nil, answerBlockedMessage == nil,
+              conversation?.id == conversationID, selectedScope == scope,
+              activeRequestID == requestID
+        else { return }
         isAnswering = true
         statusText = "Starting…"
         defer {
-            isAnswering = false
-            statusText = nil
+            if activeRequestID == requestID {
+                activeRequestID = nil
+                isAnswering = false
+                statusText = nil
+            }
         }
 
         let userMessage = KnowledgeMessage(
@@ -521,8 +681,25 @@ final class KnowledgeBaseController {
             content: text
         )
         messages.append(userMessage)
-        do { try await chatStore.append(userMessage) } catch {
+        do {
+            try await chatStore.append(userMessage)
+        } catch is CancellationError {
+            Task { try? await chatStore.removeMessage(id: userMessage.id, conversationID: conversationID) }
+            return
+        } catch {
+            if Task.isCancelled {
+                Task { try? await chatStore.removeMessage(id: userMessage.id, conversationID: conversationID) }
+                return
+            }
             errorMessage = error.localizedDescription
+        }
+        guard !Task.isCancelled,
+              conversation?.id == conversationID,
+              selectedScope == scope,
+              activeRequestID == requestID
+        else {
+            Task { try? await chatStore.removeMessage(id: userMessage.id, conversationID: conversationID) }
+            return
         }
 
         let assistantID = UUID()
@@ -541,15 +718,20 @@ final class KnowledgeBaseController {
             conversationID: conversationID,
             scope: scope,
             originFilter: originFilter.origins,
-            history: history
+            history: history,
+            requestID: requestID
         )
 
         var citations: [KnowledgeSourceRef] = []
+        var receivedTerminalEvent = false
         let stream = qaService.answer(request)
         do {
             for await event in stream {
                 try Task.checkCancellation()
-                guard conversation?.id == conversationID else { break }
+                guard conversation?.id == conversationID,
+                      selectedScope == scope,
+                      activeRequestID == requestID
+                else { break }
                 switch event {
                 case let .status(status):
                     statusText = status
@@ -560,45 +742,68 @@ final class KnowledgeBaseController {
                     citations = refs
                     assistant.citations = refs
                     upsertAssistant(assistant, conversationID: conversationID)
+                case let .recoveryActions(actions):
+                    assistant.recoveryActions = actions
+                    upsertAssistant(assistant, conversationID: conversationID)
                 case let .finished(finalText):
+                    receivedTerminalEvent = true
                     assistant.content = finalText
                     assistant.citations = citations
                     assistant.isStreaming = false
                     upsertAssistant(assistant, conversationID: conversationID)
-                    guard conversation?.id == conversationID else { break }
-                    try await chatStore.append(
-                        KnowledgeMessage(
-                            id: assistantID,
-                            conversationID: conversationID,
-                            role: .assistant,
-                            content: finalText,
-                            citations: citations,
-                            isStreaming: false
-                        )
+                    guard conversation?.id == conversationID,
+                          selectedScope == scope,
+                          activeRequestID == requestID
+                    else { break }
+                    let completedMessage = KnowledgeMessage(
+                        id: assistantID,
+                        conversationID: conversationID,
+                        role: .assistant,
+                        content: finalText,
+                        citations: citations,
+                        isStreaming: false,
+                        recoveryActions: assistant.recoveryActions
                     )
+                    Task { try? await chatStore.append(completedMessage) }
                 case let .failed(message):
+                    receivedTerminalEvent = true
                     assistant.content = message
                     assistant.isStreaming = false
                     upsertAssistant(assistant, conversationID: conversationID)
                     errorMessage = message
-                    guard conversation?.id == conversationID else { break }
-                    try await chatStore.append(assistant)
+                    guard conversation?.id == conversationID,
+                          activeRequestID == requestID
+                    else { break }
+                    let failedMessage = assistant
+                    Task { try? await chatStore.append(failedMessage) }
                 }
             }
+            if !receivedTerminalEvent,
+               conversation?.id == conversationID,
+               selectedScope == scope
+            {
+                // A stream can finish without a terminal event when its
+                // producer closes directly. Never leave a permanent spinner
+                // or streaming placeholder in that case.
+                messages.removeAll { $0.id == assistantID }
+                errorMessage = "Answer stream ended before completion."
+            }
         } catch is CancellationError {
+            let isCurrentRequest = activeRequestID == requestID
+            let sameConversation = conversation?.id == conversationID
+            let sameScope = selectedScope == scope
             assistant.isStreaming = false
             if assistant.content.isEmpty {
-                messages.removeAll { $0.id == assistantID }
-                if conversation?.id == conversationID {
-                    Task {
-                        do {
-                            try await chatStore.removeMessage(id: userMessage.id, conversationID: conversationID)
-                        } catch {}
-                    }
+                if sameConversation, sameScope {
+                    messages.removeAll { $0.id == assistantID }
                 }
             } else {
-                upsertAssistant(assistant, conversationID: conversationID)
-                if conversation?.id == conversationID {
+                if isCurrentRequest, sameConversation, sameScope {
+                    upsertAssistant(assistant, conversationID: conversationID)
+                } else if sameConversation {
+                    messages.removeAll { $0.id == assistantID }
+                }
+                if isCurrentRequest, sameConversation, sameScope {
                     Task {
                         do {
                             try await chatStore.append(
@@ -608,14 +813,24 @@ final class KnowledgeBaseController {
                                     role: .assistant,
                                     content: assistant.content,
                                     citations: assistant.citations,
-                                    isStreaming: false
+                                    isStreaming: false,
+                                    recoveryActions: assistant.recoveryActions
                                 )
                             )
                         } catch {}
                     }
                 }
             }
+            Task {
+                do {
+                    try await chatStore.removeMessage(id: userMessage.id, conversationID: conversationID)
+                } catch {}
+            }
         } catch {
+            guard conversation?.id == conversationID,
+                  selectedScope == scope,
+                  activeRequestID == requestID
+            else { return }
             assistant.content = error.localizedDescription
             assistant.isStreaming = false
             upsertAssistant(assistant, conversationID: conversationID)
@@ -629,6 +844,15 @@ final class KnowledgeBaseController {
             messages[index] = message
         } else {
             messages.append(message)
+        }
+    }
+
+    func performRecoveryAction(_ action: KnowledgeRecoveryAction) {
+        switch action {
+        case .account:
+            SettingsWindowController.shared.show(tab: .account)
+        case .aiSettings:
+            SettingsWindowController.shared.show(tab: .ai)
         }
     }
 }

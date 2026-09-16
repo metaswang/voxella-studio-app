@@ -54,6 +54,11 @@ let package = Package(
                     condition: .when(traits: ["BundledSpeech"])
                 ),
                 .product(
+                    name: "MLXHuggingFace",
+                    package: "mlx-swift-lm",
+                    condition: .when(traits: ["BundledSpeech"])
+                ),
+                .product(
                     name: "MLXVLM",
                     package: "mlx-swift-lm",
                     condition: .when(traits: ["BundledSpeech"])

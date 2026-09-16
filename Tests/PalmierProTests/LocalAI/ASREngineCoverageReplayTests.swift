@@ -29,7 +29,12 @@ struct ASREngineCoverageReplayTests {
                     return ["qwen": score.qwen, "parakeet": score.parakeet, "uncovered": score.whisper]
                 }
             ))
-            #expect(route.whisperHint == nil)
+            #expect(route.reason == .whisperLanguage || route.whisperHint == nil)
+            if route.reason == .whisperLanguage {
+                #expect(route.whisperHint != nil)
+            } else {
+                #expect(route.whisperHint == nil)
+            }
             if ["session-01", "session-06", "session-08", "session-09"].contains(input.id) {
                 #expect(route.engine == .whisper)
             }

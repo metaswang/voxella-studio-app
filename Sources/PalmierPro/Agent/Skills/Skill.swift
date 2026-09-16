@@ -1,6 +1,6 @@
 import Foundation
 
-/// A skill is a folder under `~/.palmier/skills/<id>/` with a `SKILL.md` file
+/// A skill is a folder under `~/.voxstudio/skills/<id>/` with a `SKILL.md` file
 struct Skill: Identifiable, Sendable {
     let id: String  // folder name
     let name: String

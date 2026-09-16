@@ -10,9 +10,9 @@ struct SubtitlePostprocessResult: Sendable {
 /// further edits, align the final text to source word timings, and rebuild
 /// long transcript segments from the timed cues.
 ///
-/// Qwen, Parakeet, and English Whisper already punctuate, so those paths skip
-/// repair and only split cues. The LLM never owns absolute time and never
-/// translates. Timing always comes from a monotonic partition of ASR words.
+/// Qwen and Parakeet already punctuate, so those paths skip repair and only
+/// split cues. Whisper does not, so repair runs whenever subtitle cleanup is
+/// invoked. The LLM never owns absolute time and never translates.
 /// Low-confidence remap gaps interpolate instead of replacing the corrected
 /// text with raw ASR wording.
 struct SubtitlePostprocessPipeline: Sendable {

@@ -37,9 +37,7 @@ enum SubtitleLLMRepairPolicy {
         switch engine {
         case .qwen, .parakeet:
             return true
-        case .whisper:
-            return ASREngineLanguagePolicy.isEnglish(languageCode)
-        case nil:
+        case .whisper, nil:
             return false
         }
     }

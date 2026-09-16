@@ -47,6 +47,7 @@ enum ASREngineRouteReason: String, Sendable {
     case invalidLanguageEvidence
     case engineCoverage
     case chineseEnglishConflict
+    case whisperLanguage
     case insufficientEngineCoverage
 }
 
@@ -54,6 +55,8 @@ struct ASREngineScores: Equatable, Sendable {
     var qwen: Float
     var parakeet: Float
     var whisper: Float
+
+    static let zero = ASREngineScores(qwen: 0, parakeet: 0, whisper: 0)
 
     subscript(_ engine: ASREngine) -> Float {
         switch engine {
@@ -81,6 +84,9 @@ struct ASREngineScores: Equatable, Sendable {
 struct ASREngineRouteDecision: Equatable, Sendable {
     var engine: ASREngine
     var scores: ASREngineScores
+    /// Per-window language evidence projected onto the preferred engine for each language.
+    /// `scores` remains the raw model-capability coverage for diagnostics and compatibility.
+    var engineVoteScores: ASREngineScores = .zero
     var reason: ASREngineRouteReason
     var topLanguage: String?
     var parakeetDomainLanguage: String?

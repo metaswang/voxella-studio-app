@@ -98,6 +98,12 @@ private final class SileroVADBranch: Module {
     }
 
     func callAsFunction(_ x: MLXArray, state: MLXArray?) -> (MLXArray, MLXArray) {
+        let (frames, newState) = frameProbabilities(x, state: state)
+        return (mean(frames, axis: 1, keepDims: true), newState)
+    }
+
+    /// Per-timestep speech probabilities, shape `[batch, time]`.
+    func frameProbabilities(_ x: MLXArray, state: MLXArray?) -> (MLXArray, MLXArray) {
         var x = x
         if x.ndim == 1 { x = x[.newAxis, 0...] }
 
@@ -120,8 +126,7 @@ private final class SileroVADBranch: Module {
 
         var out = MLXNN.relu(hSeq)
         out = sigmoid(finalConv(out))
-        let prob = mean(out.squeezed(axis: -1), axis: 1, keepDims: true)
-        return (prob, newState)
+        return (out.squeezed(axis: -1), newState)
     }
 
     private func splitState(_ s: MLXArray?) -> (MLXArray?, MLXArray?) {
@@ -238,6 +243,35 @@ public final class SileroVAD: Module {
             probs = probs[0]
         }
         return probs
+    }
+
+    /// One full-sequence forward. Returns per-32 ms probabilities, same count as `predictProba`.
+    public func predictProbaFullSequence(
+        _ audio: MLXArray,
+        sampleRate: Int = 16000
+    ) throws -> MLXArray {
+        let b = try branch(forSampleRate: sampleRate)
+        let cs = b.config.chunkSize
+        let ctx = b.config.contextSize
+        var a = audio
+        let originalNDim = a.ndim
+        if originalNDim == 1 { a = a[.newAxis, 0...] }
+
+        if a.dim(-1) == 0 {
+            return originalNDim == 1
+                ? MLXArray.zeros([0])
+                : MLXArray.zeros([a.dim(0), 0])
+        }
+
+        let pad = (cs - a.dim(-1) % cs) % cs
+        if pad > 0 {
+            a = padded(a, widths: [.init((0, 0)), .init((0, pad))])
+        }
+        let preCtx = MLXArray.zeros([a.dim(0), ctx])
+        a = concatenated([preCtx, a], axis: -1)
+
+        let (frames, _) = b.frameProbabilities(a, state: nil)
+        return originalNDim == 1 ? frames[0] : frames
     }
 
     public func getSpeechTimestamps(

@@ -38,8 +38,7 @@ enum KnowledgeSourceOrigin: String, Codable, Sendable, CaseIterable, Identifiabl
     ) -> Set<KnowledgeSourceOrigin> {
         let allowed: Set<KnowledgeSourceOrigin> = isSignedIn ? [.local, .cloud] : [.local]
         guard let uiFilter else { return allowed }
-        let intersection = uiFilter.intersection(allowed)
-        return intersection.isEmpty ? allowed : intersection
+        return uiFilter.intersection(allowed)
     }
 }
 
@@ -55,6 +54,8 @@ struct SessionSearchFilter: Equatable, Sendable {
     var modality: SessionIndexModality?
     /// nil = do not constrain origin (tests / internal). User-facing search should set this.
     var sourceOrigins: Set<KnowledgeSourceOrigin>?
+    /// Cloud rows are private to the signed-in owner. Local rows are device scoped.
+    var cloudOwnerUserID: String?
     var limit: Int
 
     init(
@@ -67,6 +68,7 @@ struct SessionSearchFilter: Equatable, Sendable {
         language: String? = nil,
         modality: SessionIndexModality? = nil,
         sourceOrigins: Set<KnowledgeSourceOrigin>? = nil,
+        cloudOwnerUserID: String? = nil,
         limit: Int = 20
     ) {
         self.sessionID = sessionID
@@ -78,6 +80,7 @@ struct SessionSearchFilter: Equatable, Sendable {
         self.language = language
         self.modality = modality
         self.sourceOrigins = sourceOrigins
+        self.cloudOwnerUserID = cloudOwnerUserID
         self.limit = max(1, min(limit, 50))
     }
 
@@ -86,12 +89,14 @@ struct SessionSearchFilter: Equatable, Sendable {
         sessionID: UUID? = nil,
         sessionIDs: Set<UUID>? = nil,
         uiFilter: Set<KnowledgeSourceOrigin>? = nil,
+        cloudOwnerUserID: String? = nil,
         limit: Int = 20
     ) -> SessionSearchFilter {
         SessionSearchFilter(
             sessionID: sessionID,
             sessionIDs: sessionIDs,
             sourceOrigins: KnowledgeSourceOrigin.effectiveOrigins(isSignedIn: isSignedIn, uiFilter: uiFilter),
+            cloudOwnerUserID: cloudOwnerUserID,
             limit: limit
         )
     }
@@ -113,6 +118,12 @@ struct SessionSearchHit: Equatable, Sendable {
     var hasVideo: Bool
     var language: String?
     var quoteSpan: WordSpanMapper.QuoteSpan?
+    /// Session metadata copied onto hits so QA and clients do not need a second lookup.
+    var duration: Double = 0
+    var sourceOrigin: KnowledgeSourceOrigin = .local
+    var sessionType: WorkbenchSessionType = .upload
+    var sourceCreatedAt: Double? = nil
+    var sourceModifiedAt: Double? = nil
 }
 
 struct SessionCard: Equatable, Sendable {
@@ -133,6 +144,32 @@ struct SessionCard: Equatable, Sendable {
     var sourceOrigin: KnowledgeSourceOrigin = .local
     var remoteSessionID: UUID? = nil
     var ownerUserID: String? = nil
+    var sessionType: WorkbenchSessionType = .upload
+    var sourceCreatedAt: Double? = nil
+    var sourceModifiedAt: Double? = nil
+}
+
+/// Complete, metadata-only view of an indexed session. This is intentionally
+/// separate from transcript hits so inventory questions can query every session
+/// even when no transcript term matches.
+struct SessionCatalogEntry: Equatable, Sendable {
+    var sessionID: UUID
+    var title: String
+    var tag: String?
+    var summaryMarkdown: String?
+    var language: String?
+    var duration: Double
+    var hasVideo: Bool
+    var mediaPath: String
+    var sessionType: WorkbenchSessionType
+    var sourceOrigin: KnowledgeSourceOrigin
+    var remoteSessionID: UUID?
+    var ownerUserID: String?
+    var sourceCreatedAt: Double?
+    var sourceModifiedAt: Double?
+    var lexicalReady: Bool
+    var embeddingReady: Bool
+    var indexedAt: Double?
 }
 
 struct SessionSpeaker: Equatable, Sendable {
@@ -171,7 +208,7 @@ enum SessionIndexIngestAction: Equatable, Sendable {
 
 struct SessionIndexSnapshot: Sendable {
     /// Bump when lexical unit shape changes so historical rows rebuild.
-    static let ingestFormat = 3
+    static let ingestFormat = 4
 
     var sessionID: UUID
     var title: String
@@ -182,6 +219,9 @@ struct SessionIndexSnapshot: Sendable {
     var hasVideo: Bool
     var mediaPath: String
     var sourceMTime: Double?
+    /// Original session dates, distinct from index maintenance timestamps.
+    var sourceCreatedAt: Double? = nil
+    var sourceModifiedAt: Double? = nil
     var generation: Int
     var speakers: [SessionSpeaker]
     var segments: [TranscriptionSegment]
@@ -191,6 +231,7 @@ struct SessionIndexSnapshot: Sendable {
     var sourceOrigin: KnowledgeSourceOrigin = .local
     var remoteSessionID: UUID? = nil
     var ownerUserID: String? = nil
+    var sessionType: WorkbenchSessionType = .upload
 
     static func generation(modifiedAt: Date) -> Int {
         ingestFormat &* 1_000_000_000_000 + Int(modifiedAt.timeIntervalSince1970)

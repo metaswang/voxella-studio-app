@@ -179,7 +179,15 @@ public final class WhisperModel: Module, STTGenerationModel {
                 endOfTextId: tokenizer.endOfTextId
             )
 
-            let nextToken = sample(stepLogits, temperature: generationParameters.temperature)
+            let nextToken = sample(
+                stepLogits,
+                temperature: generationParameters.temperature,
+                topP: generationParameters.topP,
+                topK: generationParameters.topK,
+                repetitionPenalty: generationParameters.repetitionPenalty,
+                repetitionContextSize: generationParameters.repetitionContextSize,
+                generated: generated
+            )
             if nextToken == tokenizer.endOfTextId { break }
             generated.append(nextToken)
 
@@ -223,12 +231,72 @@ public final class WhisperModel: Module, STTGenerationModel {
         return (generated, promptIds.count, generated.count, language)
     }
 
-    private func sample(_ logits: MLXArray, temperature: Float) -> Int {
+    private func sample(
+        _ logits: MLXArray,
+        temperature: Float,
+        topP: Float,
+        topK: Int,
+        repetitionPenalty: Float,
+        repetitionContextSize: Int,
+        generated: [Int]
+    ) -> Int {
         let logits1D = logits.ndim > 1 ? logits.squeezed() : logits
-        if temperature <= 0 {
-            return logits1D.argMax(axis: -1).item(Int.self)
+        var filtered = logits1D.expandedDimensions(axis: 0)
+
+        if repetitionPenalty != 1.0, !generated.isEmpty {
+            let unique = Array(Set(generated.suffix(max(1, repetitionContextSize))))
+                .filter { $0 >= 0 && $0 < filtered.dim(-1) }
+            if !unique.isEmpty {
+                let tokenIDs = MLXArray(unique.map(Int32.init)).reshaped([1, -1])
+                let selected = takeAlong(filtered, tokenIDs, axis: -1)
+                let penalty = MLXArray(repetitionPenalty)
+                let penalized = MLX.where(
+                    selected .< 0,
+                    selected * penalty,
+                    selected / penalty
+                )
+                filtered = putAlong(filtered, tokenIDs, values: penalized, axis: -1)
+            }
         }
-        let scaled = (logits1D / temperature).expandedDimensions(axis: 0)
+
+        if temperature <= 0 {
+            return filtered.argMax(axis: -1).item(Int.self)
+        }
+
+        var scaled = filtered / temperature
+        let vocabSize = scaled.dim(-1)
+        if topK > 0, topK < vocabSize {
+            let kth = min(topK - 1, max(vocabSize - 1, 0))
+            let maskIndices = argPartition(-scaled, kth: kth, axis: -1)[0..., topK...]
+            let negativeInfinity = MLXArray.full(
+                maskIndices.shape,
+                values: MLXArray(-Float.infinity),
+                dtype: scaled.dtype
+            )
+            scaled = putAlong(scaled, maskIndices, values: negativeInfinity, axis: -1)
+        }
+
+        if topP > 0, topP < 1.0, vocabSize > 1 {
+            let sortedIndices = argSort(-scaled, axis: -1)
+            let sortedLogits = takeAlong(scaled, sortedIndices, axis: -1)
+            let cumulative = cumsum(softmax(sortedLogits, axis: -1), axis: -1)
+            let removeRaw = cumulative .> MLXArray(topP)
+            let keepFirst = MLXArray.zeros([1, 1]).asType(.bool)
+            let remove = MLX.concatenated(
+                [keepFirst, removeRaw[0..., ..<(vocabSize - 1)]],
+                axis: -1
+            )
+            let maskedSorted = MLX.where(remove, MLXArray(-Float.infinity), sortedLogits)
+            let positions = MLXArray(0 ..< vocabSize).reshaped([1, -1]).asType(.int32)
+            let inverseIndices = putAlong(
+                MLXArray.zeros(sortedIndices.shape, type: Int32.self),
+                sortedIndices.asType(.int32),
+                values: positions,
+                axis: -1
+            )
+            scaled = takeAlong(maskedSorted, inverseIndices, axis: -1)
+        }
+
         return categorical(scaled).item(Int.self)
     }
 

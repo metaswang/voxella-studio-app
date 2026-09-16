@@ -1,6 +1,6 @@
 import Foundation
 
-struct ASRSpeechRange: Equatable, Sendable {
+struct ASRSpeechRange: Codable, Equatable, Sendable {
     let start: Double
     let end: Double
 
@@ -16,7 +16,7 @@ struct ASRRecognitionChunk: Equatable, Sendable {
     var inputDuration: Double { inputEnd - inputStart }
 }
 
-struct ASRChunkPlannerConfiguration: Equatable, Sendable {
+struct ASRChunkPlannerConfiguration: Codable, Equatable, Sendable {
     let maximumWindowDuration: Double
     let boundaryContextDuration: Double
     let maximumMergeGap: Double

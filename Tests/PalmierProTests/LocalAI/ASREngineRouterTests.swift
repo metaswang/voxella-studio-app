@@ -91,6 +91,21 @@ struct ASREngineRouterTests {
         #expect(decision.whisperHint == nil)
     }
 
+    @Test func closeAsianEnglishCoverageUsesQwenInsteadOfWhisper() {
+        let decision = ASREngineRouter.decide(posterior: ["ja": 0.52, "en": 0.48], speechDuration: 3)
+        #expect(decision.engine == .qwen)
+        #expect(decision.reason == .engineCoverage)
+        #expect(decision.whisperHint == nil)
+        #expect(decision.scores.qwen > 0.95)
+    }
+
+    @Test func closeEnglishAsianCoverageStillAvoidsWhisper() {
+        let decision = ASREngineRouter.decide(posterior: ["en": 0.55, "ja": 0.45], speechDuration: 3)
+        #expect(decision.engine != .whisper)
+        #expect(decision.whisperHint == nil)
+        #expect(decision.scores.qwen > 0.95)
+    }
+
     @Test func highConfidenceWhisperLanguageOnlySelectsEngine() {
         var posterior: [String: Float] = [:]
         for language in ASREngineLanguagePolicy.voxLingua107Languages {
@@ -99,12 +114,12 @@ struct ASREngineRouterTests {
         posterior["sw"] = 0.92
         let decision = ASREngineRouter.decide(posterior: posterior, speechDuration: 3)
         #expect(decision.engine == .whisper)
-        #expect(decision.reason == .insufficientEngineCoverage)
+        #expect(decision.reason == .whisperLanguage)
         #expect(decision.topLanguage == "sw")
-        #expect(decision.whisperHint == nil)
+        #expect(decision.whisperHint == "sw")
     }
 
-    @Test func unanimousLanguageEvidenceDoesNotPromptWhisper() {
+    @Test func unanimousWhisperLanguageLocksHint() {
         let evidence: [ASRLanguageEvidence] = (0..<3).map { index in
             .init(
                 window: .init(slices: [.init(start: Double(index * 5), end: Double((index + 1) * 5))]),
@@ -113,8 +128,8 @@ struct ASREngineRouterTests {
         }
         let decision = ASREngineRouter.decide(evidence: evidence)
         #expect(decision.engine == .whisper)
-        #expect(decision.reason == .insufficientEngineCoverage)
-        #expect(decision.whisperHint == nil)
+        #expect(decision.reason == .whisperLanguage)
+        #expect(decision.whisperHint == "sw")
     }
 
     @Test func explicitlySelectedWhisperLanguageRemainsAuthoritative() {
@@ -156,7 +171,7 @@ struct ASREngineRouterTests {
         #expect(ASREngineLanguagePolicy.qwenLockLanguage(fromDetected: "Cantonese") == "Cantonese")
     }
 
-    @Test func conflictingStrongOpeningCannotBeOverruledByLaterEnglish() {
+    @Test func laterEnglishMajorityOverridesConflictingOpening() {
         let opening: [String: Float] = [
             "hy": 0.87,
             "en": 0.08,
@@ -176,10 +191,11 @@ struct ASREngineRouterTests {
                 .init(window: .init(slices: [.init(start: Double(index) * 5, end: Double(index + 1) * 5)]), posterior: posterior)
             }
         )
-        #expect(decision.engine == .whisper)
-        #expect(decision.reason == .insufficientEngineCoverage)
+        #expect(decision.engine == .parakeet)
+        #expect(decision.reason == .engineCoverage)
+        #expect(decision.topLanguage == "en")
+        #expect(decision.parakeetDomainLanguage == "en")
         #expect(decision.whisperHint == nil)
-        #expect(decision.parakeetDomainLanguage == nil)
     }
 
     @Test func identificationWindowsSpreadAcrossLongSpeech() {
@@ -187,11 +203,41 @@ struct ASREngineRouterTests {
             speechRanges: [ASRSpeechRange(start: 0, end: 60)],
             audioDuration: 60
         )
-        #expect(windows.count == 3)
+        #expect(windows.count == 5)
         #expect(windows.allSatisfy { $0.duration >= 3 && $0.duration <= 5 })
         #expect(windows[0].start < 1)
-        #expect(windows[1].start > 15)
-        #expect(windows[2].start > 40)
+        #expect(windows[1].start > 10)
+        #expect(windows[2].start > 25)
+        #expect(windows[3].start > 40)
+        #expect(windows[4].start > 50)
+    }
+
+    @Test func longFormAudioUsesSevenStratifiedWindows() {
+        let windows = ASREngineRouter.identificationWindows(
+            speechRanges: [ASRSpeechRange(start: 0, end: 60 * 60)],
+            audioDuration: 60 * 60
+        )
+
+        #expect(windows.count == 7)
+        #expect(windows.allSatisfy { $0.duration == 5 })
+        #expect(windows[0].start < 1)
+        #expect(windows[1].start > 500)
+        #expect(windows[2].start > 1_100)
+        #expect(windows[3].start > 1_700)
+        #expect(windows[4].start > 2_300)
+        #expect(windows[5].start > 2_900)
+        #expect(windows[6].start > 3_500)
+    }
+
+    @Test func sparseLongFormAudioDoesNotReuseSpeechForSevenWindows() {
+        let windows = ASREngineRouter.identificationWindows(
+            speechRanges: [ASRSpeechRange(start: 100, end: 112)],
+            audioDuration: 60 * 60
+        )
+        let slices = windows.flatMap(\.slices).sorted { $0.start < $1.start }
+
+        #expect(windows.count == 4)
+        #expect(zip(slices, slices.dropFirst()).allSatisfy { $0.end <= $1.start })
     }
 
     @Test func identificationWindowsLeaveTheOpeningIsland() {
@@ -202,7 +248,7 @@ struct ASREngineRouterTests {
             ],
             audioDuration: 90
         )
-        #expect(windows.count == 3)
+        #expect(windows.count == 5)
         #expect(windows.filter { $0.start < 3 }.count == 1)
         #expect(windows.contains { $0.start >= 40 })
         #expect(windows.contains { $0.start >= 60 })

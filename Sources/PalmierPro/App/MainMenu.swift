@@ -146,7 +146,7 @@ enum MainMenuBuilder {
             action: #selector(AppDelegate.zoomIn(_:)),
             keyEquivalent: "+"
         )
-        increaseZoomItem.keyEquivalentModifierMask = [.command]
+        increaseZoomItem.keyEquivalentModifierMask = [.command, .shift]
         increaseZoomItem.target = NSApp.delegate
         menu.addItem(increaseZoomItem)
 
@@ -164,7 +164,7 @@ enum MainMenuBuilder {
             action: #selector(AppDelegate.resetZoom(_:)),
             keyEquivalent: "0"
         )
-        resetZoomItem.keyEquivalentModifierMask = [.command]
+        resetZoomItem.keyEquivalentModifierMask = [.command, .shift]
         resetZoomItem.target = NSApp.delegate
         menu.addItem(resetZoomItem)
         menu.addItem(.separator())

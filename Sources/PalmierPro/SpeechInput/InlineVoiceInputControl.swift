@@ -1,12 +1,38 @@
 import SwiftUI
 
 struct InlineVoiceInputControl: View {
+    enum Presentation {
+        /// The full inline control used by script and search fields.
+        case standard
+        /// A compact accessory for embedding inside a composer row.
+        case embedded
+    }
+
     @Binding var text: String
     var multiline = true
+    var presentation: Presentation = .standard
     @Environment(\.isEnabled) private var isEnabled
     @State private var coordinator: VoiceInputCoordinator?
 
     var body: some View {
+        Group {
+            switch presentation {
+            case .standard:
+                standardContent
+            case .embedded:
+                embeddedContent
+            }
+        }
+        .onChange(of: isEnabled) { _, enabled in
+            if !enabled { coordinator?.dismiss() }
+        }
+        .onDisappear {
+            coordinator?.shutdown()
+            coordinator = nil
+        }
+    }
+
+    private var standardContent: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             if let coordinator, !coordinator.draft.isEmpty || !coordinator.recognition.partialText.isEmpty {
                 Text(coordinator.draft.isEmpty ? coordinator.recognition.partialText : coordinator.draft)
@@ -57,13 +83,50 @@ struct InlineVoiceInputControl: View {
                 }
             }
         }
-        .onChange(of: isEnabled) { _, enabled in
-            if !enabled { coordinator?.dismiss() }
+    }
+
+    private var embeddedContent: some View {
+        HStack(spacing: AppTheme.Spacing.xs) {
+            if let coordinator {
+                if coordinator.recorder.isRecording {
+                    RecordingLiveWaveformView(
+                        store: coordinator.recorder.waveform,
+                        isPaused: coordinator.isBusy
+                    )
+                    .frame(width: AppTheme.SpeechInput.inlineRecordingWaveformWidth)
+
+                    Text(Duration.seconds(coordinator.recorder.duration).formatted(.time(pattern: .minuteSecond)))
+                        .font(.system(size: AppTheme.FontSize.xxs, design: .monospaced))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                        .monospacedDigit()
+                } else if coordinator.isBusy {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .accessibilityLabel("Preparing voice input")
+                }
+            }
+
+            voiceButton
         }
-        .onDisappear {
-            coordinator?.shutdown()
-            coordinator = nil
+        .font(.system(size: AppTheme.FontSize.xs))
+        .frame(minHeight: AppTheme.IconSize.lg)
+    }
+
+    private var voiceButton: some View {
+        Button(action: toggleRecording) {
+            Image(systemName: coordinator?.recorder.isRecording == true ? "stop.fill" : "mic.fill")
+                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
+                .foregroundStyle(
+                    coordinator?.recorder.isRecording == true
+                        ? AppTheme.Status.errorColor
+                        : AppTheme.Text.secondaryColor
+                )
+                .frame(width: AppTheme.IconSize.lg, height: AppTheme.IconSize.lg)
         }
+        .buttonStyle(.borderless)
+        .disabled(coordinator?.isBusy == true)
+        .help(coordinator?.recorder.isRecording == true ? "Stop and transcribe" : "Voice input")
+        .accessibilityLabel(coordinator?.recorder.isRecording == true ? "Stop and transcribe" : "Voice input")
     }
 
     private func error(_ message: String) -> some View {

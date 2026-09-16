@@ -65,7 +65,7 @@ struct KnowledgeToolExecutor: Sendable {
             hits = try await service.search(query: query, filter: filter)
         }
         
-        let citations = hits.map(KnowledgeQAService.citation(from:))
+        let citations = hits.map { KnowledgeQAService.citation(from: $0) }
         return .success([
             "hits": hits.count,
             "citations": citations.map { citationToDict($0) },

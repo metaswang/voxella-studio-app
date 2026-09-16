@@ -322,7 +322,9 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
     }
 
     private func createDub(for transcriptionID: UUID) {
-        _ = store.createDub(for: transcriptionID)
+        Task { @MainActor in
+            _ = await store.createDubAfterAccess(for: transcriptionID)
+        }
     }
 
     private func delete(_ session: WorkbenchSession) {

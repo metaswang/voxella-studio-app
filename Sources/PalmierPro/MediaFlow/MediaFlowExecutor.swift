@@ -142,6 +142,20 @@ actor MediaFlowExecutor: MediaJobEventSource {
                         output.diarizationDiagnostics,
                         output.alignmentDiagnostics
                     )))
+                    if transcript.asrEngine == .whisper,
+                       !request.steps.contains(where: {
+                           if case .prepareSubtitles = $0 { return true }
+                           return false
+                       }) {
+                        try await recoverWhisperPunctuation(
+                            transcript: transcript,
+                            payload: SubtitleProcessingPayload(),
+                            llmClients: &LLMClients,
+                            context: &context,
+                            progressEvent: progressEvent,
+                            continuation: continuation
+                        )
+                    }
 
                 case .alignScript(let payload):
                     guard let mediaURL = context.mediaURL else {
@@ -385,6 +399,67 @@ actor MediaFlowExecutor: MediaJobEventSource {
             return try await llmClientFactory()
         }
         return try await AITransportPolicy.makeTextClient(for: useCase)
+    }
+
+    /// Whisper-only punctuation recovery when the user did not opt into subtitle
+    /// cleanup. BYOK or hosted text must already be usable; otherwise keep ASR text.
+    private func recoverWhisperPunctuation(
+        transcript: TranscriptionResult,
+        payload: SubtitleProcessingPayload,
+        llmClients: inout [LLMUseCase: any LLMTextClient],
+        context: inout FlowContext,
+        progressEvent: @escaping @Sendable (
+            MediaFlowStage,
+            String,
+            Double,
+            Int?,
+            Int?,
+            String
+        ) -> Void,
+        continuation: AsyncStream<MediaJobEvent>.Continuation
+    ) async throws {
+        do {
+            try Task.checkCancellation()
+            if llmClients[.subtitleProcessing] == nil {
+                llmClients[.subtitleProcessing] = try await makeLLMClient(for: .subtitleProcessing)
+            }
+            guard let client = llmClients[.subtitleProcessing] else { return }
+            let output = try await SubtitlePostprocessPipeline(client: client).process(
+                transcript: transcript,
+                options: payload,
+                progress: { fraction, current, total, message in
+                    progressEvent(
+                        .subtitlePreparation,
+                        "subtitle_preparation",
+                        fraction,
+                        current,
+                        total,
+                        message
+                    )
+                }
+            )
+            context.transcript = TranscriptionResult(
+                text: TranscriptSegmenter.joinedText(
+                    output.rebuiltSegments.map(\.text),
+                    language: transcript.language
+                ),
+                language: transcript.language,
+                words: transcript.words,
+                segments: output.rebuiltSegments,
+                asrEngine: transcript.asrEngine
+            )
+            context.warnings.append(contentsOf: output.warnings)
+            context.subtitles = output.track
+            continuation.yield(
+                .artifact(.subtitles(output.track, rebuiltSegments: output.rebuiltSegments))
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            Log.transcription.notice(
+                "whisper punctuation recovery skipped error=\(error.localizedDescription)"
+            )
+        }
     }
 
     private func applyPreparedSubtitleFallback(

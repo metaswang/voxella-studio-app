@@ -399,7 +399,9 @@ private struct WorkbenchSidebar: View {
             store.selectedTranscriptionID = nil
             store.route = .transcribe
         case .dub:
-            store.startNewDubDraft()
+            Task { @MainActor in
+                await store.startNewDubDraftAfterAccess()
+            }
         default:
             store.route = route
         }

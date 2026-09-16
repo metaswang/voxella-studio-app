@@ -85,12 +85,14 @@ struct TranscribeWorkbenchView: View {
                     store.clearPendingMediaImport()
                     pendingNetVideoTitle = nil
                     showProcessingOptions = false
-                    _ = store.beginTranscriptions(
-                        sourceURLs: urls,
-                        submission: submission,
-                        netVideoSource: netVideoSource,
-                        isRecordedCapture: isRecordedCapture
-                    )
+                    Task { @MainActor in
+                        _ = await store.beginTranscriptionsAfterAccess(
+                            sourceURLs: urls,
+                            submission: submission,
+                            netVideoSource: netVideoSource,
+                            isRecordedCapture: isRecordedCapture
+                        )
+                    }
                 }
             )
             .appZoomEnvironment(presentationBoundary: true)
@@ -479,7 +481,7 @@ struct TranscribeWorkbenchView: View {
             } else {
                 VStack(spacing: AppTheme.Spacing.smMd) {
                     Image(systemName: "text.alignleft")
-                        .font(.system(size: AppTheme.FontSize.lg, weight: .light))
+                        .font(.system(size: AppTheme.FontSize.title1, weight: .light))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                     Text("Your editable transcript will appear here")
                         .font(.system(size: AppTheme.FontSize.smMd))
@@ -1166,7 +1168,7 @@ struct TranscribeWorkbenchView: View {
         ) {
             return "\(prefix): transcribe + subtitles"
         }
-        return job.state == .completed ? "Re-transcribe and rebuild subtitles" : "Transcribe"
+        return job.state == .completed ? "Re-transcribe" : "Transcribe"
     }
 
     private func llmRouteDescription(for useCase: LLMUseCase) -> String {

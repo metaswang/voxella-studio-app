@@ -1,14 +1,319 @@
 import Foundation
 
-/// P0 Knowledge QA pipeline: Hybrid Search TopK → Context → Answer LLM.
-/// Reranker / Answerability / MMR land in P1.
-///
-/// Streaming (P0): `LLMTextClient.complete` returns the full answer, then
-/// `chunkForStreaming` emits character chunks so the chat UI can animate.
-/// This is **not** token SSE. Real streaming is deferred (P1+); do not block P0 on it.
+enum KnowledgeAnswerLanguage: Equatable, Sendable {
+    case chinese
+    case japanese
+    case korean
+    case cyrillic
+    case english
+
+    static func detect(from text: String) -> Self {
+        var han = 0
+        var kana = 0
+        var hangul = 0
+        var cyrillic = 0
+        var latin = 0
+
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x3040...0x30FF:
+                kana += 1
+            case 0x4E00...0x9FFF, 0x3400...0x4DBF:
+                han += 1
+            case 0xAC00...0xD7AF, 0x1100...0x11FF, 0x3130...0x318F:
+                hangul += 1
+            case 0x0400...0x052F:
+                cyrillic += 1
+            case 0x0041...0x005A, 0x0061...0x007A:
+                latin += 1
+            default:
+                continue
+            }
+        }
+
+        if hangul > 0 { return .korean }
+        if kana > 0 { return .japanese }
+        if han > 0 { return .chinese }
+        if cyrillic > latin { return .cyrillic }
+        return .english
+    }
+
+    var instruction: String {
+        switch self {
+        case .chinese: "Chinese (中文)"
+        case .japanese: "Japanese (日本語)"
+        case .korean: "Korean (한국어)"
+        case .cyrillic: "the same Cyrillic language as the question"
+        case .english: "English"
+        }
+    }
+}
+
+struct KnowledgeQueryPlan: Equatable, Sendable {
+    let searchQuery: String
+    let answerConstraints: [String]
+
+    static func fallback(for query: String) -> Self {
+        Self(searchQuery: query, answerConstraints: [])
+    }
+}
+
+/// Time budgets owned by the Knowledge QA pipeline. These deliberately do not
+/// change the shared `.chat` route policy used by other app features.
+struct KnowledgeQAExecutionPolicy: Equatable, Sendable {
+    var overall: Duration = .seconds(56)
+    var understanding: Duration = .seconds(8)
+    var retrieval: Duration = .seconds(8)
+    var graphRecall: Duration = .seconds(5)
+    var rerank: Duration = .seconds(5)
+    var answer: Duration = .seconds(30)
+
+    static let `default` = Self()
+}
+
+/// Injectable seams keep timeout and cancellation tests deterministic while
+/// leaving the production retrieval and model clients unchanged.
+struct KnowledgeQAMonotonicClock: Sendable {
+    let now: @Sendable () -> ContinuousClock.Instant
+
+    init(now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock().now }) {
+        self.now = now
+    }
+
+    static let continuous = Self()
+}
+
+struct KnowledgeQAExecutionDependencies: Sendable {
+    typealias Planner = @Sendable (
+        _ query: String,
+        _ history: [KnowledgeMessage],
+        _ targetTranscriptLanguage: String?,
+        _ allowCloud: Bool
+    ) async throws -> KnowledgeQueryPlan
+    typealias Recall = @Sendable (
+        _ query: String,
+        _ filter: SessionSearchFilter
+    ) async throws -> [SessionSearchHit]
+    typealias Reranker = @Sendable (
+        _ query: String,
+        _ chunks: [String]
+    ) async throws -> [Double]
+    typealias Answer = @Sendable (
+        _ system: String,
+        _ user: String,
+        _ allowCloud: Bool
+    ) async throws -> String
+
+    var planner: Planner?
+    var hybridRecall: Recall?
+    var graphRecall: Recall?
+    var reranker: Reranker?
+    var answer: Answer?
+    var clock: KnowledgeQAMonotonicClock
+
+    init(
+        planner: Planner? = nil,
+        hybridRecall: Recall? = nil,
+        graphRecall: Recall? = nil,
+        reranker: Reranker? = nil,
+        answer: Answer? = nil,
+        clock: KnowledgeQAMonotonicClock = .continuous
+    ) {
+        self.planner = planner
+        self.hybridRecall = hybridRecall
+        self.graphRecall = graphRecall
+        self.reranker = reranker
+        self.answer = answer
+        self.clock = clock
+    }
+
+    static let live = Self()
+}
+
+enum KnowledgeQAOutcome: String, Sendable {
+    case completed
+    case fallback
+    case noEvidence
+    case timedOut
+    case failed
+    case cancelled
+}
+
+private struct KnowledgeQADeadline: Sendable {
+    let end: ContinuousClock.Instant
+    let now: @Sendable () -> ContinuousClock.Instant
+
+    init(duration: Duration, clock: KnowledgeQAMonotonicClock = .continuous) {
+        now = clock.now
+        end = now().advanced(by: duration)
+    }
+
+    var remaining: Duration {
+        now().duration(to: end)
+    }
+
+    func budget(_ requested: Duration) throws -> Duration {
+        let value = min(requested, remaining)
+        guard value > .zero else { throw KnowledgeQAError.timeout }
+        return value
+    }
+}
+
+/// A timeout must release the caller even when an underlying dependency does
+/// not respond to cancellation promptly. The losing task is cancelled and its
+/// late result is discarded by this coordinator.
+private struct KnowledgeQATimeoutFailure: Error, @unchecked Sendable {
+    let error: Error
+}
+
+private enum KnowledgeQATimeoutResult<T>: @unchecked Sendable {
+    case success(T)
+    case failure(KnowledgeQATimeoutFailure)
+}
+
+private final class KnowledgeQATimeoutCoordinator<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: KnowledgeQATimeoutResult<T>?
+    private var continuation: CheckedContinuation<T, Error>?
+    private var cancelOperation: (() -> Void)?
+    private var cancelTimer: (() -> Void)?
+
+    func attach(_ continuation: CheckedContinuation<T, Error>) {
+        var pending: KnowledgeQATimeoutResult<T>?
+        lock.lock()
+        if let result {
+            pending = result
+        } else {
+            self.continuation = continuation
+        }
+        lock.unlock()
+        if let pending {
+            switch pending {
+            case let .success(value): continuation.resume(returning: value)
+            case let .failure(failure): continuation.resume(throwing: failure)
+            }
+        }
+    }
+
+    func setCancelOperation(_ cancel: @escaping @Sendable () -> Void) {
+        lock.lock()
+        if result != nil {
+            lock.unlock()
+            cancel()
+        } else {
+            cancelOperation = cancel
+            lock.unlock()
+        }
+    }
+
+    func setCancelTimer(_ cancel: @escaping @Sendable () -> Void) {
+        lock.lock()
+        if result != nil {
+            lock.unlock()
+            cancel()
+        } else {
+            cancelTimer = cancel
+            lock.unlock()
+        }
+    }
+
+    func resolve(_ result: KnowledgeQATimeoutResult<T>) {
+        var continuation: CheckedContinuation<T, Error>?
+        var cancelOperation: (() -> Void)?
+        var cancelTimer: (() -> Void)?
+        lock.lock()
+        guard self.result == nil else {
+            lock.unlock()
+            return
+        }
+        self.result = result
+        continuation = self.continuation
+        self.continuation = nil
+        cancelOperation = self.cancelOperation
+        cancelTimer = self.cancelTimer
+        self.cancelOperation = nil
+        self.cancelTimer = nil
+        lock.unlock()
+        cancelOperation?()
+        cancelTimer?()
+        if let continuation {
+            switch result {
+            case let .success(value): continuation.resume(returning: value)
+            case let .failure(failure): continuation.resume(throwing: failure)
+            }
+        }
+    }
+}
+
+/// Graph recall is an optional enhancement. Its result is published as a
+/// snapshot so hybrid recall can continue without awaiting the graph task.
+private final class KnowledgeQAGraphRecallSnapshot: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: [SessionSearchHit] = []
+
+    func store(_ hits: [SessionSearchHit]) {
+        lock.lock()
+        value = hits
+        lock.unlock()
+    }
+
+    func read() -> [SessionSearchHit] {
+        lock.lock()
+        let snapshot = value
+        lock.unlock()
+        return snapshot
+    }
+}
+
+/// Non-structured timeout race used by QA stages. Unlike a task group, this
+/// returns as soon as the winner resolves and only signals cancellation to the
+/// losing task.
+enum KnowledgeQATimeout {
+    static func run<T: Sendable>(
+        _ duration: Duration,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        guard duration > .zero else { throw KnowledgeQAError.timeout }
+        let coordinator = KnowledgeQATimeoutCoordinator<T>()
+        do {
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    coordinator.attach(continuation)
+                    let operationTask = Task {
+                        do {
+                            coordinator.resolve(.success(try await operation()))
+                        } catch {
+                            coordinator.resolve(.failure(KnowledgeQATimeoutFailure(error: error)))
+                        }
+                    }
+                    coordinator.setCancelOperation { operationTask.cancel() }
+                    let timerTask = Task {
+                        do {
+                            try await Task.sleep(for: duration)
+                            coordinator.resolve(.failure(KnowledgeQATimeoutFailure(error: KnowledgeQAError.timeout)))
+                        } catch is CancellationError {
+                            // The operation won the race.
+                        } catch {
+                            coordinator.resolve(.failure(KnowledgeQATimeoutFailure(error: error)))
+                        }
+                    }
+                    coordinator.setCancelTimer { timerTask.cancel() }
+                }
+            } onCancel: {
+                coordinator.resolve(.failure(KnowledgeQATimeoutFailure(error: CancellationError())))
+            }
+        } catch let failure as KnowledgeQATimeoutFailure {
+            throw failure.error
+        }
+    }
+}
+
 struct KnowledgeQAService: Sendable {
-    var topK: Int = 8
+    var topK: Int = 30
+    var candidateLimit: Int = 40
     var maxContextChars: Int = 10_000
+    var executionPolicy: KnowledgeQAExecutionPolicy = .default
+    var dependencies: KnowledgeQAExecutionDependencies = .live
     var chatStore: KnowledgeChatStore = .shared
     var useAgentRuntime: Bool = true
 
@@ -31,8 +336,10 @@ struct KnowledgeQAService: Sendable {
                 do {
                     try await run(request, continuation: continuation)
                 } catch is CancellationError {
+                    Self.logOutcome(.cancelled, request: request)
                     continuation.finish()
                 } catch {
+                    Self.logOutcome(.failed, request: request, detail: error.localizedDescription)
                     continuation.yield(.failed(error.localizedDescription))
                     continuation.finish()
                 }
@@ -47,80 +354,257 @@ struct KnowledgeQAService: Sendable {
     ) async throws {
         let query = request.queryText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
+            Self.logOutcome(.failed, request: request, detail: "empty_query")
             continuation.yield(.failed("Enter a question to ask your knowledge base."))
             continuation.finish()
             return
         }
 
-        try Task.checkCancellation()
-        try await MainActor.run {
-            try AccountService.shared.requireNewContentAccess()
+        guard await MainActor.run(body: { KnowledgeAnswerAvailability.current() == .ready }) else {
+            throw KnowledgeQAError.llmUnavailable
         }
 
-        continuation.yield(.status("Searching knowledge…"))
-        let hits = try await retrieve(query: query, scope: request.scope, originFilter: request.originFilter)
+        let deadline = KnowledgeQADeadline(
+            duration: executionPolicy.overall,
+            clock: dependencies.clock
+        )
+
+        continuation.yield(.status("Understanding question…"))
+        Self.logStage(
+            "understanding",
+            request: request,
+            budget: executionPolicy.understanding,
+            remaining: deadline.remaining
+        )
+        let queryPlan: KnowledgeQueryPlan
+        do {
+            let budget = try deadline.budget(executionPolicy.understanding)
+            queryPlan = try await KnowledgeQATimeout.run(budget) {
+                let targetTranscriptLanguage = await self.targetTranscriptLanguage(
+                    for: request.scope,
+                    originFilter: request.originFilter
+                )
+                if let targetTranscriptLanguage {
+                    Log.search.debug("knowledge query planner target transcript language=\(targetTranscriptLanguage) request_id=\(request.requestID.uuidString)")
+                }
+                return try await self.planQuery(
+                    query,
+                    history: request.history,
+                    targetTranscriptLanguage: targetTranscriptLanguage,
+                    allowCloud: request.allowCloud,
+                    request: request
+                )
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as KnowledgeQAError {
+            if case .timeout = error {
+                Log.search.warning("knowledge qa stage=understanding-timeout request_id=\(request.requestID.uuidString) budget_ms=\(Self.milliseconds(executionPolicy.understanding))")
+            } else {
+                Log.search.warning("knowledge qa stage=understanding-failed request_id=\(request.requestID.uuidString) reason=\(error.localizedDescription)")
+            }
+            queryPlan = .fallback(for: query)
+        } catch {
+            Log.search.warning("knowledge qa stage=understanding-failed request_id=\(request.requestID.uuidString) reason=\(error.localizedDescription)")
+            queryPlan = .fallback(for: query)
+        }
         try Task.checkCancellation()
 
-        let citations = hits.map(Self.citation(from:))
+        continuation.yield(.status("Searching knowledge…"))
+        Self.logStage(
+            "searching",
+            request: request,
+            budget: executionPolicy.retrieval,
+            remaining: deadline.remaining
+        )
+        let hits: [SessionSearchHit]
+        var retrievalTimedOut = false
+        var retrievalFailed = false
+        do {
+            let budget = try deadline.budget(executionPolicy.retrieval)
+            hits = try await KnowledgeQATimeout.run(budget) {
+                try await self.retrieve(
+                    query: queryPlan.searchQuery,
+                    originalQuery: query,
+                    scope: request.scope,
+                    originFilter: request.originFilter,
+                    policy: self.executionPolicy,
+                    request: request
+                )
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as KnowledgeQAError {
+            guard case .timeout = error else { throw error }
+            retrievalTimedOut = true
+            hits = []
+            Log.search.warning("knowledge qa stage=retrieval-timeout request_id=\(request.requestID.uuidString) budget_ms=\(Self.milliseconds(executionPolicy.retrieval))")
+        } catch {
+            retrievalFailed = true
+            Log.search.warning("knowledge qa stage=retrieval-failed request_id=\(request.requestID.uuidString) reason=\(error.localizedDescription)")
+            hits = []
+        }
+        try Task.checkCancellation()
+        if !retrievalTimedOut, !retrievalFailed {
+            Log.search.info("knowledge qa stage=search-complete scope=\(Self.scopeName(request.scope)) hits=\(hits.count) request_id=\(request.requestID.uuidString)")
+        }
+
+        let answerLanguage = KnowledgeAnswerLanguage.detect(from: query)
+        let citations = hits.map { Self.citation(from: $0) }
         if hits.isEmpty {
-            let message = Self.insufficientEvidenceMessage(scope: request.scope)
+            let message: String
+            if retrievalTimedOut {
+                message = Self.retrievalTimeoutMessage(scope: request.scope, language: answerLanguage)
+            } else if retrievalFailed {
+                message = Self.retrievalFailureMessage(scope: request.scope, language: answerLanguage)
+            } else {
+                message = Self.insufficientEvidenceMessage(scope: request.scope, language: answerLanguage)
+            }
             continuation.yield(.citations([]))
-            continuation.yield(.status("No evidence found"))
+            continuation.yield(.status(
+                retrievalTimedOut ? "Search timed out" : (retrievalFailed ? "Search failed" : "No evidence found")
+            ))
             for chunk in Self.chunkForStreaming(message) {
                 try Task.checkCancellation()
                 continuation.yield(.delta(chunk))
             }
             continuation.yield(.finished(message))
+            Self.logOutcome(
+                retrievalTimedOut ? .timedOut : (retrievalFailed ? .failed : .noEvidence),
+                request: request
+            )
             continuation.finish()
             return
         }
 
         continuation.yield(.citations(citations))
         continuation.yield(.status("Composing answer…"))
+        Log.search.info("knowledge qa stage=composing scope=\(Self.scopeName(request.scope)) citations=\(citations.count) request_id=\(request.requestID.uuidString)")
 
-        let context = Self.buildContext(hits: hits, maxChars: maxContextChars)
-        let system = Self.systemPrompt(mode: request.answerMode, scope: request.scope, originFilter: request.originFilter)
-        let user = Self.userPrompt(query: query, context: context, history: request.history)
-
-        let answerText: String
+        let context: String
         do {
-            answerText = try await generateAnswer(
-                system: system,
-                user: user,
-                allowCloud: request.allowCloud
-            )
+            let budget = try deadline.budget(.seconds(2))
+            context = try await KnowledgeQATimeout.run(budget) {
+                await self.buildContext(hits: hits)
+            }
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
-            let fallback = Self.excerptFallback(query: query, hits: hits)
+            Log.search.warning("knowledge qa stage=context-timeout request_id=\(request.requestID.uuidString)")
+            context = Self.buildContext(hits: hits, maxChars: maxContextChars)
+        }
+        let system = Self.systemPrompt(
+            mode: request.answerMode,
+            scope: request.scope,
+            originFilter: request.originFilter,
+            answerLanguage: answerLanguage
+        )
+        let user = Self.userPrompt(
+            query: query,
+            searchQuery: queryPlan.searchQuery,
+            answerConstraints: queryPlan.answerConstraints,
+            context: context,
+            history: request.history
+        )
+
+        let hostedCreditsExhausted = await MainActor.run {
+            AITransportPolicy.current == .hosted && HostedCreditAvailability.shared.isExhausted
+        }
+        if hostedCreditsExhausted {
+            continuation.yield(.recoveryActions([.account, .aiSettings]))
+            let fallback = Self.excerptFallback(
+                query: query,
+                hits: hits,
+                language: answerLanguage
+            )
             continuation.yield(.status("Showing excerpts…"))
             for chunk in Self.chunkForStreaming(fallback) {
                 try Task.checkCancellation()
                 continuation.yield(.delta(chunk))
             }
             continuation.yield(.finished(fallback))
+            Self.logOutcome(.fallback, request: request, detail: "hosted_credits_exhausted")
+            continuation.finish()
+            return
+        }
+
+        let answerText: String
+        do {
+            let budget = try deadline.budget(executionPolicy.answer)
+            answerText = try await KnowledgeQATimeout.run(budget) {
+                try await generateAnswer(
+                    system: system,
+                    user: user,
+                    allowCloud: request.allowCloud
+                )
+            }
+        } catch let error as LLMClientError {
+            Log.search.warning("knowledge qa stage=answer-fallback reason=\(error.localizedDescription)")
+            if case .insufficientCredits = error {
+                continuation.yield(.recoveryActions([.account, .aiSettings]))
+            }
+            let fallback = Self.excerptFallback(
+                query: query,
+                hits: hits,
+                language: answerLanguage
+            )
+            continuation.yield(.status("Showing excerpts…"))
+            for chunk in Self.chunkForStreaming(fallback) {
+                try Task.checkCancellation()
+                continuation.yield(.delta(chunk))
+            }
+            continuation.yield(.finished(fallback))
+            Self.logOutcome(.fallback, request: request, detail: "answer_model")
+            continuation.finish()
+            return
+        } catch {
+            Log.search.warning("knowledge qa stage=answer-fallback reason=\(error.localizedDescription)")
+            let fallback = Self.excerptFallback(
+                query: query,
+                hits: hits,
+                language: answerLanguage
+            )
+            continuation.yield(.status("Showing excerpts…"))
+            for chunk in Self.chunkForStreaming(fallback) {
+                try Task.checkCancellation()
+                continuation.yield(.delta(chunk))
+            }
+            continuation.yield(.finished(fallback))
+            Self.logOutcome(.fallback, request: request, detail: "answer_model")
             continuation.finish()
             return
         }
 
         try Task.checkCancellation()
         continuation.yield(.status("Showing answer…"))
+        Log.search.info("knowledge qa stage=showing-answer scope=\(Self.scopeName(request.scope)) chars=\(answerText.count) request_id=\(request.requestID.uuidString)")
         for chunk in Self.chunkForStreaming(answerText) {
             try Task.checkCancellation()
             continuation.yield(.delta(chunk))
-            try await Task.sleep(for: .milliseconds(12))
         }
         continuation.yield(.finished(answerText))
+        Self.logOutcome(.completed, request: request)
         continuation.finish()
     }
 
-    private func retrieve(query: String, scope: KnowledgeQAScope, originFilter: Set<KnowledgeSourceOrigin>?) async throws -> [SessionSearchHit] {
+    private func retrieve(
+        query: String,
+        originalQuery: String,
+        scope: KnowledgeQAScope,
+        originFilter: Set<KnowledgeSourceOrigin>?,
+        policy: KnowledgeQAExecutionPolicy,
+        request: KnowledgeQARequest
+    ) async throws -> [SessionSearchHit] {
         let filter = await MainActor.run { () -> SessionSearchFilter in
             let signedIn = AccountService.shared.isSignedIn
+            let owner = AccountService.shared.userID?.uuidString
             let allowed = KnowledgeSourceOrigin.effectiveOrigins(isSignedIn: signedIn, uiFilter: originFilter)
             switch scope {
             case .all:
                 return SessionSearchFilter.visible(
                     isSignedIn: signedIn,
                     uiFilter: originFilter,
+                    cloudOwnerUserID: owner,
                     limit: topK
                 )
             case let .session(sessionID):
@@ -130,12 +614,18 @@ struct KnowledgeQAService: Sendable {
                     hasRemoteSessionID: session?.remoteSessionID != nil || session?.isRemoteOnly == true
                 )
                 guard allowed.contains(origin) else {
-                    return SessionSearchFilter(sessionID: sessionID, sourceOrigins: [], limit: topK)
+                    return SessionSearchFilter(
+                        sessionID: sessionID,
+                        sourceOrigins: [],
+                        cloudOwnerUserID: owner,
+                        limit: topK
+                    )
                 }
                 return SessionSearchFilter.visible(
                     isSignedIn: signedIn,
                     sessionID: sessionID,
                     uiFilter: originFilter,
+                    cloudOwnerUserID: owner,
                     limit: topK
                 )
             case let .sessions(ids):
@@ -148,12 +638,18 @@ struct KnowledgeQAService: Sendable {
                     return allowed.contains(origin)
                 })
                 guard !visibleIDs.isEmpty else {
-                    return SessionSearchFilter(sessionIDs: [], sourceOrigins: [], limit: topK)
+                    return SessionSearchFilter(
+                        sessionIDs: [],
+                        sourceOrigins: [],
+                        cloudOwnerUserID: owner,
+                        limit: topK
+                    )
                 }
                 return SessionSearchFilter.visible(
                     isSignedIn: signedIn,
                     sessionIDs: visibleIDs,
                     uiFilter: originFilter,
+                    cloudOwnerUserID: owner,
                     limit: topK
                 )
             }
@@ -165,65 +661,399 @@ struct KnowledgeQAService: Sendable {
             return []
         }
         let service = await MainActor.run { SessionIndexCoordinator.shared.searchService }
-        var hits = try await service.transcriptSearch(query: query, filter: filter)
-        if hits.isEmpty {
-            hits = try await service.search(query: query, filter: filter)
+        if Self.isCatalogQuery(originalQuery) || Self.isCatalogQuery(query) {
+            let catalogFilter = SessionSearchFilter(
+                sessionID: filter.sessionID,
+                sessionIDs: filter.sessionIDs,
+                sourceOrigins: filter.sourceOrigins,
+                cloudOwnerUserID: filter.cloudOwnerUserID,
+                limit: 50
+            )
+            let entries = try await service.sessionCatalog(filter: catalogFilter)
+            return entries.enumerated().map { index, entry in
+                SessionSearchHit(
+                    sessionID: entry.sessionID,
+                    title: entry.title,
+                    unitID: -((index + 1) * 1_000_000 + abs(entry.sessionID.hashValue % 999_999)),
+                    kind: .sessionCard,
+                    start: nil,
+                    end: entry.duration > 0 ? entry.duration : nil,
+                    speakerLabels: [],
+                    // Catalog queries ask for session metadata. Keep the
+                    // retrieval anchor metadata-only so a fallback (or an
+                    // answer model) cannot accidentally surface the stored
+                    // summary sections such as "Key Points".
+                    text: entry.title,
+                    score: 1 / Double(index + 1),
+                    matchSource: "catalog",
+                    snippet: nil,
+                    cueIDs: [],
+                    hasVideo: entry.hasVideo,
+                    language: entry.language,
+                    quoteSpan: nil,
+                    duration: entry.duration,
+                    sourceOrigin: entry.sourceOrigin,
+                    sessionType: entry.sessionType,
+                    sourceCreatedAt: entry.sourceCreatedAt,
+                    sourceModifiedAt: entry.sourceModifiedAt
+                )
+            }
+        }
+        let graphSnapshot = KnowledgeQAGraphRecallSnapshot()
+        let graphTask = Task { [self] in
+            do {
+                let hits = try await graphRecall(
+                    store: service.store,
+                    query: query,
+                    filter: filter,
+                    policy: policy,
+                    request: request
+                )
+                graphSnapshot.store(hits)
+            } catch is CancellationError {
+                // The optional branch is cancelled when hybrid recall is
+                // ready or when the enclosing retrieval budget expires.
+            } catch {
+                Log.search.warning("knowledge graph recall unavailable request_id=\(request.requestID.uuidString): \(error.localizedDescription)")
+            }
+        }
+        let (hybridHits, graphHits) = try await withTaskCancellationHandler {
+            defer { graphTask.cancel() }
+            let hybridHits: [SessionSearchHit]
+            if let hybridRecall = dependencies.hybridRecall {
+                hybridHits = try await hybridRecall(query, filter)
+            } else {
+                hybridHits = try await self.hybridRecall(
+                    service: service,
+                    query: query,
+                    filter: filter
+                )
+            }
+            // Give a graph result that completed alongside hybrid recall one
+            // scheduling turn to publish, without making graph a join barrier.
+            await Task.yield()
+            return (hybridHits, graphSnapshot.read())
+        } onCancel: {
+            graphTask.cancel()
+        }
+        var candidates: [SessionSearchHit] = []
+        var seenUnitIDs = Set<Int>()
+        for hit in hybridHits + graphHits where seenUnitIDs.insert(hit.unitID).inserted {
+            candidates.append(hit)
+            if candidates.count == candidateLimit { break }
         }
         switch scope {
         case .all:
             break
         case let .session(sessionID):
-            hits = hits.filter { $0.sessionID == sessionID }
+            candidates = candidates.filter { $0.sessionID == sessionID }
         case let .sessions(ids):
             let allowed = Set(ids)
-            hits = hits.filter { allowed.contains($0.sessionID) }
+            candidates = candidates.filter { allowed.contains($0.sessionID) }
+        }
+        guard !candidates.isEmpty else { return [] }
+        let rerankCandidates = candidates
+        var rerankTimedOut = false
+        do {
+            let scores = try await KnowledgeQATimeout.run(policy.rerank) {
+                if let reranker = self.dependencies.reranker {
+                    return try await reranker(query, rerankCandidates.map(\.text))
+                }
+                return try await RerankerService.shared.scores(
+                    query: query,
+                    chunks: rerankCandidates.map(\.text)
+                )
+            }
+            guard scores.count == rerankCandidates.count else {
+                throw KnowledgeQAError.invalidRerankerOutput
+            }
+            let reranked = zip(rerankCandidates, scores).map { KnowledgeRerankedHit(hit: $0.0, score: $0.1) }
+            let admitted = KnowledgeRerankPolicy.thresholded(reranked)
+            guard !admitted.isEmpty else { return [] }
+            let vectors = (try? await service.store.textEmbeddings(unitIDs: admitted.map(\.hit.unitID))) ?? [:]
+            return KnowledgeMMR.select(admitted, vectors: vectors).map(\.hit)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as KnowledgeQAError {
+            if case .timeout = error {
+                rerankTimedOut = true
+                Log.search.warning("knowledge rerank timed out request_id=\(request.requestID.uuidString)")
+            } else {
+                Log.search.warning("knowledge rerank unavailable request_id=\(request.requestID.uuidString): \(error.localizedDescription)")
+            }
+        } catch {
+            Log.search.warning("knowledge rerank unavailable request_id=\(request.requestID.uuidString): \(error.localizedDescription)")
+        }
+        let fallback = rerankCandidates.map { KnowledgeRerankedHit(hit: $0, score: $0.score) }
+        if rerankTimedOut {
+            return rerankCandidates
+        }
+        let vectors = (try? await service.store.textEmbeddings(unitIDs: rerankCandidates.map(\.unitID))) ?? [:]
+        try Task.checkCancellation()
+        return KnowledgeMMR.select(fallback, vectors: vectors).map(\.hit)
+    }
+
+    private func hybridRecall(
+        service: SearchService,
+        query: String,
+        filter: SessionSearchFilter
+    ) async throws -> [SessionSearchHit] {
+        var hits = try await service.transcriptSearch(query: query, filter: filter)
+        if hits.isEmpty {
+            hits = try await service.search(query: query, filter: filter)
         }
         return Array(hits.prefix(topK))
     }
 
+    private static func isCatalogQuery(_ query: String) -> Bool {
+        let normalized = query.lowercased()
+        let markers = [
+            "session", "sessions", "duration", "longest", "shortest", "recent", "latest",
+            "list", "how many", "type", "origin", "date", "时长", "最长", "最短", "最近",
+            "哪些 session", "所有 session", "多少个", "类型", "来源", "日期"
+        ]
+        return markers.contains { normalized.contains($0) }
+    }
+
+    private func graphRecall(
+        store: SessionIndexStore,
+        query: String,
+        filter: SessionSearchFilter,
+        policy: KnowledgeQAExecutionPolicy,
+        request: KnowledgeQARequest
+    ) async throws -> [SessionSearchHit] {
+        do {
+            return try await KnowledgeQATimeout.run(policy.graphRecall) {
+                if let graphRecall = self.dependencies.graphRecall {
+                    return try await graphRecall(query, filter)
+                }
+                return try await KnowledgeGraphRecallService(store: store).recall(query: query, filter: filter)
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as KnowledgeQAError {
+            guard case .timeout = error else { throw error }
+            Log.search.info("knowledge graph recall timed out request_id=\(request.requestID.uuidString)")
+            return []
+        } catch {
+            Log.search.warning("knowledge graph recall unavailable request_id=\(request.requestID.uuidString): \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    private func buildContext(hits: [SessionSearchHit]) async -> String {
+        let store = await MainActor.run { SessionIndexCoordinator.shared.searchService.store }
+        var metadata: [UUID: KnowledgeSessionContextMetadata] = [:]
+        var neighbors: [Int: [SessionSearchHit]] = [:]
+        for hit in hits {
+            if metadata[hit.sessionID] == nil,
+               let card = try? await store.sessionCard(id: hit.sessionID)
+            {
+                metadata[hit.sessionID] = KnowledgeSessionContextMetadata(
+                    title: card.title,
+                    // A catalog hit is intentionally metadata-only. Passing
+                    // the persisted summary here would let the answer model
+                    // re-introduce unsolicited summaries into an inventory
+                    // response.
+                    summary: hit.matchSource == "catalog"
+                        ? nil
+                        : (card.summaryMarkdown ?? card.summaryExcerpt),
+                    duration: card.duration,
+                    sessionType: card.sessionType,
+                    sourceOrigin: card.sourceOrigin,
+                    sourceCreatedAt: card.sourceCreatedAt,
+                    sourceModifiedAt: card.sourceModifiedAt
+                )
+            }
+            if hit.text.count < KnowledgeContextBuilder.shortAnchorLimit {
+                neighbors[hit.unitID] = (try? await store.contextNeighbors(for: hit)) ?? []
+            }
+        }
+        return KnowledgeContextBuilder.build(
+            anchors: hits,
+            metadata: metadata,
+            neighbors: neighbors,
+            maxChars: maxContextChars
+        )
+    }
+
     private func generateAnswer(system: String, user: String, allowCloud: Bool) async throws -> String {
-        let client = try await Self.makeTextClient(allowCloud: allowCloud)
+        if let answer = dependencies.answer {
+            return try await answer(system, user, allowCloud)
+        }
+        let client = try await Self.makeTextClient(allowCloud: allowCloud, useCase: .chat)
         return try await client.complete(system: system, user: user)
+    }
+
+    private func planQuery(
+        _ query: String,
+        history: [KnowledgeMessage],
+        targetTranscriptLanguage: String?,
+        allowCloud: Bool,
+        request: KnowledgeQARequest
+    ) async throws -> KnowledgeQueryPlan {
+        do {
+            if let planner = dependencies.planner {
+                let plan = try await planner(
+                    query,
+                    history,
+                    targetTranscriptLanguage,
+                    allowCloud
+                )
+                Log.search.info("knowledge qa stage=planner-complete search_chars=\(plan.searchQuery.count) constraints=\(plan.answerConstraints.count) request_id=\(request.requestID.uuidString)")
+                return plan
+            }
+            // Query understanding is a short, bounded planning step. Using the
+            // dedicated route prevents a slow answer-chat route from blocking
+            // the entire QA pipeline before retrieval can begin.
+            let client = try await Self.makeTextClient(
+                allowCloud: allowCloud,
+                useCase: .graphQueryUnderstanding
+            )
+            let response = try await client.complete(
+                system: Self.queryPlannerPrompt,
+                user: Self.queryPlannerInput(
+                    query: query,
+                    history: history,
+                    targetTranscriptLanguage: targetTranscriptLanguage
+                )
+            )
+            let plan = try Self.decodeQueryPlan(response)
+            Log.search.info("knowledge qa stage=planner-complete search_chars=\(plan.searchQuery.count) constraints=\(plan.answerConstraints.count) request_id=\(request.requestID.uuidString)")
+            return plan
+        } catch is CancellationError {
+            Log.search.info("knowledge qa stage=planner-cancelled request_id=\(request.requestID.uuidString)")
+            throw CancellationError()
+        } catch {
+            Log.search.warning("knowledge query planning unavailable request_id=\(request.requestID.uuidString): \(error.localizedDescription)")
+            Log.search.info("knowledge qa stage=planner-fallback fallback=direct-question request_id=\(request.requestID.uuidString)")
+            return .fallback(for: query)
+        }
+    }
+
+    private static func scopeName(_ scope: KnowledgeQAScope) -> String {
+        switch scope {
+        case .all: "all"
+        case .session: "session"
+        case .sessions: "sessions"
+        }
+    }
+
+    private static func milliseconds(_ duration: Duration) -> Int {
+        let components = duration.components
+        return max(0, Int(components.seconds * 1_000 + components.attoseconds / 1_000_000_000_000_000))
+    }
+
+    private static func logStage(
+        _ stage: String,
+        request: KnowledgeQARequest,
+        budget: Duration? = nil,
+        remaining: Duration? = nil
+    ) {
+        let budgetText = budget.map { " budget_ms=\(Self.milliseconds($0))" } ?? ""
+        let remainingText = remaining.map { " remaining_ms=\(Self.milliseconds($0))" } ?? ""
+        Log.search.info("knowledge qa stage=\(stage) scope=\(Self.scopeName(request.scope)) request_id=\(request.requestID.uuidString)\(budgetText)\(remainingText)")
+    }
+
+    private static func logOutcome(_ outcome: KnowledgeQAOutcome, request: KnowledgeQARequest, detail: String? = nil) {
+        let suffix = detail.map { " detail=\($0)" } ?? ""
+        Log.search.info("knowledge qa outcome=\(outcome.rawValue) request_id=\(request.requestID.uuidString)\(suffix)")
+    }
+
+    /// Returns a source-language target only when the selected scope has one
+    /// unambiguous, visible transcript language. A mixed-language selection
+    /// deliberately falls back to the user's question language.
+    private func targetTranscriptLanguage(
+        for scope: KnowledgeQAScope,
+        originFilter: Set<KnowledgeSourceOrigin>?
+    ) async -> String? {
+        let selectedIDs = scope.sessionIDs
+        guard !selectedIDs.isEmpty else { return nil }
+
+        let visibility: (ids: [UUID], ownerUserID: String?) = await MainActor.run {
+            let signedIn = AccountService.shared.isSignedIn
+            let owner = AccountService.shared.userID?.uuidString
+            let allowed = KnowledgeSourceOrigin.effectiveOrigins(
+                isSignedIn: signedIn,
+                uiFilter: originFilter
+            )
+            let ids = selectedIDs.filter { id in
+                let session = WorkbenchStore.shared.sessions.first(where: { $0.id == id })
+                let origin = KnowledgeSourceOrigin.resolve(
+                    isCloudStorage: session?.storage == .cloud,
+                    hasRemoteSessionID: session?.remoteSessionID != nil || session?.isRemoteOnly == true
+                )
+                guard allowed.contains(origin) else { return false }
+                if origin == .cloud, !signedIn { return false }
+                return owner != nil || origin == .local
+            }
+            return (ids, owner)
+        }
+        let visibleIDs = visibility.ids
+        guard !visibleIDs.isEmpty else { return nil }
+
+        let store = await MainActor.run { SessionIndexCoordinator.shared.searchService.store }
+        var languages: [String] = []
+        for id in visibleIDs {
+            guard let card = try? await store.sessionCard(id: id),
+                  let language = card.language?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !language.isEmpty
+            else { continue }
+
+            if card.sourceOrigin == .cloud, card.ownerUserID != visibility.ownerUserID {
+                continue
+            }
+            if !languages.contains(where: { $0.caseInsensitiveCompare(language) == .orderedSame }) {
+                languages.append(language)
+            }
+        }
+
+        guard languages.count == 1 else { return nil }
+        return languages[0]
     }
 
     /// Cloud/BYOK credentials are independent of the WeMM download gate.
     /// Retrieval still requires local WeMM even when the answer LLM is hosted.
     /// P0: allowCloud = true when hosted transport is available (no settings toggle yet).
     @MainActor
-    static func makeTextClient(allowCloud: Bool) async throws -> any LLMTextClient {
+    private static func makeTextClient(
+        allowCloud: Bool,
+        useCase: LLMUseCase
+    ) async throws -> any LLMTextClient {
         switch AITransportPolicy.current {
         case .unavailable:
             throw KnowledgeQAError.llmUnavailable
         case .hosted:
             guard allowCloud else { throw KnowledgeQAError.cloudDisabled }
-            return try await AITransportPolicy.makeTextClient(for: .chat)
+            return try await AITransportPolicy.makeTextClient(for: useCase)
         case .byok:
-            return try await AITransportPolicy.makeTextClient(for: .chat)
+            return try await AITransportPolicy.makeTextClient(for: useCase)
         }
+    }
+
+    /// Compatibility entry point for the knowledge agent's general chat route.
+    @MainActor
+    static func makeTextClient(allowCloud: Bool) async throws -> any LLMTextClient {
+        try await makeTextClient(allowCloud: allowCloud, useCase: .chat)
     }
 
     static func buildContext(hits: [SessionSearchHit], maxChars: Int) -> String {
-        var used = 0
-        var blocks: [String] = []
-        for (index, hit) in hits.enumerated() {
-            let start = hit.start.map(KnowledgeSourceRef.formatTimestamp) ?? "—"
-            let end = hit.end.map(KnowledgeSourceRef.formatTimestamp) ?? "—"
-            let speakers = hit.speakerLabels.isEmpty ? "—" : hit.speakerLabels.joined(separator: ", ")
-            let body = hit.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !body.isEmpty else { continue }
-            let block = """
-            [\(index + 1)] session=\(hit.sessionID.uuidString) title=\(hit.title)
-            time=\(start)–\(end) speakers=\(speakers)
-            \(body)
-            """
-            if used + block.count > maxChars, !blocks.isEmpty { break }
-            blocks.append(block)
-            used += block.count
-        }
-        return blocks.joined(separator: "\n\n")
+        KnowledgeContextBuilder.build(
+            anchors: hits,
+            metadata: Dictionary(
+                uniqueKeysWithValues: hits.map {
+                    ($0.sessionID, KnowledgeSessionContextMetadata(title: $0.title, summary: nil))
+                }
+            ),
+            neighbors: [:],
+            maxChars: maxChars
+        )
     }
 
-    static func citation(from hit: SessionSearchHit) -> KnowledgeSourceRef {
+    static func citation(
+        from hit: SessionSearchHit,
+        matchText: String? = nil
+    ) -> KnowledgeSourceRef {
         let sourceType: String
         switch hit.kind {
         case .transcriptChunk:
@@ -245,11 +1075,17 @@ struct KnowledgeQAService: Sendable {
             chunkIndex: hit.unitID,
             language: hit.language,
             speaker: hit.speakerLabels.first,
-            snippet: hit.snippet ?? String(hit.text.prefix(180))
+            snippet: hit.snippet ?? String(hit.text.prefix(180)),
+            matchText: matchText ?? hit.snippet ?? hit.text
         )
     }
 
-    static func systemPrompt(mode: KnowledgeAnswerMode, scope: KnowledgeQAScope, originFilter: Set<KnowledgeSourceOrigin>?) -> String {
+    static func systemPrompt(
+        mode: KnowledgeAnswerMode,
+        scope: KnowledgeQAScope,
+        originFilter: Set<KnowledgeSourceOrigin>?,
+        answerLanguage: KnowledgeAnswerLanguage = .english
+    ) -> String {
         let scopeLine: String
         switch scope {
         case .all:
@@ -283,15 +1119,61 @@ struct KnowledgeQAService: Sendable {
         You are Vox Studio Knowledge Base assistant.
         \(scopeLine)
         Use only the provided transcript excerpts as evidence.
+        The user's output constraints are instructions about how to format the answer, not evidence and not search terms. Follow them when they are compatible with the evidence.
+        Treat an explicit length or format constraint as a required contract. Before finalizing, verify the answer satisfies it without adding a preface, explanation of the constraint, or extra conclusion.
         If the excerpts are insufficient, say you could not find enough evidence and list the closest sources.
         Do not fabricate quotes, speakers, or timestamps.
         When helpful, cite sources as [n] matching the excerpt numbers.
         \(style)
-        Reply in the same language as the user question when possible.
+        The required answer language is \(answerLanguage.instruction). Write the entire answer in that language, including headings, caveats, and source explanations. Never switch to English because the evidence excerpts are in English. Match the language of the user's question exactly.
         """
     }
 
-    static func userPrompt(query: String, context: String, history: [KnowledgeMessage]) -> String {
+    static let queryPlannerPrompt = """
+        You are a retrieval query planner for a transcript knowledge base.
+        Separate the user's semantic search intent from instructions about the answer's length, language, style, citations, or format.
+        Return strict JSON only, with this shape:
+        {"search_query":"semantic terms and entities only","answer_constraints":["output requirements"]}
+        Keep names, topics, dates, and relationships needed to find evidence. Remove only instructions about how the answer should be written.
+        When the planner input supplies a target transcript language, write search_query in that language and script because the indexed transcript is stored in its source language. Translate the semantic search intent when needed, but keep named entities, acronyms, and proper nouns in their original spelling unless the transcript language clearly uses a localized form. This rule applies only to search_query; keep answer_constraints in the user's own wording.
+        If no target transcript language is supplied, keep search_query in the language and script used by the current question. Do not translate or transliterate it unless the user explicitly asks for translation.
+        Do not answer the question. Do not invent entities. If there is no explicit output constraint, return an empty array.
+        """
+
+    static func queryPlannerInput(
+        query: String,
+        history: [KnowledgeMessage],
+        targetTranscriptLanguage: String? = nil
+    ) -> String {
+        let recent = history.suffix(6)
+        var lines: [String] = []
+        if let targetTranscriptLanguage {
+            let language = targetTranscriptLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !language.isEmpty {
+                lines.append("Target transcript language for search_query: \(language)")
+                lines.append("Use this source language/script for the semantic search query; do not apply it to answer_constraints.")
+                lines.append("")
+            }
+        }
+        if !recent.isEmpty {
+            lines.append("Conversation context (use only to resolve references):")
+            lines.append(contentsOf: recent.map { message in
+                let role = message.role == .user ? "User" : "Assistant"
+                return "\(role): \(message.content)"
+            })
+            lines.append("")
+        }
+        lines.append("Current question: \(query)")
+        return lines.joined(separator: "\n")
+    }
+
+    static func userPrompt(
+        query: String,
+        searchQuery: String? = nil,
+        answerConstraints: [String] = [],
+        context: String,
+        history: [KnowledgeMessage]
+    ) -> String {
         var parts: [String] = []
         let recent = history.suffix(6)
         if !recent.isEmpty {
@@ -305,11 +1187,67 @@ struct KnowledgeQAService: Sendable {
         parts.append("Evidence excerpts:")
         parts.append(context)
         parts.append("")
+        if let searchQuery {
+            parts.append("Retrieval search intent (already applied; do not treat it as an answer): \(searchQuery)")
+            if !answerConstraints.isEmpty {
+                parts.append("Answer constraints (follow these output requirements):")
+                parts.append(contentsOf: answerConstraints.map { "- \($0)" })
+            }
+            parts.append("")
+        }
         parts.append("Question: \(query)")
         return parts.joined(separator: "\n")
     }
 
-    static func insufficientEvidenceMessage(scope: KnowledgeQAScope) -> String {
+    static func decodeQueryPlan(_ response: String) throws -> KnowledgeQueryPlan {
+        struct WirePlan: Decodable {
+            let searchQuery: String
+            let answerConstraints: [String]
+
+            enum CodingKeys: String, CodingKey {
+                case searchQuery = "search_query"
+                case answerConstraints = "answer_constraints"
+            }
+        }
+
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        let json: String
+        if trimmed.hasPrefix("```") {
+            let lines = trimmed.split(separator: "\n")
+            json = lines.dropFirst().dropLast().joined(separator: "\n")
+        } else {
+            json = trimmed
+        }
+        guard let data = json.data(using: .utf8) else {
+            throw KnowledgeQAError.invalidQueryPlan
+        }
+        let wire = try JSONDecoder().decode(WirePlan.self, from: data)
+        let searchQuery = wire.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !searchQuery.isEmpty, searchQuery.count <= 500 else {
+            throw KnowledgeQAError.invalidQueryPlan
+        }
+        let constraints = wire.answerConstraints
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .prefix(8)
+            .map { String($0.prefix(240)) }
+        return KnowledgeQueryPlan(searchQuery: searchQuery, answerConstraints: constraints)
+    }
+
+    static func insufficientEvidenceMessage(
+        scope: KnowledgeQAScope,
+        language: KnowledgeAnswerLanguage = .english
+    ) -> String {
+        if language == .chinese {
+            switch scope {
+            case .all:
+                return "我在你的知识库中没有找到足够的已索引转录证据来回答这个问题。请尝试更具体的关键词，或等候 session 完成索引。"
+            case .session:
+                return "我在这个 session 中没有找到足够的证据来回答这个问题。请尝试换一种问法，或确认该 session 已完成索引。"
+            case .sessions:
+                return "我在选中的 session 中没有找到足够的证据来回答这个问题。请尝试换一种问法，或确认这些 session 已完成索引。"
+            }
+        }
         switch scope {
         case .all:
             return "I could not find enough indexed transcript evidence for that question across your knowledge base. Try a more specific phrase, or wait until sessions finish indexing."
@@ -320,18 +1258,105 @@ struct KnowledgeQAService: Sendable {
         }
     }
 
-    static func excerptFallback(query: String, hits: [SessionSearchHit]) -> String {
-        var lines = [
-            "I found related transcript excerpts, but the answer model is unavailable right now (sign in for hosted AI, or enable BYOK in Settings).",
-            "",
-            "Closest matches for “\(query)”:",
-        ]
+    static func retrievalTimeoutMessage(
+        scope: KnowledgeQAScope,
+        language: KnowledgeAnswerLanguage = .english
+    ) -> String {
+        if language == .chinese {
+            switch scope {
+            case .all:
+                return "知识库检索在时限内没有完成，因此我没有足够的证据回答这个问题。请稍后重试。"
+            case .session:
+                return "这个 session 的检索在时限内没有完成，因此我没有足够的证据回答这个问题。请稍后重试。"
+            case .sessions:
+                return "选中 session 的检索在时限内没有完成，因此我没有足够的证据回答这个问题。请稍后重试。"
+            }
+        }
+        switch scope {
+        case .all:
+            return "Knowledge search did not finish within the time limit, so I do not have enough evidence to answer. Please try again."
+        case .session:
+            return "Search for this session did not finish within the time limit, so I do not have enough evidence to answer. Please try again."
+        case .sessions:
+            return "Search for the selected sessions did not finish within the time limit, so I do not have enough evidence to answer. Please try again."
+        }
+    }
+
+    static func retrievalFailureMessage(
+        scope: KnowledgeQAScope,
+        language: KnowledgeAnswerLanguage = .english
+    ) -> String {
+        if language == .chinese {
+            switch scope {
+            case .all:
+                return "知识库检索遇到暂时性错误，无法可靠回答这个问题。请稍后重试。"
+            case .session:
+                return "这个 session 的检索遇到暂时性错误，无法可靠回答这个问题。请稍后重试。"
+            case .sessions:
+                return "选中 session 的检索遇到暂时性错误，无法可靠回答这个问题。请稍后重试。"
+            }
+        }
+        switch scope {
+        case .all:
+            return "Knowledge search failed temporarily, so I cannot answer reliably. Please try again."
+        case .session:
+            return "Search for this session failed temporarily, so I cannot answer reliably. Please try again."
+        case .sessions:
+            return "Search for the selected sessions failed temporarily, so I cannot answer reliably. Please try again."
+        }
+    }
+
+    static func excerptFallback(
+        query: String,
+        hits: [SessionSearchHit],
+        language: KnowledgeAnswerLanguage = .english
+    ) -> String {
+        let isCatalogResult = !hits.isEmpty && hits.allSatisfy { $0.kind == .sessionCard }
+        var lines: [String]
+        if language == .chinese {
+            lines = [
+                isCatalogResult
+                    ? "我找到了匹配的 session，但回答模型在时限内没有返回可用答案。下面列出请求的 session 元数据："
+                    : "我找到了相关的转录片段，但回答模型在时限内没有返回可用答案。下面列出最接近的证据摘录：",
+                "",
+                "与“\(query)”最接近的匹配：",
+            ]
+        } else {
+            lines = [
+                isCatalogResult
+                    ? "I found matching sessions, but the answer model did not return a usable answer within the time limit. Here is the requested session metadata:"
+                    : "I found related transcript excerpts, but the answer model did not return a usable answer within the time limit. Here are the closest evidence excerpts:",
+                "",
+                "Closest matches for “\(query)”:",
+            ]
+        }
         for (index, hit) in hits.prefix(5).enumerated() {
-            let time = hit.start.map(KnowledgeSourceRef.formatTimestamp) ?? "—"
-            let snippet = (hit.snippet ?? hit.text)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let clipped = snippet.count > 160 ? String(snippet.prefix(157)) + "…" : snippet
-            lines.append("\(index + 1). \(hit.title) · \(time) — \(clipped)")
+            if hit.kind == .sessionCard {
+                let duration: String
+                if hit.duration > 0 {
+                    let totalSeconds = Int(hit.duration.rounded())
+                    let hours = totalSeconds / 3600
+                    let minutes = (totalSeconds % 3600) / 60
+                    let seconds = totalSeconds % 60
+                    duration = hours > 0
+                        ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
+                        : String(format: "%d:%02d", minutes, seconds)
+                } else {
+                    duration = "—"
+                }
+                let modified = hit.sourceModifiedAt.map {
+                    Date(timeIntervalSince1970: $0).formatted(date: .abbreviated, time: .omitted)
+                } ?? "—"
+                lines.append(
+                    "\(index + 1). \(hit.title) · \(hit.sessionType.label) · \(hit.sourceOrigin.label) · \(duration) · \(modified)"
+                )
+            } else {
+                let time = hit.start.map(KnowledgeSourceRef.formatTimestamp) ?? "—"
+                let snippet = (hit.snippet ?? hit.text)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let clipped = snippet.count > 160 ? String(snippet.prefix(157)) + "…" : snippet
+                lines.append("\(index + 1). \(hit.title) · \(time) — \(clipped)")
+            }
         }
         return lines.joined(separator: "\n")
     }
@@ -355,6 +1380,9 @@ enum KnowledgeQAError: LocalizedError {
     case llmUnavailable
     case cloudDisabled
     case sessionNotVisible
+    case invalidRerankerOutput
+    case invalidQueryPlan
+    case timeout
 
     var errorDescription: String? {
         switch self {
@@ -364,6 +1392,12 @@ enum KnowledgeQAError: LocalizedError {
             "Cloud answering is disabled for this request."
         case .sessionNotVisible:
             "Sign in to ask about this cloud session."
+        case .invalidRerankerOutput:
+            "The local reranker returned an invalid result."
+        case .invalidQueryPlan:
+            "The retrieval query planner returned an invalid result."
+        case .timeout:
+            "The answer model took too long to respond. Showing transcript excerpts instead."
         }
     }
 }

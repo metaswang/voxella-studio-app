@@ -275,6 +275,16 @@ enum DeviceTrialLoginMerge {
         return Payload(deviceStartedAt: earliestHint, deviceTrialToken: nil)
     }
 
+    /// POST /trial without a signed token mints `now+14d` on servers that ignore naked
+    /// `device_started_at`. Skip that call while a local device clock still needs upgrade.
+    static func shouldPostAccountTrialMerge(
+        hasSignedToken: Bool,
+        provisional: DeviceTrialClock.ProvisionalRecord?
+    ) -> Bool {
+        if hasSignedToken { return true }
+        return provisional == nil
+    }
+
     /// After successful account merge, drop provisional when server absorbed it
     /// (server ends ≤ provisional ends ⇒ start was earliest-or-equal).
     static func shouldClearProvisional(

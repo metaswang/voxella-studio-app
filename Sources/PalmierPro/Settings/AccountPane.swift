@@ -33,9 +33,7 @@ struct AccountPane: View {
 
     private var signedInBody: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
-            if case let .active(active)? = account.trialPresentation {
-                trialSection(.active(active))
-            }
+            trialCountdownSection
 
             if account.isPaid || account.appAccess.license == .lifetime {
                 subscriptionSection
@@ -293,11 +291,20 @@ struct AccountPane: View {
 
     private var signedOutBody: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
-            if case let .active(active)? = account.trialPresentation {
-                trialSection(.active(active))
-            }
+            trialCountdownSection
             AccountSignInView()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var trialCountdownSection: some View {
+        if account.trialPresentation != nil {
+            SwiftUI.TimelineView(.periodic(from: .now, by: 60.0)) { _ in
+                if case let .active(active)? = account.trialPresentation {
+                    trialSection(.active(active))
+                }
+            }
+        }
     }
 }

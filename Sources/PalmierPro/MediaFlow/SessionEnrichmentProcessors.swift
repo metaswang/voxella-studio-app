@@ -52,7 +52,40 @@ struct SessionTitleLLMProcessor: Sendable {
         \(clipped)
         """
         let raw = try await client.complete(system: system, user: user)
-        let parsed = try LLMStructuredOutputDecoder.decode(ResponseEnvelope.self, from: raw)
+        let parsed: ResponseEnvelope
+        do {
+            parsed = try LLMStructuredOutputDecoder.decode(ResponseEnvelope.self, from: raw)
+        } catch {
+            Log.llm.warning(
+                "structured output decode failed use_case=session_metadata phase=initial "
+                    + "bytes=\(raw.utf8.count) error=\(String(describing: error))"
+            )
+            let repairSystem = """
+            Convert the candidate response into the required JSON object.
+            Return strict JSON only, with exactly these keys:
+            {"title":"<string>","tag_text":"<string>","internal_summary":"<string>"}
+            Do not add Markdown, code fences, comments, or extra keys.
+            Preserve only information present in the candidate. If a field is missing, use an empty string.
+            """
+            let candidate = String(raw.prefix(4_000))
+            let repairUser = """
+            The candidate response is not valid for the required schema:
+            <candidate>
+            \(candidate)
+            </candidate>
+            Return the corrected JSON object now.
+            """
+            let repairedRaw = try await client.complete(system: repairSystem, user: repairUser)
+            do {
+                parsed = try LLMStructuredOutputDecoder.decode(ResponseEnvelope.self, from: repairedRaw)
+            } catch {
+                Log.llm.warning(
+                    "structured output decode failed use_case=session_metadata phase=repair "
+                        + "bytes=\(repairedRaw.utf8.count) error=\(String(describing: error))"
+                )
+                throw error
+            }
+        }
         let title = SessionTitlePolicy.compact(
             parsed.title,
             fallback: SessionTitlePolicy.compact(parsed.internalSummary ?? clipped)

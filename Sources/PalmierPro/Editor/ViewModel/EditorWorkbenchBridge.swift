@@ -104,33 +104,35 @@ extension EditorViewModel {
             useLLMSubtitleProcessing: true
         )
         let store = WorkbenchStore.shared
-        guard let batchID = store.beginTranscriptions(
-            sourceURLs: [asset.url],
-            options: options,
-            openSessionWhenDone: false
-        ) else {
-            sessionProcessingStates[clipId] = .failed(
-                store.transcriptionAdmissionError ?? L10n.string("Could not start transcription.")
-            )
-            return
-        }
-
-        let jobIDs = store.transcriptions
-            .filter { $0.batchID == batchID }
-            .map(\.id)
-        guard let jobID = jobIDs.first else {
-            sessionProcessingStates[clipId] = .failed(L10n.string("The transcription session was not created."))
-            return
-        }
-
-        sessionProcessingTasks[clipId]?.cancel()
-        sessionProcessingStates[clipId] = .processing
-        let timelineID = activeTimelineId
-        let startFrame = clip.startFrame
-        let mediaRef = clip.mediaRef
-
-        sessionProcessingTasks[clipId] = Task { @MainActor [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
+            guard let batchID = await store.beginTranscriptionsAfterAccess(
+                sourceURLs: [asset.url],
+                submission: TranscriptionSubmission(options: options, placement: .localDefault),
+                openSessionWhenDone: false
+            ) else {
+                self.sessionProcessingStates[clipId] = .failed(
+                    store.transcriptionAdmissionError ?? L10n.string("Could not start transcription.")
+                )
+                return
+            }
+
+            let jobIDs = store.transcriptions
+                .filter { $0.batchID == batchID }
+                .map(\.id)
+            guard let jobID = jobIDs.first else {
+                self.sessionProcessingStates[clipId] = .failed(L10n.string("The transcription session was not created."))
+                return
+            }
+
+            self.sessionProcessingTasks[clipId]?.cancel()
+            self.sessionProcessingStates[clipId] = .processing
+            let timelineID = self.activeTimelineId
+            let startFrame = clip.startFrame
+            let mediaRef = clip.mediaRef
+
+            self.sessionProcessingTasks[clipId] = Task { @MainActor [weak self] in
+                guard let self else { return }
             let terminalJob = await self.waitForTranscription(jobID, in: store)
             guard !Task.isCancelled else { return }
             guard self.activeTimelineId == timelineID,
@@ -180,6 +182,7 @@ extension EditorViewModel {
                 kind: .success
             )
             self.sessionProcessingTasks[clipId] = nil
+            }
         }
     }
 
@@ -264,25 +267,27 @@ extension EditorViewModel {
         let sourceClip = timeline.tracks[location.trackIndex].clips[location.clipIndex]
         let startFrame = sourceClip.startFrame
         let store = WorkbenchStore.shared
-        guard let dubID = store.addDub(
-            script: normalizedScript,
-            title: "",
-            openRoute: false
-        ) else { return }
-        store.updateDub(dubID) { job in
-            job.referenceVoiceID = referenceMode == .library ? referenceVoiceID : nil
-            job.referenceAudioPath = referenceMode == .recording ? recordedURL?.path : nil
-            job.referenceText = normalizedScript
-        }
-
-        sessionProcessingTasks[clipId]?.cancel()
-        sessionProcessingStates[clipId] = .processing
-        let sourceMediaURL: URL? = referenceClipID.flatMap { id in
-            clipFor(id: id).flatMap { mediaAssetsById[$0.mediaRef]?.url }
-        }
-        let referenceClip = referenceClipID.flatMap(clipFor(id:))
-        sessionProcessingTasks[clipId] = Task { @MainActor [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
+            guard let dubID = await store.addDubAfterAccess(
+                script: normalizedScript,
+                title: "",
+                openRoute: false
+            ) else { return }
+            store.updateDub(dubID) { job in
+                job.referenceVoiceID = referenceMode == .library ? referenceVoiceID : nil
+                job.referenceAudioPath = referenceMode == .recording ? recordedURL?.path : nil
+                job.referenceText = normalizedScript
+            }
+
+            self.sessionProcessingTasks[clipId]?.cancel()
+            self.sessionProcessingStates[clipId] = .processing
+            let sourceMediaURL: URL? = referenceClipID.flatMap { id in
+                self.clipFor(id: id).flatMap { self.mediaAssetsById[$0.mediaRef]?.url }
+            }
+            let referenceClip = referenceClipID.flatMap(self.clipFor(id:))
+            self.sessionProcessingTasks[clipId] = Task { @MainActor [weak self] in
+                guard let self else { return }
             do {
                 if referenceMode == .timelineClip,
                    referenceClip != nil,
@@ -355,6 +360,7 @@ extension EditorViewModel {
                 self.sessionProcessingStates[clipId] = .failed(error.localizedDescription)
             }
             self.sessionProcessingTasks[clipId] = nil
+            }
         }
     }
 

@@ -4,38 +4,39 @@ import Testing
 
 @Suite("ASR speech preparation")
 struct ASRSpeechPreparationTests {
+    private static let hop = LocalSpeechVAD.chunkSize
+    private static let sampleRate = LocalSpeechVAD.sampleRate
+
     @Test func sustainedLowProbabilityAudioSkipsRecognition() {
+        let frames = 8
         let result = ASRSpeechPreparation.make(
-            sampleCount: 64 * 512,
-            originalProbabilities: Array(repeating: 0.02, count: 64)
+            sampleCount: frames * Self.hop,
+            originalProbabilities: Array(repeating: 0.02, count: frames)
         )
 
         #expect(!result.hasPotentialSpeech)
-        #expect(result.excludedRanges == [.init(start: 0, end: 2.048)])
+        #expect(result.excludedRanges == [.init(start: 0, end: Double(frames * Self.hop) / Double(Self.sampleRate))])
     }
 
-    @Test func ambiguousAudioIsPreservedWithBoundaryProtection() throws {
-        var probabilities = Array(repeating: Float(0.02), count: 64)
-        probabilities[30] = 0.20
+    @Test func ambiguousAudioIsRejectedWithoutSileroAnchor() {
+        var probabilities = Array(repeating: Float(0.02), count: 8)
+        probabilities[4] = 0.20
 
         let result = ASRSpeechPreparation.make(
-            sampleCount: 64 * 512,
+            sampleCount: 8 * Self.hop,
             originalProbabilities: probabilities
         )
 
-        let range = try #require(result.recognitionRanges.first)
-        #expect(result.recognitionRanges.count == 1)
-        #expect(range.start == 0.704)
-        #expect(range.end == 1.376)
+        #expect(!result.hasPotentialSpeech)
         #expect(result.confidentSpeechRanges.isEmpty)
     }
 
     @Test func oneFrameShortSpeechIsNotDiscarded() {
-        var probabilities = Array(repeating: Float(0.02), count: 64)
-        probabilities[30] = 0.80
+        var probabilities = Array(repeating: Float(0.02), count: 8)
+        probabilities[4] = 0.80
 
         let result = ASRSpeechPreparation.make(
-            sampleCount: 64 * 512,
+            sampleCount: 8 * Self.hop,
             originalProbabilities: probabilities
         )
 
@@ -43,15 +44,16 @@ struct ASRSpeechPreparationTests {
         #expect(result.confidentSpeechRanges.count == 1)
     }
 
-    @Test func rescueCanOnlyIncreaseSpeechProbability() {
+    @Test func rescueCannotBypassOriginalGate() {
+        let frames = 4
         let result = ASRSpeechPreparation.make(
-            sampleCount: 32 * 512,
-            originalProbabilities: Array(repeating: 0.02, count: 32),
-            rescuedProbabilities: Array(repeating: 0.60, count: 32)
+            sampleCount: frames * Self.hop,
+            originalProbabilities: Array(repeating: 0.02, count: frames),
+            rescuedProbabilities: Array(repeating: 0.60, count: frames)
         )
 
-        #expect(result.hasPotentialSpeech)
-        #expect(result.confidentSpeechRanges == [.init(start: 0, end: 1.024)])
+        #expect(!result.hasPotentialSpeech)
+        #expect(result.confidentSpeechRanges.isEmpty)
     }
 
     @Test func chunkContextDoesNotCrossExcludedAudio() throws {
@@ -78,12 +80,13 @@ struct ASRSpeechPreparationTests {
     #if BUNDLED_SPEECH
     @Test(.enabled(if: ProcessInfo.processInfo.environment["VOXELLA_RUN_LOCAL_FIXTURES"] == "1"))
     func installed16kSileroCheckpointLoadsAndRuns() async throws {
-        let probabilities = try await ASRSpeechProbabilityService.shared.probabilities(
-            samples: Array(repeating: 0, count: 16_000),
+        let samples = [Float](repeating: 0, count: Self.sampleRate)
+        let probabilities = try await SpeechAnalysisService.shared.probabilities(
+            samples: samples,
             progress: { _, _, _ in }
         )
 
-        #expect(probabilities.count == 32)
+        #expect(probabilities.count == LocalSpeechVAD.chunkCount(for: samples.count))
         #expect(probabilities.allSatisfy { $0.isFinite })
     }
     #endif

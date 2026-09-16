@@ -44,7 +44,7 @@ final class MeetBotStore {
             }
         }
 
-        access = await AccountService.shared.prepareFeatureAccess(.meetBot)
+        _ = await prepareFeatureAccess()
         guard loadGeneration == generation, !Task.isCancelled, access == .allowed else { return }
 
         do {
@@ -67,6 +67,7 @@ final class MeetBotStore {
     }
 
     func manualJoin() async {
+        guard await prepareFeatureAccess() else { return }
         errorMessage = nil
         joinResult = nil
         let urlValue = meetingURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -103,6 +104,7 @@ final class MeetBotStore {
 
     func setMeeting(_ meeting: VoxellaGoogleCalendarMeeting, enabled: Bool) async {
         guard updatingMeetingID == nil else { return }
+        guard await prepareFeatureAccess() else { return }
         errorMessage = nil
         updatingMeetingID = meeting.id
         defer { updatingMeetingID = nil }
@@ -116,6 +118,7 @@ final class MeetBotStore {
 
     func retryMeeting(_ meeting: VoxellaGoogleCalendarMeeting) async {
         guard updatingMeetingID == nil else { return }
+        guard await prepareFeatureAccess() else { return }
         errorMessage = nil
         updatingMeetingID = meeting.id
         defer { updatingMeetingID = nil }
@@ -136,6 +139,11 @@ final class MeetBotStore {
         if let recordScreen = status.rules?.recordScreen {
             self.recordScreen = recordScreen
         }
+    }
+
+    private func prepareFeatureAccess() async -> Bool {
+        access = await AccountService.shared.prepareFeatureAccess(.meetBot)
+        return access == .allowed
     }
 
     private func handle(_ error: Error, feature: AccountFeature) {

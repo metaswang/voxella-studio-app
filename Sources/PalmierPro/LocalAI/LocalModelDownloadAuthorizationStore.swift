@@ -19,7 +19,11 @@ actor LocalModelDownloadAuthorizationStore {
 
     func records() throws -> [Record] {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
-        return try JSONDecoder().decode([Record].self, from: Data(contentsOf: fileURL))
+        let raw = try JSONDecoder().decode([RawRecord].self, from: Data(contentsOf: fileURL))
+        return raw.compactMap { item in
+            guard let id = LocalModelID(rawValue: item.id) else { return nil }
+            return Record(id: id, revision: item.revision)
+        }
     }
 
     func authorize(_ record: Record) throws {
@@ -37,6 +41,11 @@ actor LocalModelDownloadAuthorizationStore {
 
     func replace(with records: [Record]) throws {
         try write(records)
+    }
+
+    private struct RawRecord: Decodable {
+        let id: String
+        let revision: String
     }
 
     private func write(_ records: [Record]) throws {

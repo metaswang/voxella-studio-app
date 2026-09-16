@@ -91,6 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         Task { @MainActor in
             do {
+                await RecordingSessionController.shared.prepareForTermination()
                 for project in projects {
                     try await project.saveBeforeClosing()
                 }

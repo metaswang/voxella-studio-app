@@ -8,6 +8,7 @@ struct LocalSpeechVADTests {
         let value = SpeechRegionAnalysis(
             sampleRate: 16_000,
             chunkCount: 12,
+            probabilities: [0.1, 0.8],
             segments: [SpeechRegion(startTime: 0.32, endTime: 1.28)],
             backend: .coreML,
             modelRevision: "revision"

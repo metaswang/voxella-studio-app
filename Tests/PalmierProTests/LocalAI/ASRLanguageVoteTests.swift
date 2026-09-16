@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import PalmierPro
 
-@Suite("Duration weighted engine evidence")
+@Suite("Equal window engine evidence")
 struct ASRLanguageVoteTests {
     @Test func overlappingCoverageDoesNotForceQwenForEuropeanLanguages() {
         let route = ASREngineRouter.decide(posterior: ["en": 0.41, "da": 0.44, "la": 0.15], speechDuration: 2)
@@ -31,11 +31,20 @@ struct ASRLanguageVoteTests {
     }
 
     @Test func uncertainEvidenceAndUnsupportedLanguagesStillUseWhisper() {
-        for posterior: [String: Float] in [["my": 0.71, "zh": 0.29], ["la": 0.89, "en": 0.11], ["en": 0.34, "my": 0.33, "la": 0.33]] {
+        for posterior: [String: Float] in [["my": 0.71, "zh": 0.29], ["en": 0.34, "my": 0.33, "la": 0.33]] {
             let route = ASREngineRouter.decide(posterior: posterior, speechDuration: 2)
             #expect(route.engine == .whisper)
+            #expect(route.reason == .insufficientEngineCoverage)
             #expect(route.whisperHint == nil)
         }
+    }
+
+    @Test func lockedUnsupportedLanguagePromptsWhisper() {
+        let route = ASREngineRouter.decide(posterior: ["la": 0.89, "en": 0.11], speechDuration: 2)
+        #expect(route.engine == .whisper)
+        #expect(route.reason == .whisperLanguage)
+        #expect(route.whisperHint == "la")
+        #expect(route.topLanguage == "la")
     }
 
     @Test func unresolvedOtherLanguageCannotBeHiddenByChineseEnglishProtection() {
@@ -43,9 +52,50 @@ struct ASRLanguageVoteTests {
         #expect(route.engine == .whisper)
     }
 
-    @Test func windowOutsideCoverageCannotBeHiddenByLongerCoveredAudio() {
+    @Test func singletonUnsupportedWindowDoesNotOverrideCoveredMajority() {
         let rows = evidence(Array(repeating: ["en": Float(1)], count: 8) + [["my": 0.7, "en": 0.3]])
-        #expect(ASREngineRouter.decide(evidence: rows).engine == .whisper)
+        let route = ASREngineRouter.decide(evidence: rows)
+        #expect(route.engine == .parakeet)
+        #expect(route.reason == .weightedEvidence || route.reason == .engineCoverage)
+    }
+
+    @Test func singletonUnsupportedLanguageDoesNotOverrideEnglishMajority() {
+        let route = ASREngineRouter.decide(evidence: evidence(
+            Array(repeating: ["en": Float(0.99), "fr": Float(0.01)], count: 6) + [["mi": 0.84, "en": 0.16]]
+        ))
+        #expect(route.engine == .parakeet)
+        #expect(route.reason == .engineCoverage)
+        #expect(route.topLanguage == "en")
+    }
+
+    @Test func corroboratedUnsupportedLanguageStillUsesWhisper() {
+        let route = ASREngineRouter.decide(evidence: evidence(
+            Array(repeating: ["en": Float(0.99), "fr": Float(0.01)], count: 5)
+                + [["my": 0.9, "en": 0.1], ["my": 0.88, "en": 0.12]]
+        ))
+        #expect(route.engine == .whisper)
+        #expect(route.reason == .insufficientEngineCoverage)
+    }
+
+    @Test func splitReliableWindowsWithoutMajorityStayConservative() {
+        let route = ASREngineRouter.decide(evidence: evidence([
+            ["en": 0.99, "fr": 0.01],
+            ["my": 0.99, "en": 0.01],
+        ]))
+        #expect(route.engine == .whisper)
+        #expect(route.reason == .insufficientEngineCoverage)
+    }
+
+    @Test func weakUnsupportedWindowDoesNotOverrideStrongEnglishEvidence() {
+        let route = ASREngineRouter.decide(evidence: evidence([
+            ["en": 0.99, "fr": 0.01],
+            ["lb": 0.21, "la": 0.20, "sw": 0.20, "en": 0.20, "my": 0.19],
+            ["en": 0.99, "fr": 0.01],
+        ]))
+
+        #expect(route.engine == .parakeet)
+        #expect(route.reason == .weightedEvidence || route.reason == .engineCoverage)
+        #expect(route.scores.parakeet > 0.70)
     }
 
     @Test func modelCoverageIncludesEnglishButNotLatinOrBurmese() {
@@ -61,7 +111,44 @@ struct ASRLanguageVoteTests {
     }
 
     @Test func emptyEvidenceStillFallsBack() {
-        #expect(ASREngineRouter.decide(evidence: []).reason == .insufficientSpeech)
+        #expect(ASREngineRouter.decide(evidence: []).reason == .insufficientEngineCoverage)
+    }
+
+    @Test func projectedEngineVoteTreatsChineseMajorityAndLaoOutlierAsQwen() throws {
+        let rows = Array(repeating: ["zh": Float(0.99), "en": Float(0.01)], count: 4)
+            + [["lo": Float(0.92), "zh": Float(0.08)]]
+        let route = ASREngineRouter.decide(evidence: evidence(rows, seconds: 3.6))
+        let vote = try #require(route.languageVote)
+
+        #expect(route.engine == .qwen)
+        #expect(route.engineVoteScores.qwen > 0.75)
+        #expect(route.engineVoteScores.whisper < 0.25)
+        #expect(vote.weightShares.allSatisfy { abs($0 - 0.2) < 0.000001 })
+    }
+
+    @Test func invalidWindowDoesNotEraseStrongRemainingEngineEvidence() throws {
+        let invalid = ASRLanguageEvidence(
+            window: .init(slices: [.init(start: .nan, end: 4)]),
+            posterior: ["lo": 0.99]
+        )
+        let valid = evidence([["zh": 0.99, "en": 0.01]])[0]
+        let route = ASREngineRouter.decide(evidence: [invalid, valid])
+        let vote = try #require(route.languageVote)
+
+        #expect(route.engine == .qwen)
+        #expect(vote.validWindowCount == 1)
+        #expect(vote.invalidWindowCount == 1)
+        #expect(route.engineVoteScores.qwen > 0.98)
+    }
+
+    @Test func lowProjectedEngineScoreFallsBackToWhisperWithoutWindowCountGate() {
+        let route = ASREngineRouter.decide(evidence: evidence([
+            ["zh": 0.46, "lo": 0.54],
+        ]))
+
+        #expect(route.engine == .whisper)
+        #expect(route.reason == .insufficientEngineCoverage)
+        #expect(route.engineVoteScores.qwen < 0.50)
     }
 
     private func evidence(_ rows: [[String: Float]], seconds: Double = 5) -> [ASRLanguageEvidence] {
@@ -70,7 +157,7 @@ struct ASRLanguageVoteTests {
         }
     }
 
-    @Test func confidentForeignWindowCannotDominateDurationWeights() throws {
+    @Test func confidentForeignWindowCannotDominateEqualWindowVotes() throws {
         let samples = evidence([
             ["la": 0.88, "en": 0.12],
             ["en": 0.34, "la": 0.33, "fr": 0.33],
@@ -87,14 +174,15 @@ struct ASRLanguageVoteTests {
     @Test(arguments: ["en", "zh", "sw", "fr", "ja"])
     func oneReliableWindowIsEnough(language: String) {
         let route = ASREngineRouter.decide(evidence: evidence([[language: 0.85, "is": 0.15]]))
-        #expect(route.reason == (language == "sw" ? .insufficientEngineCoverage : .engineCoverage))
+        #expect(route.reason == (language == "sw" ? .whisperLanguage : .weightedEvidence))
         #expect(route.engine == ASREngineLanguagePolicy.engine(forLanguageCode: language))
+        #expect(route.whisperHint == (language == "sw" ? "sw" : nil))
     }
 
     @Test(arguments: [0.1, 2.5, 2.999])
     func shortStrongSpeechUsesNormalRouting(seconds: Double) {
         let route = ASREngineRouter.decide(evidence: evidence([["en": 0.99, "ms": 0.01]], seconds: seconds))
-        #expect(route.reason == .engineCoverage)
+        #expect(route.reason == .weightedEvidence)
         #expect(route.engine == .parakeet)
         #expect(route.whisperHint == nil)
     }
@@ -142,9 +230,13 @@ struct ASRLanguageVoteTests {
         #expect(abs(a.confidence - b.confidence) < 0.000001)
     }
 
-    @Test func durationWeightIsCapped() {
+    @Test func windowWeightDoesNotDependOnDuration() {
         let rows: [[String: Float]] = [["en": 0.9, "zh": 0.1], ["en": 0.6, "zh": 0.4]]
-        #expect(ASRLanguageVote.pool(evidence(rows, seconds: 5)).confidence == ASRLanguageVote.pool(evidence(rows, seconds: 500)).confidence)
+        let short = ASRLanguageVote.pool(evidence(rows, seconds: 5))
+        let long = ASRLanguageVote.pool(evidence(rows, seconds: 500))
+        #expect(short.confidence == long.confidence)
+        #expect(short.weightShares == [0.5, 0.5])
+        #expect(long.weightShares == [0.5, 0.5])
     }
 
     @Test func conflictingDuplicateOrOverlappingWindowsFailClosed() {

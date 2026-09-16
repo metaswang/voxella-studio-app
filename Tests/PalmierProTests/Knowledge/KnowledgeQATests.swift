@@ -57,6 +57,20 @@ struct KnowledgeChatStoreTests {
         let after = try await store.messages(for: conversation.id)
         #expect(after.isEmpty)
     }
+
+    @Test
+    func clearConversationRemovesAllMessages() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kb-clear-\(UUID().uuidString)", isDirectory: true)
+        let store = KnowledgeChatStore(rootURL: root)
+        let conversation = try await store.conversation(for: .all)
+        try await store.append(KnowledgeMessage(conversationID: conversation.id, role: .user, content: "one"))
+        try await store.append(KnowledgeMessage(conversationID: conversation.id, role: .assistant, content: "two"))
+
+        try await store.clear(conversationID: conversation.id)
+
+        #expect(try await store.messages(for: conversation.id).isEmpty)
+    }
 }
 
 
@@ -109,6 +123,81 @@ struct KnowledgeMultiScopeChatStoreTests {
 
 struct KnowledgeQAServiceHelpersTests {
     @Test
+    func queryPlannerSeparatesAnswerConstraintFromSearchIntent() throws {
+        let plan = try KnowledgeQAService.decodeQueryPlan(
+            #"{"search_query":"主要主题","answer_constraints":["用中文回答","只用 3 句话"]}"#,
+        )
+
+        #expect(plan.searchQuery == "主要主题")
+        #expect(plan.answerConstraints == ["用中文回答", "只用 3 句话"])
+    }
+
+    @Test
+    func queryPlannerRejectsEmptySearchIntentWithoutHardcodedCleanup() {
+        #expect(throws: KnowledgeQAError.self) {
+            try KnowledgeQAService.decodeQueryPlan(
+                #"{"search_query":"  ","answer_constraints":["3 sentences"]}"#,
+            )
+        }
+    }
+
+    @Test
+    func answerPromptCarriesConstraintsSeparatelyFromRetrievalQuery() {
+        let prompt = KnowledgeQAService.userPrompt(
+            query: "讲的主要是什么主题？ 3句话",
+            searchQuery: "讲的主要是什么主题",
+            answerConstraints: ["用中文回答", "只用 3 句话"],
+            context: "[1] 会议讨论了交付计划。",
+            history: []
+        )
+
+        #expect(prompt.contains("Retrieval search intent (already applied; do not treat it as an answer)"))
+        #expect(prompt.contains("只用 3 句话"))
+        #expect(prompt.contains("Question: 讲的主要是什么主题？ 3句话"))
+    }
+
+    @Test
+    func queryPlannerReceivesRecentConversationOnlyToResolveReferences() {
+        let input = KnowledgeQAService.queryPlannerInput(
+            query: "那谁负责？ 3句话",
+            history: [
+                KnowledgeMessage(conversationID: UUID(), role: .user, content: "刚才讨论了发布计划"),
+                KnowledgeMessage(conversationID: UUID(), role: .assistant, content: "证据显示由产品团队负责。"),
+            ]
+        )
+
+        #expect(input.contains("Conversation context"))
+        #expect(input.contains("刚才讨论了发布计划"))
+        #expect(input.contains("Current question: 那谁负责？ 3句话"))
+    }
+
+    @Test
+    func queryPlannerUsesTargetTranscriptLanguageWhenProvided() {
+        let input = KnowledgeQAService.queryPlannerInput(
+            query: "主要讲了什么？",
+            history: [],
+            targetTranscriptLanguage: "en-US"
+        )
+
+        #expect(input.contains("Target transcript language for search_query: en-US"))
+        #expect(input.contains("Use this source language/script for the semantic search query"))
+        #expect(KnowledgeQAService.queryPlannerPrompt.contains("target transcript language"))
+        #expect(KnowledgeQAService.queryPlannerPrompt.contains("indexed transcript is stored in its source language"))
+    }
+
+    @Test
+    func queryPlannerFallsBackToQuestionLanguageWithoutTranscriptTarget() {
+        let input = KnowledgeQAService.queryPlannerInput(
+            query: "What was discussed?",
+            history: []
+        )
+
+        #expect(!input.contains("Target transcript language for search_query"))
+        #expect(KnowledgeQAService.queryPlannerPrompt.contains("keep search_query in the language and script used by the current question"))
+        #expect(KnowledgeQAService.queryPlannerPrompt.contains("Do not translate or transliterate"))
+    }
+
+    @Test
     func citationMapsSessionAndTimestamp() {
         let sessionID = UUID()
         let hit = SessionSearchHit(
@@ -134,6 +223,7 @@ struct KnowledgeQAServiceHelpersTests {
         #expect(citation.title == "Weekly sync")
         #expect(citation.speaker == "Alice")
         #expect(citation.timestampLabel == "2:05")
+        #expect(citation.matchText == "ship knowledge QA")
         #expect(citation.chipLabel.contains("Weekly sync"))
         #expect(citation.chipLabel.contains("2:05"))
     }
@@ -189,6 +279,49 @@ struct KnowledgeQAServiceHelpersTests {
     }
 
     @Test
+    func catalogFallbackRendersRequestedMetadataWithoutSessionSummary() {
+        let hit = SessionSearchHit(
+            sessionID: UUID(),
+            title: "Testing",
+            unitID: 1,
+            kind: .sessionCard,
+            start: nil,
+            end: 4,
+            speakerLabels: [],
+            // Simulate a stale/legacy catalog hit that still carries summary
+            // text. The inventory fallback must never render it.
+            text: "Testing\n## Overview\nKey Points\n* The system is being tested.",
+            score: 1,
+            matchSource: "catalog",
+            snippet: "## Overview\nKey Points\n* The system is being tested.",
+            cueIDs: [],
+            hasVideo: false,
+            language: "en",
+            quoteSpan: nil,
+            duration: 4,
+            sourceOrigin: .local,
+            sessionType: .record,
+            sourceCreatedAt: 1_000,
+            sourceModifiedAt: 2_000
+        )
+
+        let fallback = KnowledgeQAService.excerptFallback(
+            query: "列出所有 session 的标题、类型、来源和时长，并按最近修改时间排序",
+            hits: [hit],
+            language: .chinese
+        )
+
+        #expect(fallback.contains("Testing"))
+        #expect(fallback.contains("请求的 session 元数据"))
+        #expect(fallback.contains("Record"))
+        #expect(fallback.contains("Local"))
+        #expect(fallback.contains("0:04"))
+        #expect(!fallback.contains("Overview"))
+        #expect(!fallback.contains("Key Points"))
+        #expect(!fallback.contains("system is being tested"))
+    }
+
+    @Test
     func chunkForStreamingCoversFullText() {
         let text = "Hello knowledge base streaming answer."
         let chunks = KnowledgeQAService.chunkForStreaming(text, chunkSize: 8)
@@ -239,6 +372,161 @@ struct KnowledgeQAServiceHelpersTests {
         #expect(KnowledgeSourceType.from(sessionType: .upload) == .upload)
         #expect(KnowledgeSourceType.from(sessionType: .netVideo) == .netVideo)
         #expect(KnowledgeSourceType.from(sessionType: .dub) == .dub)
+    }
+}
+
+struct KnowledgeQAExecutionTests {
+    @Test
+    func defaultBudgetsKeepPlannerAndAnswerWithinOverallLimit() {
+        let policy = KnowledgeQAExecutionPolicy.default
+
+        #expect(policy.overall == .seconds(56))
+        #expect(policy.understanding == .seconds(8))
+        #expect(policy.retrieval == .seconds(8))
+        #expect(policy.graphRecall == .seconds(5))
+        #expect(policy.rerank == .seconds(5))
+        #expect(policy.answer == .seconds(30))
+    }
+
+    @Test
+    func outcomesHaveStableLogValues() {
+        #expect(KnowledgeQAOutcome.completed.rawValue == "completed")
+        #expect(KnowledgeQAOutcome.fallback.rawValue == "fallback")
+        #expect(KnowledgeQAOutcome.timedOut.rawValue == "timedOut")
+        #expect(KnowledgeQAOutcome.cancelled.rawValue == "cancelled")
+    }
+
+    @Test
+    func timeoutReturnsWithoutWaitingForNonCooperativeOperation() async throws {
+        let started = ContinuousClock().now
+        do {
+            _ = try await KnowledgeQATimeout.run(.milliseconds(40)) {
+                await withCheckedContinuation { (continuation: CheckedContinuation<String, Never>) in
+                    // Simulate a provider that ignores cancellation and returns
+                    // late. The timeout race must return before the provider.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(250))
+                        continuation.resume(returning: "late")
+                    }
+                }
+            }
+            Issue.record("expected timeout")
+        } catch is KnowledgeQAError {
+            // Expected timeout.
+        }
+
+        let elapsed = started.duration(to: ContinuousClock().now)
+        #expect(elapsed < .milliseconds(200))
+    }
+
+    @Test
+    func requestIDIsStableAcrossRequestCopies() {
+        let requestID = UUID()
+        let request = KnowledgeQARequest(
+            queryText: "hello",
+            conversationID: UUID(),
+            scope: .all,
+            requestID: requestID
+        )
+        let copy = request
+
+        #expect(request.requestID == requestID)
+        #expect(copy.requestID == requestID)
+    }
+}
+
+struct KnowledgeRerankAndContextTests {
+    @Test
+    func rerankThresholdUsesPrimaryRelaxedAndSingleEvidenceFallback() {
+        let hits = [
+            reranked(unitID: 1, score: 0.26),
+            reranked(unitID: 2, score: 0.24),
+        ]
+        #expect(KnowledgeRerankPolicy.thresholded(hits).map(\.hit.unitID) == [1])
+
+        let relaxed = [reranked(unitID: 1, score: 0.20), reranked(unitID: 2, score: 0.18)]
+        #expect(KnowledgeRerankPolicy.thresholded(relaxed).map(\.hit.unitID) == [1, 2])
+
+        let single = [reranked(unitID: 1, score: 0.16), reranked(unitID: 2, score: 0.14)]
+        #expect(KnowledgeRerankPolicy.thresholded(single).map(\.hit.unitID) == [1])
+        #expect(KnowledgeRerankPolicy.thresholded([reranked(unitID: 1, score: 0.14)]).isEmpty)
+    }
+
+    @Test
+    func mmrUsesStoredVectorsToAvoidNearDuplicateEvidence() {
+        let candidates = [
+            reranked(unitID: 1, score: 0.9, text: "first evidence"),
+            reranked(unitID: 2, score: 0.88, text: "duplicate evidence"),
+            reranked(unitID: 3, score: 0.7, text: "independent evidence"),
+        ]
+        let selected = KnowledgeMMR.select(
+            candidates,
+            vectors: [
+                1: [1, 0, 0],
+                2: [1, 0, 0],
+                3: [0, 1, 0],
+            ],
+            limit: 2
+        )
+
+        #expect(selected.map(\.hit.unitID) == [1, 3])
+    }
+
+    @Test
+    func contextAddsBoundedMetadataAndNeighborsWithoutChangingCitationAnchor() {
+        let sessionID = UUID()
+        let anchor = hit(sessionID: sessionID, unitID: 10, text: "anchor")
+        let before = hit(sessionID: sessionID, unitID: 9, text: "before neighbor")
+        let after = hit(sessionID: sessionID, unitID: 11, text: "after neighbor")
+        let context = KnowledgeContextBuilder.build(
+            anchors: [anchor],
+            metadata: [sessionID: .init(title: "Weekly review", summary: String(repeating: "summary ", count: 100))],
+            neighbors: [anchor.unitID: [after, before]],
+            maxChars: 1_000
+        )
+
+        #expect(context.contains("Session title: Weekly review"))
+        #expect(context.contains("before neighbor"))
+        #expect(context.contains("anchor"))
+        #expect(context.contains("after neighbor"))
+        #expect(context.count <= 1_000)
+        #expect(KnowledgeQAService.citation(from: anchor).chunkIndex == 10)
+    }
+
+    @Test
+    func recoveryActionsDecodeWhenAbsentFromOlderMessageJSON() throws {
+        let message = KnowledgeMessage(conversationID: UUID(), role: .assistant, content: "excerpt")
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(message)) as! [String: Any]
+        json.removeValue(forKey: "recoveryActions")
+        let decoded = try JSONDecoder().decode(
+            KnowledgeMessage.self,
+            from: JSONSerialization.data(withJSONObject: json)
+        )
+        #expect(decoded.recoveryActions.isEmpty)
+    }
+
+    private func reranked(unitID: Int, score: Double, text: String = "evidence") -> KnowledgeRerankedHit {
+        KnowledgeRerankedHit(hit: hit(sessionID: UUID(), unitID: unitID, text: text), score: score)
+    }
+
+    private func hit(sessionID: UUID, unitID: Int, text: String) -> SessionSearchHit {
+        SessionSearchHit(
+            sessionID: sessionID,
+            title: "Session",
+            unitID: unitID,
+            kind: .transcriptChunk,
+            start: Double(unitID),
+            end: Double(unitID + 1),
+            speakerLabels: [],
+            text: text,
+            score: 1,
+            matchSource: "test",
+            snippet: nil,
+            cueIDs: [],
+            hasVideo: false,
+            language: "en",
+            quoteSpan: nil
+        )
     }
 }
 
@@ -383,3 +671,56 @@ struct KnowledgeQAReadyGateTests {
     }
 }
 
+struct KnowledgeAnswerLanguageTests {
+    @Test
+    func detectsChineseQuestionAndPinsPromptLanguage() {
+        let question = "这个 session 的主要主题是什么？"
+
+        #expect(KnowledgeAnswerLanguage.detect(from: question) == .chinese)
+
+        let prompt = KnowledgeQAService.systemPrompt(
+            mode: .normal,
+            scope: .all,
+            originFilter: nil,
+            answerLanguage: .chinese
+        )
+        #expect(prompt.contains("Chinese (中文)"))
+        #expect(prompt.contains("Never switch to English"))
+    }
+
+    @Test
+    func noEvidenceFallbackUsesQuestionLanguage() {
+        let message = KnowledgeQAService.insufficientEvidenceMessage(
+            scope: .session(UUID()),
+            language: .chinese
+        )
+
+        #expect(message.contains("没有找到足够的证据"))
+        #expect(!message.contains("I could not"))
+    }
+}
+
+struct KnowledgeTranscriptNavigationTests {
+    @Test
+    func citationTimeSelectsOverlappingTranscriptSegment() {
+        let segments = [
+            TranscriptionSegment(text: "开场", start: 0, end: 4),
+            TranscriptionSegment(text: "主要讨论数学", start: 10, end: 18),
+            TranscriptionSegment(text: "结尾", start: 20, end: 24),
+        ]
+        let target = KnowledgeTranscriptTarget(startTime: 12, endTime: 14, matchText: "数学")
+
+        #expect(KnowledgeTranscriptNavigation.segmentIndex(for: target, in: segments) == 1)
+    }
+
+    @Test
+    func citationTimeFallsBackToNearestSegment() {
+        let segments = [
+            TranscriptionSegment(text: "first", start: 0, end: 2),
+            TranscriptionSegment(text: "second", start: 10, end: 12),
+        ]
+        let target = KnowledgeTranscriptTarget(startTime: 7, endTime: 8, matchText: "second")
+
+        #expect(KnowledgeTranscriptNavigation.segmentIndex(for: target, in: segments) == 1)
+    }
+}

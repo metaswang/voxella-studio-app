@@ -1,5 +1,9 @@
 import Foundation
 
+extension Notification.Name {
+    static let aiConfigurationDidChange = Notification.Name("voxella.ai.configurationDidChange")
+}
+
 enum AITransport: Equatable, Sendable {
     case hosted
     case byok

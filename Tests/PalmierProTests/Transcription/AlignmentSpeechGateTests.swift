@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import PalmierPro
 
@@ -163,6 +164,35 @@ struct AlignmentSpeechGateTests {
         #expect(slice.start <= AlignmentSpeechGate.Policy.standard.pad)
     }
 
+    @Test func skipsSoundSceneAnalysisForLongRecordings() {
+        #expect(AlignmentSpeechGate.shouldAnalyzeSoundScenes(
+            audioDuration: AlignmentSpeechGate.maximumSceneAnalysisDuration
+        ))
+        #expect(!AlignmentSpeechGate.shouldAnalyzeSoundScenes(
+            audioDuration: AlignmentSpeechGate.maximumSceneAnalysisDuration + 0.001
+        ))
+        #expect(!AlignmentSpeechGate.shouldAnalyzeSoundScenes(audioDuration: .nan))
+    }
+
+    @Test func forwardsSoundSceneProgress() {
+        let expected = [
+            SceneProgress(completed: 1, total: 2),
+            SceneProgress(completed: 2, total: 2),
+        ]
+        let recorder = SceneProgressRecorder()
+        _ = AlignmentSpeechGate.mask(
+            samples: tone(duration: 10, amplitude: 0.1),
+            sampleRate: sampleRate,
+            speechIntervals: [.init(startTime: 0, endTime: 10)],
+            sceneClassifier: StubSoundSceneClassifier(progressUpdates: expected),
+            sceneProgress: { completed, total in
+                recorder.append(.init(completed: completed, total: total))
+            }
+        )
+
+        #expect(recorder.snapshot() == expected)
+    }
+
     @Test func splitsInteriorPauseAtLeastMinInteriorPause() {
         let samples = tone(duration: 4, amplitude: 0.1)
             + tone(duration: 0.4, amplitude: 0.0002)
@@ -253,14 +283,41 @@ struct AlignmentSpeechGateTests {
 private struct StubSoundSceneClassifier: AlignmentSoundSceneClassifying {
     var windows: [AlignmentSoundSceneWindow] = []
     var error: Error?
+    var progressUpdates: [SceneProgress] = []
 
     func classifySoundScenes(
         samples: [Float],
         sampleRate: Int,
-        ranges: [ClosedRange<Double>]
+        ranges: [ClosedRange<Double>],
+        progress: @escaping @Sendable (Int, Int) -> Void
     ) throws -> [AlignmentSoundSceneWindow] {
         if let error { throw error }
+        for update in progressUpdates {
+            progress(update.completed, update.total)
+        }
         return windows
+    }
+}
+
+private struct SceneProgress: Equatable, Sendable {
+    let completed: Int
+    let total: Int
+}
+
+private final class SceneProgressRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var updates: [SceneProgress] = []
+
+    func append(_ update: SceneProgress) {
+        lock.lock()
+        updates.append(update)
+        lock.unlock()
+    }
+
+    func snapshot() -> [SceneProgress] {
+        lock.lock()
+        defer { lock.unlock() }
+        return updates
     }
 }
 

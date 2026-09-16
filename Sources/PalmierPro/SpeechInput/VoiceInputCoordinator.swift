@@ -11,7 +11,6 @@ final class VoiceInputCoordinator {
     let recognition: SpeechInputController
     var draft = ""
     private(set) var errorMessage: String?
-    private(set) var focusGeneration = 0
     private(set) var editorMaximumHeight = AppTheme.SpeechInput.scriptMaxHeight
 
     private var automaticallyInserts = false
@@ -45,7 +44,6 @@ final class VoiceInputCoordinator {
         automaticallyInserts = false
         errorMessage = nil
         panel().present()
-        focusGeneration &+= 1
     }
 
     func beginInline(onInsert: @escaping (String) -> Bool) {
@@ -90,12 +88,14 @@ final class VoiceInputCoordinator {
             suspendedRecordingURL = nil
             recorder.start()
         }
+        requestEditorFocus()
     }
 
     func retryRecognition() {
         guard let recordedURL, !isBusy, !recorder.isRecording else { return }
         errorMessage = nil
         startRecognition(from: recordedURL, session: sessionID)
+        requestEditorFocus()
     }
 
     @discardableResult
@@ -128,6 +128,10 @@ final class VoiceInputCoordinator {
         panelController?.resize(to: height)
     }
 
+    func requestEditorFocus() {
+        panelController?.restoreEditorFocus()
+    }
+
     private func stopAndRecognize() {
         let activeSession = sessionID
         Task { [weak self] in
@@ -143,7 +147,7 @@ final class VoiceInputCoordinator {
             guard let self, self.sessionID == session else { return }
             let separator = self.draft.isEmpty || self.draft.hasSuffix("\n") ? "" : "\n"
             self.draft += separator + result.text
-            self.focusGeneration &+= 1
+            self.requestEditorFocus()
             if self.automaticallyInserts { self.submit() }
         }
     }
@@ -192,4 +196,3 @@ final class VoiceInputCoordinator {
         startRecognition(from: url, session: sessionID)
     }
 }
-

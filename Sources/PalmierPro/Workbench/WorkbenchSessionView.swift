@@ -35,7 +35,16 @@ struct RecentSessionsView: View {
                         .frame(width: AppTheme.Workbench.searchWidth)
                 }
 
-                if filteredSessions.isEmpty && store.isLoadingRemoteSessions {
+                if store.isHydrating {
+                    VStack(spacing: AppTheme.Spacing.md) {
+                        ProgressView()
+                        Text("Loading saved sessions…")
+                            .font(.system(size: AppTheme.FontSize.sm))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.emptyStateMinHeight)
+                    .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+                } else if filteredSessions.isEmpty && store.isLoadingRemoteSessions {
                     VStack(spacing: AppTheme.Spacing.md) {
                         ProgressView()
                         Text("Loading VoxStudio Cloud sessions…")
@@ -204,15 +213,20 @@ struct WorkbenchSessionDetailView: View {
                         SettingsWindowController.shared.show(tab: .voiceLibrary)
                     },
                     onStart: { referenceVoiceID in
-                        guard let transcriptionID = session.transcriptionID,
-                              let dubID = store.createDub(for: transcriptionID) else {
+                        guard let transcriptionID = session.transcriptionID else {
                             showDubOptionsSheet = false
                             return
                         }
-                        store.updateDub(dubID) { dub in
-                            dub.referenceVoiceID = referenceVoiceID
+                        Task { @MainActor in
+                            guard let dubID = await store.createDubAfterAccess(for: transcriptionID) else {
+                                showDubOptionsSheet = false
+                                return
+                            }
+                            store.updateDub(dubID) { dub in
+                                dub.referenceVoiceID = referenceVoiceID
+                            }
+                            showDubOptionsSheet = false
                         }
-                        showDubOptionsSheet = false
                     }
                 )
                 .appZoomEnvironment(presentationBoundary: true)
@@ -796,7 +810,13 @@ struct WorkbenchSessionDetailView: View {
         let isProcessing = session.status.showsProcessing || session.status.showsQueued
         return Menu {
             if session.transcriptionID != nil {
-                Button("Re-transcribe and rebuild subtitles") {
+                Button(session.subtitleTrack == nil ? "Segment subtitles" : "Re-segment subtitles") {
+                    if let transcriptionID = session.transcriptionID {
+                        store.prepareSubtitles(transcriptionID)
+                    }
+                }
+                .disabled(isProcessing || (session.transcript == nil && session.sourceURL == nil))
+                Button("Re-transcribe") {
                     showRetranscribeSheet = true
                 }
                 .disabled(isProcessing || session.sourceURL == nil)
@@ -899,12 +919,14 @@ struct WorkbenchSessionDetailView: View {
         let hasTranslations = !session.translationTracks.isEmpty
 
         VStack(spacing: AppTheme.Spacing.sm) {
-            HStack(spacing: AppTheme.Spacing.xs) {
+            ZStack(alignment: .trailing) {
                 Button {
                     selectedTab = tab
                 } label: {
                     Text(tab.title)
                         .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 24)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
 
@@ -948,6 +970,7 @@ struct WorkbenchSessionDetailView: View {
                     .menuIndicator(.hidden)
                 }
             }
+            .frame(minWidth: 108, minHeight: 24)
             .foregroundStyle(isActive ? AppTheme.Text.primaryColor : AppTheme.Text.tertiaryColor)
 
             Rectangle()
@@ -1210,7 +1233,9 @@ struct WorkbenchSessionDetailView: View {
 
     private func openWorkflow(_ session: WorkbenchSession) {
         if let transcriptionID = session.transcriptionID {
-            _ = store.createDub(for: transcriptionID)
+            Task { @MainActor in
+                _ = await store.createDubAfterAccess(for: transcriptionID)
+            }
         } else if let dubID = session.dubID {
             store.selectedDubID = dubID
             store.route = .dub
@@ -1511,7 +1536,7 @@ private struct SessionMediaPlayer: View {
         SwiftUI.TimelineView(
             .periodic(from: .now, by: AppTheme.Workbench.playerRefreshInterval)
         ) { _ in
-            let currentTime = playback.player?.currentTime().seconds.finiteOrZero ?? 0
+            let currentTime = playback.currentTime
             let cueText = playback.activeSubtitleText(at: currentTime)
             let isVideoReady = playback.playerViewRef?.playerLayer.isReadyForDisplay == true
             VStack(spacing: 0) {
@@ -1585,7 +1610,7 @@ private struct SessionMediaPlayer: View {
         SwiftUI.TimelineView(
             .periodic(from: .now, by: AppTheme.Workbench.playerRefreshInterval)
         ) { _ in
-            let currentTime = playback.player?.currentTime().seconds.finiteOrZero ?? 0
+            let currentTime = playback.currentTime
             VStack(spacing: AppTheme.Spacing.smMd) {
                 AudioWaveformView(
                     peaks: playback.peaks,
@@ -1601,23 +1626,24 @@ private struct SessionMediaPlayer: View {
 
     private func videoControls(currentTime: Double) -> some View {
         VStack(spacing: AppTheme.Spacing.sm) {
-            Slider(
-                value: Binding(
-                    get: {
-                        playback.duration > 0
-                            ? min(1, max(0, currentTime / playback.duration))
-                            : 0
-                    },
-                    set: { playback.seek(to: $0) }
-                ),
-                in: 0...1
+            SessionPlaybackSeekBar(
+                progress: playbackProgress(currentTime),
+                isEnabled: playback.player != nil && playback.duration > 0,
+                isPlaying: playback.isPlaying,
+                onSeek: { progress, resumesPlayback in
+                    playback.seek(to: progress, resumesPlayback: resumesPlayback)
+                }
             )
-            .disabled(playback.player == nil || playback.duration <= 0)
             transportRow(currentTime: currentTime, includeAdvancedControls: true)
         }
         .padding(.horizontal, AppTheme.Spacing.md)
         .padding(.vertical, AppTheme.Spacing.smMd)
-        .background(AppTheme.Background.surfaceColor)
+            .background(AppTheme.Background.surfaceColor)
+    }
+
+    private func playbackProgress(_ currentTime: Double) -> Double {
+        guard playback.duration > 0 else { return 0 }
+        return min(1, max(0, currentTime / playback.duration))
     }
 
     private func transportRow(currentTime: Double, includeAdvancedControls: Bool) -> some View {
@@ -1633,18 +1659,15 @@ private struct SessionMediaPlayer: View {
             .disabled(playback.player == nil)
 
             if !includeAdvancedControls {
-                Slider(
-                    value: Binding(
-                        get: {
-                            playback.duration > 0
-                                ? min(1, max(0, currentTime / playback.duration))
-                                : 0
-                        },
-                        set: { playback.seek(to: $0) }
-                    ),
-                    in: 0...1
+                SessionPlaybackSeekBar(
+                    progress: playbackProgress(currentTime),
+                    isEnabled: playback.player != nil && playback.duration > 0,
+                    isPlaying: playback.isPlaying,
+                    onSeek: { progress, resumesPlayback in
+                        playback.seek(to: progress, resumesPlayback: resumesPlayback)
+                    }
                 )
-                .disabled(playback.player == nil || playback.duration <= 0)
+                .frame(maxWidth: .infinity)
             }
 
             Text("\(formatTime(currentTime)) / \(formatTime(playback.duration))")

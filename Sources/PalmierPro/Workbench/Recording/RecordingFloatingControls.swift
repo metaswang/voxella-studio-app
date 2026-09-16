@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class RecordingFloatingControlsController {
     private var panel: NSPanel?
-    private var zoomObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var zoomObserver: NSObjectProtocol?
 
     init() {
         zoomObserver = NotificationCenter.default.addObserver(
@@ -18,7 +18,7 @@ final class RecordingFloatingControlsController {
         }
     }
 
-    isolated deinit {
+    deinit {
         if let zoomObserver {
             NotificationCenter.default.removeObserver(zoomObserver)
         }
@@ -26,9 +26,10 @@ final class RecordingFloatingControlsController {
 
     func present(session: RecordingSessionController, displayID: UInt32? = nil) {
         guard panel == nil else { return }
+        let scale = AppZoomScale.shared.scale
         let size = NSSize(
-            width: AppTheme.Workbench.recordingControlsWidth,
-            height: AppTheme.Workbench.recordingControlsHeight
+            width: AppTheme.Workbench.recordingControlsWidth * scale,
+            height: AppTheme.Workbench.recordingControlsHeight * scale
         )
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
@@ -44,13 +45,15 @@ final class RecordingFloatingControlsController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.contentView = RecordingControlsHostingView(rootView: AnyView(RecordingFloatingControlsView(session: session).appZoomEnvironment()))
+        panel.contentView = RecordingControlsHostingView(
+            rootView: RecordingFloatingControlsView(session: session).appZoomEnvironment()
+        )
         let screen = NSScreen.screens.first { $0.displayID == displayID }
             ?? NSScreen.main ?? NSScreen.screens.first
         if let frame = screen?.visibleFrame {
             panel.setFrameOrigin(NSPoint(
                 x: frame.midX - size.width / 2,
-                y: frame.maxY - size.height - AppTheme.Spacing.lg
+                y: frame.maxY - size.height - AppTheme.Spacing.lg * scale
             ))
         }
         self.panel = panel
@@ -74,14 +77,20 @@ final class RecordingFloatingControlsController {
 
     private func applyZoomScale() {
         guard let panel else { return }
-        panel.setContentSizePreservingCenter(NSSize(
-            width: AppTheme.Workbench.recordingControlsWidth,
-            height: AppTheme.Workbench.recordingControlsHeight
+        let scale = AppZoomScale.shared.scale
+        let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        panel.setContentSize(NSSize(
+            width: AppTheme.Workbench.recordingControlsWidth * scale,
+            height: AppTheme.Workbench.recordingControlsHeight * scale
+        ))
+        panel.setFrameOrigin(NSPoint(
+            x: center.x - panel.frame.width / 2,
+            y: center.y - panel.frame.height / 2
         ))
     }
 }
 
-private final class RecordingControlsHostingView: NSHostingView<AnyView> {
+private final class RecordingControlsHostingView<Content: View>: NSHostingView<Content> {
     override var mouseDownCanMoveWindow: Bool { true }
 }
 

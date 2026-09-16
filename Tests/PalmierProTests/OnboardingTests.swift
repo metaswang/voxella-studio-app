@@ -40,6 +40,20 @@ struct OnboardingTests {
         #expect(LocalPreparationFeature.dubbing.requiredIDs(asrModelID: .whisperLargeV3Turbo8Bit) == [.qwenTTS17B, .forcedAligner])
     }
 
+    @Test func knowledgeRankingPreparesAllKnowledgeQADependencies() {
+        #expect(LocalPreparationFeature.knowledgeRanking.requiredIDs(
+            asrModelID: .whisperLargeV3Turbo8Bit
+        ) == [.weMMEmbedding2B4Bit, .qwen3Reranker06B4Bit])
+    }
+
+    @Test func firstRunFeatureSelectionIncludesKnowledgeRanking() {
+        #expect(LocalPreparationFeature.allCases.contains(.knowledgeRanking))
+        #expect(LocalPreparationFeature.requiredIDs(
+            for: [.knowledgeRanking],
+            asrModelID: .whisperLargeV3Turbo8Bit
+        ) == [.weMMEmbedding2B4Bit, .qwen3Reranker06B4Bit])
+    }
+
     @Test func setupPersistsSelectionButRequiresExplicitCompletion() throws {
         let name = "OnboardingTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: name))

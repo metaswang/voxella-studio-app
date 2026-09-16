@@ -15,6 +15,7 @@ final class SessionIndexCoordinator {
     private var pendingRemovals: Set<UUID> = []
     private var pendingRetainIDs: Set<UUID>?
     private var embeddingQueue: [UUID] = []
+    private var graphQueue: Set<UUID> = []
 
     private init() {
         let url = Self.indexURL
@@ -124,6 +125,28 @@ final class SessionIndexCoordinator {
         }
     }
 
+    func backfillKnowledgeGraph() {
+        guard KnowledgeGraphAvailability.canRun(.graphExtraction) else { return }
+        let origins = KnowledgeSourceOrigin.effectiveOrigins(
+            isSignedIn: AccountService.shared.isSignedIn
+        )
+        let owner = AccountService.shared.userID?.uuidString
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let sources = try await self.store.graphSourcesNeedingRebuild(
+                    sourceOrigins: origins,
+                    cloudOwnerUserID: owner
+                )
+                guard KnowledgeGraphAvailability.canRun(.graphExtraction) else { return }
+                self.graphQueue.formUnion(sources.map(\.sessionID))
+                self.pump()
+            } catch {
+                Log.search.warning("knowledge graph backfill discovery failed error=\(error.localizedDescription)")
+            }
+        }
+    }
+
     private var embeddingsAvailable: Bool {
         #if BUNDLED_SPEECH
         LocalModelManager.shared.state(for: SearchIndexConfig.modelID).isInstalled
@@ -139,6 +162,7 @@ final class SessionIndexCoordinator {
             || !pendingRemovals.isEmpty
             || pendingRetainIDs != nil
             || (!embeddingQueue.isEmpty && embeddingsAvailable)
+            || (!graphQueue.isEmpty && KnowledgeGraphAvailability.canRun(.graphExtraction))
     }
 
     private func enqueueEmbedding(_ sessionID: UUID) {
@@ -193,13 +217,20 @@ final class SessionIndexCoordinator {
                     generation: snapshot.generation
                 ) {
                 case .skip:
+                    // A generation-equivalent row may still have stale owner or
+                    // source metadata (notably pre-migration cloud rows).
+                    try await store.patchSessionMetadata(snapshot: snapshot)
                     continue
                 case .embedOnly:
+                    try await store.patchSessionMetadata(snapshot: snapshot)
                     enqueueEmbedding(snapshot.sessionID)
                 case .replace:
                     let clips = clipWindows(for: snapshot)
                     try await store.replaceLexical(snapshot: snapshot, clips: clips)
                     enqueueEmbedding(snapshot.sessionID)
+                    if KnowledgeGraphSettings.shared.isEnabled {
+                        graphQueue.insert(snapshot.sessionID)
+                    }
                 }
             } catch {
                 Log.search.error(
@@ -222,6 +253,7 @@ final class SessionIndexCoordinator {
         }
 
         await embedPending()
+        await ingestKnowledgeGraphPending()
     }
 
     private func embedPending() async {
@@ -280,6 +312,28 @@ final class SessionIndexCoordinator {
         #endif
     }
 
+    private func ingestKnowledgeGraphPending() async {
+        guard KnowledgeGraphAvailability.canRun(.graphExtraction) else { return }
+        let sourceIDs = graphQueue
+        graphQueue.removeAll()
+        let ingestion = KnowledgeGraphIngestionService(store: store)
+        for sessionID in sourceIDs {
+            guard !Task.isCancelled,
+                  KnowledgeGraphAvailability.canRun(.graphExtraction)
+            else { return }
+            do {
+                guard let source = try await store.graphSource(sessionID: sessionID) else { continue }
+                try await ingestion.rebuild(source)
+            } catch is CancellationError {
+                return
+            } catch {
+                Log.search.warning(
+                    "knowledge graph ingest failed id=\(sessionID.uuidString) error=\(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
     private func clipWindows(for snapshot: SessionIndexSnapshot) -> [CuePacker.Clip] {
         if !snapshot.cues.isEmpty {
             return CuePacker.pack(cues: snapshot.cues, shotBounds: snapshot.shotBounds)
@@ -321,6 +375,8 @@ extension SessionIndexSnapshot {
             hasVideo: Self.isVideo(job.sourcePath),
             mediaPath: job.sourcePath,
             sourceMTime: job.modifiedAt.timeIntervalSince1970,
+            sourceCreatedAt: job.createdAt.timeIntervalSince1970,
+            sourceModifiedAt: job.modifiedAt.timeIntervalSince1970,
             generation: SessionIndexSnapshot.generation(modifiedAt: job.modifiedAt),
             speakers: speakers(in: job),
             segments: segments,
@@ -329,7 +385,10 @@ extension SessionIndexSnapshot {
             shotBounds: [],
             sourceOrigin: origin,
             remoteSessionID: job.remoteSessionID,
-            ownerUserID: nil
+            ownerUserID: nil,
+            sessionType: job.isRecordedCapture
+                ? .record
+                : (job.netVideoSourceURL == nil ? .upload : .netVideo)
         )
     }
 
@@ -371,6 +430,8 @@ extension SessionIndexSnapshot {
             hasVideo: session.remoteSourceHasVideo == true || Self.isVideo(mediaPath),
             mediaPath: mediaPath,
             sourceMTime: session.modifiedAt.timeIntervalSince1970,
+            sourceCreatedAt: session.createdAt.timeIntervalSince1970,
+            sourceModifiedAt: session.modifiedAt.timeIntervalSince1970,
             generation: SessionIndexSnapshot.generation(modifiedAt: session.modifiedAt),
             speakers: labels.map { SessionSpeaker(label: $0, displayName: $0) },
             segments: segments,
@@ -379,7 +440,8 @@ extension SessionIndexSnapshot {
             shotBounds: [],
             sourceOrigin: sourceOrigin,
             remoteSessionID: session.remoteSessionID ?? session.id,
-            ownerUserID: ownerUserID
+            ownerUserID: ownerUserID,
+            sessionType: session.sessionType
         )
     }
 

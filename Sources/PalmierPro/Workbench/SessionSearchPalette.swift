@@ -450,7 +450,9 @@ struct SessionSearchPalette: View {
         case .netVideo:
             store.showNetVideoImport()
         case .dub:
-            store.addDub()
+            Task { @MainActor in
+                _ = await store.addDubAfterAccess()
+            }
         case .videoEditor:
             store.route = .videoEditor
         }

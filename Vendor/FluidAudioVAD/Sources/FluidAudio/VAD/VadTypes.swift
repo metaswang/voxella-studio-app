@@ -12,7 +12,7 @@ public struct VadConfig: Sendable {
     public init(
         defaultThreshold: Float = 0.85,
         debugMode: Bool = false,
-        computeUnits: MLComputeUnits = .cpuAndNeuralEngine
+        computeUnits: MLComputeUnits = .cpuOnly
     ) {
         self.defaultThreshold = defaultThreshold
         self.debugMode = debugMode

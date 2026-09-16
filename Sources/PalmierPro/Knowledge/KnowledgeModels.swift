@@ -1,8 +1,7 @@
 import Foundation
 
 enum KnowledgeQAModelPolicy {
-    /// P1+: include Qwen3-Reranker when a `LocalModelID` exists.
-    static let includeReranker = false
+    static let includeReranker = true
 
     /// Local MLX answer model from Settings, if/when cataloged.
     /// P0 answer is hosted/BYOK (`AITransportPolicy`); nil = cloud-only answer.
@@ -281,6 +280,8 @@ struct KnowledgeSourceRef: Equatable, Hashable, Codable, Identifiable, Sendable 
     var language: String?
     var speaker: String?
     var snippet: String?
+    /// The retrieved text to highlight in the transcript.
+    var matchText: String?
 
     var sessionUUID: UUID? { UUID(uuidString: sourceID) }
 
@@ -304,7 +305,62 @@ struct KnowledgeSourceRef: Equatable, Hashable, Codable, Identifiable, Sendable 
     }
 }
 
+struct KnowledgeTranscriptTarget: Equatable, Sendable {
+    let startTime: Double?
+    let endTime: Double?
+    let matchText: String?
+
+    init(startTime: Double?, endTime: Double?, matchText: String?) {
+        self.startTime = startTime
+        self.endTime = endTime
+        self.matchText = matchText
+    }
+
+    init(source: KnowledgeSourceRef) {
+        self.init(
+            startTime: source.startTime,
+            endTime: source.endTime,
+            matchText: source.matchText ?? source.snippet
+        )
+    }
+}
+
+enum KnowledgeTranscriptNavigation {
+    static func segmentIndex(
+        for target: KnowledgeTranscriptTarget,
+        in segments: [TranscriptionSegment]
+    ) -> Int? {
+        guard !segments.isEmpty else { return nil }
+
+        if let start = target.startTime, start.isFinite {
+            let end = if let candidate = target.endTime, candidate.isFinite {
+                max(start, candidate)
+            } else {
+                start
+            }
+            let validIndices = segments.indices.filter { index in
+                segments[index].start.isFinite && segments[index].end.isFinite
+            }
+            if let overlapping = validIndices.first(where: { index in
+                let segment = segments[index]
+                return segment.start <= end && segment.end >= start
+            }) {
+                return overlapping
+            }
+
+            return validIndices.min { lhs, rhs in
+                abs(segments[lhs].start - start) < abs(segments[rhs].start - start)
+            }
+        }
+
+        return nil
+    }
+}
+
 struct KnowledgeQARequest: Sendable {
+    /// Identifies one user submission so late events from a cancelled request
+    /// cannot mutate the next request's UI state.
+    let requestID: UUID
     var queryText: String
     var conversationID: UUID
     var scope: KnowledgeQAScope
@@ -320,8 +376,10 @@ struct KnowledgeQARequest: Sendable {
         answerMode: KnowledgeAnswerMode = .normal,
         allowCloud: Bool = true,
         originFilter: Set<KnowledgeSourceOrigin>? = nil,
-        history: [KnowledgeMessage] = []
+        history: [KnowledgeMessage] = [],
+        requestID: UUID = UUID()
     ) {
+        self.requestID = requestID
         self.queryText = queryText
         self.conversationID = conversationID
         self.scope = scope
@@ -336,8 +394,14 @@ enum KnowledgeAnswerEvent: Sendable {
     case status(String)
     case delta(String)
     case citations([KnowledgeSourceRef])
+    case recoveryActions([KnowledgeRecoveryAction])
     case finished(String)
     case failed(String)
+}
+
+enum KnowledgeRecoveryAction: String, Codable, CaseIterable, Sendable {
+    case account
+    case aiSettings
 }
 
 enum KnowledgeMessageRole: String, Codable, Sendable {
@@ -354,6 +418,7 @@ struct KnowledgeMessage: Identifiable, Equatable, Codable, Sendable {
     var citations: [KnowledgeSourceRef]
     var createdAt: Date
     var isStreaming: Bool
+    var recoveryActions: [KnowledgeRecoveryAction]
 
     init(
         id: UUID = UUID(),
@@ -362,7 +427,8 @@ struct KnowledgeMessage: Identifiable, Equatable, Codable, Sendable {
         content: String,
         citations: [KnowledgeSourceRef] = [],
         createdAt: Date = .now,
-        isStreaming: Bool = false
+        isStreaming: Bool = false,
+        recoveryActions: [KnowledgeRecoveryAction] = []
     ) {
         self.id = id
         self.conversationID = conversationID
@@ -371,6 +437,86 @@ struct KnowledgeMessage: Identifiable, Equatable, Codable, Sendable {
         self.citations = citations
         self.createdAt = createdAt
         self.isStreaming = isStreaming
+        self.recoveryActions = recoveryActions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, conversationID, role, content, citations, createdAt, isStreaming, recoveryActions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        conversationID = try container.decode(UUID.self, forKey: .conversationID)
+        role = try container.decode(KnowledgeMessageRole.self, forKey: .role)
+        content = try container.decode(String.self, forKey: .content)
+        citations = try container.decodeIfPresent([KnowledgeSourceRef].self, forKey: .citations) ?? []
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        isStreaming = try container.decodeIfPresent(Bool.self, forKey: .isStreaming) ?? false
+        recoveryActions = try container.decodeIfPresent([KnowledgeRecoveryAction].self, forKey: .recoveryActions) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(conversationID, forKey: .conversationID)
+        try container.encode(role, forKey: .role)
+        try container.encode(content, forKey: .content)
+        try container.encode(citations, forKey: .citations)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(isStreaming, forKey: .isStreaming)
+        try container.encode(recoveryActions, forKey: .recoveryActions)
+    }
+}
+
+@MainActor
+enum KnowledgeAnswerAvailability: Equatable {
+    case ready
+    case localAccessRequired
+    case signInOrBYOKRequired
+    case byokAnswerRouteRequired
+    case byokGraphRouteRequired
+    case hostedCreditsExhausted
+
+    static func current() -> Self {
+        guard AccountService.shared.hasFeatureAccess else { return .localAccessRequired }
+        switch AITransportPolicy.current {
+        case .unavailable:
+            return .signInOrBYOKRequired
+        case .hosted:
+            return HostedCreditAvailability.shared.isExhausted ? .hostedCreditsExhausted : .ready
+        case .byok:
+            guard LLMSettingsStore.shared.hasConfiguredModel(for: .chat) else {
+                return .byokAnswerRouteRequired
+            }
+            if KnowledgeGraphSettings.shared.isEnabled,
+               (!LLMSettingsStore.shared.hasConfiguredModel(for: .graphExtraction)
+                    || !LLMSettingsStore.shared.hasConfiguredModel(for: .graphQueryUnderstanding))
+            {
+                return .byokGraphRouteRequired
+            }
+            return .ready
+        }
+    }
+
+    var message: String? {
+        switch self {
+        case .ready: nil
+        case .localAccessRequired: "Trial or Lifetime access is required to use the local Knowledge Base."
+        case .signInOrBYOKRequired: "Sign in or configure BYOK to ask your knowledge base."
+        case .byokAnswerRouteRequired: "Configure a chat model and API key in Settings → AI before asking."
+        case .byokGraphRouteRequired: "Configure Graph extraction and Graph query task models in Settings → AI, or turn off graph recall."
+        case .hostedCreditsExhausted: "Hosted AI credits are exhausted. Manage credits or configure BYOK in Settings → AI."
+        }
+    }
+
+    var recoveryActions: [KnowledgeRecoveryAction] {
+        switch self {
+        case .signInOrBYOKRequired: [.account, .aiSettings]
+        case .byokAnswerRouteRequired, .byokGraphRouteRequired: [.aiSettings]
+        case .hostedCreditsExhausted: [.account, .aiSettings]
+        case .ready, .localAccessRequired: []
+        }
     }
 }
 

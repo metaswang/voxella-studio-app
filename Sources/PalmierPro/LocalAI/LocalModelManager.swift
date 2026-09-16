@@ -16,11 +16,11 @@ enum LocalModelID: String, Codable, CaseIterable, Identifiable, Sendable {
     case spokenLanguageID
     case forcedAligner
     case sileroVAD
-    case sileroVADMLX
     case sortformerDiarization
     case weSpeaker
     case qwenTTS17B
     case weMMEmbedding2B4Bit
+    case qwen3Reranker06B4Bit
 
     var id: String { rawValue }
 
@@ -145,6 +145,7 @@ struct LocalModelDescriptor: Identifiable, Sendable {
         case transcribe
         case dub
         case search
+        case knowledgeRanking
     }
 }
 
@@ -345,7 +346,7 @@ final class LocalModelManager {
         .init(
             id: .sileroVAD,
             title: "Silero VAD v6 Core ML",
-            purpose: "Speech-region detection on the Neural Engine",
+            purpose: "Speech detection on CPU Core ML",
             repository: "FluidInference/silero-vad-coreml",
             weightFilename: LocalSpeechVAD.coreMLBundleName,
             revision: "b419383c55c110e2c9271fa6ee0ea83d03c70d96",
@@ -358,21 +359,6 @@ final class LocalModelManager {
             requiredFor: [.transcribe],
             isRecommended: true,
             storage: .coreMLBundle(directoryName: LocalSpeechVAD.coreMLBundleName)
-        ),
-        .init(
-            id: .sileroVADMLX,
-            title: "Silero VAD v6 MLX",
-            purpose: "32 ms ASR speech-probability detection",
-            repository: "mlx-community/silero-vad-v6",
-            revision: "2ebf4a5e10726a2e78ddd4d70eedfb6f1c33eb06",
-            weightByteSize: 1_237_860,
-            weightSHA256: "65b6c5f0293cbc44d109e58bef78b474d9c65dedbee814cf0b90ef5f0d9150ff",
-            byteSize: 1_238_323,
-            sizeLabel: "~ 1.3 MB",
-            license: "MIT",
-            licenseURL: URL(string: "https://github.com/snakers4/silero-vad/blob/master/LICENSE"),
-            requiredFor: [.transcribe],
-            isRecommended: true
         ),
         .init(
             id: .sortformerDiarization,
@@ -430,7 +416,7 @@ final class LocalModelManager {
             sizeLabel: "~ 2.03 GB",
             license: "Apache-2.0",
             licenseURL: URL(string: "https://huggingface.co/tencent/WeMM-Embedding-2B/blob/main/LICENSE"),
-            requiredFor: [.search],
+            requiredFor: [.search, .knowledgeRanking],
             isRecommended: true,
             requiredArtifacts: [
                 .init(filename: "config.json", byteSize: 3_537, sha256: "c5abba86ba31264a074383cd164e23627f0dce1a22bdc6c23c96237af8bd3839"),
@@ -438,6 +424,28 @@ final class LocalModelManager {
                 .init(filename: "tokenizer.json", byteSize: 19_990_378, sha256: "40e444c744512f423da4c8443c47c21e22ff76056ba4e9796a81c04c13a9daf0"),
                 .init(filename: "tokenizer_config.json", byteSize: 1_171, sha256: "b34b3377d4a32eda1a4898aea3f738a98e51aaf8038cc4f465b015d11298c8d1"),
                 .init(filename: "model.safetensors.index.json", byteSize: 81_908, sha256: "fbb49af67f30c6ebf7a2a260403b5759c16f29ce6670c90389467d6bedd059f8"),
+            ]
+        ),
+        .init(
+            id: .qwen3Reranker06B4Bit,
+            title: "Qwen3 Reranker 0.6B 4-bit",
+            purpose: "On-device relevance ranking for knowledge-base evidence",
+            repository: "mlx-community/Qwen3-Reranker-0.6B-4bit",
+            revision: "5f324548f1d20c2b5a450f126fc6ef2fb1126524",
+            weightByteSize: 335_296_756,
+            weightSHA256: "1d212560a5b1c36186787fdae19f11f20fecfc29bef91522e12a8e0d118f4545",
+            byteSize: 346_711_934,
+            sizeLabel: "~ 347 MB",
+            license: "Apache-2.0",
+            licenseURL: URL(string: "https://huggingface.co/mlx-community/Qwen3-Reranker-0.6B-4bit"),
+            requiredFor: [.knowledgeRanking],
+            isRecommended: true,
+            requiredArtifacts: [
+                .init(filename: "config.json", byteSize: 1_021, sha256: "09adff58b65e9305009c9caa4923b3365b18dd2f84135b44168aaf869278bea4"),
+                .init(filename: "generation_config.json", byteSize: 214, sha256: "81051cd3f6e77013827148d0b8a6ead93f8ac390d5ab805f849199f0af6a08db"),
+                .init(filename: "model.safetensors.index.json", byteSize: 49_770, sha256: "90d82744cdb6b7d093f0b812fc21a49b6ffa9d0084a45428f0cfd01eb4adbe12"),
+                .init(filename: "tokenizer.json", byteSize: 11_422_650, sha256: "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"),
+                .init(filename: "tokenizer_config.json", byteSize: 377, sha256: "1689852cc9c45010de040c8302a8acdc0d2c4c6c740dd7e9dd0a8c704e16eada"),
             ]
         ),
     ]
@@ -970,6 +978,11 @@ final class LocalModelManager {
         return true
     }
 
+    nonisolated static func isInstalled(_ id: LocalModelID) -> Bool {
+        guard let model = catalog.first(where: { $0.id == id }) else { return false }
+        return isInstalled(model)
+    }
+
     private nonisolated static func hasWeights(in directory: URL) -> Bool {
         if FileManager.default.fileExists(
             atPath: directory.appendingPathComponent(LocalSpeechVAD.coreMLBundleName).path
@@ -1235,7 +1248,8 @@ final class LocalModelManager {
     private nonisolated static func additionalFiles(for id: LocalModelID) -> [String] {
         switch id {
         case .whisperLargeV3Turbo8Bit, .whisperLargeV3TurboFP16,
-             .qwen3ASR17B8Bit, .parakeetTDT06Bv3, .weMMEmbedding2B4Bit:
+             .qwen3ASR17B8Bit, .parakeetTDT06Bv3, .weMMEmbedding2B4Bit,
+             .qwen3Reranker06B4Bit:
             catalog.first(where: { $0.id == id })?.requiredArtifacts.map(\.filename) ?? []
         case .forcedAligner:
             ["vocab.json", "merges.txt", "tokenizer_config.json", "quantize_config.json"]
@@ -1243,8 +1257,6 @@ final class LocalModelManager {
             ["vocab.json", "merges.txt", "tokenizer_config.json"]
         case .sileroVAD:
             LocalSpeechVAD.requiredBundleFiles.map { "\(LocalSpeechVAD.coreMLBundleName)/\($0)" }
-        case .sileroVADMLX:
-            []
         case .spokenLanguageID, .sortformerDiarization, .weSpeaker:
             []
         }

@@ -5,6 +5,7 @@ enum LocalPreparationFeature: String, CaseIterable, Identifiable, Codable, Senda
     case transcription
     case dubbing
     case search
+    case knowledgeRanking
 
     var id: String { rawValue }
 
@@ -13,6 +14,7 @@ enum LocalPreparationFeature: String, CaseIterable, Identifiable, Codable, Senda
         case .transcription: "Transcription & Captions"
         case .dubbing: "Dubbing"
         case .search: "Search by meaning"
+        case .knowledgeRanking: "Knowledge ranking"
         }
     }
 
@@ -21,6 +23,7 @@ enum LocalPreparationFeature: String, CaseIterable, Identifiable, Codable, Senda
         case .transcription: "Turn recordings into editable text and timed captions on this Mac."
         case .dubbing: "Create a voiceover from your script on this Mac."
         case .search: "Search sessions, videos, and images by meaning or what appears on screen."
+        case .knowledgeRanking: "Rank evidence for Knowledge Base answers on this Mac."
         }
     }
 
@@ -29,6 +32,7 @@ enum LocalPreparationFeature: String, CaseIterable, Identifiable, Codable, Senda
         case .transcription: "text.bubble"
         case .dubbing: "waveform"
         case .search: "sparkle.magnifyingglass"
+        case .knowledgeRanking: "books.vertical"
         }
     }
 
@@ -40,6 +44,11 @@ enum LocalPreparationFeature: String, CaseIterable, Identifiable, Codable, Senda
             LocalModelInstallPlan.dubPlan(modelID: .qwenTTS17B, isInstalled: { _ in false }).items.map(\.id)
         case .search:
             [SearchIndexConfig.modelID]
+        case .knowledgeRanking:
+            LocalModelInstallPlan.knowledgeQARequiredIDs(
+                answerModelID: nil,
+                includeReranker: true
+            )
         }
     }
 

@@ -20,35 +20,36 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
 
     private var converter: AVAudioConverter?
     private var converterInputFormat: AVAudioFormat?
-    private var pts = CMTime.zero
-    private var didStartPTS = false
     private var didLogInputFormat = false
 
     func reset() {
         converter = nil
         converterInputFormat = nil
-        pts = .zero
-        didStartPTS = false
         didLogInputFormat = false
     }
 
-    func transcode(_ sampleBuffer: CMSampleBuffer, timelineStart: CMTime = .zero) -> CMSampleBuffer? {
+    func transcode(_ sampleBuffer: CMSampleBuffer, presentationTime: CMTime = .zero) -> CMSampleBuffer? {
         guard let input = Self.pcmBuffer(from: sampleBuffer),
               let converted = resample(input) else {
             return nil
         }
-        if !didStartPTS {
-            pts = timelineStart
-            didStartPTS = true
-        }
-        guard let output = Self.makeSampleBuffer(from: converted, presentationTime: pts) else {
+        return Self.makeSampleBuffer(from: converted, presentationTime: presentationTime)
+    }
+
+    func flush() -> AVAudioPCMBuffer? {
+        guard let converter, converterInputFormat != nil else { return nil }
+        let capacity = AVAudioFrameCount(8_192)
+        guard let output = AVAudioPCMBuffer(pcmFormat: Self.canonicalFormat, frameCapacity: capacity) else {
             return nil
         }
-        let duration = CMTime(
-            value: CMTimeValue(converted.frameLength),
-            timescale: CMTimeScale(Self.sampleRate)
-        )
-        pts = CMTimeAdd(pts, duration)
+        var conversionError: NSError?
+        let status = converter.convert(to: output, error: &conversionError) { _, status in
+            status.pointee = .endOfStream
+            return nil
+        }
+        guard conversionError == nil, status != .error, output.frameLength > 0 else {
+            return nil
+        }
         return output
     }
 
@@ -89,7 +90,6 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
         let status = converter.convert(to: output, error: &conversionError) { _, status in
             supplier.next(status: status)
         }
-        converter.reset()
         guard conversionError == nil, status != .error, output.frameLength > 0 else {
             Log.recording.error(
                 "recording audio conversion failed status=\(String(describing: status)) error=\(conversionError?.localizedDescription ?? "nil")"
@@ -132,7 +132,8 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
         frameCount: AVAudioFrameCount = 2_048,
         presentationTime: CMTime = .zero
     ) -> CMSampleBuffer? {
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: canonicalFormat, frameCapacity: frameCount) else {
+        guard frameCount > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: canonicalFormat, frameCapacity: frameCount) else {
             return nil
         }
         buffer.frameLength = frameCount
@@ -200,6 +201,21 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
         return sampleBuffer
     }
 
+    static func sampleDuration(_ sampleBuffer: CMSampleBuffer) -> CMTime {
+        let duration = CMSampleBufferGetDuration(sampleBuffer)
+        if duration.isValid, duration.isNumeric, duration.seconds > 0 {
+            return duration
+        }
+        let frames = CMSampleBufferGetNumSamples(sampleBuffer)
+        var timescale = CMTimeScale(sampleRate)
+        if let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
+           let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription),
+           streamDescription.pointee.mSampleRate > 0 {
+            timescale = CMTimeScale(streamDescription.pointee.mSampleRate)
+        }
+        return CMTime(value: CMTimeValue(max(frames, 1)), timescale: max(timescale, 1))
+    }
+
     private static func matchesCanonical(_ format: AVAudioFormat) -> Bool {
         isSameFormat(format, canonicalFormat)
     }
@@ -232,7 +248,7 @@ private final class ConversionInput: @unchecked Sendable {
 
     func next(status: UnsafeMutablePointer<AVAudioConverterInputStatus>) -> AVAudioBuffer? {
         guard !supplied else {
-            status.pointee = .endOfStream
+            status.pointee = .noDataNow
             return nil
         }
         supplied = true

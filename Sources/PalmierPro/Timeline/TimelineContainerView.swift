@@ -62,7 +62,6 @@ struct TimelineContainerView: NSViewRepresentable {
             name: .timelineClipColorsDidChange,
             object: nil
         )
-
         return container
     }
 

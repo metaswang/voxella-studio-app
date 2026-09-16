@@ -295,7 +295,7 @@ struct LocalFirstWorkbenchTests {
     @Test func exposesOnlyFirstReleaseRoutes() {
         #expect(
             WorkbenchRoute.allCases
-                == [.recent, .dashboard, .transcribe, .meetBot, .dub, .voiceLibrary, .videoEditor, .session]
+                == [.recent, .dashboard, .transcribe, .meetBot, .dub, .knowledge, .voiceLibrary, .videoEditor, .session]
         )
         #expect(Project.fileExtension == "voxella")
         #expect(Project.legacyFileExtension == "palmier")
@@ -322,12 +322,6 @@ struct LocalFirstWorkbenchTests {
         #expect(coreMLVAD.repository == "FluidInference/silero-vad-coreml")
         #expect(LocalSpeechVAD.requiredBundleFiles.allSatisfy { !$0.contains("*") })
         #expect(LocalSpeechVAD.requiredBundleFiles.contains("weights/weight.bin"))
-
-        let mlxVAD = catalog.first { $0.id == .sileroVADMLX }!
-        #expect(mlxVAD.weightByteSize == 1_237_860)
-        #expect(mlxVAD.weightSHA256.count == 64)
-        #expect(mlxVAD.storage == .safetensors)
-        #expect(mlxVAD.repository == "mlx-community/silero-vad-v6")
 
         let qwenASR = catalog.first { $0.id == .qwen3ASR17B8Bit }!
         let parakeetASR = catalog.first { $0.id == .parakeetTDT06Bv3 }!

@@ -5,7 +5,7 @@ actor SessionIndexStore {
     static let lexicalLimit = 30
     static let vectorLimit = 30
 
-    private let sqlite: SessionSQLite
+    let sqlite: SessionSQLite
 
     init(url: URL) throws {
         sqlite = try SessionSQLite(url: url)
@@ -26,6 +26,24 @@ actor SessionIndexStore {
         if !columns.contains("indexed_at") {
             try sqlite.execute("ALTER TABLE sessions ADD COLUMN indexed_at REAL")
         }
+        if !columns.contains("session_type") {
+            try sqlite.execute("ALTER TABLE sessions ADD COLUMN session_type TEXT NOT NULL DEFAULT 'upload'")
+        }
+        if !columns.contains("source_created_at") {
+            try sqlite.execute("ALTER TABLE sessions ADD COLUMN source_created_at REAL")
+        }
+        if !columns.contains("source_modified_at") {
+            try sqlite.execute("ALTER TABLE sessions ADD COLUMN source_modified_at REAL")
+        }
+        try sqlite.execute(
+            "UPDATE sessions SET source_modified_at = source_mtime WHERE source_modified_at IS NULL AND source_mtime IS NOT NULL"
+        )
+        // Legacy rows have no original creation field. Preserve the best
+        // available source timestamp so catalog consumers never confuse a
+        // missing date with the index rebuild time.
+        try sqlite.execute(
+            "UPDATE sessions SET source_created_at = COALESCE(source_created_at, source_mtime, created_at) WHERE source_created_at IS NULL"
+        )
     }
 
     func replaceLexical(snapshot: SessionIndexSnapshot, clips: [CuePacker.Clip]) throws {
@@ -37,8 +55,9 @@ actor SessionIndexStore {
                 INSERT INTO sessions(
                     id, title, tag, summary_markdown, language, duration_sec, has_video,
                     media_path, source_mtime, ingest_generation, lexical_ready, embedding_ready,
-                    created_at, modified_at, source_origin, remote_session_id, owner_user_id, indexed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?)
+                    created_at, modified_at, source_origin, remote_session_id, owner_user_id, indexed_at,
+                    session_type, source_created_at, source_modified_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 binds: [
                     .text(snapshot.sessionID.uuidString),
@@ -51,12 +70,15 @@ actor SessionIndexStore {
                     .text(snapshot.mediaPath),
                     .optional(snapshot.sourceMTime),
                     .int(snapshot.generation),
-                    .double(now),
-                    .double(now),
+                    .double(snapshot.sourceCreatedAt ?? now),
+                    .double(snapshot.sourceModifiedAt ?? snapshot.sourceMTime ?? now),
                     .text(snapshot.sourceOrigin.rawValue),
                     .optional(snapshot.remoteSessionID?.uuidString),
                     .optional(snapshot.ownerUserID),
                     .double(now),
+                    .text(snapshot.sessionType.rawValue),
+                    .optional(snapshot.sourceCreatedAt),
+                    .optional(snapshot.sourceModifiedAt ?? snapshot.sourceMTime),
                 ]
             )
             for speaker in snapshot.speakers {
@@ -129,13 +151,22 @@ actor SessionIndexStore {
         try sqlite.transaction {
             try sqlite.run(
                 """
-                UPDATE sessions SET title = ?, tag = ?, summary_markdown = ?, modified_at = ?
+                UPDATE sessions SET title = ?, tag = ?, summary_markdown = ?,
+                    session_type = ?, source_created_at = ?, source_modified_at = ?, source_mtime = ?,
+                    source_origin = ?, remote_session_id = ?, owner_user_id = ?, indexed_at = ?
                 WHERE id = ?
                 """,
                 binds: [
                     .text(snapshot.title),
                     .optional(snapshot.tag),
                     .optional(snapshot.summaryMarkdown),
+                    .text(snapshot.sessionType.rawValue),
+                    .optional(snapshot.sourceCreatedAt),
+                    .optional(snapshot.sourceModifiedAt ?? snapshot.sourceMTime),
+                    .optional(snapshot.sourceModifiedAt ?? snapshot.sourceMTime),
+                    .text(snapshot.sourceOrigin.rawValue),
+                    .optional(snapshot.remoteSessionID?.uuidString),
+                    .optional(snapshot.ownerUserID),
                     .double(Date().timeIntervalSince1970),
                     .text(snapshot.sessionID.uuidString),
                 ]
@@ -152,7 +183,7 @@ actor SessionIndexStore {
             )
             try sqlite.run("DELETE FROM vec_text WHERE unit_id = ?", binds: [.int(unitID)])
             try sqlite.run(
-                "UPDATE sessions SET embedding_ready = 0, modified_at = ? WHERE id = ?",
+                "UPDATE sessions SET embedding_ready = 0, indexed_at = ? WHERE id = ?",
                 binds: [.double(Date().timeIntervalSince1970), .text(snapshot.sessionID.uuidString)]
             )
             try sqlite.run("DELETE FROM units_fts WHERE rowid = ?", binds: [.int(unitID)])
@@ -190,7 +221,7 @@ actor SessionIndexStore {
 
     func markEmbeddingReady(_ sessionID: UUID, ready: Bool) throws {
         try sqlite.run(
-            "UPDATE sessions SET embedding_ready = ?, modified_at = ? WHERE id = ?",
+            "UPDATE sessions SET embedding_ready = ?, indexed_at = ? WHERE id = ?",
             binds: [
                 .bool(ready),
                 .double(Date().timeIntervalSince1970),
@@ -281,6 +312,62 @@ actor SessionIndexStore {
         return try card(from: row)
     }
 
+    /// Lists session metadata without requiring a text match. This powers
+    /// inventory-style QA queries and index diagnostics.
+    func sessionCatalog(filter: SessionSearchFilter = .init()) throws -> [SessionCatalogEntry] {
+        var sql = "SELECT * FROM sessions s WHERE 1 = 1"
+        var binds: [SessionSQLiteValue] = []
+        sql += Self.catalogFilterSQL(filter, binds: &binds)
+        sql += " ORDER BY COALESCE(s.source_modified_at, s.source_mtime, s.indexed_at, 0) DESC LIMIT ?"
+        binds.append(.int(filter.limit))
+        return try sqlite.query(sql, binds: binds).compactMap { row in
+            guard let id = row.text("id").flatMap(UUID.init(uuidString:)),
+                  let title = row.text("title") else { return nil }
+            let origin = row.text("source_origin").flatMap(KnowledgeSourceOrigin.init(rawValue:)) ?? .local
+            return SessionCatalogEntry(
+                sessionID: id,
+                title: title,
+                tag: row.text("tag"),
+                summaryMarkdown: row.text("summary_markdown"),
+                language: row.text("language"),
+                duration: row.double("duration_sec") ?? 0,
+                hasVideo: row.bool("has_video"),
+                mediaPath: row.text("media_path") ?? "",
+                sessionType: WorkbenchSessionType(rawValue: row.text("session_type") ?? "upload") ?? .upload,
+                sourceOrigin: origin,
+                remoteSessionID: row.text("remote_session_id").flatMap(UUID.init(uuidString:)),
+                ownerUserID: row.text("owner_user_id"),
+                sourceCreatedAt: row.double("source_created_at"),
+                sourceModifiedAt: row.double("source_modified_at") ?? row.double("source_mtime"),
+                lexicalReady: row.bool("lexical_ready"),
+                embeddingReady: row.bool("embedding_ready"),
+                indexedAt: row.double("indexed_at")
+            )
+        }
+    }
+
+    /// Repairs identity and source metadata without rebuilding transcript units.
+    func patchSessionMetadata(snapshot: SessionIndexSnapshot) throws {
+        try sqlite.run(
+            """
+            UPDATE sessions SET title = ?, tag = ?, summary_markdown = ?, language = ?,
+                duration_sec = ?, has_video = ?, media_path = ?, source_mtime = ?,
+                source_origin = ?, remote_session_id = ?, owner_user_id = ?, session_type = ?,
+                source_created_at = ?, source_modified_at = ?, indexed_at = ?
+            WHERE id = ?
+            """,
+            binds: [
+                .text(snapshot.title), .optional(snapshot.tag), .optional(snapshot.summaryMarkdown),
+                .optional(snapshot.language), .double(snapshot.duration), .bool(snapshot.hasVideo),
+                .text(snapshot.mediaPath), .optional(snapshot.sourceModifiedAt ?? snapshot.sourceMTime),
+                .text(snapshot.sourceOrigin.rawValue), .optional(snapshot.remoteSessionID?.uuidString),
+                .optional(snapshot.ownerUserID), .text(snapshot.sessionType.rawValue),
+                .optional(snapshot.sourceCreatedAt), .optional(snapshot.sourceModifiedAt ?? snapshot.sourceMTime),
+                .double(Date().timeIntervalSince1970), .text(snapshot.sessionID.uuidString),
+            ]
+        )
+    }
+
     func searchLexical(
         query: String,
         kinds: [SessionIndexUnitKind],
@@ -291,7 +378,9 @@ actor SessionIndexStore {
         let kindList = kinds.map { "'\($0.rawValue)'" }.joined(separator: ",")
         var sql = """
         SELECT u.id, u.session_id, u.kind, u.start_s, u.end_s, u.speaker_label, u.text,
-               u.cue_ids, s.title, s.has_video, s.language, bm25(units_fts) AS rank
+               u.cue_ids, s.title, s.has_video, s.language, s.duration_sec, s.source_origin,
+               s.session_type, s.source_created_at, s.source_modified_at, s.source_mtime,
+               bm25(units_fts) AS rank
         FROM units_fts
         JOIN units u ON u.id = units_fts.rowid
         JOIN sessions s ON s.id = u.session_id
@@ -317,7 +406,9 @@ actor SessionIndexStore {
         let table = vecTable(modality)
         var sql = """
         SELECT u.id, u.session_id, u.kind, u.start_s, u.end_s, u.speaker_label, u.text,
-               u.cue_ids, s.title, s.has_video, s.language, v.distance AS rank
+               u.cue_ids, s.title, s.has_video, s.language, s.duration_sec, s.source_origin,
+               s.session_type, s.source_created_at, s.source_modified_at, s.source_mtime,
+               v.distance AS rank
         FROM \(table) v
         JOIN units u ON u.id = v.unit_id
         JOIN sessions s ON s.id = u.session_id
@@ -459,6 +550,7 @@ actor SessionIndexStore {
     }
 
     private func deleteSessionRows(_ sessionID: UUID) throws {
+        try deleteGraphSource(sessionID: sessionID)
         let unitRows = try sqlite.query(
             "SELECT id FROM units WHERE session_id = ?",
             binds: [.text(sessionID.uuidString)]
@@ -532,7 +624,10 @@ actor SessionIndexStore {
             embeddingReady: row.bool("embedding_ready"),
             sourceOrigin: origin,
             remoteSessionID: row.text("remote_session_id").flatMap(UUID.init(uuidString:)),
-            ownerUserID: row.text("owner_user_id")
+            ownerUserID: row.text("owner_user_id"),
+            sessionType: WorkbenchSessionType(rawValue: row.text("session_type") ?? "upload") ?? .upload,
+            sourceCreatedAt: row.double("source_created_at"),
+            sourceModifiedAt: row.double("source_modified_at") ?? row.double("source_mtime")
         )
     }
 
@@ -559,7 +654,12 @@ actor SessionIndexStore {
             cueIDs: Self.decodeCueIDs(row.text("cue_ids")),
             hasVideo: row.bool("has_video"),
             language: row.text("language"),
-            quoteSpan: nil
+            quoteSpan: nil,
+            duration: row.double("duration_sec") ?? 0,
+            sourceOrigin: row.text("source_origin").flatMap(KnowledgeSourceOrigin.init(rawValue:)) ?? .local,
+            sessionType: WorkbenchSessionType(rawValue: row.text("session_type") ?? "upload") ?? .upload,
+            sourceCreatedAt: row.double("source_created_at"),
+            sourceModifiedAt: row.double("source_modified_at") ?? row.double("source_mtime")
         )
     }
 
@@ -660,6 +760,48 @@ actor SessionIndexStore {
         return pieces.joined(separator: " AND ")
     }
 
+    private static func catalogFilterSQL(_ filter: SessionSearchFilter, binds: inout [SessionSQLiteValue]) -> String {
+        var sql = ""
+        if let ids = filter.sessionIDs, !ids.isEmpty {
+            let sorted = ids.map(\.uuidString).sorted()
+            let placeholders = Array(repeating: "?", count: sorted.count).joined(separator: ",")
+            sql += " AND s.id IN (\(placeholders))"
+            binds.append(contentsOf: sorted.map { .text($0) })
+        } else if let id = filter.sessionID {
+            sql += " AND s.id = ?"
+            binds.append(.text(id.uuidString))
+        }
+        if let hasVideo = filter.hasVideo {
+            sql += " AND s.has_video = ?"
+            binds.append(.bool(hasVideo))
+        }
+        if let language = filter.language {
+            sql += " AND s.language = ?"
+            binds.append(.text(language))
+        }
+        if let origins = filter.sourceOrigins, !origins.isEmpty {
+            let sorted = origins.sorted { $0.rawValue < $1.rawValue }
+            let placeholders = Array(repeating: "?", count: sorted.count).joined(separator: ",")
+            sql += " AND COALESCE(s.source_origin, 'local') IN (\(placeholders))"
+            binds.append(contentsOf: sorted.map { .text($0.rawValue) })
+            if origins.contains(.cloud) {
+                if let owner = filter.cloudOwnerUserID {
+                    if origins.contains(.local) {
+                        sql += " AND (COALESCE(s.source_origin, 'local') = 'local' OR s.owner_user_id = ?)"
+                    } else {
+                        sql += " AND s.owner_user_id = ?"
+                    }
+                    binds.append(.text(owner))
+                } else if origins.contains(.local) {
+                    sql += " AND COALESCE(s.source_origin, 'local') = 'local'"
+                } else {
+                    sql += " AND 0"
+                }
+            }
+        }
+        return sql
+    }
+
     private static func filterSQL(_ filter: SessionSearchFilter, binds: inout [SessionSQLiteValue]) -> String {
         var sql = ""
         if let sessionIDs = filter.sessionIDs, !sessionIDs.isEmpty {
@@ -707,6 +849,20 @@ actor SessionIndexStore {
             for origin in origins.sorted(by: { $0.rawValue < $1.rawValue }) {
                 binds.append(.text(origin.rawValue))
             }
+            if origins.contains(.cloud) {
+                if let owner = filter.cloudOwnerUserID {
+                    if origins.contains(.local) {
+                        sql += " AND (COALESCE(s.source_origin, 'local') = 'local' OR s.owner_user_id = ?)"
+                    } else {
+                        sql += " AND s.owner_user_id = ?"
+                    }
+                    binds.append(.text(owner))
+                } else if origins.contains(.local) {
+                    sql += " AND COALESCE(s.source_origin, 'local') = 'local'"
+                } else {
+                    sql += " AND 0"
+                }
+            }
         }
         return sql
     }
@@ -739,7 +895,10 @@ actor SessionIndexStore {
         source_origin TEXT NOT NULL DEFAULT 'local',
         remote_session_id TEXT,
         owner_user_id TEXT,
-        indexed_at REAL
+        indexed_at REAL,
+        session_type TEXT NOT NULL DEFAULT 'upload',
+        source_created_at REAL,
+        source_modified_at REAL
     );
     CREATE TABLE IF NOT EXISTS speakers (
         session_id TEXT NOT NULL,
@@ -784,6 +943,49 @@ actor SessionIndexStore {
         unit_id INTEGER PRIMARY KEY,
         embedding float[256] distance_metric=cosine
     );
+    CREATE TABLE IF NOT EXISTS graph_source_state (
+        session_id TEXT PRIMARY KEY,
+        source_generation INTEGER NOT NULL,
+        schema_version INTEGER NOT NULL,
+        source_origin TEXT NOT NULL,
+        owner_user_id TEXT,
+        updated_at REAL NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS graph_entities (
+        id INTEGER PRIMARY KEY,
+        scope_key TEXT NOT NULL,
+        canonical_name TEXT NOT NULL,
+        normalized_name TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        UNIQUE(scope_key, normalized_name)
+    );
+    CREATE TABLE IF NOT EXISTS graph_aliases (
+        entity_id INTEGER NOT NULL,
+        normalized_name TEXT NOT NULL,
+        PRIMARY KEY(entity_id, normalized_name)
+    );
+    CREATE INDEX IF NOT EXISTS graph_aliases_name ON graph_aliases(normalized_name);
+    CREATE TABLE IF NOT EXISTS graph_relations (
+        id INTEGER PRIMARY KEY,
+        subject_entity_id INTEGER NOT NULL,
+        predicate TEXT NOT NULL,
+        object_entity_id INTEGER NOT NULL,
+        UNIQUE(subject_entity_id, predicate, object_entity_id)
+    );
+    CREATE TABLE IF NOT EXISTS graph_relation_evidence (
+        relation_id INTEGER NOT NULL,
+        session_id TEXT NOT NULL,
+        unit_id INTEGER NOT NULL,
+        PRIMARY KEY(relation_id, session_id, unit_id)
+    );
+    CREATE TABLE IF NOT EXISTS graph_entity_chunks (
+        entity_id INTEGER NOT NULL,
+        session_id TEXT NOT NULL,
+        unit_id INTEGER NOT NULL,
+        PRIMARY KEY(entity_id, session_id, unit_id)
+    );
+    CREATE INDEX IF NOT EXISTS graph_entity_chunks_entity ON graph_entity_chunks(entity_id);
+    CREATE INDEX IF NOT EXISTS graph_entity_chunks_unit ON graph_entity_chunks(unit_id);
     """
 }
 

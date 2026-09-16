@@ -162,6 +162,25 @@ enum AppAccessGate {
         )) != nil
     }
 
+    static func hasFeatureAccess(
+        hasPaidPlan: Bool,
+        access: AppAccessSnapshot,
+        hasLocalLifetimeCredential: Bool = false,
+        at date: Date = .now
+    ) -> Bool {
+        hasPaidPlan
+            || hasLocalLifetimeCredential
+            || access.hasLocalFeatureEntitlement(at: date)
+    }
+
+    static func shouldPresentTrialActivationTip(
+        enforced: Bool,
+        signedIn: Bool,
+        hasLocalLifetimeCredential: Bool
+    ) -> Bool {
+        enforced && signedIn && !hasLocalLifetimeCredential
+    }
+
     static func requireNewContent(
         enforced: Bool,
         signedIn: Bool,

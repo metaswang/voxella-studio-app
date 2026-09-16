@@ -19,8 +19,8 @@ enum VoiceReferenceSpeechGate {
     static let targetPeakDBFS = -3.0
     static let maximumGainDB = 30.0
     static let truePeakCeilingDBTP = -1.5
-    static let quietFlatPeak: Float = 0.05
-    static let minimumQuietDynamicRange: Float = 2.5
+    static let quietFlatPeak = AudioBoundarySilenceTrimmer.quietFlatPeak
+    static let minimumQuietDynamicRange = AudioBoundarySilenceTrimmer.minimumQuietDynamicRange
 
     static func trimmedSpan(
         samples: [Float],

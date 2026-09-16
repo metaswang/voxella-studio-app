@@ -88,7 +88,7 @@ struct AIEditMenu: View {
         action: EditAction,
         perform: @escaping () -> Void
     ) -> some View {
-        if action.requiresPaidPlan && !AccountService.shared.isPaid {
+        if action.requiresPaidPlan && !AccountService.shared.hasFeatureAccess {
             Button {
                 SettingsWindowController.shared.show(tab: .account)
             } label: {

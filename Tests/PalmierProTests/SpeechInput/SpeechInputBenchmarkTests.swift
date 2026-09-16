@@ -10,12 +10,12 @@ struct SpeechInputBenchmarkTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["VOXELLA_INSTALL_SPEECH_INPUT_VAD"] == "1"))
     func installExperimentVAD() async throws {
         let manager = LocalModelManager.shared
-        manager.download(.sileroVADMLX)
+        manager.download(.sileroVAD)
         let deadline = ContinuousClock.now.advanced(by: .seconds(120))
-        while manager.state(for: .sileroVADMLX).isBusy, ContinuousClock.now < deadline {
+        while manager.state(for: .sileroVAD).isBusy, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(200))
         }
-        #expect(manager.state(for: .sileroVADMLX).isInstalled)
+        #expect(manager.state(for: .sileroVAD).isInstalled)
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["VOXELLA_SPEECH_INPUT_CANCELLATION"] == "1"))

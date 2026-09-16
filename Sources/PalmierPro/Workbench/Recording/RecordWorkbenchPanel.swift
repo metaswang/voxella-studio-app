@@ -227,7 +227,7 @@ struct RecordWorkbenchPanel: View {
             if !session.phase.isCapturing {
                 RecordingInfoButton(
                     title: "Processing limit",
-                    message: RecordingDurationLimit.recordingHint(isPaid: account.isPaid)
+                    message: RecordingDurationLimit.recordingHint(hasFeatureAccess: account.hasFeatureAccess)
                 )
             }
         }

@@ -1,14 +1,10 @@
 import Foundation
 
 struct ASRSpeechPreparationPolicy: Equatable, Sendable {
-    var frameSize = 512
+    var frameSize = LocalSpeechVAD.chunkSize
     var entryThreshold: Float = 0.50
     var exitThreshold: Float = 0.35
-    var excludedThreshold: Float = 0.10
-    var excludedFrameCount = 24
-    var exitFrameCount = 10
-    var protectionBeforeActivityFrameCount = 8
-    var protectionAfterActivityFrameCount = 12
+    var exitFrameCount = 1
 
     static let standard = ASRSpeechPreparationPolicy()
 }
@@ -31,27 +27,17 @@ enum ASRSpeechPreparation {
     ) -> ASRSpeechPreparationResult {
         guard sampleCount > 0, sampleRate > 0, policy.frameSize > 0,
               policy.entryThreshold.isFinite, policy.exitThreshold.isFinite,
-              policy.excludedThreshold.isFinite,
-              (0...1).contains(policy.excludedThreshold),
-              policy.excludedThreshold <= policy.exitThreshold,
               policy.exitThreshold <= policy.entryThreshold,
               policy.entryThreshold <= 1,
-              policy.excludedFrameCount > 0, policy.exitFrameCount > 0,
-              policy.protectionBeforeActivityFrameCount >= 0,
-              policy.protectionAfterActivityFrameCount >= 0 else {
+              policy.exitFrameCount > 0 else {
             return .init(recognitionRanges: [], confidentSpeechRanges: [], excludedRanges: [])
         }
         let frameCount = ((sampleCount - 1) / policy.frameSize) + 1
         let probabilities = (0..<frameCount).map { index -> Float in
-            let original = originalProbabilities.indices.contains(index) ? originalProbabilities[index] : policy.exitThreshold
-            let rescued: Float
-            if let rescuedProbabilities, rescuedProbabilities.indices.contains(index) {
-                rescued = rescuedProbabilities[index]
-            } else {
-                rescued = original
-            }
-            return max(original.isFinite ? original : policy.exitThreshold,
-                       rescued.isFinite ? rescued : policy.exitThreshold)
+            let original = originalProbabilities.indices.contains(index)
+                ? originalProbabilities[index]
+                : policy.exitThreshold
+            return original.isFinite ? original : policy.exitThreshold
         }
 
         let confident = SpeechProbabilitySegmenter.sampleRanges(
@@ -66,45 +52,28 @@ enum ASRSpeechPreparation {
             padding: 0
         )
 
-        guard probabilities.contains(where: { $0 > policy.excludedThreshold }) else {
-            return .init(recognitionRanges: [], confidentSpeechRanges: confident, excludedRanges: [
-                ASRSpeechRange(start: 0, end: Double(sampleCount) / Double(sampleRate)),
-            ])
-        }
-
-        var excludedFrames = [Bool](repeating: false, count: frameCount)
-        var runStart: Int?
-        for index in 0...frameCount {
-            let isLow = index < frameCount && probabilities[index] <= policy.excludedThreshold
-            if isLow {
-                runStart = runStart ?? index
-            } else if let start = runStart {
-                let runEnd = index
-                if runEnd - start >= policy.excludedFrameCount {
-                    let excludedStart = start == 0
-                        ? start
-                        : min(runEnd, start + policy.protectionAfterActivityFrameCount)
-                    let excludedEnd = runEnd == frameCount
-                        ? runEnd
-                        : max(excludedStart, runEnd - policy.protectionBeforeActivityFrameCount)
-                    if excludedStart < excludedEnd {
-                        for frame in excludedStart..<excludedEnd { excludedFrames[frame] = true }
-                    }
-                }
-                runStart = nil
-            }
+        _ = rescuedProbabilities
+        var acceptedFrames = [Bool](repeating: false, count: frameCount)
+        for range in confident {
+            let first = max(0, Int((range.start * Double(sampleRate) / Double(policy.frameSize)).rounded(.down)))
+            let last = min(
+                frameCount - 1,
+                max(first, Int((range.end * Double(sampleRate) / Double(policy.frameSize)).rounded(.up)) - 1)
+            )
+            guard first <= last else { continue }
+            for index in first...last { acceptedFrames[index] = true }
         }
 
         let excluded = ranges(
-            matching: true,
-            flags: excludedFrames,
+            matching: false,
+            flags: acceptedFrames,
             sampleCount: sampleCount,
             sampleRate: sampleRate,
             frameSize: policy.frameSize
         )
         let recognition = ranges(
-            matching: false,
-            flags: excludedFrames,
+            matching: true,
+            flags: acceptedFrames,
             sampleCount: sampleCount,
             sampleRate: sampleRate,
             frameSize: policy.frameSize

@@ -21,7 +21,6 @@ enum AppTheme {
         values.map(zoomed)
     }
 
-
     private static func adaptive(light: NSColor, dark: NSColor) -> NSColor {
         NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light

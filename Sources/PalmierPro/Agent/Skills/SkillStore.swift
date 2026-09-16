@@ -31,7 +31,7 @@ struct SkillScan: Sendable {
     let shas: [String: String]
 }
 
-/// Reads skills from `~/.palmier/skills/` — the single source of truth.
+/// Reads skills from `~/.voxstudio/skills/` — the single source of truth.
 @Observable
 @MainActor
 final class SkillStore {
@@ -49,7 +49,7 @@ final class SkillStore {
 
     nonisolated static var directory: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".palmier/skills", isDirectory: true)
+            .appendingPathComponent(".voxstudio/skills", isDirectory: true)
     }
 
     private static var ledgerURL: URL { directory.appendingPathComponent(".installed.json") }
@@ -158,7 +158,7 @@ final class SkillStore {
         }
     }
 
-    /// Resolves `~/.palmier/skills/<id>/` only when `id` is a single safe path component.
+    /// Resolves `~/.voxstudio/skills/<id>/` only when `id` is a single safe path component.
     nonisolated static func skillDirectory(for id: String) -> URL? {
         guard isValidSkillId(id) else { return nil }
         let dir = directory.appendingPathComponent(id, isDirectory: true).standardizedFileURL

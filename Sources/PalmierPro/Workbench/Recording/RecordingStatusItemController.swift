@@ -50,6 +50,29 @@ final class RecordingStatusItemController: NSObject {
             )
             menu.addItem(.separator())
             addItem("Recording Setup…", action: #selector(showRecordingSetup), to: menu)
+            menu.addItem(.separator())
+            addHeader("VoxStudio Workflows", to: menu, alignedToMenuLeadingEdge: true)
+            addSubmenu(
+                "Transcribe",
+                imageName: "text.bubble",
+                items: [
+                    ("Import", #selector(importMedia), "square.and.arrow.down"),
+                    ("Net Video", #selector(importNetVideo), "play.rectangle"),
+                ],
+                to: menu
+            )
+            addItem(
+                "Voiceover",
+                action: #selector(showVoiceover),
+                to: menu,
+                imageName: "waveform.and.mic"
+            )
+            addItem(
+                "Remote Meeting Notetaker",
+                action: #selector(showMeetingNotetaker),
+                to: menu,
+                imageName: "person.2"
+            )
 
         case .preparing, .picking, .finishing:
             addHeader(session.phase == .finishing ? "Finishing Recording…" : "Preparing Recording…", to: menu)
@@ -97,9 +120,16 @@ final class RecordingStatusItemController: NSObject {
         statusItem.length = isCapturing ? NSStatusItem.variableLength : NSStatusItem.squareLength
     }
 
-    private func addHeader(_ title: String, to menu: NSMenu) {
+    private func addHeader(
+        _ title: String,
+        to menu: NSMenu,
+        alignedToMenuLeadingEdge: Bool = false
+    ) {
         let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         header.isEnabled = false
+        if alignedToMenuLeadingEdge {
+            header.view = MenuHeaderView(title: title)
+        }
         menu.addItem(header)
     }
 
@@ -107,15 +137,43 @@ final class RecordingStatusItemController: NSObject {
         _ title: String,
         action: Selector,
         to menu: NSMenu,
-        keyEquivalent: VoiceInputShortcutOption? = nil
+        keyEquivalent: VoiceInputShortcutOption? = nil,
+        imageName: String? = nil
     ) {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent == nil ? "" : " ")
         if let keyEquivalent {
             item.keyEquivalentModifierMask = keyEquivalent.menuModifiers
         }
+        if let imageName {
+            item.image = menuImage(named: imageName)
+        }
         item.target = self
         item.isEnabled = true
         menu.addItem(item)
+    }
+
+    private func addSubmenu(
+        _ title: String,
+        imageName: String,
+        items: [(String, Selector, String)],
+        to menu: NSMenu
+    ) {
+        let submenu = NSMenu(title: title)
+        submenu.autoenablesItems = false
+        for (itemTitle, action, itemImageName) in items {
+            addItem(itemTitle, action: action, to: submenu, imageName: itemImageName)
+        }
+
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.image = menuImage(named: imageName)
+        item.submenu = submenu
+        menu.addItem(item)
+    }
+
+    private func menuImage(named name: String) -> NSImage? {
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+        image?.isTemplate = true
+        return image
     }
 
     @objc private func recordDisplay() {
@@ -138,6 +196,37 @@ final class RecordingStatusItemController: NSObject {
         VoiceInputCoordinator.shared.present()
     }
 
+    @objc private func importMedia() {
+        NSApp.activate(ignoringOtherApps: true)
+        AppState.shared.showHome()
+        Task { @MainActor in
+            let urls = await WorkbenchFilePicker.pickMediaFiles()
+            if !urls.isEmpty {
+                WorkbenchStore.shared.stageMediaImport(urls)
+            }
+        }
+    }
+
+    @objc private func importNetVideo() {
+        NSApp.activate(ignoringOtherApps: true)
+        AppState.shared.showHome()
+        WorkbenchStore.shared.showNetVideoImport()
+    }
+
+    @objc private func showVoiceover() {
+        NSApp.activate(ignoringOtherApps: true)
+        AppState.shared.showHome()
+        Task { @MainActor in
+            _ = await WorkbenchStore.shared.addDubAfterAccess()
+        }
+    }
+
+    @objc private func showMeetingNotetaker() {
+        NSApp.activate(ignoringOtherApps: true)
+        AppState.shared.showHome()
+        WorkbenchStore.shared.route = .meetBot
+    }
+
     @objc private func showRecordingSetup() {
         session?.showRecordingSetup()
     }
@@ -156,5 +245,26 @@ final class RecordingStatusItemController: NSObject {
 
     @objc private func discardRecording() {
         session?.discard()
+    }
+}
+
+private final class MenuHeaderView: NSView {
+    private let label: NSTextField
+
+    init(title: String) {
+        let font = NSFont.menuFont(ofSize: 0)
+        let width = (title as NSString).size(withAttributes: [.font: font]).width + 64
+        label = NSTextField(labelWithString: title)
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: 24))
+
+        label.font = font
+        label.textColor = .secondaryLabelColor
+        label.frame = NSRect(x: 32, y: 2, width: width - 48, height: 20)
+        addSubview(label)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }

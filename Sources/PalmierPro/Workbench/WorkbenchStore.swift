@@ -120,6 +120,7 @@ enum WorkbenchJobState: String, Codable, Hashable, Sendable {
 }
 
 enum SpeakerCountOption: String, Codable, CaseIterable, Identifiable, Sendable {
+    case off
     case auto
     case one
     case two
@@ -130,6 +131,7 @@ enum SpeakerCountOption: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var count: Int? {
         switch self {
+        case .off: 0
         case .auto: nil
         case .one: 1
         case .two: 2
@@ -140,6 +142,7 @@ enum SpeakerCountOption: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
+        case .off: "Off"
         case .auto: "Auto-detect"
         case .one: "1 speaker"
         case .two: "2 speakers"
@@ -288,7 +291,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     }
 
     func shouldProcessSubtitles(hasUsableLLM: Bool) -> Bool {
-        hasUsableLLM && (useLLMSubtitleProcessing ?? true)
+        hasUsableLLM && (useLLMSubtitleProcessing ?? false)
     }
 
     var normalizedTargetLanguageCode: String? {
@@ -420,7 +423,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         batchID: UUID? = nil,
         result: TranscriptionResult? = nil,
         editedText: String = "",
-        useLLMSubtitleProcessing: Bool? = nil,
+        useLLMSubtitleProcessing: Bool? = false,
         targetLanguageCode: String? = nil,
         cloudVocalRepairEnabled: Bool = false,
         subtitleTrack: SubtitleTrack? = nil,
@@ -528,7 +531,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         batchID = try container.decodeIfPresent(UUID.self, forKey: .batchID)
         result = try container.decodeIfPresent(TranscriptionResult.self, forKey: .result)
         editedText = try container.decodeIfPresent(String.self, forKey: .editedText) ?? ""
-        useLLMSubtitleProcessing = try container.decodeIfPresent(Bool.self, forKey: .useLLMSubtitleProcessing)
+        useLLMSubtitleProcessing = try container.decodeIfPresent(Bool.self, forKey: .useLLMSubtitleProcessing) ?? false
         targetLanguageCode = try container.decodeIfPresent(String.self, forKey: .targetLanguageCode)
         cloudVocalRepairEnabled = try container.decodeIfPresent(Bool.self, forKey: .cloudVocalRepairEnabled) ?? false
         subtitleTrack = try container.decodeIfPresent(SubtitleTrack.self, forKey: .subtitleTrack)
@@ -1176,7 +1179,7 @@ enum WorkbenchSessionDeletionTarget: Equatable, Sendable {
     case remote(UUID)
 }
 
-private struct WorkbenchSnapshot: Codable, Sendable {
+struct WorkbenchSnapshot: Codable, Sendable {
     var schemaVersion: Int? = 6
     var transcriptions: [WorkbenchTranscriptionJob]
     var dubs: [WorkbenchDubJob]
@@ -1257,6 +1260,10 @@ struct SummaryTaskRegistry: Sendable {
 }
 
 enum WorkbenchMediaFlowPlanner {
+    static func subtitlePreparationSteps() -> [MediaFlowStep] {
+        [.prepareSubtitles(SubtitleProcessingPayload())]
+    }
+
     static func transcriptionSteps(
         for job: WorkbenchTranscriptionJob,
         hasSubtitleModel: Bool,
@@ -1309,6 +1316,12 @@ enum WorkbenchMediaFlowPlanner {
     }
 }
 
+enum SubtitlePreparationRecoveryPolicy {
+    static func speakerCountForTranscription(of job: WorkbenchTranscriptionJob) -> SpeakerCountOption {
+        job.result == nil && job.speakerCount == .auto ? .off : job.speakerCount
+    }
+}
+
 enum WorkbenchSnapshotLoadOutcome: Equatable, Sendable {
     case missing
     case loaded
@@ -1322,7 +1335,7 @@ enum WorkbenchPersistenceGuard {
     }
 }
 
-private actor WorkbenchPersistence {
+actor WorkbenchPersistence {
     private let URL: URL
     private var latestRevision = 0
     /// After a decode failure, refuse to write so we never clobber a corrupt/unreadable workbench with an empty snapshot.
@@ -1450,6 +1463,7 @@ final class WorkbenchStore {
     /// FIFO of transcription job IDs waiting for the single local ASR slot.
     private var pendingTranscriptionQueue: [UUID] = []
     private var activeQueuedTranscriptionID: UUID?
+    private var pendingSubtitlePreparationAfterTranscription: Set<UUID> = []
     private let persistence: WorkbenchPersistence
     private var hasHydrated = false
     private var pendingNewDubDraft = false
@@ -1463,6 +1477,8 @@ final class WorkbenchStore {
     private var remoteSessionsLoadGeneration = UUID()
     /// Signed enhanced-audio links are short lived, so keep them in memory only.
     private(set) var enhancedAudioURLs: [UUID: URL] = [:]
+
+    var isHydrating: Bool { !hasHydrated }
 
     init(
         taskAccess: any TranscriptionTaskAccessing = RoutedTranscriptionTaskAccess(),
@@ -1905,6 +1921,22 @@ final class WorkbenchStore {
         return id
     }
 
+    func createDubAfterAccess(
+        for sessionID: UUID,
+        track: WorkbenchTranscriptTrack = .source
+    ) async -> UUID? {
+        do {
+            try await AccountService.shared.prepareNewContentAccess()
+            return createDub(for: sessionID, track: track)
+        } catch is AppAccessError {
+            transcriptionAdmissionError = nil
+            return nil
+        } catch {
+            transcriptionAdmissionError = error.localizedDescription
+            return nil
+        }
+    }
+
     /// Media URLs waiting for the Processing options sheet (web upload flow).
     var pendingMediaImportURLs: [URL] = []
     var pendingNetVideoSource: WorkbenchNetVideoSource?
@@ -1914,7 +1946,6 @@ final class WorkbenchStore {
     var preferRecordEntry = false
 
     func stageMediaImport(_ urls: [URL]) {
-        guard admitNewContent() else { return }
         transcriptionAdmissionError = nil
         pendingNetVideoSource = nil
         pendingMediaImportOrigin = .files
@@ -1929,7 +1960,6 @@ final class WorkbenchStore {
         videoID: String,
         title: String?
     ) {
-        guard admitNewContent() else { return }
         transcriptionAdmissionError = nil
         pendingNetVideoSource = WorkbenchNetVideoSource(
             sourceURL: sourceURL,
@@ -1960,7 +1990,6 @@ final class WorkbenchStore {
     }
 
     func stageRecordedMedia(_ url: URL) {
-        guard admitNewContent() else { return }
         transcriptionAdmissionError = nil
         pendingNetVideoSource = nil
         pendingMediaImportOrigin = .recording
@@ -2121,6 +2150,32 @@ final class WorkbenchStore {
             enqueueTranscription(id, openSessionWhenBatchCompletes: openSessionWhenDone)
         }
         return batchID
+    }
+
+    @discardableResult
+    func beginTranscriptionsAfterAccess(
+        sourceURLs: [URL],
+        submission: TranscriptionSubmission,
+        openSessionWhenDone: Bool = true,
+        netVideoSource: WorkbenchNetVideoSource? = nil,
+        isRecordedCapture: Bool = false
+    ) async -> UUID? {
+        do {
+            try await AccountService.shared.prepareNewContentAccess()
+            return beginTranscriptions(
+                sourceURLs: sourceURLs,
+                submission: submission,
+                openSessionWhenDone: openSessionWhenDone,
+                netVideoSource: netVideoSource,
+                isRecordedCapture: isRecordedCapture
+            )
+        } catch is AppAccessError {
+            transcriptionAdmissionError = nil
+            return nil
+        } catch {
+            transcriptionAdmissionError = error.localizedDescription
+            return nil
+        }
     }
 
     private func admitNewContent() -> Bool {
@@ -2284,6 +2339,24 @@ final class WorkbenchStore {
         return job.id
     }
 
+    @discardableResult
+    func addDubAfterAccess(
+        script: String = "",
+        title: String = "",
+        openRoute: Bool = true
+    ) async -> UUID? {
+        do {
+            try await AccountService.shared.prepareNewContentAccess()
+            return addDub(script: script, title: title, openRoute: openRoute)
+        } catch is AppAccessError {
+            transcriptionAdmissionError = nil
+            return nil
+        } catch {
+            transcriptionAdmissionError = error.localizedDescription
+            return nil
+        }
+    }
+
     /// Starts a blank Dub workspace while preserving the most recently used settings.
     func startNewDubDraft() {
         guard admitNewContent() else { return }
@@ -2310,10 +2383,23 @@ final class WorkbenchStore {
         save()
     }
 
+    func startNewDubDraftAfterAccess() async {
+        do {
+            try await AccountService.shared.prepareNewContentAccess()
+            startNewDubDraft()
+        } catch is AppAccessError {
+            transcriptionAdmissionError = nil
+        } catch {
+            transcriptionAdmissionError = error.localizedDescription
+        }
+    }
+
     /// Ensures direct routes and deep links have a blank Dub draft when no draft is selected.
     func ensureActiveDubDraft() {
         if selectedDubIndex == nil {
-            startNewDubDraft()
+            Task { @MainActor [weak self] in
+                await self?.startNewDubDraftAfterAccess()
+            }
             return
         }
         guard let id = selectedDubID else { return }
@@ -2593,6 +2679,7 @@ final class WorkbenchStore {
 
     private func removeTranscriptionLocally(_ id: UUID) {
         pendingTranscriptionQueue.removeAll { $0 == id }
+        pendingSubtitlePreparationAfterTranscription.remove(id)
         if activeQueuedTranscriptionID == id { activeQueuedTranscriptionID = nil }
         cloudSyncTasks[id]?.cancel()
         cloudSyncTasks[id] = nil
@@ -3214,6 +3301,12 @@ final class WorkbenchStore {
     }
 
     func runTranscription(_ id: UUID) {
+        prepareNewContentAccessAndRun { [weak self] in
+            self?.runTranscriptionAuthorized(id)
+        }
+    }
+
+    private func runTranscriptionAuthorized(_ id: UUID) {
         guard admitNewContent() else { return }
         guard let job = transcriptions.first(where: { $0.id == id }) else { return }
         guard flowTasks[id] == nil, !job.state.isActive else { return }
@@ -3248,6 +3341,12 @@ final class WorkbenchStore {
     }
 
     func retranscribe(_ id: UUID, submission: TranscriptionSubmission) {
+        prepareNewContentAccessAndRun { [weak self] in
+            self?.retranscribeAuthorized(id, submission: submission)
+        }
+    }
+
+    private func retranscribeAuthorized(_ id: UUID, submission: TranscriptionSubmission) {
         guard admitNewContent() else { return }
         guard let job = transcriptions.first(where: { $0.id == id }) else { return }
         guard !job.state.isActive else { return }
@@ -3263,14 +3362,28 @@ final class WorkbenchStore {
             $0.customTitle = SessionTitlePolicy.normalizedUserTitle(submission.options.customTitle)
             $0.placement = submission.placement
         }
-        runTranscription(id)
+        runTranscriptionAuthorized(id)
+    }
+
+    private func prepareNewContentAccessAndRun(_ action: @escaping @MainActor () -> Void) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await AccountService.shared.prepareNewContentAccess()
+                try Task.checkCancellation()
+                action()
+            } catch is AppAccessError {
+                transcriptionAdmissionError = nil
+            } catch {
+                transcriptionAdmissionError = error.localizedDescription
+            }
+        }
     }
 
     private static func cloudVocalRepairEnabled(isRecordedCapture: Bool) -> Bool {
         isRecordedCapture
             && CloudVocalRepairSettings.isEnabled
-            && AccountService.shared.isSignedIn
-            && AccountService.shared.isPaid
+            && AccountService.shared.canUseCloudHighFidelityVoiceRepair
     }
 
     private func startTranscriptionPipeline(_ id: UUID) {
@@ -3303,6 +3416,7 @@ final class WorkbenchStore {
                 if !releasedSlot {
                     finishTranscriptionSlot(id)
                 }
+                runPendingSubtitlePreparation(afterTranscription: id)
             }
             if Task.isCancelled {
                 updateTranscription(id) {
@@ -3753,7 +3867,85 @@ final class WorkbenchStore {
         selectedTranscriptionID = nil
     }
 
+    func prepareSubtitles(_ id: UUID) {
+        prepareNewContentAccessAndRun { [weak self] in
+            self?.prepareSubtitlesAuthorized(id)
+        }
+    }
+
+    private func prepareSubtitlesAuthorized(_ id: UUID) {
+        guard admitNewContent(),
+              let job = transcriptions.first(where: { $0.id == id }),
+              flowTasks[id] == nil,
+              !job.state.isActive else { return }
+
+        guard job.result != nil else {
+            let recoveredSpeakerCount = SubtitlePreparationRecoveryPolicy.speakerCountForTranscription(of: job)
+            if recoveredSpeakerCount != job.speakerCount {
+                updateTranscription(id) { $0.speakerCount = recoveredSpeakerCount }
+            }
+            pendingSubtitlePreparationAfterTranscription.insert(id)
+            runTranscriptionAuthorized(id)
+            return
+        }
+        runSubtitlePreparation(id)
+    }
+
+    private func runPendingSubtitlePreparation(afterTranscription id: UUID) {
+        guard pendingSubtitlePreparationAfterTranscription.remove(id) != nil,
+              let job = transcriptions.first(where: { $0.id == id }),
+              job.state == .completed,
+              job.result != nil else { return }
+        runSubtitlePreparation(id)
+    }
+
+    private func runSubtitlePreparation(_ id: UUID) {
+        guard flowTasks[id] == nil,
+              let snapshot = transcriptions.first(where: { $0.id == id }),
+              !snapshot.state.isActive,
+              let transcript = snapshot.result else { return }
+        updateTranscription(id) {
+            $0.state = .queued
+            $0.progress = 0
+            $0.progressMessage = "Queued for subtitle segmentation"
+            $0.flowProgressStage = .subtitlePreparation
+            $0.progressStep = "flow_started"
+            $0.errorMessage = nil
+        }
+        let request = MediaFlowRequest(
+            id: id,
+            input: .transcript(
+                transcript: transcript,
+                subtitles: snapshot.subtitleTrack,
+                translation: snapshot.translationTrack
+            ),
+            steps: WorkbenchMediaFlowPlanner.subtitlePreparationSteps()
+        )
+        let task = Task { [weak self] in
+            guard let self else { return }
+            defer { flowTasks[id] = nil }
+            for await event in MediaFlowExecutor.shared.events(for: request) {
+                if Task.isCancelled { break }
+                await consumeSubtitlePreparationEvent(event, jobID: id)
+            }
+            if Task.isCancelled {
+                updateTranscription(id) {
+                    $0.state = .completed
+                    $0.progress = 1
+                    $0.progressMessage = "Subtitle segmentation cancelled"
+                }
+            }
+        }
+        flowTasks[id] = task
+    }
+
     func runTranslation(_ id: UUID) {
+        prepareNewContentAccessAndRun { [weak self] in
+            self?.runTranslationAuthorized(id)
+        }
+    }
+
+    private func runTranslationAuthorized(_ id: UUID) {
         guard admitNewContent() else { return }
         guard flowTasks[id] == nil,
               let index = transcriptions.firstIndex(where: { $0.id == id }),
@@ -3803,6 +3995,12 @@ final class WorkbenchStore {
     }
 
     func runDub(_ id: UUID) {
+        prepareNewContentAccessAndRun { [weak self] in
+            self?.runDubAuthorized(id)
+        }
+    }
+
+    private func runDubAuthorized(_ id: UUID) {
         guard admitNewContent() else { return }
         guard flowTasks[id] == nil,
               let index = dubs.firstIndex(where: { $0.id == id }),
@@ -4372,6 +4570,53 @@ final class WorkbenchStore {
             }
 
         case .artifact(.transcription), .artifact(.alignment), .artifact(.dub):
+            break
+        }
+    }
+
+    private func consumeSubtitlePreparationEvent(_ event: MediaJobEvent, jobID: UUID) async {
+        switch event {
+        case .progress(let progress):
+            updateTranscription(jobID) { job in
+                job.flowProgressStage = progress.stage
+                job.progressStep = progress.step
+                job.progressCompleted = progress.current
+                job.progressTotal = progress.total
+                job.progressMessage = progress.message
+                switch progress.status {
+                case .started, .processing:
+                    job.state = .running
+                    job.progress = max(job.progress, progress.progress)
+                case .completed:
+                    job.state = .completed
+                    job.progress = 1
+                    job.progressMessage = job.subtitleTrack == nil
+                        ? "Subtitle segmentation finished without a subtitle track"
+                        : "Subtitles ready"
+                    job.errorMessage = nil
+                case .cancelled:
+                    job.state = .completed
+                    job.progress = 1
+                    job.progressMessage = "Subtitle segmentation cancelled"
+                case .failed:
+                    job.state = .completed
+                    job.progress = 1
+                    job.errorMessage = progress.message
+                    job.progressMessage = "Subtitle segmentation failed"
+                }
+            }
+        case .artifact(.subtitles(let track, let rebuiltSegments)):
+            updateTranscription(jobID) { job in
+                job.subtitleTrack = track
+                let prepared = Self.preparedTranscript(
+                    from: track,
+                    base: job.result,
+                    rebuiltSegments: rebuiltSegments
+                )
+                job.result = prepared
+                job.editedText = prepared.text
+            }
+        case .artifact(.transcription), .artifact(.translation), .artifact(.alignment), .artifact(.dub):
             break
         }
     }

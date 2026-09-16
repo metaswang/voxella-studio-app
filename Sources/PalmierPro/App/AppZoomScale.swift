@@ -94,11 +94,14 @@ private struct AppZoomScaleEnvironmentModifier: ViewModifier {
             content
                 .environment(\.appZoomScale, zoom.scale)
                 .environment(\.appZoomAlreadyApplied, true)
-                .modifier(AppZoomSheetContentSizeModifier())
+                // Recreate when scale changes so `AppTheme.*` computed metrics refresh.
+                .id(zoom.scale)
+                .modifier(AppZoomSheetContentSizeModifier(scale: zoom.scale))
         } else {
             content
                 .environment(\.appZoomScale, zoom.scale)
                 .environment(\.appZoomAlreadyApplied, true)
+                .id(zoom.scale)
         }
     }
 }
@@ -106,6 +109,7 @@ private struct AppZoomScaleEnvironmentModifier: ViewModifier {
 /// Sizes sheet / detached presentation windows from **real layout** size.
 /// Metrics are already zoom-scaled via `AppTheme`, so measured size == hit box.
 private struct AppZoomSheetContentSizeModifier: ViewModifier {
+    let scale: CGFloat
     @State private var measuredSize: CGSize = .zero
 
     func body(content: Content) -> some View {

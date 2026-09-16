@@ -40,6 +40,18 @@ struct RecognizedSpan: Equatable, Sendable {
 }
 
 #if BUNDLED_SPEECH
+protocol WordAlignmentProviding {
+    func alignmentUnits(text: String, language: String) throws -> [String]
+    func align(audio: [Float], text: String, sampleRate: Int, language: String) -> [AlignedWord]
+}
+
+extension Qwen3ForcedAligner: WordAlignmentProviding {
+    func alignmentUnits(text: String, language: String) throws -> [String] {
+        guard let tokenizer else { throw LongFormAlignmentError.missingTokenizer }
+        return TextPreprocessor.prepareForAlignment(text: text, tokenizer: tokenizer, language: language).words
+    }
+}
+
 struct LongFormAlignmentResult: Sendable {
     let words: [AlignedWord]
     let coarseTimedUnitCount: Int
@@ -341,7 +353,7 @@ enum LongFormAlignmentEngine {
         sampleRate: Int,
         spans: [RecognizedSpan],
         language: String,
-        aligner: Qwen3ForcedAligner,
+        aligner: any WordAlignmentProviding,
         capabilities: AlignmentModelCapabilities = .qwen3ForcedAligner,
         speechMask: AlignmentSpeechMask? = nil,
         progress: @escaping @Sendable (Double, String) -> Void
@@ -363,7 +375,7 @@ enum LongFormAlignmentEngine {
         sampleRate: Int,
         spans: [RecognizedSpan],
         language: String,
-        aligner: Qwen3ForcedAligner,
+        aligner: any WordAlignmentProviding,
         capabilities: AlignmentModelCapabilities = .qwen3ForcedAligner,
         speechMask: AlignmentSpeechMask? = nil,
         progress: @escaping @Sendable (Double, String) -> Void
@@ -426,6 +438,7 @@ enum LongFormAlignmentEngine {
                 "Aligned chunk \(index + 1) of \(chunks.count)"
             )
         }
+        try Task.checkCancellation()
         guard !result.isEmpty else { throw LongFormAlignmentError.emptyAlignmentUnits }
         return LongFormAlignmentResult(
             words: result,
@@ -442,7 +455,7 @@ enum LongFormAlignmentEngine {
         sampleRate: Int,
         chunk: AlignmentWorkChunk,
         language: String,
-        aligner: Qwen3ForcedAligner,
+        aligner: any WordAlignmentProviding,
         capabilities: AlignmentModelCapabilities,
         speechMask: AlignmentSpeechMask?,
         chunkIndex: Int,
@@ -477,6 +490,7 @@ enum LongFormAlignmentEngine {
             sampleRate: sampleRate,
             language: language
         )
+        try Task.checkCancellation()
 
         do {
             guard local.count == units.count else {
@@ -515,12 +529,18 @@ enum LongFormAlignmentEngine {
         } catch let error as LongFormAlignmentError {
             let rejectedDuration = rejectedUnitDuration(from: error)
             let rejectedAlignmentChunkCount = 1
-            guard canRetry(
+            let shouldRetry = chunk.sourceSpans.count > 1 && canRetry(
                 spanDuration: span.duration,
                 unitCount: units.count,
                 retryDepth: retryDepth,
                 capabilities: capabilities
-            ) else {
+            )
+            Log.transcription.warning(
+                "Alignment rejected chunk=\(chunkIndex + 1) depth=\(retryDepth) "
+                    + "range=\(sliceStartTime)...\(sliceEndTime) units=\(units.count) "
+                    + "sourceSpans=\(chunk.sourceSpans.count) retry=\(shouldRetry) reason=\(error.localizedDescription)"
+            )
+            guard shouldRetry else {
                 let fallback = try coarseTiming(
                     for: chunk.sourceSpans,
                     language: language,
@@ -545,32 +565,12 @@ enum LongFormAlignmentEngine {
                 progressFraction,
                 "Retrying alignment chunk \(chunkIndex + 1) with smaller audio ranges…"
             )
-            let splitChunks: (left: AlignmentWorkChunk, right: AlignmentWorkChunk)
-            if chunk.sourceSpans.count > 1 {
-                let splitIndex = coarseBoundarySplitIndex(for: chunk.sourceSpans)
-                splitChunks = (
-                    AlignmentWorkChunk(sourceSpans: Array(chunk.sourceSpans[..<splitIndex])),
-                    AlignmentWorkChunk(sourceSpans: Array(chunk.sourceSpans[splitIndex...]))
-                )
-            } else {
-                let splitUnit = units.count / 2
-                guard splitUnit > 0, splitUnit < units.count else { throw error }
-                let splitFraction = Double(splitUnit) / Double(units.count)
-                let splitTime = span.startTime + span.duration * splitFraction
-                guard splitTime > span.startTime, splitTime < span.endTime else { throw error }
-                splitChunks = (
-                    AlignmentWorkChunk(sourceSpans: [RecognizedSpan(
-                        text: units[..<splitUnit].joined(separator: " "),
-                        startTime: span.startTime,
-                        endTime: splitTime
-                    )]),
-                    AlignmentWorkChunk(sourceSpans: [RecognizedSpan(
-                        text: units[splitUnit...].joined(separator: " "),
-                        startTime: splitTime,
-                        endTime: span.endTime
-                    )])
-                )
-            }
+            // Only source boundaries preserve the association between text and recorded audio.
+            let splitIndex = coarseBoundarySplitIndex(for: chunk.sourceSpans)
+            let splitChunks = (
+                left: AlignmentWorkChunk(sourceSpans: Array(chunk.sourceSpans[..<splitIndex])),
+                right: AlignmentWorkChunk(sourceSpans: Array(chunk.sourceSpans[splitIndex...]))
+            )
             let left = try alignSpan(
                 audio: audio,
                 audioDuration: audioDuration,
@@ -617,7 +617,7 @@ enum LongFormAlignmentEngine {
     private static func coarseTiming(
         for spans: [RecognizedSpan],
         language: String,
-        aligner: Qwen3ForcedAligner,
+        aligner: any WordAlignmentProviding,
         maximumWordDuration: Double
     ) throws -> [AlignedWord] {
         var result: [AlignedWord] = []
@@ -694,7 +694,7 @@ enum LongFormAlignmentEngine {
         original: TranscriptionResult,
         audioDuration: Double,
         language: String,
-        aligner: Qwen3ForcedAligner,
+        aligner: any WordAlignmentProviding,
         capabilities: AlignmentModelCapabilities = .qwen3ForcedAligner
     ) throws -> [RecognizedSpan] {
         let newUnits = try alignmentUnits(for: text, language: language, aligner: aligner)
@@ -779,14 +779,9 @@ enum LongFormAlignmentEngine {
     private static func alignmentUnits(
         for text: String,
         language: String,
-        aligner: Qwen3ForcedAligner
+        aligner: any WordAlignmentProviding
     ) throws -> [String] {
-        guard let tokenizer = aligner.tokenizer else { throw LongFormAlignmentError.missingTokenizer }
-        let units = TextPreprocessor.prepareForAlignment(
-            text: text,
-            tokenizer: tokenizer,
-            language: language
-        ).words
+        let units = try aligner.alignmentUnits(text: text, language: language)
         guard !units.isEmpty else { throw LongFormAlignmentError.emptyAlignmentUnits }
         return units
     }
@@ -802,6 +797,8 @@ enum LongFormAlignmentEngine {
             let start = Double(word.startTime)
             let end = Double(word.endTime)
             guard start.isFinite, end.isFinite,
+                  start >= -capabilities.timestampTolerance,
+                  end <= sliceDuration + capabilities.timestampTolerance,
                   end >= start,
                   start + capabilities.timestampTolerance >= previousStart else {
                 throw LongFormAlignmentError.invalidTimestamps(
@@ -846,14 +843,15 @@ enum LongFormAlignmentEngine {
             previousStart = start
         }
         let minimum = capabilities.plateauMinimumUnitCount
-        guard words.count >= minimum * 2 else { return }
-        let suffix = words.suffix(minimum)
-        guard let first = suffix.first else { return }
-        if suffix.allSatisfy({ abs($0.startTime - first.startTime) < 0.1 }) {
-            throw LongFormAlignmentError.timestampPlateau(
-                chunk: chunkIndex,
-                start: Double(first.startTime)
-            )
+        if minimum > 0, words.count / 2 >= minimum {
+            let suffix = words.suffix(minimum)
+            if let first = suffix.first,
+               suffix.allSatisfy({ abs($0.startTime - first.startTime) < 0.1 }) {
+                throw LongFormAlignmentError.timestampPlateau(
+                    chunk: chunkIndex,
+                    start: Double(first.startTime)
+                )
+            }
         }
         let samples = words.map {
             AlignmentTimestampSample(

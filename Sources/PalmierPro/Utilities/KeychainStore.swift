@@ -172,7 +172,10 @@ enum KeychainStore {
     }
 
     private static func upsert(_ data: Data, account: String, backend: Backend, service: String, background: Bool) throws {
-        let query = protectedQuery(account: account, backend: backend, service: service)
+        var query = protectedQuery(account: account, backend: backend, service: service)
+        if backend == .login, background {
+            query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        }
         var attributes: [String: Any] = [kSecValueData as String: data]
         if backend == .dataProtection {
             attributes[kSecAttrAccessible as String] = accessibility(background: background)
@@ -196,6 +199,11 @@ enum KeychainStore {
         var query = protectedQuery(account: account, backend: backend, service: service)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
+        // A stale login-keychain ACL must not block app launch with repeated modal
+        // authorization prompts. Explicit credential saves can still repair the item.
+        if backend == .login {
+            query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        }
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         if status == errSecItemNotFound { return nil }

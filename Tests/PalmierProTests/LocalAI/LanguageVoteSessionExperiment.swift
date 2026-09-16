@@ -23,9 +23,11 @@ struct LanguageVoteSessionExperiment {
             try await MLXRuntime.beginInference()
             defer { MLXRuntime.endInference() }
             let model = try EcapaTdnn.fromModelDirectory(LocalModelManager.directory(for: .spokenLanguageID))
-            let evidence = try LocalSpeechPipeline.languageIdentificationEvidence(
-                samples: samples, speechRanges: [.init(start: 0, end: duration)], languageIdentifier: model
+            let sampled = try LocalSpeechPipeline.sampledLanguageIdentificationEvidence(
+                samples: samples,
+                languageIdentifier: model
             )
+            let evidence = sampled.evidence
             #expect(!evidence.isEmpty)
             #expect(evidence.allSatisfy { !$0.posterior.isEmpty && $0.posterior.values.allSatisfy(\.isFinite) })
             let route = ASREngineRouter.decide(evidence: evidence)
@@ -53,16 +55,17 @@ struct LanguageVoteSessionExperiment {
             var outputs: [Output] = []
             for item in items {
                 try Task.checkCancellation()
-                let start = ContinuousClock.now
+                let startedAt = DispatchTime.now().uptimeNanoseconds
                 let decoded = try AudioFileLoader.load(url: URL(fileURLWithPath: item.path), targetSampleRate: 16_000)
+                let decodedAt = DispatchTime.now().uptimeNanoseconds
                 let rescue = ASRAudioPreprocessor.prepareVADRescue(samples: decoded)
-                let original = try await ASRSpeechProbabilityService.shared.probabilities(samples: decoded, progress: { _, _, _ in })
-                let rescued = rescue.didApplyGain
-                    ? try await ASRSpeechProbabilityService.shared.probabilities(samples: rescue.samples, progress: { _, _, _ in }) : nil
-                let preparation = ASRSpeechPreparation.make(sampleCount: decoded.count, originalProbabilities: original, rescuedProbabilities: rescued)
-                let evidence = try LocalSpeechPipeline.languageIdentificationEvidence(
-                    samples: rescue.samples, speechRanges: preparation.confidentSpeechRanges, languageIdentifier: model
+                let sampled = try LocalSpeechPipeline.sampledLanguageIdentificationEvidence(
+                    samples: rescue.samples,
+                    languageIdentifier: model
                 )
+                let finishedAt = DispatchTime.now().uptimeNanoseconds
+                let evidence = sampled.evidence
+                #expect(sampled.sampling.isComplete)
                 let route = ASREngineRouter.decide(evidence: evidence)
                 let vote = try #require(route.languageVote)
                 var average: [String: Float] = [:]
@@ -89,10 +92,15 @@ struct LanguageVoteSessionExperiment {
                     newLanguage: route.topLanguage, newEngine: route.engine.rawValue, reason: route.reason.rawValue,
                     pooled: vote.posterior, shares: vote.weightShares, anchors: vote.anchorLanguages,
                     whisperHint: route.whisperHint,
-                    seconds: Double(start.duration(to: .now).components.attoseconds) / 1e18 + Double(start.duration(to: .now).components.seconds)
+                    samplingTarget: sampled.sampling.targetCount,
+                    samplingAttempts: sampled.sampling.attemptedCount,
+                    samplingComplete: sampled.sampling.isComplete,
+                    decodingSeconds: Double(decodedAt - startedAt) / 1_000_000_000,
+                    lidSeconds: Double(finishedAt - decodedAt) / 1_000_000_000,
+                    seconds: Double(finishedAt - startedAt) / 1_000_000_000
                 )
                 outputs.append(output)
-                print("LID_EXPERIMENT id=\(item.id) reference=\(item.reference) old=\(oldEngine.rawValue)/\(output.oldLanguage ?? "nil") new=\(route.engine.rawValue)/\(route.topLanguage ?? "nil") reason=\(route.reason.rawValue) pool=\(vote.confidence)")
+                print("LID_EXPERIMENT id=\(item.id) reference=\(item.reference) old=\(oldEngine.rawValue)/\(output.oldLanguage ?? "nil") new=\(route.engine.rawValue)/\(route.topLanguage ?? "nil") reason=\(route.reason.rawValue) pool=\(vote.confidence) accepted=\(evidence.count)/\(sampled.sampling.targetCount) attempted=\(sampled.sampling.attemptedCount) decode=\(output.decodingSeconds)s lid=\(output.lidSeconds)s")
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                 try encoder.encode(outputs).write(to: manifestURL.deletingLastPathComponent().appendingPathComponent("results.json"), options: .atomic)
@@ -100,6 +108,44 @@ struct LanguageVoteSessionExperiment {
                 if item.id == "mixed-en-zh" { #expect(route.engine == .qwen) }
                 if item.id == "short-en" { #expect(!evidence.isEmpty) }
             }
+        }.value
+    }
+
+    @Test(.enabled(if: manifest != nil))
+    func measureFullVADBaseline() async throws {
+        try await Task.detached {
+            let manifestURL = URL(fileURLWithPath: try #require(Self.manifest))
+            let items = try JSONDecoder().decode([Input].self, from: Data(contentsOf: manifestURL))
+            let item = try #require(items.first)
+            let startedAt = DispatchTime.now().uptimeNanoseconds
+            let decoded = try AudioFileLoader.load(
+                url: URL(fileURLWithPath: item.path),
+                targetSampleRate: ASRAudioPreprocessor.sampleRate
+            )
+            let decodedAt = DispatchTime.now().uptimeNanoseconds
+            let rescue = ASRAudioPreprocessor.prepareVADRescue(samples: decoded)
+            let original = try await SpeechAnalysisService.shared.probabilities(
+                samples: decoded,
+                progress: { _, _, _ in }
+            )
+            let rescued = rescue.didApplyGain
+                ? try await SpeechAnalysisService.shared.probabilities(
+                    samples: rescue.samples,
+                    progress: { _, _, _ in }
+                )
+                : nil
+            let preparation = ASRSpeechPreparation.make(
+                sampleCount: decoded.count,
+                originalProbabilities: original,
+                rescuedProbabilities: rescued
+            )
+            let finishedAt = DispatchTime.now().uptimeNanoseconds
+            print(
+                "VAD_BASELINE id=\(item.id) decode=\(Double(decodedAt - startedAt) / 1_000_000_000)s "
+                    + "vad=\(Double(finishedAt - decodedAt) / 1_000_000_000)s "
+                    + "ranges=\(preparation.recognitionRanges.count) confident=\(preparation.confidentSpeechRanges.count) "
+                    + "passes=\(rescue.didApplyGain ? 2 : 1)"
+            )
         }.value
     }
 
@@ -139,6 +185,11 @@ struct LanguageVoteSessionExperiment {
         let shares: [Double]
         let anchors: [String]
         let whisperHint: String?
+        let samplingTarget: Int
+        let samplingAttempts: Int
+        let samplingComplete: Bool
+        let decodingSeconds: Double
+        let lidSeconds: Double
         let seconds: Double
     }
 }

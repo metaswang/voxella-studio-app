@@ -404,7 +404,7 @@ struct SessionFullscreenChrome: View {
         SwiftUI.TimelineView(
             .periodic(from: .now, by: AppTheme.Workbench.playerRefreshInterval)
         ) { _ in
-            let currentTime = playback.player?.currentTime().seconds.finiteOrZero ?? 0
+            let currentTime = playback.currentTime
             let cueText = playback.activeSubtitleText(at: currentTime)
             ZStack {
                 Color.clear
@@ -482,21 +482,15 @@ struct SessionFullscreenChrome: View {
 
     private func bottomChrome(currentTime: Double) -> some View {
         VStack(spacing: AppTheme.Spacing.smMd) {
-            Slider(
-                value: Binding(
-                    get: {
-                        playback.duration > 0
-                            ? min(1, max(0, currentTime / playback.duration))
-                            : 0
-                    },
-                    set: { progress in
-                        chrome.revealControls()
-                        playback.seek(to: progress)
-                    }
-                ),
-                in: 0...1
+            SessionPlaybackSeekBar(
+                progress: playbackProgress(currentTime),
+                isEnabled: playback.player != nil && playback.duration > 0,
+                isPlaying: playback.isPlaying,
+                onSeek: { progress, resumesPlayback in
+                    chrome.revealControls()
+                    playback.seek(to: progress, resumesPlayback: resumesPlayback)
+                }
             )
-            .disabled(playback.player == nil || playback.duration <= 0)
 
             HStack(spacing: AppTheme.Spacing.md) {
                 Button {
@@ -536,6 +530,11 @@ struct SessionFullscreenChrome: View {
             RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
                 .strokeBorder(AppTheme.Border.primaryColor, lineWidth: AppTheme.BorderWidth.thin)
         }
+    }
+
+    private func playbackProgress(_ currentTime: Double) -> Double {
+        guard playback.duration > 0 else { return 0 }
+        return min(1, max(0, currentTime / playback.duration))
     }
 
     private var fullscreenSubtitleMenu: some View {
@@ -629,6 +628,124 @@ struct SessionFullscreenChrome: View {
     }
 }
 
+/// A seek bar that treats the entire track as an interactive target.
+///
+/// SwiftUI's macOS Slider only reliably seeks when the existing thumb is
+/// grabbed. Session playback needs the more familiar media-player behavior:
+/// clicking anywhere on the track jumps there, and dragging can begin from
+/// any point. The playback callback receives the desired resume behavior so
+/// the controller can pause while scrubbing and restore the previous state
+/// when the gesture ends.
+struct SessionPlaybackSeekBar: View {
+    let progress: Double
+    let isEnabled: Bool
+    let isPlaying: Bool
+    let onSeek: (_ progress: Double, _ resumesPlayback: Bool) -> Void
+
+    @State private var dragProgress: Double?
+    @State private var wasPlayingWhenDragStarted = false
+
+    private let trackHeight: CGFloat = 4
+    private let thumbSize: CGFloat = 12
+    private let hitTargetHeight: CGFloat = 24
+
+    private var displayedProgress: Double {
+        min(1, max(0, dragProgress ?? progress))
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = max(geometry.size.width, 1)
+            let thumbX = width * displayedProgress
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(AppTheme.Border.subtleColor)
+                    .frame(height: trackHeight)
+
+                Capsule()
+                    .fill(AppTheme.Text.primaryColor)
+                    .frame(width: thumbX, height: trackHeight)
+
+                Circle()
+                    .fill(AppTheme.Text.primaryColor)
+                    .frame(width: thumbSize, height: thumbSize)
+                    .shadow(
+                        color: .black.opacity(AppTheme.Opacity.subtle),
+                        radius: 2,
+                        y: 1
+                    )
+                    .offset(x: thumbX - thumbSize / 2)
+
+                // Keep the whole measured rect hit-testable, including the
+                // whitespace around the thin visual track and the thumb.
+                Rectangle()
+                    .fill(Color.black.opacity(0.001))
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(seekGesture(width: width))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .opacity(isEnabled ? AppTheme.Opacity.opaque : AppTheme.Opacity.muted)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Playback position")
+            .accessibilityValue("\(Int((displayedProgress * 100).rounded())) percent")
+            .accessibilityAdjustableAction { direction in
+                guard isEnabled else { return }
+                let step = 0.05
+                let target: Double
+                switch direction {
+                case .increment:
+                    target = min(1, displayedProgress + step)
+                case .decrement:
+                    target = max(0, displayedProgress - step)
+                @unknown default:
+                    return
+                }
+                onSeek(target, true)
+            }
+        }
+        .frame(height: hitTargetHeight)
+    }
+
+    private func seekGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard isEnabled else { return }
+                if dragProgress == nil {
+                    wasPlayingWhenDragStarted = isPlaying
+                }
+
+                let target = normalizedProgress(
+                    at: value.location.x,
+                    width: width
+                )
+                if dragProgress == nil || abs(dragProgress! - target) > 0.001 {
+                    dragProgress = target
+                    onSeek(target, false)
+                }
+            }
+            .onEnded { value in
+                guard isEnabled else {
+                    dragProgress = nil
+                    return
+                }
+
+                let target = normalizedProgress(
+                    at: value.location.x,
+                    width: width
+                )
+                dragProgress = target
+                onSeek(target, wasPlayingWhenDragStarted)
+                dragProgress = nil
+            }
+    }
+
+    private func normalizedProgress(at x: CGFloat, width: CGFloat) -> Double {
+        guard width > 0 else { return 0 }
+        return min(1, max(0, Double(x / width)))
+    }
+}
+
 struct SessionAVPlayerRepresentable: NSViewRepresentable {
     let player: AVPlayer
     var onViewReady: ((SessionPlayerView) -> Void)?
@@ -694,8 +811,11 @@ final class SessionFullscreenWindowController: NSWindowController, NSWindowDeleg
         playerView.autoresizingMask = [.width, .height]
         playerView.frame = screen.frame
 
-        let chrome = SessionFullscreenChrome(playback: playback, chrome: chromeState)
-        let hosting = NSHostingView(rootView: AnyView(chrome.appZoomEnvironment()))
+        let chrome = AnyView(
+            SessionFullscreenChrome(playback: playback, chrome: chromeState)
+                .appZoomEnvironment()
+        )
+        let hosting = NSHostingView(rootView: chrome)
         hosting.frame = screen.frame
         hosting.autoresizingMask = [.width, .height]
         hostingView = hosting

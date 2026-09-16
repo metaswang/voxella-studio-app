@@ -361,6 +361,26 @@ struct LLMResilienceTests {
     }
 
     @Test
+    func chatRouteSendsConfiguredReasoningEffort() {
+        let configuration = LLMRuntimeConfiguration(
+            profile: LLMProviderProfile(
+                provider: .openRouter,
+                baseURL: "https://openrouter.ai/api/v1",
+                model: "openai/gpt-5-nano"
+            ),
+            modelIdentifier: "openrouter/openai/gpt-5-nano",
+            modelName: "openai/gpt-5-nano",
+            endpoint: URL(string: "https://openrouter.ai/api/v1/chat/completions")!,
+            apiKey: "test-openrouter",
+            useCase: .chat,
+            reasoningEffort: .medium
+        )
+
+        #expect(configuration.openAICompatibleRequestOptions.reasoningEffort == "medium")
+        #expect(configuration.resolvedExtraBody["reasoning"] == .object(["effort": .string("medium")]))
+    }
+
+    @Test
     func subtitleProcessingDisablesGeminiAndOpenRouterReasoning() {
         let openRouter = LLMRuntimeConfiguration(
             profile: LLMProviderProfile(
@@ -914,6 +934,41 @@ struct LLMResilienceTests {
 
             await #expect(throws: LLMClientError.self) {
                 try await client.complete(system: "system", user: "user")
+            }
+            #expect(HostedLLMSequenceURLProtocol.requestCount() == 1)
+        }
+
+        @Test
+        func mapsInsufficientCreditsWithoutRetryingOrReturningUpstreamText() async {
+            HostedLLMSequenceURLProtocol.reset([
+                (
+                    402,
+                    Data(#"{"error":{"type":"insufficient_credits","code":"insufficient_credits","message":"credits exhausted"}}"#.utf8)
+                ),
+                (200, Data(#"{"output_text":"must not run"}"#.utf8)),
+            ])
+            let sessionConfiguration = URLSessionConfiguration.ephemeral
+            sessionConfiguration.protocolClasses = [HostedLLMSequenceURLProtocol.self]
+            let client = VoxellaHostedLLMTextClient(
+                useCase: .chat,
+                policy: LLMRequestPolicy(timeoutSeconds: 15, maximumAttemptsPerModel: 2, initialBackoffSeconds: 0),
+                session: URLSession(configuration: sessionConfiguration),
+                tokenProvider: { "test-token" },
+                tokenRefresher: {},
+                sleeper: { _ in }
+            )
+
+            do {
+                try await client.complete(system: "system", user: "user")
+                Issue.record("Expected insufficient credits")
+            } catch let error as LLMClientError {
+                guard case let .insufficientCredits(message) = error else {
+                    Issue.record("Expected insufficient credits, got \(error)")
+                    return
+                }
+                #expect(message == "credits exhausted")
+            } catch {
+                Issue.record("Expected LLMClientError, got \(error)")
             }
             #expect(HostedLLMSequenceURLProtocol.requestCount() == 1)
         }

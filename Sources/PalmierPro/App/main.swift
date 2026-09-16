@@ -9,6 +9,13 @@ if CommandLine.arguments.contains("--wemm-eval") {
     }
     dispatchMain()
 }
+if CommandLine.arguments.contains("--asr-tuning-experiment") {
+    Task {
+        let status = await WhisperTuningExperimentCLI.run(arguments: CommandLine.arguments)
+        exit(Int32(status))
+    }
+    dispatchMain()
+}
 #endif
 
 Log.bootstrap()

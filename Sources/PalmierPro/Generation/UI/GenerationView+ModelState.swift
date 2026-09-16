@@ -33,7 +33,7 @@ extension GenerationView {
     var aiAllowed: Bool { account.aiAllowed }
 
     var currentModelLocked: Bool {
-        guard !account.isPaid else { return false }
+        guard !account.hasFeatureAccess else { return false }
         switch selectedType {
         case .video: return videoModel.paidOnly
         case .image: return imageModel.paidOnly
@@ -47,7 +47,7 @@ extension GenerationView {
         return models[safeIndex]
     }
 
-    private func isAvailable(_ paidOnly: Bool) -> Bool { account.isPaid || !paidOnly }
+    private func isAvailable(_ paidOnly: Bool) -> Bool { account.hasFeatureAccess || !paidOnly }
 
     var enabledVideoModels: [(index: Int, model: VideoModelConfig)] {
         videoModels.enumerated()

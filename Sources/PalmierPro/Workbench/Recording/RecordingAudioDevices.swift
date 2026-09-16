@@ -96,11 +96,6 @@ enum RecordingAudioDeviceEnumerator {
         return uid
     }
 
-    static func prefersDefaultAudioEngine(explicitUID: String?) -> Bool {
-        guard let explicitUID, !explicitUID.isEmpty else { return true }
-        return explicitUID == defaultInputUID()
-    }
-
     static func captureDevice(uniqueID: String) -> AVCaptureDevice? {
         AVCaptureDevice(uniqueID: uniqueID)
     }

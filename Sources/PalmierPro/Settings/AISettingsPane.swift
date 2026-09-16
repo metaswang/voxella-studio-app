@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct AISettingsPane: View {
     @Bindable private var settings = LLMSettingsStore.shared
+    @Bindable private var graphSettings = KnowledgeGraphSettings.shared
     @State private var isAdvancedExpanded = false
     @State private var selectedProviderID: UUID?
     @State private var providerDraft = LLMProviderProfile.defaultOpenAI
@@ -85,6 +86,16 @@ struct AISettingsPane: View {
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Toggle("Enable graph recall for Knowledge Base", isOn: $graphSettings.isEnabled)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+            if graphSettings.isEnabled {
+                Text("Graph extraction runs in the background for visible indexed sessions and augments recall only.")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+            }
         }
     }
 
@@ -657,9 +668,9 @@ struct AISettingsPane: View {
     private func timeoutRange(for useCase: LLMUseCase) -> ClosedRange<Double> {
         let minimum = LLMRequestPolicy.minimumTimeoutSeconds(for: useCase)
         switch useCase {
-        case .subtitleProcessing:
+        case .subtitleProcessing, .graphExtraction:
             return max(60, minimum)...1_800
-        case .translation, .chat:
+        case .translation, .chat, .graphQueryUnderstanding:
             return minimum...1_800
         }
     }

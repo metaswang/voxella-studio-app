@@ -96,6 +96,36 @@ After either recovery path, verify the profile before building:
 
 The command must no longer report `No Keychain password item found`. Use the same profile name in `.env` or `.env.prod` that the release wrapper loads.
 
+## 1A. Recover or rotate the Sparkle Ed25519 key
+
+Sparkle update signing is independent of Developer ID signing and Apple notarization. The public key in `Sources/PalmierPro/Resources/Info.plist` must match the private key used for every published appcast enclosure.
+
+Check the existing key without printing private material:
+
+      SPARKLE_ROOT='.build/artifacts/sparkle/Sparkle'
+      "$SPARKLE_ROOT/bin/generate_keys" -p
+      /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Sources/PalmierPro/Resources/Info.plist
+      "$SPARKLE_ROOT/bin/sign_update" -p .build/VoxStudio.dmg
+
+If the Keychain lookup fails or the public key differs, stop and recover the original Sparkle private key before publishing. A newly generated key cannot update already-installed apps that trust the old `SUPublicEDKey`.
+
+Only when key rotation is explicitly intended:
+
+      mkdir -p .secrets
+      "$SPARKLE_ROOT/bin/generate_keys"
+      "$SPARKLE_ROOT/bin/generate_keys" -x .secrets/sparkle-ed25519-private.key
+      chmod 600 .secrets/sparkle-ed25519-private.key
+      git check-ignore -v .secrets/sparkle-ed25519-private.key
+
+Copy the newly generated public key into `SUPublicEDKey`, retain the private backup only under `.secrets/`, and verify `generate_keys -p` matches the plist before building. On another machine, import the protected backup with `generate_keys -f .secrets/sparkle-ed25519-private.key`. Never print, commit, upload, or place the private key in a DMG or command-line argument.
+
+For the Hugging Face distribution path, set the appcast feed and latest enclosure to public URLs:
+
+      https://huggingface.co/hfadam/VoxStudio.app/resolve/main/appcast.xml
+      https://huggingface.co/hfadam/VoxStudio.app/resolve/main/VoxStudio.dmg?download=true
+
+Upload both `appcast.xml` and `VoxStudio.dmg`, and verify the remote appcast contains the exact artifact version, byte count, and valid `sparkle:edSignature` before reporting the release.
+
 ## 2. Select and record the release version
 
 Formal releases must use the release wrapper with no manually supplied version:

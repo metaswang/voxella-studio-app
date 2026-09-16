@@ -176,6 +176,31 @@ struct RecordingStopResult: Sendable {
     let diagnostics: RecordingSessionDiagnostics
 }
 
+enum RecordingRuntimeEvent: Sendable {
+    case recovering(source: String, message: String)
+    case recovered(source: String)
+    case failed(error: RecordingError, reason: String)
+    case userStopped
+}
+
+enum RecordingCaptureHealth {
+    static let startupGrace: TimeInterval = 3
+    static let stallTimeout: TimeInterval = 5
+    static let failureTimeout: TimeInterval = 15
+    static let checkInterval: TimeInterval = 1
+    static let gapFillThreshold: TimeInterval = 0.05
+    static let fragmentInterval: TimeInterval = 10
+    static let minimumFreeBytes: Int64 = 80 * 1_024 * 1_024
+    static let lowFreeBytes: Int64 = 300 * 1_024 * 1_024
+}
+
+enum RecordingLifecycleTimeout {
+    static let start: TimeInterval = 25
+    static let stop: TimeInterval = 20
+    static let writerFinish: TimeInterval = 20
+    static let termination: TimeInterval = 25
+}
+
 enum RecordingPhase: Equatable, Sendable {
     case idle
     case preparing
@@ -200,22 +225,22 @@ enum RecordingDurationLimit {
     static let freeSeconds: TimeInterval = 10 * 60
     static let paidSeconds: TimeInterval = 2 * 60 * 60
 
-    static func maxSeconds(isPaid: Bool) -> TimeInterval {
-        isPaid ? paidSeconds : freeSeconds
+    static func maxSeconds(hasFeatureAccess: Bool) -> TimeInterval {
+        hasFeatureAccess ? paidSeconds : freeSeconds
     }
 
-    static func exceedsLimit(_ duration: TimeInterval, isPaid: Bool) -> Bool {
-        duration.isFinite && duration > maxSeconds(isPaid: isPaid)
+    static func exceedsLimit(_ duration: TimeInterval, hasFeatureAccess: Bool) -> Bool {
+        duration.isFinite && maxSeconds(hasFeatureAccess: hasFeatureAccess) < duration
     }
 
-    static func recordingHint(isPaid: Bool) -> String {
-        isPaid
+    static func recordingHint(hasFeatureAccess: Bool) -> String {
+        hasFeatureAccess
             ? "Record as long as you need. Cloud processing is limited to 2 hours."
             : "Record as long as you need. Cloud processing is limited to 10 minutes on Free."
     }
 
-    static func cloudClipNotice(isPaid: Bool) -> String {
-        isPaid
+    static func cloudClipNotice(hasFeatureAccess: Bool) -> String {
+        hasFeatureAccess
             ? "VoxStudio Cloud can process 2 hours at a time. The clip is set to the first 2 hours. Process on this Mac to keep the full recording."
             : "VoxStudio Cloud can process 10 minutes at a time on Free. The clip is set to the first 10 minutes. Process on this Mac to keep the full recording."
     }
@@ -223,9 +248,9 @@ enum RecordingDurationLimit {
     static func clampedClipRange(
         duration: TimeInterval,
         current: ClosedRange<Double>?,
-        isPaid: Bool
+        hasFeatureAccess: Bool
     ) -> ClosedRange<Double> {
-        let limit = maxSeconds(isPaid: isPaid)
+        let limit = maxSeconds(hasFeatureAccess: hasFeatureAccess)
         let endBound = max(0, duration)
         let maxSpan = min(limit, endBound)
         guard maxSpan > 0 else { return 0...max(endBound, 0.001) }
@@ -288,6 +313,8 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
     case noDisplay
     case writerFailed(String)
     case captureFailed(String)
+    case captureInterrupted(String)
+    case diskSpaceLow
     case emptyRecording
 
     var errorDescription: String? {
@@ -314,6 +341,10 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
             "Could not write the recording: \(message)"
         case .captureFailed(let message):
             "Recording failed: \(message)"
+        case .captureInterrupted(let message):
+            message
+        case .diskSpaceLow:
+            "The disk is almost full. Recording stopped so the captured audio could be saved."
         case .emptyRecording:
             "The recording did not capture any media."
         }

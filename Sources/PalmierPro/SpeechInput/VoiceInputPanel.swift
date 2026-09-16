@@ -5,8 +5,9 @@ import SwiftUI
 final class VoiceInputPanelController: NSObject, NSWindowDelegate {
     private weak var coordinator: VoiceInputCoordinator?
     private var panel: VoiceInputPanel?
-    private var lastAppliedZoomScale = AppZoomScale.shared.scale
-    private var zoomObserver: NSObjectProtocol?
+    private var focusRetryScheduled = false
+    private var unscaledPanelHeight = AppTheme.SpeechInput.quickInputMinimumHeight
+    private nonisolated(unsafe) var zoomObserver: NSObjectProtocol?
 
     init(coordinator: VoiceInputCoordinator) {
         self.coordinator = coordinator
@@ -22,7 +23,7 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
         }
     }
 
-    isolated deinit {
+    deinit {
         if let zoomObserver {
             NotificationCenter.default.removeObserver(zoomObserver)
         }
@@ -34,18 +35,21 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
             ?? NSScreen.main
             ?? NSScreen.screens.first
         let visibleFrame = screen?.visibleFrame ?? .zero
-        let maximumHeight = visibleFrame.height * AppTheme.SpeechInput.quickInputMaximumHeightRatio
-        coordinator?.updateEditorMaximumHeight(max(0, maximumHeight - AppTheme.SpeechInput.quickInputMinimumHeight))
-        panel.setContentSize(NSSize(
+        let maximumHeight = unscaledMaximumHeight(in: visibleFrame)
+        coordinator?.updateEditorMaximumHeight(maximumHeight - AppTheme.SpeechInput.quickInputMinimumHeight)
+        unscaledPanelHeight = AppTheme.SpeechInput.quickInputMinimumHeight
+        setPanelContentSize(
             width: AppTheme.SpeechInput.quickInputWidth,
-            height: AppTheme.SpeechInput.quickInputMinimumHeight
-        ))
+            height: unscaledPanelHeight,
+            keepingCenterOf: panel
+        )
         panel.setFrameOrigin(NSPoint(
             x: visibleFrame.midX - panel.frame.width / 2,
             y: visibleFrame.midY - panel.frame.height / 2
         ))
         panel.orderFrontRegardless()
         panel.makeKeyAndOrderFront(nil)
+        restoreEditorFocus()
     }
 
     func dismiss() {
@@ -55,16 +59,41 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
 
     func resize(to requestedHeight: CGFloat) {
         guard let panel, let screen = panel.screen ?? NSScreen.main else { return }
-        let maximum = screen.visibleFrame.height * AppTheme.SpeechInput.quickInputMaximumHeightRatio
+        let maximum = unscaledMaximumHeight(in: screen.visibleFrame)
         let height = min(maximum, max(AppTheme.SpeechInput.quickInputMinimumHeight, requestedHeight))
-        let current = panel.contentRect(forFrameRect: panel.frame).size
-        guard abs(current.width - AppTheme.SpeechInput.quickInputWidth) > AppTheme.BorderWidth.thin
-            || abs(current.height - height) > AppTheme.BorderWidth.thin else { return }
-        panel.setContentSizePreservingCenter(NSSize(width: AppTheme.SpeechInput.quickInputWidth, height: height))
+        unscaledPanelHeight = height
+        coordinator?.updateEditorMaximumHeight(maximum - AppTheme.SpeechInput.quickInputMinimumHeight)
+        let scaledHeight = height * AppZoomScale.shared.scale
+        guard abs(panel.frame.height - scaledHeight) > AppTheme.BorderWidth.thin else { return }
+        setPanelContentSize(
+            width: AppTheme.SpeechInput.quickInputWidth,
+            height: height,
+            keepingCenterOf: panel
+        )
     }
 
     func windowWillClose(_ notification: Notification) {
         coordinator?.dismiss()
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        restoreEditorFocus()
+    }
+
+    func restoreEditorFocus() {
+        guard let panel, panel.isVisible, let contentView = panel.contentView else { return }
+        if let editor = focusTarget(in: contentView) {
+            editor.requestFocus()
+            return
+        }
+
+        guard !focusRetryScheduled else { return }
+        focusRetryScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            focusRetryScheduled = false
+            self.restoreEditorFocus()
+        }
     }
 
     private func makePanelIfNeeded() -> VoiceInputPanel {
@@ -82,6 +111,7 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
         panel.title = "Voice Input"
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = false
         panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -89,7 +119,10 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
         panel.hasShadow = false
         panel.isReleasedWhenClosed = false
         panel.delegate = self
-        let contentView = NSHostingView(rootView: VoiceInputPanelView(coordinator: coordinator!).appZoomEnvironment())
+        let contentView = NSHostingView(
+            rootView: VoiceInputPanelView(coordinator: coordinator!)
+                .appZoomEnvironment()
+        )
         contentView.wantsLayer = true
         contentView.layer?.backgroundColor = NSColor.clear.cgColor
         contentView.layer?.cornerRadius = AppTheme.Radius.xl
@@ -100,22 +133,45 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
     }
 
     private func applyZoomScale() {
-        let currentScale = AppZoomScale.shared.scale
-        let previousScale = lastAppliedZoomScale
-        guard currentScale != previousScale else { return }
-        lastAppliedZoomScale = currentScale
         guard let panel, panel.isVisible else { return }
-
         let screen = panel.screen ?? NSScreen.main
-        let maximum = (screen?.visibleFrame.height ?? 0) * AppTheme.SpeechInput.quickInputMaximumHeightRatio
-        coordinator?.updateEditorMaximumHeight(max(0, maximum - AppTheme.SpeechInput.quickInputMinimumHeight))
+        let visibleFrame = screen?.visibleFrame ?? .zero
+        let maximum = unscaledMaximumHeight(in: visibleFrame)
+        unscaledPanelHeight = min(maximum, max(AppTheme.SpeechInput.quickInputMinimumHeight, unscaledPanelHeight))
+        coordinator?.updateEditorMaximumHeight(maximum - AppTheme.SpeechInput.quickInputMinimumHeight)
+        setPanelContentSize(
+            width: AppTheme.SpeechInput.quickInputWidth,
+            height: unscaledPanelHeight,
+            keepingCenterOf: panel
+        )
+    }
 
-        let current = panel.contentRect(forFrameRect: panel.frame).size
-        let factor = currentScale / previousScale
-        panel.setContentSizePreservingCenter(NSSize(
-            width: current.width * factor,
-            height: current.height * factor
+    private func unscaledMaximumHeight(in visibleFrame: NSRect) -> CGFloat {
+        visibleFrame.height
+            * AppTheme.SpeechInput.quickInputMaximumHeightRatio
+            / AppZoomScale.shared.scale
+    }
+
+    private func setPanelContentSize(width: CGFloat, height: CGFloat, keepingCenterOf panel: NSPanel) {
+        let scale = AppZoomScale.shared.scale
+        let center = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        panel.setContentSize(NSSize(width: width * scale, height: height * scale))
+        panel.setFrameOrigin(NSPoint(
+            x: center.x - panel.frame.width / 2,
+            y: center.y - panel.frame.height / 2
         ))
+    }
+
+    private func focusTarget(in view: NSView) -> VoiceInputFocusTarget? {
+        if let target = view as? VoiceInputFocusTarget {
+            return target
+        }
+        for subview in view.subviews {
+            if let target = focusTarget(in: subview) {
+                return target
+            }
+        }
+        return nil
     }
 }
 
@@ -126,7 +182,6 @@ private final class VoiceInputPanel: NSPanel {
 
 private struct VoiceInputPanelView: View {
     @Bindable var coordinator: VoiceInputCoordinator
-    @FocusState private var isEditorFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
@@ -145,17 +200,8 @@ private struct VoiceInputPanelView: View {
                 .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
         }
         .shadow(AppTheme.Shadow.lg)
-        .onAppear { focusAndResize() }
-        .onChange(of: coordinator.focusGeneration) { _, _ in focusAndResize() }
+        .onAppear { resizeForDraft() }
         .onChange(of: coordinator.draft) { _, _ in resizeForDraft() }
-        .onKeyPress(.return, phases: .down) { press in
-            guard !press.modifiers.contains(.shift), coordinator.canSubmit else { return .ignored }
-            return coordinator.submit() ? .handled : .ignored
-        }
-        .onKeyPress(.escape, phases: .down) { _ in
-            coordinator.dismiss()
-            return .handled
-        }
     }
 
     private var inputArea: some View {
@@ -167,7 +213,8 @@ private struct VoiceInputPanelView: View {
                     fontSize: AppTheme.FontSize.mdLg,
                     textInset: NSSize(width: AppTheme.Spacing.xs, height: AppTheme.Spacing.xs),
                     showsVerticalScroller: false,
-                    autofocus: isEditorFocused
+                    onReturn: { coordinator.submit() },
+                    onEscape: { coordinator.dismiss() }
                 )
                     .frame(height: editorHeight)
 
@@ -276,11 +323,6 @@ private struct VoiceInputPanelView: View {
             AppTheme.Spacing.zero,
             editorHeight - AppTheme.SpeechInput.quickInputEditorMinimumHeight
         )
-    }
-
-    private func focusAndResize() {
-        isEditorFocused = true
-        resizeForDraft()
     }
 
     private func resizeForDraft() {

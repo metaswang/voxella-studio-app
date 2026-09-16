@@ -1,0 +1,53 @@
+{
+  "audioPath" : "\/Users\/adamwang\/Downloads\/lex_60min.mp3",
+  "audioSeconds" : 3605,
+  "communityRTFTarget" : 0.003,
+  "fluidAudioRTFTarget" : 0.001,
+  "mlxChunkedVsFullMaxAbsDelta" : 0.9999961256980896,
+  "runs" : [
+    {
+      "elapsedSeconds" : 2.757224667,
+      "frames" : 14083,
+      "hopSeconds" : 0.256,
+      "id" : "coreml-cpu",
+      "meanProbability" : 0.9656135999520699,
+      "meetsCommunityTarget" : true,
+      "meetsFluidAudioTarget" : true,
+      "mlxPeakBytes" : 232972792,
+      "mlxPeakDeltaBytes" : 0,
+      "rtf" : 0.0007648334721220527,
+      "speechRatio" : 0.9610829403606103,
+      "speechSeconds" : 3464.704
+    },
+    {
+      "elapsedSeconds" : 4.534176417,
+      "frames" : 112657,
+      "hopSeconds" : 0.032,
+      "id" : "mlx-full",
+      "meanProbability" : 0.008399380086477927,
+      "meetsCommunityTarget" : true,
+      "meetsFluidAudioTarget" : false,
+      "mlxPeakBytes" : 3245089576,
+      "mlxPeakDeltaBytes" : 3007116800,
+      "rtf" : 0.0012577465789181694,
+      "speechRatio" : 0.004251872399445215,
+      "speechSeconds" : 15.328000000000001
+    },
+    {
+      "elapsedSeconds" : 16.275890917,
+      "frames" : 112657,
+      "hopSeconds" : 0.032,
+      "id" : "mlx-chunked",
+      "meanProbability" : 0.8869022092502019,
+      "meetsCommunityTarget" : false,
+      "meetsFluidAudioTarget" : false,
+      "mlxPeakBytes" : 3245089576,
+      "mlxPeakDeltaBytes" : 0,
+      "rtf" : 0.004514810240499307,
+      "speechRatio" : 0.8858718446601942,
+      "speechSeconds" : 3193.568
+    }
+  ],
+  "sampleRate" : 16000,
+  "warmupSeconds" : 5
+}

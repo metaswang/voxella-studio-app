@@ -56,7 +56,9 @@ struct WorkbenchLibraryView: View {
                         icon: "waveform.and.mic",
                         tint: .purple
                     ) {
-                        store.addDub()
+                        Task { @MainActor in
+                            _ = await store.addDubAfterAccess()
+                        }
                     }
                     actionCard(
                         title: L10n.string("Edit a video"),
@@ -159,7 +161,7 @@ struct WorkbenchLibraryView: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 18) {
                 Image(systemName: icon)
-                    .font(.system(size: 22, weight: .medium))
+                    .font(.system(size: AppTheme.FontSize.title1, weight: .medium))
                     .foregroundStyle(tint)
                     .frame(width: 42, height: 42)
                     .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))

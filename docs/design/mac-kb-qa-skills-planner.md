@@ -23,7 +23,7 @@
 ## 2. 设计原则（对齐 API，适配 Mac）
 
 1. **复用 API 心智，不复刻整图**：Skill 选择（≤3）→ 简单路由短路 → 否则 contract + **动态 tool-loop** → evidence hard-gate → Composer。不做完整 LangGraph / fast-router（chit-chat/help 可后置）。
-2. **Skills 包装沿用 App Settings → Skills**：`SKILL.md` + Community catalog；新增 category **`knowledge`**（社区「知识库 chat」类）。安装路径仍是 `~/.palmier/skills/<id>/`。
+2. **Skills 包装沿用 App Settings → Skills**：`SKILL.md` + Community catalog；新增 category **`knowledge`**（社区「知识库 chat」类）。安装路径为 `~/.voxstudio/skills/<id>/`。
 3. **运行时桥接必须新建**：Knowledge 页专用 `KnowledgeAgentRuntime`（或等价），**不要**指望编辑器 `AgentService` 直接答 KB。
 4. **工具 I/O schema 在 App 内实现**：命名尽量对齐 API 点分工具（Mac 侧可用 `knowledge_search` ↔ `knowledge.search`），能力表驱动证据种类。
 5. **Scope 仍由 UI 决定**：`.all` / `.session` / `.sessions` 作为默认 `target_scope`；skill 不得越权扫登录不可见的 cloud。

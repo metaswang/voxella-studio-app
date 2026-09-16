@@ -20,6 +20,7 @@ struct ProcessingOptionsSheet: View {
     @State private var sessionTitle = ""
     @State private var showAdvanced = false
     @State private var speakerCount: SpeakerCountOption = .auto
+    @State private var enableSubtitleSegmentation = false
     @State private var enableClip = false
     @State private var clipRange: ClosedRange<Double> = 0...1
     @State private var hasExplicitClipRange = false
@@ -53,7 +54,7 @@ struct ProcessingOptionsSheet: View {
     private var titleText: String {
         switch mode {
         case .upload: "Processing options"
-        case .retranscribe: "Re-transcribe and rebuild subtitles"
+        case .retranscribe: "Re-transcribe"
         }
     }
 
@@ -62,7 +63,7 @@ struct ProcessingOptionsSheet: View {
         case .upload:
             "Optionally clip the media and enable translation before processing."
         case .retranscribe:
-            "Reprocess the media and replace the transcript and subtitles only after it completes."
+            "Reprocess the media and replace the transcript after it completes."
         }
     }
 
@@ -74,7 +75,7 @@ struct ProcessingOptionsSheet: View {
         }
         return switch mode {
         case .upload: "Transcribe"
-        case .retranscribe: "Re-transcribe and rebuild"
+        case .retranscribe: "Re-transcribe"
         }
     }
 
@@ -173,7 +174,7 @@ struct ProcessingOptionsSheet: View {
             Spacer()
             Button(action: onCancel) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: AppTheme.FontSize.smMd, weight: .bold))
                     .foregroundStyle(AppTheme.Text.mutedColor)
                     .frame(width: AppTheme.zoomed(28), height: AppTheme.zoomed(28))
                     .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.zoomed(8)))
@@ -303,6 +304,10 @@ struct ProcessingOptionsSheet: View {
                 .menuIndicator(.hidden)
             }
 
+            Toggle("Segment subtitles", isOn: $enableSubtitleSegmentation)
+                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                .toggleStyle(.checkbox)
+
             if isSingleFile {
                 clipSection
             }
@@ -322,7 +327,7 @@ struct ProcessingOptionsSheet: View {
             .toggleStyle(.checkbox)
             .disabled(requiresCloudDurationClip)
             if requiresCloudDurationClip {
-                Text(RecordingDurationLimit.cloudClipNotice(isPaid: account.isPaid))
+                Text(RecordingDurationLimit.cloudClipNotice(hasFeatureAccess: account.hasFeatureAccess))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Status.warningColor)
                     .fixedSize(horizontal: false, vertical: true)
@@ -364,7 +369,7 @@ struct ProcessingOptionsSheet: View {
     private var requiresCloudDurationClip: Bool {
         guard !allowsCloudStorage, computeDestination == .cloud, isSingleFile else { return false }
         guard let duration = mediaDurationSeconds else { return false }
-        return RecordingDurationLimit.exceedsLimit(duration, isPaid: account.isPaid)
+        return RecordingDurationLimit.exceedsLimit(duration, hasFeatureAccess: account.hasFeatureAccess)
     }
 
     private var translationSection: some View {
@@ -481,7 +486,7 @@ struct ProcessingOptionsSheet: View {
     private var cloudComputeCard: some View {
         switch CloudTranscriptionNoticePolicy.notice(
             isSignedIn: account.isSignedIn,
-            isPaid: account.isPaid,
+            hasFeatureAccess: account.hasFeatureAccess,
             quota: cloudQuota
         ) {
         case .signIn:
@@ -581,6 +586,7 @@ struct ProcessingOptionsSheet: View {
         languageCode = initialOptions.languageCode
         sessionTitle = initialOptions.customTitle ?? ""
         speakerCount = initialOptions.speakerCount
+        enableSubtitleSegmentation = initialOptions.useLLMSubtitleProcessing ?? false
         enableTranslation = initialOptions.enableTranslation
             || !(initialOptions.normalizedTargetLanguageCode ?? "").isEmpty
         targetLanguageCode = initialOptions.normalizedTargetLanguageCode ?? ""
@@ -591,7 +597,7 @@ struct ProcessingOptionsSheet: View {
             clipRange = Double(startMs) / 1000 ... Double(endMs) / 1000
             hasExplicitClipRange = true
             showAdvanced = true
-        } else if enableTranslation {
+        } else if enableTranslation || enableSubtitleSegmentation {
             showAdvanced = true
         }
     }
@@ -602,7 +608,8 @@ struct ProcessingOptionsSheet: View {
             customTitle: SessionTitlePolicy.normalizedUserTitle(sessionTitle),
             speakerCount: speakerCount,
             enableTranslation: enableTranslation,
-            targetLanguageCode: enableTranslation ? targetLanguageCode : nil
+            targetLanguageCode: enableTranslation ? targetLanguageCode : nil,
+            useLLMSubtitleProcessing: enableSubtitleSegmentation
         )
         if isSingleFile, enableClip {
             options.clipStartMs = Int((clipRange.lowerBound * 1000).rounded())
@@ -619,7 +626,7 @@ struct ProcessingOptionsSheet: View {
         let clamped = RecordingDurationLimit.clampedClipRange(
             duration: duration,
             current: enableClip ? clipRange : nil,
-            isPaid: account.isPaid
+            hasFeatureAccess: account.hasFeatureAccess
         )
         let alreadyApplied =
             showAdvanced
@@ -644,7 +651,7 @@ struct ProcessingOptionsSheet: View {
         let clamped = RecordingDurationLimit.clampedClipRange(
             duration: duration,
             current: range,
-            isPaid: account.isPaid
+            hasFeatureAccess: account.hasFeatureAccess
         )
         if clamped != range {
             clipRange = clamped

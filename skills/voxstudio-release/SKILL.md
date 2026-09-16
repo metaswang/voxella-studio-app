@@ -37,6 +37,8 @@ Read references/release-runbook.md before performing a release. Use scripts/uplo
 - TEAM_IDENTIFIER must match the Team ID in that certificate. The bundle script can derive it from the certificate when omitted.
 - NOTARY_PROFILE must name an existing xcrun notarytool Keychain profile.
 - If NOTARY_PROFILE is missing, recover it before building by following the API-key or app-specific-password procedure in the runbook.
+- Sparkle Ed25519 signing is separate from Apple notarization. `SUPublicEDKey` must match the private key used by `sign_update`; do not publish an unsigned appcast or an artifact signed by an unrelated key.
+- If the existing Sparkle private key is unavailable, recover it before publishing. If key rotation is intentional, generate a new Ed25519 key, export a backup to the ignored `.secrets/` directory with mode 600, update `SUPublicEDKey`, and ship a transition release deliberately. Existing installations that trust the old public key will not accept updates signed only by the new key.
 - App Store Connect API keys are managed at https://appstoreconnect.apple.com/access/integrations/api.
 - A Team API key uses an `AuthKey_<KEY_ID>.p8` private key; a `.provisionprofile` is never a notarization credential.
 - Keep local notarization private keys under `.secrets/`, which is ignored by Git, with restrictive file permissions. Never print, commit, or upload the key.
@@ -47,6 +49,28 @@ Read references/release-runbook.md before performing a release. Use scripts/uplo
 - The Developer ID app must not carry com.apple.developer.applesignin, com.apple.developer.team-identifier, or keychain-access-groups.
 - Google and Apple account login use the browser OAuth/PKCE flow in the current app. Do not reintroduce native GoogleSignIn SDK configuration or restricted entitlements into this release.
 - Expected outputs are .build/VoxStudio.app and .build/VoxStudio.dmg.
+
+## Sparkle key and public appcast
+
+- Keep the Sparkle private-key backup at `.secrets/sparkle-ed25519-private.key`; `.secrets/` is Git-ignored. Never print, commit, upload, or include this file in a DMG.
+- Check the current key before changing `SUPublicEDKey`:
+
+      SPARKLE_ROOT='.build/artifacts/sparkle/Sparkle'
+      "$SPARKLE_ROOT/bin/generate_keys" -p
+      /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Sources/PalmierPro/Resources/Info.plist
+      "$SPARKLE_ROOT/bin/sign_update" -p .build/VoxStudio.dmg
+
+- If `generate_keys -p` does not return the public key in `Info.plist`, stop and recover the original private key. Do not silently generate a replacement for an established release stream.
+- When a new key is explicitly authorized, generate it in the macOS Keychain, export a protected backup, and verify Git ignores it:
+
+      mkdir -p .secrets
+      "$SPARKLE_ROOT/bin/generate_keys"
+      "$SPARKLE_ROOT/bin/generate_keys" -x .secrets/sparkle-ed25519-private.key
+      chmod 600 .secrets/sparkle-ed25519-private.key
+      git check-ignore -v .secrets/sparkle-ed25519-private.key
+
+- Copy the new public key printed by `generate_keys` into `SUPublicEDKey`, then verify the appcast item and DMG with `sign_update` before publication. Import an existing backup on another machine with `generate_keys -f`; never pass private-key material on a command line.
+- For Hugging Face publication, the public feed is `https://huggingface.co/hfadam/VoxStudio.app/resolve/main/appcast.xml` and the latest enclosure must use the public DMG URL in that same repository. Upload and verify `appcast.xml` as well as `VoxStudio.dmg`.
 
 ## Standard workflow
 

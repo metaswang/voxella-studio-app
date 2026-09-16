@@ -42,6 +42,10 @@ public actor VadManager {
     }
 
     internal func processChunk(_ audioChunk: [Float], inputState: VadState? = nil) async throws -> VadResult {
+        try processChunkSync(audioChunk, inputState: inputState)
+    }
+
+    private func processChunkSync(_ audioChunk: [Float], inputState: VadState? = nil) throws -> VadResult {
         guard let loadedModel = vadModel else {
             throw VadError.notInitialized
         }
@@ -67,7 +71,7 @@ public actor VadManager {
         // No normalization - preserve original amplitude information for VAD
 
         // Process through unified model
-        let (rawProbability, newHiddenState, newCellState) = try await processUnifiedModel(
+        let (rawProbability, newHiddenState, newCellState) = try processUnifiedModel(
             processedChunk,
             inputState: currentState,
             model: loadedModel
@@ -91,7 +95,7 @@ public actor VadManager {
         _ audioChunk: [Float],
         inputState: VadState,
         model: MLModel
-    ) async throws -> (Float, [Float], [Float]) {
+    ) throws -> (Float, [Float], [Float]) {
         do {
             let result: (Float, [Float], [Float]) = try autoreleasepool {
                 // Reuse ANE-aligned buffers to avoid surface churn between invocations
@@ -232,26 +236,20 @@ public actor VadManager {
 
     /// Process audio samples using adaptive batch processing for optimal performance
     internal func processAudioSamples(_ audioData: [Float]) async throws -> [VadResult] {
-
-        // Split audio into chunks of chunkSize (4096 samples) as model is optimized for this size
-        var audioChunks: [[Float]] = []
-        for i in stride(from: 0, to: audioData.count, by: Self.chunkSize) {
-            let endIndex = min(i + Self.chunkSize, audioData.count)
-            let chunk = Array(audioData[i..<endIndex])
-            audioChunks.append(chunk)
-        }
-
-        guard !audioChunks.isEmpty else {
-            return []
-        }
+        guard !audioData.isEmpty else { return [] }
 
         var results: [VadResult] = []
+        results.reserveCapacity(((audioData.count - 1) / Self.chunkSize) + 1)
         var currentState = VadState.initial()
-
-        for (chunk) in audioChunks {
-            let result = try await processChunk(chunk, inputState: currentState)
+        var index = 0
+        while index < audioData.count {
+            try Task.checkCancellation()
+            let endIndex = min(index + Self.chunkSize, audioData.count)
+            let chunk = Array(audioData[index..<endIndex])
+            let result = try processChunkSync(chunk, inputState: currentState)
             results.append(result)
             currentState = result.outputState
+            index = endIndex
         }
 
         return results

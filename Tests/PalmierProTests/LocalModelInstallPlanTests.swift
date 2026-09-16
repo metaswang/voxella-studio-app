@@ -15,7 +15,6 @@ struct LocalModelInstallPlanTests {
         )
         #expect(plan.items.map(\.id) == [
             .sileroVAD,
-            .sileroVADMLX,
             .qwen3ASR17B8Bit,
             .parakeetTDT06Bv3,
             .whisperLargeV3Turbo8Bit,
@@ -36,7 +35,7 @@ struct LocalModelInstallPlanTests {
             catalog: Self.catalog,
             isInstalled: { _ in false }
         )
-        #expect(plan.items.map(\.id) == [.sileroVAD, .sileroVADMLX, .parakeetTDT06Bv3])
+        #expect(plan.items.map(\.id) == [.sileroVAD, .parakeetTDT06Bv3])
         #expect(plan.missingItems.contains { $0.id == .spokenLanguageID } == false)
         #expect(plan.missingItems.contains { $0.id == .forcedAligner } == false)
         #expect(plan.missingItems.contains { $0.id == .sortformerDiarization } == false)
@@ -50,7 +49,7 @@ struct LocalModelInstallPlanTests {
             catalog: Self.catalog,
             isInstalled: { _ in false }
         )
-        #expect(plan.items.map(\.id) == [.sileroVAD, .sileroVADMLX, .qwen3ASR17B8Bit, .forcedAligner])
+        #expect(plan.items.map(\.id) == [.sileroVAD, .qwen3ASR17B8Bit, .forcedAligner])
         #expect(plan.missingItems.contains { $0.id == .parakeetTDT06Bv3 } == false)
         #expect(plan.missingItems.contains { $0.id == .spokenLanguageID } == false)
     }
@@ -63,12 +62,12 @@ struct LocalModelInstallPlanTests {
             catalog: Self.catalog,
             isInstalled: { _ in false }
         )
-        #expect(plan.items.map(\.id) == [.sileroVAD, .sileroVADMLX, .qwen3ASR17B8Bit, .forcedAligner])
+        #expect(plan.items.map(\.id) == [.sileroVAD, .qwen3ASR17B8Bit, .forcedAligner])
     }
 
     @Test func installedModelsAreExcludedFromAdditionalDiskSpace() {
         let installed: Set<LocalModelID> = [
-            .whisperLargeV3Turbo8Bit, .forcedAligner, .sileroVAD, .sileroVADMLX,
+            .whisperLargeV3Turbo8Bit, .forcedAligner, .sileroVAD,
             .qwen3ASR17B8Bit, .parakeetTDT06Bv3,
         ]
         let plan = LocalModelInstallPlan.plan(
@@ -85,14 +84,14 @@ struct LocalModelInstallPlanTests {
 
     @Test func higherWhisperFallbackPrecisionChangesWhisperDomainPlanSize() {
         let eightBit = LocalModelInstallPlan.plan(
-            languageCode: "fa",
+            languageCode: "iw",
             speakerCount: 1,
             asrModelID: .whisperLargeV3Turbo8Bit,
             catalog: Self.catalog,
             isInstalled: { _ in false }
         )
         let fp16 = LocalModelInstallPlan.plan(
-            languageCode: "fa",
+            languageCode: "iw",
             speakerCount: 1,
             asrModelID: .whisperLargeV3TurboFP16,
             catalog: Self.catalog,
@@ -100,7 +99,7 @@ struct LocalModelInstallPlanTests {
         )
         #expect(fp16.additionalBytes > eightBit.additionalBytes)
         #expect(fp16.asrModelID == .whisperLargeV3TurboFP16)
-        #expect(eightBit.items.map(\.id) == [.sileroVAD, .sileroVADMLX, .whisperLargeV3Turbo8Bit, .forcedAligner])
+        #expect(eightBit.items.map(\.id) == [.sileroVAD, .whisperLargeV3Turbo8Bit, .forcedAligner])
     }
 
     @Test func liveCatalogComputesAutomaticDefaultFromInstalledState() {
@@ -123,18 +122,18 @@ struct LocalModelInstallPlanTests {
             speakerCount: 1,
             asrModelID: .whisperLargeV3Turbo8Bit,
             catalog: LocalModelManager.catalog,
-            isInstalled: { $0 == .sileroVAD || $0 == .sileroVADMLX }
+            isInstalled: { $0 == .sileroVAD }
         )
         #expect(plan.items.first?.id == .sileroVAD)
         #expect(plan.items.first?.isInstalled == true)
         #expect(plan.missingItems.contains { $0.id == .sileroVAD } == false)
-        #expect(plan.missingItems.contains { $0.id == .sileroVADMLX } == false)
     }
 
     @Test func knowledgeQAPlanAlwaysIncludesWeMMEvenForCloudAnswer() {
         let catalog = [
             Self.descriptor(.weMMEmbedding2B4Bit, bytes: 2_000_000_000, license: false),
             Self.descriptor(.qwenTTS17B, bytes: 2_400_000_000, license: false),
+            Self.descriptor(.qwen3Reranker06B4Bit, bytes: 350_000_000, license: false),
         ]
         let cloudAnswer = LocalModelInstallPlan.knowledgeQAPlan(
             answerModelID: nil,
@@ -151,9 +150,12 @@ struct LocalModelInstallPlanTests {
             catalog: catalog,
             isInstalled: { $0 == .weMMEmbedding2B4Bit }
         )
-        #expect(localAnswer.items.map(\.id) == [.weMMEmbedding2B4Bit, .qwenTTS17B])
-        #expect(localAnswer.missingItems.map(\.id) == [.qwenTTS17B])
-        #expect(LocalModelInstallPlan.knowledgeQARequiredIDs(answerModelID: nil, includeReranker: true) == [.weMMEmbedding2B4Bit])
+        #expect(localAnswer.items.map(\.id) == [.weMMEmbedding2B4Bit, .qwenTTS17B, .qwen3Reranker06B4Bit])
+        #expect(localAnswer.missingItems.map(\.id) == [.qwenTTS17B, .qwen3Reranker06B4Bit])
+        #expect(
+            LocalModelInstallPlan.knowledgeQARequiredIDs(answerModelID: nil, includeReranker: true)
+                == [.weMMEmbedding2B4Bit, .qwen3Reranker06B4Bit]
+        )
     }
 
     @Test func dubbingPlanIncludesSelectedVoiceModelAndAlignerWithPinnedRevisions() {
@@ -180,7 +182,6 @@ struct LocalModelInstallPlanTests {
             descriptor(.whisperLargeV3TurboFP16, bytes: 3_000_000_000, license: true),
             descriptor(.forcedAligner, bytes: 80_000_000, license: false),
             descriptor(.sileroVAD, bytes: 10_000_000, license: false),
-            descriptor(.sileroVADMLX, bytes: 2_000_000, license: false),
             descriptor(.spokenLanguageID, bytes: 80_000_000, license: false),
             descriptor(.sortformerDiarization, bytes: 320_000_000, license: false),
         ]

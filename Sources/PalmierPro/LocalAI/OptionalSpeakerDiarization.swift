@@ -13,6 +13,16 @@ enum OptionalSpeakerDiarization {
         recognize: () async throws -> SpeakerActivityTimeline
     ) async throws -> SpeakerActivityTimeline {
         try Task.checkCancellation()
+        if requestedSpeakerCount == 0 {
+            return SpeakerActivityTimeline(
+                intervals: [], probabilities: [], frameDuration: 0, speakerCapacity: 0,
+                audioDuration: audioDuration,
+                diagnostics: DiarizationDiagnostics(
+                    backend: .disabled, elapsedSeconds: 0, processedChunks: 0,
+                    detectedSpeakerCount: 0, requestedSpeakerCount: 0, warnings: []
+                )
+            )
+        }
         if requestedSpeakerCount == 1 {
             return SpeakerActivityPostprocessor.singleSpeaker(speechRanges: speechRanges, audioDuration: audioDuration)
         }
@@ -42,6 +52,7 @@ enum OptionalSpeakerDiarization {
     }
 
     static func cacheIdentity(requestedSpeakerCount: Int?, modelRevision: String?) -> String {
+        if requestedSpeakerCount == 0 { return "disabled" }
         if requestedSpeakerCount == 1 { return "single" }
         return modelRevision.map { "sortformer@\($0)" } ?? "none"
     }

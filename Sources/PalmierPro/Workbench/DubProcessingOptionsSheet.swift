@@ -62,7 +62,7 @@ struct DubProcessingOptionsSheet: View {
         guard cloudComputeSelected else { return .none }
         return CloudCreditNoticePolicy.notice(
             isSignedIn: account.isSignedIn,
-            isPaid: account.isPaid,
+            hasFeatureAccess: account.hasFeatureAccess,
             estimate: estimate,
             estimateFailed: estimateError
         )

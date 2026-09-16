@@ -7,7 +7,7 @@
 1. Keep `AppZoomScale.shared.scale` (0.8…1.5) and View menu Zoom In/Out/Reset.
 2. **No** app-chrome `scaleEffect` / `AppPageZoomLayout` inverse layout.
 3. Scale layout metrics: `AppTheme.Spacing` / `Radius` / `FontSize` / `IconSize` (and key window sizes) multiply by `AppTheme.appZoomScaleFactor`.
-4. Inject `@Environment(\.appZoomScale)` at top-level surfaces; `.appZoomEnvironment()` keeps the live zoom value available without resetting view state.
+4. Inject `@Environment(\.appZoomScale)`; top-level surfaces use `.appZoomEnvironment()` (and `.id(scale)` so theme metrics refresh).
 5. Sheets / floating panels: `contentSize` from **measured layout** (already metric-scaled).
 6. Timeline `editor.zoomScale` remains a separate canvas zoom track.
 

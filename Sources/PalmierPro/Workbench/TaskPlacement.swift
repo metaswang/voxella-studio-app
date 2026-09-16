@@ -83,7 +83,7 @@ struct TranscriptionProcessingOptions: Equatable, Sendable {
     var speakerCount: SpeakerCountOption = .auto
     var enableTranslation = false
     var targetLanguageCode: String?
-    var useLLMSubtitleProcessing: Bool? = nil
+    var useLLMSubtitleProcessing: Bool? = false
     var cloudVocalRepairEnabled = false
     var clipStartMs: Int?
     var clipEndMs: Int?
@@ -309,15 +309,15 @@ enum CloudTranscriptionNoticeKind: Equatable, Sendable {
 enum CloudTranscriptionNoticePolicy {
     static func notice(
         isSignedIn: Bool,
-        isPaid: Bool,
+        hasFeatureAccess: Bool,
         quota: CloudTranscriptionQuota?
     ) -> CloudTranscriptionNoticeKind {
         guard isSignedIn else { return .signIn }
         guard let quota else {
-            return isPaid ? .none : .freeUpgrade
+            return hasFeatureAccess ? .none : .freeUpgrade
         }
         guard quota.canAfford else { return .insufficientCredits }
-        guard isPaid else { return .freeUpgrade }
+        guard hasFeatureAccess else { return .freeUpgrade }
         if quota.shouldShowLowBalanceNotice,
            let remaining = quota.remainingMediaSecondsAfterSubmission {
             return .lowBalance(remainingSeconds: remaining)
@@ -358,7 +358,7 @@ enum CloudCreditNotice: Equatable, Sendable {
 enum CloudCreditNoticePolicy {
     static func notice(
         isSignedIn: Bool,
-        isPaid: Bool,
+        hasFeatureAccess: Bool,
         estimate: CloudUsageEstimate?,
         estimateFailed: Bool = false
     ) -> CloudCreditNotice {
@@ -371,7 +371,7 @@ enum CloudCreditNoticePolicy {
                 availableDuration: estimate.maxDurationSecWithRemainingQuota ?? 0
             )
         }
-        guard isPaid else { return .freeUpgrade }
+        guard hasFeatureAccess else { return .freeUpgrade }
         guard estimate.shouldShowLowBalanceNotice,
               let remaining = estimate.remainingMediaSecondsAfterSubmission else {
             return .none

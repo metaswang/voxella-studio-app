@@ -25,7 +25,8 @@ protocol AlignmentSoundSceneClassifying: Sendable {
     func classifySoundScenes(
         samples: [Float],
         sampleRate: Int,
-        ranges: [ClosedRange<Double>]
+        ranges: [ClosedRange<Double>],
+        progress: @escaping @Sendable (Int, Int) -> Void
     ) throws -> [AlignmentSoundSceneWindow]
 }
 
@@ -49,6 +50,8 @@ struct AlignmentSpeechMask: Equatable, Sendable {
 }
 
 enum AlignmentSpeechGate {
+    static let maximumSceneAnalysisDuration = 15 * 60.0
+
     struct Policy: Equatable, Sendable {
         var cellDuration: Double
         var absoluteFloor: Double
@@ -80,7 +83,8 @@ enum AlignmentSpeechGate {
         sampleRate: Int,
         speechIntervals: [AlignmentSpeechInterval],
         policy: Policy = .standard,
-        sceneClassifier: (any AlignmentSoundSceneClassifying)? = nil
+        sceneClassifier: (any AlignmentSoundSceneClassifying)? = nil,
+        sceneProgress: @escaping @Sendable (Int, Int) -> Void = { _, _ in }
     ) -> AlignmentSpeechMask {
         let duration = sampleRate > 0 ? Double(samples.count) / Double(sampleRate) : 0
         let empty = AlignmentSpeechMask(policy: policy, audioDuration: max(0, duration), isAlignableSpeech: [])
@@ -144,7 +148,8 @@ enum AlignmentSpeechGate {
                     : try sceneClassifier.classifySoundScenes(
                         samples: samples,
                         sampleRate: sampleRate,
-                        ranges: ranges
+                        ranges: ranges,
+                        progress: sceneProgress
                     )
             } catch {
                 windows = []
@@ -167,6 +172,12 @@ enum AlignmentSpeechGate {
 
         let alignable = zip(energySpeech, musicWithoutSpeech).map { $0 && !$1 }
         return AlignmentSpeechMask(policy: policy, audioDuration: duration, isAlignableSpeech: alignable)
+    }
+
+    static func shouldAnalyzeSoundScenes(audioDuration: Double) -> Bool {
+        audioDuration.isFinite
+            && audioDuration > 0
+            && audioDuration <= maximumSceneAnalysisDuration
     }
 
     static func splitIntervals(

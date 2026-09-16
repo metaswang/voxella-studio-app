@@ -6,6 +6,7 @@ import MLXAudioVAD
 #endif
 
 enum DiarizationBackend: String, Codable, Sendable {
+    case disabled
     case singleSpeaker
     case unavailable
     case mlxStreamingSortformer
@@ -13,6 +14,7 @@ enum DiarizationBackend: String, Codable, Sendable {
 
     var title: String {
         switch self {
+        case .disabled: "Speaker identification disabled"
         case .singleSpeaker: "Single-speaker bypass"
         case .unavailable: "Speaker labels unavailable"
         case .mlxStreamingSortformer: "MLX Streaming Sortformer"
@@ -404,6 +406,7 @@ final class MLXStreamingSortformerEngine: SpeakerDiarizationEngine, @unchecked S
         self.modelRevision = modelRevision
     }
 
+    @concurrent
     func diarize(
         audio: [Float],
         sampleRate: Int,
@@ -465,7 +468,7 @@ final class MLXStreamingSortformerEngine: SpeakerDiarizationEngine, @unchecked S
         if !pack.samples.isEmpty {
             let packedAudio = MLXArray(pack.samples)
             var chunkStartedAt = ContinuousClock.now
-            for try await output in model.generateStream(
+            try model.forEachChunk(
                 audio: packedAudio,
                 sampleRate: sampleRate,
                 chunkDuration: Float(streaming.chunkDuration),
@@ -474,7 +477,7 @@ final class MLXStreamingSortformerEngine: SpeakerDiarizationEngine, @unchecked S
                 mergeGap: 0,
                 spkcacheMax: streaming.spkcacheMax,
                 fifoMax: streaming.fifoMax
-            ) {
+            ) { output in
                 try Task.checkCancellation()
                 if let speakerProbabilities = output.speakerProbs {
                     eval(speakerProbabilities)

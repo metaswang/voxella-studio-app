@@ -531,8 +531,9 @@ struct MediaFlowTests {
         #expect(!request.user.contains("<asr_input>"))
     }
 
-    @Test func whisperEnglishSkipsCorrectionAndOnlySegments() async throws {
+    @Test func whisperEnglishCorrectsThenSegments() async throws {
         let client = StubLLMClient(responses: [
+            #"{"text":"Hello world."}"#,
             #"{"lines":["Hello world."]}"#,
         ])
         let words = [
@@ -553,10 +554,10 @@ struct MediaFlowTests {
         )
 
         #expect(track.cues.map(\.text) == ["Hello world."])
-        #expect(await client.requestCount == 1)
-        let request = try #require(await client.requests.first)
-        #expect(request.system.contains("This is segmentation-only."))
-        #expect(!request.system.contains("add natural punctuation"))
+        #expect(await client.requestCount == 2)
+        let requests = await client.requests
+        #expect(requests[0].system.contains("add natural punctuation"))
+        #expect(requests[1].system.contains("This is segmentation-only."))
     }
 
     @Test func whisperNonEnglishStillCorrectsThenSegments() async throws {
@@ -1675,7 +1676,7 @@ struct MediaFlowTests {
         #expect(displayed[0].speaker == "Speaker 1")
     }
 
-    @Test func transcriptionFlowAutomaticallyPreparesSubtitlesWhenAKeyIsAvailable() {
+    @Test func transcriptionFlowSkipsSubtitlesByDefaultAndHonorsAnExplicitRequest() {
         var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/interview.mov")
 
         #expect(
@@ -1686,7 +1687,7 @@ struct MediaFlowTests {
         #expect(
             WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: true, hasTranslationModel: true)
                 .map { $0.stage.rawValue }
-                == ["transcription", "subtitlePreparation"]
+                == ["transcription"]
         )
 
         job.useLLMSubtitleProcessing = false
@@ -1721,6 +1722,22 @@ struct MediaFlowTests {
         )
     }
 
+    @Test func standaloneSubtitlePreparationUsesOnlyTheReusableSubtitleStage() {
+        #expect(
+            WorkbenchMediaFlowPlanner.subtitlePreparationSteps().map(\.stage.rawValue)
+                == ["subtitlePreparation"]
+        )
+    }
+
+    @Test func standaloneSubtitlePreparationTurnsLegacyAutoDiarizationOffBeforeRetrying() {
+        var interrupted = WorkbenchTranscriptionJob(sourcePath: "/tmp/interview.mov")
+        interrupted.speakerCount = .auto
+        #expect(SubtitlePreparationRecoveryPolicy.speakerCountForTranscription(of: interrupted) == .off)
+
+        interrupted.result = TranscriptionResult(text: "Done", language: "en", words: [], segments: [])
+        #expect(SubtitlePreparationRecoveryPolicy.speakerCountForTranscription(of: interrupted) == .auto)
+    }
+
     @Test func transcriptionRequiresBothLLMRoutesForTranslation() {
         var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/interview.mov")
         job.targetLanguageCode = "zh-CN"
@@ -1728,7 +1745,7 @@ struct MediaFlowTests {
         #expect(
             WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: true, hasTranslationModel: false)
                 .map { $0.stage.rawValue }
-                == ["transcription", "subtitlePreparation"]
+                == ["transcription"]
         )
     }
 

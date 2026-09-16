@@ -2,7 +2,7 @@
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
     <channel>
         <title>Palmier Pro</title>
-        <link>https://raw.githubusercontent.com/palmier-io/palmier-pro/main/appcast.xml</link>
+        <link>https://huggingface.co/hfadam/VoxStudio.app/raw/main/appcast.xml</link>
         <description>Updates for Palmier Pro</description>
         <language>en</language>
         <item>
@@ -1000,6 +1000,29 @@
                 length="84474947"
                 type="application/octet-stream"
                 sparkle:edSignature="THNlW3ZZ36MyyRX2rWIxPKrt4HisY7+/v9c8X+k4J9Vvx4ens3mPKYzjP4cpEP7uHTh4KXaq2/gNBJ5xnoOmCA=="/>
+        </item>
+        <item>
+            <title>Version 7.0.9</title>
+            <pubDate>Tue, 15 Sep 2026 08:35:25 +0800</pubDate>
+            <sparkle:version>89</sparkle:version>
+            <sparkle:shortVersionString>7.0.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://huggingface.co/hfadam/VoxStudio.app/resolve/main/VoxStudio.dmg?download=true"
+                length="90672766"
+                type="application/octet-stream"/>
+        </item>
+        <item>
+            <title>Version 7.0.10</title>
+            <pubDate>Tue, 15 Sep 2026 08:54:24 +0800</pubDate>
+            <sparkle:version>90</sparkle:version>
+            <sparkle:shortVersionString>7.0.10</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://huggingface.co/hfadam/VoxStudio.app/resolve/main/VoxStudio.dmg?download=true"
+                length="90672522"
+                type="application/octet-stream"
+                sparkle:edSignature="h7q8RwUhZ0ZWr75o9rZy3U4sZxgCgseFgEhMYUJI53AIkUyR+y7QEGtxIQmNjGXHRqirVeTzwG9MQCFV5go+CA=="/>
         </item>
     </channel>
 </rss>

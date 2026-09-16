@@ -84,6 +84,12 @@ struct SearchService: Sendable {
         try await store.sessionCard(id: id)
     }
 
+    /// Returns the complete indexed session inventory, independent of text
+    /// matches. Callers should pass a user-visible filter for origin/ownership.
+    func sessionCatalog(filter: SessionSearchFilter = .init()) async throws -> [SessionCatalogEntry] {
+        try await store.sessionCatalog(filter: filter)
+    }
+
     func sessionSummary(id: UUID) async throws -> (title: String, tag: String?, markdown: String?)? {
         guard let card = try await store.sessionCard(id: id) else { return nil }
         return (card.title, card.tag, card.summaryMarkdown)

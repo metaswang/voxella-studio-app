@@ -17,6 +17,7 @@ struct SpeechRegion: Codable, Equatable, Sendable {
 struct SpeechRegionAnalysis: Codable, Equatable, Sendable {
     let sampleRate: Int
     let chunkCount: Int
+    let probabilities: [Float]
     let segments: [SpeechRegion]
     let backend: LocalSpeechVADBackend
     let modelRevision: String
@@ -54,12 +55,6 @@ private enum LocalSpeechVADError: Error, LocalizedError {
     }
 }
 
-enum LocalSpeechVADRunner {
-    static func chunkCount(for sampleCount: Int) -> Int {
-        LocalSpeechVAD.chunkCount(for: sampleCount)
-    }
-}
-
 actor SpeechAnalysisService {
     static let shared = SpeechAnalysisService()
 
@@ -69,6 +64,14 @@ actor SpeechAnalysisService {
     }
 
     private var managers: [ModelKey: VadManager] = [:]
+
+    func probabilities(
+        samples: [Float],
+        threshold: Float = 0.5,
+        progress: @escaping @Sendable (Int, Int, String) -> Void
+    ) async throws -> [Float] {
+        try await analyze(samples: samples, threshold: threshold, progress: progress).probabilities
+    }
 
     func analyze(
         samples: [Float],
@@ -80,6 +83,7 @@ actor SpeechAnalysisService {
             return SpeechRegionAnalysis(
                 sampleRate: LocalSpeechVAD.sampleRate,
                 chunkCount: 0,
+                probabilities: [],
                 segments: [],
                 backend: .coreML,
                 modelRevision: "none"
@@ -98,8 +102,13 @@ actor SpeechAnalysisService {
         try Task.checkCancellation()
         var segmentationConfig = segmentation ?? .default
         segmentationConfig.maxSpeechDuration = .infinity
-        let segments = try await manager.segmentSpeech(samples, config: segmentationConfig)
+        let results = try await manager.process(samples)
         try Task.checkCancellation()
+        let segments = await manager.segmentSpeech(
+            from: results,
+            totalSamples: samples.count,
+            config: segmentationConfig
+        )
         progress(totalChunks, totalChunks, "Checking for speech locally… almost done")
 
         let elapsed = Double(
@@ -108,16 +117,18 @@ actor SpeechAnalysisService {
         let analysis = SpeechRegionAnalysis(
             sampleRate: LocalSpeechVAD.sampleRate,
             chunkCount: totalChunks,
+            probabilities: results.map(\.probability),
             segments: segments.map {
                 SpeechRegion(startTime: Float($0.startTime), endTime: Float($0.endTime))
             },
             backend: .coreML,
             modelRevision: descriptor.revision
         )
+        let audioSeconds = Double(samples.count) / Double(LocalSpeechVAD.sampleRate)
         Log.transcription.notice(
             "VAD completed backend=\(LocalSpeechVADBackend.coreML.rawValue) chunks=\(analysis.chunkCount) "
                 + "segments=\(analysis.segments.count) elapsed=\(String(format: "%.4f", elapsed))s "
-                + "rtf=\(String(format: "%.5f", elapsed / max(0.001, Double(samples.count) / Double(LocalSpeechVAD.sampleRate))))"
+                + "rtf=\(String(format: "%.5f", elapsed / max(0.001, audioSeconds)))"
         )
         return analysis
     }
@@ -137,12 +148,11 @@ actor SpeechAnalysisService {
         }
 
         let configuration = MLModelConfiguration()
-        configuration.computeUnits = .cpuAndNeuralEngine
+        configuration.computeUnits = .cpuOnly
         let model = try await MLModel.load(contentsOf: modelURL, configuration: configuration)
-        // ANE keeps Metal free for ASR. Callers choose a threshold for their pipeline.
         let config = VadConfig(
             defaultThreshold: threshold,
-            computeUnits: .cpuAndNeuralEngine
+            computeUnits: .cpuOnly
         )
         let manager = VadManager(config: config, vadModel: model)
         managers[key] = manager

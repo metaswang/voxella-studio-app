@@ -2,13 +2,13 @@ import AVFoundation
 import Foundation
 
 extension ToolExecutor {
-    private var canUsePaidModels: Bool { AccountService.shared.isPaid }
-    private func modelAvailable(paidOnly: Bool) -> Bool { canUsePaidModels || !paidOnly }
+    private var canUsePlanGatedModels: Bool { AccountService.shared.hasFeatureAccess }
+    private func modelAvailable(paidOnly: Bool) -> Bool { canUsePlanGatedModels || !paidOnly }
 
     private func requirePlan(for modelId: String, paidOnly: Bool) throws {
-        if paidOnly && !canUsePaidModels {
+        if paidOnly && !canUsePlanGatedModels {
             throw ToolError(
-                "Model '\(modelId)' requires a paid plan. Pick a free model from list_models, "
+                "Model '\(modelId)' requires a paid plan, Lifetime access, or active trial. Pick a free model from list_models, "
                 + "or tell the user to subscribe."
             )
         }
@@ -19,7 +19,7 @@ extension ToolExecutor {
             throw ToolError("Model catalog not loaded yet. Try again in a moment.")
         }
         guard let match = ids.first(where: { modelAvailable(paidOnly: $0.paidOnly) }) else {
-            throw ToolError("No \(kind) model is available on the current plan. Tell the user to subscribe.")
+            throw ToolError("No \(kind) model is available on the current plan, Lifetime access, or trial. Tell the user to subscribe.")
         }
         return match.id
     }

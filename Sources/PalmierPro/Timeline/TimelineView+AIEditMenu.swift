@@ -9,12 +9,12 @@ extension TimelineView {
         let submenu = NSMenu()
         submenu.autoenablesItems = false
         let aiAllowed = editor.aiEditAllowed
-        let isPaid = AccountService.shared.isPaid
+        let hasFeatureAccess = AccountService.shared.hasFeatureAccess
         let mediaType = editor.clipFor(id: clipId)?.mediaType ?? .video
         let enhanceActions = actions.filter { $0.group(for: mediaType) == .enhance }
         let audioActions = actions.filter { $0.group(for: mediaType) == .audio }
         let addAction: (EditAction) -> Void = { action in
-            let paidBlocked = action.requiresPaidPlan && !isPaid
+            let paidBlocked = action.requiresPaidPlan && !hasFeatureAccess
             switch action {
             case .upscale:
                 let upscaleItem = NSMenuItem(title: paidBlocked ? "Upscale… (Paid)" : "Upscale…", action: #selector(self.performAIEditUpscale(_:)), keyEquivalent: "")
@@ -80,7 +80,7 @@ extension TimelineView {
             submenu.addItem(.sectionHeader(title: "AI Audio"))
             audioActions.filter { $0 == .rerun }.forEach(addAction)
             for kind in audioTransforms {
-                let paidBlocked = kind.model?.paidOnly == true && !isPaid
+                let paidBlocked = kind.model?.paidOnly == true && !hasFeatureAccess
                 let title = paidBlocked ? "\(kind.menuTitle) (Paid)" : kind.menuTitle
                 let item = NSMenuItem(
                     title: title,

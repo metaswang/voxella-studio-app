@@ -245,6 +245,8 @@ enum LLMUseCase: String, Codable, CaseIterable, Identifiable, Sendable {
     case translation
     case subtitleProcessing
     case chat
+    case graphExtraction
+    case graphQueryUnderstanding
 
     var id: String { rawValue }
 
@@ -253,14 +255,42 @@ enum LLMUseCase: String, Codable, CaseIterable, Identifiable, Sendable {
         case .translation: "Translation"
         case .subtitleProcessing: "Subtitle cleanup"
         case .chat: "AI editing chat"
+        case .graphExtraction: "Graph extraction & ingestion"
+        case .graphQueryUnderstanding: "Graph query understanding"
         }
     }
 
     var detail: String {
         switch self {
         case .translation: "Translates timed subtitle cues."
-        case .subtitleProcessing: "Segments subtitle cues. Repairs punctuation only when ASR did not already punctuate."
+        case .subtitleProcessing: "Segments subtitle cues. Repairs punctuation for Whisper; Qwen and Parakeet only segment."
         case .chat: "Plans and applies edits from the editor's left chat panel."
+        case .graphExtraction: "Extracts a bounded entity and relation graph from indexed transcript chunks."
+        case .graphQueryUnderstanding: "Finds graph entities for knowledge-base recall."
+        }
+    }
+}
+
+enum LLMReasoningEffort: String, Codable, CaseIterable, Identifiable, Sendable {
+    case none
+    case minimal
+    case low
+    case medium
+    case high
+    case xHigh = "xhigh"
+    case max
+
+    var id: String { rawValue }
+
+    var labelKey: String {
+        switch self {
+        case .none: "None"
+        case .minimal: "Minimal"
+        case .low: "Low"
+        case .medium: "Medium"
+        case .high: "High"
+        case .xHigh: "X High"
+        case .max: "Max"
         }
     }
 }
@@ -290,14 +320,26 @@ struct LLMRequestPolicy: Codable, Equatable, Sendable {
                 maximumAttemptsPerModel: 2,
                 initialBackoffSeconds: 0.5
             )
+        case .graphExtraction:
+            LLMRequestPolicy(
+                timeoutSeconds: 90,
+                maximumAttemptsPerModel: 2,
+                initialBackoffSeconds: 0.75
+            )
+        case .graphQueryUnderstanding:
+            LLMRequestPolicy(
+                timeoutSeconds: 15,
+                maximumAttemptsPerModel: 1,
+                initialBackoffSeconds: 0.5
+            )
         }
     }
 
     static func minimumTimeoutSeconds(for useCase: LLMUseCase) -> Double {
         switch useCase {
-        case .subtitleProcessing: 90
+        case .subtitleProcessing, .graphExtraction: 90
         case .translation: 45
-        case .chat: 15
+        case .chat, .graphQueryUnderstanding: 15
         }
     }
 
@@ -349,6 +391,18 @@ struct LLMModelRoute: Codable, Equatable, Sendable {
                 fallbackModels: ["openai/gpt-5.4-nano"],
                 policy: .default(for: useCase)
             )
+        case .graphExtraction:
+            LLMModelRoute(
+                primaryModel: "minimax/MiniMax-M3",
+                fallbackModels: ["openai/gpt-5.4-nano"],
+                policy: .default(for: useCase)
+            )
+        case .graphQueryUnderstanding:
+            LLMModelRoute(
+                primaryModel: "minimax/MiniMax-M3",
+                fallbackModels: ["openai/gpt-5.4-nano"],
+                policy: .default(for: useCase)
+            )
         }
     }
 
@@ -371,6 +425,7 @@ struct LLMRuntimeConfiguration: Sendable {
     let endpoint: URL
     let apiKey: String
     let useCase: LLMUseCase?
+    let reasoningEffort: LLMReasoningEffort?
 
     init(
         profile: LLMProviderProfile,
@@ -378,7 +433,8 @@ struct LLMRuntimeConfiguration: Sendable {
         modelName: String,
         endpoint: URL,
         apiKey: String,
-        useCase: LLMUseCase? = nil
+        useCase: LLMUseCase? = nil,
+        reasoningEffort: LLMReasoningEffort? = nil
     ) {
         self.profile = profile
         self.modelIdentifier = modelIdentifier
@@ -386,10 +442,14 @@ struct LLMRuntimeConfiguration: Sendable {
         self.endpoint = endpoint
         self.apiKey = apiKey
         self.useCase = useCase
+        self.reasoningEffort = reasoningEffort
     }
 
     var openAICompatibleRequestOptions: LLMOpenAICompatibleRequestOptions {
         var options = providerRequestOptions
+        if useCase == .chat, let reasoningEffort {
+            options.reasoningEffort = reasoningEffort.rawValue
+        }
         if useCase == .subtitleProcessing || useCase == .translation {
             options.suppressThinking(
                 canDisableThinking: canDisableThinking,
@@ -624,6 +684,7 @@ final class LLMSettingsStore {
     private static let legacyProfileDefaultsKey = "voxella.llm.provider-profile.v1"
     private static let subtitleRouteMigrationKey = "voxella.llm.migration.subtitle-route.v1"
     private static let useBYOKKey = "voxella.llm.use-byok.v1"
+    private static let chatReasoningEffortKey = "voxella.llm.chat-reasoning-effort.v1"
     private static let useBYOKMigrationKey = "voxella.llm.migration.use-byok.v1"
     private static let credentialAvailabilityDefaultsKey = "voxella.llm.credential-availability.v1"
 
@@ -634,10 +695,20 @@ final class LLMSettingsStore {
     private(set) var credentialError: String?
     private(set) var configurationError: String?
 
+    var chatReasoningEffort: LLMReasoningEffort {
+        didSet {
+            defaults.set(chatReasoningEffort.rawValue, forKey: Self.chatReasoningEffortKey)
+            guard oldValue != chatReasoningEffort else { return }
+            notifyConfigurationChanged()
+        }
+    }
+
     var useBYOK: Bool {
         didSet {
             defaults.set(useBYOK, forKey: Self.useBYOKKey)
             defaults.set(true, forKey: Self.useBYOKMigrationKey)
+            guard oldValue != useBYOK else { return }
+            notifyConfigurationChanged()
         }
     }
 
@@ -664,6 +735,9 @@ final class LLMSettingsStore {
         self.defaults = defaults
         self.credentialSaver = credentialSaver ?? Self.persistCredentialToKeychain
         self.useBYOK = defaults.object(forKey: Self.useBYOKKey) as? Bool ?? false
+        self.chatReasoningEffort = defaults.string(forKey: Self.chatReasoningEffortKey)
+            .flatMap(LLMReasoningEffort.init(rawValue:))
+            ?? .medium
         var shouldPersist = false
 
         switch Self.loadConfiguration(from: defaults) {
@@ -775,6 +849,7 @@ final class LLMSettingsStore {
         persist()
         credentialAvailability[profile.id] = false
         persistCredentialAvailability()
+        notifyConfigurationChanged()
         return profile.id
     }
 
@@ -792,6 +867,7 @@ final class LLMSettingsStore {
         providers[index] = validated
         _ = normalizeRoutesForProviderRouting()
         persist()
+        notifyConfigurationChanged()
     }
 
     func removeProvider(id: UUID) async throws {
@@ -809,6 +885,7 @@ final class LLMSettingsStore {
         credentialSaveGeneration[id] = nil
         persist()
         persistCredentialAvailability()
+        notifyConfigurationChanged()
     }
 
     func updateRoute(_ route: LLMModelRoute, for useCase: LLMUseCase) throws {
@@ -829,6 +906,7 @@ final class LLMSettingsStore {
             policy: validatedPolicy
         )
         persist()
+        notifyConfigurationChanged()
     }
 
     func refreshCredentialStatus() {
@@ -847,9 +925,13 @@ final class LLMSettingsStore {
                 }
             }
             guard generation == credentialGeneration else { return }
+            let availabilityChanged = credentialAvailability != statuses
             credentialAvailability = statuses
             credentialError = statusError
             persistCredentialAvailability()
+            if availabilityChanged {
+                notifyConfigurationChanged()
+            }
             if self.defaults.object(forKey: Self.useBYOKMigrationKey) == nil {
                 // Existing installs with a stored provider key keep their old
                 // behavior. New installs remain hosted by default.
@@ -927,8 +1009,13 @@ final class LLMSettingsStore {
             }
         }
         guard generation == credentialGeneration else { return hasAPIKey }
+        let availabilityChanged = credentialAvailability != statuses
         credentialAvailability = statuses
         credentialError = statusError
+        persistCredentialAvailability()
+        if availabilityChanged {
+            notifyConfigurationChanged()
+        }
         return hasAPIKey
     }
 
@@ -1004,9 +1091,13 @@ final class LLMSettingsStore {
         credentialGeneration += 1
         try await credentialSaver(value, profile)
         guard provider(id: providerID)?.credentialAccount == profile.credentialAccount else { return }
+        let availabilityChanged = credentialAvailability[providerID] != true
         credentialAvailability[providerID] = true
         persistCredentialAvailability()
         credentialError = nil
+        if availabilityChanged {
+            notifyConfigurationChanged()
+        }
     }
 
     func deleteAPIKey(providerID: UUID) async throws {
@@ -1019,10 +1110,14 @@ final class LLMSettingsStore {
             try KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
         }.value
         guard provider(id: providerID)?.credentialAccount == profile.credentialAccount else { return }
+        let availabilityChanged = credentialAvailability[providerID] != false
         credentialAvailability[providerID] = false
         persistCredentialAvailability()
         credentialSaveStates[providerID] = .idle
         credentialError = nil
+        if availabilityChanged {
+            notifyConfigurationChanged()
+        }
     }
 
     private func loadCredential(for profile: LLMProviderProfile) async throws -> String? {
@@ -1049,9 +1144,14 @@ final class LLMSettingsStore {
         defaults.set(cached, forKey: Self.credentialAvailabilityDefaultsKey)
     }
 
+    private func notifyConfigurationChanged() {
+        NotificationCenter.default.post(name: .aiConfigurationDidChange, object: nil)
+    }
+
     func runtimeRoute(for useCase: LLMUseCase) async throws -> LLMRuntimeRoute {
         let route = route(for: useCase)
         let policy = try route.policy.validated(for: useCase)
+        let reasoningEffort = useCase == .chat ? chatReasoningEffort : nil
         var configurations: [LLMRuntimeConfiguration] = []
         var firstCredentialError: Error?
 
@@ -1071,7 +1171,8 @@ final class LLMSettingsStore {
                     modelName: parsed.model,
                     endpoint: try validated.completionEndpoint(),
                     apiKey: key,
-                    useCase: useCase
+                    useCase: useCase,
+                    reasoningEffort: reasoningEffort
                 ))
             } catch {
                 firstCredentialError = firstCredentialError ?? error

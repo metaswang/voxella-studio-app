@@ -202,6 +202,11 @@ struct SessionSQLiteRow {
         return nil
     }
 
+    func blob(_ name: String) -> Data? {
+        if case .blob(let value) = columns[name] { return value }
+        return nil
+    }
+
     func bool(_ name: String) -> Bool {
         int(name) == 1
     }

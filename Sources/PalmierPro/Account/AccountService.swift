@@ -183,6 +183,15 @@ final class AccountService {
             hasLocalLifetimeCredential: LifetimeLocalCredential.isPresent()
         )
     }
+    /// Trial and Lifetime also satisfy feature-level plan gates; Meet Bot and Calendar use AccountFeature.
+    var hasFeatureAccess: Bool {
+        AppAccessGate.hasFeatureAccess(
+            hasPaidPlan: isPaid,
+            access: appAccess,
+            hasLocalLifetimeCredential: LifetimeLocalCredential.isPresent()
+        )
+    }
+    var canUseCloudHighFidelityVoiceRepair: Bool { isSignedIn && isPaid }
     var canPurchaseCredits: Bool { isSignedIn && (!isAppAccessEnforced || appAccess.canPurchaseCredits) }
     var appAccessLabel: String {
         AppAccessGate.label(
@@ -514,6 +523,9 @@ final class AccountService {
     private func clearAccount() {
         accessRequestID = UUID()
         entitlementSchedule = .init()
+        if WorkbenchTipCenter.shared.tip?.id == "app-access.(AppAccessError.trialActivationRequired.receiptCode)" {
+            WorkbenchTipCenter.shared.hide()
+        }
 #if MAC_APP_STORE
         transactionRecoveryTask?.cancel()
         transactionRecoveryTask = nil
@@ -564,6 +576,8 @@ final class AccountService {
         }
         do {
             try await reloadAccount(generation: generation)
+            guard isCurrentSession(generation) else { return }
+            HostedCreditAvailability.shared.clearAfterAccountRefresh()
         } catch {
             guard isCurrentSession(generation) else { return }
             if AppAccessRefreshSchedule.invalidatesSession(error) { await rejectSession(); return }
@@ -781,7 +795,8 @@ final class AccountService {
     }
 
     /// PR4: on login/account refresh, merge device trial start into the account (earliest wins).
-    /// Provisional-only devices must upgrade (or send earliest hint) so `/trial` does not reopen 14d.
+    /// Provisional-only devices must upgrade to a signed token before `/trial`.
+    /// Register failure must not POST `/trial` without a token (that reopens 14d from now).
     private func mergeDeviceTrialOnLoginIfNeeded() async {
         guard Self.paidAccessEnabled, isSignedIn else { return }
         // Lifetime / paid subscription: server skips trial merge.
@@ -797,12 +812,21 @@ final class AccountService {
                 // Prefer signed token via register(clientStartedAt: provisional.startedAt).
                 try await ensureDeviceTrialStarted()
             } catch {
-                // Network / register failure: still merge with earliestClientStartedAtHint below.
                 Log.account.warning("Provisional device trial upgrade before login merge unavailable")
             }
         }
 
         let signed = try? DeviceTrialClock.load()
+        let provisionalAfterUpgrade = try? DeviceTrialClock.loadProvisional()
+        guard DeviceTrialLoginMerge.shouldPostAccountTrialMerge(
+            hasSignedToken: signed != nil,
+            provisional: provisionalAfterUpgrade
+        ) else {
+            Log.account.warning("Skipping account trial merge until device trial register succeeds")
+            reapplyLocalEntitlementOverlays()
+            return
+        }
+
         let payload = DeviceTrialLoginMerge.resolvePayload(
             signedStartedAt: signed?.startedAt,
             signedToken: signed?.envelope.token,
@@ -953,6 +977,12 @@ final class AccountService {
     }
 
     private func presentTrialActivationTip() {
+        guard AppAccessGate.shouldPresentTrialActivationTip(
+            enforced: isAppAccessEnforced,
+            signedIn: isSignedIn,
+            hasLocalLifetimeCredential: LifetimeLocalCredential.isPresent()
+        ) else { return }
+
         WorkbenchTipCenter.shared.show(
             AppAccessError.trialActivationRequired.localizedDescription,
             kind: .warning,
@@ -1030,6 +1060,8 @@ final class AccountService {
 
     func requireNewContentAccess() throws {
         refreshEntitlementAfterActivation()
+        // Keep a valid device trial visible after account/session state changes.
+        reapplyLocalEntitlementOverlays()
         do {
             try AppAccessGate.requireNewContent(
                 enforced: Self.paidAccessEnabled,

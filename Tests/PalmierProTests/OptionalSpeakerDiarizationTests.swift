@@ -4,6 +4,18 @@ import Testing
 
 @Suite("Optional speaker recognition")
 struct OptionalSpeakerDiarizationTests {
+    @Test func disabledSpeakerIdentificationDoesNotLoadAModel() async throws {
+        let result = try await OptionalSpeakerDiarization.resolve(
+            requestedSpeakerCount: 0, isInstalled: true,
+            speechRanges: [.init(start: 0, end: 2)], audioDuration: 2
+        ) {
+            Issue.record("Disabled speaker identification must not load a model")
+            throw URLError(.unknown)
+        }
+        #expect(result.diagnostics.backend == .disabled)
+        #expect(result.diagnostics.warnings.isEmpty)
+    }
+
     @Test(arguments: [nil, 2, 4] as [Int?])
     func missingModelPreservesUnattributedTimeline(count: Int?) async throws {
         let result = try await OptionalSpeakerDiarization.resolve(

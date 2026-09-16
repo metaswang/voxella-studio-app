@@ -264,7 +264,7 @@ final class AppState {
     /// - Parameter presentImmediately: When false, prepares the document without activating the editor UI.
     @discardableResult
     func createProject(named name: String, presentImmediately: Bool = true) async throws -> VideoProject {
-        try AccountService.shared.requireNewContentAccess()
+        try await AccountService.shared.prepareNewContentAccess()
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = trimmed.isEmpty ? Project.defaultProjectName : trimmed
         guard !base.contains("/"), !base.contains("\\"), base != ".", base != ".." else {
@@ -278,7 +278,7 @@ final class AppState {
         }
         try await closeCurrentProjectIfNeeded()
         try Task.checkCancellation()
-        try AccountService.shared.requireNewContentAccess()
+        try await AccountService.shared.prepareNewContentAccess()
         let doc = instantiateProject(at: url, presentImmediately: presentImmediately)
         do {
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
@@ -324,10 +324,10 @@ final class AppState {
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in
                 do {
-                    try AccountService.shared.requireNewContentAccess()
+                    try await AccountService.shared.prepareNewContentAccess()
                     try await closeCurrentProjectIfNeeded()
                     try Task.checkCancellation()
-                    try AccountService.shared.requireNewContentAccess()
+                    try await AccountService.shared.prepareNewContentAccess()
                     let doc = instantiateProject(at: url)
                     try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
                         doc.save(to: url, ofType: VideoProject.typeIdentifier, for: .saveOperation) { error in

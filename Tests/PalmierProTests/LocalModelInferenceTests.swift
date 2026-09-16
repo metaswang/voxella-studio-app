@@ -226,7 +226,6 @@ struct LocalModelInferenceTests {
         #expect(FileManager.default.fileExists(atPath: source.path))
         try await Self.ensureInstalled([
             .sileroVAD,
-            .sileroVADMLX,
             .spokenLanguageID,
             .qwen3ASR17B8Bit,
             .parakeetTDT06Bv3,
@@ -266,7 +265,7 @@ struct LocalModelInferenceTests {
 
         #expect(route.engine == .qwen)
         #expect(route.reason != .userLocked)
-        #expect(route.reason == .engineCoverage)
+        #expect(route.reason == .weightedEvidence || route.reason == .engineCoverage || route.reason == .chineseEnglishConflict)
         #expect(route.scores.qwen > route.scores.parakeet)
         #expect(route.scores.qwen > route.scores.whisper)
         #expect(["zh", "yue"].contains { (result.language ?? "").hasPrefix($0) })

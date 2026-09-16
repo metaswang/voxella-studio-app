@@ -10,7 +10,7 @@ struct DubOutputPlayer: View {
         SwiftUI.TimelineView(
             .periodic(from: .now, by: AppTheme.Workbench.playerRefreshInterval)
         ) { _ in
-            let currentTime = playback.player?.currentTime().seconds.finiteOrZero ?? 0
+            let currentTime = playback.currentTime
             let duration = playback.duration
             let progress = duration > 0 ? min(1, max(0, currentTime / duration)) : 0
             let remaining = max(0, duration - currentTime)
@@ -19,19 +19,17 @@ struct DubOutputPlayer: View {
                 AudioWaveformView(peaks: playback.peaks, progress: progress)
                     .frame(height: AppTheme.Workbench.waveformHeight)
 
-                Slider(
-                    value: Binding(
-                        get: { progress },
-                        set: { value in
-                            playback.seek(
-                                to: value,
-                                resumesPlayback: playback.isPlaying
-                            )
-                        }
-                    ),
-                    in: 0...1
+                SessionPlaybackSeekBar(
+                    progress: progress,
+                    isEnabled: playback.player != nil && duration > 0,
+                    isPlaying: playback.isPlaying,
+                    onSeek: { value, resumesPlayback in
+                        playback.seek(
+                            to: value,
+                            resumesPlayback: resumesPlayback
+                        )
+                    }
                 )
-                .disabled(playback.player == nil || duration <= 0)
 
                 HStack(spacing: AppTheme.Spacing.sm) {
                     Text(formatTime(currentTime))

@@ -8,7 +8,9 @@ struct ASRLanguageIdentificationWindow: Equatable, Sendable {
 }
 
 enum ASREngineRouter {
-    static let identificationWindowCount = 3
+    static let standardIdentificationWindowCount = 5
+    static let longFormIdentificationWindowCount = 7
+    static let longFormAudioDuration = 30 * 60.0
     static let targetIdentificationWindowDuration = 3.0
     static let maximumIdentificationWindowDuration = ASRLanguageVotePolicy.standard.maximumSpeechDuration
 
@@ -29,6 +31,45 @@ enum ASREngineRouter {
             total + (covered.contains(ASREngineLanguagePolicy.ecapaRoutingCode(entry.key)) ? 0 : entry.value)
         }
         return ASREngineScores(qwen: qwen, parakeet: parakeet, whisper: whisper)
+    }
+
+    /// Projects a language posterior onto one preferred engine per language.
+    ///
+    /// `scores(from:)` intentionally reports raw capability coverage, where a
+    /// language supported by both models contributes to both scores. Routing
+    /// needs a real vote, so overlapping capabilities use the language policy's
+    /// preferred engine and cannot be counted twice.
+    static func projectedScores(from posterior: [String: Float]) -> ASREngineScores {
+        var scores = ASREngineScores.zero
+        for (language, probability) in posterior {
+            switch ASREngineLanguagePolicy.engine(forLanguageCode: language) {
+            case .qwen:
+                scores.qwen += probability
+            case .parakeet:
+                scores.parakeet += probability
+            case .whisper:
+                scores.whisper += probability
+            }
+        }
+        return scores
+    }
+
+    /// Aggregates per-window projected engine votes using the equal-window
+    /// shares produced by the language vote.
+    static func projectedScores(
+        from posteriors: [[String: Float]],
+        weightShares: [Double]
+    ) -> ASREngineScores {
+        guard posteriors.count == weightShares.count else { return .zero }
+        var result = ASREngineScores.zero
+        for (posterior, share) in zip(posteriors, weightShares) {
+            guard share.isFinite, share > 0 else { continue }
+            let projected = projectedScores(from: posterior)
+            result.qwen += Float(share) * projected.qwen
+            result.parakeet += Float(share) * projected.parakeet
+            result.whisper += Float(share) * projected.whisper
+        }
+        return result
     }
 
     static func topLanguage(in posterior: [String: Float]) -> (language: String, confidence: Float)? {
@@ -56,9 +97,11 @@ enum ASREngineRouter {
         let totalSpeech = ranges.reduce(0.0) { $0 + $1.duration }
         guard totalSpeech > 0 else { return [] }
 
-        let count = min(identificationWindowCount, max(1, Int(min(
-            Double(identificationWindowCount), totalSpeech / targetIdentificationWindowDuration
-        ))))
+        let preferredCount = audioDuration >= longFormAudioDuration
+            ? longFormIdentificationWindowCount
+            : standardIdentificationWindowCount
+        let availableCount = max(1, Int((totalSpeech / targetIdentificationWindowDuration).rounded(.down)))
+        let count = min(preferredCount, availableCount)
         let windowLength = min(maximumIdentificationWindowDuration, totalSpeech / Double(count))
         let lastOrigin = max(0, totalSpeech - windowLength)
 
@@ -76,52 +119,173 @@ enum ASREngineRouter {
         let vote = ASRLanguageVote.pool(evidence, policy: policy)
         let top = topLanguage(in: vote.posterior)?.language
         let coverage = scores(from: vote.posterior)
-        let selection = selectEngine(vote: vote, coverage: coverage)
+        let engineVotes = projectedScores(
+            from: vote.windowPosteriors,
+            weightShares: vote.weightShares
+        )
+        let selection = selectEngine(vote: vote, coverage: coverage, engineVotes: engineVotes)
         let engine = selection.engine
         return ASREngineRouteDecision(
             engine: engine,
             scores: coverage,
+            engineVoteScores: engineVotes,
             reason: selection.reason,
             topLanguage: top,
             parakeetDomainLanguage: engine == .parakeet ? topLanguage(in: vote.posterior.filter {
                 ASREngineLanguagePolicy.parakeetLanguages.contains($0.key)
             })?.language : nil,
-            whisperHint: nil,
-            routeConfidence: engine == .whisper ? vote.confidence : coverage[engine],
+            whisperHint: whisperHint(engine: engine, reason: selection.reason, topLanguage: top),
+            routeConfidence: routeConfidence(
+                engine: engine,
+                reason: selection.reason,
+                vote: vote,
+                coverage: coverage,
+                engineVotes: engineVotes
+            ),
             speechDuration: vote.speechDuration,
             languageVote: vote
         )
     }
 
+    /// Language lock and engine coverage are independent gates.
+    /// A close Qwen/Parakeet family vote is not a coverage hole.
     private static func selectEngine(
         vote: ASRLanguageVoteResult,
-        coverage: ASREngineScores
+        coverage: ASREngineScores,
+        engineVotes: ASREngineScores
     ) -> (engine: ASREngine, reason: ASREngineRouteReason) {
-        if vote.reason == .invalidLanguageEvidence || vote.reason == .insufficientSpeech {
-            return (.whisper, vote.reason)
-        }
         let policy = vote.policy
         let anchors = Set(vote.anchorLanguages)
-        let windowScores = vote.windowPosteriors.map { scores(from: $0) }
-        func qualifies(_ engine: ASREngine, languages: Set<String>) -> Bool {
-            let score = Double(coverage[engine])
-            return score > policy.minimumPooledConfidence
-                && score - (1 - score) >= policy.minimumMargin
-                && anchors.isSubset(of: languages)
-                && windowScores.allSatisfy { Double($0[engine]) > policy.minimumWindowCoverage }
-        }
-        let qwen = qualifies(.qwen, languages: ASREngineLanguagePolicy.qwenSupportedLanguages)
-        let parakeet = qualifies(.parakeet, languages: ASREngineLanguagePolicy.parakeetLanguages)
+        let outliers = ASRLanguageVote.outlierLanguages(in: vote.windowPosteriors, policy: policy)
+        let bilingualHasReliableUnsupportedLanguage = hasReliableUnsupportedWindow(
+            vote.windowPosteriors,
+            supportedLanguages: ASREngineLanguagePolicy.qwenSupportedLanguages,
+            outliers: outliers,
+            policy: policy
+        )
         let bilingual = anchors.isSuperset(of: ["zh", "en"]) || vote.windowPosteriors.contains {
             let chinese = Double($0["zh", default: 0])
             let english = Double($0["en", default: 0])
             return min(chinese, english) >= policy.minimumBilingualEvidence
                 && chinese + english >= policy.minimumAnchorConfidence
         }
-        if qwen && bilingual { return (.qwen, .chineseEnglishConflict) }
-        if parakeet { return (.parakeet, .engineCoverage) }
-        if qwen { return (.qwen, .engineCoverage) }
-        return (.whisper, .insufficientEngineCoverage)
+        func canUse(_ engine: ASREngine) -> Bool {
+            switch engine {
+            case .qwen:
+                Double(coverage.qwen) >= policy.minimumPooledConfidence
+                    && !hasReliableUnsupportedWindow(
+                        vote.windowPosteriors,
+                        supportedLanguages: ASREngineLanguagePolicy.qwenSupportedLanguages,
+                        outliers: outliers,
+                        policy: policy
+                    )
+            case .parakeet:
+                Double(coverage.parakeet) >= policy.minimumPooledConfidence
+                    && !hasReliableUnsupportedWindow(
+                        vote.windowPosteriors,
+                        supportedLanguages: ASREngineLanguagePolicy.parakeetLanguages,
+                        outliers: outliers,
+                        policy: policy
+                    )
+            case .whisper:
+                false
+            }
+        }
+        func coverageWinner() -> (engine: ASREngine, reason: ASREngineRouteReason)? {
+            let qwenOK = canUse(.qwen)
+            let parakeetOK = canUse(.parakeet)
+            if qwenOK, parakeetOK {
+                return coverage.parakeet > coverage.qwen
+                    ? (.parakeet, .engineCoverage)
+                    : (.qwen, .engineCoverage)
+            }
+            if qwenOK { return (.qwen, .engineCoverage) }
+            if parakeetOK { return (.parakeet, .engineCoverage) }
+            return nil
+        }
+
+        if vote.reason == .weightedEvidence,
+           Double(vote.confidence) >= policy.minimumAnchorConfidence,
+           let top = topLanguage(in: vote.posterior)?.language {
+            let preferred = ASREngineLanguagePolicy.engine(forLanguageCode: top)
+            if preferred == .whisper {
+                return (.whisper, .whisperLanguage)
+            }
+            if canUse(preferred) {
+                return (preferred, .weightedEvidence)
+            }
+            let other: ASREngine = preferred == .qwen ? .parakeet : .qwen
+            if canUse(other) {
+                return (other, .engineCoverage)
+            }
+            return (.whisper, .insufficientEngineCoverage)
+        }
+
+        // Qwen is the only routing target that can intentionally retain a
+        // Chinese/English mixture. Use raw Qwen capability coverage for this
+        // explicit exception, but still require a sufficiently strong LID score.
+        if bilingual,
+           !bilingualHasReliableUnsupportedLanguage,
+           Double(coverage.qwen) >= policy.minimumPooledConfidence {
+            return (.qwen, .chineseEnglishConflict)
+        }
+
+        let leading = engineVotes.leading
+        let runnerUp = engineVotes.runnerUp
+        let score = Double(leading.score)
+        let margin = Double(leading.score - runnerUp.score)
+        if leading.engine != .whisper,
+           score >= policy.minimumPooledConfidence,
+           margin >= policy.minimumMargin,
+           canUse(leading.engine) {
+            return (leading.engine, .engineCoverage)
+        }
+
+        return coverageWinner() ?? (.whisper, .insufficientEngineCoverage)
+    }
+
+    private static func whisperHint(
+        engine: ASREngine,
+        reason: ASREngineRouteReason,
+        topLanguage: String?
+    ) -> String? {
+        guard engine == .whisper, reason == .whisperLanguage else { return nil }
+        return ASREngineLanguagePolicy.whisperLanguageCode(from: topLanguage)
+    }
+
+    private static func routeConfidence(
+        engine: ASREngine,
+        reason: ASREngineRouteReason,
+        vote: ASRLanguageVoteResult,
+        coverage: ASREngineScores,
+        engineVotes: ASREngineScores
+    ) -> Float {
+        switch reason {
+        case .weightedEvidence, .whisperLanguage:
+            vote.confidence
+        case .chineseEnglishConflict, .engineCoverage:
+            coverage[engine]
+        default:
+            engineVotes.leading.score
+        }
+    }
+
+    private static func hasReliableUnsupportedWindow(
+        _ posteriors: [[String: Float]],
+        supportedLanguages: Set<String>,
+        outliers: Set<String>,
+        policy: ASRLanguageVotePolicy
+    ) -> Bool {
+        posteriors.contains { posterior in
+            guard let top = ASRLanguageVote.reliableTop(
+                of: posterior,
+                minimumConfidence: policy.minimumWindowConflictConfidence,
+                policy: policy
+            ) else {
+                return posterior.isEmpty
+            }
+            return !supportedLanguages.contains(top.language) && !outliers.contains(top.language)
+        }
     }
 
     static func decide(

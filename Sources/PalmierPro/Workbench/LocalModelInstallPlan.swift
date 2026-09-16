@@ -51,7 +51,7 @@ struct LocalModelInstallPlan: Equatable, Sendable {
         speakerCount: Int?,
         whisperFallbackModelID: LocalModelID
     ) -> [LocalModelID] {
-        var required: [LocalModelID] = [.sileroVAD, .sileroVADMLX]
+        var required: [LocalModelID] = [.sileroVAD]
         if languageCode == nil {
             required.append(contentsOf: [
                 .qwen3ASR17B8Bit,
@@ -122,7 +122,6 @@ struct LocalModelInstallPlan: Equatable, Sendable {
 
     /// P0 Knowledge QA: always WeMM (local hybrid/RAG). Local answer LLM is optional
     /// (`answerModelID`); nil = hosted/BYOK answer. Cloud answer still requires WeMM.
-    /// `includeReranker` is reserved for P1+ (no catalog ID yet).
     static func knowledgeQARequiredIDs(
         answerModelID: LocalModelID?,
         includeReranker: Bool
@@ -131,8 +130,9 @@ struct LocalModelInstallPlan: Equatable, Sendable {
         if let answerModelID {
             ids.append(answerModelID)
         }
-        // P1+: append Qwen3-Reranker MLX when LocalModelID exists.
-        _ = includeReranker
+        if includeReranker {
+            ids.append(.qwen3Reranker06B4Bit)
+        }
         var seen = Set<LocalModelID>()
         return ids.filter { seen.insert($0).inserted }
     }

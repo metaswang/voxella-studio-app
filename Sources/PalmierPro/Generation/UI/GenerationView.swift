@@ -271,7 +271,7 @@ struct GenerationView: View {
             guard !isPopulatingPanel else { return }
             normalizeModelSelection()
         }
-        .onChange(of: account.isPaid) { _, _ in
+        .onChange(of: account.hasFeatureAccess) { _, _ in
             guard !isPopulatingPanel else { return }
             normalizeModelSelection()
         }
