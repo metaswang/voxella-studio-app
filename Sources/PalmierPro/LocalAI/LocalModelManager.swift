@@ -725,7 +725,10 @@ final class LocalModelManager {
         refreshTask = Task { [weak self] in
             let installed = await Task.detached(priority: .utility) {
                 Self.pruneUnusedCachedModels()
-                return Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, Self.isInstalled($0)) })
+                return Dictionary(
+                    catalog.map { ($0.id, Self.isInstalled($0)) },
+                    uniquingKeysWith: { current, _ in current }
+                )
             }.value
             guard let self, !Task.isCancelled, generation == self.refreshGeneration else { return }
             let searchWasInstalled = self.state(for: SearchIndexConfig.modelID).isInstalled
@@ -1385,7 +1388,10 @@ final class LocalModelManager {
     }
 
     private nonisolated static func artifactHashes(for model: LocalModelDescriptor) -> [String: String] {
-        var hashes = Dictionary(uniqueKeysWithValues: model.requiredArtifacts.map { ($0.filename, $0.sha256) })
+        var hashes = Dictionary(
+            model.requiredArtifacts.map { ($0.filename, $0.sha256) },
+            uniquingKeysWith: { current, _ in current }
+        )
         hashes[model.weightFilename] = model.weightSHA256
         return hashes
     }

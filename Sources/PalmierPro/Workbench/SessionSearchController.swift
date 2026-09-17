@@ -279,7 +279,7 @@ final class SessionSearchController {
             guard session.transcriptionID != nil || session.dubID != nil else { return nil }
             return (session.id, session)
         }
-        return Dictionary(uniqueKeysWithValues: localPairs)
+        return Dictionary(localPairs, uniquingKeysWith: { current, _ in current })
     }
 
     private func makeLocalResults(
@@ -393,10 +393,22 @@ final class SessionSearchController {
     private func fuse(local: [Result], cloud: [Result]) -> [Result] {
         let validLocal = Result.deduplicated(local.filter(\.isDisplayable))
         let validCloud = Result.deduplicated(cloud.filter(\.isDisplayable))
-        let localByKey = Dictionary(uniqueKeysWithValues: validLocal.map { ($0.remoteSessionID, $0) })
-        let cloudByKey = Dictionary(uniqueKeysWithValues: validCloud.map { ($0.remoteSessionID, $0) })
-        let localRanks = Dictionary(uniqueKeysWithValues: validLocal.enumerated().map { ($0.element.remoteSessionID, $0.offset) })
-        let cloudRanks = Dictionary(uniqueKeysWithValues: validCloud.enumerated().map { ($0.element.remoteSessionID, $0.offset) })
+        let localByKey = Dictionary(
+            validLocal.map { ($0.remoteSessionID, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
+        let cloudByKey = Dictionary(
+            validCloud.map { ($0.remoteSessionID, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
+        let localRanks = Dictionary(
+            validLocal.enumerated().map { ($0.element.remoteSessionID, $0.offset) },
+            uniquingKeysWith: { current, _ in current }
+        )
+        let cloudRanks = Dictionary(
+            validCloud.enumerated().map { ($0.element.remoteSessionID, $0.offset) },
+            uniquingKeysWith: { current, _ in current }
+        )
         return Set(localByKey.keys).union(cloudByKey.keys).compactMap { key in
             switch (localByKey[key], cloudByKey[key]) {
             case let (.some(local), .some(cloud)):

@@ -102,8 +102,14 @@ struct UpscaleModelConfig: Identifiable, Sendable {
 
     var defaultSettings: UpscaleSettings {
         UpscaleSettings(
-            selections: Dictionary(uniqueKeysWithValues: selectSettings.map { ($0.id, $0.defaultValue) }),
-            toggles: Dictionary(uniqueKeysWithValues: toggleSettings.map { ($0.id, $0.defaultValue) })
+            selections: Dictionary(
+                selectSettings.map { ($0.id, $0.defaultValue) },
+                uniquingKeysWith: { current, _ in current }
+            ),
+            toggles: Dictionary(
+                toggleSettings.map { ($0.id, $0.defaultValue) },
+                uniquingKeysWith: { current, _ in current }
+            )
         )
     }
 

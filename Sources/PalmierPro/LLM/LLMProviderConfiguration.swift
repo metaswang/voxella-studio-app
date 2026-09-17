@@ -244,6 +244,7 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
 enum LLMUseCase: String, Codable, CaseIterable, Identifiable, Sendable {
     case translation
     case subtitleProcessing
+    case skillSelection
     case chat
     case graphExtraction
     case graphQueryUnderstanding
@@ -254,6 +255,7 @@ enum LLMUseCase: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .translation: "Translation"
         case .subtitleProcessing: "Subtitle cleanup"
+        case .skillSelection: "Knowledge skill selection"
         case .chat: "AI editing chat"
         case .graphExtraction: "Graph extraction & ingestion"
         case .graphQueryUnderstanding: "Graph query understanding"
@@ -264,10 +266,21 @@ enum LLMUseCase: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .translation: "Translates timed subtitle cues."
         case .subtitleProcessing: "Segments subtitle cues. Repairs punctuation for Whisper; Qwen and Parakeet only segment."
+        case .skillSelection: "Routes knowledge-base questions with a bounded, low-latency selector."
         case .chat: "Plans and applies edits from the editor's left chat panel."
         case .graphExtraction: "Extracts a bounded entity and relation graph from indexed transcript chunks."
         case .graphQueryUnderstanding: "Finds graph entities for knowledge-base recall."
         }
+    }
+
+    /// Selector calls are deliberately bounded and do not need a reasoning
+    /// budget. These defaults are applied by both BYOK and hosted transports.
+    var defaultMaxOutputTokens: Int? {
+        self == .skillSelection ? 256 : nil
+    }
+
+    var defaultReasoningEffort: LLMReasoningEffort? {
+        self == .skillSelection ? LLMReasoningEffort.none : nil
     }
 }
 
@@ -295,6 +308,38 @@ enum LLMReasoningEffort: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
+extension LLMReasoningEffort {
+    /// Returns the effort values that the chat picker can safely expose for a
+    /// configured model. Known agent models reuse the same provider/model
+    /// capability table as the editor agent; custom provider models remain
+    /// configurable and therefore keep the full generic set.
+    static func supportedChatEfforts(providerPrefix: String, modelName: String) -> [Self] {
+        let normalizedPrefix = providerPrefix.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedModel = modelName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let modelCandidates = [
+            normalizedModel,
+            normalizedModel.split(separator: "/").last.map(String.init) ?? normalizedModel,
+        ]
+
+        if let knownModel = modelCandidates.compactMap(AgentModel.persisted).first {
+            return knownModel.supportedReasoningEfforts.compactMap { Self(rawValue: $0.rawValue) }
+        }
+
+        if modelCandidates.contains(where: { ClaudeChatModelID($0) != nil }) {
+            return [.low, .medium, .high, .xHigh, .max]
+        }
+
+        // Anthropic's adaptive thinking API does not support the disabled or
+        // minimal modes exposed by OpenAI-compatible providers.
+        if normalizedPrefix == "anthropic"
+            || normalizedModel.hasPrefix("claude-") {
+            return [.low, .medium, .high, .xHigh, .max]
+        }
+
+        return allCases
+    }
+}
+
 struct LLMRequestPolicy: Codable, Equatable, Sendable {
     var timeoutSeconds: Double
     var maximumAttemptsPerModel: Int
@@ -313,6 +358,12 @@ struct LLMRequestPolicy: Codable, Equatable, Sendable {
                 timeoutSeconds: minimumTimeoutSeconds(for: useCase),
                 maximumAttemptsPerModel: 2,
                 initialBackoffSeconds: 0.75
+            )
+        case .skillSelection:
+            LLMRequestPolicy(
+                timeoutSeconds: 8,
+                maximumAttemptsPerModel: 1,
+                initialBackoffSeconds: 0
             )
         case .chat:
             LLMRequestPolicy(
@@ -339,6 +390,7 @@ struct LLMRequestPolicy: Codable, Equatable, Sendable {
         switch useCase {
         case .subtitleProcessing, .graphExtraction: 90
         case .translation: 45
+        case .skillSelection: 3
         case .chat, .graphQueryUnderstanding: 15
         }
     }
@@ -348,7 +400,7 @@ struct LLMRequestPolicy: Codable, Equatable, Sendable {
     }
 
     func validated(for useCase: LLMUseCase) throws -> LLMRequestPolicy {
-        guard timeoutSeconds.isFinite, (15...1_800).contains(timeoutSeconds) else {
+        guard timeoutSeconds.isFinite, (3...1_800).contains(timeoutSeconds) else {
             throw LLMConfigurationError.invalidTimeout
         }
         guard (1...4).contains(maximumAttemptsPerModel) else {
@@ -377,6 +429,12 @@ struct LLMModelRoute: Codable, Equatable, Sendable {
             LLMModelRoute(
                 primaryModel: "openai/gpt-5.4-nano",
                 fallbackModels: ["minimax/MiniMax-M3"],
+                policy: .default(for: useCase)
+            )
+        case .skillSelection:
+            LLMModelRoute(
+                primaryModel: "openai/gpt-5.4-nano",
+                fallbackModels: [],
                 policy: .default(for: useCase)
             )
         case .subtitleProcessing:
@@ -418,6 +476,33 @@ struct LLMModelRoute: Codable, Equatable, Sendable {
     }
 }
 
+struct LLMChatModelOption: Identifiable, Equatable, Sendable {
+    let reference: String
+    let provider: LLMProviderKind
+    let providerName: String
+    let modelName: String
+    let isAvailable: Bool
+    let supportedReasoningEfforts: [LLMReasoningEffort]
+
+    init(
+        reference: String,
+        provider: LLMProviderKind,
+        providerName: String,
+        modelName: String,
+        isAvailable: Bool,
+        supportedReasoningEfforts: [LLMReasoningEffort]
+    ) {
+        self.reference = reference
+        self.provider = provider
+        self.providerName = providerName
+        self.modelName = modelName
+        self.isAvailable = isAvailable
+        self.supportedReasoningEfforts = supportedReasoningEfforts
+    }
+
+    var id: String { reference.lowercased() }
+}
+
 struct LLMRuntimeConfiguration: Sendable {
     let profile: LLMProviderProfile
     let modelIdentifier: String
@@ -450,7 +535,14 @@ struct LLMRuntimeConfiguration: Sendable {
         if useCase == .chat, let reasoningEffort {
             options.reasoningEffort = reasoningEffort.rawValue
         }
-        if useCase == .subtitleProcessing || useCase == .translation {
+        if useCase == .skillSelection {
+            options.suppressThinking(
+                canDisableThinking: canDisableThinking,
+                disableReasoning: disablesReasoningForStructuredOutput
+            )
+            options.temperature = 0
+            options.maxOutputTokens = 256
+        } else if useCase == .subtitleProcessing || useCase == .translation {
             options.suppressThinking(
                 canDisableThinking: canDisableThinking,
                 disableReasoning: disablesReasoningForStructuredOutput
@@ -640,7 +732,7 @@ enum LLMConfigurationError: LocalizedError {
         case .noConfiguredModel(let useCase):
             "Configure an API key and an available provider/model route for \(useCase.title.lowercased())."
         case .invalidTimeout:
-            "Set timeout between 15 and 1,800 seconds."
+            "Set timeout between 3 and 1,800 seconds."
         case .invalidRetryCount:
             "Set retry attempts between 1 and 4."
         case .invalidBackoff:
@@ -648,6 +740,12 @@ enum LLMConfigurationError: LocalizedError {
         case .cannotRemoveLastProvider:
             "Keep at least one LLM provider."
         }
+    }
+}
+
+extension String {
+    var normalizedModelReference: String {
+        trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }
 
@@ -803,6 +901,102 @@ final class LLMSettingsStore {
         routes[useCase] ?? .default(for: useCase)
     }
 
+    /// Chat models exposed by the composer follow the same provider-aware
+    /// catalog as the editor agent:
+    ///
+    /// - explicitly configured LLM OpenAI/Claude providers use only their
+    ///   chat-capable models (OpenAI 5.6+ and Claude 4.8+);
+    /// - when neither provider is configured, only the primary model from the
+    ///   AI Service's “AI editing chat” route is exposed.
+    var chatModelOptions: [LLMChatModelOption] {
+        let providerProfiles = providers.compactMap { profile -> (LLMProviderProfile, AgentProvider)? in
+            guard let provider = chatProvider(for: profile) else { return nil }
+            return (profile, provider)
+        }
+        if !providerProfiles.isEmpty {
+            return uniqueChatModelOptions(providerProfiles.flatMap { profile, provider in
+                chatModelOptions(for: profile, provider: provider)
+            })
+        }
+
+        guard let fallback = chatModelOption(for: route(for: .chat).primaryModel) else {
+            return []
+        }
+        return [fallback]
+    }
+
+    var effectiveChatModelOption: LLMChatModelOption? {
+        let options = chatModelOptions
+        let selectedReference = route(for: .chat).primaryModel.normalizedModelReference
+        return options.first(where: { $0.id == selectedReference }) ?? options.first
+    }
+
+    var effectiveChatModelReference: String {
+        effectiveChatModelOption?.reference ?? route(for: .chat).primaryModel
+    }
+
+    var chatReasoningEffortsForCurrentModel: [LLMReasoningEffort] {
+        return effectiveChatModelOption?.supportedReasoningEfforts
+            ?? LLMReasoningEffort.allCases
+    }
+
+    var effectiveChatReasoningEffort: LLMReasoningEffort {
+        let supported = chatReasoningEffortsForCurrentModel
+        guard supported.contains(chatReasoningEffort) else {
+            return supported.contains(.medium) ? .medium : (supported.first ?? .medium)
+        }
+        return chatReasoningEffort
+    }
+
+    /// Selects a model from the composer catalog and promotes it to the
+    /// primary model in the AI Service's chat route. Existing route fallbacks
+    /// remain intact.
+    func selectChatModel(_ option: LLMChatModelOption) {
+        selectChatModel(reference: option.reference)
+    }
+
+    func selectChatModel(reference: String) {
+        guard let selected = chatModelOptions.first(where: {
+            $0.id == reference.normalizedModelReference
+        }) else { return }
+
+        let currentRoute = route(for: .chat)
+        let selectedReference = selected.reference
+        let selectedID = selectedReference.normalizedModelReference
+        let references = [selectedReference] + currentRoute.modelChain.filter {
+            $0.normalizedModelReference != selectedID
+        }
+        let nextRoute = LLMModelRoute(
+            primaryModel: references[0],
+            fallbackModels: Array(references.dropFirst()),
+            policy: currentRoute.policy
+        )
+
+        do {
+            try updateRoute(nextRoute, for: .chat)
+            synchronizeChatReasoningEffort()
+        } catch {
+            configurationError = error.localizedDescription
+        }
+    }
+
+    func synchronizeChatReasoningEffort() {
+        let effective = effectiveChatReasoningEffort
+        guard effective != chatReasoningEffort else { return }
+        chatReasoningEffort = effective
+    }
+
+    /// Repairs a persisted selection when a provider key is added/removed or
+    /// when an older model no longer belongs to the filtered chat catalog.
+    func synchronizeChatModelSelection() {
+        guard let selected = effectiveChatModelOption else { return }
+        if route(for: .chat).primaryModel.normalizedModelReference != selected.id {
+            selectChatModel(selected)
+            return
+        }
+        synchronizeChatReasoningEffort()
+    }
+
     func hasAPIKey(for providerID: UUID) -> Bool {
         credentialAvailability[providerID] == true
     }
@@ -812,7 +1006,7 @@ final class LLMSettingsStore {
     }
 
     func hasConfiguredModel(for useCase: LLMUseCase) -> Bool {
-        route(for: useCase).modelChain.contains { reference in
+        return route(for: useCase).modelChain.contains { reference in
             guard let parsed = try? Self.parseModelReference(reference),
                   let provider = providers.first(where: {
                       $0.normalizedPrefix.caseInsensitiveCompare(parsed.prefix) == .orderedSame
@@ -1132,15 +1326,21 @@ final class LLMSettingsStore {
 
     private func restoreCredentialAvailability() {
         let cached = defaults.dictionary(forKey: Self.credentialAvailabilityDefaultsKey) ?? [:]
-        credentialAvailability = Dictionary(uniqueKeysWithValues: providers.map { profile in
-            (profile.id, cached[profile.id.uuidString] as? Bool ?? false)
-        })
+        credentialAvailability = Dictionary(
+            providers.map { profile in
+                (profile.id, cached[profile.id.uuidString] as? Bool ?? false)
+            },
+            uniquingKeysWith: { current, _ in current }
+        )
     }
 
     private func persistCredentialAvailability() {
-        let cached = Dictionary(uniqueKeysWithValues: providers.map { profile in
-            (profile.id.uuidString, credentialAvailability[profile.id] == true)
-        })
+        let cached = Dictionary(
+            providers.map { profile in
+                (profile.id.uuidString, credentialAvailability[profile.id] == true)
+            },
+            uniquingKeysWith: { current, _ in current }
+        )
         defaults.set(cached, forKey: Self.credentialAvailabilityDefaultsKey)
     }
 
@@ -1151,7 +1351,7 @@ final class LLMSettingsStore {
     func runtimeRoute(for useCase: LLMUseCase) async throws -> LLMRuntimeRoute {
         let route = route(for: useCase)
         let policy = try route.policy.validated(for: useCase)
-        let reasoningEffort = useCase == .chat ? chatReasoningEffort : nil
+        let reasoningEffort = useCase == .chat ? effectiveChatReasoningEffort : nil
         var configurations: [LLMRuntimeConfiguration] = []
         var firstCredentialError: Error?
 
@@ -1217,6 +1417,114 @@ final class LLMSettingsStore {
         var suffix = 2
         while used.contains("\(base)-\(suffix)") { suffix += 1 }
         return "\(base)-\(suffix)"
+    }
+
+    private func chatModelOption(for reference: String) -> LLMChatModelOption? {
+        guard let parsed = try? Self.parseModelReference(reference),
+              let profile = providers.first(where: {
+                  $0.normalizedPrefix.caseInsensitiveCompare(parsed.prefix) == .orderedSame
+              }) else {
+            return nil
+        }
+
+        let canonicalReference = effectiveModelReference(
+            "\(profile.normalizedPrefix)/\(parsed.model)"
+        )
+        guard let canonical = try? Self.parseModelReference(canonicalReference) else {
+            return nil
+        }
+        return LLMChatModelOption(
+            reference: canonicalReference,
+            provider: profile.provider,
+            providerName: profile.normalizedDisplayName,
+            modelName: canonical.model,
+            isAvailable: hasAPIKey(for: profile.id),
+            supportedReasoningEfforts: LLMReasoningEffort.supportedChatEfforts(
+                providerPrefix: profile.normalizedPrefix,
+                modelName: canonical.model
+            )
+        )
+    }
+
+    private func chatModelOptions(
+        for profile: LLMProviderProfile,
+        provider: AgentProvider
+    ) -> [LLMChatModelOption] {
+        chatModels(for: provider, profile: profile).map { model in
+            let reference = profile.normalizedPrefix + "/" + model.rawValue
+            return LLMChatModelOption(
+                reference: reference,
+                provider: profile.provider,
+                providerName: profile.normalizedDisplayName,
+                modelName: model.rawValue,
+                isAvailable: hasAPIKey(for: profile.id),
+                supportedReasoningEfforts: model.supportedReasoningEfforts.compactMap {
+                    LLMReasoningEffort(rawValue: $0.rawValue)
+                }
+            )
+        }
+    }
+
+    private func uniqueChatModelOptions(
+        _ options: [LLMChatModelOption]
+    ) -> [LLMChatModelOption] {
+        var seen: Set<String> = []
+        return options.filter { seen.insert($0.id).inserted }
+    }
+
+    private func chatModels(
+        for provider: AgentProvider,
+        profile: LLMProviderProfile
+    ) -> [AgentModel] {
+        let references = [profile.defaultModelReference].compactMap { $0 }
+            + route(for: .chat).modelChain
+        return chatModels(for: provider, references: references, profile: profile)
+    }
+
+    private func chatModels(
+        for provider: AgentProvider,
+        references: [String],
+        profile: LLMProviderProfile? = nil
+    ) -> [AgentModel] {
+        var result = AgentModel.chatModels(for: provider)
+        let candidates = references.compactMap { reference -> AgentModel? in
+            guard let parsed = try? Self.parseModelReference(reference) else { return nil }
+            if let profile {
+                guard parsed.prefix.caseInsensitiveCompare(profile.normalizedPrefix) == .orderedSame else {
+                    return nil
+                }
+            } else {
+                guard let referenceProfile = providers.first(where: {
+                    $0.normalizedPrefix.caseInsensitiveCompare(parsed.prefix) == .orderedSame
+                }), chatProvider(for: referenceProfile) == provider else {
+                    return nil
+                }
+            }
+
+            switch provider {
+            case .openAI:
+                return OpenAIChatModelID(parsed.model).map { AgentModel(rawValue: $0.rawValue) }
+            case .anthropic:
+                return ClaudeChatModelID(parsed.model).map { AgentModel(rawValue: $0.rawValue) }
+            }
+        }
+        for candidate in candidates where !result.contains(where: {
+            $0.rawValue.caseInsensitiveCompare(candidate.rawValue) == .orderedSame
+        }) {
+            result.append(candidate)
+        }
+        return result
+    }
+
+    private func chatProvider(for profile: LLMProviderProfile) -> AgentProvider? {
+        let prefix = profile.normalizedPrefix
+        if profile.provider == .openAI || prefix == "openai" {
+            return .openAI
+        }
+        if prefix == "claude" || prefix == "anthropic" {
+            return .anthropic
+        }
+        return nil
     }
 
     private func persist() {

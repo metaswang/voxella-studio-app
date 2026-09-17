@@ -2,6 +2,7 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 import Foundation
+import os
 @preconcurrency import ScreenCaptureKit
 import VideoToolbox
 
@@ -107,24 +108,9 @@ private struct RecordingAudioLevelMeter {
     }
 }
 
-private struct RecordingTrackHealth {
-    var lastReceived: TimeInterval = 0
-    var lastAppended: TimeInterval = 0
-    var dropped = 0
-    var failedAppends = 0
-    var conversionFailures = 0
-
-    mutating func reset(at uptime: TimeInterval) {
-        lastReceived = uptime
-        lastAppended = uptime
-        dropped = 0
-        failedAppends = 0
-        conversionFailures = 0
-    }
-}
-
 final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.voxella.studio.recording", qos: .userInitiated)
+    private let supervisorQueue = DispatchQueue(label: "com.voxella.studio.recording.supervisor", qos: .userInitiated)
     private let hostClock = CMClockGetHostTimeClock()
     private lazy var microphone = MicrophoneCaptureEngine(outputQueue: queue)
 
@@ -141,6 +127,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     private var videoSize = (width: 0, height: 0)
     private var didStartSession = false
     private var hostOrigin: CMTime?
+    private var segmentGlobalStart: CMTime = .zero
     private var pauseOffset: CMTime = .zero
     private var pauseBegan: CMTime?
     private var isPaused = false
@@ -166,39 +153,52 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     private var contentFilter: SCContentFilter?
     private var currentDisplayID: UInt32?
     private var captureGeneration: UInt64 = 0
+    private var recoveryGeneration: UInt64 = 0
     private var healthTimer: DispatchSourceTimer?
     private var captureStartedAt: TimeInterval?
-    private var microphoneHealth = RecordingTrackHealth()
-    private var systemAudioHealth = RecordingTrackHealth()
-    private var nextAudioPTS: [AudioMeterSource: CMTime] = [:]
-    private var completedSegments: [URL] = []
+    private var microphoneHealth = RecordingHealthMachine()
+    private var systemAudioHealth = RecordingHealthMachine()
+    private var microphoneProgress = RecordingTrackProgress()
+    private var systemAudioProgress = RecordingTrackProgress()
+    private var microphoneCursor = RecordingAudioCursor()
+    private var systemAudioCursor = RecordingAudioCursor()
+    private var sealedSegments: [RecordingWriterSegment] = []
     private var segmentIndex = 0
     private var sessionID = UUID()
     private var captureBackend = "none"
     private var isRecovering = false
-    private var stallBeganAt: TimeInterval?
+    private var isRecoveringStream = false
     private var streamRecoveryAttempts = 0
     private var didWarnDiskSpace = false
-    private var finishResumed = false
-    private var didFinalizeWriter = false
+    private var finishContext: RecordingFinishContext?
     private var sessionManifest: RecordingSessionManifest?
+    private var orphanedWriters: [AVAssetWriter] = []
+    private var lastVideoCallback: TimeInterval = 0
+    private var lastCompleteVideoFrame: TimeInterval = 0
+    private var lastVideoAppended: TimeInterval = 0
+    private var lastVideoPTS: Double?
+    private var pendingStopReason: RecordingStopReason = .userStop
+    private let healthSnapshot = OSAllocatedUnfairLock(initialState: RecordingHealthSnapshot())
+    private let durableSalvage = OSAllocatedUnfairLock(initialState: false)
+
+    var hasDurableSalvage: Bool { durableSalvage.withLock { $0 } }
 
     func start(_ request: RecordingEngineRequest) async throws {
-        try await Self.withTimeout(seconds: RecordingLifecycleTimeout.start) {
+        try await RecordingTimeout.withTimeout(seconds: RecordingLifecycleTimeout.start) {
             try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                     self.queue.async {
                         do {
                             try self.beginLocked(request, continuation: continuation)
                         } catch {
-                            self.resetLocked()
+                            self.resetLocked(mode: .discard)
                             continuation.resume(throwing: error)
                         }
                     }
                 }
             } onCancel: {
                 self.queue.async {
-                    self.cancelStartLocked()
+                    self.cancelStartLocked(expectedSessionID: request.sessionID)
                 }
             }
         }
@@ -223,11 +223,9 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             }
             self.pauseBegan = nil
             self.isPaused = false
-            let now = ProcessInfo.processInfo.systemUptime
-            self.microphoneHealth.lastReceived = now
-            self.microphoneHealth.lastAppended = now
-            self.systemAudioHealth.lastReceived = now
-            self.systemAudioHealth.lastAppended = now
+            self.microphoneHealth.applyPauseGrace(duration: RecordingCaptureHealth.pauseGrace)
+            self.systemAudioHealth.applyPauseGrace(duration: RecordingCaptureHealth.pauseGrace)
+            self.updateHealthSnapshotLocked()
         }
     }
 
@@ -241,6 +239,8 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         queue.async { [weak self] in
             guard let self, !self.isStopping, self.writer != nil else { return }
             Log.recording.notice("recording handling system wake session=\(self.sessionID.uuidString)")
+            self.microphoneHealth.applyPauseGrace(duration: RecordingCaptureHealth.pauseGrace)
+            self.systemAudioHealth.applyPauseGrace(duration: RecordingCaptureHealth.pauseGrace)
             self.recoverAfterInterruptionLocked(reason: "system wake")
         }
     }
@@ -248,24 +248,38 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     func handleDisplayChange() {
         queue.async { [weak self] in
             guard let self, !self.isStopping, self.stream != nil else { return }
-            self.recoverStreamLocked(reason: "display change")
+            self.recoverStreamLocked(reason: "display change", streamStopped: false)
         }
     }
 
-    func stop() async throws -> RecordingStopResult {
-        try await Self.withTimeout(seconds: RecordingLifecycleTimeout.stop) {
+    func stop(
+        expectedSessionID: UUID? = nil,
+        mode: RecordingFinishMode = .export,
+        reason: RecordingStopReason = .userStop
+    ) async throws -> RecordingStopResult {
+        let timeout = mode == .salvage ? RecordingLifecycleTimeout.salvageStop : RecordingLifecycleTimeout.stop
+        return try await RecordingTimeout.withTimeout(seconds: timeout) {
             try await withCheckedThrowingContinuation { continuation in
                 self.queue.async {
-                    self.finishLocked(discard: false, continuation: continuation)
+                    self.finishLocked(
+                        mode: mode,
+                        expectedSessionID: expectedSessionID,
+                        reason: reason,
+                        continuation: continuation
+                    )
                 }
             }
         }
     }
 
-    func cancel() async {
+    func cancel(expectedSessionID: UUID? = nil) async {
         await withCheckedContinuation { continuation in
             queue.async { [weak self] in
                 guard let self else {
+                    continuation.resume()
+                    return
+                }
+                if let expectedSessionID, self.sessionID != expectedSessionID {
                     continuation.resume()
                     return
                 }
@@ -273,7 +287,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
                     continuation.resume()
                     return
                 }
-                self.finishLocked(discard: true) { (_: Result<RecordingStopResult, Error>) in
+                self.finishLocked(mode: .discard, expectedSessionID: expectedSessionID, reason: .userDiscard) { _ in
                     continuation.resume()
                 }
             }
@@ -284,7 +298,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         _ request: RecordingEngineRequest,
         continuation: CheckedContinuation<Void, Error>
     ) throws {
-        guard writer == nil, startContinuation == nil else {
+        guard writer == nil, startContinuation == nil, finishContext == nil else {
             throw RecordingError.alreadyRecording
         }
         guard request.configuration.hasAudioSource else {
@@ -294,7 +308,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             throw diskError
         }
 
-        resetLocked()
+        resetLocked(mode: .discard)
         captureGeneration += 1
         let generation = captureGeneration
         currentRequest = request
@@ -307,6 +321,9 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         liveWaveform = request.liveWaveform
         onAudioLevelWarning = request.onAudioLevelWarning
         onRuntimeEvent = request.onRuntimeEvent
+        isStopping = false
+        durableSalvage.withLock { $0 = false }
+        pendingStopReason = .userStop
 
         var audioTracks = 0
         if request.configuration.capturesSystemAudio { audioTracks += 1 }
@@ -322,20 +339,45 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         try installWriterLocked(url: writerURL, request: request)
         startContinuation = continuation
         captureBackend = Self.backendName(for: request.configuration)
-        writeManifest(status: RecordingSessionManifest.inProgress)
+        writeJournal(status: RecordingSessionManifest.capturing)
 
         let usesStreamMicrophone = request.configuration.microphone.isEnabled
             && request.configuration.requiresScreenCapture
         if request.configuration.microphone.isEnabled, !usesStreamMicrophone {
-            try microphone.start(
+            microphone.start(
+                sessionID: request.sessionID,
+                generation: generation,
                 deviceID: request.configuration.microphone.deviceID,
                 onSample: { [weak self] sample in
-                    self?.appendConvertedAudio(sample, to: self?.microphoneInput, source: .microphone)
+                    self?.appendMicrophoneSample(sample)
                 },
                 onEvent: { [weak self] event in
-                    self?.handleMicrophoneEventLocked(event)
+                    self?.handleMicrophoneEventLocked(event, generation: generation)
+                },
+                completion: { [weak self] result in
+                    self?.queue.async {
+                        guard let self, self.captureGeneration == generation else { return }
+                        switch result {
+                        case .failure(let error):
+                            self.handleStartResultLocked(error, generation: generation)
+                        case .success:
+                            if request.configuration.requiresScreenCapture {
+                                do {
+                                    guard let filter = request.contentFilter else {
+                                        throw RecordingError.noDisplay
+                                    }
+                                    try self.startStreamLocked(filter: filter, request: request, generation: generation)
+                                } catch {
+                                    self.handleStartResultLocked(error, generation: generation)
+                                }
+                            } else {
+                                self.handleStartResultLocked(nil, generation: generation)
+                            }
+                        }
+                    }
                 }
             )
+            return
         }
 
         if request.configuration.requiresScreenCapture {
@@ -419,6 +461,12 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         didStartSession = true
         self.writer = writer
         outputURL = url
+        didAppendMedia = false
+        didAppendVideo = false
+        didAppendMicrophone = false
+        didAppendSystemAudio = false
+        microphoneCursor = RecordingAudioCursor()
+        systemAudioCursor = RecordingAudioCursor()
     }
 
     private func startStreamLocked(
@@ -451,7 +499,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         if let continuation = startContinuation {
             startContinuation = nil
             if let error {
-                resetLocked()
+                resetLocked(mode: .discard)
                 continuation.resume(throwing: RecordingPermission.captureStartError(error))
                 return
             }
@@ -482,146 +530,171 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             return
         }
         isRecovering = false
-        stallBeganAt = nil
-        let now = ProcessInfo.processInfo.systemUptime
-        microphoneHealth.lastReceived = now
-        microphoneHealth.lastAppended = now
-        systemAudioHealth.lastReceived = now
-        systemAudioHealth.lastAppended = now
-        emit(.recovered(source: "stream"))
+        isRecoveringStream = false
+        emit(.recovering(source: "stream", message: "Waiting for capture audio…"))
     }
 
-    private func cancelStartLocked() {
+    private func cancelStartLocked(expectedSessionID: UUID) {
         guard startContinuation != nil else { return }
+        guard sessionID == expectedSessionID else { return }
         captureGeneration += 1
         let continuation = startContinuation
         startContinuation = nil
-        resetLocked()
+        resetLocked(mode: .discard)
         continuation?.resume(throwing: RecordingError.cancelled)
     }
 
     private func finishLocked(
-        discard: Bool,
+        mode: RecordingFinishMode,
+        expectedSessionID: UUID? = nil,
+        reason: RecordingStopReason,
         continuation: CheckedContinuation<RecordingStopResult, Error>? = nil,
         discarded: (@Sendable (Result<RecordingStopResult, Error>) -> Void)? = nil
     ) {
-        guard !isStopping else {
+        if let expectedSessionID, sessionID != expectedSessionID, startContinuation == nil {
             discarded?(.failure(RecordingError.cancelled))
             continuation?.resume(throwing: RecordingError.cancelled)
             return
         }
-        isStopping = true
-        captureGeneration += 1
-        stopHealthMonitorLocked()
-        finishResumed = false
-        didFinalizeWriter = false
-        let resume: @Sendable (Result<RecordingStopResult, RecordingError>) -> Void = { [weak self] result in
-            self?.queue.async {
-                guard let self, !self.finishResumed else { return }
-                self.finishResumed = true
-                switch result {
-                case .success(let stopResult):
-                    continuation?.resume(returning: stopResult)
-                    discarded?(.success(stopResult))
-                case .failure(let error):
-                    continuation?.resume(throwing: error)
-                    discarded?(.failure(error))
-                }
+        if let finishContext {
+            if let continuation {
+                finishContext.gate.arm(continuation)
             }
+            discarded?(.failure(RecordingError.cancelled))
+            return
         }
+        isStopping = true
+        pendingStopReason = reason
+        captureGeneration += 1
+        microphone.fence(generation: captureGeneration)
+        microphone.stop()
+        stopHealthMonitorLocked()
+        updateHealthSnapshotLocked(isStopping: true)
+
         if let startContinuation {
             self.startContinuation = nil
             startContinuation.resume(throwing: RecordingError.cancelled)
         }
-        microphone.stop()
+
         flushTranscodersLocked()
         let stream = self.stream
         self.stream = nil
-        let diagnostics = RecordingSessionDiagnostics(
-            microphone: microphoneMeter.snapshot,
-            systemAudio: systemAudioMeter.snapshot
+        let diagnostics = makeDiagnosticsLocked(reason: reason)
+        let operationID = UUID()
+        let context = RecordingFinishContext(
+            sessionID: sessionID,
+            operationID: operationID,
+            captureGeneration: captureGeneration,
+            mode: mode,
+            writer: writer,
+            outputURL: outputURL,
+            includesVideo: includesVideo,
+            audioTrackCount: audioTrackCount,
+            didAppendMedia: didAppendMedia,
+            didAppendVideo: didAppendVideo,
+            didAppendMicrophone: didAppendMicrophone,
+            didAppendSystemAudio: didAppendSystemAudio,
+            segments: sealedSegments,
+            diagnostics: diagnostics,
+            stopReason: reason
         )
+        if let continuation {
+            context.gate.arm(continuation)
+        }
+        finishContext = context
 
-        let completeWriter = {
-            self.finalizeWriterLocked(discard: discard, diagnostics: diagnostics, resume: resume)
+        let completeWriter = { [weak self] in
+            self?.finalizeWriterLocked(context: context, discarded: discarded)
         }
 
         if let stream {
-            stream.stopCapture { [weak self] _ in
+            let timeout = DispatchWorkItem { [weak self] in
                 self?.queue.async {
+                    guard let self, self.finishContext?.operationID == operationID else { return }
                     completeWriter()
                 }
             }
-            queue.asyncAfter(deadline: .now() + 8) { [weak self] in
-                guard let self, self.isStopping, self.writer != nil, !self.finishResumed else { return }
-                completeWriter()
+            context.storeStreamTimeout(timeout)
+            stream.stopCapture { [weak self] _ in
+                self?.queue.async {
+                    guard self?.finishContext?.operationID == operationID else { return }
+                    completeWriter()
+                }
             }
+            queue.asyncAfter(deadline: .now() + RecordingLifecycleTimeout.streamStop, execute: timeout)
         } else {
             completeWriter()
         }
     }
 
     private func finalizeWriterLocked(
-        discard: Bool,
-        diagnostics: RecordingSessionDiagnostics,
-        resume: @escaping @Sendable (Result<RecordingStopResult, RecordingError>) -> Void
+        context: RecordingFinishContext,
+        discarded: (@Sendable (Result<RecordingStopResult, Error>) -> Void)?
     ) {
-        guard !didFinalizeWriter else { return }
-        didFinalizeWriter = true
+        guard finishContext?.operationID == context.operationID else { return }
+        guard context.markWriterFinalized() else { return }
+        let resume: @Sendable (Result<RecordingStopResult, Error>) -> Void = { result in
+            discarded?(result)
+            context.resume(result)
+        }
+
+        let writer = context.writer ?? self.writer
+        let outputURL = context.outputURL ?? self.outputURL
         guard let writer, let outputURL else {
-            resetLocked()
-            resume(.failure(discard ? .cancelled : .emptyRecording))
+            if !context.segments.isEmpty {
+                completePreservedOutput(context: context, currentURL: context.segments.last!.url, resume: resume)
+                return
+            }
+            resetLocked(mode: context.mode)
+            resume(.failure(context.mode == .discard ? RecordingError.cancelled : RecordingError.emptyRecording))
             return
         }
 
-        if discard {
+        if context.mode == .discard {
             if writer.status == .writing {
                 writer.cancelWriting()
             }
             try? FileManager.default.removeItem(at: outputURL)
             RecordingSessionManifest.remove(for: outputURL)
-            for url in completedSegments {
-                try? FileManager.default.removeItem(at: url)
-                RecordingSessionManifest.remove(for: url)
+            for segment in context.segments {
+                try? FileManager.default.removeItem(at: segment.url)
+                RecordingSessionManifest.remove(for: segment.url)
             }
-            resetLocked()
-            resume(.failure(.cancelled))
+            resetLocked(mode: .discard)
+            resume(.failure(RecordingError.cancelled))
             return
         }
 
         if writer.status == .failed {
             logWriterFailure("before finish")
             let message = writer.error?.localizedDescription ?? RecordingError.emptyRecording.localizedDescription
-            preserveOutputIfNeeded(url: outputURL, reason: message)
-            completePreservedOutput(
-                currentURL: outputURL,
-                includesVideo: includesVideo,
-                audioTrackCount: audioTrackCount,
-                diagnostics: diagnostics,
-                resume: resume,
-                fallbackError: .writerFailed(message)
-            )
+            preserveOutputIfNeeded(url: outputURL, reason: message, status: RecordingSessionManifest.failed)
+            completePreservedOutput(context: context, currentURL: outputURL, resume: resume)
             return
         }
 
-        if !didStartSession || (!didAppendMedia && completedSegments.isEmpty) {
+        if !didStartSession || (!context.didAppendMedia && context.segments.isEmpty && !didAppendMedia) {
             if writer.status == .writing {
                 writer.cancelWriting()
             }
             try? FileManager.default.removeItem(at: outputURL)
             RecordingSessionManifest.remove(for: outputURL)
-            resetLocked()
-            resume(.failure(.emptyRecording))
+            if !context.segments.isEmpty {
+                completePreservedOutput(context: context, currentURL: context.segments.last!.url, resume: resume)
+                return
+            }
+            resetLocked(mode: context.mode)
+            resume(.failure(RecordingError.emptyRecording))
             return
         }
 
-        if includesVideo && !didAppendVideo && completedSegments.isEmpty {
-            if writer.status == .writing {
-                writer.cancelWriting()
-            }
-            preserveOutputIfNeeded(url: outputURL, reason: "The recording did not capture any video frames.")
-            resetLocked()
-            resume(.failure(.writerFailed("The recording did not capture any video frames.")))
+        if context.includesVideo && !context.didAppendVideo && !didAppendVideo && context.segments.isEmpty {
+            preserveOutputIfNeeded(
+                url: outputURL,
+                reason: "The recording did not capture any video frames.",
+                status: RecordingSessionManifest.failed
+            )
+            completePreservedOutput(context: context, currentURL: outputURL, resume: resume)
             return
         }
 
@@ -633,16 +706,12 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         }
 
         if let input = systemAudioInput, !didAppendSystemAudio {
-            appendSilence(to: input, at: nextAudioPTS[.systemAudio] ?? .zero)
+            appendTrailingSilence(to: input, source: .systemAudio)
         }
         if let input = microphoneInput, !didAppendMicrophone {
-            appendSilence(to: input, at: nextAudioPTS[.microphone] ?? .zero)
+            appendTrailingSilence(to: input, source: .microphone)
         }
 
-        let includesVideo = self.includesVideo
-        let audioTrackCount = self.audioTrackCount
-        let didAppendMedia = self.didAppendMedia
-        let segments = completedSegments
         videoInput?.markAsFinished()
         systemAudioInput?.markAsFinished()
         microphoneInput?.markAsFinished()
@@ -651,103 +720,186 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         microphoneInput = nil
         pixelBufferAdaptor = nil
 
-        writer.finishWriting { [weak self] in
+        let capturedWriter = writer
+        capturedWriter.finishWriting { [weak self] in
             self?.queue.async {
+                guard self?.finishContext?.operationID == context.operationID else {
+                    self?.releaseOrphanedWriter(capturedWriter)
+                    return
+                }
                 self?.completeAfterWriterFinished(
-                    writer: writer,
+                    writer: capturedWriter,
                     outputURL: outputURL,
-                    includesVideo: includesVideo,
-                    audioTrackCount: audioTrackCount,
-                    didAppendMedia: didAppendMedia,
-                    segments: segments,
-                    diagnostics: diagnostics,
+                    context: context,
                     resume: resume
                 )
             }
         }
-        queue.asyncAfter(deadline: .now() + RecordingLifecycleTimeout.writerFinish) { [weak self] in
-            guard let self, self.isStopping, !self.finishResumed else { return }
-            self.preserveOutputIfNeeded(url: outputURL, reason: "Timed out while finishing the recording.")
-            self.completePreservedOutput(
-                currentURL: outputURL,
-                includesVideo: includesVideo,
-                audioTrackCount: audioTrackCount,
-                diagnostics: diagnostics,
-                resume: resume,
-                fallbackError: .writerFailed("Timed out while finishing the recording.")
-            )
+        let timeout = DispatchWorkItem { [weak self] in
+            self?.queue.async {
+                guard let self, self.finishContext?.operationID == context.operationID else { return }
+                self.preserveOutputIfNeeded(
+                    url: outputURL,
+                    reason: "Timed out while finishing the recording.",
+                    status: RecordingSessionManifest.pendingFinalize
+                )
+                self.completePreservedOutput(context: context, currentURL: outputURL, resume: resume)
+            }
         }
+        context.storeWriterTimeout(timeout)
+        let writerTimeout = context.mode == .salvage
+            ? RecordingLifecycleTimeout.salvageWriterFinish
+            : RecordingLifecycleTimeout.writerFinish
+        queue.asyncAfter(deadline: .now() + writerTimeout, execute: timeout)
     }
 
     private func completeAfterWriterFinished(
         writer: AVAssetWriter,
         outputURL: URL,
-        includesVideo: Bool,
-        audioTrackCount: Int,
-        didAppendMedia: Bool,
-        segments: [URL],
-        diagnostics: RecordingSessionDiagnostics,
-        resume: @escaping @Sendable (Result<RecordingStopResult, RecordingError>) -> Void
+        context: RecordingFinishContext,
+        resume: @escaping @Sendable (Result<RecordingStopResult, Error>) -> Void
     ) {
-        guard writer.status == .completed, didAppendMedia || !segments.isEmpty else {
+        guard finishContext?.operationID == context.operationID else { return }
+        guard writer.status == .completed, context.didAppendMedia || didAppendMedia || !context.segments.isEmpty else {
             logWriterFailure("after finish")
             let message = writer.error?.localizedDescription ?? RecordingError.emptyRecording.localizedDescription
-            if didAppendMedia || FileManager.default.fileExists(atPath: outputURL.path) {
-                preserveOutputIfNeeded(url: outputURL, reason: message)
-                completePreservedOutput(
-                    currentURL: outputURL,
-                    includesVideo: includesVideo,
-                    audioTrackCount: audioTrackCount,
-                    diagnostics: diagnostics,
-                    resume: resume,
-                    fallbackError: .writerFailed(message)
-                )
+            if context.didAppendMedia || didAppendMedia || FileManager.default.fileExists(atPath: outputURL.path) {
+                preserveOutputIfNeeded(url: outputURL, reason: message, status: RecordingSessionManifest.failed)
+                completePreservedOutput(context: context, currentURL: outputURL, resume: resume)
+                return
+            }
+            if !context.segments.isEmpty {
+                completePreservedOutput(context: context, currentURL: context.segments.last!.url, resume: resume)
                 return
             }
             try? FileManager.default.removeItem(at: outputURL)
             RecordingSessionManifest.remove(for: outputURL)
-            resetLocked()
-            resume(.failure(.writerFailed(message)))
+            resetLocked(mode: context.mode)
+            resume(.failure(RecordingError.writerFailed(message)))
             return
         }
-        completePreservedOutput(
-            currentURL: outputURL,
-            includesVideo: includesVideo,
-            audioTrackCount: audioTrackCount,
-            diagnostics: diagnostics,
-            resume: resume,
-            fallbackError: nil
-        )
+        completePreservedOutput(context: context, currentURL: outputURL, resume: resume)
     }
 
     private func completePreservedOutput(
+        context: RecordingFinishContext,
         currentURL: URL,
-        includesVideo: Bool,
-        audioTrackCount: Int,
-        diagnostics: RecordingSessionDiagnostics,
-        resume: @escaping @Sendable (Result<RecordingStopResult, RecordingError>) -> Void,
-        fallbackError: RecordingError?
+        resume: @escaping @Sendable (Result<RecordingStopResult, Error>) -> Void
     ) {
-        let segments = completedSegments.filter { FileManager.default.fileExists(atPath: $0.path) }
-        let currentExists = FileManager.default.fileExists(atPath: currentURL.path)
-        var urls = segments
-        if currentExists, !urls.contains(currentURL) {
+        guard finishContext?.operationID == context.operationID else { return }
+        let segments = (context.segments + sealedSegments).reduce(into: [RecordingWriterSegment]()) { partial, segment in
+            if !partial.contains(where: { $0.url == segment.url }) {
+                partial.append(segment)
+            }
+        }
+        var urls = segments.map(\.url).filter { FileManager.default.fileExists(atPath: $0.path) }
+        if FileManager.default.fileExists(atPath: currentURL.path), !urls.contains(currentURL) {
             urls.append(currentURL)
         }
-        resetLocked()
+        let includesVideo = context.includesVideo
+        let audioTrackCount = context.audioTrackCount
+        let diagnostics = context.diagnostics
+        let sessionID = context.sessionID
+        let salvageOnly = context.mode == .salvage
+        releaseWriterLocked(cancel: false)
+        resetLocked(mode: context.mode, keepSalvage: true)
+
         guard !urls.isEmpty else {
-            resume(.failure(fallbackError ?? .emptyRecording))
+            finishContext = nil
+            resume(.failure(RecordingError.emptyRecording))
             return
         }
+
+        let journalOK = writeJournal(
+            status: salvageOnly ? RecordingSessionManifest.rawSaved : RecordingSessionManifest.pendingExport,
+            outputURL: urls.last ?? currentURL,
+            sessionID: sessionID,
+            urls: urls
+        )
+        durableSalvage.withLock { $0 = journalOK }
+
         Task {
+            let inspections = await withTaskGroup(of: RecordingMediaValidator.Inspection.self) { group in
+                for url in urls {
+                    group.addTask { await RecordingMediaValidator.inspect(url) }
+                }
+                var results: [RecordingMediaValidator.Inspection] = []
+                for await inspection in group {
+                    results.append(inspection)
+                }
+                return results
+            }
+            let readable = inspections.filter(\.isReadable).map(\.url)
+            let unreadable = inspections.filter { !$0.isReadable }
+            var warnings = unreadable.map { "Unreadable segment: \($0.url.lastPathComponent)" }
+            var resultURL = readable.last ?? urls.last ?? currentURL
+            var outcome: RecordingStopOutcomeKind = readable.count == urls.count ? .complete : .partial
+            if readable.isEmpty {
+                outcome = .recoveryRequired
+                warnings.append("No segment could be decoded.")
+                let journalOK = self.writeJournal(
+                    status: RecordingSessionManifest.failed,
+                    outputURL: urls.last ?? currentURL,
+                    sessionID: sessionID,
+                    urls: urls,
+                    warnings: warnings
+                )
+                self.queue.async {
+                    self.durableSalvage.withLock { $0 = journalOK }
+                    self.finishContext = nil
+                    resume(
+                        .success(
+                            RecordingStopResult(
+                                url: resultURL,
+                                diagnostics: diagnostics,
+                                outcome: .recoveryRequired,
+                                warnings: warnings,
+                                segmentURLs: urls,
+                                sessionID: sessionID,
+                                journalPersisted: journalOK
+                            )
+                        )
+                    )
+                }
+                return
+            }
+
+            if salvageOnly {
+                outcome = readable.count == 1 ? .rawSegments : .rawSegments
+                let journalOK = self.writeJournal(
+                    status: RecordingSessionManifest.pendingImport,
+                    outputURL: resultURL,
+                    sessionID: sessionID,
+                    urls: readable,
+                    warnings: warnings
+                )
+                self.queue.async {
+                    self.durableSalvage.withLock { $0 = journalOK }
+                    self.finishContext = nil
+                    resume(
+                        .success(
+                            RecordingStopResult(
+                                url: resultURL,
+                                diagnostics: diagnostics,
+                                outcome: outcome,
+                                warnings: warnings,
+                                segmentURLs: readable,
+                                sessionID: sessionID,
+                                journalPersisted: journalOK
+                            )
+                        )
+                    )
+                }
+                return
+            }
+
             do {
-                var resultURL = urls.last ?? currentURL
-                if urls.count > 1 {
+                if readable.count > 1 {
                     let concatenated = currentURL.deletingLastPathComponent()
                         .appendingPathComponent("\(currentURL.deletingPathExtension().lastPathComponent)-joined")
                         .appendingPathExtension(includesVideo || audioTrackCount >= 2 ? currentURL.pathExtension : "m4a")
                     try await RecordingAudioMixer.concatenate(
-                        urls: urls,
+                        urls: readable,
                         to: concatenated,
                         includesVideo: includesVideo
                     )
@@ -768,33 +920,97 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
                         }
                         resultURL = mixedURL
                     } catch {
+                        warnings.append("Audio mix failed; keeping separate tracks.")
+                        outcome = .partial
                         Log.recording.error(
                             "recording audio mix failed error=\(Log.detail(error))",
                             telemetry: "Recording audio mix failed"
                         )
                     }
                 }
-                RecordingSessionManifest.remove(for: currentURL)
-                for url in urls {
-                    RecordingSessionManifest.remove(for: url)
+                let journalOK = self.writeJournal(
+                    status: RecordingSessionManifest.pendingImport,
+                    outputURL: resultURL,
+                    sessionID: sessionID,
+                    urls: readable,
+                    warnings: warnings
+                )
+                self.queue.async {
+                    self.durableSalvage.withLock { $0 = journalOK }
+                    self.finishContext = nil
+                    resume(
+                        .success(
+                            RecordingStopResult(
+                                url: resultURL,
+                                diagnostics: diagnostics,
+                                outcome: outcome,
+                                warnings: warnings,
+                                segmentURLs: readable,
+                                sessionID: sessionID,
+                                journalPersisted: journalOK
+                            )
+                        )
+                    )
                 }
-                resume(.success(RecordingStopResult(url: resultURL, diagnostics: diagnostics)))
             } catch {
                 Log.recording.error(
                     "recording segment join failed error=\(Log.detail(error))",
                     telemetry: "Recording segment join failed"
                 )
-                let fallback = urls.last ?? currentURL
-                RecordingSessionManifest.remove(for: currentURL)
-                resume(.success(RecordingStopResult(url: fallback, diagnostics: diagnostics)))
+                warnings.append("Could not join segments; keeping original files.")
+                let journalOK = self.writeJournal(
+                    status: RecordingSessionManifest.pendingImport,
+                    outputURL: readable[0],
+                    sessionID: sessionID,
+                    urls: readable,
+                    warnings: warnings
+                )
+                self.queue.async {
+                    self.durableSalvage.withLock { $0 = journalOK }
+                    self.finishContext = nil
+                    resume(
+                        .success(
+                            RecordingStopResult(
+                                url: readable[0],
+                                diagnostics: diagnostics,
+                                outcome: .rawSegments,
+                                warnings: warnings,
+                                segmentURLs: readable,
+                                sessionID: sessionID,
+                                journalPersisted: journalOK
+                            )
+                        )
+                    )
+                }
             }
         }
     }
 
-    private func resetLocked() {
-        stopHealthMonitorLocked()
-        if writer?.status == .writing {
+    private func releaseWriterLocked(cancel: Bool) {
+        if cancel, writer?.status == .writing {
             writer?.cancelWriting()
+        } else if let writer, writer.status == .writing {
+            orphanedWriters.append(writer)
+        }
+        writer = nil
+        videoInput = nil
+        systemAudioInput = nil
+        microphoneInput = nil
+        pixelBufferAdaptor = nil
+    }
+
+    private func releaseOrphanedWriter(_ writer: AVAssetWriter) {
+        orphanedWriters.removeAll { $0 === writer }
+    }
+
+    private func resetLocked(mode: RecordingFinishMode, keepSalvage: Bool = false) {
+        stopHealthMonitorLocked()
+        if mode == .discard {
+            if writer?.status == .writing {
+                writer?.cancelWriting()
+            }
+        } else if let writer, writer.status == .writing {
+            orphanedWriters.append(writer)
         }
         stream = nil
         writer = nil
@@ -812,6 +1028,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         videoSize = (0, 0)
         didStartSession = false
         hostOrigin = nil
+        segmentGlobalStart = .zero
         pauseOffset = .zero
         pauseBegan = nil
         isPaused = false
@@ -821,7 +1038,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         didAppendMicrophone = false
         didLogVideoFormat = false
         didLogWriterAppendFailure = false
-        isStopping = false
+        isStopping = mode != .discard && keepSalvage ? false : false
         startContinuation = nil
         systemAudioMeter = RecordingAudioLevelMeter()
         microphoneMeter = RecordingAudioLevelMeter()
@@ -837,20 +1054,31 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         contentFilter = nil
         currentDisplayID = nil
         captureStartedAt = nil
-        microphoneHealth = RecordingTrackHealth()
-        systemAudioHealth = RecordingTrackHealth()
-        nextAudioPTS = [:]
-        completedSegments = []
+        microphoneHealth = RecordingHealthMachine()
+        systemAudioHealth = RecordingHealthMachine()
+        microphoneProgress = RecordingTrackProgress()
+        systemAudioProgress = RecordingTrackProgress()
+        microphoneCursor = RecordingAudioCursor()
+        systemAudioCursor = RecordingAudioCursor()
+        sealedSegments = []
         segmentIndex = 0
         captureBackend = "none"
         isRecovering = false
-        stallBeganAt = nil
+        isRecoveringStream = false
         streamRecoveryAttempts = 0
         didWarnDiskSpace = false
-        finishResumed = false
-        didFinalizeWriter = false
-        sessionManifest = nil
+        if !keepSalvage {
+            finishContext = nil
+            durableSalvage.withLock { $0 = false }
+            sessionManifest = nil
+        }
+        lastVideoCallback = 0
+        lastCompleteVideoFrame = 0
+        lastVideoAppended = 0
+        lastVideoPTS = nil
+        recoveryGeneration = 0
         microphone.stop()
+        healthSnapshot.withLock { $0 = RecordingHealthSnapshot() }
     }
 
     private func streamConfiguration(
@@ -917,12 +1145,18 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         return input
     }
 
-    private func writerPTS() -> CMTime {
-        let now = CMClockGetTime(hostClock)
-        if hostOrigin == nil {
-            hostOrigin = now
+    private func sessionPTS(from samplePTS: CMTime?) -> CMTime {
+        let raw: CMTime
+        if let samplePTS, samplePTS.isValid, samplePTS.isNumeric {
+            raw = samplePTS
+        } else {
+            raw = CMClockGetTime(hostClock)
         }
-        return CMTimeSubtract(CMTimeSubtract(now, hostOrigin ?? now), pauseOffset)
+        if hostOrigin == nil {
+            hostOrigin = raw
+        }
+        let global = CMTimeSubtract(CMTimeSubtract(raw, hostOrigin ?? raw), pauseOffset)
+        return CMTimeMaximum(.zero, CMTimeSubtract(global, segmentGlobalStart))
     }
 
     private func ensureSessionStarted() {
@@ -931,13 +1165,26 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         didStartSession = true
     }
 
+    private func appendMicrophoneSample(_ sample: MicrophoneCapturedSample) {
+        guard sample.sessionID == sessionID, sample.backendGeneration == captureGeneration else { return }
+        appendConvertedAudio(
+            sample.sampleBuffer,
+            to: microphoneInput,
+            source: .microphone,
+            capturePTS: sample.capturePTS
+        )
+    }
+
     private func appendVideo(_ sampleBuffer: CMSampleBuffer) {
-        guard !isStopping, !isPaused,
-              writer?.status == .writing,
+        let now = ProcessInfo.processInfo.systemUptime
+        lastVideoCallback = now
+        guard !isStopping, !isPaused else { return }
+        guard Self.isCompleteScreenFrame(sampleBuffer) else { return }
+        lastCompleteVideoFrame = now
+        guard writer?.status == .writing,
               let input = videoInput,
               input.isReadyForMoreMediaData,
               let adaptor = pixelBufferAdaptor,
-              Self.isCompleteScreenFrame(sampleBuffer),
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             return
         }
@@ -949,9 +1196,12 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         }
         ensureSessionStarted()
         guard let encodedBuffer = pixelBufferForWriter(pixelBuffer) else { return }
-        if adaptor.append(encodedBuffer, withPresentationTime: writerPTS()) {
+        let pts = sessionPTS(from: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        if adaptor.append(encodedBuffer, withPresentationTime: pts) {
             didAppendVideo = true
             didAppendMedia = true
+            lastVideoAppended = now
+            lastVideoPTS = pts.seconds
         } else {
             logAppendFailure(kind: "video")
             if writer?.status == .failed {
@@ -993,13 +1243,18 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     private func appendConvertedAudio(
         _ sampleBuffer: CMSampleBuffer,
         to input: AVAssetWriterInput?,
-        source: AudioMeterSource
+        source: AudioMeterSource,
+        capturePTS: CMTime? = nil
     ) {
         let now = ProcessInfo.processInfo.systemUptime
-        switch source {
-        case .systemAudio: systemAudioHealth.lastReceived = now
-        case .microphone: microphoneHealth.lastReceived = now
+        let samplePTS = capturePTS ?? CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        mutateHealth(source) { $0.noteReceived(at: now) }
+        mutateProgress(source) { $0.noteReceived(at: now, pts: samplePTS) }
+        if health(for: source).phase == .healthy, isRecovering {
+            isRecovering = false
+            emit(.recovered(source: source == .microphone ? "microphone" : "system audio"))
         }
+        updateHealthSnapshotLocked()
         guard !isStopping, !isPaused, let input else { return }
         if writer?.status == .failed {
             rotateWriterLocked(reason: "writer failed during audio append")
@@ -1007,141 +1262,215 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         }
         guard writer?.status == .writing else { return }
 
-        let timelineTime = writerPTS()
+        let timelineTime = sessionPTS(from: samplePTS)
         let sampleDuration = RecordingAudioTranscoder.sampleDuration(sampleBuffer)
-        var pts = timelineTime
-        if let next = nextAudioPTS[source] {
-            let gap = CMTimeSubtract(timelineTime, next)
-            if gap.isNumeric, gap.seconds >= RecordingCaptureHealth.gapFillThreshold {
-                appendSilence(to: input, from: next, to: timelineTime)
-                pts = timelineTime
-            } else {
-                pts = next
-            }
+        var planned: (silenceFrom: CMTime?, commitPTS: CMTime) = (nil, timelineTime)
+        mutateCursor(source) { planned = $0.plan(samplePTS: timelineTime, gapThreshold: RecordingCaptureHealth.gapFillThreshold) }
+        if let silenceFrom = planned.silenceFrom {
+            appendSilence(to: input, source: source, from: silenceFrom, to: planned.commitPTS, now: now)
         }
 
         if source == .microphone, isMicrophoneMuted {
-            appendSilence(to: input, from: pts, duration: sampleDuration)
-            nextAudioPTS[source] = CMTimeAdd(pts, sampleDuration)
-            microphoneHealth.lastAppended = now
+            appendSilence(
+                to: input,
+                source: source,
+                from: planned.commitPTS,
+                duration: sampleDuration,
+                now: now
+            )
             return
         }
 
         let transcoder = source == .systemAudio ? systemAudioTranscoder : microphoneTranscoder
-        guard let converted = transcoder.transcode(sampleBuffer, presentationTime: pts) else {
-            switch source {
-            case .systemAudio: systemAudioHealth.conversionFailures += 1
-            case .microphone: microphoneHealth.conversionFailures += 1
-            }
+        let converted = transcoder.transcodeAll(sampleBuffer, presentationTime: planned.commitPTS)
+        guard !converted.isEmpty else {
+            mutateHealth(source) { $0.noteConversionFailure() }
             return
         }
-        let tick: RecordingAudioMeterTick?
-        switch source {
-        case .systemAudio:
-            tick = systemAudioMeter.append(converted)
-        case .microphone:
-            tick = microphoneMeter.append(converted)
-        }
-        if let level = tick?.warningLevel {
+        mutateHealth(source) { $0.noteConverted(at: now) }
+        for sample in converted {
+            let tick: RecordingAudioMeterTick?
             switch source {
-            case .systemAudio where !microphoneEnabled:
-                onAudioLevelWarning?(RecordingAudioLevelWarning(track: .systemAudio, level: level))
-            case .microphone where !systemAudioEnabled:
-                onAudioLevelWarning?(RecordingAudioLevelWarning(track: .microphone, level: level))
-            default:
+            case .systemAudio:
+                tick = systemAudioMeter.append(sample)
+            case .microphone:
+                tick = microphoneMeter.append(sample)
+            }
+            if let level = tick?.warningLevel {
+                switch source {
+                case .systemAudio where !microphoneEnabled:
+                    onAudioLevelWarning?(RecordingAudioLevelWarning(track: .systemAudio, level: level))
+                case .microphone where !systemAudioEnabled:
+                    onAudioLevelWarning?(RecordingAudioLevelWarning(track: .microphone, level: level))
+                default:
+                    break
+                }
+            }
+            if commitAudioSample(sample, to: input, source: source, now: now, tick: tick) == false {
                 break
             }
         }
+    }
+
+    @discardableResult
+    private func commitAudioSample(
+        _ sample: CMSampleBuffer,
+        to input: AVAssetWriterInput,
+        source: AudioMeterSource,
+        now: TimeInterval,
+        tick: RecordingAudioMeterTick? = nil
+    ) -> Bool {
         ensureSessionStarted()
         guard input.isReadyForMoreMediaData else {
-            switch source {
-            case .systemAudio: systemAudioHealth.dropped += 1
-            case .microphone: microphoneHealth.dropped += 1
-            }
+            mutateHealth(source) { $0.noteWriterNotReady(at: now) }
             logDroppedSample(source: source)
-            return
+            updateHealthSnapshotLocked()
+            return false
         }
-        if input.append(converted) {
-            didAppendMedia = true
-            if let tick {
-                liveWaveform?.ingest(peak: tick.peak, at: ProcessInfo.processInfo.systemUptime)
-            }
-            let duration = CMTime(
-                value: CMTimeValue(CMSampleBufferGetNumSamples(converted)),
-                timescale: CMTimeScale(RecordingAudioTranscoder.sampleRate)
-            )
-            nextAudioPTS[source] = CMTimeAdd(pts, duration)
-            switch source {
-            case .systemAudio:
-                if !didAppendSystemAudio {
-                    Log.recording.notice("recording system audio sample appended")
-                }
-                didAppendSystemAudio = true
-                systemAudioHealth.lastAppended = now
-            case .microphone:
-                if !didAppendMicrophone {
-                    Log.recording.notice("recording microphone sample appended")
-                }
-                didAppendMicrophone = true
-                microphoneHealth.lastAppended = now
-            }
-        } else {
-            switch source {
-            case .systemAudio: systemAudioHealth.failedAppends += 1
-            case .microphone: microphoneHealth.failedAppends += 1
-            }
+        guard input.append(sample) else {
+            mutateHealth(source) { $0.noteAppendFailure() }
             logAppendFailure(kind: source == .systemAudio ? "system audio" : "microphone")
             if writer?.status == .failed {
                 rotateWriterLocked(reason: source == .systemAudio ? "system audio append failed" : "microphone append failed")
             }
+            return false
         }
+        let frames = Int64(CMSampleBufferGetNumSamples(sample))
+        let pts = CMSampleBufferGetPresentationTimeStamp(sample)
+        mutateCursor(source) {
+            $0.commit(
+                start: pts,
+                frames: frames,
+                sampleRate: RecordingAudioTranscoder.sampleRate
+            )
+        }
+        mutateHealth(source) { $0.noteCommitted(at: now) }
+        mutateProgress(source) { $0.noteCommitted(at: now, pts: pts, frames: frames) }
+        didAppendMedia = true
+        switch source {
+        case .systemAudio:
+            if !didAppendSystemAudio {
+                Log.recording.notice("recording system audio sample appended")
+            }
+            didAppendSystemAudio = true
+        case .microphone:
+            if !didAppendMicrophone {
+                Log.recording.notice("recording microphone sample appended")
+            }
+            didAppendMicrophone = true
+        }
+        if let tick {
+            liveWaveform?.ingest(peak: tick.peak, at: now)
+        }
+        updateHealthSnapshotLocked()
+        return true
     }
 
-    private func appendSilence(to input: AVAssetWriterInput, at presentationTime: CMTime) {
-        appendSilence(to: input, from: presentationTime, duration: CMTime(value: 2_048, timescale: 48_000))
+    private func appendTrailingSilence(to input: AVAssetWriterInput, source: AudioMeterSource) {
+        let start = cursor(for: source).nextPTS ?? .zero
+        appendSilence(
+            to: input,
+            source: source,
+            from: start,
+            duration: CMTime(value: 2_048, timescale: 48_000),
+            now: ProcessInfo.processInfo.systemUptime
+        )
     }
 
-    private func appendSilence(to input: AVAssetWriterInput, from start: CMTime, duration: CMTime) {
+    private func appendSilence(
+        to input: AVAssetWriterInput,
+        source: AudioMeterSource,
+        from start: CMTime,
+        duration: CMTime,
+        now: TimeInterval
+    ) {
         guard duration.isNumeric, duration.seconds > 0 else { return }
-        appendSilence(to: input, from: start, to: CMTimeAdd(start, duration))
+        appendSilence(to: input, source: source, from: start, to: CMTimeAdd(start, duration), now: now)
     }
 
-    private func appendSilence(to input: AVAssetWriterInput, from start: CMTime, to end: CMTime) {
+    private func appendSilence(
+        to input: AVAssetWriterInput,
+        source: AudioMeterSource,
+        from start: CMTime,
+        to end: CMTime,
+        now: TimeInterval
+    ) {
         var pts = start
         let chunk = CMTime(seconds: 0.5, preferredTimescale: 48_000)
         while CMTimeCompare(pts, end) < 0 {
             let remaining = CMTimeSubtract(end, pts)
             let duration = CMTimeMinimum(remaining, chunk)
             let frames = AVAudioFrameCount(max(1, (duration.seconds * RecordingAudioTranscoder.sampleRate).rounded()))
-            guard input.isReadyForMoreMediaData,
-                  let sample = RecordingAudioTranscoder.makeSilentSampleBuffer(
-                    frameCount: frames,
-                    presentationTime: pts
-                  ) else {
+            guard let sample = RecordingAudioTranscoder.makeSilentSampleBuffer(
+                frameCount: frames,
+                presentationTime: pts
+            ) else {
                 break
             }
-            ensureSessionStarted()
-            if input.append(sample) {
-                didAppendMedia = true
-                pts = CMTimeAdd(pts, CMTime(value: CMTimeValue(frames), timescale: 48_000))
-            } else {
-                break
-            }
+            guard commitAudioSample(sample, to: input, source: source, now: now) else { break }
+            pts = cursor(for: source).nextPTS ?? CMTimeAdd(pts, CMTime(value: CMTimeValue(frames), timescale: 48_000))
         }
     }
 
     private func flushTranscodersLocked() {
-        if let input = systemAudioInput, let pcm = systemAudioTranscoder.flush() {
-            let pts = nextAudioPTS[.systemAudio] ?? writerPTS()
-            if let sample = RecordingAudioTranscoder.makeSampleBuffer(from: pcm, presentationTime: pts) {
-                _ = input.append(sample)
+        let now = ProcessInfo.processInfo.systemUptime
+        if let input = systemAudioInput {
+            let pts = systemAudioCursor.nextPTS ?? sessionPTS(from: nil)
+            for pcm in systemAudioTranscoder.flushAll() {
+                if let sample = RecordingAudioTranscoder.makeSampleBuffer(from: pcm, presentationTime: pts) {
+                    _ = commitAudioSample(sample, to: input, source: .systemAudio, now: now)
+                }
             }
         }
-        if let input = microphoneInput, let pcm = microphoneTranscoder.flush() {
-            let pts = nextAudioPTS[.microphone] ?? writerPTS()
-            if let sample = RecordingAudioTranscoder.makeSampleBuffer(from: pcm, presentationTime: pts) {
-                _ = input.append(sample)
+        if let input = microphoneInput {
+            let pts = microphoneCursor.nextPTS ?? sessionPTS(from: nil)
+            for pcm in microphoneTranscoder.flushAll() {
+                if let sample = RecordingAudioTranscoder.makeSampleBuffer(from: pcm, presentationTime: pts) {
+                    _ = commitAudioSample(sample, to: input, source: .microphone, now: now)
+                }
             }
+        }
+    }
+
+    private func health(for source: AudioMeterSource) -> RecordingHealthMachine {
+        switch source {
+        case .systemAudio: systemAudioHealth
+        case .microphone: microphoneHealth
+        }
+    }
+
+    private func cursor(for source: AudioMeterSource) -> RecordingAudioCursor {
+        switch source {
+        case .systemAudio: systemAudioCursor
+        case .microphone: microphoneCursor
+        }
+    }
+
+    // Mutable accessors keep copies from the getters above from being discarded.
+    private func setHealth(_ source: AudioMeterSource, _ value: RecordingHealthMachine) {
+        switch source {
+        case .systemAudio: systemAudioHealth = value
+        case .microphone: microphoneHealth = value
+        }
+    }
+
+    private func mutateHealth(_ source: AudioMeterSource, _ body: (inout RecordingHealthMachine) -> Void) {
+        var value = health(for: source)
+        body(&value)
+        setHealth(source, value)
+    }
+
+    private func mutateProgress(_ source: AudioMeterSource, _ body: (inout RecordingTrackProgress) -> Void) {
+        switch source {
+        case .systemAudio: body(&systemAudioProgress)
+        case .microphone: body(&microphoneProgress)
+        }
+    }
+
+    private func mutateCursor(_ source: AudioMeterSource, _ body: (inout RecordingAudioCursor) -> Void) {
+        switch source {
+        case .systemAudio: body(&systemAudioCursor)
+        case .microphone: body(&microphoneCursor)
         }
     }
 
@@ -1195,18 +1524,19 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         }
     }
 
-    private func handleMicrophoneEventLocked(_ event: MicrophoneCaptureEvent) {
+    private func handleMicrophoneEventLocked(_ event: MicrophoneCaptureEvent, generation: UInt64) {
+        guard generation == captureGeneration else { return }
         switch event {
         case .recovering(let message):
             isRecovering = true
+            microphoneHealth.noteRestartAttempt(at: ProcessInfo.processInfo.systemUptime)
+            updateHealthSnapshotLocked()
             emit(.recovering(source: "microphone", message: message))
         case .recovered:
-            isRecovering = false
-            stallBeganAt = nil
-            let now = ProcessInfo.processInfo.systemUptime
-            microphoneHealth.lastReceived = now
-            microphoneHealth.lastAppended = now
-            emit(.recovered(source: "microphone"))
+            isRecovering = microphoneHealth.phase != .healthy
+            if microphoneHealth.phase == .healthy {
+                emit(.recovered(source: "microphone"))
+            }
         case .failed(let error):
             emit(.failed(error: error, reason: "microphone"))
         }
@@ -1214,15 +1544,18 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
 
     private func recoverAfterInterruptionLocked(reason: String) {
         if microphoneEnabled, currentRequest?.configuration.requiresScreenCapture != true {
+            microphoneHealth.noteRestartAttempt(at: ProcessInfo.processInfo.systemUptime)
             microphone.recover()
         }
         if stream != nil {
-            recoverStreamLocked(reason: reason)
+            recoverStreamLocked(reason: reason, streamStopped: false)
         }
+        updateHealthSnapshotLocked()
     }
 
-    private func recoverStreamLocked(reason: String) {
+    private func recoverStreamLocked(reason: String, streamStopped: Bool) {
         guard !isStopping, let request = currentRequest else { return }
+        guard !isRecoveringStream else { return }
         streamRecoveryAttempts += 1
         if streamRecoveryAttempts > 3 {
             emit(
@@ -1234,12 +1567,15 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             return
         }
         isRecovering = true
+        isRecoveringStream = true
+        recoveryGeneration += 1
+        let recGen = recoveryGeneration
+        let generation = captureGeneration
         emit(.recovering(source: "stream", message: "Reconnecting capture…"))
         Log.recording.notice(
             "recording stream recovering reason=\(reason) attempt=\(streamRecoveryAttempts) session=\(sessionID.uuidString)"
         )
-        let generation = captureGeneration
-        guard currentDisplayID != nil, stream != nil else {
+        if streamStopped || stream == nil {
             recreateStreamLocked(reason: reason, request: request, generation: generation)
             return
         }
@@ -1247,18 +1583,25 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             guard let self else { return }
             do {
                 let filter = try await self.rebuildContentFilter()
+                guard recGen == self.recoveryGeneration, generation == self.captureGeneration else { return }
                 guard let stream = self.stream else { throw RecordingError.noDisplay }
                 try await stream.updateContentFilter(filter)
                 self.queue.async {
-                    guard self.captureGeneration == generation, !self.isStopping else { return }
+                    guard self.recoveryGeneration == recGen, self.captureGeneration == generation, !self.isStopping else { return }
                     self.contentFilter = filter
-                    self.isRecovering = false
-                    self.stallBeganAt = nil
-                    self.emit(.recovered(source: "stream"))
+                    self.isRecoveringStream = false
+                    self.emit(.recovering(source: "stream", message: "Waiting for capture audio…"))
+                }
+            } catch let lost as RecordingError where lost == .captureTargetUnavailable {
+                self.queue.async {
+                    guard self.recoveryGeneration == recGen, self.captureGeneration == generation else { return }
+                    self.isRecoveringStream = false
+                    self.emit(.captureTargetLost(message: lost.localizedDescription ?? ""))
+                    self.emit(.failed(error: .captureTargetUnavailable, reason: "display lost"))
                 }
             } catch {
                 self.queue.async {
-                    guard self.captureGeneration == generation, !self.isStopping else { return }
+                    guard self.recoveryGeneration == recGen, self.captureGeneration == generation, !self.isStopping else { return }
                     self.recreateStreamLocked(reason: reason, request: request, generation: generation)
                 }
             }
@@ -1270,6 +1613,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         stream = nil
         old?.stopCapture { _ in }
         guard let filter = contentFilter ?? request.contentFilter else {
+            isRecoveringStream = false
             emit(
                 .failed(
                     error: .captureInterrupted("Capture stopped and no display is available. The recording so far was saved."),
@@ -1281,6 +1625,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         do {
             try startStreamLocked(filter: filter, request: request, generation: generation)
         } catch {
+            isRecoveringStream = false
             emit(
                 .failed(
                     error: .captureInterrupted("Capture stopped and could not be restored. The recording so far was saved."),
@@ -1292,15 +1637,9 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
 
     private func rebuildContentFilter() async throws -> SCContentFilter {
         let content = try await RecordingPermission.shareableContent()
-        let display: SCDisplay
-        if let displayID = currentDisplayID,
-           let match = content.displays.first(where: { $0.displayID == displayID }) {
-            display = match
-        } else if let first = content.displays.first {
-            display = first
-            currentDisplayID = first.displayID
-        } else {
-            throw RecordingError.noDisplay
+        guard let displayID = currentDisplayID,
+              let display = content.displays.first(where: { $0.displayID == displayID }) else {
+            throw RecordingError.captureTargetUnavailable
         }
         let excluded = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
         return SCContentFilter(display: display, excludingApplications: excluded, exceptingWindows: [])
@@ -1308,21 +1647,42 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
 
     private func startHealthMonitorLocked() {
         stopHealthMonitorLocked()
-        let timer = DispatchSource.makeTimerSource(queue: queue)
+        let timer = DispatchSource.makeTimerSource(queue: supervisorQueue)
         timer.schedule(
             deadline: .now() + RecordingCaptureHealth.checkInterval,
             repeating: RecordingCaptureHealth.checkInterval
         )
         timer.setEventHandler { [weak self] in
-            self?.checkHealthLocked()
+            self?.checkHealthFromSupervisor()
         }
         timer.resume()
         healthTimer = timer
+        updateHealthSnapshotLocked()
     }
 
     private func stopHealthMonitorLocked() {
         healthTimer?.cancel()
         healthTimer = nil
+    }
+
+    private func checkHealthFromSupervisor() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let snapshot = healthSnapshot.withLock { $0 }
+        if snapshot.isStopping { return }
+        if let deadline = snapshot.failureDeadline, now >= deadline, !snapshot.isHealthy {
+            queue.async { [weak self] in
+                self?.emit(
+                    .failed(
+                        error: .captureInterrupted("Recording stopped receiving audio. The recording so far was saved."),
+                        reason: "supervisor deadline"
+                    )
+                )
+            }
+            return
+        }
+        queue.async { [weak self] in
+            self?.checkHealthLocked()
+        }
     }
 
     private func checkHealthLocked() {
@@ -1338,46 +1698,63 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         }
         guard !isPaused, let started = captureStartedAt else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        guard now - started > RecordingCaptureHealth.startupGrace else { return }
-
-        var stalled: [String] = []
-        if microphoneEnabled {
-            if now - microphoneHealth.lastReceived > RecordingCaptureHealth.stallTimeout {
-                stalled.append("microphone")
-            } else if now - microphoneHealth.lastAppended > RecordingCaptureHealth.stallTimeout {
-                stalled.append("microphone write")
-            }
-        }
-        if systemAudioEnabled {
-            if now - systemAudioHealth.lastReceived > RecordingCaptureHealth.stallTimeout {
-                stalled.append("system audio")
-            } else if now - systemAudioHealth.lastAppended > RecordingCaptureHealth.stallTimeout {
-                stalled.append("system audio write")
-            }
-        }
-        if stalled.isEmpty {
-            if isRecovering {
-                isRecovering = false
-                emit(.recovered(source: "capture"))
-            }
-            stallBeganAt = nil
-            streamRecoveryAttempts = 0
-            return
-        }
-        if stallBeganAt == nil {
-            stallBeganAt = now
-            isRecovering = true
-            Log.recording.warning(
-                "recording capture stalled tracks=\(stalled.joined(separator: ",")) session=\(sessionID.uuidString) backend=\(captureBackend) elapsed=\(now - started) droppedMic=\(microphoneHealth.dropped) droppedSystem=\(systemAudioHealth.dropped)"
+        applyHealthDecision(
+            microphoneHealth.evaluate(at: now, startedAt: started, enabled: microphoneEnabled),
+            source: "microphone",
+            now: now
+        )
+        applyHealthDecision(
+            systemAudioHealth.evaluate(at: now, startedAt: started, enabled: systemAudioEnabled),
+            source: "system audio",
+            now: now
+        )
+        if includesVideo,
+           lastCompleteVideoFrame > 0,
+           lastVideoAppended > 0,
+           now - lastVideoAppended >= RecordingCaptureHealth.videoFreezeTimeout,
+           (microphoneEnabled && now - microphoneHealth.lastReceived <= RecordingCaptureHealth.stallTimeout)
+            || (systemAudioEnabled && now - systemAudioHealth.lastReceived <= RecordingCaptureHealth.stallTimeout) {
+            emit(
+                .failed(
+                    error: .captureInterrupted("Recording stopped receiving video. The recording so far was saved."),
+                    reason: "video freeze"
+                )
             )
-            emit(.recovering(source: "capture", message: "Recording lost the audio feed. Reconnecting…"))
-            recoverAfterInterruptionLocked(reason: stalled.joined(separator: ","))
         }
-        if now - (stallBeganAt ?? now) >= RecordingCaptureHealth.failureTimeout {
+        updateHealthSnapshotLocked()
+    }
+
+    private func applyHealthDecision(_ decision: RecordingHealthMachine.Decision, source: String, now: TimeInterval) {
+        switch decision {
+        case .none:
+            break
+        case .restartCapture(let reason):
+            isRecovering = true
+            emit(.recovering(source: source, message: "Recording lost the audio feed. Reconnecting…"))
+            Log.recording.warning(
+                "recording capture stalled source=\(source) reason=\(reason) session=\(sessionID.uuidString)"
+            )
+            if source == "microphone" {
+                microphoneHealth.noteRestartAttempt(at: now)
+                microphone.recover()
+            } else {
+                recoverStreamLocked(reason: reason, streamStopped: false)
+            }
+        case .rolloverWriter(let reason):
+            emit(.recovering(source: "writer", message: "Recording hit a write delay and continued in a new file."))
+            rotateWriterLocked(reason: "\(source) \(reason)")
+        case .rebuildConverter(let reason):
+            if source == "microphone" {
+                microphoneTranscoder.reset()
+            } else {
+                systemAudioTranscoder.reset()
+            }
+            Log.recording.warning("recording converter rebuilt source=\(source) reason=\(reason)")
+        case .fail(let reason):
             emit(
                 .failed(
                     error: .captureInterrupted("Recording stopped receiving audio. The recording so far was saved."),
-                    reason: stalled.joined(separator: ",")
+                    reason: "\(source) \(reason)"
                 )
             )
         }
@@ -1388,10 +1765,26 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         Log.recording.error(
             "recording rotating writer reason=\(reason) session=\(sessionID.uuidString) path=\(currentURL.lastPathComponent)"
         )
-        preserveOutputIfNeeded(url: currentURL, reason: reason)
+        let localDuration = max(
+            microphoneCursor.nextPTS?.seconds ?? 0,
+            systemAudioCursor.nextPTS?.seconds ?? 0
+        )
         if didAppendMedia {
-            completedSegments.append(currentURL)
+            sealedSegments.append(
+                RecordingWriterSegment(
+                    index: segmentIndex,
+                    url: currentURL,
+                    globalStart: segmentGlobalStart.seconds,
+                    localDuration: localDuration,
+                    status: RecordingSessionManifest.rawSaved,
+                    didAppendMedia: didAppendMedia,
+                    didAppendVideo: didAppendVideo,
+                    didAppendMicrophone: didAppendMicrophone,
+                    didAppendSystemAudio: didAppendSystemAudio
+                )
+            )
         }
+        preserveOutputIfNeeded(url: currentURL, reason: reason, status: RecordingSessionManifest.rawSaved)
         let oldWriter = writer
         videoInput?.markAsFinished()
         systemAudioInput?.markAsFinished()
@@ -1401,13 +1794,19 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         microphoneInput = nil
         pixelBufferAdaptor = nil
         writer = nil
-        nextAudioPTS = [:]
+        microphoneCursor = RecordingAudioCursor()
+        systemAudioCursor = RecordingAudioCursor()
         didStartSession = false
+        didAppendMedia = false
+        didAppendVideo = false
+        didAppendMicrophone = false
+        didAppendSystemAudio = false
+        segmentGlobalStart = CMTimeAdd(segmentGlobalStart, CMTime(seconds: localDuration, preferredTimescale: 48_000))
         segmentIndex += 1
         let nextURL = makeSegmentURL(from: currentURL)
         do {
             try installWriterLocked(url: nextURL, request: request)
-            writeManifest(status: RecordingSessionManifest.inProgress)
+            writeJournal(status: RecordingSessionManifest.capturing)
             emit(.recovering(source: "writer", message: "Recording hit a write error and continued in a new file."))
         } catch {
             outputURL = currentURL
@@ -1418,8 +1817,16 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
                 )
             )
         }
-        oldWriter?.finishWriting {
+        oldWriter?.finishWriting { [weak self] in
             Log.recording.notice("recording previous segment finished path=\(currentURL.lastPathComponent)")
+            if let oldWriter {
+                self?.queue.async {
+                    self?.releaseOrphanedWriter(oldWriter)
+                }
+            }
+        }
+        if let oldWriter {
+            orphanedWriters.append(oldWriter)
         }
     }
 
@@ -1429,30 +1836,104 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             .appendingPathExtension(base.pathExtension)
     }
 
-    private func preserveOutputIfNeeded(url: URL, reason: String) {
+    private func preserveOutputIfNeeded(url: URL, reason: String, status: String) {
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         let note = url.appendingPathExtension("error.txt")
         try? "\(reason)\nsession=\(sessionID.uuidString)\nbackend=\(captureBackend)\n"
             .write(to: note, atomically: true, encoding: .utf8)
-        writeManifest(status: RecordingSessionManifest.failed)
+        writeJournal(status: status, outputURL: url)
         Log.recording.error(
             "recording preserving output path=\(url.lastPathComponent) reason=\(reason) session=\(sessionID.uuidString)"
         )
     }
 
-    private func writeManifest(status: String) {
-        guard let outputURL else { return }
+    @discardableResult
+    private func writeJournal(
+        status: String,
+        outputURL: URL? = nil,
+        sessionID: UUID? = nil,
+        urls: [URL]? = nil,
+        warnings: [String]? = nil
+    ) -> Bool {
+        let outputURL = outputURL ?? self.outputURL
+        guard let outputURL else { return false }
+        var segments = sealedSegments.map(\.journalSegment)
+        if let urls {
+            for (index, url) in urls.enumerated() where !segments.contains(where: { $0.path == url.path }) {
+                segments.append(
+                    RecordingJournalSegment(
+                        index: index,
+                        path: url.path,
+                        globalStart: 0,
+                        localDuration: nil,
+                        status: status,
+                        didAppendMedia: true,
+                        didAppendVideo: includesVideo,
+                        didAppendMicrophone: microphoneEnabled,
+                        didAppendSystemAudio: systemAudioEnabled
+                    )
+                )
+            }
+        }
         let manifest = RecordingSessionManifest(
-            sessionID: sessionID.uuidString,
+            sessionID: (sessionID ?? self.sessionID).uuidString,
             startedAt: Date(),
             outputPath: outputURL.path,
-            mode: currentRequest?.configuration.mode.rawValue ?? "unknown",
+            mode: currentRequest?.configuration.mode.rawValue ?? sessionManifest?.mode ?? "unknown",
             backend: captureBackend,
             deviceID: currentRequest?.configuration.microphone.deviceID,
-            status: status
+            status: status,
+            segments: segments,
+            includesVideo: includesVideo,
+            audioTrackCount: audioTrackCount,
+            warnings: warnings,
+            stopReason: pendingStopReason.logLabel
         )
         sessionManifest = manifest
-        RecordingSessionManifest.write(manifest)
+        let ok = RecordingSessionManifest.write(manifest)
+        if !ok {
+            Log.recording.error(
+                "recording journal persist failed session=\(manifest.sessionID) status=\(status)",
+                telemetry: "Recording journal persist failed"
+            )
+        }
+        return ok
+    }
+
+    private func makeDiagnosticsLocked(reason: RecordingStopReason) -> RecordingSessionDiagnostics {
+        RecordingSessionDiagnostics(
+            microphone: microphoneMeter.snapshot,
+            systemAudio: systemAudioMeter.snapshot,
+            lastMicrophoneReceivePTS: microphoneProgress.lastReceivedPTS,
+            lastMicrophoneAppendPTS: microphoneProgress.lastCommittedPTS,
+            lastSystemAudioReceivePTS: systemAudioProgress.lastReceivedPTS,
+            lastSystemAudioAppendPTS: systemAudioProgress.lastCommittedPTS,
+            lastVideoAppendPTS: lastVideoPTS,
+            microphoneDropped: microphoneHealth.dropped,
+            systemAudioDropped: systemAudioHealth.dropped,
+            failedAppends: microphoneHealth.failedAppends + systemAudioHealth.failedAppends,
+            conversionFailures: microphoneHealth.conversionFailures + systemAudioHealth.conversionFailures,
+            restartCount: microphoneHealth.restartCount + streamRecoveryAttempts,
+            segmentCount: sealedSegments.count + (didAppendMedia ? 1 : 0),
+            stopReason: reason
+        )
+    }
+
+    private func updateHealthSnapshotLocked(isStopping: Bool? = nil) {
+        let nowStopping = isStopping ?? self.isStopping
+        let lastReceived = max(microphoneHealth.lastReceived, systemAudioHealth.lastReceived)
+        let lastAppended = max(microphoneHealth.lastAppended, systemAudioHealth.lastAppended)
+        let deadline = [microphoneHealth.failureDeadline, systemAudioHealth.failureDeadline].compactMap { $0 }.min()
+        let healthy = (!microphoneEnabled || microphoneHealth.phase == .healthy)
+            && (!systemAudioEnabled || systemAudioHealth.phase == .healthy)
+        healthSnapshot.withLock { snapshot in
+            snapshot.sessionID = sessionID
+            snapshot.isStopping = nowStopping
+            snapshot.isHealthy = healthy
+            snapshot.failureDeadline = deadline
+            snapshot.lastReceived = lastReceived
+            snapshot.lastAppended = lastAppended
+        }
     }
 
     private func emit(_ event: RecordingRuntimeEvent) {
@@ -1491,26 +1972,6 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         return ns.domain == SCStreamError.errorDomain && ns.code == SCStreamError.Code.userStopped.rawValue
     }
 
-    private static func withTimeout<T: Sendable>(
-        seconds: TimeInterval,
-        operation: @escaping @Sendable () async throws -> T
-    ) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask {
-                try await operation()
-            }
-            group.addTask {
-                try await Task.sleep(for: .seconds(seconds))
-                throw RecordingError.captureFailed("Recording timed out.")
-            }
-            guard let result = try await group.next() else {
-                throw RecordingError.captureFailed("Recording timed out.")
-            }
-            group.cancelAll()
-            return result
-        }
-    }
-
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard stream === self.stream, !isStopping else { return }
         switch type {
@@ -1527,10 +1988,11 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         queue.async { [weak self] in
-            guard let self, stream === self.stream else { return }
+            guard let self else { return }
+            guard stream === self.stream || self.stream == nil else { return }
             if let startContinuation = self.startContinuation {
                 self.startContinuation = nil
-                self.resetLocked()
+                self.resetLocked(mode: .discard)
                 startContinuation.resume(throwing: RecordingPermission.captureStartError(error))
                 return
             }
@@ -1543,7 +2005,8 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
                 self.emit(.userStopped)
                 return
             }
-            self.recoverStreamLocked(reason: Log.detail(error))
+            self.stream = nil
+            self.recoverStreamLocked(reason: Log.detail(error), streamStopped: true)
         }
     }
 }

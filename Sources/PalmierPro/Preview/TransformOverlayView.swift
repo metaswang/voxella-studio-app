@@ -80,9 +80,10 @@ struct TransformOverlayView: View {
             .onChanged { value in
                 if dragStarts.isEmpty {
                     let frame = editor.activeFrame
-                    dragStarts = Dictionary(uniqueKeysWithValues: selectedTransformClips.map {
-                        ($0.id, $0.transformAt(frame: frame))
-                    })
+                    dragStarts = Dictionary(
+                        selectedTransformClips.map { ($0.id, $0.transformAt(frame: frame)) },
+                        uniquingKeysWith: { current, _ in current }
+                    )
                 }
                 guard let start = dragStarts[clip.id] else { return }
                 let (moved, snap) = TransformOverlayMath.movedTransform(start, by: value.translation, in: videoRect)

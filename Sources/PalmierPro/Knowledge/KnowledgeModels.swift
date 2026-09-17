@@ -298,6 +298,7 @@ struct KnowledgeSourceRef: Equatable, Hashable, Codable, Identifiable, Sendable 
     }
 
     static func formatTimestamp(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "—" }
         let total = max(0, Int(seconds.rounded()))
         let m = total / 60
         let s = total % 60
@@ -395,6 +396,7 @@ enum KnowledgeAnswerEvent: Sendable {
     case delta(String)
     case citations([KnowledgeSourceRef])
     case recoveryActions([KnowledgeRecoveryAction])
+    case clarification(String)
     case finished(String)
     case failed(String)
 }
@@ -594,6 +596,7 @@ struct KnowledgeListRow: Identifiable, Equatable, Sendable {
     }
 
     private static func formatDuration(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "—" }
         let total = max(0, Int(seconds.rounded()))
         let m = total / 60
         let s = total % 60

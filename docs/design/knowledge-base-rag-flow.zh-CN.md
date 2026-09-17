@@ -7,17 +7,19 @@
 
 ```text
 Controller 发送前门禁（本地 entitlement、回答模型、模型准备、scope）
-  → KnowledgeQAService.answer（默认进入 Agent runtime）
+  → KnowledgeQAService.answer
+      → 一次 Query Understanding（planQuery）
+          ├─ clarificationQuestion → KnowledgeAnswerEvent.clarification（普通 assistant 消息，无 citation）
+          └─ 否则把同一个 KnowledgeQueryPlan 交给 Agent
   → KnowledgeAgentRuntime
-      → 加载 bundled + 已安装的 knowledge skills
-      → LLM 选择最多 3 个 skill；失败时启发式选择
-      → request router
-          ├─ simpleQA：knowledge.search（最多 8）→ 一次回答
+      → 用 standaloneQuery 加载/选择最多 3 个 knowledge skills；失败时启发式选择
+      → request router（同样使用 standaloneQuery）
+          ├─ simpleQA：knowledge.search(searchQuery)（Hybrid + Graph + rerank + MMR，最多 8）→ 一次回答
           ├─ inventory：JSON tool-loop（最多 4 轮）
           └─ complex：JSON tool-loop（最多 6 轮）
-      → finish_with_evidence / ask_clarification 控制
-      → 用收集到的 citations 组装最终回答
-  → 没有可用 KB skill 时回退到 legacy RAG
+      → finish_with_evidence / ask_clarification 控制（clarification 与 planner 共用同一事件）
+      → 用当前轮收集的 citations 组装最终回答
+  → 没有可用 KB skill 时回退到 legacy RAG，并复用已生成的 plan
   → 有引用的回答，或简单路径的摘录降级
 ```
 
@@ -50,7 +52,7 @@ Knowledge skill 在现有 `name`/`description` frontmatter 上增加可选字段
 
 选择器输入用户问题、scope 和每个 skill 的 `selection_summary`（缺失时使用 description），只允许返回最多 3 个已加载的 skill ID。LLM 输出无效、为空或请求失败时，按多 session 对比 → 时间线 → inventory → 单 session transcript → content QA 的启发式顺序选择；仍无选中项时进入 legacy RAG。
 
-路由规则是轻量的 P0 router：inventory skill 或明显的列表/计数问题进入 `inventory`；单 session 且只有 transcript skill 时进入 `simpleQA`；出现 collection/timeline skill 时进入 `complex`；其他情况也进入 `simpleQA`。因此，当前 Agent simpleQA 直接把原问题交给 `knowledge.search`，不会先执行 legacy RAG 的 `search_query/answer_constraints` planner。P0 的文字 heuristic 目前识别 `how many`、`list all`、`which sessions` 等英文短语，其他语言主要依赖 LLM skill selection。
+路由规则是轻量的 P0 router：inventory skill 或明显的列表/计数问题进入 `inventory`；单 session 且只有 transcript skill 时进入 `simpleQA`；出现 collection/timeline skill 时进入 `complex`；其他情况也进入 `simpleQA`。Skill selection 与 route 都使用 `plan.standaloneQuery`，而不是原始代词问题。P0 的文字 heuristic 目前识别 `how many`、`list all`、`which sessions` 等英文短语，其他语言主要依赖 LLM skill selection。
 
 ## 注册 tools
 
@@ -58,16 +60,16 @@ Knowledge skill 在现有 `name`/`description` frontmatter 上增加可选字段
 
 | Tool | 输入与默认值 | 输出 / 用途 |
 | --- | --- | --- |
-| `knowledge.search` | `query`；`session_ids?`；`limit?`（默认 8） | hybrid transcript hits + `citations` |
+| `knowledge.search` | `query`；`session_ids?`；`limit?`（默认 8，夹紧 1–8） | shared Hybrid + Graph hits + `citations` |
 | `session.list` | `query?`、`type?`、`origin?`、`date_from?`、`date_to?`、`limit?`（默认 20） | 按可见性过滤的 session cards 与 count |
 | `knowledge.get_session_metadata` | `session_id` | title、type、duration、modified_at、origin、has_transcript |
 | `session.get_summary` | `session_id` | summary markdown、title、tag |
 | `session.get_segments` | `session_id`、`start?`、`end?`、`limit?`（默认 20） | 连续 transcript segments；给定时间范围时取该范围 |
-| `session.search_segments` | `session_ids`、`query`、`limit?`（默认 8） | 带时间和 speaker 的 transcript hits |
+| `session.search_segments` | `session_ids`、`query`、`limit?`（默认 8） | 指定 session 的 shared Hybrid + Graph hits、时间和 speaker，以及 `citations` |
 | `session.get_timeline` | `session_id`、`bucket_seconds?`（默认 60） | 按时间桶聚合的 segments |
-| `knowledge.compare_sessions` | `session_ids`（至少 2）、`focus_query?`、`mode?`（默认 themes） | 每个 session 的 summary，以及可选 focus hits |
+| `knowledge.compare_sessions` | `session_ids`（至少 2）、`focus_query?`、`mode?`（默认 themes） | 每个 session 的 summary，以及可选 focus hits（每 session 独立 shared retrieval） |
 | `finish_with_evidence` | `accepted_refs` | 控制 loop 结束，并记录接受的引用 ID 数量 |
-| `ask_clarification` | 非空 `question` | 控制 loop 结束并向 UI 返回 clarification failure |
+| `ask_clarification` | 非空 `question` | 结束当前 stream，发出 `KnowledgeAnswerEvent.clarification`；UI 保存为普通 assistant 消息 |
 
 tool 返回的 JSON 中，搜索类结果携带 `KnowledgeSourceRef` 的 source、时间、speaker 和 snippet；最终回答只应把这些证据当作事实来源。内置 skill 的 `allowed_tools` 可由 `KnowledgeToolRegistry.validateSkill` 校验，必须是 registry 中的名称子集；当前 P0 的 Agent prompt 暴露全局 registry，尚未按每个 skill 的 `allowed_tools` 再缩小工具集合。
 
@@ -77,11 +79,15 @@ tool 返回的 JSON 中，搜索类结果携带 `KnowledgeSourceRef` 的 source�
 
 登出不会删除本地 cloud index 或图，但它们不可召回。关闭 BYOK 也不删除图数据，只暂停 graph ingestion 与 recall。图不复制 transcript 全文，只保存实体、别名、关系、关系证据、entity-to-chunk 链接以及 source generation/schema 指纹。
 
-## RAG core（legacy fallback 与 search 内部）
+## RAG core（共享检索：Agent 与 legacy fallback）
 
-Legacy Hybrid Search 使用 FTS5 与 WeMM text embedding 的 RRF，最多 30 个 transcript chunk。Graph query understanding 与 Hybrid 并行：只产出实体/别名和 hop 建议，不回答问题。图扩展默认最多 2 跳、硬上限 3 跳；每跳最多 20 个节点、总节点最多 80，最终最多 20 个关联 chunk。
+Agent semantic search = shared Hybrid + Graph retrieval core。`KnowledgeRetrievalService` 同时服务 legacy RAG 和 Agent 的 `knowledge.search` / `session.search_segments` / `knowledge.compare_sessions.focus_query`。权限 filter（scope、origin、登录态、cloud owner）只在这一处构造。
 
-候选按 `unitID` 去重后截断为 40，统一送入 reranker。Graph path 仅作为内部 provenance，绝不传给 reranker，也不作为 LLM 事实。Agent 的 `knowledge.search` 复用现有 `SearchService.transcriptSearch`，无结果时回退 `SearchService.search`，由传入的 `limit` 控制结果数；Agent 外层不再追加一轮独立 rerank。
+Hybrid Search 使用 FTS5 与 WeMM text embedding 的 RRF，最多 30 个 transcript chunk。Graph Recall 与 Hybrid **并行等待**：Graph 开启且路由可用时必须实际尝试，5 秒子预算；未启用、不可用、超时或失败时软降级为空 Graph 结果，不让整次搜索失败。图扩展默认最多 2 跳、硬上限 3 跳；每跳最多 20 个节点、总节点最多 80，最终最多 20 个关联 chunk。
+
+候选按 `unitID` 去重后截断为 40，统一送入 reranker。Graph path 仅作为内部 provenance，绝不传给 reranker，也不作为 LLM 事实。Agent 的 `limit` 只截断最终 MMR 结果（1–8），不再把 8 当成召回上限。Catalog 启发式只用于 legacy；Agent `knowledge.search` 不走 catalog。
+
+retrieval 8 秒只覆盖 Hybrid ∥ Graph；rerank 使用独立的 5 秒预算（legacy 从 overall remaining 取 min）。这样等待 Graph 不会把已经成功的 Hybrid 结果打成 retrieval timeout。
 
 本地 reranker 固定为 `mlx-community/Qwen3-Reranker-0.6B-4bit` revision `5f324548f1d20c2b5a450f126fc6ef2fb1126524`，模型与 tokenizer 资产由 catalog 的 SHA-256 验证。它通过共享 MLX inference gate 执行，支持取消；输入严格是 query 与原始 chunk 文本，不包含标题、摘要、邻居或 graph path。
 
@@ -110,11 +116,9 @@ Legacy RAG 的每个 session 标题只加入一次，标题和摘要合计每 se
 
 Agent tool-loop 的最终 context 由已收集的 citation snippet 编号组成，最多 10,000 字；simpleQA 也通过 `KnowledgeQAService.buildContext` 进入同一回答提示。引用永远指向 anchor/segment；标题、摘要、timeline bucket 和邻居只帮助理解，不应产生新的 transcript 引用。Prompt 要求回答使用提问语言；回答模型不可用时，legacy/simple 路径使用带引用的摘录降级。
 
-## Legacy RAG 的 query planning 与 prompt 实验
+## Query planning
 
-没有进入 Agent runtime 的请求在 legacy RAG 路径中，先经过一次结构化 query planning。planner 使用固定的 `gpt-5-nano` chat route，只返回 `search_query` 与 `answer_constraints` JSON；`search_query` 只保留主题、实体、关系和时间等语义信息。单个目标 session（或所有选中 session 语言明确一致）时，优先使用索引记录的原始转录语言和文字脚本生成 `search_query`，因为 transcript 原文以该语言存储；实体、缩写和专有名词保留原拼写。多 session 语言混合、全库范围或缺少语言元数据时，回退为当前问题语言。`answer_constraints` 承载“3 句话”、语言、格式等输出要求，不能进入召回。Hybrid、Graph、reranker 只接收 `search_query`；完整原问题和约束只进入回答 prompt。planner 失败时保留原问题作为检索输入并记录诊断，不使用针对某个语言后缀的字符串规则。
-
-Agent runtime 的 skill selector 是另一轮独立调用：它只选择 skill ID，不生成 `search_query`。complex/inventory tool-loop 使用原问题、scope、skill body 和工具观察结果取证，最终 Composer 再接收原问题与 citations。
+默认 Agent 路径和 legacy 路径共用一次结构化 query planning，发生在 skill selection 之前。planner 使用现有 `.graphQueryUnderstanding` 路由，外层 8 秒 understanding 预算，只返回 JSON：`standalone_query`、`search_query`、`answer_constraints`、可选 `clarification_question`。`standalone_query` 补全人物、方案、会议、时间等指代，供 skill selection、route 和 Agent 工具决策使用。`search_query` 只保留主题、实体、关系和时间等语义信息，供 Hybrid 和 Graph Recall 使用。单个目标 session（或所有选中 session 语言明确一致）时，优先使用索引记录的原始转录语言和文字脚本生成 `search_query`；实体、缩写和专有名词保留原拼写。多 session 语言混合、全库范围或缺少语言元数据时，回退为当前问题语言。`answer_constraints` 承载“3 句话”、语言、格式等输出要求，不能进入召回。Hybrid、Graph、reranker 只接收 `search_query`；完整原问题、standalone query 和约束进入回答 prompt。多个指代对象都合理时返回澄清问题，不检索、不猜测；UI 把它存成普通 assistant 消息。planner 失败、超时或 JSON 无效时保留原问题作为检索输入并记录诊断，不主动澄清。Agent 无 skill 回退 legacy 时复用已有 plan，不得再次执行 Query Understanding。
 
 验收 legacy planner 使用固定模型 `openai/gpt-5-nano`、固定 `reasoning.effort=medium`、固定 temperature 与 token 上限，并关闭实验路由 fallback；一次只改变 prompt/检索策略，避免把模型能力变化误判为 prompt 效果。生产路由仍可按现有 resilience policy fallback。
 
@@ -131,7 +135,7 @@ Agent runtime 的 skill selector 是另一轮独立调用：它只选择 skill I
 
 - skill selector 失败：使用本地启发式选择；没有 eligible skill 或选择结果为空：回退 legacy RAG。
 - Agent tool 返回的业务错误：写入 observation，继续下一轮；未知 tool 或抛出的参数错误会使当前 stream 以 failed event 结束。
-- `ask_clarification`：结束当前 Agent stream 并返回 clarification failure；不伪造答案。
+- `ask_clarification` 与 planner 澄清都发出 `KnowledgeAnswerEvent.clarification`：结束当前 stream，保存为普通 assistant 消息，不标记失败，不生成 citation。
 - Graph query、图 SQLite、Graph 模型或 reranker 故障均软降级到 Hybrid/融合候选；`429`、超时和 provider 故障使用现有有限重试，耗尽后显示带引用摘录，不误报额度不足。
 - simpleQA/legacy 的回答生成失败时保留 citations 并显示摘录；complex/inventory 的最终 Composer 失败则由 runtime 以 failed event 返回，后续可补统一 excerpt fallback。
 
@@ -142,5 +146,6 @@ Hosted `/api/v1/llm/responses` 的 `402` 且嵌套 `error.type/code = insufficie
 - Agent runtime：[`KnowledgeAgentRuntime.swift`](../../Sources/PalmierPro/Knowledge/Agent/KnowledgeAgentRuntime.swift)
 - tool schema/allowlist：[`KnowledgeToolRegistry.swift`](../../Sources/PalmierPro/Knowledge/Agent/KnowledgeToolRegistry.swift)
 - tool 执行：[`KnowledgeToolExecutor.swift`](../../Sources/PalmierPro/Knowledge/Agent/KnowledgeToolExecutor.swift)
+- 共享 Hybrid + Graph 检索：[`KnowledgeRetrievalService.swift`](../../Sources/PalmierPro/Knowledge/KnowledgeRetrievalService.swift)
 - skill 解析与加载：[`Skill.swift`](../../Sources/PalmierPro/Agent/Skills/Skill.swift)、[`SkillStore.swift`](../../Sources/PalmierPro/Agent/Skills/SkillStore.swift)
-- legacy RAG 与回答 composer：[`KnowledgeQAService.swift`](../../Sources/PalmierPro/Knowledge/KnowledgeQAService.swift)
+- query planning、legacy RAG 与回答 composer：[`KnowledgeQAService.swift`](../../Sources/PalmierPro/Knowledge/KnowledgeQAService.swift)

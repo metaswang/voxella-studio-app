@@ -104,7 +104,8 @@ enum RecordingAudioMixer {
             let asset = AVURLAsset(url: url)
             let duration = try await asset.load(.duration)
             guard duration.isValid, duration.isNumeric, duration.seconds > 0 else { continue }
-            let range = CMTimeRange(start: .zero, duration: duration)
+            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+            var segmentDuration = CMTime.zero
             if includesVideo,
                let videoTrack = try await asset.loadTracks(withMediaType: .video).first {
                 let compositionVideo = composition.tracks(withMediaType: .video).first as? AVMutableCompositionTrack
@@ -112,9 +113,12 @@ enum RecordingAudioMixer {
                         withMediaType: .video,
                         preferredTrackID: kCMPersistentTrackID_Invalid
                     )
-                try compositionVideo?.insertTimeRange(range, of: videoTrack, at: cursor)
+                let videoRange = try await videoTrack.load(.timeRange)
+                if videoRange.duration.isNumeric, videoRange.duration.seconds > 0 {
+                    try compositionVideo?.insertTimeRange(videoRange, of: videoTrack, at: cursor)
+                    segmentDuration = videoRange.duration
+                }
             }
-            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
             for (index, track) in audioTracks.enumerated() {
                 let existingAudio = composition.tracks(withMediaType: .audio)
                 let compositionAudio: AVMutableCompositionTrack?
@@ -127,9 +131,15 @@ enum RecordingAudioMixer {
                     )
                 }
                 guard let compositionAudio else { continue }
-                try compositionAudio.insertTimeRange(range, of: track, at: cursor)
+                let audioRange = try await track.load(.timeRange)
+                guard audioRange.duration.isNumeric, audioRange.duration.seconds > 0 else { continue }
+                try compositionAudio.insertTimeRange(audioRange, of: track, at: cursor)
+                if CMTimeCompare(audioRange.duration, segmentDuration) > 0 {
+                    segmentDuration = audioRange.duration
+                }
             }
-            cursor = CMTimeAdd(cursor, duration)
+            guard segmentDuration.seconds > 0 else { continue }
+            cursor = CMTimeAdd(cursor, segmentDuration)
         }
         guard cursor.seconds > 0 else {
             throw MixError(reason: "concatenated duration is empty")

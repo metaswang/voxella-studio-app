@@ -51,7 +51,8 @@ final class RecordingStatusItemController: NSObject {
             menu.addItem(.separator())
             addItem("Recording Setup…", action: #selector(showRecordingSetup), to: menu)
             menu.addItem(.separator())
-            addHeader("VoxStudio Workflows", to: menu, alignedToMenuLeadingEdge: true)
+            addHeader("VoxStudio Workflows", to: menu)
+            menu.addItem(.separator())
             addSubmenu(
                 "Transcribe",
                 imageName: "text.bubble",
@@ -106,6 +107,9 @@ final class RecordingStatusItemController: NSObject {
             addItem("Discard Recording", action: #selector(discardRecording), to: menu)
         }
 
+        menu.addItem(.separator())
+        addItem("Quit \(AppIdentity.productName)", action: #selector(quitApplication), to: menu)
+
         statusItem?.menu = menu
     }
 
@@ -120,16 +124,9 @@ final class RecordingStatusItemController: NSObject {
         statusItem.length = isCapturing ? NSStatusItem.variableLength : NSStatusItem.squareLength
     }
 
-    private func addHeader(
-        _ title: String,
-        to menu: NSMenu,
-        alignedToMenuLeadingEdge: Bool = false
-    ) {
+    private func addHeader(_ title: String, to menu: NSMenu) {
         let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         header.isEnabled = false
-        if alignedToMenuLeadingEdge {
-            header.view = MenuHeaderView(title: title)
-        }
         menu.addItem(header)
     }
 
@@ -246,25 +243,8 @@ final class RecordingStatusItemController: NSObject {
     @objc private func discardRecording() {
         session?.discard()
     }
-}
 
-private final class MenuHeaderView: NSView {
-    private let label: NSTextField
-
-    init(title: String) {
-        let font = NSFont.menuFont(ofSize: 0)
-        let width = (title as NSString).size(withAttributes: [.font: font]).width + 64
-        label = NSTextField(labelWithString: title)
-        super.init(frame: NSRect(x: 0, y: 0, width: width, height: 24))
-
-        label.font = font
-        label.textColor = .secondaryLabelColor
-        label.frame = NSRect(x: 32, y: 2, width: width - 48, height: 20)
-        addSubview(label)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+    @objc private func quitApplication() {
+        NSApp.terminate(nil)
     }
 }

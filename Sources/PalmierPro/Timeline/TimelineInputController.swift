@@ -405,8 +405,10 @@ final class TimelineInputController {
             )
 
             // Let any selected edge drive snapping, not just the lead start.
-            let clipsById = Dictionary(uniqueKeysWithValues:
-                editor.timeline.tracks.flatMap(\.clips).map { ($0.id, $0) })
+            let clipsById = Dictionary(
+                editor.timeline.tracks.flatMap(\.clips).map { ($0.id, $0) },
+                uniquingKeysWith: { current, _ in current }
+            )
             var probeOffsets: [Int] = []
             for p in drag.all {
                 guard let c = clipsById[p.clipId] else { continue }
@@ -1500,7 +1502,10 @@ final class TimelineInputController {
     /// Clamps track movement to valid, type-compatible tracks.
     func clampedTrackDelta(for drag: DragState.MoveClipDrag, proposed: Int) -> Int {
         let tracks = editor.timeline.tracks
-        let clipsById = Dictionary(uniqueKeysWithValues: tracks.flatMap(\.clips).map { ($0.id, $0) })
+        let clipsById = Dictionary(
+            tracks.flatMap(\.clips).map { ($0.id, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         let pinned = pinnedCompanionIds(for: drag)
         let movers = drag.all.filter { !pinned.contains($0.clipId) }
         let step = proposed >= 0 ? -1 : 1

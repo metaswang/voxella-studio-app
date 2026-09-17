@@ -5,6 +5,20 @@ import Foundation
 struct KnowledgeToolExecutor: Sendable {
     let scope: KnowledgeQAScope
     let originFilter: Set<KnowledgeSourceOrigin>?
+    let retrievalService: KnowledgeRetrievalService
+    let requestID: UUID
+
+    init(
+        scope: KnowledgeQAScope,
+        originFilter: Set<KnowledgeSourceOrigin>?,
+        retrievalService: KnowledgeRetrievalService,
+        requestID: UUID = UUID()
+    ) {
+        self.scope = scope
+        self.originFilter = originFilter
+        self.retrievalService = retrievalService
+        self.requestID = requestID
+    }
     
     func execute(toolName: String, arguments: [String: Any]) async throws -> KnowledgeToolResult {
         switch toolName {
@@ -37,34 +51,32 @@ struct KnowledgeToolExecutor: Sendable {
         guard let query = args["query"] as? String else {
             throw KnowledgeToolError.missingParameter("query")
         }
-        let sessionIDs = (args["session_ids"] as? [String])?.compactMap { UUID(uuidString: $0) }
-        let limit = args["limit"] as? Int ?? 8
+        let requestedSessionIDs = (args["session_ids"] as? [String])?.compactMap { UUID(uuidString: $0) }
+        let limit = min(8, max(1, args["limit"] as? Int ?? 8))
         
         let searchScope: KnowledgeQAScope
-        if let sessionIDs, !sessionIDs.isEmpty {
+        if let requestedSessionIDs {
+            let sessionIDs = requestedSessionIDs.filter(isSessionAllowedByScope)
+            guard !sessionIDs.isEmpty else {
+                return .success(["hits": 0, "citations": []])
+            }
             searchScope = KnowledgeQAScope.fromSelection(sessionIDs)
         } else {
             searchScope = scope
         }
-        
-        let filter = await MainActor.run { () -> SessionSearchFilter in
-            let signedIn = AccountService.shared.isSignedIn
-            switch searchScope {
-            case .all:
-                return SessionSearchFilter.visible(isSignedIn: signedIn, uiFilter: originFilter, limit: limit)
-            case let .session(id):
-                return SessionSearchFilter.visible(isSignedIn: signedIn, sessionID: id, uiFilter: originFilter, limit: limit)
-            case let .sessions(ids):
-                return SessionSearchFilter.visible(isSignedIn: signedIn, sessionIDs: Set(ids), uiFilter: originFilter, limit: limit)
-            }
-        }
-        
-        let service = await MainActor.run { SessionIndexCoordinator.shared.searchService }
-        var hits = try await service.transcriptSearch(query: query, filter: filter)
-        if hits.isEmpty {
-            hits = try await service.search(query: query, filter: filter)
-        }
-        
+
+        let result = try await retrievalService.search(
+            KnowledgeRetrievalRequest(
+                query: query,
+                scope: searchScope,
+                originFilter: originFilter,
+                resultLimit: limit,
+                requestID: requestID,
+                includeCatalog: false,
+                retrievalPath: .agent
+            )
+        )
+        let hits = result.hits
         let citations = hits.map { KnowledgeQAService.citation(from: $0) }
         return .success([
             "hits": hits.count,
@@ -78,7 +90,9 @@ struct KnowledgeToolExecutor: Sendable {
         let originArg = args["origin"] as? String
         let dateFrom = args["date_from"] as? String
         let dateTo = args["date_to"] as? String
-        let limit = args["limit"] as? Int ?? 20
+        // Collection analysis must see the full visible inventory by default;
+        // otherwise older sessions can be omitted before classification.
+        let limit = max(0, args["limit"] as? Int ?? 50)
         
         let sessions = await MainActor.run { WorkbenchStore.shared.sessions }
         let signedIn = await MainActor.run { AccountService.shared.isSignedIn }
@@ -89,7 +103,7 @@ struct KnowledgeToolExecutor: Sendable {
                 isCloudStorage: session.storage == .cloud,
                 hasRemoteSessionID: session.remoteSessionID != nil || session.isRemoteOnly
             )
-            return allowed.contains(origin)
+            return allowed.contains(origin) && isSessionAllowedByScope(session.id)
         }
         
         if let query, !query.isEmpty {
@@ -125,13 +139,22 @@ struct KnowledgeToolExecutor: Sendable {
         }
         
         let sorted = filtered.sorted { $0.modifiedAt > $1.modifiedAt }
-        let results = sorted.prefix(limit).map { session in
+        let selected = Array(sorted.prefix(limit))
+        let results = selected.map { session in
             sessionToDict(session)
+        }
+        let citations = selected.map { session in
+            sessionCitation(
+                sessionID: session.id,
+                title: session.title,
+                sourceType: "sessionCard"
+            )
         }
         
         return .success([
             "count": results.count,
             "sessions": results,
+            "citations": citations,
         ])
     }
     
@@ -144,8 +167,17 @@ struct KnowledgeToolExecutor: Sendable {
         guard let session = await MainActor.run(body: { WorkbenchStore.shared.sessions.first { $0.id == sessionID } }) else {
             return .error("Session not found")
         }
+        guard isSessionAllowedByScope(sessionID) else {
+            return .error("Session is outside the current knowledge scope")
+        }
         
-        return .success(sessionToDict(session))
+        var result = sessionToDict(session)
+        result["citations"] = [sessionCitation(
+            sessionID: session.id,
+            title: session.title,
+            sourceType: "sessionCard"
+        )]
+        return .success(result)
     }
     
     private func sessionGetSummary(_ args: [String: Any]) async throws -> KnowledgeToolResult {
@@ -153,17 +185,28 @@ struct KnowledgeToolExecutor: Sendable {
               let sessionID = UUID(uuidString: sessionIDStr) else {
             throw KnowledgeToolError.invalidParameter("session_id must be valid UUID")
         }
+        guard isSessionAllowedByScope(sessionID) else {
+            return .error("Session is outside the current knowledge scope")
+        }
         
         let service = await MainActor.run { SessionIndexCoordinator.shared.searchService }
         guard let summary = try await service.sessionSummary(id: sessionID) else {
             return .error("Session not found or no summary available")
         }
         
+        let citation = sessionCitation(
+            sessionID: sessionID,
+            title: summary.title,
+            sourceType: "sessionSummary",
+            snippet: summary.markdown,
+            chunkIndex: -2
+        )
         return .success([
             "session_id": sessionID.uuidString,
             "title": summary.title,
             "tag": summary.tag as Any,
             "summary_markdown": summary.markdown as Any,
+            "citations": [citation],
         ])
     }
     
@@ -171,6 +214,9 @@ struct KnowledgeToolExecutor: Sendable {
         guard let sessionIDStr = args["session_id"] as? String,
               let sessionID = UUID(uuidString: sessionIDStr) else {
             throw KnowledgeToolError.invalidParameter("session_id must be valid UUID")
+        }
+        guard isSessionAllowedByScope(sessionID) else {
+            return .error("Session is outside the current knowledge scope")
         }
         
         let start = args["start"] as? Double
@@ -210,29 +256,30 @@ struct KnowledgeToolExecutor: Sendable {
         guard !sessionIDs.isEmpty else {
             throw KnowledgeToolError.invalidParameter("session_ids must contain valid UUIDs")
         }
-        
-        let limit = args["limit"] as? Int ?? 8
-        let searchScope = KnowledgeQAScope.fromSelection(sessionIDs)
-        
-        let filter = await MainActor.run { () -> SessionSearchFilter in
-            let signedIn = AccountService.shared.isSignedIn
-            switch searchScope {
-            case .all:
-                return SessionSearchFilter.visible(isSignedIn: signedIn, uiFilter: originFilter, limit: limit)
-            case let .session(id):
-                return SessionSearchFilter.visible(isSignedIn: signedIn, sessionID: id, uiFilter: originFilter, limit: limit)
-            case let .sessions(ids):
-                return SessionSearchFilter.visible(isSignedIn: signedIn, sessionIDs: Set(ids), uiFilter: originFilter, limit: limit)
-            }
+        guard sessionIDs.allSatisfy(isSessionAllowedByScope) else {
+            return .error("Session is outside the current knowledge scope")
         }
         
-        let service = await MainActor.run { SessionIndexCoordinator.shared.searchService }
-        let hits = try await service.transcriptSearch(query: query, filter: filter)
-        
+        let limit = min(8, max(1, args["limit"] as? Int ?? 8))
+        let searchScope = KnowledgeQAScope.fromSelection(sessionIDs)
+        let result = try await retrievalService.search(
+            KnowledgeRetrievalRequest(
+                query: query,
+                scope: searchScope,
+                originFilter: originFilter,
+                resultLimit: limit,
+                requestID: requestID,
+                includeCatalog: false,
+                retrievalPath: .agent
+            )
+        )
+        let hits = result.hits
+        let citations = hits.map { citationToDict(KnowledgeQAService.citation(from: $0)) }
         let results = hits.map { Self.hitToDict($0) }
         return .success([
             "hit_count": results.count,
             "hits": results,
+            "citations": citations,
         ])
     }
     
@@ -240,6 +287,9 @@ struct KnowledgeToolExecutor: Sendable {
         guard let sessionIDStr = args["session_id"] as? String,
               let sessionID = UUID(uuidString: sessionIDStr) else {
             throw KnowledgeToolError.invalidParameter("session_id must be valid UUID")
+        }
+        guard isSessionAllowedByScope(sessionID) else {
+            return .error("Session is outside the current knowledge scope")
         }
         
         let bucketSeconds = args["bucket_seconds"] as? Int ?? 60
@@ -267,12 +317,16 @@ struct KnowledgeToolExecutor: Sendable {
         guard sessionIDs.count >= 2 else {
             throw KnowledgeToolError.invalidParameter("session_ids must contain at least 2 valid UUIDs")
         }
+        guard sessionIDs.allSatisfy(isSessionAllowedByScope) else {
+            return .error("Session is outside the current knowledge scope")
+        }
         
         let focusQuery = args["focus_query"] as? String
         let mode = args["mode"] as? String ?? "themes"
         
         let service = await MainActor.run { SessionIndexCoordinator.shared.searchService }
         var comparisons: [[String: Any]] = []
+        var citations: [[String: Any]] = []
         
         for sessionID in sessionIDs {
             guard let summary = try await service.sessionSummary(id: sessionID) else { continue }
@@ -284,23 +338,38 @@ struct KnowledgeToolExecutor: Sendable {
             ]
             
             if let focusQuery, !focusQuery.isEmpty {
-                let filter = SessionSearchFilter.visible(
-                    isSignedIn: await MainActor.run { AccountService.shared.isSignedIn },
-                    sessionID: sessionID,
-                    uiFilter: originFilter,
-                    limit: 3
+                let focus = try await retrievalService.search(
+                    KnowledgeRetrievalRequest(
+                        query: focusQuery,
+                        scope: .session(sessionID),
+                        originFilter: originFilter,
+                        resultLimit: 3,
+                        requestID: requestID,
+                        includeCatalog: false,
+                        retrievalPath: .agent
+                    )
                 )
-                let hits = try await service.transcriptSearch(query: focusQuery, filter: filter)
-                sessionData["focus_hits"] = hits.map { Self.hitToDict($0) }
+                sessionData["focus_hits"] = focus.hits.map { Self.hitToDict($0) }
+                citations.append(contentsOf: focus.hits.map {
+                    citationToDict(KnowledgeQAService.citation(from: $0))
+                })
             }
             
             comparisons.append(sessionData)
+            citations.append(sessionCitation(
+                sessionID: sessionID,
+                title: summary.title,
+                sourceType: "sessionSummary",
+                snippet: summary.markdown,
+                chunkIndex: -2
+            ))
         }
         
         return .success([
             "mode": mode,
             "session_count": comparisons.count,
             "comparisons": comparisons,
+            "citations": citations,
         ])
     }
     
@@ -378,7 +447,43 @@ struct KnowledgeToolExecutor: Sendable {
             "has_transcript": session.transcript != nil,
         ]
     }
-    
+
+    private func isSessionAllowedByScope(_ sessionID: UUID) -> Bool {
+        switch scope {
+        case .all:
+            return true
+        case let .session(id):
+            return id == sessionID
+        case let .sessions(ids):
+            return ids.contains(sessionID)
+        }
+    }
+
+    private func sessionCitation(
+        sessionID: UUID,
+        title: String,
+        sourceType: String,
+        snippet: String? = nil,
+        chunkIndex: Int? = nil
+    ) -> [String: Any] {
+        let ref = KnowledgeSourceRef(
+            sourceID: sessionID.uuidString,
+            sourceType: sourceType,
+            title: title.isEmpty ? "Untitled session" : title,
+            uri: nil,
+            page: nil,
+            startTime: nil,
+            endTime: nil,
+            parentID: nil,
+            chunkIndex: chunkIndex,
+            language: nil,
+            speaker: nil,
+            snippet: snippet,
+            matchText: nil
+        )
+        return citationToDict(ref)
+    }
+
     private func citationToDict(_ ref: KnowledgeSourceRef) -> [String: Any] {
         var dict: [String: Any] = [
             "id": ref.id,
@@ -390,8 +495,11 @@ struct KnowledgeToolExecutor: Sendable {
         if let page = ref.page { dict["page"] = page }
         if let startTime = ref.startTime { dict["start_time"] = startTime }
         if let endTime = ref.endTime { dict["end_time"] = endTime }
+        if let chunkIndex = ref.chunkIndex { dict["chunk_index"] = chunkIndex }
+        if let language = ref.language { dict["language"] = language }
         if let speaker = ref.speaker { dict["speaker"] = speaker }
         if let snippet = ref.snippet { dict["snippet"] = snippet }
+        if let matchText = ref.matchText { dict["match_text"] = matchText }
         return dict
     }
     

@@ -36,6 +36,7 @@ final class KnowledgeBaseController {
     var transcriptSessionID: UUID?
     var transcriptTarget: KnowledgeTranscriptTarget?
     var isClearingHistory = false
+    var isLoadingSummaryForSessionID: UUID?
 
     private var answerTask: Task<Void, Never>?
     private var prepareTask: Task<Void, Never>?
@@ -373,6 +374,30 @@ final class KnowledgeBaseController {
         WorkbenchStore.shared.openSession(id)
     }
 
+    /// Loads an existing session summary, generating it through the same
+    /// Workbench enrichment path when the session has no persisted summary.
+    /// The result is inserted directly as an assistant reply so summary cards
+    /// never masquerade as a draft question.
+    func showSummary(for sessionID: UUID) {
+        guard !isAnswering, session(for: sessionID) != nil else { return }
+
+        let scope = selectedScope
+        let requestID = UUID()
+        answerTask?.cancel()
+        activeRequestID = requestID
+        isAnswering = true
+        statusText = L10n.string("Loading summary…")
+        errorMessage = nil
+        isLoadingSummaryForSessionID = sessionID
+        answerTask = Task { [weak self] in
+            await self?.loadAndShowSummary(
+                for: sessionID,
+                scope: scope,
+                requestID: requestID
+            )
+        }
+    }
+
     func clearHistory() {
         guard !isClearingHistory else { return }
         guard let conversationID = conversation?.id else {
@@ -474,6 +499,7 @@ final class KnowledgeBaseController {
         isAnswering = false
         statusText = nil
         pendingQuery = nil
+        isLoadingSummaryForSessionID = nil
         Task { await loadConversation(for: scope) }
     }
 
@@ -491,6 +517,7 @@ final class KnowledgeBaseController {
             guard loadGeneration == currentGeneration else { return }
             self.conversation = conversation
             self.messages = messages
+            self.flushPendingQueryIfNeeded()
         } catch {
             guard loadGeneration == currentGeneration else { return }
             self.errorMessage = error.localizedDescription
@@ -586,6 +613,7 @@ final class KnowledgeBaseController {
         answerTask = nil
         isAnswering = false
         statusText = nil
+        isLoadingSummaryForSessionID = nil
     }
 
     private func ensureModelsThenAsk() async {
@@ -765,6 +793,28 @@ final class KnowledgeBaseController {
                         recoveryActions: assistant.recoveryActions
                     )
                     Task { try? await chatStore.append(completedMessage) }
+                case let .clarification(question):
+                    receivedTerminalEvent = true
+                    assistant.content = question
+                    assistant.citations = []
+                    assistant.isStreaming = false
+                    upsertAssistant(assistant, conversationID: conversationID)
+                    guard conversation?.id == conversationID,
+                          selectedScope == scope,
+                          activeRequestID == requestID
+                    else { break }
+                    Task {
+                        try? await chatStore.append(
+                            KnowledgeMessage(
+                                id: assistantID,
+                                conversationID: conversationID,
+                                role: .assistant,
+                                content: question,
+                                citations: [],
+                                isStreaming: false
+                            )
+                        )
+                    }
                 case let .failed(message):
                     receivedTerminalEvent = true
                     assistant.content = message
@@ -847,6 +897,142 @@ final class KnowledgeBaseController {
         }
     }
 
+    private func loadAndShowSummary(
+        for sessionID: UUID,
+        scope: KnowledgeQAScope,
+        requestID: UUID
+    ) async {
+        defer {
+            if activeRequestID == requestID {
+                activeRequestID = nil
+                answerTask = nil
+                isAnswering = false
+                statusText = nil
+                isLoadingSummaryForSessionID = nil
+            }
+        }
+
+        do {
+            try await ensureConversationLoaded(for: scope)
+            guard isCurrentRequest(requestID, scope: scope),
+                  let conversationID = conversation?.id else { return }
+
+            let summary = try await loadOrGenerateSummary(for: sessionID)
+            guard isCurrentRequest(requestID, scope: scope) else { return }
+
+            let message = KnowledgeMessage(
+                conversationID: conversationID,
+                role: .assistant,
+                content: summary.markdown,
+                citations: [summary.citation]
+            )
+            messages.append(message)
+            try await chatStore.append(message)
+        } catch is CancellationError {
+            return
+        } catch {
+            guard isCurrentRequest(requestID, scope: scope) else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func ensureConversationLoaded(for scope: KnowledgeQAScope) async throws {
+        guard conversation?.scope != scope else { return }
+        let loadedConversation = try await chatStore.conversation(for: scope)
+        try Task.checkCancellation()
+        let loadedMessages = try await chatStore.messages(for: loadedConversation.id)
+        try Task.checkCancellation()
+        guard selectedScope == scope else { throw CancellationError() }
+        conversation = loadedConversation
+        messages = loadedMessages
+    }
+
+    private func loadOrGenerateSummary(for sessionID: UUID) async throws -> KnowledgeSummaryReply {
+        if let cached = try await cachedSummary(for: sessionID) {
+            return cached
+        }
+
+        statusText = L10n.string("Generating summary…")
+        await WorkbenchStore.shared.ensureSummary(for: sessionID)
+
+        // A summary task may already be running because the session was opened
+        // from Recent. Give that task time to commit its result before showing
+        // an error in chat.
+        for _ in 0..<150 {
+            try Task.checkCancellation()
+            if let cached = try await cachedSummary(for: sessionID) {
+                return cached
+            }
+            if let session = session(for: sessionID),
+               session.summaryState == .failed
+                || (session.summaryState == nil && Self.nonEmptyText(session.summaryMarkdown) == nil) {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(400))
+        }
+
+        throw KnowledgeSummaryError.unavailable
+    }
+
+    private func cachedSummary(for sessionID: UUID) async throws -> KnowledgeSummaryReply? {
+        if let session = session(for: sessionID),
+           let markdown = Self.nonEmptyText(session.summaryMarkdown) {
+            return KnowledgeSummaryReply(
+                markdown: markdown,
+                citation: Self.summaryCitation(
+                    sessionID: sessionID,
+                    title: session.title,
+                    markdown: markdown
+                )
+            )
+        }
+
+        let service = SessionIndexCoordinator.shared.searchService
+        guard let indexed = try await service.sessionSummary(id: sessionID),
+              let markdown = Self.nonEmptyText(indexed.markdown) else {
+            return nil
+        }
+        return KnowledgeSummaryReply(
+            markdown: markdown,
+            citation: Self.summaryCitation(
+                sessionID: sessionID,
+                title: indexed.title,
+                markdown: markdown
+            )
+        )
+    }
+
+    private func isCurrentRequest(_ requestID: UUID, scope: KnowledgeQAScope) -> Bool {
+        activeRequestID == requestID && selectedScope == scope && !Task.isCancelled
+    }
+
+    private static func nonEmptyText(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func summaryCitation(
+        sessionID: UUID,
+        title: String,
+        markdown: String
+    ) -> KnowledgeSourceRef {
+        KnowledgeSourceRef(
+            sourceID: sessionID.uuidString,
+            sourceType: "sessionSummary",
+            title: title.isEmpty ? "Untitled session" : title,
+            uri: nil,
+            page: nil,
+            startTime: nil,
+            endTime: nil,
+            parentID: nil,
+            chunkIndex: -2,
+            language: nil,
+            speaker: nil,
+            snippet: markdown,
+            matchText: nil
+        )
+    }
+
     func performRecoveryAction(_ action: KnowledgeRecoveryAction) {
         switch action {
         case .account:
@@ -854,5 +1040,18 @@ final class KnowledgeBaseController {
         case .aiSettings:
             SettingsWindowController.shared.show(tab: .ai)
         }
+    }
+}
+
+private struct KnowledgeSummaryReply {
+    let markdown: String
+    let citation: KnowledgeSourceRef
+}
+
+private enum KnowledgeSummaryError: LocalizedError {
+    case unavailable
+
+    var errorDescription: String? {
+        "No generated summary is available for this session yet."
     }
 }

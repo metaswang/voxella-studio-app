@@ -91,7 +91,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         Task { @MainActor in
             do {
-                await RecordingSessionController.shared.prepareForTermination()
+                switch await RecordingSessionController.shared.prepareForTermination() {
+                case .idle, .salvaged:
+                    break
+                case .unsafe(let message):
+                    isTerminating = false
+                    sender.presentError(RecordingError.terminationUnsafe(message))
+                    sender.reply(toApplicationShouldTerminate: false)
+                    return
+                }
                 for project in projects {
                     try await project.saveBeforeClosing()
                 }

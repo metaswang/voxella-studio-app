@@ -82,11 +82,28 @@ struct AgentModel: Hashable, Codable, Sendable {
     static let luna = AgentModel(rawValue: "gpt-5.6-luna")
     static let terra = AgentModel(rawValue: "gpt-5.6-terra")
     static let sol = AgentModel(rawValue: "gpt-5.6-sol")
+    static let astra = AgentModel(rawValue: "gpt-6-astra")
+    static let nano = AgentModel(rawValue: "gpt-5-nano")
+    static let nano54 = AgentModel(rawValue: "gpt-5.4-nano")
 
-    static let allCases = [sonnet5, opus5, fable5, luna, terra, sol]
+    static let allCases = [sonnet5, opus5, fable5, nano, nano54, luna, terra, sol, astra]
     static let anthropicModels = [sonnet5, opus5, fable5]
 
     static let defaultModel: AgentModel = .terra
+
+    /// The model catalog shared by the editor agent and other chat surfaces.
+    /// Keeping the provider/version checks here prevents a second UI from
+    /// accidentally offering embedding, image, or legacy models.
+    static func chatModels(for provider: AgentProvider) -> [AgentModel] {
+        allCases.filter { model in
+            switch provider {
+            case .anthropic:
+                ClaudeChatModelID(model.rawValue) != nil
+            case .openAI:
+                OpenAIChatModelID(model.rawValue) != nil
+            }
+        }
+    }
 
     var displayName: String {
         switch rawValue {
@@ -96,13 +113,16 @@ struct AgentModel: Hashable, Codable, Sendable {
         case Self.luna.rawValue: "GPT-5.6 Luna"
         case Self.terra.rawValue: "GPT-5.6 Terra"
         case Self.sol.rawValue: "GPT-5.6 Sol"
+        case Self.astra.rawValue: "GPT-6 Astra"
+        case Self.nano.rawValue: "GPT-5 Nano"
+        case Self.nano54.rawValue: "GPT-5.4 Nano"
         default:
             rawValue
         }
     }
 
     var provider: AgentProvider {
-        rawValue.hasPrefix("claude-") ? .anthropic : .openAI
+        rawValue.lowercased().hasPrefix("claude-") ? .anthropic : .openAI
     }
 
     var maxOutputTokens: Int { 64_000 }
@@ -149,6 +169,7 @@ struct OpenAIChatModelID: Hashable, Sendable {
     let rawValue: String
     let majorVersion: Int
     let minorVersion: Int
+    let isNano: Bool
 
     init?(_ rawValue: String) {
         let components = rawValue.split(separator: "-", omittingEmptySubsequences: false)
@@ -166,8 +187,48 @@ struct OpenAIChatModelID: Hashable, Sendable {
         let minor = version.count == 2 ? Int(version[1]) : 0
         guard let minor,
               components.dropFirst(2).allSatisfy({ $0.allSatisfy(\.isLetter) }),
-              major > 5 || minor >= 6
+              components.dropFirst(2).contains(where: { String($0).lowercased() == "nano" })
+                || major > 5 || minor >= 6
         else { return nil }
+
+        self.rawValue = rawValue
+        self.majorVersion = major
+        self.minorVersion = minor
+        self.isNano = components.dropFirst(2).contains {
+            String($0).lowercased() == "nano"
+        }
+    }
+
+    var supportedReasoningEfforts: [AgentReasoningEffort] {
+        if majorVersion == 5, minorVersion == 6, !isNano {
+            [.none, .low, .medium, .high, .xHigh, .max]
+        } else {
+            [.low, .medium, .high, .xHigh, .max]
+        }
+    }
+}
+
+/// Claude model identifiers that are suitable for the agent chat surface.
+///
+/// Claude has used both `claude-opus-4-8` and `claude-sonnet-5`-style names,
+/// so the numeric version components are intentionally collected instead of
+/// assuming that the version always occurs at one fixed position.
+struct ClaudeChatModelID: Hashable, Sendable {
+    let rawValue: String
+    let majorVersion: Int
+    let minorVersion: Int
+
+    init?(_ rawValue: String) {
+        let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let components = normalized.split(separator: "-", omittingEmptySubsequences: false)
+        guard components.count >= 3, components[0] == "claude" else { return nil }
+
+        let versionNumbers = components.dropFirst().flatMap { component in
+            component.split(separator: ".", omittingEmptySubsequences: false).compactMap { Int($0) }
+        }
+        guard let major = versionNumbers.first else { return nil }
+        let minor = versionNumbers.dropFirst().first ?? 0
+        guard major > 4 || (major == 4 && minor >= 8) else { return nil }
 
         self.rawValue = rawValue
         self.majorVersion = major
@@ -175,11 +236,7 @@ struct OpenAIChatModelID: Hashable, Sendable {
     }
 
     var supportedReasoningEfforts: [AgentReasoningEffort] {
-        if majorVersion == 5, minorVersion == 6 {
-            [.none, .low, .medium, .high, .xHigh, .max]
-        } else {
-            [.low, .medium, .high, .xHigh, .max]
-        }
+        [.low, .medium, .high, .xHigh, .max]
     }
 }
 

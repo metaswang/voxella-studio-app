@@ -156,9 +156,53 @@ extension LLMProviderProfile {
 }
 
 extension LLMRuntimeConfiguration {
+    private var usesOfficialOpenAIChatCompletions: Bool {
+        profile.provider == .openAI
+            || endpoint.host?.caseInsensitiveCompare("api.openai.com") == .orderedSame
+    }
+
     var resolvedExtraBody: [String: LLMJSONValue] {
         var result = openAICompatibleRequestOptions.extraBody
         LLMJSONValue.deepMerge(profile.resolvedExtraBody, into: &result)
+
+        // Gateway-specific reasoning fields can remain in persisted overrides
+        // after a provider is changed. The official OpenAI Chat Completions
+        // endpoint rejects those fields and accepts only `reasoning_effort`.
+        if usesOfficialOpenAIChatCompletions {
+            let legacyReasoningEffort: String?
+            if case let .object(reasoning)? = result["reasoning"],
+               case let .string(effort)? = reasoning["effort"] {
+                legacyReasoningEffort = effort
+            } else {
+                legacyReasoningEffort = nil
+            }
+            result.removeValue(forKey: "reasoning")
+            result.removeValue(forKey: "thinking")
+            result.removeValue(forKey: "reasoning_split")
+            if result["reasoning_effort"] == nil, let legacyReasoningEffort {
+                result["reasoning_effort"] = .string(legacyReasoningEffort)
+            }
+            if let maxTokens = result.removeValue(forKey: "max_tokens"),
+               result["max_completion_tokens"] == nil {
+                result["max_completion_tokens"] = maxTokens
+            }
+        }
+        if useCase == .skillSelection {
+            // A provider's persisted general-chat override must not turn a
+            // bounded routing call back into an unbounded generation.
+            if usesOfficialOpenAIChatCompletions {
+                // Newer official OpenAI reasoning models reject the legacy
+                // `max_tokens` name. Compatible gateways still expect it.
+                result.removeValue(forKey: "max_tokens")
+                result["max_completion_tokens"] = .number(256)
+                result["reasoning_effort"] = .string("none")
+                result.removeValue(forKey: "reasoning")
+                result.removeValue(forKey: "thinking")
+                result.removeValue(forKey: "reasoning_split")
+            } else {
+                result["max_tokens"] = .number(256)
+            }
+        }
         return result
     }
 }

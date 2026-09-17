@@ -103,6 +103,8 @@ private struct RecordingFloatingControlsView: View {
                 .font(.system(size: AppTheme.FontSize.xxs))
                 .foregroundStyle(session.isPaused ? AppTheme.Status.warningColor : AppTheme.Status.errorColor)
             RecordingFloatingTimer(session: session)
+            RecordingLiveWaveformView(store: session.liveWaveform, isPaused: session.isPaused)
+                .frame(width: AppTheme.Workbench.recordingControlsWaveformWidth)
             Divider().padding(.vertical, AppTheme.Spacing.sm)
             control(
                 session.isPaused ? "play.fill" : "pause.fill",

@@ -1,4 +1,26 @@
+import AVFoundation
 import Foundation
+
+struct RecordingJournalSegment: Codable, Equatable, Sendable {
+    var index: Int
+    var path: String
+    var globalStart: Double
+    var localDuration: Double?
+    var status: String
+    var didAppendMedia: Bool
+    var didAppendVideo: Bool
+    var didAppendMicrophone: Bool
+    var didAppendSystemAudio: Bool
+
+    var url: URL { URL(fileURLWithPath: path) }
+}
+
+struct RecordingRecoveredSession: Equatable, Sendable {
+    var sessionID: String
+    var urls: [URL]
+    var status: String
+    var manifest: RecordingSessionManifest
+}
 
 struct RecordingSessionManifest: Codable, Equatable, Sendable {
     var sessionID: String
@@ -8,14 +30,31 @@ struct RecordingSessionManifest: Codable, Equatable, Sendable {
     var backend: String
     var deviceID: String?
     var status: String
+    var segments: [RecordingJournalSegment]?
+    var includesVideo: Bool?
+    var audioTrackCount: Int?
+    var warnings: [String]?
+    var stopReason: String?
 
+    static let capturing = "capturing"
     static let inProgress = "inProgress"
+    static let pendingFinalize = "pendingFinalize"
+    static let rawSaved = "rawSaved"
+    static let pendingExport = "pendingExport"
+    static let pendingImport = "pendingImport"
+    static let registered = "registered"
     static let completed = "completed"
     static let failed = "failed"
+
+    static let recoverableStatuses: Set<String> = [
+        capturing, inProgress, pendingFinalize, rawSaved, pendingExport, pendingImport, failed,
+    ]
 
     var manifestURL: URL {
         Self.manifestURL(for: URL(fileURLWithPath: outputPath))
     }
+
+    var outputURL: URL { URL(fileURLWithPath: outputPath) }
 
     static func manifestURL(for outputURL: URL) -> URL {
         outputURL.appendingPathExtension("recording.json")
@@ -36,18 +75,44 @@ struct RecordingSessionManifest: Codable, Equatable, Sendable {
         return directory.appendingPathComponent("Recording-\(stamp)-\(token).\(ext)")
     }
 
-    static func write(_ manifest: RecordingSessionManifest) {
-        let url = manifest.manifestURL
+    @discardableResult
+    static func write(_ manifest: RecordingSessionManifest) -> Bool {
         do {
-            let data = try JSONEncoder().encode(manifest)
-            try data.write(to: url, options: .atomic)
+            try writeThrowing(manifest)
+            return true
         } catch {
             Log.recording.warning("recording manifest write failed error=\(Log.detail(error))")
+            return false
         }
+    }
+
+    static func writeThrowing(_ manifest: RecordingSessionManifest) throws {
+        let data = try JSONEncoder().encode(manifest)
+        try data.write(to: manifest.manifestURL, options: .atomic)
     }
 
     static func remove(for outputURL: URL) {
         try? FileManager.default.removeItem(at: manifestURL(for: outputURL))
+    }
+
+    static func markRegistered(sessionID: String, in directory: URL) {
+        for recovered in recoverInterruptedSessions(in: directory, includePendingImport: true) where recovered.sessionID == sessionID {
+            var manifest = recovered.manifest
+            manifest.status = registered
+            write(manifest)
+        }
+    }
+
+    static func markRegistered(urls: [URL]) {
+        for url in urls {
+            let manifestURL = manifestURL(for: url)
+            guard let data = try? Data(contentsOf: manifestURL),
+                  var manifest = try? JSONDecoder().decode(RecordingSessionManifest.self, from: data) else {
+                continue
+            }
+            manifest.status = registered
+            write(manifest)
+        }
     }
 
     static func availableBytes(at url: URL) -> Int64? {
@@ -59,37 +124,143 @@ struct RecordingSessionManifest: Codable, Equatable, Sendable {
         return fallback?.volumeAvailableCapacity.map(Int64.init)
     }
 
-    static func recoverInterruptedSessions(in directory: URL) -> [URL] {
+    static func recoverInterruptedSessions(
+        in directory: URL,
+        includePendingImport: Bool = true
+    ) -> [RecordingRecoveredSession] {
         let contents = (try? FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
         )) ?? []
-        var recovered: [URL] = []
+        var bySession: [String: RecordingSessionManifest] = [:]
         for manifestURL in contents where manifestURL.pathExtension == "json"
             && manifestURL.lastPathComponent.hasSuffix(".recording.json") {
             guard let data = try? Data(contentsOf: manifestURL),
                   let manifest = try? JSONDecoder().decode(RecordingSessionManifest.self, from: data),
-                  manifest.status == inProgress else {
+                  recoverableStatuses.contains(manifest.status) else {
                 continue
             }
-            let outputURL = URL(fileURLWithPath: manifest.outputPath)
-            let size = (try? outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            if FileManager.default.fileExists(atPath: outputURL.path), size > 0 {
-                recovered.append(outputURL)
-                Log.recording.notice(
-                    "recording recovered interrupted session id=\(manifest.sessionID) path=\(outputURL.lastPathComponent) bytes=\(size)"
-                )
+            if manifest.status == pendingImport, !includePendingImport {
+                continue
+            }
+            if let existing = bySession[manifest.sessionID] {
+                if manifest.startedAt >= existing.startedAt {
+                    bySession[manifest.sessionID] = merged(existing, manifest)
+                } else {
+                    bySession[manifest.sessionID] = merged(manifest, existing)
+                }
             } else {
-                Log.recording.warning(
-                    "recording interrupted session has no media id=\(manifest.sessionID) path=\(outputURL.lastPathComponent)"
-                )
+                bySession[manifest.sessionID] = manifest
             }
         }
+
+        var recovered: [RecordingRecoveredSession] = []
+        for manifest in bySession.values {
+            let urls = existingMediaURLs(for: manifest)
+            guard !urls.isEmpty else {
+                Log.recording.warning(
+                    "recording interrupted session has no media id=\(manifest.sessionID) path=\(manifest.outputURL.lastPathComponent)"
+                )
+                continue
+            }
+            Log.recording.notice(
+                "recording recovered interrupted session id=\(manifest.sessionID) status=\(manifest.status) files=\(urls.count)"
+            )
+            recovered.append(
+                RecordingRecoveredSession(
+                    sessionID: manifest.sessionID,
+                    urls: urls,
+                    status: manifest.status,
+                    manifest: manifest
+                )
+            )
+        }
         return recovered.sorted { lhs, rhs in
-            let left = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            let right = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            return left > right
+            lhs.manifest.startedAt > rhs.manifest.startedAt
+        }
+    }
+
+    private static func merged(_ older: RecordingSessionManifest, _ newer: RecordingSessionManifest) -> RecordingSessionManifest {
+        var result = newer
+        var segments = older.segments ?? []
+        for segment in newer.segments ?? [] where !segments.contains(where: { $0.path == segment.path }) {
+            segments.append(segment)
+        }
+        result.segments = segments.sorted { $0.index < $1.index }
+        return result
+    }
+
+    private static func existingMediaURLs(for manifest: RecordingSessionManifest) -> [URL] {
+        if manifest.status == pendingImport || manifest.status == rawSaved || manifest.status == pendingExport {
+            let size = (try? manifest.outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if FileManager.default.fileExists(atPath: manifest.outputURL.path), size > 0 {
+                return [manifest.outputURL]
+            }
+        }
+        var urls: [URL] = []
+        let candidates = (manifest.segments?.map(\.url) ?? []) + [manifest.outputURL]
+        for url in candidates where !urls.contains(url) {
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if FileManager.default.fileExists(atPath: url.path), size > 0 {
+                urls.append(url)
+            }
+        }
+        return urls
+    }
+}
+
+enum RecordingMediaValidator {
+    struct Inspection: Equatable, Sendable {
+        var url: URL
+        var exists: Bool
+        var fileSize: Int64
+        var isReadable: Bool
+        var duration: TimeInterval?
+        var hasAudio: Bool
+        var hasVideo: Bool
+    }
+
+    static func inspect(_ url: URL) async -> Inspection {
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        let size = Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        guard exists, size > 0 else {
+            return Inspection(
+                url: url,
+                exists: exists,
+                fileSize: size,
+                isReadable: false,
+                duration: nil,
+                hasAudio: false,
+                hasVideo: false
+            )
+        }
+        let asset = AVURLAsset(url: url)
+        do {
+            let duration = try await asset.load(.duration)
+            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+            let videoTracks = try await asset.loadTracks(withMediaType: .video)
+            let readable = duration.isValid && duration.isNumeric && duration.seconds > 0
+                && (!audioTracks.isEmpty || !videoTracks.isEmpty)
+            return Inspection(
+                url: url,
+                exists: true,
+                fileSize: size,
+                isReadable: readable,
+                duration: duration.isNumeric ? duration.seconds : nil,
+                hasAudio: !audioTracks.isEmpty,
+                hasVideo: !videoTracks.isEmpty
+            )
+        } catch {
+            return Inspection(
+                url: url,
+                exists: true,
+                fileSize: size,
+                isReadable: false,
+                duration: nil,
+                hasAudio: false,
+                hasVideo: false
+            )
         }
     }
 }

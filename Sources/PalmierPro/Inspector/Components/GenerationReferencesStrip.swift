@@ -22,7 +22,10 @@ struct GenerationReferencesStrip: View {
     }
 
     static func slots(for gen: GenerationInput, in assets: [MediaAsset]) -> [(String, MediaAsset)] {
-        let byId = Dictionary(uniqueKeysWithValues: assets.map { ($0.id, $0) })
+        let byId = Dictionary(
+            assets.map { ($0.id, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         let primary = primaryLabels(for: gen)
         let videoBase = videoReferenceBaseLabel(for: gen)
         let groups: [(ids: [String]?, base: String, primary: [String])] = [

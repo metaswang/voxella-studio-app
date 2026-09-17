@@ -48,9 +48,12 @@ extension EditorViewModel {
     /// Pushes the current tint palette to the renderer; call after any speaker/toggle change.
     func syncSpeakerColors() {
         ClipRenderer.speakerColors = markSpeakers
-            ? Dictionary(uniqueKeysWithValues: projectSpeakers.map {
-                ($0.id, NSColor($0.color).withAlphaComponent(AppTheme.Opacity.prominent).cgColor)
-            })
+            ? Dictionary(
+                projectSpeakers.map {
+                    ($0.id, NSColor($0.color).withAlphaComponent(AppTheme.Opacity.prominent).cgColor)
+                },
+                uniquingKeysWith: { current, _ in current }
+            )
             : [:]
         mediaVisualCache.timelineView?.needsDisplay = true
     }

@@ -120,11 +120,8 @@ enum RecordingAudioDeviceEnumerator {
             return .off
         case .systemDefault:
             return fallback
-        case .device(let id):
-            if devices.contains(where: { $0.id == id }) {
-                return current
-            }
-            return fallback
+        case .device:
+            return current
         }
     }
 

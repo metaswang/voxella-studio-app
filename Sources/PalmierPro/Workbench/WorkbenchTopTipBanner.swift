@@ -50,12 +50,15 @@ struct WorkbenchTopTipBanner: View {
         }
         .padding(.horizontal, AppTheme.Spacing.lg)
         .padding(.vertical, AppTheme.Spacing.md)
-        .background(background(for: tip.kind), in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
+        .background {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+                .fill(background(for: tip.kind))
+                .shadow(AppTheme.Shadow.sm)
+        }
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
                 .strokeBorder(border(for: tip.kind), lineWidth: AppTheme.BorderWidth.thin)
         }
-        .shadow(AppTheme.Shadow.sm)
     }
 
     private func foreground(for kind: WorkbenchTipKind) -> Color {

@@ -255,6 +255,10 @@ struct KnowledgeSourceListView: View {
         .opacity(qaAble ? 1 : AppTheme.Opacity.muted)
         .knowledgeSelectionChrome(isSelected: selected, emphasize: false)
         .contentShape(Rectangle())
+        .onTapGesture {
+            controller.handleSessionClick(row.id)
+            listFocused = true
+        }
         .animation(.spring(response: 0.28, dampingFraction: 0.86), value: selected)
     }
 }

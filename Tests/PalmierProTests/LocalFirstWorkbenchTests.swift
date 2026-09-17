@@ -346,7 +346,7 @@ struct LocalFirstWorkbenchTests {
         #expect(catalog.first { $0.id == .forcedAligner }?.requiredFor == [.transcribe, .dub])
         let weMM = catalog.first { $0.id == .weMMEmbedding2B4Bit }!
         #expect(weMM.repository == "hfadam/WeMM-Embedding-2B-MLX-4bit")
-        #expect(weMM.requiredFor == [.search])
+        #expect(weMM.requiredFor == [.search, .knowledgeRanking])
         #expect(weMM.requiredArtifacts.contains { $0.filename == "embedding_chat_template.jinja" })
 
         let sharedCodecBytes: Int64 = 682_300_739

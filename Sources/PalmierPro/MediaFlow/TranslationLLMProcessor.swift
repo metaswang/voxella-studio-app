@@ -270,7 +270,10 @@ struct TranslationLLMProcessor: Sendable {
             request: request,
             maximumAttempts: maximumAttempts
         )
-        let byID = Dictionary(uniqueKeysWithValues: translations.map { ($0.id, $0) })
+        let byID = Dictionary(
+            translations.map { ($0.id, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         let ordered = expectedIDs.compactMap { byID[$0] }
         guard ordered.count == expectedIDs.count else {
             let recoveredIDs = Set(ordered.map(\.id))
@@ -289,9 +292,10 @@ struct TranslationLLMProcessor: Sendable {
         let encoded = try Self.encodedUserPrompt(request)
         let expectedIDs = request.cues.map(\.id)
         let expectedIDSet = Set(expectedIDs)
-        let budgets = Dictionary(uniqueKeysWithValues: request.cues.map {
-            ($0.id, $0.characterBudget)
-        })
+        let budgets = Dictionary(
+            request.cues.map { ($0.id, $0.characterBudget) },
+            uniquingKeysWith: { current, _ in current }
+        )
         var acceptedByID: [Int: ResponseEnvelope.Translation] = [:]
         var priorFailure: String?
         let attempts = max(1, maximumAttempts)

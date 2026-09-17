@@ -50,6 +50,74 @@ struct LLMRequestOverridesTests {
     }
 
     @Test
+    func officialOpenAIDropsGatewayReasoningFields() {
+        var profile = LLMProviderProfile.defaultOpenAI
+        profile.extraBody = [
+            "thinking": .object(["type": .string("enabled")]),
+            "reasoning_split": .bool(true),
+        ]
+        let configuration = LLMRuntimeConfiguration(
+            profile: profile,
+            modelIdentifier: "openai/gpt-5-nano",
+            modelName: "gpt-5-nano",
+            endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
+            apiKey: "test-key",
+            useCase: .chat,
+            reasoningEffort: .medium
+        )
+
+        #expect(configuration.resolvedExtraBody["reasoning_effort"] == .string("medium"))
+        #expect(configuration.resolvedExtraBody["reasoning"] == nil)
+        #expect(configuration.resolvedExtraBody["thinking"] == nil)
+        #expect(configuration.resolvedExtraBody["reasoning_split"] == nil)
+    }
+
+    @Test
+    func officialOpenAIRepairsPersistedGatewayFieldsAndTokenLimit() {
+        var profile = LLMProviderProfile.defaultOpenAI
+        profile.extraBody = [
+            "reasoning": .object([
+                "enabled": .bool(true),
+                "effort": .string("high"),
+            ]),
+            "thinking": .object(["type": .string("enabled")]),
+            "reasoning_split": .bool(true),
+            "max_tokens": .number(1_024),
+        ]
+        let configuration = LLMRuntimeConfiguration(
+            profile: profile,
+            modelIdentifier: "openai/gpt-5-nano",
+            modelName: "gpt-5-nano",
+            endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
+            apiKey: "test-key",
+            useCase: .chat
+        )
+
+        let body = configuration.resolvedExtraBody
+        #expect(body["reasoning"] == nil)
+        #expect(body["thinking"] == nil)
+        #expect(body["reasoning_split"] == nil)
+        #expect(body["reasoning_effort"] == .string("high"))
+        #expect(body["max_tokens"] == nil)
+        #expect(body["max_completion_tokens"] == .number(1_024))
+    }
+
+    @Test
+    func skillSelectionUsesOfficialOpenAIMaxCompletionTokens() {
+        let configuration = LLMRuntimeConfiguration(
+            profile: .defaultOpenAI,
+            modelIdentifier: "openai/gpt-5.4-nano",
+            modelName: "gpt-5.4-nano",
+            endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
+            apiKey: "test-key",
+            useCase: .skillSelection
+        )
+
+        #expect(configuration.resolvedExtraBody["max_completion_tokens"] == .number(256))
+        #expect(configuration.resolvedExtraBody["max_tokens"] == nil)
+    }
+
+    @Test
     func clientSendsResolvedExtraBodyAtRequestRoot() async throws {
         var profile = LLMProviderProfile(
             provider: .openRouter,

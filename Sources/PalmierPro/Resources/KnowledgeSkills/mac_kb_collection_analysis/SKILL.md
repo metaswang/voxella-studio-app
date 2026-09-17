@@ -17,6 +17,7 @@ This skill performs higher-order analysis across multiple sessions: comparing th
 ## Tool Guidance
 
 - Use `session.list` to discover relevant sessions by metadata when the user doesn't specify which sessions
+- For topic or theme classification, call `session.list` without the topic as its `query`: that parameter filters titles only. List the full visible collection (use `limit: 50` when needed), then inspect summaries or transcript evidence.
 - Use `session.get_summary` to quickly understand session themes without full transcript search
 - Use `knowledge.compare_sessions` for structured comparison across 2+ sessions
 - Use `knowledge.search` for theme extraction when summaries alone are insufficient

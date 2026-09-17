@@ -9,23 +9,34 @@ struct AgentProviderTests {
             ["claude-sonnet-5", "Sonnet 5"],
             ["claude-opus-5", "Opus 5"],
             ["claude-fable-5", "Fable 5"],
+            ["gpt-5-nano", "GPT-5 Nano"],
+            ["gpt-5.4-nano", "GPT-5.4 Nano"],
             ["gpt-5.6-luna", "GPT-5.6 Luna"],
             ["gpt-5.6-terra", "GPT-5.6 Terra"],
             ["gpt-5.6-sol", "GPT-5.6 Sol"],
+            ["gpt-6-astra", "GPT-6 Astra"],
         ])
         #expect(AgentModel.allCases.allSatisfy { $0.maxOutputTokens == 64_000 })
         #expect(AgentModel.defaultModel == .terra)
         #expect(AgentModel.persisted("claude-opus-4-8") == .opus5)
         #expect(AgentModel.allCases.map(\.provider) == [
-            .anthropic, .anthropic, .anthropic, .openAI, .openAI, .openAI,
+            .anthropic, .anthropic, .anthropic,
+            .openAI, .openAI, .openAI, .openAI, .openAI, .openAI,
         ])
         #expect(AgentModel.allCases.filter(\.requiresPaidHostedPlan) == [.fable5, .sol])
         let anthropicEfforts: [AgentReasoningEffort] = [.low, .medium, .high, .xHigh, .max]
         let openAIEfforts: [AgentReasoningEffort] = [.none, .low, .medium, .high, .xHigh, .max]
         #expect(AgentModel.allCases.filter { $0.provider == .anthropic }
             .allSatisfy { $0.supportedReasoningEfforts == anthropicEfforts })
-        #expect(AgentModel.allCases.filter { $0.provider == .openAI }
+        #expect(AgentModel.allCases.filter {
+            guard let model = OpenAIChatModelID($0.rawValue) else { return false }
+            return model.majorVersion == 5 && model.minorVersion == 6 && !model.isNano
+        }
             .allSatisfy { $0.supportedReasoningEfforts == openAIEfforts })
+        #expect(AgentModel.astra.supportedReasoningEfforts
+            == [.low, .medium, .high, .xHigh, .max])
+        #expect(OpenAIChatModelID("gpt-5.6-nano")?.supportedReasoningEfforts
+            == [.low, .medium, .high, .xHigh, .max])
     }
 
     @Test func discoveredOpenAIModelsKeepOnlySupportedChatVersionsAndEfforts() throws {
@@ -39,7 +50,29 @@ struct AgentProviderTests {
             == [.low, .medium, .high, .xHigh, .max])
         #expect(OpenAIChatModelID("gpt-5.10") != nil)
         #expect(OpenAIChatModelID("gpt-5.5") == nil)
+        #expect(OpenAIChatModelID("gpt-5-nano") != nil)
+        #expect(OpenAIChatModelID("gpt-5.4-nano") != nil)
+        #expect(OpenAIChatModelID("gpt-5.5-nano") != nil)
         #expect(OpenAIChatModelID("gpt-image-2.5") == nil)
+    }
+
+    @Test func chatCatalogUsesTheOpenAIFiveSixAndClaudeFourEightBoundaries() {
+        #expect(AgentModel.chatModels(for: .openAI) == [
+            .nano, .nano54, .luna, .terra, .sol, .astra,
+        ])
+        #expect(ClaudeChatModelID("claude-opus-4-8") != nil)
+        #expect(ClaudeChatModelID("claude-sonnet-4-7") == nil)
+        #expect(ClaudeChatModelID("claude-sonnet-5") != nil)
+        #expect(ClaudeChatModelID("claude-3-7-sonnet") == nil)
+
+        #expect(LLMReasoningEffort.supportedChatEfforts(
+            providerPrefix: "openai",
+            modelName: "gpt-5.6-luna"
+        ) == [.none, .low, .medium, .high, .xHigh, .max])
+        #expect(LLMReasoningEffort.supportedChatEfforts(
+            providerPrefix: "claude",
+            modelName: "claude-opus-4-8"
+        ) == [.low, .medium, .high, .xHigh, .max])
     }
 
     @Test func dynamicOpenAIModelsUseTheExistingSingleValuePersistenceFormat() throws {

@@ -119,12 +119,13 @@ enum KnowledgeContextBuilder {
     }
 
     private static func formatDuration(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "—" }
         let total = max(0, Int(seconds.rounded()))
         return String(format: "%02d:%02d:%02d", total / 3600, (total / 60) % 60, total % 60)
     }
 
     private static func formatDate(_ timestamp: Double?) -> String? {
-        guard let timestamp, timestamp > 0 else { return nil }
+        guard let timestamp, timestamp.isFinite, timestamp > 0 else { return nil }
         return ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: timestamp))
     }
 }

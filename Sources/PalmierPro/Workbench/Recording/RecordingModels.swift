@@ -150,9 +150,58 @@ struct RecordingAudioLevelWarning: Sendable {
     }
 }
 
+enum RecordingStopReason: Equatable, Sendable {
+    case userStop
+    case userDiscard
+    case systemUserStopped
+    case captureInterrupted(String)
+    case writerFailed(String)
+    case microphoneLost
+    case diskSpace
+    case termination
+    case emptyRecording
+    case captureTargetLost
+    case timedOut
+
+    var logLabel: String {
+        switch self {
+        case .userStop: "user stop"
+        case .userDiscard: "user discard"
+        case .systemUserStopped: "system userStopped"
+        case .captureInterrupted(let reason): "capture interrupted \(reason)"
+        case .writerFailed(let reason): "writer failed \(reason)"
+        case .microphoneLost: "microphone lost"
+        case .diskSpace: "disk space"
+        case .termination: "app terminating"
+        case .emptyRecording: "empty recording"
+        case .captureTargetLost: "capture target lost"
+        case .timedOut: "timed out"
+        }
+    }
+}
+
+enum RecordingStopOutcomeKind: String, Equatable, Sendable {
+    case complete
+    case partial
+    case rawSegments
+    case recoveryRequired
+}
+
 struct RecordingSessionDiagnostics: Equatable, Sendable {
     let microphone: RecordingAudioLevel?
     let systemAudio: RecordingAudioLevel?
+    var lastMicrophoneReceivePTS: Double? = nil
+    var lastMicrophoneAppendPTS: Double? = nil
+    var lastSystemAudioReceivePTS: Double? = nil
+    var lastSystemAudioAppendPTS: Double? = nil
+    var lastVideoAppendPTS: Double? = nil
+    var microphoneDropped: Int = 0
+    var systemAudioDropped: Int = 0
+    var failedAppends: Int = 0
+    var conversionFailures: Int = 0
+    var restartCount: Int = 0
+    var segmentCount: Int = 0
+    var stopReason: RecordingStopReason? = nil
 
     var warningMessage: String? {
         let microphoneLow = microphone?.isLowLevel == true
@@ -174,6 +223,11 @@ struct RecordingSessionDiagnostics: Equatable, Sendable {
 struct RecordingStopResult: Sendable {
     let url: URL
     let diagnostics: RecordingSessionDiagnostics
+    var outcome: RecordingStopOutcomeKind = .complete
+    var warnings: [String] = []
+    var segmentURLs: [URL] = []
+    var sessionID: UUID? = nil
+    var journalPersisted: Bool = false
 }
 
 enum RecordingRuntimeEvent: Sendable {
@@ -181,6 +235,7 @@ enum RecordingRuntimeEvent: Sendable {
     case recovered(source: String)
     case failed(error: RecordingError, reason: String)
     case userStopped
+    case captureTargetLost(message: String)
 }
 
 enum RecordingCaptureHealth {
@@ -192,13 +247,20 @@ enum RecordingCaptureHealth {
     static let fragmentInterval: TimeInterval = 10
     static let minimumFreeBytes: Int64 = 80 * 1_024 * 1_024
     static let lowFreeBytes: Int64 = 300 * 1_024 * 1_024
+    static let recoveredSampleCount = 8
+    static let writerBackpressureTimeout: TimeInterval = 8
+    static let pauseGrace: TimeInterval = 5
+    static let videoFreezeTimeout: TimeInterval = 20
 }
 
 enum RecordingLifecycleTimeout {
     static let start: TimeInterval = 25
-    static let stop: TimeInterval = 20
-    static let writerFinish: TimeInterval = 20
-    static let termination: TimeInterval = 25
+    static let stop: TimeInterval = 12
+    static let writerFinish: TimeInterval = 12
+    static let streamStop: TimeInterval = 4
+    static let salvageStop: TimeInterval = 6
+    static let salvageWriterFinish: TimeInterval = 6
+    static let termination: TimeInterval = 10
 }
 
 enum RecordingPhase: Equatable, Sendable {
@@ -219,6 +281,12 @@ enum RecordingPhase: Equatable, Sendable {
     var isCapturing: Bool {
         self == .recording || self == .paused
     }
+}
+
+enum RecordingTerminationOutcome: Equatable, Sendable {
+    case idle
+    case salvaged
+    case unsafe(String)
 }
 
 enum RecordingDurationLimit {
@@ -316,6 +384,9 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
     case captureInterrupted(String)
     case diskSpaceLow
     case emptyRecording
+    case captureTargetUnavailable
+    case microphoneUnavailable
+    case terminationUnsafe(String)
 
     var errorDescription: String? {
         switch self {
@@ -347,6 +418,12 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
             "The disk is almost full. Recording stopped so the captured audio could be saved."
         case .emptyRecording:
             "The recording did not capture any media."
+        case .captureTargetUnavailable:
+            "The selected display is no longer available. The recording so far was saved."
+        case .microphoneUnavailable:
+            "The selected microphone is unavailable. Reconnect it or choose another input."
+        case .terminationUnsafe(let message):
+            message
         }
     }
 

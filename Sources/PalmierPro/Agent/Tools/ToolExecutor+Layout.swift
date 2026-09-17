@@ -63,7 +63,10 @@ extension ToolExecutor {
         }
         guard !input.slots.isEmpty else { throw ToolError("apply_layout needs a non-empty 'slots' array") }
 
-        let slotById = Dictionary(uniqueKeysWithValues: layout.slots.map { ($0.id, $0) })
+        let slotById = Dictionary(
+            layout.slots.map { ($0.id, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
 
         var seen = Set<String>()
         var seenClips = Set<String>()

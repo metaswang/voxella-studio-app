@@ -292,10 +292,11 @@ final class VideoEngine {
         let mediaURLs = editor.mediaResolver.expectedURLMap()
         let missingMediaRefs = editor.missingMediaRefs
         let assetSizes: [String: CGSize] = Dictionary(
-            uniqueKeysWithValues: editor.mediaAssets.compactMap { asset in
+            editor.mediaAssets.compactMap { asset in
                 guard let w = asset.sourceWidth, let h = asset.sourceHeight, w > 0, h > 0 else { return nil }
                 return (asset.id, CGSize(width: w, height: h))
-            }
+            },
+            uniquingKeysWith: { current, _ in current }
         )
         let resolveTimeline = editor.timelineResolver()
 

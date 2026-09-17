@@ -129,6 +129,8 @@ struct KnowledgeQAServiceHelpersTests {
         )
 
         #expect(plan.searchQuery == "主要主题")
+        #expect(plan.standaloneQuery == "主要主题")
+        #expect(plan.clarificationQuestion == nil)
         #expect(plan.answerConstraints == ["用中文回答", "只用 3 句话"])
     }
 
@@ -279,6 +281,54 @@ struct KnowledgeQAServiceHelpersTests {
     }
 
     @Test
+    func buildContextAcceptsSeveralHitsFromOneSession() {
+        let sessionID = UUID()
+        let hits = [
+            SessionSearchHit(
+                sessionID: sessionID,
+                title: "One session",
+                unitID: 41,
+                kind: .transcriptChunk,
+                start: 0,
+                end: 5,
+                speakerLabels: [],
+                text: "First evidence",
+                score: 1,
+                matchSource: "bm25",
+                snippet: nil,
+                cueIDs: [],
+                hasVideo: false,
+                language: nil,
+                quoteSpan: nil
+            ),
+            SessionSearchHit(
+                sessionID: sessionID,
+                title: "One session",
+                unitID: 42,
+                kind: .transcriptChunk,
+                start: 10,
+                end: 15,
+                speakerLabels: [],
+                text: "Second evidence",
+                score: 0.9,
+                matchSource: "bm25",
+                snippet: nil,
+                cueIDs: [],
+                hasVideo: false,
+                language: nil,
+                quoteSpan: nil
+            ),
+        ]
+
+        let context = KnowledgeQAService.buildContext(hits: hits, maxChars: 10_000)
+
+        #expect(context.contains("First evidence"))
+        #expect(context.contains("Second evidence"))
+        #expect(context.contains("time=0:00–0:05"))
+        #expect(context.contains("time=0:10–0:15"))
+    }
+
+    @Test
     func catalogFallbackRendersRequestedMetadataWithoutSessionSummary() {
         let hit = SessionSearchHit(
             sessionID: UUID(),
@@ -394,6 +444,7 @@ struct KnowledgeQAExecutionTests {
         #expect(KnowledgeQAOutcome.fallback.rawValue == "fallback")
         #expect(KnowledgeQAOutcome.timedOut.rawValue == "timedOut")
         #expect(KnowledgeQAOutcome.cancelled.rawValue == "cancelled")
+        #expect(KnowledgeQAOutcome.clarification.rawValue == "clarification")
     }
 
     @Test
@@ -723,4 +774,361 @@ struct KnowledgeTranscriptNavigationTests {
 
         #expect(KnowledgeTranscriptNavigation.segmentIndex(for: target, in: segments) == 1)
     }
+}
+
+struct KnowledgeQueryPlanDecodingTests {
+    @Test
+    func standaloneQueryFallsBackToSearchQueryAndClarificationIsOptional() throws {
+        let plan = try KnowledgeQAService.decodeQueryPlan(
+            #"{"search_query":"张三 方案","answer_constraints":[]}"#
+        )
+        #expect(plan.standaloneQuery == "张三 方案")
+        #expect(plan.searchQuery == "张三 方案")
+        #expect(plan.clarificationQuestion == nil)
+    }
+
+    @Test
+    func clarificationQuestionIsPreserved() throws {
+        let plan = try KnowledgeQAService.decodeQueryPlan(
+            #"{"standalone_query":"他为什么这么做？","search_query":"他为什么这么做？","answer_constraints":[],"clarification_question":"你指的是张三还是李四？"}"#
+        )
+        #expect(plan.needsClarification)
+        #expect(plan.clarificationQuestion == "你指的是张三还是李四？")
+    }
+
+    @Test
+    func followUpPlanCanResolvePronounToNamedPerson() throws {
+        let plan = try KnowledgeQAService.decodeQueryPlan(
+            #"{"standalone_query":"张三为什么提出该方案？","search_query":"张三 方案 原因","answer_constraints":[]}"#
+        )
+        #expect(plan.standaloneQuery.contains("张三"))
+        #expect(plan.searchQuery.contains("张三"))
+    }
+
+    @Test
+    func plannerPromptRequiresHistoryAwareRewriteWithoutGuessing() {
+        #expect(KnowledgeQAService.queryPlannerPrompt.contains("standalone_query"))
+        #expect(KnowledgeQAService.queryPlannerPrompt.contains("clarification_question"))
+        #expect(KnowledgeQAService.queryPlannerPrompt.contains("Do not treat prior assistant answers as knowledge-base facts"))
+        #expect(KnowledgeQAService.queryPlannerPrompt.contains("do not guess"))
+    }
+
+    @Test
+    func plannerInputKeepsOnlyTheMostRecentSixMessages() {
+        let conversationID = UUID()
+        var history: [KnowledgeMessage] = []
+        for index in 1...7 {
+            history.append(
+                KnowledgeMessage(
+                    conversationID: conversationID,
+                    role: index.isMultiple(of: 2) ? .assistant : .user,
+                    content: "message-\(index)"
+                )
+            )
+        }
+        let input = KnowledgeQAService.queryPlannerInput(
+            query: "他为什么这么做？",
+            history: history
+        )
+        #expect(!input.contains("message-1"))
+        #expect(input.contains("message-2"))
+        #expect(input.contains("message-7"))
+        #expect(input.contains("Current question: 他为什么这么做？"))
+    }
+}
+
+struct KnowledgeRetrievalServiceTests {
+    @Test
+    func waitsForSlowGraphAndKeepsGraphOnlyHit() async throws {
+        let hybridHit = testHit(unitID: 1, text: "hybrid evidence about delivery")
+        let graphHit = testHit(unitID: 2, text: "graph-only evidence about the same plan")
+        let graphCalls = PlannerCallBox()
+        let service = KnowledgeRetrievalService(
+            executionPolicy: KnowledgeQAExecutionPolicy(
+                retrieval: .milliseconds(400),
+                graphRecall: .milliseconds(200),
+                rerank: .milliseconds(50)
+            ),
+            dependencies: KnowledgeQAExecutionDependencies(
+                hybridRecall: { _, _ in [hybridHit] },
+                graphRecall: { _, _ in
+                    graphCalls.count += 1
+                    try await Task.sleep(for: .milliseconds(40))
+                    return [graphHit]
+                },
+                reranker: { _, chunks in chunks.map { _ in 0.9 } }
+            )
+        )
+        let result = try await service.search(agentRequest(query: "方案"))
+        #expect(graphCalls.count == 1)
+        #expect(result.diagnostics.graphAttempted)
+        #expect(result.diagnostics.graphStatus == .used)
+        #expect(Set(result.hits.map(\.unitID)) == [1, 2])
+        #expect(result.diagnostics.hybridHitCount == 1)
+        #expect(result.diagnostics.graphHitCount == 1)
+        #expect(result.diagnostics.rerankerStatus == .used)
+    }
+
+    @Test
+    func deduplicatesSharedUnitIDsPreferringHybrid() async throws {
+        let sessionID = UUID()
+        let hybrid = testHit(sessionID: sessionID, unitID: 7, text: "hybrid copy")
+        let graph = testHit(sessionID: sessionID, unitID: 7, text: "graph copy")
+        let service = KnowledgeRetrievalService(
+            dependencies: KnowledgeQAExecutionDependencies(
+                hybridRecall: { _, _ in [hybrid] },
+                graphRecall: { _, _ in [graph] },
+                reranker: { _, chunks in chunks.map { _ in 0.9 } }
+            )
+        )
+        let result = try await service.search(agentRequest(query: "copy"))
+        #expect(result.hits.map(\.unitID) == [7])
+        #expect(result.hits.first?.text == "hybrid copy")
+        #expect(result.diagnostics.candidateCount == 1)
+    }
+
+    @Test
+    func graphFailureStillReturnsHybridEvidence() async throws {
+        let hybridHit = testHit(unitID: 3, text: "hybrid still available")
+        let service = KnowledgeRetrievalService(
+            executionPolicy: KnowledgeQAExecutionPolicy(
+                retrieval: .milliseconds(300),
+                graphRecall: .milliseconds(40),
+                rerank: .milliseconds(50)
+            ),
+            dependencies: KnowledgeQAExecutionDependencies(
+                hybridRecall: { _, _ in [hybridHit] },
+                graphRecall: { _, _ in
+                    throw KnowledgeQAError.timeout
+                },
+                reranker: { _, chunks in chunks.map { _ in 0.9 } }
+            )
+        )
+        let result = try await service.search(agentRequest(query: "hybrid"))
+        #expect(result.hits.map(\.unitID) == [3])
+        #expect(result.diagnostics.graphAttempted)
+        #expect(result.diagnostics.graphStatus == .timeout)
+    }
+
+    @Test
+    func graphDisabledDoesNotAttemptRecall() async throws {
+        let hybridHit = testHit(unitID: 4, text: "hybrid only")
+        let service = KnowledgeRetrievalService(
+            dependencies: KnowledgeQAExecutionDependencies(
+                hybridRecall: { _, _ in [hybridHit] },
+                reranker: { _, chunks in chunks.map { _ in 0.9 } }
+            )
+        )
+        let result = try await service.search(agentRequest(query: "topic"))
+        #expect(result.hits.map(\.unitID) == [4])
+        #expect(!result.diagnostics.graphAttempted)
+        #expect(result.diagnostics.graphStatus == .disabled || result.diagnostics.graphStatus == .unavailable)
+    }
+
+    @Test
+    func visibleFilterIncludesCloudOwner() async {
+        let service = KnowledgeRetrievalService()
+        let filter = await service.makeVisibleFilter(scope: .all, originFilter: nil)
+        let owner = await MainActor.run { AccountService.shared.userID?.uuidString }
+        #expect(filter.cloudOwnerUserID == owner)
+        #expect(filter.limit == 30)
+        #expect(filter.sourceOrigins != nil)
+    }
+
+    @Test
+    func agentCatalogQueriesDoNotUseCatalogHeuristic() async throws {
+        let hit = testHit(unitID: 9, text: "how many sessions were listed in the transcript")
+        let service = KnowledgeRetrievalService(
+            dependencies: KnowledgeQAExecutionDependencies(
+                hybridRecall: { query, _ in
+                    #expect(query.contains("how many sessions"))
+                    return [hit]
+                },
+                graphRecall: { _, _ in [] },
+                reranker: { _, chunks in chunks.map { _ in 0.9 } }
+            )
+        )
+        let result = try await service.search(
+            KnowledgeRetrievalRequest(
+                query: "how many sessions mentioned budget",
+                scope: .all,
+                originFilter: nil,
+                resultLimit: 8,
+                requestID: UUID(),
+                includeCatalog: false,
+                retrievalPath: .agent
+            )
+        )
+        #expect(result.hits.map(\.unitID) == [9])
+        #expect(result.hits.first?.matchSource != "catalog")
+    }
+
+    private func agentRequest(query: String) -> KnowledgeRetrievalRequest {
+        KnowledgeRetrievalRequest(
+            query: query,
+            scope: .all,
+            originFilter: nil,
+            resultLimit: 8,
+            requestID: UUID(),
+            includeCatalog: false,
+            retrievalPath: .agent
+        )
+    }
+
+    private func testHit(
+        sessionID: UUID = UUID(),
+        unitID: Int,
+        text: String
+    ) -> SessionSearchHit {
+        SessionSearchHit(
+            sessionID: sessionID,
+            title: "Session",
+            unitID: unitID,
+            kind: .transcriptChunk,
+            start: Double(unitID),
+            end: Double(unitID + 1),
+            speakerLabels: ["Alice"],
+            text: text,
+            score: 1,
+            matchSource: "test",
+            snippet: text,
+            cueIDs: [],
+            hasVideo: false,
+            language: "en",
+            quoteSpan: nil
+        )
+    }
+}
+
+struct KnowledgeQAClarificationAndFallbackTests {
+    @Test
+    func plannerClarificationSkipsRetrievalAndDoesNotFail() async {
+        let box = PlannerCallBox()
+        let hybridCalls = PlannerCallBox()
+        var service = KnowledgeQAService()
+        service.useAgentRuntime = true
+        service.skillsProvider = { [] }
+        service.dependencies = KnowledgeQAExecutionDependencies(
+            planner: { query, _, _, _ in
+                box.count += 1
+                return KnowledgeQueryPlan(
+                    standaloneQuery: query,
+                    searchQuery: query,
+                    answerConstraints: [],
+                    clarificationQuestion: "你指的是张三还是李四？"
+                )
+            },
+            hybridRecall: { _, _ in
+                hybridCalls.count += 1
+                return []
+            }
+        )
+        let events = await collect(
+            service.answer(
+                KnowledgeQARequest(queryText: "他为什么这么做？", conversationID: UUID(), scope: .all)
+            )
+        )
+        #expect(box.count == 1)
+        #expect(hybridCalls.count == 0)
+        #expect(events.contains { if case .clarification("你指的是张三还是李四？") = $0 { return true }; return false })
+        #expect(!events.contains { if case .failed = $0 { return true }; return false })
+        #expect(!events.contains { if case .citations = $0 { return true }; return false })
+    }
+
+    @Test
+    func agentFallbackReusesPlanWithoutCallingPlannerAgain() async {
+        let box = PlannerCallBox()
+        var service = KnowledgeQAService()
+        service.useAgentRuntime = true
+        service.skillsProvider = { [] }
+        service.dependencies = KnowledgeQAExecutionDependencies(
+            planner: { query, history, _, _ in
+                box.count += 1
+                #expect(history.contains(where: { $0.content.contains("张三提出了什么方案") }))
+                return KnowledgeQueryPlan(
+                    standaloneQuery: "张三为什么提出该方案？",
+                    searchQuery: "张三 方案 原因",
+                    answerConstraints: [],
+                    clarificationQuestion: nil
+                )
+            },
+            hybridRecall: { query, _ in
+                #expect(query == "张三 方案 原因")
+                return []
+            },
+            graphRecall: { _, _ in [] },
+            reranker: { _, chunks in chunks.map { _ in 0.9 } }
+        )
+        let conversationID = UUID()
+        let events = await collect(
+            service.answer(
+                KnowledgeQARequest(
+                    queryText: "他为什么这么做？",
+                    conversationID: conversationID,
+                    scope: .all,
+                    history: [
+                        KnowledgeMessage(conversationID: conversationID, role: .user, content: "张三提出了什么方案？"),
+                        KnowledgeMessage(conversationID: conversationID, role: .assistant, content: "证据显示他提出了交付方案。"),
+                    ]
+                )
+            )
+        )
+        #expect(box.count == 1)
+        #expect(events.contains { if case .finished(let text) = $0 { return text.contains("enough") || text.contains("证据"); }; return false })
+    }
+
+    @Test
+    func invalidPlannerJSONFallsBackToCurrentQuestionWithoutClarifying() async {
+        var service = KnowledgeQAService()
+        service.useAgentRuntime = false
+        service.dependencies = KnowledgeQAExecutionDependencies(
+            planner: { _, _, _, _ in
+                throw KnowledgeQAError.invalidQueryPlan
+            },
+            hybridRecall: { query, _ in
+                #expect(query == "当前问题")
+                return []
+            },
+            graphRecall: { _, _ in [] },
+            reranker: { _, chunks in chunks.map { _ in 0.9 } }
+        )
+        let events = await collect(
+            service.answer(
+                KnowledgeQARequest(queryText: "当前问题", conversationID: UUID(), scope: .all)
+            )
+        )
+        #expect(!events.contains { if case .clarification = $0 { return true }; return false })
+        #expect(events.contains { if case .finished = $0 { return true }; return false })
+    }
+
+    @Test
+    func userPromptKeepsOriginalResolvedSearchAndConstraintsSeparate() {
+        let prompt = KnowledgeQAService.userPrompt(
+            query: "他为什么这么做？ 3句话",
+            standaloneQuery: "张三为什么提出该方案？",
+            searchQuery: "张三 方案 原因",
+            answerConstraints: ["只用 3 句话"],
+            context: "[1] 张三提出了交付方案。",
+            history: [
+                KnowledgeMessage(conversationID: UUID(), role: .assistant, content: "旧答案不应当作证据"),
+            ]
+        )
+        #expect(prompt.contains("Question: 他为什么这么做？ 3句话"))
+        #expect(prompt.contains("Resolved standalone question: 张三为什么提出该方案？"))
+        #expect(prompt.contains("Retrieval search intent (already applied; do not treat it as an answer): 张三 方案 原因"))
+        #expect(prompt.contains("只用 3 句话"))
+        #expect(prompt.contains("reference resolution only; not evidence"))
+    }
+
+    private func collect(_ stream: AsyncStream<KnowledgeAnswerEvent>) async -> [KnowledgeAnswerEvent] {
+        var events: [KnowledgeAnswerEvent] = []
+        for await event in stream {
+            events.append(event)
+        }
+        return events
+    }
+}
+
+final class PlannerCallBox: @unchecked Sendable {
+    var count = 0
 }

@@ -115,6 +115,137 @@ struct LLMResilienceTests {
     }
 
     @Test @MainActor
+    func chatModelPickerFiltersConfiguredOpenAIAndClaudeProviders() throws {
+        let suiteName = "LLMChatModelPickerTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let openAI = LLMProviderProfile(
+            provider: .openAI,
+            prefix: "openai",
+            displayName: "OpenAI",
+            baseURL: "https://api.openai.com/v1",
+            model: "gpt-5.4-nano"
+        )
+        let openRouter = LLMProviderProfile(
+            provider: .openRouter,
+            prefix: "openrouter",
+            displayName: "OpenRouter",
+            baseURL: "https://openrouter.ai/api/v1",
+            model: "google/gemini-2.5-flash-lite"
+        )
+        let saved = LLMSettingsStore.PersistedConfiguration(
+            providers: [openAI, openRouter],
+            routes: [
+                .chat: LLMModelRoute(
+                    primaryModel: "openrouter/google/gemini-2.5-flash-lite",
+                    fallbackModels: [],
+                    policy: .default(for: .chat)
+                ),
+            ]
+        )
+        defaults.set(try JSONEncoder().encode(saved), forKey: "voxella.llm.configuration.v2")
+
+        let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
+        let options = settings.chatModelOptions
+
+        #expect(options.map(\.reference) == [
+            "openai/gpt-5-nano",
+            "openai/gpt-5.4-nano",
+            "openai/gpt-5.6-luna",
+            "openai/gpt-5.6-terra",
+            "openai/gpt-5.6-sol",
+            "openai/gpt-6-astra",
+        ])
+        #expect(options.allSatisfy { OpenAIChatModelID($0.modelName) != nil })
+        #expect(!options.contains { $0.reference.hasPrefix("openrouter/") })
+        #expect(options.first?.supportedReasoningEfforts == [.low, .medium, .high, .xHigh, .max])
+        #expect(options.first(where: { $0.modelName == "gpt-5.6-luna" })?.supportedReasoningEfforts
+            == [.none, .low, .medium, .high, .xHigh, .max])
+
+        settings.chatReasoningEffort = .minimal
+        settings.selectChatModel(reference: "openai/gpt-5.6-luna")
+        #expect(settings.route(for: .chat).primaryModel == "openai/gpt-5.6-luna")
+        #expect(settings.effectiveChatReasoningEffort == .medium)
+    }
+
+    @Test @MainActor
+    func chatModelPickerFiltersConfiguredClaudeProviderAndMatchesEfforts() throws {
+        let suiteName = "LLMClaudeChatModelPickerTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let claude = LLMProviderProfile(
+            provider: .openAICompatible,
+            prefix: "claude",
+            displayName: "Claude",
+            baseURL: "https://claude.example.com/v1",
+            model: "claude-opus-4-8"
+        )
+        let miniMax = LLMProviderProfile.defaultMiniMax
+        let saved = LLMSettingsStore.PersistedConfiguration(
+            providers: [claude, miniMax],
+            routes: [
+                .chat: LLMModelRoute(
+                    primaryModel: "claude/claude-opus-4-8",
+                    fallbackModels: ["minimax/MiniMax-M3"],
+                    policy: .default(for: .chat)
+                ),
+            ]
+        )
+        defaults.set(try JSONEncoder().encode(saved), forKey: "voxella.llm.configuration.v2")
+
+        let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
+        let options = settings.chatModelOptions
+
+        #expect(options.map(\.reference) == [
+            "claude/claude-sonnet-5",
+            "claude/claude-opus-5",
+            "claude/claude-fable-5",
+            "claude/claude-opus-4-8",
+        ])
+        #expect(options.allSatisfy { ClaudeChatModelID($0.modelName) != nil })
+        #expect(options.first?.supportedReasoningEfforts == [.low, .medium, .high, .xHigh, .max])
+        #expect(!options.contains { $0.reference.hasPrefix("minimax/") })
+
+        settings.chatReasoningEffort = .none
+        settings.synchronizeChatModelSelection()
+        #expect(settings.effectiveChatReasoningEffort == .medium)
+    }
+
+    @Test @MainActor
+    func chatModelPickerFallsBackToOnlyAIEditingChatRouteModel() throws {
+        let suiteName = "LLMChatModelFallbackTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let miniMax = LLMProviderProfile.defaultMiniMax
+        let openRouter = LLMProviderProfile(
+            provider: .openRouter,
+            prefix: "openrouter",
+            displayName: "OpenRouter",
+            baseURL: "https://openrouter.ai/api/v1",
+            model: "google/gemini-2.5-flash-lite"
+        )
+        let saved = LLMSettingsStore.PersistedConfiguration(
+            providers: [miniMax, openRouter],
+            routes: [
+                .chat: LLMModelRoute(
+                    primaryModel: "minimax/MiniMax-M3",
+                    fallbackModels: ["openrouter/google/gemini-2.5-flash-lite"],
+                    policy: .default(for: .chat)
+                ),
+            ]
+        )
+        defaults.set(try JSONEncoder().encode(saved), forKey: "voxella.llm.configuration.v2")
+
+        let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
+
+        #expect(settings.chatModelOptions.map(\.reference) == ["minimax/MiniMax-M3"])
+        #expect(settings.effectiveChatModelReference == "minimax/MiniMax-M3")
+    }
+
+    @Test @MainActor
     func legacyDefaultsDomainMigratesIntoStableApplicationDomain() throws {
         let currentSuiteName = "LLMStableDefaultsTests.\(UUID().uuidString)"
         let legacySuiteName = "LLMLegacyDefaultsTests.\(UUID().uuidString)"
@@ -357,7 +488,10 @@ struct LLMResilienceTests {
             temperature: 0,
             maxOutputTokens: 4_096
         ))
-        #expect(configuration.resolvedExtraBody["reasoning"] == .object(["effort": .string("none")]))
+        #expect(configuration.resolvedExtraBody["reasoning_effort"] == .string("none"))
+        #expect(configuration.resolvedExtraBody["reasoning"] == nil)
+        #expect(configuration.resolvedExtraBody["max_completion_tokens"] == .number(4_096))
+        #expect(configuration.resolvedExtraBody["max_tokens"] == nil)
     }
 
     @Test
@@ -466,7 +600,10 @@ struct LLMResilienceTests {
             temperature: 0,
             maxOutputTokens: 8_192
         ))
-        #expect(configuration.resolvedExtraBody["reasoning"] == .object(["effort": .string("none")]))
+        #expect(configuration.resolvedExtraBody["reasoning_effort"] == .string("none"))
+        #expect(configuration.resolvedExtraBody["reasoning"] == nil)
+        #expect(configuration.resolvedExtraBody["max_completion_tokens"] == .number(8_192))
+        #expect(configuration.resolvedExtraBody["max_tokens"] == nil)
     }
 
     @Test @MainActor

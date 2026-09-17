@@ -37,7 +37,7 @@ Hosted 已知额度耗尽也是显式状态。它在回答前阻止新请求；�
 
 Graph schema 位于 `Search/index.sqlite`，由 entity、alias、relation、relation evidence、entity-chunk link 和 graph source state 组成。结构化抽取只接受当前 6-chunk 批次的 ID 和受控 schema；source 变更/删除以事务替换并清理孤儿，保证旧 evidence 不可召回。
 
-检索 query 与回答约束分离：结构化 planner 固定使用 `gpt-5-nano` 与中等思考强度，输出 `search_query` 和 `answer_constraints`。单 session 或语言一致的选中 sessions 优先传入索引中的 raw transcript language，使 `search_query` 与 transcript 原文语言/脚本一致；混合语言、全库或缺少元数据时才保留问题语言。只有 `search_query` 进入 Hybrid/Graph/reranker；“3 句话”、语言和格式要求只进入回答 prompt。planner 不回答问题，也不复制 transcript 内容。planner 失败时软降级为原问题检索并记录诊断。实验验证关闭 fallback 以固定模型；生产请求仍遵循 resilience policy。
+检索 query 与回答约束分离：结构化 planner 输出 `standalone_query`、`search_query`、`answer_constraints` 和可选 `clarification_question`。默认 Agent 路径在 skill selection 之前执行一次 planning，legacy fallback 复用同一 plan。单 session 或语言一致的选中 sessions 优先传入索引中的 raw transcript language，使 `search_query` 与 transcript 原文语言/脚本一致；混合语言、全库或缺少元数据时才保留问题语言。只有 `search_query` 进入 Hybrid/Graph/reranker；“3 句话”、语言和格式要求只进入回答 prompt。多个合理指代对象时返回澄清，不检索。planner 失败时软降级为原问题检索并记录诊断。实验验证关闭 fallback 以固定模型；生产请求仍遵循 resilience policy。
 
 Prompt 回归矩阵固定模型、reasoning、temperature、token 上限和 session snapshot，仅切换 query planning 与 prompt 版本：B0（原问题直检索）、P1（JSON 分离）、P2（P1 + evidence-only/语言/引用约束）、P3（P2 + 先证据归纳再输出）。验收记录召回、空证据、精确句数、语言一致性、引用质量、延迟与 token/cost；不得用模型切换解释 prompt 结果。
 

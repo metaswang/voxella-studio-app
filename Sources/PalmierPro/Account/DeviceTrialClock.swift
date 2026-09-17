@@ -153,6 +153,7 @@ enum DeviceTrialClock {
     }
 
     static let provisionalKeychainAccount = "voxstudio.app-access.device-trial.provisional"
+    static let startHintKeychainAccount = "voxstudio.app-access.device-trial.start-hint"
 
     static func storeProvisional(
         startedAt: Date,
@@ -189,12 +190,49 @@ enum DeviceTrialClock {
         try delete()
     }
 
-    /// Earliest local start hint for register: provisional, else legacy plaintext PR1 clock.
-    static func earliestClientStartedAtHint() -> Date? {
-        if let provisional = try? loadProvisional() {
-            return provisional.startedAt
+    /// Persist the earliest known trial start (account-inferred or prior local clock).
+    /// Register uses this so a later signed JWT cannot reopen remaining time after sign-out.
+    static func rememberClientStartHint(
+        _ startedAt: Date,
+        at date: Date = .now,
+        read: () throws -> String? = {
+            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.startHintKeychainAccount)
+        },
+        write: (String) throws -> Void = {
+            try KeychainStore.saveThisDeviceOnly($0, account: DeviceTrialClock.startHintKeychainAccount)
         }
-        return legacyStartedAtHint()
+    ) {
+        let clamped = min(startedAt, date)
+        let earliest = loadStartHint(read: read).map { min($0, clamped) } ?? clamped
+        let record = StartHintRecord(startedAt: earliest)
+        guard let data = try? JSONEncoder().encode(record) else { return }
+        try? write(data.base64EncodedString())
+    }
+
+    static func loadStartHint(
+        read: () throws -> String? = {
+            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.startHintKeychainAccount)
+        }
+    ) -> Date? {
+        guard let value = try? read(),
+              let data = Data(base64Encoded: value),
+              let record = try? JSONDecoder().decode(StartHintRecord.self, from: data)
+        else { return nil }
+        return record.startedAt
+    }
+
+    private struct StartHintRecord: Codable, Equatable, Sendable {
+        let startedAt: Date
+    }
+
+    /// Earliest local start hint for register: persisted account start, provisional, else legacy.
+    static func earliestClientStartedAtHint() -> Date? {
+        let candidates = [
+            loadStartHint(),
+            (try? loadProvisional())?.startedAt,
+            legacyStartedAtHint(),
+        ]
+        return candidates.compactMap { $0 }.min()
     }
 
     static func activeSnapshot(
@@ -283,6 +321,22 @@ enum DeviceTrialLoginMerge {
     ) -> Bool {
         if hasSignedToken { return true }
         return provisional == nil
+    }
+
+    /// Do not replace an active trial with a later-ending device clock (reopens remaining time).
+    static func shouldReplaceEntitlement(
+        current: AppAccessSnapshot,
+        candidate: AppAccessSnapshot,
+        at date: Date = .now
+    ) -> Bool {
+        if current.license == .lifetime || current.hasActiveSubscription(at: date) { return false }
+        guard candidate.license == .trial, let candidateEnds = candidate.trialEndsAt else { return false }
+        guard current.license == .trial, let currentEnds = current.trialEndsAt else { return true }
+        return candidateEnds <= currentEnds
+    }
+
+    static func inferredStart(fromTrialEndsAt endsAt: Date, durationDays: Int = DeviceTrialClock.durationDays) -> Date {
+        endsAt.addingTimeInterval(-TimeInterval(durationDays) * 86_400)
     }
 
     /// After successful account merge, drop provisional when server absorbed it

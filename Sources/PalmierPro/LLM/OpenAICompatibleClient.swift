@@ -4,7 +4,7 @@ protocol LLMTextClient: Sendable {
     func complete(system: String, user: String) async throws -> String
 }
 
-struct OpenAICompatibleClient: LLMTextClient {
+struct OpenAICompatibleClient: LLMConfigurableTextClient {
     static let maximumConnectionsPerHost = 32
 
     let configuration: LLMRuntimeConfiguration
@@ -31,6 +31,18 @@ struct OpenAICompatibleClient: LLMTextClient {
     }
 
     func complete(system: String, user: String) async throws -> String {
+        try await complete(
+            system: system,
+            user: user,
+            options: .default
+        )
+    }
+
+    func complete(
+        system: String,
+        user: String,
+        options: LLMTextCompletionOptions
+    ) async throws -> String {
         var request = URLRequest(
             url: configuration.endpoint,
             timeoutInterval: policy.timeoutSeconds
@@ -40,7 +52,12 @@ struct OpenAICompatibleClient: LLMTextClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Client-Request-ID")
-        let extraBody = configuration.resolvedExtraBody
+        var extraBody = configuration.resolvedExtraBody
+        if let structuredOutput = options.structuredOutput {
+            // Request-scoped structured output must win over an old provider
+            // override so the selector cannot silently return free-form text.
+            extraBody["response_format"] = structuredOutput.chatCompletionsValue
+        }
         request.httpBody = try JSONEncoder().encode(
             ChatCompletionRequest(
                 model: configuration.modelName,
@@ -121,7 +138,7 @@ struct OpenAICompatibleClient: LLMTextClient {
     }
 }
 
-struct ResilientLLMTextClient: LLMTextClient {
+struct ResilientLLMTextClient: LLMConfigurableTextClient {
     typealias ClientFactory = @Sendable (LLMRuntimeConfiguration, LLMRequestPolicy) -> any LLMTextClient
     typealias Sleeper = @Sendable (Duration) async throws -> Void
 
@@ -154,6 +171,18 @@ struct ResilientLLMTextClient: LLMTextClient {
     }
 
     func complete(system: String, user: String) async throws -> String {
+        try await complete(
+            system: system,
+            user: user,
+            options: .default
+        )
+    }
+
+    func complete(
+        system: String,
+        user: String,
+        options: LLMTextCompletionOptions
+    ) async throws -> String {
         var failures: [LLMAttemptFailure] = []
         let attempts = route.policy.maximumAttemptsPerModel
 
@@ -163,7 +192,12 @@ struct ResilientLLMTextClient: LLMTextClient {
                 try Task.checkCancellation()
                 let startedAt = Date()
                 do {
-                    let result = try await entry.client.complete(system: system, user: user)
+                    let result = try await Self.complete(
+                        entry.client,
+                        system: system,
+                        user: user,
+                        options: options
+                    )
                     let elapsedMilliseconds = Self.elapsedMilliseconds(since: startedAt)
                     if !failures.isEmpty {
                         Log.llm.notice(
@@ -202,6 +236,18 @@ struct ResilientLLMTextClient: LLMTextClient {
             try await sleeper(.seconds(retryDelay))
         }
         throw LLMClientError.exhausted(failures)
+    }
+
+    private static func complete(
+        _ client: any LLMTextClient,
+        system: String,
+        user: String,
+        options: LLMTextCompletionOptions
+    ) async throws -> String {
+        if let configurable = client as? any LLMConfigurableTextClient {
+            return try await configurable.complete(system: system, user: user, options: options)
+        }
+        return try await client.complete(system: system, user: user)
     }
 
     static func isRetryable(_ error: Error) -> Bool {

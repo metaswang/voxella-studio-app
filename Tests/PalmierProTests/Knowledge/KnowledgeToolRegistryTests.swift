@@ -28,7 +28,7 @@ struct KnowledgeToolRegistryTests {
     func testToolLookup() {
         let searchTool = KnowledgeToolRegistry.tool(named: "knowledge.search")
         #expect(searchTool != nil)
-        #expect(searchTool?.name == "knowledge.search")
+        #expect(searchTool?.description.contains("graph recall") == true)
         #expect(!searchTool!.parameters.isEmpty)
         
         let unknownTool = KnowledgeToolRegistry.tool(named: "nonexistent")

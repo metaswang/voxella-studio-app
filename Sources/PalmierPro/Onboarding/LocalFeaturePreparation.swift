@@ -82,7 +82,10 @@ struct LocalPreparationStatus: Equatable {
     let remainingBytes: Int64
 
     init(ids: [LocalModelID], catalog: [LocalModelDescriptor], state: (LocalModelID) -> LocalModelDownloadState) {
-        let descriptors = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
+        let descriptors = Dictionary(
+            catalog.map { ($0.id, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         let unique = Set(ids)
         var total = 0.0
         var completed = 0.0

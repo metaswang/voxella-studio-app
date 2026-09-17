@@ -38,6 +38,8 @@ final class RecordingSessionController {
     private var didHideApp = false
     private var failedPermission: RecordingPermissionKind?
     private var captureBackend = "none"
+    private var pendingStopReason: RecordingStopReason?
+    private var activeConfiguration: RecordingCaptureConfiguration?
 
     private init() {
         statusItem.attach(self)
@@ -88,6 +90,7 @@ final class RecordingSessionController {
             let defaultDeviceID = RecordingAudioDeviceEnumerator.defaultInputUID()
             guard let self else { return }
             self.devices = devices
+            guard !self.phase.isActive else { return }
             self.configuration.microphone = RecordingAudioDeviceEnumerator.resolvedMicrophone(
                 self.configuration.microphone,
                 devices: devices,
@@ -157,11 +160,8 @@ final class RecordingSessionController {
         permissionSettingsURL = nil
         failedPermission = nil
         configuration.normalizeAudioSources()
-        configuration.microphone = RecordingAudioDeviceEnumerator.resolvedMicrophone(
-            configuration.microphone,
-            devices: devices,
-            defaultDeviceID: RecordingAudioDeviceEnumerator.defaultInputUID()
-        )
+        let frozenMicrophone = configuration.microphone
+        activeConfiguration = configuration
         let id = UUID()
         sessionID = id
         phase = .preparing
@@ -173,10 +173,30 @@ final class RecordingSessionController {
         liveWaveform.reset()
         pauseAccumulated = 0
         pauseStartedAt = nil
+        pendingStopReason = nil
 
         preparationTask = Task { [weak self] in
             guard let self else { return }
             do {
+                let devices = await RecordingAudioDeviceEnumerator.devices()
+                let defaultDeviceID = RecordingAudioDeviceEnumerator.defaultInputUID()
+                try Task.checkCancellation()
+                guard self.sessionID == id, self.phase == .preparing || self.phase == .picking else { return }
+                self.devices = devices
+                if case .device(let deviceID) = frozenMicrophone {
+                    if RecordingAudioDeviceEnumerator.captureDevice(uniqueID: deviceID) == nil {
+                        throw RecordingError.microphoneUnavailable
+                    }
+                    self.configuration.microphone = .device(id: deviceID)
+                } else if frozenMicrophone == .systemDefault {
+                    self.configuration.microphone = RecordingAudioDeviceEnumerator.resolvedMicrophone(
+                        .systemDefault,
+                        devices: devices,
+                        defaultDeviceID: defaultDeviceID
+                    )
+                }
+                self.activeConfiguration = self.configuration
+
                 try await self.preparePermissions()
                 try Task.checkCancellation()
                 guard self.sessionID == id, self.phase == .preparing || self.phase == .picking else { return }
@@ -189,8 +209,9 @@ final class RecordingSessionController {
                 try Task.checkCancellation()
                 guard self.sessionID == id, self.phase == .preparing else { return }
                 try AccountService.shared.requireNewContentAccess()
+                let configuration = self.activeConfiguration ?? self.configuration
                 let request = RecordingEngineRequest(
-                    configuration: self.configuration,
+                    configuration: configuration,
                     contentFilter: picked.filter,
                     sourceRect: picked.sourceRect,
                     outputURL: outputURL,
@@ -209,10 +230,10 @@ final class RecordingSessionController {
                         }
                     }
                 )
-                self.captureBackend = Self.backendName(for: self.configuration)
+                self.captureBackend = Self.backendName(for: self.activeConfiguration ?? self.configuration)
                 try await self.engine.start(request)
                 guard self.sessionID == id, self.phase == .preparing else {
-                    await self.engine.cancel()
+                    await self.engine.cancel(expectedSessionID: id)
                     return
                 }
 
@@ -290,38 +311,47 @@ final class RecordingSessionController {
         updateControls()
     }
 
-    func prepareForTermination() async {
+    func prepareForTermination() async -> RecordingTerminationOutcome {
         switch phase {
         case .idle:
-            return
+            return .idle
         case .preparing, .picking:
-            logStop(reason: "app terminating")
+            pendingStopReason = .termination
             discard()
         case .recording, .paused, .finishing:
-            logStop(reason: "app terminating")
+            pendingStopReason = .termination
             if phase != .finishing {
-                stop()
+                finish(discard: false, mode: .salvage)
             }
         }
         let deadline = Date().addingTimeInterval(RecordingLifecycleTimeout.termination)
         while phase != .idle, Date() < deadline {
             try? await Task.sleep(for: .milliseconds(50))
         }
-        if phase != .idle {
-            Log.recording.error(
-                "recording termination wait timed out phase=\(String(describing: phase)) session=\(sessionID.uuidString)"
-            )
+        if phase == .idle {
+            return engine.hasDurableSalvage ? .salvaged : .idle
         }
+        if engine.hasDurableSalvage {
+            Log.recording.error(
+                "recording termination wait timed out with salvage session=\(sessionID.uuidString)"
+            )
+            return .salvaged
+        }
+        Log.recording.error(
+            "recording termination wait timed out phase=\(String(describing: phase)) session=\(sessionID.uuidString)"
+        )
+        return .unsafe("Recording is still saving. Wait a moment and quit again.")
     }
 
-    private func finish(discard: Bool) {
+    private func finish(discard: Bool, mode: RecordingFinishMode? = nil) {
         guard phase.isCapturing || phase == .preparing || phase == .picking else { return }
         preparationTask?.cancel()
         let wasPreparing = phase == .preparing || phase == .picking
         let wasPicking = phase == .picking
         let id = sessionID
-        let reason = discard ? "user discard" : "user stop"
-        logStop(reason: reason)
+        let reason = pendingStopReason ?? (discard ? .userDiscard : .userStop)
+        pendingStopReason = nil
+        logStop(reason: reason.logLabel)
         phase = .finishing
         updateControls()
         stopTimer()
@@ -329,28 +359,43 @@ final class RecordingSessionController {
             DisplayRegionOverlayController.shared.cancelSelection()
             RecordingContentPicker.shared.cancelPending()
         }
+        let finishMode = mode ?? (discard ? .discard : .export)
 
         Task { [weak self] in
             guard let self else { return }
             do {
                 if discard || wasPreparing {
-                    await self.engine.cancel()
+                    await self.engine.cancel(expectedSessionID: id)
                     self.restoreApp()
                     guard self.sessionID == id else { return }
                     self.resetToIdle()
                     return
                 }
-                let stopResult = try await self.engine.stop()
+                let stopResult = try await self.engine.stop(
+                    expectedSessionID: id,
+                    mode: finishMode,
+                    reason: reason
+                )
                 self.restoreApp()
                 guard self.sessionID == id else { return }
                 self.lastDiagnostics = stopResult.diagnostics
-                self.liveAudioWarning = nil
+                self.liveAudioWarning = stopResult.warnings.first
                 if stopResult.diagnostics.warningMessage != nil {
                     Log.recording.warning(
                         "recording completed with low audio level microphone=\(String(describing: stopResult.diagnostics.microphone)) systemAudio=\(String(describing: stopResult.diagnostics.systemAudio))"
                     )
                 }
-                WorkbenchStore.shared.stageRecordedMedia(stopResult.url)
+                Log.recording.notice(
+                    "recording stop summary reason=\(reason.logLabel) outcome=\(stopResult.outcome.rawValue) session=\(id.uuidString) segments=\(stopResult.segmentURLs.count) journal=\(stopResult.journalPersisted) droppedMic=\(stopResult.diagnostics.microphoneDropped) droppedSystem=\(stopResult.diagnostics.systemAudioDropped) failedAppends=\(stopResult.diagnostics.failedAppends) restarts=\(stopResult.diagnostics.restartCount)"
+                )
+                let stagedURLs: [URL]
+                switch stopResult.outcome {
+                case .complete, .partial:
+                    stagedURLs = [stopResult.url]
+                case .rawSegments, .recoveryRequired:
+                    stagedURLs = stopResult.segmentURLs.isEmpty ? [stopResult.url] : stopResult.segmentURLs
+                }
+                WorkbenchStore.shared.stageRecordedMedia(urls: stagedURLs, sessionID: stopResult.sessionID)
                 self.resetToIdle()
             } catch let error as RecordingError where error == .cancelled {
                 self.restoreApp()
@@ -359,7 +404,7 @@ final class RecordingSessionController {
             } catch {
                 self.restoreApp()
                 guard self.sessionID == id else { return }
-                self.logStop(reason: "finish failed", error: error)
+                self.logStop(reason: reason.logLabel, error: error)
                 Log.recording.error(
                     "recording finish failed error=\(Log.detail(error))",
                     telemetry: "Recording finish failed"
@@ -591,6 +636,8 @@ final class RecordingSessionController {
         pauseStartedAt = nil
         isMicrophoneMuted = false
         captureBackend = "none"
+        activeConfiguration = nil
+        pendingStopReason = nil
         liveWaveform.reset()
         updateControls()
     }
@@ -606,14 +653,37 @@ final class RecordingSessionController {
             liveAudioWarning = nil
         case .failed(let error, let reason):
             guard phase.isCapturing else { return }
-            logStop(reason: reason, error: error)
+            pendingStopReason = stopReason(for: error, fallback: reason)
+            logStop(reason: pendingStopReason?.logLabel ?? reason, error: error)
             errorMessage = error.localizedDescription
             finish(discard: false)
         case .userStopped:
             guard phase.isCapturing else { return }
-            logStop(reason: "system userStopped")
+            pendingStopReason = .systemUserStopped
             errorMessage = "Recording was stopped from the system Screen Recording control."
             finish(discard: false)
+        case .captureTargetLost(let message):
+            guard phase.isCapturing else { return }
+            pendingStopReason = .captureTargetLost
+            errorMessage = message
+            liveAudioWarning = message
+        }
+    }
+
+    private func stopReason(for error: RecordingError, fallback: String) -> RecordingStopReason {
+        switch error {
+        case .diskSpaceLow:
+            .diskSpace
+        case .microphoneUnavailable:
+            .microphoneLost
+        case .captureTargetUnavailable:
+            .captureTargetLost
+        case .writerFailed(let message):
+            .writerFailed(message)
+        case .captureInterrupted:
+            fallback.contains("microphone") ? .microphoneLost : .captureInterrupted(fallback)
+        default:
+            .captureInterrupted(fallback)
         }
     }
 
@@ -638,10 +708,9 @@ final class RecordingSessionController {
         let recovered = RecordingSessionManifest.recoverInterruptedSessions(
             in: WorkbenchStore.recordingMediaDirectory
         )
-        guard let url = recovered.first, phase == .idle else { return }
-        RecordingSessionManifest.remove(for: url)
+        guard phase == .idle, let session = recovered.first else { return }
         liveAudioWarning = "A previous recording was recovered after an interruption."
-        WorkbenchStore.shared.stageRecordedMedia(url)
+        WorkbenchStore.shared.stageRecordedMedia(urls: session.urls, sessionID: UUID(uuidString: session.sessionID))
     }
 
     private func logStop(reason: String, error: Error? = nil, extra: String? = nil) {

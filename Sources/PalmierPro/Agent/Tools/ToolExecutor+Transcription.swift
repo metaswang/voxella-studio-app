@@ -428,7 +428,10 @@ extension ToolExecutor {
         registry: [SpeakerRegistryEntry],
         assignments: [String: [String: Int]]
     ) async -> [String: [String: String]] {
-        let namesById = Dictionary(uniqueKeysWithValues: registry.map { ($0.id, $0.name) })
+        let namesById = Dictionary(
+            registry.map { ($0.id, $0.name) },
+            uniquingKeysWith: { current, _ in current }
+        )
         // The identify run is the source of truth; per-file partial coverage is fine because
         // registry names never collide with raw provider labels.
         if !assignments.isEmpty {

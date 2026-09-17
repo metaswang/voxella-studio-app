@@ -13,7 +13,7 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
     private let outputQueue: DispatchQueue
     private let captureQueue = DispatchQueue(label: "com.voxella.studio.recording.microphone")
     private let audioEngine = AVAudioEngine()
-    private var onSample: ((CMSampleBuffer) -> Void)?
+    private var onSample: ((MicrophoneCapturedSample) -> Void)?
     private var onEvent: ((MicrophoneCaptureEvent) -> Void)?
     private var didInstallEngineTap = false
     private var didLogTapFailure = false
@@ -22,8 +22,8 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
     private var restartTimestamps: [TimeInterval] = []
     private var stableSampleCount = 0
     private let pendingTapLock = OSAllocatedUnfairLock(initialState: 0)
-    private var droppedTapBuffers = 0
-    private var didNotifyTapBackpressure = false
+    private let droppedTapBuffers = OSAllocatedUnfairLock(initialState: 0)
+    private let dropLogScheduled = OSAllocatedUnfairLock(initialState: false)
     private var observers: [NSObjectProtocol] = []
     private var captureSession: AVCaptureSession?
     private var sessionOutput: AVCaptureAudioDataOutput?
@@ -32,7 +32,8 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
     private var boundDeviceUID: String?
     private var usesCaptureSession = false
     private var isRestarting = false
-    private var captureToken = 0
+    private var captureToken: UInt64 = 0
+    private var sessionID = UUID()
 
     private let maxPendingTapBuffers = 24
     private let maxConsecutiveRestartFailures = 5
@@ -44,20 +45,35 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
     }
 
     func start(
+        sessionID: UUID,
+        generation: UInt64,
         deviceID: String?,
-        onSample: @escaping (CMSampleBuffer) -> Void,
-        onEvent: @escaping (MicrophoneCaptureEvent) -> Void
-    ) throws {
-        stop()
-        isStoppingCapture = false
-        captureToken += 1
-        self.onSample = onSample
-        self.onEvent = onEvent
-        boundDeviceUID = deviceID
-        if let deviceID, !deviceID.isEmpty {
-            try startCaptureSession(deviceID: deviceID)
-        } else {
-            try startAudioEngine()
+        onSample: @escaping (MicrophoneCapturedSample) -> Void,
+        onEvent: @escaping (MicrophoneCaptureEvent) -> Void,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        captureQueue.async { [weak self] in
+            guard let self else {
+                completion(.failure(RecordingError.captureFailed("The selected microphone is unavailable.")))
+                return
+            }
+            self.stopLocked()
+            self.isStoppingCapture = false
+            self.sessionID = sessionID
+            self.captureToken = generation
+            self.onSample = onSample
+            self.onEvent = onEvent
+            self.boundDeviceUID = deviceID
+            do {
+                if let deviceID, !deviceID.isEmpty {
+                    try self.startCaptureSession(deviceID: deviceID)
+                } else {
+                    try self.startAudioEngine()
+                }
+                completion(.success(()))
+            } catch {
+                completion(.failure(error))
+            }
         }
     }
 
@@ -69,8 +85,18 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
 
     func stop() {
         isStoppingCapture = true
-        captureQueue.sync { [weak self] in
+        captureQueue.async { [weak self] in
             self?.stopLocked()
+        }
+    }
+
+    func fence(generation: UInt64) {
+        isStoppingCapture = true
+        captureQueue.async { [weak self] in
+            guard let self else { return }
+            self.captureToken = generation
+            self.onSample = nil
+            self.onEvent = nil
         }
     }
 
@@ -97,14 +123,16 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
         restartTimestamps = []
         stableSampleCount = 0
         pendingTapLock.withLock { $0 = 0 }
-        droppedTapBuffers = 0
-        didNotifyTapBackpressure = false
+        droppedTapBuffers.withLock { $0 = 0 }
+        dropLogScheduled.withLock { $0 = false }
         boundDeviceUID = nil
         isRestarting = false
         captureToken += 1
+        isStoppingCapture = true
     }
 
     private func startAudioEngine() throws {
+        isStoppingCapture = false
         usesCaptureSession = false
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
@@ -137,6 +165,8 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
 
     private func installEngineTap(on input: AVAudioInputNode) throws {
         removeEngineTapIfNeeded()
+        let generation = captureToken
+        let sessionID = self.sessionID
         input.installTap(onBus: 0, bufferSize: 1_024, format: nil) { [weak self] buffer, when in
             guard let self, !self.isStoppingCapture else { return }
             let shouldDrop = self.pendingTapLock.withLock { count -> Bool in
@@ -147,8 +177,8 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
                 return false
             }
             if shouldDrop {
-                self.captureQueue.async { self.droppedTapBuffers += 1 }
-                self.logTapBackpressureIfNeeded()
+                self.droppedTapBuffers.withLock { $0 += 1 }
+                self.scheduleDropLogIfNeeded()
                 return
             }
             guard let copied = Self.copyPCMBuffer(buffer) else {
@@ -162,17 +192,31 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
             } else {
                 presentationTime = CMClockGetTime(CMClockGetHostTimeClock())
             }
+            let handler = self.onSample
             self.outputQueue.async { [weak self] in
                 guard let self else { return }
                 self.pendingTapLock.withLock { $0 = max(0, $0 - 1) }
-                self.handleEngineBuffer(copied, presentationTime: presentationTime)
+                guard generation == self.captureToken, !self.isStoppingCapture else { return }
+                self.handleEngineBuffer(
+                    copied,
+                    presentationTime: presentationTime,
+                    sessionID: sessionID,
+                    generation: generation,
+                    handler: handler
+                )
             }
         }
         didInstallEngineTap = true
     }
 
-    private func handleEngineBuffer(_ buffer: AVAudioPCMBuffer, presentationTime: CMTime) {
-        guard !isStoppingCapture else { return }
+    private func handleEngineBuffer(
+        _ buffer: AVAudioPCMBuffer,
+        presentationTime: CMTime,
+        sessionID: UUID,
+        generation: UInt64,
+        handler: ((MicrophoneCapturedSample) -> Void)?
+    ) {
+        guard generation == captureToken, !isStoppingCapture else { return }
         guard let sample = RecordingAudioTranscoder.makeSampleBuffer(
             from: buffer,
             presentationTime: presentationTime
@@ -180,8 +224,15 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
             logTapFailure("sample buffer")
             return
         }
-        noteStableAudio()
-        onSample?(sample)
+        noteStableAudio(generation: generation)
+        handler?(
+            MicrophoneCapturedSample(
+                sessionID: sessionID,
+                backendGeneration: generation,
+                sampleBuffer: sample,
+                capturePTS: presentationTime
+            )
+        )
     }
 
     private func observeEngineConfigurationChanges() {
@@ -198,6 +249,7 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
     }
 
     private func startCaptureSession(deviceID: String) throws {
+        isStoppingCapture = false
         usesCaptureSession = true
         boundDeviceUID = deviceID
         try rebuildCaptureSessionLocked(deviceID: deviceID)
@@ -218,7 +270,7 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
         captureSession = nil
 
         guard let device = RecordingAudioDeviceEnumerator.captureDevice(uniqueID: deviceID) else {
-            throw RecordingError.captureFailed("The selected microphone is unavailable.")
+            throw RecordingError.microphoneUnavailable
         }
         let session = AVCaptureSession()
         let input: AVCaptureDeviceInput
@@ -228,18 +280,30 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
             throw RecordingError.captureFailed("Could not open the selected microphone.")
         }
         guard session.canAddInput(input) else {
-            throw RecordingError.captureFailed("The selected microphone is unavailable.")
+            throw RecordingError.microphoneUnavailable
         }
         session.addInput(input)
 
         let output = AVCaptureAudioDataOutput()
+        let generation = captureToken
+        let sessionID = self.sessionID
+        let handler = onSample
         let sink = CaptureSessionSink { [weak self] sample in
-            self?.noteStableAudio()
-            self?.onSample?(sample)
+            guard let self, generation == self.captureToken, !self.isStoppingCapture else { return }
+            self.noteStableAudio(generation: generation)
+            let pts = CMSampleBufferGetPresentationTimeStamp(sample)
+            handler?(
+                MicrophoneCapturedSample(
+                    sessionID: sessionID,
+                    backendGeneration: generation,
+                    sampleBuffer: sample,
+                    capturePTS: pts.isNumeric ? pts : CMClockGetTime(CMClockGetHostTimeClock())
+                )
+            )
         }
         output.setSampleBufferDelegate(sink, queue: outputQueue)
         guard session.canAddOutput(output) else {
-            throw RecordingError.captureFailed("The selected microphone is unavailable.")
+            throw RecordingError.microphoneUnavailable
         }
         session.addOutput(output)
 
@@ -352,12 +416,12 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
         restartCaptureWithBackoff(attempt: 0, reason: reason, token: captureToken)
     }
 
-    private func restartCaptureWithBackoff(attempt: Int, reason: String, token: Int) {
+    private func restartCaptureWithBackoff(attempt: Int, reason: String, token: UInt64) {
         guard !isStoppingCapture, onSample != nil, token == captureToken else { return }
         do {
             if usesCaptureSession {
                 guard let deviceID = boundDeviceUID else {
-                    throw RecordingError.captureFailed("The selected microphone is unavailable.")
+                    throw RecordingError.microphoneUnavailable
                 }
                 try rebuildCaptureSessionLocked(deviceID: deviceID)
             } else {
@@ -367,7 +431,7 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
             stableSampleCount = 0
             isRestarting = false
             Log.recording.notice("recording microphone engine restarted after \(reason)")
-            emit(.recovered)
+            emit(.recovering("Waiting for microphone audio…"))
         } catch {
             if attempt >= 6 {
                 consecutiveRestartFailures += 1
@@ -391,7 +455,7 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
     private func restartAudioEngineLocked() throws {
         let format = audioEngine.inputNode.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
-            throw RecordingError.captureFailed("The selected microphone is unavailable.")
+            throw RecordingError.microphoneUnavailable
         }
         try installEngineTap(on: audioEngine.inputNode)
         if !audioEngine.isRunning {
@@ -413,13 +477,14 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
         restartTimestamps.append(ProcessInfo.processInfo.systemUptime)
     }
 
-    private func noteStableAudio() {
+    private func noteStableAudio(generation: UInt64) {
         captureQueue.async { [weak self] in
-            guard let self else { return }
+            guard let self, generation == self.captureToken, !self.isStoppingCapture else { return }
             self.stableSampleCount += 1
-            if self.stableSampleCount == 50 {
+            if self.stableSampleCount == RecordingCaptureHealth.recoveredSampleCount {
                 self.consecutiveRestartFailures = 0
                 self.restartTimestamps.removeAll()
+                self.emit(.recovered)
             }
         }
     }
@@ -440,12 +505,19 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
         )
     }
 
-    private func logTapBackpressureIfNeeded() {
-        captureQueue.async { [weak self] in
-            guard let self, !self.didNotifyTapBackpressure else { return }
-            self.didNotifyTapBackpressure = true
+    private func scheduleDropLogIfNeeded() {
+        let shouldLog = dropLogScheduled.withLock { scheduled -> Bool in
+            if scheduled { return false }
+            scheduled = true
+            return true
+        }
+        guard shouldLog else { return }
+        captureQueue.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else { return }
+            self.dropLogScheduled.withLock { $0 = false }
+            let count = self.droppedTapBuffers.withLock { $0 }
             Log.recording.warning(
-                "recording microphone tap dropped buffers count=\(self.droppedTapBuffers)",
+                "recording microphone tap dropped buffers count=\(count)",
                 telemetry: "Recording microphone tap backpressure"
             )
         }
@@ -463,27 +535,15 @@ final class MicrophoneCaptureEngine: @unchecked Sendable {
             return nil
         }
         copy.frameLength = buffer.frameLength
-        let frames = Int(buffer.frameLength)
-        let channels = Int(buffer.format.channelCount)
-        if let source = buffer.floatChannelData, let destination = copy.floatChannelData {
-            for channel in 0..<channels {
-                destination[channel].update(from: source[channel], count: frames)
-            }
-            return copy
+        let source = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+        let destination = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+        for index in 0..<min(source.count, destination.count) {
+            let bytes = Int(source[index].mDataByteSize)
+            destination[index].mDataByteSize = source[index].mDataByteSize
+            guard bytes > 0, let srcData = source[index].mData, let dstData = destination[index].mData else { continue }
+            memcpy(dstData, srcData, bytes)
         }
-        if let source = buffer.int16ChannelData, let destination = copy.int16ChannelData {
-            for channel in 0..<channels {
-                destination[channel].update(from: source[channel], count: frames)
-            }
-            return copy
-        }
-        if let source = buffer.int32ChannelData, let destination = copy.int32ChannelData {
-            for channel in 0..<channels {
-                destination[channel].update(from: source[channel], count: frames)
-            }
-            return copy
-        }
-        return nil
+        return copy
     }
 }
 

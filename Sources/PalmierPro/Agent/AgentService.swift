@@ -102,7 +102,7 @@ final class AgentService {
     var availableModels: [AgentModel] {
         switch AITransportPolicy.current {
         case .byok:
-            AgentModel.anthropicModels + (openAIModels.isEmpty ? AgentModel.allCases.filter { $0.provider == .openAI } : openAIModels)
+            AgentModel.chatModels(for: .anthropic) + (openAIModels.isEmpty ? AgentModel.chatModels(for: .openAI) : openAIModels)
         case .hosted, .unavailable:
             AgentModel.allCases
         }

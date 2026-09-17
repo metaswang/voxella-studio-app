@@ -335,9 +335,10 @@ actor VoxellaAuthService {
         pendingPKCE = nil
         let components = URLComponents(url: callback, resolvingAgainstBaseURL: false)
         let items = Dictionary(
-            uniqueKeysWithValues: (components?.queryItems ?? []).compactMap { item in
+            (components?.queryItems ?? []).compactMap { item in
                 item.value.map { (item.name, $0) }
-            }
+            },
+            uniquingKeysWith: { _, new in new }
         )
         guard items["access_token"] == nil, items["refresh_token"] == nil else {
             throw VoxellaAuthError.invalidCallback

@@ -426,7 +426,10 @@ extension EditorViewModel {
             }
             for trackIndex in affectedTrackIndexes(for: target, shiftedBy: visualTarget) {
                 let clips = timeline.tracks[trackIndex].clips
-                let startFramesByClipId = Dictionary(uniqueKeysWithValues: clips.map { ($0.id, $0.startFrame) })
+                let startFramesByClipId = Dictionary(
+                    clips.map { ($0.id, $0.startFrame) },
+                    uniquingKeysWith: { current, _ in current }
+                )
                 let shifts = RippleEngine.computeRipplePush(clips: clips, insertFrame: atFrame, pushAmount: pushAmount)
                 for shift in shifts {
                     guard let originalStartFrame = startFramesByClipId[shift.clipId] else { continue }
@@ -605,7 +608,10 @@ extension EditorViewModel {
         guard !shifts.isEmpty, timeline.tracks.indices.contains(trackIndex) else { return nil }
         let track = timeline.tracks[trackIndex]
         let label = timelineTrackDisplayLabel(at: trackIndex)
-        let shiftMap = Dictionary(uniqueKeysWithValues: shifts.map { ($0.clipId, $0.newStartFrame) })
+        let shiftMap = Dictionary(
+            shifts.map { ($0.clipId, $0.newStartFrame) },
+            uniquingKeysWith: { current, _ in current }
+        )
         var intervals: [FrameRange] = []
         for clip in track.clips {
             let start = shiftMap[clip.id] ?? clip.startFrame

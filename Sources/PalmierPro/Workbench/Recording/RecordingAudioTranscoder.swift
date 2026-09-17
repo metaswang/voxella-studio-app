@@ -29,28 +29,73 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
     }
 
     func transcode(_ sampleBuffer: CMSampleBuffer, presentationTime: CMTime = .zero) -> CMSampleBuffer? {
-        guard let input = Self.pcmBuffer(from: sampleBuffer),
-              let converted = resample(input) else {
+        guard let input = Self.pcmBuffer(from: sampleBuffer) else {
             return nil
         }
-        return Self.makeSampleBuffer(from: converted, presentationTime: presentationTime)
+        let drained = drainIfFormatChanged(input.format)
+        let converted = resample(input)
+        if converted == nil, drained.isEmpty {
+            return nil
+        }
+        if let converted {
+            return Self.makeSampleBuffer(from: converted, presentationTime: presentationTime)
+        }
+        if let first = drained.first {
+            return Self.makeSampleBuffer(from: first, presentationTime: presentationTime)
+        }
+        return nil
+    }
+
+    func transcodeAll(_ sampleBuffer: CMSampleBuffer, presentationTime: CMTime = .zero) -> [CMSampleBuffer] {
+        guard let input = Self.pcmBuffer(from: sampleBuffer) else { return [] }
+        var outputs: [AVAudioPCMBuffer] = drainIfFormatChanged(input.format)
+        if let converted = resample(input) {
+            outputs.append(converted)
+        }
+        var pts = presentationTime
+        return outputs.compactMap { buffer in
+            let sample = Self.makeSampleBuffer(from: buffer, presentationTime: pts)
+            let duration = CMTime(
+                value: CMTimeValue(buffer.frameLength),
+                timescale: CMTimeScale(max(1, buffer.format.sampleRate.rounded()))
+            )
+            pts = CMTimeAdd(pts, duration)
+            return sample
+        }
     }
 
     func flush() -> AVAudioPCMBuffer? {
-        guard let converter, converterInputFormat != nil else { return nil }
-        let capacity = AVAudioFrameCount(8_192)
-        guard let output = AVAudioPCMBuffer(pcmFormat: Self.canonicalFormat, frameCapacity: capacity) else {
-            return nil
+        flushAll().first
+    }
+
+    func flushAll() -> [AVAudioPCMBuffer] {
+        guard converter != nil else { return [] }
+        var drained: [AVAudioPCMBuffer] = []
+        for _ in 0..<8 {
+            guard let converter else { break }
+            let capacity = AVAudioFrameCount(8_192)
+            guard let output = AVAudioPCMBuffer(pcmFormat: Self.canonicalFormat, frameCapacity: capacity) else {
+                break
+            }
+            var conversionError: NSError?
+            let status = converter.convert(to: output, error: &conversionError) { _, status in
+                status.pointee = .endOfStream
+                return nil
+            }
+            if conversionError != nil || status == .error {
+                break
+            }
+            if output.frameLength > 0 {
+                drained.append(output)
+            }
+            if status == .endOfStream || output.frameLength == 0 {
+                break
+            }
         }
-        var conversionError: NSError?
-        let status = converter.convert(to: output, error: &conversionError) { _, status in
-            status.pointee = .endOfStream
-            return nil
-        }
-        guard conversionError == nil, status != .error, output.frameLength > 0 else {
-            return nil
-        }
-        return output
+        converter?.reset()
+        converter = nil
+        converterInputFormat = nil
+        return drained
     }
 
     func resample(_ input: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
@@ -65,7 +110,13 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
             )
         }
         if Self.matchesCanonical(inFormat) {
+            if converter != nil {
+                return drainIfFormatChanged(inFormat).last ?? input
+            }
             return input
+        }
+        if converter != nil, converterInputFormat.map({ !Self.isSameFormat($0, inFormat) }) == true {
+            _ = drainIfFormatChanged(inFormat)
         }
         if converter == nil || converterInputFormat.map({ !Self.isSameFormat($0, inFormat) }) == true {
             converter = AVAudioConverter(from: inFormat, to: Self.canonicalFormat)
@@ -97,6 +148,14 @@ final class RecordingAudioTranscoder: @unchecked Sendable {
             return nil
         }
         return output
+    }
+
+    private func drainIfFormatChanged(_ incoming: AVAudioFormat) -> [AVAudioPCMBuffer] {
+        guard converter != nil else { return [] }
+        if let current = converterInputFormat, Self.isSameFormat(current, incoming) {
+            return []
+        }
+        return flushAll()
     }
 
     private static func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {

@@ -318,6 +318,7 @@ final class AccountService {
         )
         reapplyLocalEntitlementOverlays()
         restoreSession()
+        Task { await self.alignDeviceTrialClockWithServer() }
         didBecomeActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
@@ -389,16 +390,21 @@ final class AccountService {
                 guard let token = try await VoxellaAuthService.shared.validAccessToken() else {
                     guard self.isCurrentSession(generation) else { return }
                     await self.rejectSession()
+                    await self.alignDeviceTrialClockWithServer()
                     return
                 }
                 guard self.isCurrentSession(generation) else { return }
                 _ = await self.applyAuthenticatedSession(token: token, generation: generation, allowOfflineRestore: true)
             } catch {
                 guard self.isCurrentSession(generation) else { return }
-                if AppAccessRefreshSchedule.permitsOfflineFallback(error), await self.restoreOfflineAccess(generation: generation) { return }
+                if AppAccessRefreshSchedule.permitsOfflineFallback(error), await self.restoreOfflineAccess(generation: generation) {
+                    await self.alignDeviceTrialClockWithServer()
+                    return
+                }
                 await self.rejectSession()
                 self.lastError = error.localizedDescription
             }
+            await self.alignDeviceTrialClockWithServer()
         }
     }
 
@@ -474,6 +480,7 @@ final class AccountService {
             if let reportedAccess = plansResponse?.appAccess?.snapshot {
                 appAccess = reportedAccess
                 entitlementSchedule.succeeded(at: .now)
+                rememberTrialStartHint(from: reportedAccess)
             }
             // Free / unsigned-capable path: fill from device trial when server has no entitlement (PR1).
             reapplyLocalEntitlementOverlays()
@@ -840,6 +847,7 @@ final class AccountService {
             let serverTrialEndsAt = access.snapshot.trialEndsAt
             appAccess = access.snapshot
             entitlementSchedule.succeeded(at: .now)
+            rememberTrialStartHint(from: access.snapshot)
             try? await persistAppAccess()
             if DeviceTrialLoginMerge.shouldClearProvisional(
                 serverTrialEndsAt: serverTrialEndsAt,
@@ -847,8 +855,8 @@ final class AccountService {
             ) {
                 try? DeviceTrialClock.clearProvisional()
             }
-            // After merge: if device local trial ends_at is later than server trial_ends_at,
-            // re-issue a truncated device token so sign-out still shows correct remaining time.
+            // After merge: if the device token grants more remaining time than the account
+            // trial, re-register with the account start so Keychain/sign-out stay aligned.
             if let deviceRecord = try? DeviceTrialClock.load(),
                let serverEndsAt = serverTrialEndsAt,
                deviceRecord.endsAt > serverEndsAt {
@@ -858,19 +866,20 @@ final class AccountService {
                     reapplyLocalEntitlementOverlays()
                     return
                 }
-                // Server expired: delete device token.
                 if serverEndsAt <= .now {
                     try? KeychainStore.deleteThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
                     reapplyLocalEntitlementOverlays()
                     return
                 }
-                // Re-verify to get truncated token from server.
                 do {
-                    let response = try await api.verifyDeviceTrial(fingerprint: fingerprint)
+                    let accountStart = DeviceTrialLoginMerge.inferredStart(fromTrialEndsAt: serverEndsAt)
+                    let response = try await api.registerDeviceTrial(
+                        fingerprint: fingerprint,
+                        clientStartedAt: min(accountStart, deviceRecord.startedAt)
+                    )
                     try applyDeviceTrialResponse(response, fingerprint: fingerprint)
                 } catch {
-                    // Fallback: delete stale device token on verification failure.
-                    try? KeychainStore.deleteThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+                    Log.account.warning("Device trial could not be aligned to account trial end")
                 }
             }
             reapplyLocalEntitlementOverlays()
@@ -881,8 +890,23 @@ final class AccountService {
 
     private func ensureDeviceTrialStarted() async throws {
         let fingerprint = try DeviceFingerprint.current()
+        let clientStartedAt = earliestDeviceTrialStartHint()
         if let record = try? DeviceTrialClock.load(fingerprint: fingerprint) {
             applyDeviceTrialRecord(record)
+            if let clientStartedAt, record.startedAt > clientStartedAt.addingTimeInterval(1) {
+                do {
+                    try await syncDeviceTrial(
+                        fingerprint: fingerprint,
+                        preferVerify: false,
+                        clientStartedAt: clientStartedAt
+                    )
+                } catch AppAccessError.trialExpired {
+                    throw AppAccessError.trialExpired
+                } catch {
+                    Log.account.warning("Device trial could not inherit earlier account start")
+                }
+                return
+            }
             switch record.evaluation() {
             case .allowed:
                 if record.refreshIsDue(at: .now, lastAttempt: deviceTrialVerifyAttempt) {
@@ -922,7 +946,6 @@ final class AccountService {
         }
 
         // Prefer upgrading an existing provisional clock, else register from earliest hint.
-        let clientStartedAt = DeviceTrialClock.earliestClientStartedAtHint()
         if let provisional = try? DeviceTrialClock.loadProvisional(fingerprint: fingerprint) {
             switch provisional.evaluation() {
             case .expired:
@@ -935,7 +958,7 @@ final class AccountService {
                     try await syncDeviceTrial(
                         fingerprint: fingerprint,
                         preferVerify: false,
-                        clientStartedAt: provisional.startedAt
+                        clientStartedAt: ([provisional.startedAt] + [clientStartedAt].compactMap { $0 }).min()
                     )
                     return
                 } catch AppAccessError.trialExpired {
@@ -969,11 +992,60 @@ final class AccountService {
         }
     }
 
-    private func applyProvisionalTrialRecord(_ record: DeviceTrialClock.ProvisionalRecord) {
-        accessRequestID = UUID()
-        if let snapshot = record.snapshot() {
-            appAccess = snapshot
+    /// Launch / restore: re-register so a server LEAST-backdated fingerprint replaces a later local JWT.
+    /// Mid-trial 24h verify skip would otherwise keep showing today+14d after the first device register.
+    private func alignDeviceTrialClockWithServer() async {
+        guard Self.paidAccessEnabled else { return }
+        let fingerprint: String
+        do {
+            fingerprint = try DeviceFingerprint.current()
+        } catch {
+            return
         }
+        let hasLocalClock = (try? DeviceTrialClock.load(fingerprint: fingerprint)) != nil
+            || (try? DeviceTrialClock.loadProvisional(fingerprint: fingerprint)) != nil
+            || DeviceTrialClock.loadStartHint() != nil
+            || ((try? KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount))?.isEmpty == false)
+        guard hasLocalClock else { return }
+        do {
+            try await syncDeviceTrial(
+                fingerprint: fingerprint,
+                preferVerify: false,
+                clientStartedAt: earliestDeviceTrialStartHint()
+            )
+        } catch AppAccessError.trialExpired {
+            lastError = AppAccessError.trialExpired.localizedDescription
+        } catch {
+            Log.account.warning("Device trial launch align unavailable")
+        }
+    }
+
+    private func rememberTrialStartHint(from snapshot: AppAccessSnapshot) {
+        guard snapshot.license == .trial, let ends = snapshot.trialEndsAt else { return }
+        DeviceTrialClock.rememberClientStartHint(DeviceTrialLoginMerge.inferredStart(fromTrialEndsAt: ends))
+    }
+
+    private func earliestDeviceTrialStartHint() -> Date? {
+        var candidates: [Date] = []
+        if let local = DeviceTrialClock.earliestClientStartedAtHint() {
+            candidates.append(local)
+        }
+        if let signed = try? DeviceTrialClock.load() {
+            candidates.append(signed.startedAt)
+        }
+        if appAccess.license == .trial, let ends = appAccess.trialEndsAt {
+            candidates.append(DeviceTrialLoginMerge.inferredStart(fromTrialEndsAt: ends))
+        }
+        return candidates.min()
+    }
+
+    private func applyProvisionalTrialRecord(_ record: DeviceTrialClock.ProvisionalRecord) {
+        guard let snapshot = record.snapshot() else { return }
+        guard DeviceTrialLoginMerge.shouldReplaceEntitlement(current: appAccess, candidate: snapshot) else {
+            return
+        }
+        accessRequestID = UUID()
+        appAccess = snapshot
     }
 
     private func presentTrialActivationTip() {
@@ -991,10 +1063,12 @@ final class AccountService {
     }
 
     private func applyDeviceTrialRecord(_ record: DeviceTrialClock.Record) {
-        accessRequestID = UUID()
-        if let snapshot = record.snapshot() {
-            appAccess = snapshot
+        guard let snapshot = record.snapshot() else { return }
+        guard DeviceTrialLoginMerge.shouldReplaceEntitlement(current: appAccess, candidate: snapshot) else {
+            return
         }
+        accessRequestID = UUID()
+        appAccess = snapshot
     }
 
     private func syncDeviceTrial(
@@ -1041,6 +1115,12 @@ final class AccountService {
 
     private func applyDeviceTrialResponse(_ response: DeviceTrialAPIResponse, fingerprint: String) throws {
         guard !response.token.isEmpty else { throw AppAccessError.verificationRequired }
+        let claims = try DeviceTrialLicense.verify(response.token, fingerprint: fingerprint)
+        let candidate = AppAccessSnapshot(license: .trial, trialEndsAt: claims.endsAt)
+        if !DeviceTrialLoginMerge.shouldReplaceEntitlement(current: appAccess, candidate: candidate) {
+            Log.account.warning("Ignoring device trial token that would extend remaining trial time")
+            return
+        }
         let record = try DeviceTrialClock.store(
             token: response.token,
             fingerprint: fingerprint,

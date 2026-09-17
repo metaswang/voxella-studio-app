@@ -1,15 +1,31 @@
+import AppKit
+import Foundation
 import SwiftUI
 
 struct KnowledgeChatPane: View {
     @Bindable var controller: KnowledgeBaseController
+    @Bindable private var workbench = WorkbenchStore.shared
     @Bindable private var models = LocalModelManager.shared
     @Bindable private var llmSettings = LLMSettingsStore.shared
     @FocusState private var inputFocused: Bool
+    @State private var isClearHovered = false
 
     private var livePlan: LocalModelInstallPlan {
         models.knowledgeQAInstallPlan(
             answerModelID: KnowledgeQAModelPolicy.localAnswerModelID,
             includeReranker: KnowledgeQAModelPolicy.includeReranker
+        )
+    }
+
+    private var chatBackground: LinearGradient {
+        LinearGradient(
+            colors: [
+                AppTheme.Background.baseColor,
+                AppTheme.Background.surfaceColor.opacity(0.72),
+                AppTheme.Background.baseColor,
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
         )
     }
 
@@ -31,8 +47,11 @@ struct KnowledgeChatPane: View {
             modelGate
             composer
         }
-        .background(AppTheme.Background.baseColor)
-        .onAppear { controller.syncModelPlan(livePlan) }
+        .background(chatBackground)
+        .onAppear {
+            llmSettings.synchronizeChatModelSelection()
+            controller.syncModelPlan(livePlan)
+        }
         .onChange(of: livePlan) { _, newPlan in
             controller.syncModelPlan(newPlan)
         }
@@ -40,9 +59,23 @@ struct KnowledgeChatPane: View {
 
     private var header: some View {
         HStack(spacing: AppTheme.Spacing.smMd) {
-            Image(systemName: "sparkles")
-                .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
-                .foregroundStyle(AppTheme.Accent.primary)
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.19, green: 0.70, blue: 0.93).opacity(0.22),
+                                Color(red: 0.33, green: 0.36, blue: 0.94).opacity(0.16),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: "sparkles")
+                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(Color(red: 0.13, green: 0.52, blue: 0.82))
+            }
+            .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(controller.scopeTitle)
                     .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
@@ -57,39 +90,34 @@ struct KnowledgeChatPane: View {
             Button {
                 controller.clearHistory()
             } label: {
-                Group {
-                    if controller.isClearingHistory {
-                        HStack(spacing: AppTheme.Spacing.xs) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text(L10n.string("Clear"))
-                        }
-                    } else {
-                        HStack(spacing: AppTheme.Spacing.xs) {
-                            Image(systemName: "broom.fill")
-                            Text(L10n.string("Clear"))
-                        }
-                    }
+                if controller.isClearingHistory {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 30, height: 30)
+                } else {
+                    BrushCleaningGlyph()
+                        .frame(width: 30, height: 30)
                 }
-                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(AppTheme.Text.secondaryColor)
-            .padding(.horizontal, AppTheme.Spacing.sm)
-            .padding(.vertical, AppTheme.Spacing.xs)
+            .foregroundStyle(isClearHovered ? AppTheme.Text.primaryColor : AppTheme.Text.secondaryColor)
             .background(
-                RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
-                    .fill(AppTheme.Background.baseColor)
+                RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
+                    .fill(isClearHovered ? AppTheme.Background.raisedColor : AppTheme.Background.baseColor)
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
+                    .strokeBorder(
+                        isClearHovered ? AppTheme.Border.primaryColor : AppTheme.Border.subtleColor,
+                        lineWidth: AppTheme.BorderWidth.hairline
+                    )
+            }
+            .onHover { isClearHovered = $0 }
+            .animation(.easeOut(duration: AppTheme.Anim.hover), value: isClearHovered)
             .disabled(controller.messages.isEmpty || controller.isAnswering || controller.isClearingHistory)
             .accessibilityLabel(L10n.string("Clear chat history"))
             .help(L10n.string("Clear chat history"))
-            if controller.isAnswering {
-                KnowledgeAnswerStatusControl(
-                    status: controller.statusText ?? L10n.string("Working…"),
-                    onStop: controller.cancelAnswer
-                )
-            } else if let modelStatusText = controller.modelStatusText {
+            if !controller.isAnswering, let modelStatusText = controller.modelStatusText {
                 Text(modelStatusText)
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -107,7 +135,7 @@ struct KnowledgeChatPane: View {
                 LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                     if controller.messages.isEmpty {
                         emptyState
-                            .frame(maxWidth: .infinity)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.top, AppTheme.Spacing.mdLg)
                     }
                     ForEach(controller.messages) { message in
@@ -127,85 +155,106 @@ struct KnowledgeChatPane: View {
         }
     }
 
+    @ViewBuilder
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-            HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
-                Image(systemName: "text.bubble")
-                    .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.medium))
-                    .foregroundStyle(AppTheme.Accent.primary)
-                    .frame(width: AppTheme.IconSize.lgXl, height: AppTheme.IconSize.lgXl)
-                    .padding(AppTheme.Spacing.sm)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
-                            .fill(AppTheme.Accent.primary.opacity(AppTheme.Opacity.faint))
-                    )
+        switch controller.selectedScope {
+        case .all:
+            allKnowledgeEmptyState
+        case let .session(sessionID):
+            focusedEmptyState(sessionID: sessionID)
+        case .sessions:
+            focusedEmptyState(sessionID: nil)
+        }
+    }
 
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text(L10n.string("Ask your knowledge base"))
-                        .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
-                        .foregroundStyle(AppTheme.Text.primaryColor)
-                    Text(L10n.string("Select All knowledge to search across sessions, or pick one session for focused QA."))
+    private var allKnowledgeEmptyState: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            KnowledgeEmptyStateHeader(
+                title: L10n.string("All knowledge"),
+                subtitle: L10n.string("Open a recent session for focused questions, or view its generated summary."),
+                systemImage: "square.stack.3d.up.fill"
+            )
+
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
+                Text(L10n.string("Recent sessions"))
+                    .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+
+                if recentSessions.isEmpty {
+                    Text(L10n.string("No recent knowledge sessions yet."))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: AppTheme.Spacing.sm),
-                    GridItem(.flexible(), spacing: AppTheme.Spacing.sm),
-                ],
-                spacing: AppTheme.Spacing.sm
-            ) {
-                ForEach(Self.starterPrompts) { prompt in
-                    Button {
-                        controller.draft = L10n.string(prompt.titleKey)
-                        inputFocused = true
-                    } label: {
-                        HStack(spacing: AppTheme.Spacing.sm) {
-                            Image(systemName: prompt.icon)
-                                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
-                                .foregroundStyle(AppTheme.Accent.primary)
-                                .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
-                            Text(L10n.string(prompt.titleKey))
-                                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
-                                .foregroundStyle(AppTheme.Text.secondaryColor)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                            Spacer(minLength: AppTheme.Spacing.zero)
-                        }
-                        .frame(
-                            maxWidth: .infinity,
-                            minHeight: AppTheme.Knowledge.starterPromptMinHeight,
-                            alignment: .leading
-                        )
-                        .padding(.horizontal, AppTheme.Spacing.md)
-                        .padding(.vertical, AppTheme.Spacing.sm)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
-                                .fill(AppTheme.Background.surfaceColor)
-                        )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
-                                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.hairline)
+                        .padding(.vertical, AppTheme.Spacing.md)
+                } else {
+                    LazyVStack(spacing: AppTheme.Spacing.sm) {
+                        ForEach(recentSessions) { session in
+                            KnowledgeRecentSessionRow(
+                                session: session,
+                                isSummaryLoading: controller.isLoadingSummaryForSessionID == session.id,
+                                onOpen: { controller.selectSession(session.id) },
+                                onSummary: { controller.showSummary(for: session.id) }
+                            )
                         }
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
         .frame(maxWidth: AppTheme.Knowledge.emptyStateMaxWidth, alignment: .leading)
-        .padding(AppTheme.Spacing.lg)
-        .background(
-            RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
-                .fill(AppTheme.Background.raisedColor)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.hairline)
+    }
+
+    private func focusedEmptyState(sessionID: UUID?) -> some View {
+        VStack(alignment: .center, spacing: AppTheme.Spacing.lg) {
+            KnowledgeEmptyStateHeader(
+                title: sessionID.map { controller.titleForSession($0) } ?? L10n.string("Ask your knowledge base"),
+                subtitle: sessionID == nil
+                    ? L10n.string("Choose a focused prompt for the selected sessions, or write your own question.")
+                    : L10n.string("Choose a focused prompt or write your own question about this session."),
+                systemImage: "text.bubble"
+            )
+            .frame(maxWidth: AppTheme.Knowledge.emptyStateMaxWidth, alignment: .leading)
+
+            VStack(spacing: AppTheme.Spacing.sm) {
+                ForEach(focusedPrompts(sessionID: sessionID)) { prompt in
+                    Button {
+                        if prompt.isSummary, let sessionID {
+                            controller.showSummary(for: sessionID)
+                        } else {
+                            controller.send(query: L10n.string(prompt.titleKey))
+                        }
+                    } label: {
+                        KnowledgeStarterPromptCard(
+                            prompt: prompt,
+                            isLoading: prompt.isSummary
+                                && controller.isLoadingSummaryForSessionID == sessionID
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(controller.isAnswering)
+                }
+            }
+            .frame(maxWidth: AppTheme.Knowledge.emptyStateMaxWidth)
         }
-        .shadow(AppTheme.Shadow.sm)
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var recentSessions: [WorkbenchSession] {
+        let visibleIDs = Set(controller.rows.map(\.id))
+        return workbench.sessions
+            .filter { visibleIDs.contains($0.id) }
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .prefix(8)
+            .map { $0 }
+    }
+
+    private func focusedPrompts(sessionID: UUID?) -> [KnowledgeStarterPrompt] {
+        guard sessionID != nil else { return Self.starterPrompts }
+        return [
+            KnowledgeStarterPrompt(
+                icon: "doc.text.magnifyingglass",
+                titleKey: "View session summary",
+                isSummary: true
+            ),
+        ] + Self.starterPrompts.dropFirst()
     }
 
     private func messageBubble(_ message: KnowledgeMessage) -> some View {
@@ -214,16 +263,58 @@ struct KnowledgeChatPane: View {
             if isUser { Spacer(minLength: AppTheme.Spacing.xxl) }
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 if isUser {
+                    HStack(alignment: .center, spacing: AppTheme.Spacing.xs) {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold))
+                        Text(L10n.string("You"))
+                            .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold))
+                            .textCase(.uppercase)
+                            .tracking(0.7)
+                    }
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+
                     Text(message.content)
                         .font(.system(size: AppTheme.FontSize.smMd))
                         .foregroundStyle(AppTheme.Text.primaryColor)
                         .textSelection(.enabled)
+                    if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        KnowledgeMessageCopyButton(
+                            value: message.content,
+                            label: L10n.string("Copy question")
+                        )
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
                 } else {
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.12, green: 0.52, blue: 0.82))
+                            .frame(width: 22, height: 22)
+                            .background {
+                                Circle()
+                                    .fill(AppTheme.Accent.primary.opacity(AppTheme.Opacity.faint))
+                            }
+                        Text(L10n.string("Knowledge assistant"))
+                            .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                            .textCase(.uppercase)
+                            .tracking(0.7)
+                    }
+
+                    if message.isStreaming {
+                        KnowledgeAnswerStatusControl(
+                            status: controller.statusText ?? L10n.string("Working…"),
+                            onStop: controller.cancelAnswer
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     if message.content.isEmpty && message.isStreaming {
-                        KnowledgeEmptyAnswerIndicator()
+                        EmptyView()
                     } else {
-                        MarkdownText(
+                        KnowledgeAnswerText(
                             text: message.content,
+                            citations: message.citations,
                             proseFont: .system(size: AppTheme.FontSize.smMd)
                         )
                     }
@@ -233,6 +324,16 @@ struct KnowledgeChatPane: View {
                     if !message.recoveryActions.isEmpty {
                         recoveryActions(message.recoveryActions)
                     }
+                    if !message.isStreaming,
+                       !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        KnowledgeMessageCopyButton(
+                            value: KnowledgeAnswerPresentation.displayText(
+                                message.content,
+                                citationCount: message.citations.count
+                            ),
+                            label: L10n.string("Copy answer")
+                        )
+                    }
                 }
             }
             .padding(AppTheme.Spacing.md)
@@ -241,18 +342,67 @@ struct KnowledgeChatPane: View {
                     .fill(
                         isUser
                             ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.soft)
-                            : AppTheme.Background.surfaceColor
+                            : AppTheme.Background.raisedColor.opacity(0.94)
                     )
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
+                    .strokeBorder(
+                        isUser
+                            ? AppTheme.Accent.primary.opacity(0.16)
+                            : AppTheme.Border.subtleColor,
+                        lineWidth: AppTheme.BorderWidth.hairline
+                    )
+            }
+            .shadow(
+                color: isUser ? .clear : Color.black.opacity(0.08),
+                radius: isUser ? 0 : 12,
+                y: isUser ? 0 : 4
             )
             .frame(maxWidth: AppTheme.Knowledge.messageMaxWidth, alignment: .leading)
             if !isUser { Spacer(minLength: AppTheme.Spacing.xxl) }
         }
         .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+        .transition(.move(edge: isUser ? .trailing : .leading).combined(with: .opacity))
     }
 
     private func citationRow(_ citations: [KnowledgeSourceRef]) -> some View {
-        FlowCitationChips(citations: citations) { ref in
-            controller.openCitation(ref)
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            HStack(spacing: AppTheme.Spacing.xs) {
+                Image(systemName: "link.circle.fill")
+                    .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
+                    .foregroundStyle(AppTheme.Accent.link)
+
+                Text(L10n.string("Sources"))
+                    .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+
+                Text(verbatim: "\(citations.count)")
+                    .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AppTheme.Accent.link)
+                    .padding(.horizontal, AppTheme.Spacing.xs)
+                    .padding(.vertical, AppTheme.Spacing.xxs)
+                    .background(
+                        Capsule()
+                            .fill(AppTheme.Accent.link.opacity(AppTheme.Opacity.faint))
+                    )
+
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text("\(L10n.string("Sources")), \(citations.count)"))
+            .help(L10n.string("Select a source to open its matching transcript"))
+
+            FlowCitationChips(citations: citations) { ref in
+                controller.openCitation(ref)
+            }
+
+            if citations.count > 8 {
+                Text("+\(citations.count - 8) \(L10n.string("more sources"))")
+                    .font(.system(size: AppTheme.FontSize.xxs))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
+                    .padding(.leading, AppTheme.Spacing.smMd)
+            }
         }
     }
 
@@ -398,14 +548,13 @@ struct KnowledgeChatPane: View {
             }
 
             HStack(spacing: AppTheme.Spacing.sm) {
-                modelBadge
-                Spacer(minLength: AppTheme.Spacing.sm)
                 if isBYOK {
+                    modelPicker
                     reasoningPicker
+                    Spacer(minLength: AppTheme.Spacing.sm)
                 } else {
-                    Label(L10n.string("Hosted AI"), systemImage: "cloud")
-                        .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    hostedModelBadge
+                    Spacer(minLength: AppTheme.Spacing.sm)
                 }
             }
         }
@@ -422,38 +571,63 @@ struct KnowledgeChatPane: View {
         .frame(maxWidth: AppTheme.Workbench.composerMaxWidth)
         .padding(.horizontal, AppTheme.Spacing.mdLg)
         .padding(.vertical, AppTheme.Spacing.md)
-        .background(AppTheme.Background.surfaceColor)
     }
 
     private var isBYOK: Bool {
         AITransportPolicy.current == .byok
     }
 
-    private var modelBadge: some View {
-        let model = isBYOK ? llmSettings.route(for: .chat).primaryModel : L10n.string("Hosted AI")
-        return Label {
-            Text(verbatim: model)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        } icon: {
-            Image(systemName: isBYOK ? "key.fill" : "cloud")
+    private var modelPicker: some View {
+        let selectedModel = llmSettings.effectiveChatModelReference
+        return Menu {
+            ForEach(llmSettings.chatModelOptions) { option in
+                Button {
+                    llmSettings.selectChatModel(option)
+                } label: {
+                    if option.id == normalizedModelReference(selectedModel) {
+                        Label {
+                            Text(verbatim: option.reference)
+                        } icon: {
+                            Image(systemName: "checkmark")
+                        }
+                    } else {
+                        Text(verbatim: option.reference)
+                    }
+                }
+                .disabled(!option.isAvailable)
+            }
+        } label: {
+            KnowledgeComposerControlLabel(
+                title: selectedModel,
+                systemImage: "key.fill"
+            )
         }
-        .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
-        .foregroundStyle(AppTheme.Text.tertiaryColor)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .layoutPriority(1)
+        .accessibilityLabel(L10n.string("Chat model"))
+        .accessibilityValue(Text(verbatim: selectedModel))
+        .help(Text(verbatim: selectedModel))
+    }
+
+    private var hostedModelBadge: some View {
+        KnowledgeComposerControlLabel(
+            title: L10n.string("Hosted AI"),
+            systemImage: "cloud"
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L10n.string("Chat model"))
-        .accessibilityValue(Text(verbatim: model))
-        .help(Text(verbatim: model))
+        .accessibilityValue(L10n.string("Hosted AI"))
+        .help(L10n.string("Hosted AI"))
     }
 
     private var reasoningPicker: some View {
         Menu {
-            ForEach(LLMReasoningEffort.allCases) { effort in
+            ForEach(llmSettings.chatReasoningEffortsForCurrentModel) { effort in
                 Button {
                     llmSettings.chatReasoningEffort = effort
                 } label: {
-                    if effort == llmSettings.chatReasoningEffort {
+                    if effort == llmSettings.effectiveChatReasoningEffort {
                         Label(L10n.string(key: effort.labelKey), systemImage: "checkmark")
                     } else {
                         Text(L10n.string(key: effort.labelKey))
@@ -461,19 +635,15 @@ struct KnowledgeChatPane: View {
                 }
             }
         } label: {
-            Label {
-                Text(L10n.string(key: llmSettings.chatReasoningEffort.labelKey))
-                    .lineLimit(1)
-            } icon: {
-                Image(systemName: "brain.head.profile")
-            }
-            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
-            .foregroundStyle(AppTheme.Text.secondaryColor)
+            KnowledgeComposerControlLabel(
+                title: L10n.string(key: llmSettings.effectiveChatReasoningEffort.labelKey),
+                systemImage: "brain.head.profile"
+            )
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .accessibilityLabel(L10n.string("Reasoning effort"))
-        .accessibilityValue(L10n.string(key: llmSettings.chatReasoningEffort.labelKey))
+        .accessibilityValue(L10n.string(key: llmSettings.effectiveChatReasoningEffort.labelKey))
         .help(L10n.string("Reasoning effort"))
     }
 
@@ -491,21 +661,115 @@ struct KnowledgeChatPane: View {
             && controller.answerBlockedMessage == nil
             && controller.canAskCurrentScope
     }
+
+    private func normalizedModelReference(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
 }
 
-/// Animated three-dot affordance for the gap between submitting a question and
-/// receiving the first streamed token. Keeping the dots as separate glyphs
-/// makes the motion read as an ellipsis rather than a generic spinner.
-private struct KnowledgeEmptyAnswerIndicator: View {
+private struct KnowledgeComposerControlLabel: View {
+    let title: String
+    let systemImage: String
+
+    private var controlFont: Font {
+        .system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium)
+    }
+
     var body: some View {
-        HStack(spacing: AppTheme.Spacing.sm) {
-            KnowledgeTypingIndicator()
-            Text(L10n.string("Searching knowledge"))
-                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
+        HStack(spacing: AppTheme.Spacing.xs) {
+            Image(systemName: systemImage)
+                .font(controlFont)
+                .frame(width: AppTheme.IconSize.xs, height: AppTheme.IconSize.xs)
+            Text(verbatim: title)
+                .font(controlFont)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(L10n.string("Searching knowledge"))
+        .foregroundStyle(AppTheme.Text.tertiaryColor)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct KnowledgeMessageCopyButton: View {
+    private static let feedbackDuration: Duration = .seconds(1.4)
+
+    let value: String
+    let label: String
+    @State private var status: CopyStatus = .idle
+    @State private var feedbackID: UUID?
+
+    var body: some View {
+        Button(action: copy) {
+            Image(systemName: status.iconName)
+                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                .foregroundStyle(status.tint)
+                .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
+                .contentTransition(.symbolEffect(.replace))
+                .padding(.horizontal, AppTheme.Spacing.xs)
+                .padding(.vertical, AppTheme.Spacing.xxs)
+            .contentShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xs, style: .continuous))
+            .hoverHighlight(cornerRadius: AppTheme.Radius.xs, isActive: status != .idle)
+        }
+        .buttonStyle(.plain)
+        .help(status.helpText(label: label))
+        .accessibilityLabel(Text(status.accessibilityLabel(label: label)))
+    }
+
+    private func copy() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        guard pasteboard.setString(value, forType: .string) else {
+            status = .failed
+            return
+        }
+
+        let copyID = UUID()
+        feedbackID = copyID
+        status = .copied
+        Task { @MainActor in
+            try? await Task.sleep(for: Self.feedbackDuration)
+            guard feedbackID == copyID else { return }
+            status = .idle
+        }
+    }
+
+    @MainActor
+    private enum CopyStatus: Equatable {
+        case idle
+        case copied
+        case failed
+
+        var iconName: String {
+            switch self {
+            case .idle: "doc.on.doc"
+            case .copied: "checkmark"
+            case .failed: "exclamationmark.triangle"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .idle: AppTheme.Text.tertiaryColor
+            case .copied: AppTheme.Accent.primary
+            case .failed: AppTheme.Status.errorColor
+            }
+        }
+
+        func title(label: String) -> String {
+            switch self {
+            case .idle: label
+            case .copied: L10n.string("Copied")
+            case .failed: L10n.string("Copy failed")
+            }
+        }
+
+        func helpText(label: String) -> String {
+            title(label: label)
+        }
+
+        func accessibilityLabel(label: String) -> String {
+            title(label: label)
+        }
     }
 }
 
@@ -542,6 +806,59 @@ private struct KnowledgeTypingIndicator: View {
             .frame(minWidth: compact ? 21 : 25, alignment: .leading)
         }
         .frame(height: compact ? 15 : 20)
+    }
+}
+
+/// The provided Lucide BrushCleaning glyph rendered directly in SwiftUI.
+/// Using a custom path keeps this icon available even when the host macOS
+/// version does not provide a matching SF Symbol.
+private struct BrushCleaningGlyph: View {
+    var body: some View {
+        GeometryReader { geometry in
+            let scale = min(geometry.size.width, geometry.size.height) / 24
+            Canvas { context, _ in
+                let stroke = StrokeStyle(
+                    lineWidth: 2 * scale,
+                    lineCap: .round,
+                    lineJoin: .round
+                )
+
+                var handle = Path()
+                handle.addRoundedRect(
+                    in: CGRect(x: 9 * scale, y: 2 * scale, width: 6 * scale, height: 12 * scale),
+                    cornerSize: CGSize(width: 2 * scale, height: 2 * scale)
+                )
+                context.stroke(handle, with: .foreground, style: stroke)
+
+                var body = Path()
+                body.move(to: CGPoint(x: 5 * scale, y: 14 * scale))
+                body.addLine(to: CGPoint(x: 19 * scale, y: 14 * scale))
+                body.addLine(to: CGPoint(x: 20.973 * scale, y: 20.767 * scale))
+                body.addQuadCurve(
+                    to: CGPoint(x: 20 * scale, y: 22 * scale),
+                    control: CGPoint(x: 21.3 * scale, y: 22 * scale)
+                )
+                body.addLine(to: CGPoint(x: 4 * scale, y: 22 * scale))
+                body.addQuadCurve(
+                    to: CGPoint(x: 3.027 * scale, y: 20.767 * scale),
+                    control: CGPoint(x: 2.7 * scale, y: 22 * scale)
+                )
+                body.closeSubpath()
+                context.stroke(body, with: .foreground, style: stroke)
+
+                var leftDetail = Path()
+                leftDetail.move(to: CGPoint(x: 8 * scale, y: 22 * scale))
+                leftDetail.addLine(to: CGPoint(x: 9 * scale, y: 18 * scale))
+                context.stroke(leftDetail, with: .foreground, style: stroke)
+
+                var rightDetail = Path()
+                rightDetail.move(to: CGPoint(x: 16 * scale, y: 22 * scale))
+                rightDetail.addLine(to: CGPoint(x: 15 * scale, y: 18 * scale))
+                context.stroke(rightDetail, with: .foreground, style: stroke)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .accessibilityHidden(true)
     }
 }
 
@@ -681,14 +998,17 @@ private struct KnowledgeIndeterminateRail: View {
     }
 }
 
-/// Simple wrapping chip row without pulling in a layout dependency.
+/// Full-width evidence rows. An adaptive grid gives a lone citation a narrow
+/// column, which causes long source titles to truncate even when the answer
+/// card has plenty of room. Each source now gets the complete answer width and
+/// can wrap naturally when the title is genuinely longer than that width.
 private struct FlowCitationChips: View {
     let citations: [KnowledgeSourceRef]
     let onTap: (KnowledgeSourceRef) -> Void
 
     var body: some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 190), spacing: AppTheme.Spacing.xs)],
+            columns: [GridItem(.flexible(minimum: 0), spacing: AppTheme.Spacing.xs)],
             alignment: .leading,
             spacing: AppTheme.Spacing.xs
         ) {
@@ -700,10 +1020,14 @@ private struct FlowCitationChips: View {
                         Image(systemName: "link")
                             .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold))
                         Text(ref.chipLabel)
-                            .lineLimit(1)
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 0)
                     }
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, AppTheme.Spacing.sm)
                     .padding(.vertical, AppTheme.Spacing.xs)
                     .background(
@@ -712,17 +1036,321 @@ private struct FlowCitationChips: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .help(L10n.string("Open transcript"))
+                .accessibilityLabel(Text("\(L10n.string("Open transcript")): \(ref.chipLabel)"))
+                .accessibilityHint(L10n.string("Select a source to open its matching transcript"))
             }
         }
+    }
+}
+
+/// Keeps machine-generated citation tokens out of the reading flow. The source
+/// list below the answer is the readable, clickable evidence affordance, so a
+/// user never has to decode a bare `45` or `[1, 4]` in otherwise natural prose.
+enum KnowledgeAnswerPresentation {
+    private static let numericCitationPattern = #"(?:\[\s*\d{1,3}(?:\s*[,，]\s*\d{1,3})*\s*\]|【\s*\d{1,3}(?:\s*[,，]\s*\d{1,3})*\s*】)"#
+    private static let bareCitationPattern = #"[ \t]+\d{1,3}(?=[ \t]*(?:[。！？.!?；;，,、]|$))"#
+
+    static func displayText(_ text: String, citationCount: Int) -> String {
+        let hasCitationEvidence = citationCount > 0
+            || containsMatch(text, pattern: numericCitationPattern)
+            || hasRepeatedBareCitationTokens(in: text)
+        guard hasCitationEvidence else { return text }
+
+        var value = replacing(
+            text,
+            pattern: numericCitationPattern
+        )
+
+        // Some model/provider combinations emit citation indexes as a bare
+        // token at the end of a sentence (`…内容 45。`). Only match a token
+        // separated by horizontal whitespace and followed by punctuation or
+        // the end of the answer, so ordinary values such as `20次` survive.
+        value = replacing(
+            value,
+            pattern: bareCitationPattern
+        )
+        return replacing(
+            value,
+            pattern: #"[ \t]+([。！？.!?；;，,、])"#,
+            template: "$1"
+        )
+    }
+
+    private static func replacing(
+        _ text: String,
+        pattern: String,
+        template: String = ""
+    ) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        let range = NSRange(location: 0, length: text.utf16.count)
+        return regex.stringByReplacingMatches(
+            in: text,
+            options: [],
+            range: range,
+            withTemplate: template
+        )
+    }
+
+    private static func containsMatch(_ text: String, pattern: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+        let range = NSRange(location: 0, length: text.utf16.count)
+        return regex.firstMatch(in: text, options: [], range: range) != nil
+    }
+
+    private static func hasRepeatedBareCitationTokens(in text: String) -> Bool {
+        let bulletLines = text.components(separatedBy: .newlines).filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.hasPrefix("- ")
+                || trimmed.hasPrefix("* ")
+                || trimmed.hasPrefix("• ")
+        }
+        return bulletLines.filter {
+            containsMatch($0, pattern: bareCitationPattern)
+        }.count >= 3
+    }
+}
+
+private struct KnowledgeAnswerText: View {
+    let text: String
+    let citations: [KnowledgeSourceRef]
+    var proseFont: Font = .body
+
+    var body: some View {
+        MarkdownText(
+            text: KnowledgeAnswerPresentation.displayText(
+                text,
+                citationCount: citations.count
+            ),
+            proseFont: proseFont
+        )
     }
 }
 
 private struct KnowledgeStarterPrompt: Identifiable {
     let icon: String
     let titleKey: String
+    var isSummary = false
 
     var id: String { titleKey }
+}
+
+private struct KnowledgeEmptyStateHeader: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+            Image(systemName: systemImage)
+                .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.medium))
+                .foregroundStyle(AppTheme.Accent.primary)
+                .frame(width: AppTheme.IconSize.lgXl, height: AppTheme.IconSize.lgXl)
+                .padding(AppTheme.Spacing.sm)
+                .background(
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
+                        .fill(AppTheme.Accent.primary.opacity(AppTheme.Opacity.faint))
+                )
+
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                Text(title)
+                    .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+                    .lineLimit(2)
+                Text(subtitle)
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+private struct KnowledgeStarterPromptCard: View {
+    let prompt: KnowledgeStarterPrompt
+    var isLoading = false
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: AppTheme.Spacing.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                    .fill(
+                        isHovered
+                            ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.soft)
+                            : AppTheme.Accent.primary.opacity(AppTheme.Opacity.faint)
+                    )
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(AppTheme.Accent.primary)
+                } else {
+                    Image(systemName: prompt.icon)
+                        .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                        .foregroundStyle(AppTheme.Accent.primary)
+                }
+            }
+            .frame(width: AppTheme.IconSize.lg, height: AppTheme.IconSize.lg)
+
+            Text(L10n.string(prompt.titleKey))
+                .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.medium))
+                .foregroundStyle(AppTheme.Text.primaryColor)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, minHeight: AppTheme.Knowledge.starterPromptMinHeight, alignment: .center)
+        .padding(.horizontal, AppTheme.Spacing.md)
+        .padding(.vertical, AppTheme.Spacing.smMd)
+        .background(
+            RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
+                .fill(
+                    isHovered
+                        ? AppTheme.Background.raisedColor
+                        : AppTheme.Background.surfaceColor.opacity(0.72)
+                )
+        )
+        .overlay(alignment: .leading) {
+            Capsule(style: .continuous)
+                .fill(AppTheme.Accent.primary)
+                .frame(width: isHovered ? AppTheme.BorderWidth.thick : AppTheme.BorderWidth.thin)
+                .padding(.vertical, AppTheme.Spacing.sm)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
+                .strokeBorder(
+                    isHovered ? AppTheme.Accent.primary.opacity(0.42) : AppTheme.Border.subtleColor,
+                    lineWidth: AppTheme.BorderWidth.hairline
+                )
+        }
+        .scaleEffect(isHovered ? 1.008 : 1)
+        .contentShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
+        .onHover { isHovered = $0 }
+        .animation(.spring(response: 0.28, dampingFraction: 0.84), value: isHovered)
+    }
+}
+
+private struct KnowledgeRecentSessionRow: View {
+    let session: WorkbenchSession
+    let isSummaryLoading: Bool
+    let onOpen: () -> Void
+    let onSummary: () -> Void
+
+    @State private var isHovered = false
+
+    private var title: String {
+        session.title.isEmpty ? L10n.string("Untitled session") : session.title
+    }
+
+    private var summaryIcon: String {
+        session.summaryMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? "doc.text"
+            : "sparkles"
+    }
+
+    var body: some View {
+        HStack(spacing: AppTheme.Spacing.md) {
+            Button(action: onOpen) {
+                HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+                    session.sessionType.navGlyph.view(size: AppTheme.IconSize.lgXl)
+                        .frame(width: AppTheme.IconSize.lgXl, height: AppTheme.IconSize.lgXl)
+                        .foregroundStyle(isHovered ? AppTheme.Accent.primary : AppTheme.Text.secondaryColor)
+                        .background(
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                                .fill(AppTheme.Accent.primary.opacity(isHovered ? 0.12 : 0.06))
+                        )
+
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                        Text(title)
+                            .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.semibold))
+                            .foregroundStyle(AppTheme.Text.primaryColor)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+
+                        HStack(spacing: AppTheme.Spacing.xs) {
+                            Text(session.sessionType.label)
+                            metaDot
+                            Text(session.storage == .cloud ? L10n.string("Cloud") : L10n.string("Local"))
+                            if let duration = session.duration {
+                                metaDot
+                                Text(formatDuration(duration))
+                            }
+                        }
+                        .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.medium))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                        .lineLimit(1)
+
+                        HStack(spacing: AppTheme.Spacing.xs) {
+                            Text(verbatim: "Created " + session.createdAt.formatted(date: .abbreviated, time: .shortened))
+                            metaDot
+                            Text(verbatim: "Updated " + session.modifiedAt.formatted(date: .abbreviated, time: .shortened))
+                        }
+                        .font(.system(size: AppTheme.FontSize.xxs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                        .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onSummary) {
+                Group {
+                    if isSummaryLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: summaryIcon)
+                            .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                    }
+                }
+                .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
+                .foregroundStyle(isHovered ? AppTheme.Accent.primary : AppTheme.Text.secondaryColor)
+                .background(
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                        .fill(isHovered ? AppTheme.Accent.primary.opacity(0.10) : Color.clear)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isSummaryLoading)
+            .help(L10n.string("View or generate summary"))
+        }
+        .padding(.horizontal, AppTheme.Spacing.md)
+        .padding(.vertical, AppTheme.Spacing.smMd)
+        .background(
+            RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
+                .fill(isHovered ? AppTheme.Background.raisedColor : AppTheme.Background.surfaceColor.opacity(0.70))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
+                .strokeBorder(
+                    isHovered ? AppTheme.Accent.primary.opacity(0.36) : AppTheme.Border.subtleColor,
+                    lineWidth: AppTheme.BorderWidth.hairline
+                )
+        }
+        .scaleEffect(isHovered ? 1.006 : 1)
+        .onHover { isHovered = $0 }
+        .animation(.spring(response: 0.28, dampingFraction: 0.84), value: isHovered)
+    }
+
+    private var metaDot: some View {
+        Text("·")
+            .foregroundStyle(AppTheme.Text.mutedColor)
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "00:00" }
+        let total = Int(seconds.rounded(.down))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let secs = total % 60
+        if hours > 0 {
+            return String(format: "%02d:%02d:%02d", hours, minutes, secs)
+        }
+        return String(format: "%02d:%02d", minutes, secs)
+    }
 }
 
 private extension KnowledgeChatPane {

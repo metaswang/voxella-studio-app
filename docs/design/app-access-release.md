@@ -116,3 +116,62 @@ PR1 功能可合入开发分支做联调，但**不可标为可发行/验收通�
 - 退款/拒付 webhook：`mac_app_purchases.revoked` 且 `mac_lifetime_devices.revoked=true`（billing worker）。
 - 默认最多 **3** 台（`MAC_ACCESS_LIFETIME_MAX_DEVICES`）；签发新设备时踢掉 `last_verified_at` 最旧的一台；账户页可 `POST /lifetime-device/deactivate`。
 - 客户端续期收到 403 时清除本地 Lifetime Keychain。
+
+## 当前实现核对：未登录试用显示与匿名设备登记（2026-09-17）
+
+### 产品行为
+
+- 下载、启动 App，或仅停留在未登录状态时，**不会开始试用，也不会显示剩余试用天数**。
+- 第一次触发受保护的本地功能（例如创建项目、录音、转写或生成）时，`prepareNewContentAccess()` 才启动设备试用流程。
+- 试用期间不要求登录；侧边栏、账户弹窗和账户设置显示倒计时，并每 60 秒刷新一次。
+- 剩余时间按向上取整显示：剩余至少 24 小时显示天数，少于 24 小时显示小时数，少于 1 小时显示 `Less than 1 hour left`。剩余 72 小时以内使用警告颜色。
+- Lifetime 或有效订阅优先于试用，不显示试用倒计时。
+- 试用结束后不再显示活动倒计时；创建新内容被阻止，但已有项目仍可打开、编辑和导出，并在受保护操作触发时提示升级。
+
+### 从未登录用户的通信流程
+
+App 启动时，`AccountService.configure()` 只恢复登录状态和本地授权覆盖层；未登录用户不会因此调用设备试用登记接口。
+
+第一次受保护操作的 DMG 流程如下：
+
+```text
+prepareNewContentAccess()
+  └─ ensureDeviceTrialStarted()
+       └─ POST /api/v1/app-access/device-trial   （无需 user JWT）
+```
+
+请求 body 为：
+
+```json
+{
+  "fingerprint": "64 位十六进制字符串",
+  "client_started_at": "可选的客户端最早开始时间"
+}
+```
+
+`fingerprint` 由 `IOPlatformUUID` 使用内置 pepper 做 HMAC-SHA256 得到；原始 IOPlatformUUID 不上传。服务端在 `mac_device_trials` 中以 fingerprint 为主键 UPSERT：新设备记录开始时间，已登记设备保留最早的开始时间，并返回 Ed25519 签名的 device-trial token。客户端验证签名和 fingerprint 后，将 token 存入 `ThisDeviceOnly` Keychain，token 的 `ends_at` 是本机试用倒计时的权威。
+
+因此，用户始终不登录时：
+
+- 不调用 `/api/v1/users/me`、`/api/v1/billing/plans`、`/api/v1/billing/balance` 作为试用登记的一部分；
+- 不调用需要登录的 `/api/v1/app-access/trial`；
+- 只会在首次受保护操作及后续必要复检时调用匿名 device-trial 接口。
+
+如果首次使用时无网络，客户端当前会保存一个 provisional 本地 14 天时钟；网络恢复后，在下一次受保护操作时使用原始开始时间尝试登记，不会通过登记重新获得完整 14 天。
+
+### 调用时机与频率
+
+| 接口 | 当前调用时机 | 客户端频率控制 |
+| --- | --- | --- |
+| `POST /device-trial` | 首次受保护操作；或 provisional 记录需要升级为签名 token 时 | 不在启动时调用；正常成功后不重复登记 |
+| `POST /device-trial/verify` | 上次成功验证已满 24 小时、距离 `ends_at` 不足 24 小时，或已超过离线 grace 时 | 失败重试间隔 5 分钟；不在启动时调用 |
+| `POST /trial` | 登录或账户刷新时，把设备试用合并到用户账户 | 未登录用户不会调用 |
+| 登录态账户刷新 | App 激活时按 6 小时计划刷新；只适用于已登录用户 | `AppAccessRefreshSchedule` 控制 |
+
+服务端还配置了匿名接口限流：device-trial 登记为 10 次/分钟、50 次/小时；verify 为 20 次/分钟、100 次/小时。
+
+### 当前实现与原设计的差异
+
+原设计写明“离线 grace 超过 7 天且无法验证时返回 `verificationRequired`”。但当前实现和测试采用的是软 grace：超过 7 天后仍允许本地使用，只是在下一次受保护操作时尝试验证；只有 token 的绝对 `ends_at` 到期才阻止本地创建内容。
+
+此外，provisional 登记失败时，当前实现没有复用 5 分钟的失败重试保护；连续触发受保护操作可能重复请求 `/device-trial`，目前主要依靠服务端限流兜底。若产品要求严格按设计文档执行，需要统一 grace 策略，并为 provisional 登记失败增加客户端退避。

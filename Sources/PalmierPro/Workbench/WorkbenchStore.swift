@@ -1116,9 +1116,17 @@ struct WorkbenchSession: Identifiable, Sendable {
     }
 
     var duration: Double? {
-        let transcriptEnd = transcript?.segments.map(\.end).max()
-        let dubEnd = dubSegments.map(\.end).max()
-        return [durationHint, transcriptEnd, dubEnd].compactMap { $0 }.max()
+        var candidates: [Double] = []
+        if let durationHint, durationHint.isFinite, durationHint >= 0 {
+            candidates.append(durationHint)
+        }
+        candidates.append(contentsOf: transcript?.segments.compactMap { segment in
+            segment.end.isFinite && segment.end >= 0 ? segment.end : nil
+        } ?? [])
+        candidates.append(contentsOf: dubSegments.compactMap { segment in
+            segment.end.isFinite && segment.end >= 0 ? segment.end : nil
+        })
+        return candidates.max()
     }
 
     var hasDub: Bool { outputURL != nil || source == .standaloneDub || !dubSegments.isEmpty }
@@ -1715,9 +1723,10 @@ final class WorkbenchStore {
             )
             let previousCloudIDs = Set(remoteSessions.keys)
             let mapped = Dictionary(
-                uniqueKeysWithValues: summaries
+                summaries
                     .filter { !localRemoteIDs.contains($0.id) }
-                    .map { ($0.id, Self.remoteSession(from: $0)) }
+                    .map { ($0.id, Self.remoteSession(from: $0)) },
+                uniquingKeysWith: { _, new in new }
             )
             // Preserve already-loaded transcripts/cues when refresh only returns list metadata.
             var merged: [UUID: WorkbenchSession] = [:]
@@ -1883,6 +1892,18 @@ final class WorkbenchStore {
         }
     }
 
+    /// Ensures that a Knowledge Base summary can be loaded without navigating
+    /// away from the current workspace. Opening a session normally calls the
+    /// same enrichment path, but Knowledge uses the result inline in chat.
+    func ensureSummary(for sessionID: UUID) async {
+        guard let session = sessions.first(where: { $0.id == sessionID }) else { return }
+        if session.isRemoteOnly {
+            await ensureRemoteSessionSummary(sessionID)
+        } else {
+            await ensureSessionSummary(for: sessionID)
+        }
+    }
+
     func showRecentSessions() {
         remoteSessionLoadTask?.cancel()
         remoteSessionLoadTask = nil
@@ -1941,6 +1962,7 @@ final class WorkbenchStore {
     var pendingMediaImportURLs: [URL] = []
     var pendingNetVideoSource: WorkbenchNetVideoSource?
     var pendingMediaImportOrigin: WorkbenchMediaImportOrigin = .files
+    var pendingRecordingSessionID: UUID?
     /// Open the transcribe empty state on the Net Video entry instead of file import.
     var preferNetVideoEntry = false
     var preferRecordEntry = false
@@ -1949,6 +1971,7 @@ final class WorkbenchStore {
         transcriptionAdmissionError = nil
         pendingNetVideoSource = nil
         pendingMediaImportOrigin = .files
+        pendingRecordingSessionID = nil
         pendingMediaImportURLs = urls
         selectedTranscriptionID = nil
         route = .transcribe
@@ -1969,6 +1992,7 @@ final class WorkbenchStore {
             title: title
         )
         pendingMediaImportOrigin = .netVideo
+        pendingRecordingSessionID = nil
         pendingMediaImportURLs = [mediaURL]
         selectedTranscriptionID = nil
         route = .transcribe
@@ -1989,17 +2013,20 @@ final class WorkbenchStore {
         if didChange { save() }
     }
 
-    func stageRecordedMedia(_ url: URL) {
+    func stageRecordedMedia(_ url: URL, sessionID: UUID? = nil) {
+        stageRecordedMedia(urls: [url], sessionID: sessionID)
+    }
+
+    func stageRecordedMedia(urls: [URL], sessionID: UUID? = nil) {
         transcriptionAdmissionError = nil
         pendingNetVideoSource = nil
         pendingMediaImportOrigin = .recording
-        pendingMediaImportURLs = [url]
+        pendingRecordingSessionID = sessionID
+        pendingMediaImportURLs = urls
         selectedTranscriptionID = nil
         preferRecordEntry = true
         route = .transcribe
-        // Bake listen track async so playback can start on master immediately.
-        // App Settings / ListenEnhanceSettings is the source of truth (default ON).
-        if ListenEnhanceSettings.isEnabled {
+        if ListenEnhanceSettings.isEnabled, let url = urls.first {
             Task {
                 await ListenTrackEnhanceCoordinator.shared.enqueue(masterURL: url)
             }
@@ -2007,18 +2034,37 @@ final class WorkbenchStore {
     }
 
     func clearPendingMediaImport() {
+        if pendingMediaImportOrigin == .recording {
+            if let sessionID = pendingRecordingSessionID {
+                RecordingSessionManifest.markRegistered(
+                    sessionID: sessionID.uuidString,
+                    in: Self.recordingMediaDirectory
+                )
+            } else {
+                RecordingSessionManifest.markRegistered(urls: pendingMediaImportURLs)
+            }
+        }
         pendingMediaImportURLs = []
         pendingNetVideoSource = nil
         pendingMediaImportOrigin = .files
+        pendingRecordingSessionID = nil
     }
 
     func discardPendingMediaImport() {
+        if pendingMediaImportOrigin == .recording {
+            pendingMediaImportURLs = []
+            pendingNetVideoSource = nil
+            pendingMediaImportOrigin = .files
+            pendingRecordingSessionID = nil
+            return
+        }
         for url in pendingMediaImportURLs {
             Self.removeManagedClipMediaIfNeeded(url)
         }
         pendingMediaImportURLs = []
         pendingNetVideoSource = nil
         pendingMediaImportOrigin = .files
+        pendingRecordingSessionID = nil
     }
 
     func showNetVideoImport() {

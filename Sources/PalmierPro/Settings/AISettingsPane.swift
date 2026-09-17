@@ -51,9 +51,15 @@ struct AISettingsPane: View {
             }
         }
         .onAppear {
+            isAdvancedExpanded = settings.useBYOK
             selectInitialProvider()
             syncRouteDrafts()
             settings.refreshCredentialStatus()
+        }
+        .onChange(of: settings.useBYOK) { _, isEnabled in
+            if isEnabled {
+                isAdvancedExpanded = true
+            }
         }
         .onDisappear {
             persistDrafts()
@@ -390,7 +396,7 @@ struct AISettingsPane: View {
                     "Timeout: \(Int(draft.wrappedValue.policy.timeoutSeconds))s",
                     value: draft.policy.timeoutSeconds,
                     in: timeoutRange(for: useCase),
-                    step: 15
+                    step: timeoutStep(for: useCase)
                 )
                 Stepper(
                     "Attempts/model: \(draft.wrappedValue.policy.maximumAttemptsPerModel)",
@@ -670,9 +676,15 @@ struct AISettingsPane: View {
         switch useCase {
         case .subtitleProcessing, .graphExtraction:
             return max(60, minimum)...1_800
+        case .skillSelection:
+            return minimum...1_800
         case .translation, .chat, .graphQueryUnderstanding:
             return minimum...1_800
         }
+    }
+
+    private func timeoutStep(for useCase: LLMUseCase) -> Double {
+        useCase == .skillSelection ? 1 : 15
     }
 
     private func routeValidationMessage(for useCase: LLMUseCase) -> String? {

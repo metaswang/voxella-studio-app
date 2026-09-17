@@ -213,7 +213,10 @@ struct TranslationTrackBuilder: Sendable {
         denseScript: Bool,
         limits: SubtitleReadabilityPolicy.Limits
     ) -> [SubtitleCue] {
-        let byID = Dictionary(uniqueKeysWithValues: translated.cues.map { ($0.id, $0) })
+        let byID = Dictionary(
+            translated.cues.map { ($0.id, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         let charactersPerSecond = TranslationDurationPolicy.charactersPerSecond(for: languageCode)
         var cues: [SubtitleCue] = []
         for unit in units {

@@ -163,7 +163,10 @@ struct SearchService: Sendable {
         let fused = ReciprocalRankFusion.fuse(
             rankings: [transcripts.map(\.unitID), clips.map(\.unitID)]
         )
-        let byID = Dictionary(uniqueKeysWithValues: (transcripts + clips).map { ($0.unitID, $0) })
+        let byID = Dictionary(
+            (transcripts + clips).map { ($0.unitID, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         var hits = fused.compactMap { byID[$0] }
         if hits.isEmpty {
             hits = transcripts
@@ -181,14 +184,27 @@ struct SearchService: Sendable {
     ) async throws -> [SessionSearchHit] {
         let lexical = try await lexicalSearch(query: query, kinds: kinds, filter: filter, words: words)
         var vectorHits: [SessionSearchHit] = []
-        if let embeddings, let vector = try? await embeddings.encodeText(query) {
-            for modality in modalities {
-                let hits = (try? await store.searchVector(
-                    vector: vector,
-                    modality: modality,
-                    filter: filter
-                )) ?? []
-                vectorHits.append(contentsOf: hits.filter { kinds.contains($0.kind) || $0.kind == .mediaClip })
+        if let embeddings {
+            do {
+                let vector = try await embeddings.encodeText(query)
+                for modality in modalities {
+                    do {
+                        let hits = try await store.searchVector(
+                            vector: vector,
+                            modality: modality,
+                            filter: filter
+                        )
+                        vectorHits.append(contentsOf: hits.filter { kinds.contains($0.kind) || $0.kind == .mediaClip })
+                    } catch {
+                        Log.search.warning(
+                            "text embedding search failed modality=\(modality.rawValue) query_chars=\(query.count) error=\(error.localizedDescription)"
+                        )
+                    }
+                }
+            } catch {
+                Log.search.warning(
+                    "text embedding encode failed query_chars=\(query.count) error=\(error.localizedDescription)"
+                )
             }
         }
         let fused = ReciprocalRankFusion.fuse(

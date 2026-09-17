@@ -37,7 +37,7 @@ struct KnowledgeToolDefinition: Sendable {
     
     static let knowledgeSearch = KnowledgeToolDefinition(
         name: "knowledge.search",
-        description: "Search transcript content across sessions using hybrid (lexical + semantic) retrieval. Returns hits with citations.",
+        description: "Search transcript content across sessions using hybrid lexical + semantic retrieval with graph recall when available. Returns hits with citations.",
         parameters: [
             .init(name: "query", type: "string", description: "Search query", required: true),
             .init(name: "session_ids", type: "array", description: "Optional session UUID list to scope search", required: false),
@@ -54,7 +54,7 @@ struct KnowledgeToolDefinition: Sendable {
             .init(name: "origin", type: "string", description: "Origin filter (local, cloud, all)", required: false),
             .init(name: "date_from", type: "string", description: "ISO8601 date lower bound", required: false),
             .init(name: "date_to", type: "string", description: "ISO8601 date upper bound", required: false),
-            .init(name: "limit", type: "integer", description: "Max results (default 20)", required: false),
+            .init(name: "limit", type: "integer", description: "Max results (default 50; enough for the visible collection)", required: false),
         ]
     )
     
@@ -87,7 +87,7 @@ struct KnowledgeToolDefinition: Sendable {
     
     static let sessionSearchSegments = KnowledgeToolDefinition(
         name: "session.search_segments",
-        description: "Search transcript segments within one or more sessions. Returns timed hits with speaker labels.",
+        description: "Search transcript segments within one or more sessions using hybrid lexical + semantic retrieval with graph recall when available. Returns timed hits with speaker labels and citations.",
         parameters: [
             .init(name: "session_ids", type: "array", description: "Session UUID list", required: true),
             .init(name: "query", type: "string", description: "Search query", required: true),

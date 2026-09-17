@@ -9,7 +9,10 @@ extension EditorViewModel {
 
     /// Sendable snapshot for render/export paths that resolve nested timelines off-main.
     func timelineResolver() -> @Sendable (String) -> Timeline? {
-        let byId = Dictionary(uniqueKeysWithValues: timelines.map { ($0.id, $0) })
+        let byId = Dictionary(
+            timelines.map { ($0.id, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         return { byId[$0] }
     }
 

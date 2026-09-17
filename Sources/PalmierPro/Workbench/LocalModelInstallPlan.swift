@@ -84,7 +84,10 @@ struct LocalModelInstallPlan: Equatable, Sendable {
             asrModelID: asrModelID
         )
         let ids = requiredIDs
-        let descriptors = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
+        let descriptors = Dictionary(
+            catalog.map { ($0.id, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         let items = ids.compactMap { id -> Item? in
             guard let model = descriptors[id] else { return nil }
             return Item(
@@ -160,7 +163,10 @@ struct LocalModelInstallPlan: Equatable, Sendable {
         catalog: [LocalModelDescriptor] = LocalModelManager.catalog,
         isInstalled: (LocalModelID) -> Bool
     ) -> LocalModelInstallPlan {
-        let descriptors = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
+        let descriptors = Dictionary(
+            catalog.map { ($0.id, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         let items = ids.compactMap { id -> Item? in
             guard let model = descriptors[id] else { return nil }
             return Item(

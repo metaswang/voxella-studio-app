@@ -449,19 +449,27 @@ final class TimelineView: NSView {
             )
         }()
         let rippleShiftByClip: [String: Int] = ripplePlan.map {
-            Dictionary(uniqueKeysWithValues: $0.shifts.map { ($0.clipId, $0.newStartFrame) })
+            Dictionary(
+                $0.shifts.map { ($0.clipId, $0.newStartFrame) },
+                uniquingKeysWith: { current, _ in current }
+            )
         } ?? [:]
         let rippleResizeByClip: [String: EditorViewModel.RippleTrimPlan.Resize] = ripplePlan.map {
-            Dictionary(uniqueKeysWithValues: $0.resizes.map { ($0.clipId, $0) })
+            Dictionary(
+                $0.resizes.map { ($0.clipId, $0) },
+                uniquingKeysWith: { current, _ in current }
+            )
         } ?? [:]
 
         if derivedCacheRevision != editor.timelineRenderRevision {
             derivedCacheRevision = editor.timelineRenderRevision
             cachedLinkOffsets = editor.linkGroupOffsets()
             cachedAngleLabels = Dictionary(
-                uniqueKeysWithValues: editor.multicamGroups.map { group in
+                editor.multicamGroups.map { group in
                     (group.id, group.members.reduce(into: [:]) { $0[$1.mediaRef] = $1.angleLabel })
-                })
+                },
+                uniquingKeysWith: { current, _ in current }
+            )
         }
         let linkOffsets = cachedLinkOffsets
         let anglesByGroup = cachedAngleLabels

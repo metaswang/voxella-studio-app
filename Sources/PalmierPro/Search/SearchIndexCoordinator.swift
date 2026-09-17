@@ -335,7 +335,10 @@ final class SearchIndexCoordinator {
             }
             guard !Task.isCancelled, generation == cacheGeneration,
                   VisualModelLoader.shared.embedder?.spec == model.spec else { return [] }
-            let current = Dictionary(uniqueKeysWithValues: assetsProvider().map { ($0.id, $0.url) })
+            let current = Dictionary(
+                assetsProvider().map { ($0.id, $0.url) },
+                uniquingKeysWith: { current, _ in current }
+            )
             let validIDs = Set(candidates.compactMap { current[$0.0] == $0.1 ? $0.0 : nil })
             loadedIndexes.merge(loaded.filter { validIDs.contains($0.key) }) { _, new in new }
             searchFailure = nil

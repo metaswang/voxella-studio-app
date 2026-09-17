@@ -1,6 +1,6 @@
 import Foundation
 
-struct VoxellaHostedLLMTextClient: LLMTextClient {
+struct VoxellaHostedLLMTextClient: LLMConfigurableTextClient {
     typealias TokenProvider = @Sendable () async throws -> String
     typealias TokenRefresher = @Sendable () async throws -> Void
 
@@ -43,6 +43,18 @@ struct VoxellaHostedLLMTextClient: LLMTextClient {
     }
 
     func complete(system: String, user: String) async throws -> String {
+        try await complete(
+            system: system,
+            user: user,
+            options: .default
+        )
+    }
+
+    func complete(
+        system: String,
+        user: String,
+        options: LLMTextCompletionOptions
+    ) async throws -> String {
         var shouldRefreshAccount = true
         defer {
             if shouldRefreshAccount {
@@ -51,7 +63,7 @@ struct VoxellaHostedLLMTextClient: LLMTextClient {
                 }
             }
         }
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             // Compatibility field only. The API chooses its env-configured model.
             "model": "voxella-hosted",
             "store": false,
@@ -59,6 +71,15 @@ struct VoxellaHostedLLMTextClient: LLMTextClient {
             "instructions": system,
             "input": user,
         ]
+        if let maxOutputTokens = useCase.defaultMaxOutputTokens {
+            body["max_output_tokens"] = maxOutputTokens
+        }
+        if let reasoningEffort = useCase.defaultReasoningEffort {
+            body["reasoning"] = ["effort": reasoningEffort.rawValue]
+        }
+        if let structuredOutput = options.structuredOutput {
+            body["text"] = ["format": structuredOutput.responsesTextFormatValue]
+        }
         let attempts = max(1, policy.maximumAttemptsPerModel)
         let requestID = UUID().uuidString.lowercased()
         var lastError: Error?

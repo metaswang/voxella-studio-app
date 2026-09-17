@@ -866,7 +866,10 @@ struct SubtitlePostprocessPipeline: Sendable {
             )
         }
 
-        let wordByIndex = Dictionary(uniqueKeysWithValues: words.map { ($0.index, $0) })
+        let wordByIndex = Dictionary(
+            words.map { ($0.index, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         for index in cues.indices {
             if let first = cues[index].sourceIndices.first.flatMap({ wordByIndex[$0] }),
                let last = cues[index].sourceIndices.last.flatMap({ wordByIndex[$0] }) {

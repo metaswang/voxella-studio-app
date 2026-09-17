@@ -900,6 +900,23 @@ struct AppAccessTests {
                 )
             )
         )
+        let account = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(11 * 86_400)
+        )
+        let laterDevice = AppAccessSnapshot(
+            license: .trial,
+            trialEndsAt: now.addingTimeInterval(14 * 86_400)
+        )
+        #expect(
+            !DeviceTrialLoginMerge.shouldReplaceEntitlement(current: account, candidate: laterDevice, at: now)
+        )
+        #expect(
+            DeviceTrialLoginMerge.shouldReplaceEntitlement(current: laterDevice, candidate: account, at: now)
+        )
+        #expect(
+            DeviceTrialLoginMerge.shouldReplaceEntitlement(current: .init(), candidate: account, at: now)
+        )
         // Server ending later than provisional must not clear provisional clock.
         #expect(
             !DeviceTrialLoginMerge.shouldClearProvisional(
