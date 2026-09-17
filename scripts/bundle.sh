@@ -313,6 +313,7 @@ if [ "$MODE" = "mas" ]; then
 
   echo "==> Embedding provisioning profile"
   cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
+  chmod 644 "$APP/Contents/embedded.provisionprofile"
   sed "s/__TEAM_IDENTIFIER__/$TEAM_IDENTIFIER/g" \
     "$ENTITLEMENTS_TEMPLATE" > "$SIGNING_ENTITLEMENTS"
 fi
