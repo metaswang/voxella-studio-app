@@ -2,15 +2,20 @@
 import Foundation
 import StoreKit
 
-enum AppStoreProductID: String, CaseIterable, Sendable {
-    case trial = "com.voxella.studio.trial.14day"
-    case lifetime = "com.voxella.studio.lifetime"
-    case starter = "com.voxella.studio.starter.monthly"
-    case pro = "com.voxella.studio.pro.monthly"
-    case credits5 = "com.voxella.studio.credits.5"
-    case credits10 = "com.voxella.studio.credits.10"
-    case credits20 = "com.voxella.studio.credits.20"
-    case credits50 = "com.voxella.studio.credits.50"
+enum AppStoreProductID: CaseIterable, Sendable {
+    case lifetime
+
+    var rawValue: String {
+        switch self {
+        case .lifetime:
+            Bundle.main.object(forInfoDictionaryKey: "VoxStudioAppStoreLifetimeProductID") as? String ?? ""
+        }
+    }
+
+    init?(rawValue: String) {
+        guard rawValue == Self.lifetime.rawValue else { return nil }
+        self = .lifetime
+    }
 }
 
 actor AppStorePurchaseProvider {

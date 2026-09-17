@@ -49,7 +49,7 @@ struct AppStoreOffersView: View {
                 let result = try await AppStorePurchaseProvider.shared.products()
                 try Task.checkCancellation()
                 products = result.filter {
-                    credits ? $0.type == .consumable : [AppStoreProductID.lifetime.rawValue, AppStoreProductID.starter.rawValue, AppStoreProductID.pro.rawValue].contains($0.id)
+                    !credits && $0.id == AppStoreProductID.lifetime.rawValue
                 }.sorted { $0.price < $1.price }
                 if products.isEmpty { error = "Purchases are unavailable right now." }
             } catch is CancellationError {

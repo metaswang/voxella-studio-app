@@ -119,6 +119,13 @@ echo "==> Injecting backend config into Info.plist"
 inject_plist PalmierConvexDeploymentURL "${CONVEX_DEPLOYMENT_URL:-}"
 inject_plist PalmierConvexHttpURL "${CONVEX_HTTP_URL:-}"
 inject_plist_bool VoxStudioPaidAccessEnabled "${VOXSTUDIO_PAID_ACCESS_ENABLED:-}"
+if [ "$MODE" = "mas" ]; then
+  if [ -z "${VOXSTUDIO_APP_STORE_LIFETIME_PRODUCT_ID:-}" ]; then
+    echo "!! VOXSTUDIO_APP_STORE_LIFETIME_PRODUCT_ID is required for --mas" >&2
+    exit 1
+  fi
+  inject_plist VoxStudioAppStoreLifetimeProductID "$VOXSTUDIO_APP_STORE_LIFETIME_PRODUCT_ID"
+fi
 cp "$RESOURCES/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # Flatten SwiftPM's resource bundle into the app's Resources tree.

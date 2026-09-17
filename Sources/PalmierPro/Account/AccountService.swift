@@ -146,10 +146,6 @@ final class AccountService {
             lastError = AppAccessError.signInRequired.localizedDescription
             return
         }
-        if [.credits5, .credits10, .credits20, .credits50].contains(product), !canPurchaseCredits {
-            lastError = "Choose Lifetime, Starter, or Pro before buying credits."
-            return
-        }
         let generation = sessionGeneration
         isPurchasingAppStoreProduct = true
         lastError = nil
@@ -635,38 +631,8 @@ final class AccountService {
         if appAccess.policy() == .allowed { return }
 
 #if MAC_APP_STORE
-        // MAS trial remains StoreKit + account-bound.
-        if !isSignedIn {
-            let preparation = await ensureCloudAccess()
-            switch preparation {
-            case .ready:
-                break
-            case .cancelled:
-                throw AppAccessError.signInRequired
-            case .failed:
-                throw AppAccessError.verificationRequired
-            }
-        }
+        // The Mac App Store build exposes one StoreKit product: Lifetime.
         await refreshAccountForFeatureAccess()
-        if appAccess.license == .none, !tier.isPaid {
-            let generation = sessionGeneration
-            let owner = userID
-            do {
-                guard let userID else { throw AppAccessError.signInRequired }
-                guard let access = try await AppStorePurchaseProvider.shared.purchase(.trial, appAccountToken: userID) else {
-                    throw AppAccessError.verificationRequired
-                }
-                guard isCurrentSession(generation), self.userID == owner else { throw CancellationError() }
-                accessRequestID = UUID()
-                appAccess = access
-                entitlementSchedule.succeeded(at: .now)
-                try await persistAppAccess()
-                try Task.checkCancellation()
-            } catch {
-                lastError = error.localizedDescription
-                throw (error as? AppAccessError) ?? AppAccessError.verificationRequired
-            }
-        }
 #else
         // DMG: first gated feature registers a signed device trial without sign-in (PR1.1).
         // Verify only when ≥24h since last success or the token is near expiry — not on launch
@@ -1512,19 +1478,7 @@ final class AccountService {
     func subscribe(tier: AccountTier) async {
         lastError = nil
 #if MAC_APP_STORE
-        guard let userID else {
-            lastError = AppAccessError.signInRequired.localizedDescription
-            return
-        }
-        let productID: AppStoreProductID
-        switch tier.rawValue {
-        case "starter": productID = .starter
-        case "pro": productID = .pro
-        default:
-            lastError = "The selected plan is unavailable."
-            return
-        }
-        await purchaseAppStoreProduct(productID.rawValue)
+        lastError = "Only the Lifetime purchase is available in the Mac App Store version."
 #else
         guard tier.isPaid, let planID = availablePlan(for: tier)?.planID else {
             lastError = "The selected plan is unavailable."
@@ -1600,21 +1554,7 @@ final class AccountService {
             do {
                 guard let self else { return }
 #if MAC_APP_STORE
-                guard let userID = self.userID else {
-                    self.lastError = AppAccessError.signInRequired.localizedDescription
-                    return
-                }
-                let productID: AppStoreProductID
-                switch dollars {
-                case 5: productID = .credits5
-                case 10: productID = .credits10
-                case 20: productID = .credits20
-                case 50: productID = .credits50
-                default:
-                    self.lastError = "Choose a $5, $10, $20, or $50 credit pack."
-                    return
-                }
-                await self.purchaseAppStoreProduct(productID.rawValue)
+                self.lastError = "Credit purchases are not available in the Mac App Store version."
 #else
                 let result = try await self.api.createBillingCheckout(topupAmountUSD: Double(dollars))
                 self.openInBrowser(result.checkoutURL)
