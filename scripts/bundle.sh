@@ -318,6 +318,13 @@ if [ "$MODE" = "mas" ]; then
     "$ENTITLEMENTS_TEMPLATE" > "$SIGNING_ENTITLEMENTS"
 fi
 
+# The downloaded provisioning profile can carry quarantine/metadata xattrs.
+# Apple rejects MAS/TestFlight packages containing those attributes.
+if [ "$MODE" = "mas" ]; then
+  echo "==> Clearing extended attributes after embedding provisioning profile"
+  xattr -cr "$APP"
+fi
+
 echo "==> Codesigning main app ($SIGNING_IDENTITY / $TEAM_IDENTIFIER)"
 if [ "$MODE" = "mas" ]; then
   bash scripts/check-mas-billing.sh "$APP"
