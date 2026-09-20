@@ -1001,7 +1001,7 @@ actor VoxellaAPIClient {
         )
     }
 
-    
+#if !MAC_APP_STORE
     func redeemLicenseKey(_ key: String) async throws -> AppAccessResponse {
         try await request(
             url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/redeem"),
@@ -1010,6 +1010,7 @@ actor VoxellaAPIClient {
             as: AppAccessResponse.self
         )
     }
+#endif
 
     func issueLifetimeDevice(fingerprint: String) async throws -> LifetimeDeviceAPIResponse {
         try await request(

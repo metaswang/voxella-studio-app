@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+#if !MAC_APP_STORE
 struct ActivateLicenseView: View {
     @Bindable private var account = AccountService.shared
     @State private var key = ""
@@ -112,3 +113,4 @@ final class ActivateLicenseWindowController: NSWindowController {
         )
     }
 }
+#endif

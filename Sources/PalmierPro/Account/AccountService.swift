@@ -1493,6 +1493,7 @@ final class AccountService {
 #endif
     }
 
+#if !MAC_APP_STORE
     func redeemLicenseKey(_ key: String) async throws {
         lastError = nil
         guard userID != nil else {
@@ -1505,6 +1506,7 @@ final class AccountService {
             lastError = message
             throw VoxellaAPIError.http(400, message)
         }
+        Log.account.notice("License key redeem attempt")
         do {
             let access = try await api.redeemLicenseKey(trimmed)
             appAccess = access.snapshot
@@ -1512,11 +1514,14 @@ final class AccountService {
             entitlementSchedule.succeeded(at: .now)
             try await persistAppAccess()
             await syncLifetimeDeviceCredentialIfNeeded()
+            Log.account.notice("License key redeemed: Lifetime activated")
         } catch {
+            Log.account.warning("License key redeem failed: \(Log.detail(error))")
             lastError = error.localizedDescription
             throw error
         }
     }
+#endif
 
     func purchaseLifetime() async {
         lastError = nil
