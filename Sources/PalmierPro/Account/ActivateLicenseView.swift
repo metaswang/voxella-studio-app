@@ -8,31 +8,66 @@ struct ActivateLicenseView: View {
     @State private var isSubmitting = false
     @State private var statusMessage: String?
     @State private var didSucceed = false
+    @State private var showDevices = false
     var onClose: () -> Void = {}
+
+    private var trimmedKey: String {
+        key.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var alreadyLicensed: Bool {
+        account.appAccess.license == .lifetime
+            || LifetimeLocalCredential.isPresent()
+            || LicenseKeyLocalCredential.isPresent()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Activate License")
                 .font(.title2.weight(.semibold))
-            Text("Paste a Lifetime license key. You must be signed in — the key binds to your account, then this Mac receives a Lifetime device credential.")
+            Text("Paste your license key to unlock this Mac. Sign-in is optional and only links the key to your account for device management.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if account.userID == nil {
-                Text("Sign in first, then return here to activate.")
-                    .foregroundStyle(.orange)
-                Button("Open Account…") {
-                    SettingsWindowController.shared.show(tab: .account)
+            if alreadyLicensed {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                        .accessibilityHidden(true)
+                    Text(LicenseKeyLocalCredential.isPresent()
+                         ? "License key activated"
+                         : "Lifetime unlocked")
+                        .foregroundStyle(.green)
+                        .fontWeight(.semibold)
                 }
-            } else if account.appAccess.license == .lifetime {
-                Text("This account already has Lifetime access.")
-                    .foregroundStyle(.green)
-                Button("Done") { onClose() }
-                    .keyboardShortcut(.defaultAction)
+                Text(LicenseKeyLocalCredential.isPresent()
+                     ? "This Mac is unlocked with your license key. Manage devices below if you need a free slot on another Mac."
+                     : "This Mac already has Lifetime access.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    if LicenseKeyLocalCredential.isPresent() {
+                        Button("Manage devices…") { showDevices = true }
+                    }
+                    Button("Done") { onClose() }
+                        .keyboardShortcut(.defaultAction)
+                }
+                .sheet(isPresented: $showDevices) {
+                    LicenseKeyDevicesView(onClose: { showDevices = false })
+                }
             } else {
                 TextField("VXLT-XXXX-XXXX-XXXX-XXXX", text: $key)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
+                    .disabled(isSubmitting)
+
+                if !account.isSignedIn {
+                    Text("Optional: sign in later to manage devices across Macs from your account.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 if let statusMessage {
                     ScrollView {
                         Text(statusMessage)
@@ -42,6 +77,7 @@ struct ActivateLicenseView: View {
                     }
                     .frame(maxHeight: 100)
                 }
+
                 HStack {
                     Spacer()
                     Button("Cancel") { onClose() }
@@ -50,24 +86,25 @@ struct ActivateLicenseView: View {
                         Task { await activate() }
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(isSubmitting || key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(isSubmitting || trimmedKey.isEmpty)
                 }
             }
         }
         .padding(24)
-        .frame(width: 440)
+        .frame(width: 460)
     }
 
     @MainActor
     private func activate() async {
+        guard !trimmedKey.isEmpty else { return }
         isSubmitting = true
         statusMessage = nil
         didSucceed = false
         defer { isSubmitting = false }
         do {
-            try await account.redeemLicenseKey(key)
+            try await account.redeemLicenseKey(trimmedKey)
             didSucceed = true
-            statusMessage = "Lifetime activated on this Mac."
+            statusMessage = "License activated on this Mac."
             try? await Task.sleep(nanoseconds: 900_000_000)
             onClose()
         } catch {
@@ -85,7 +122,7 @@ final class ActivateLicenseWindowController: NSWindowController {
         let root = ActivateLicenseView(onClose: {})
         let hosting = NSHostingView(rootView: AnyView(root))
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 260),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 360),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false

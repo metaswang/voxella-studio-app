@@ -170,13 +170,19 @@ final class AccountService {
     var tier: AccountTier { account?.user.tier ?? .none }
     var isPaid: Bool { tier.isPaid }
     var userID: UUID? { account?.user.id }
+    
+    /// Lifetime purchase credential OR license-key device credential.
+    private var hasLocalPaidDeviceCredential: Bool {
+        LifetimeLocalCredential.isPresent() || LicenseKeyLocalCredential.isPresent()
+    }
+
     var isAppAccessEnforced: Bool { Self.paidAccessEnabled }
     var canCreateNewContent: Bool {
         AppAccessGate.canCreateNewContent(
             enforced: isAppAccessEnforced,
             signedIn: isSignedIn,
             access: appAccess,
-            hasLocalLifetimeCredential: LifetimeLocalCredential.isPresent()
+            hasLocalLifetimeCredential: hasLocalPaidDeviceCredential
         )
     }
     /// Trial and Lifetime also satisfy feature-level plan gates; Meet Bot and Calendar use AccountFeature.
@@ -184,7 +190,7 @@ final class AccountService {
         AppAccessGate.hasFeatureAccess(
             hasPaidPlan: isPaid,
             access: appAccess,
-            hasLocalLifetimeCredential: LifetimeLocalCredential.isPresent()
+            hasLocalLifetimeCredential: hasLocalPaidDeviceCredential
         )
     }
     var canUseCloudHighFidelityVoiceRepair: Bool { isSignedIn && isPaid }
@@ -194,7 +200,7 @@ final class AccountService {
             enforced: isAppAccessEnforced,
             access: appAccess,
             tier: tier,
-            hasLocalLifetimeCredential: LifetimeLocalCredential.isPresent()
+            hasLocalLifetimeCredential: hasLocalPaidDeviceCredential
         )
     }
 
@@ -263,6 +269,7 @@ final class AccountService {
     @ObservationIgnored private var didBecomeActiveObserver: NSObjectProtocol?
     @ObservationIgnored private var deviceTrialVerifyAttempt: Date?
     @ObservationIgnored private var lifetimeDeviceVerifyAttempt: Date?
+    @ObservationIgnored private var licenseKeyDeviceVerifyAttempt: Date?
     @ObservationIgnored private let trialReminderStore = TrialReminderStore()
 
     private init() {}
@@ -617,8 +624,9 @@ final class AccountService {
         guard Self.paidAccessEnabled else { return }
         reapplyLocalEntitlementOverlays()
         await renewLifetimeLeaseIfNeeded()
+        await renewLicenseKeyLeaseIfNeeded()
         reapplyLocalEntitlementOverlays()
-        if LifetimeLocalCredential.isPresent() { return }
+        if hasLocalPaidDeviceCredential { return }
         if appAccess.policy() == .allowed { return }
 
         if isLoading, userID == nil {
@@ -662,11 +670,14 @@ final class AccountService {
         try requireNewContentAccess()
     }
 
-    /// Overlay verified Lifetime device credential (independent Keychain; survives logout).
-    /// Apply local entitlement overlays in priority order: Lifetime first, then device trial.
-    /// Cold start, sign-out, and account-clear paths must show Lifetime over trial over .none.
+    /// Apply local entitlement overlays in priority order:
+    /// 1. Lifetime device credential (purchase-based, independent Keychain)
+    /// 2. License-key device credential (key-based activation, independent Keychain)
+    /// 3. Device trial (14d local or signed token)
+    /// Cold start, sign-out, and account-clear paths must show highest available entitlement.
     private func reapplyLocalEntitlementOverlays() {
         applyLifetimeCredentialOverlayIfNeeded()
+        applyLicenseKeyCredentialOverlayIfNeeded()
         applyDeviceTrialOverlayIfNeeded()
     }
 
@@ -677,12 +688,64 @@ final class AccountService {
         appAccess = snapshot
     }
 
+    private func applyLicenseKeyCredentialOverlayIfNeeded() {
+        guard Self.paidAccessEnabled else { return }
+        if LifetimeLocalCredential.isPresent() { return }
+        guard let snapshot = try? LicenseKeyLocalCredential.activeSnapshot() else { return }
+        accessRequestID = UUID()
+        appAccess = snapshot
+    }
+
+
+    private func renewLicenseKeyLeaseIfNeeded(force: Bool = false) async {
+        guard Self.paidAccessEnabled else { return }
+        guard let record = try? LicenseKeyLocalCredential.load() else { return }
+        if !force, !record.refreshIsDue(at: .now, lastAttempt: licenseKeyDeviceVerifyAttempt) {
+            return
+        }
+        licenseKeyDeviceVerifyAttempt = .now
+        do {
+            let response = try await api.verifyLicenseKeyDevice(
+                token: record.token,
+                fingerprint: record.fingerprint
+            )
+            try applyLicenseKeyDeviceResponse(response, fingerprint: record.fingerprint)
+        } catch let error as VoxellaAPIError {
+            if case .http(let code, _) = error, code == 401 || code == 403 {
+                try? LicenseKeyLocalCredential.clear()
+                if appAccess.license == .lifetime, !LifetimeLocalCredential.isPresent() {
+                    appAccess = .init()
+                }
+                reapplyLocalEntitlementOverlays()
+            } else {
+                Log.account.warning("License key lease renew unavailable")
+            }
+        } catch {
+            Log.account.warning("License key lease renew unavailable")
+        }
+    }
+
+    private func applyLicenseKeyDeviceResponse(
+        _ response: LicenseKeyDeviceAPIResponse,
+        fingerprint: String
+    ) throws {
+        guard !response.token.isEmpty else { throw AppAccessError.verificationRequired }
+        _ = try LicenseKeyLocalCredential.store(
+            token: response.token,
+            fingerprint: fingerprint,
+            verifiedAt: .now
+        )
+        licenseKeyDeviceVerifyAttempt = .now
+        applyLicenseKeyCredentialOverlayIfNeeded()
+    }
+
+
     /// Overlay device-local trial onto `appAccess` when no stronger entitlement is present.
     /// Signed mid-trial token (even past offline grace) or provisional local 14d clock.
     /// Expired / missing leaves license at `.none` — do not fabricate a trial clock.
     private func applyDeviceTrialOverlayIfNeeded() {
         guard Self.paidAccessEnabled else { return }
-        if LifetimeLocalCredential.isPresent() { return }
+        if hasLocalPaidDeviceCredential { return }
         if appAccess.license == .lifetime { return }
         if appAccess.hasActiveSubscription { return }
         // Only overlay when license is .none (no existing server entitlement).
@@ -1018,7 +1081,7 @@ final class AccountService {
         guard AppAccessGate.shouldPresentTrialActivationTip(
             enforced: isAppAccessEnforced,
             signedIn: isSignedIn,
-            hasLocalLifetimeCredential: LifetimeLocalCredential.isPresent()
+            hasLocalLifetimeCredential: hasLocalPaidDeviceCredential
         ) else { return }
 
         WorkbenchTipCenter.shared.show(
@@ -1113,7 +1176,7 @@ final class AccountService {
                 enforced: Self.paidAccessEnabled,
                 signedIn: isSignedIn,
                 access: appAccess,
-                hasLocalLifetimeCredential: LifetimeLocalCredential.isPresent()
+                hasLocalLifetimeCredential: hasLocalPaidDeviceCredential
             )
         } catch let error as AppAccessError {
             presentAppAccessNotice(for: error)
@@ -1494,80 +1557,95 @@ final class AccountService {
     }
 
 #if !MAC_APP_STORE
+    /// Activate a license key on this Mac by fingerprint. Login is optional (links account when signed in).
     func redeemLicenseKey(_ key: String) async throws {
         lastError = nil
-        guard userID != nil else {
-            lastError = AppAccessError.signInRequired.localizedDescription
-            throw AppAccessError.signInRequired
-        }
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             let message = "Enter a valid license key."
             lastError = message
             throw VoxellaAPIError.http(400, message)
         }
-        guard appAccess.license != .lifetime else {
-            let message = "This account already has Lifetime access."
+        if LifetimeLocalCredential.isPresent() || appAccess.license == .lifetime {
+            let message = "This Mac already has Lifetime access."
             lastError = message
             throw VoxellaAPIError.http(400, message)
-        }
-        Log.account.notice("License key redeem attempt")
-        do {
-            let access = try await api.redeemLicenseKey(trimmed)
-            appAccess = access.snapshot
-            lifetimePromotion = access.lifetimePromotion
-            entitlementSchedule.succeeded(at: .now)
-            try await persistAppAccess()
-            try await issueLifetimeDeviceCredentialForRedeem()
-            Log.account.notice("License key redeemed: Lifetime activated on this Mac")
-        } catch {
-            Log.account.warning("License key redeem failed: \(Log.detail(error))")
-            lastError = error.localizedDescription
-            throw error
-        }
-    }
-
-    /// Issue Lifetime device credential during license key redemption.
-    /// Unlike syncLifetimeDeviceCredentialIfNeeded (which swallows errors), this THROWS
-    /// to ensure redeem UI cannot claim success without a local credential.
-    private func issueLifetimeDeviceCredentialForRedeem() async throws {
-        guard Self.paidAccessEnabled, isSignedIn, let owner = userID else {
-            throw AppAccessError.signInRequired
-        }
-        guard appAccess.license == .lifetime else {
-            throw AppAccessError.deviceCredentialBindFailed
         }
         let fingerprint: String
         do {
             fingerprint = try DeviceFingerprint.current()
         } catch {
-            Log.account.error("Device fingerprint unavailable for Lifetime credential")
+            lastError = AppAccessError.deviceCredentialBindFailed.localizedDescription
             throw AppAccessError.deviceCredentialBindFailed
         }
-        // Check if valid credential already exists for this device + user
-        if let existing = try? LifetimeLocalCredential.load(fingerprint: fingerprint),
-           existing.userID == owner,
-           existing.isChronologicallyValid(at: .now) {
-            Log.account.notice("Lifetime device credential already present")
-            return
-        }
-        // Issue new device credential
+        let deviceLabel = Host.current().localizedName
+        Log.account.notice("License key activate attempt")
         do {
-            let response = try await api.issueLifetimeDevice(fingerprint: fingerprint)
-            try applyLifetimeDeviceResponse(response, fingerprint: fingerprint, userID: owner)
-            Log.account.notice("Lifetime device credential issued and stored")
-        } catch let error as VoxellaAPIError {
-            if case .http(let code, let message) = error {
-                Log.account.error("Lifetime device credential issue failed: \(code) - \(message)")
-                if code == 403 {
-                    throw AppAccessError.deviceCredentialBindFailed
+            let response = try await api.activateLicenseKey(
+                key: trimmed,
+                fingerprint: fingerprint,
+                deviceLabel: deviceLabel
+            )
+            try applyLicenseKeyDeviceResponse(response, fingerprint: fingerprint)
+            entitlementSchedule.succeeded(at: .now)
+            try await persistAppAccess()
+            if isSignedIn {
+                // Best-effort: associate key/device with the signed-in account.
+                if let token = try? LicenseKeyLocalCredential.load()?.token {
+                    do {
+                        _ = try await api.linkLicenseKeyAccount(
+                            token: token,
+                            key: nil,
+                            fingerprint: fingerprint
+                        )
+                        Log.account.notice("License key linked to account")
+                    } catch {
+                        Log.account.warning("License key account link failed (non-blocking): \(error.localizedDescription)")
+                    }
                 }
             }
-            throw error
+            Log.account.notice("License key activated on this Mac")
         } catch {
-            Log.account.error("Lifetime device credential store failed: \(Log.detail(error))")
-            throw AppAccessError.deviceCredentialBindFailed
+            Log.account.warning("License key activate failed (key redacted)")
+            lastError = error.localizedDescription
+            throw error
         }
+    }
+
+
+#if !MAC_APP_STORE
+    func listLicenseKeyDevices() async throws -> LicenseKeyDevicesListResponse {
+        guard let record = try? LicenseKeyLocalCredential.load() else {
+            throw VoxellaAPIError.http(400, "License key credential not found. Please activate a license key first.")
+        }
+        let token = record.token
+        let fingerprint = try? DeviceFingerprint.current()
+        return try await api.listLicenseKeyDevices(
+            token: token,
+            licenseKeyID: record.licenseKeyID,
+            fingerprint: fingerprint
+        )
+    }
+
+    func unbindLicenseKeyDevice(fingerprint: String) async throws -> LicenseKeyDevicesListResponse {
+        guard let record = try? LicenseKeyLocalCredential.load() else {
+            throw VoxellaAPIError.http(400, "License key credential not found.")
+        }
+        let token = record.token
+        let result = try await api.unbindLicenseKeyDevice(
+            fingerprint: fingerprint,
+            token: token,
+            licenseKeyID: record.licenseKeyID
+        )
+        // If we unbound this Mac, clear local credential.
+        if let current = try? DeviceFingerprint.current(), current == fingerprint {
+            try? LicenseKeyLocalCredential.clear()
+            if appAccess.license == .lifetime, !LifetimeLocalCredential.isPresent() {
+                appAccess = .init()
+            }
+            reapplyLocalEntitlementOverlays()
+        }
+        return result
     }
 #endif
 
