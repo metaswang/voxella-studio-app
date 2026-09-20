@@ -45,6 +45,9 @@ enum MainMenuBuilder {
 #endif
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
+#if !MAC_APP_STORE
+        menu.addItem(withTitle: "Activate License…", action: #selector(AppDelegate.showActivateLicense(_:)), keyEquivalent: "")
+#endif
         menu.addItem(withTitle: "Local Features…", action: #selector(AppDelegate.showLocalModels(_:)), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit \(AppIdentity.productName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
