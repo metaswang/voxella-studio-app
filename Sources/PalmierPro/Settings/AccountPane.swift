@@ -3,6 +3,7 @@ import SwiftUI
 struct AccountPane: View {
     @Bindable var account = AccountService.shared
     @State private var topOffDollars: Int = 20
+    @State private var showDeviceManagement = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
@@ -47,12 +48,21 @@ struct AccountPane: View {
                 unpaidSection
             }
 
+#if !MAC_APP_STORE
+            if shouldShowDeviceManagement {
+                deviceManagementSection
+            }
+#endif
+
             Button("Sign out") {
                 Task { await account.signOut() }
             }
             .buttonStyle(.capsule(.secondary, size: .regular))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .sheet(isPresented: $showDeviceManagement) {
+            LicenseKeyDevicesView(onClose: { showDeviceManagement = false })
+        }
     }
 
     private func trialSection(_ presentation: TrialPresentation) -> some View {
@@ -307,4 +317,39 @@ struct AccountPane: View {
             }
         }
     }
+
+#if !MAC_APP_STORE
+    private var shouldShowDeviceManagement: Bool {
+        // Show when: local LK credential OR (signed-in AND has linked/owner access)
+        if LicenseKeyLocalCredential.isPresent() {
+            return true
+        }
+        // Future: check if user is owner/linked for a license key (requires API support)
+        return false
+    }
+
+    private var deviceManagementSection: some View {
+        SettingsGroup(title: "License Key") {
+            card {
+                HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                        Text("Device Management")
+                            .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
+                            .foregroundStyle(AppTheme.Text.primaryColor)
+                        Text("View and manage devices activated with your license key")
+                            .font(.system(size: AppTheme.FontSize.sm))
+                            .foregroundStyle(AppTheme.Text.secondaryColor)
+                    }
+
+                    Spacer(minLength: AppTheme.Spacing.lg)
+
+                    Button("Manage Devices…") {
+                        showDeviceManagement = true
+                    }
+                    .buttonStyle(accountSecondaryButtonStyle)
+                }
+            }
+        }
+    }
+#endif
 }

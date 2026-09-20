@@ -1107,11 +1107,21 @@ actor VoxellaAPIClient {
         )
     }
 
-    /// Activate license key onto this device fingerprint (no login required).
+    /// Activate license key onto this device fingerprint (login optional).
+    /// Uses authenticated request when session exists to auto-link account.
     func activateLicenseKey(key: String, fingerprint: String, deviceLabel: String?) async throws -> LicenseKeyDeviceAPIResponse {
         var body: [String: Any] = ["key": key, "fingerprint": fingerprint]
         if let deviceLabel, !deviceLabel.isEmpty {
             body["device_label"] = deviceLabel
+        }
+        // Prefer authenticated when signed in so API can auto-link user as owner/linked.
+        if auth.hasSession {
+            return try await request(
+                url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/activate"),
+                method: "POST",
+                json: body,
+                as: LicenseKeyDeviceAPIResponse.self
+            )
         }
         return try await unauthenticatedDecode(
             url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/activate"),

@@ -670,9 +670,11 @@ final class AccountService {
         try requireNewContentAccess()
     }
 
-    /// Overlay verified Lifetime device credential (independent Keychain; survives logout).
-    /// Apply local entitlement overlays in priority order: Lifetime first, then device trial.
-    /// Cold start, sign-out, and account-clear paths must show Lifetime over trial over .none.
+    /// Apply local entitlement overlays in priority order:
+    /// 1. Lifetime device credential (purchase-based, independent Keychain)
+    /// 2. License-key device credential (key-based activation, independent Keychain)
+    /// 3. Device trial (14d local or signed token)
+    /// Cold start, sign-out, and account-clear paths must show highest available entitlement.
     private func reapplyLocalEntitlementOverlays() {
         applyLifetimeCredentialOverlayIfNeeded()
         applyLicenseKeyCredentialOverlayIfNeeded()
@@ -1613,23 +1615,27 @@ final class AccountService {
 
 #if !MAC_APP_STORE
     func listLicenseKeyDevices() async throws -> LicenseKeyDevicesListResponse {
-        let record = try LicenseKeyLocalCredential.load()
-        let token = record?.token
+        guard let record = try? LicenseKeyLocalCredential.load() else {
+            throw VoxellaAPIError.http(400, "License key credential not found. Please activate a license key first.")
+        }
+        let token = record.token
         let fingerprint = try? DeviceFingerprint.current()
         return try await api.listLicenseKeyDevices(
             token: token,
-            licenseKeyID: record?.licenseKeyID,
+            licenseKeyID: record.licenseKeyID,
             fingerprint: fingerprint
         )
     }
 
     func unbindLicenseKeyDevice(fingerprint: String) async throws -> LicenseKeyDevicesListResponse {
-        let record = try LicenseKeyLocalCredential.load()
-        let token = record?.token
+        guard let record = try? LicenseKeyLocalCredential.load() else {
+            throw VoxellaAPIError.http(400, "License key credential not found.")
+        }
+        let token = record.token
         let result = try await api.unbindLicenseKeyDevice(
             fingerprint: fingerprint,
             token: token,
-            licenseKeyID: record?.licenseKeyID
+            licenseKeyID: record.licenseKeyID
         )
         // If we unbound this Mac, clear local credential.
         if let current = try? DeviceFingerprint.current(), current == fingerprint {
@@ -1640,50 +1646,6 @@ final class AccountService {
             reapplyLocalEntitlementOverlays()
         }
         return result
-    }
-#endif
-
-    /// Issue Lifetime device credential during license key redemption.
-    /// Unlike syncLifetimeDeviceCredentialIfNeeded (which swallows errors), this THROWS
-    /// to ensure redeem UI cannot claim success without a local credential.
-    private func issueLifetimeDeviceCredentialForRedeem() async throws {
-        guard Self.paidAccessEnabled, isSignedIn, let owner = userID else {
-            throw AppAccessError.signInRequired
-        }
-        guard appAccess.license == .lifetime else {
-            throw AppAccessError.deviceCredentialBindFailed
-        }
-        let fingerprint: String
-        do {
-            fingerprint = try DeviceFingerprint.current()
-        } catch {
-            Log.account.error("Device fingerprint unavailable for Lifetime credential")
-            throw AppAccessError.deviceCredentialBindFailed
-        }
-        // Check if valid credential already exists for this device + user
-        if let existing = try? LifetimeLocalCredential.load(fingerprint: fingerprint),
-           existing.userID == owner,
-           existing.isChronologicallyValid(at: .now) {
-            Log.account.notice("Lifetime device credential already present")
-            return
-        }
-        // Issue new device credential
-        do {
-            let response = try await api.issueLifetimeDevice(fingerprint: fingerprint)
-            try applyLifetimeDeviceResponse(response, fingerprint: fingerprint, userID: owner)
-            Log.account.notice("Lifetime device credential issued and stored")
-        } catch let error as VoxellaAPIError {
-            if case .http(let code, let message) = error {
-                Log.account.error("Lifetime device credential issue failed: \(code) - \(message)")
-                if code == 403 {
-                    throw AppAccessError.deviceCredentialBindFailed
-                }
-            }
-            throw error
-        } catch {
-            Log.account.error("Lifetime device credential store failed: \(Log.detail(error))")
-            throw AppAccessError.deviceCredentialBindFailed
-        }
     }
 #endif
 
