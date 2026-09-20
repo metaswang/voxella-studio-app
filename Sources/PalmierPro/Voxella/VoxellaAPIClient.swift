@@ -1001,6 +1001,16 @@ actor VoxellaAPIClient {
         )
     }
 
+    
+    func redeemLicenseKey(_ key: String) async throws -> AppAccessResponse {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/redeem"),
+            method: "POST",
+            json: ["key": key],
+            as: AppAccessResponse.self
+        )
+    }
+
     func issueLifetimeDevice(fingerprint: String) async throws -> LifetimeDeviceAPIResponse {
         try await request(
             url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/lifetime-device"),

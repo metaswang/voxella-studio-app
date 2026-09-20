@@ -133,6 +133,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         SettingsWindowController.shared.show()
     }
 
+#if !MAC_APP_STORE
+    @objc func showActivateLicense(_ sender: Any?) {
+        ActivateLicenseWindowController.shared.show()
+    }
+#endif
+
     @MainActor
     @objc func zoomIn(_ sender: Any?) {
         AppZoomScale.shared.increase()

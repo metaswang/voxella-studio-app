@@ -1493,6 +1493,31 @@ final class AccountService {
 #endif
     }
 
+    func redeemLicenseKey(_ key: String) async throws {
+        lastError = nil
+        guard userID != nil else {
+            lastError = AppAccessError.signInRequired.localizedDescription
+            throw AppAccessError.signInRequired
+        }
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            let message = "Enter a valid license key."
+            lastError = message
+            throw VoxellaAPIError.http(400, message)
+        }
+        do {
+            let access = try await api.redeemLicenseKey(trimmed)
+            appAccess = access.snapshot
+            lifetimePromotion = access.lifetimePromotion
+            entitlementSchedule.succeeded(at: .now)
+            try await persistAppAccess()
+            await syncLifetimeDeviceCredentialIfNeeded()
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
+    }
+
     func purchaseLifetime() async {
         lastError = nil
         // Lifetime checkout binds the account and issues a device credential (PR2) — login required.
