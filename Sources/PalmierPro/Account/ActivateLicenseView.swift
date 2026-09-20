@@ -8,26 +8,40 @@ struct ActivateLicenseView: View {
     @State private var isSubmitting = false
     @State private var statusMessage: String?
     @State private var didSucceed = false
-    @State private var pendingRedeemAfterSignIn = false
+    @State private var showDevices = false
     var onClose: () -> Void = {}
 
     private var trimmedKey: String {
         key.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var alreadyLicensed: Bool {
+        account.appAccess.license == .lifetime
+            || LifetimeLocalCredential.isPresent()
+            || LicenseKeyLocalCredential.isPresent()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Activate License")
                 .font(.title2.weight(.semibold))
-            Text("Paste a Lifetime license key. Sign in is only needed to bind the key to your account — you can enter the key first.")
+            Text("Paste your license key to unlock this Mac. Sign-in is optional and only links the key to your account for device management.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if account.isSignedIn, account.appAccess.license == .lifetime {
-                Text("This account already has Lifetime access.")
+            if alreadyLicensed {
+                Text("This Mac already has Lifetime access.")
                     .foregroundStyle(.green)
-                Button("Done") { onClose() }
-                    .keyboardShortcut(.defaultAction)
+                HStack {
+                    if LicenseKeyLocalCredential.isPresent() {
+                        Button("Manage Devices…") { showDevices = true }
+                    }
+                    Button("Done") { onClose() }
+                        .keyboardShortcut(.defaultAction)
+                }
+                .sheet(isPresented: $showDevices) {
+                    LicenseKeyDevicesView(onClose: { showDevices = false })
+                }
             } else {
                 TextField("VXLT-XXXX-XXXX-XXXX-XXXX", text: $key)
                     .textFieldStyle(.roundedBorder)
@@ -35,29 +49,10 @@ struct ActivateLicenseView: View {
                     .disabled(isSubmitting)
 
                 if !account.isSignedIn {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Sign in to finish activation")
-                            .font(.headline)
-                        Text("Your key stays in this window. After sign-in, activation continues automatically.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        HStack(spacing: 8) {
-                            Button(account.isSigningIn ? "Signing in…" : "Continue with Apple") {
-                                Task { await account.signInWithApple() }
-                            }
-                            .disabled(account.isSigningIn || isSubmitting)
-                            Button(account.isSigningIn ? "Signing in…" : "Continue with Google") {
-                                Task { await account.signInWithGoogle() }
-                            }
-                            .disabled(account.isSigningIn || isSubmitting)
-                        }
-                        Button("Email sign-in…") {
-                            SettingsWindowController.shared.show(tab: .account)
-                        }
-                        .disabled(account.isSigningIn || isSubmitting)
-                    }
-                    .padding(.top, 4)
+                    Text("Optional: sign in later to manage devices across Macs from your account.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let statusMessage {
@@ -74,38 +69,21 @@ struct ActivateLicenseView: View {
                     Spacer()
                     Button("Cancel") { onClose() }
                         .keyboardShortcut(.cancelAction)
-                    Button(activateButtonTitle) {
+                    Button(isSubmitting ? "Activating…" : "Activate") {
                         Task { await activate() }
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(isSubmitting || account.isSigningIn || trimmedKey.isEmpty)
+                    .disabled(isSubmitting || trimmedKey.isEmpty)
                 }
             }
         }
         .padding(24)
         .frame(width: 460)
-        .onChange(of: account.isSignedIn) { _, signedIn in
-            guard signedIn, pendingRedeemAfterSignIn, !trimmedKey.isEmpty else { return }
-            pendingRedeemAfterSignIn = false
-            Task { await activate() }
-        }
-    }
-
-    private var activateButtonTitle: String {
-        if isSubmitting { return "Activating…" }
-        if !account.isSignedIn { return "Sign in & Activate" }
-        return "Activate"
     }
 
     @MainActor
     private func activate() async {
         guard !trimmedKey.isEmpty else { return }
-        if !account.isSignedIn {
-            pendingRedeemAfterSignIn = true
-            statusMessage = "Enter your key above, then sign in to bind it to your account."
-            didSucceed = false
-            return
-        }
         isSubmitting = true
         statusMessage = nil
         didSucceed = false
@@ -113,7 +91,7 @@ struct ActivateLicenseView: View {
         do {
             try await account.redeemLicenseKey(trimmedKey)
             didSucceed = true
-            statusMessage = "Lifetime activated on this Mac."
+            statusMessage = "License activated on this Mac."
             try? await Task.sleep(nanoseconds: 900_000_000)
             onClose()
         } catch {

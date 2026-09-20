@@ -954,6 +954,102 @@ struct LifetimeDeviceAPIResponse: Decodable, Sendable {
     }
 }
 
+
+#if !MAC_APP_STORE
+struct LicenseKeyDeviceAPIItem: Decodable, Sendable, Identifiable {
+    let id: UUID
+    let fingerprint: String
+    let fingerprintMasked: String
+    let deviceLabel: String?
+    let linkedUserID: UUID?
+    let linkedUserEmail: String?
+    let boundAt: Date?
+    let lastSeenAt: Date?
+    let isCurrent: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, fingerprint
+        case fingerprintMasked = "fingerprint_masked"
+        case deviceLabel = "device_label"
+        case linkedUserID = "linked_user_id"
+        case linkedUserEmail = "linked_user_email"
+        case boundAt = "bound_at"
+        case lastSeenAt = "last_seen_at"
+        case isCurrent = "is_current"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        fingerprint = try c.decode(String.self, forKey: .fingerprint)
+        fingerprintMasked = try c.decodeIfPresent(String.self, forKey: .fingerprintMasked) ?? fingerprint
+        deviceLabel = try c.decodeIfPresent(String.self, forKey: .deviceLabel)
+        linkedUserID = try c.decodeIfPresent(UUID.self, forKey: .linkedUserID)
+        linkedUserEmail = try c.decodeIfPresent(String.self, forKey: .linkedUserEmail)
+        isCurrent = try c.decodeIfPresent(Bool.self, forKey: .isCurrent) ?? false
+        boundAt = Self.decodeDate(c, .boundAt)
+        lastSeenAt = Self.decodeDate(c, .lastSeenAt)
+    }
+
+    private static func decodeDate(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Date? {
+        guard let raw = try? c.decodeIfPresent(String.self, forKey: key) else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+    }
+}
+
+struct LicenseKeyDeviceAPIResponse: Decodable, Sendable {
+    let token: String
+    let fingerprint: String?
+    let licenseKeyID: UUID?
+    let leaseEndsAt: Date?
+    let maxDevices: Int?
+    let devicesUsed: Int?
+    let devices: [LicenseKeyDeviceAPIItem]
+
+    enum CodingKeys: String, CodingKey {
+        case token, fingerprint, devices
+        case licenseKeyID = "license_key_id"
+        case leaseEndsAt = "lease_ends_at"
+        case maxDevices = "max_devices"
+        case devicesUsed = "devices_used"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        token = try c.decodeIfPresent(String.self, forKey: .token) ?? ""
+        fingerprint = try c.decodeIfPresent(String.self, forKey: .fingerprint)
+        licenseKeyID = try c.decodeIfPresent(UUID.self, forKey: .licenseKeyID)
+        maxDevices = try c.decodeIfPresent(Int.self, forKey: .maxDevices)
+        devicesUsed = try c.decodeIfPresent(Int.self, forKey: .devicesUsed)
+        devices = try c.decodeIfPresent([LicenseKeyDeviceAPIItem].self, forKey: .devices) ?? []
+        leaseEndsAt = Self.decodeDate(c, .leaseEndsAt)
+    }
+
+    private static func decodeDate(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Date? {
+        guard let raw = try? c.decodeIfPresent(String.self, forKey: key) else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+    }
+}
+
+struct LicenseKeyDevicesListResponse: Decodable, Sendable {
+    let licenseKeyID: UUID
+    let maxDevices: Int
+    let devicesUsed: Int
+    let devices: [LicenseKeyDeviceAPIItem]
+
+    enum CodingKeys: String, CodingKey {
+        case devices
+        case licenseKeyID = "license_key_id"
+        case maxDevices = "max_devices"
+        case devicesUsed = "devices_used"
+    }
+}
+#endif
+
 actor VoxellaAPIClient {
     static let shared = VoxellaAPIClient()
 
@@ -1008,6 +1104,86 @@ actor VoxellaAPIClient {
             method: "POST",
             json: ["key": key],
             as: AppAccessResponse.self
+        )
+    }
+
+    /// Activate license key onto this device fingerprint (no login required).
+    func activateLicenseKey(key: String, fingerprint: String, deviceLabel: String?) async throws -> LicenseKeyDeviceAPIResponse {
+        var body: [String: Any] = ["key": key, "fingerprint": fingerprint]
+        if let deviceLabel, !deviceLabel.isEmpty {
+            body["device_label"] = deviceLabel
+        }
+        return try await unauthenticatedDecode(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/activate"),
+            method: "POST",
+            json: body,
+            as: LicenseKeyDeviceAPIResponse.self
+        )
+    }
+
+    func verifyLicenseKeyDevice(token: String, fingerprint: String?) async throws -> LicenseKeyDeviceAPIResponse {
+        var body: [String: Any] = ["token": token]
+        if let fingerprint { body["fingerprint"] = fingerprint }
+        return try await unauthenticatedDecode(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/verify"),
+            method: "POST",
+            json: body,
+            as: LicenseKeyDeviceAPIResponse.self
+        )
+    }
+
+    func listLicenseKeyDevices(token: String?, licenseKeyID: UUID?, fingerprint: String?) async throws -> LicenseKeyDevicesListResponse {
+        var body: [String: Any] = [:]
+        if let token { body["token"] = token }
+        if let licenseKeyID { body["license_key_id"] = licenseKeyID.uuidString }
+        if let fingerprint { body["fingerprint"] = fingerprint }
+        // Prefer authenticated when signed in so owner/linked listing works without token.
+        if auth.hasSession {
+            return try await request(
+                url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/devices"),
+                method: "POST",
+                json: body,
+                as: LicenseKeyDevicesListResponse.self
+            )
+        }
+        return try await unauthenticatedDecode(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/devices"),
+            method: "POST",
+            json: body,
+            as: LicenseKeyDevicesListResponse.self
+        )
+    }
+
+    func unbindLicenseKeyDevice(fingerprint: String, token: String?, licenseKeyID: UUID?) async throws -> LicenseKeyDevicesListResponse {
+        var body: [String: Any] = ["fingerprint": fingerprint]
+        if let token { body["token"] = token }
+        if let licenseKeyID { body["license_key_id"] = licenseKeyID.uuidString }
+        if auth.hasSession {
+            return try await request(
+                url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/devices/unbind"),
+                method: "POST",
+                json: body,
+                as: LicenseKeyDevicesListResponse.self
+            )
+        }
+        return try await unauthenticatedDecode(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/devices/unbind"),
+            method: "POST",
+            json: body,
+            as: LicenseKeyDevicesListResponse.self
+        )
+    }
+
+    func linkLicenseKeyAccount(token: String?, key: String?, fingerprint: String?) async throws -> LicenseKeyDevicesListResponse {
+        var body: [String: Any] = [:]
+        if let token { body["token"] = token }
+        if let key { body["key"] = key }
+        if let fingerprint { body["fingerprint"] = fingerprint }
+        return try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/link-account"),
+            method: "POST",
+            json: body,
+            as: LicenseKeyDevicesListResponse.self
         )
     }
 #endif
@@ -2326,6 +2502,31 @@ actor VoxellaAPIClient {
             } catch {
                 throw VoxellaAPIError.decoding
             }
+        }
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw VoxellaAPIError.decoding
+        }
+    }
+
+    
+    private func unauthenticatedDecode<T: Decodable>(
+        url: URL,
+        method: String,
+        json: [String: Any],
+        as type: T.Type
+    ) async throws -> T {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: json)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw VoxellaAPIError.http(0, "No response")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw VoxellaAPIError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
         }
         do {
             return try JSONDecoder().decode(T.self, from: data)
