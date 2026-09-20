@@ -265,6 +265,7 @@ enum AppAccessError: LocalizedError, Equatable, Sendable {
     case verificationRequired
     /// Soft / tip: need network to activate (register) device trial — not a login prompt.
     case trialActivationRequired
+    case deviceCredentialBindFailed
 
     var errorDescription: String? {
         switch self {
@@ -276,6 +277,8 @@ enum AppAccessError: LocalizedError, Equatable, Sendable {
             "Connect to the internet to verify your app access."
         case .trialActivationRequired:
             "Connect to the internet to activate your free trial."
+        case .deviceCredentialBindFailed:
+            "Account upgraded to Lifetime, but this Mac couldn't be bound. You may have reached the device limit. Check your account or contact support."
         }
     }
 
@@ -285,6 +288,7 @@ enum AppAccessError: LocalizedError, Equatable, Sendable {
         case .trialExpired: "trial_expired"
         case .verificationRequired: "entitlement_verification_required"
         case .trialActivationRequired: "trial_activation_required"
+        case .deviceCredentialBindFailed: "device_credential_bind_failed"
         }
     }
 

@@ -24,14 +24,23 @@ struct ActivateLicenseView: View {
                 Button("Open Account…") {
                     SettingsWindowController.shared.show(tab: .account)
                 }
+            } else if account.appAccess.license == .lifetime {
+                Text("This account already has Lifetime access.")
+                    .foregroundStyle(.green)
+                Button("Done") { onClose() }
+                    .keyboardShortcut(.defaultAction)
             } else {
                 TextField("VXLT-XXXX-XXXX-XXXX-XXXX", text: $key)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
                 if let statusMessage {
-                    Text(statusMessage)
-                        .foregroundStyle(didSucceed ? .green : .red)
-                        .fixedSize(horizontal: false, vertical: true)
+                    ScrollView {
+                        Text(statusMessage)
+                            .foregroundStyle(didSucceed ? .green : .red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                    .frame(maxHeight: 100)
                 }
                 HStack {
                     Spacer()
@@ -58,7 +67,7 @@ struct ActivateLicenseView: View {
         do {
             try await account.redeemLicenseKey(key)
             didSucceed = true
-            statusMessage = "Lifetime activated on this account."
+            statusMessage = "Lifetime activated on this Mac."
             try? await Task.sleep(nanoseconds: 900_000_000)
             onClose()
         } catch {

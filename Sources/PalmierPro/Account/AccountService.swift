@@ -1506,6 +1506,11 @@ final class AccountService {
             lastError = message
             throw VoxellaAPIError.http(400, message)
         }
+        guard appAccess.license != .lifetime else {
+            let message = "This account already has Lifetime access."
+            lastError = message
+            throw VoxellaAPIError.http(400, message)
+        }
         Log.account.notice("License key redeem attempt")
         do {
             let access = try await api.redeemLicenseKey(trimmed)
@@ -1513,12 +1518,55 @@ final class AccountService {
             lifetimePromotion = access.lifetimePromotion
             entitlementSchedule.succeeded(at: .now)
             try await persistAppAccess()
-            await syncLifetimeDeviceCredentialIfNeeded()
-            Log.account.notice("License key redeemed: Lifetime activated")
+            try await issueLifetimeDeviceCredentialForRedeem()
+            Log.account.notice("License key redeemed: Lifetime activated on this Mac")
         } catch {
             Log.account.warning("License key redeem failed: \(Log.detail(error))")
             lastError = error.localizedDescription
             throw error
+        }
+    }
+
+    /// Issue Lifetime device credential during license key redemption.
+    /// Unlike syncLifetimeDeviceCredentialIfNeeded (which swallows errors), this THROWS
+    /// to ensure redeem UI cannot claim success without a local credential.
+    private func issueLifetimeDeviceCredentialForRedeem() async throws {
+        guard Self.paidAccessEnabled, isSignedIn, let owner = userID else {
+            throw AppAccessError.signInRequired
+        }
+        guard appAccess.license == .lifetime else {
+            throw AppAccessError.deviceCredentialBindFailed
+        }
+        let fingerprint: String
+        do {
+            fingerprint = try DeviceFingerprint.current()
+        } catch {
+            Log.account.error("Device fingerprint unavailable for Lifetime credential")
+            throw AppAccessError.deviceCredentialBindFailed
+        }
+        // Check if valid credential already exists for this device + user
+        if let existing = try? LifetimeLocalCredential.load(fingerprint: fingerprint),
+           existing.userID == owner,
+           existing.isChronologicallyValid(at: .now) {
+            Log.account.notice("Lifetime device credential already present")
+            return
+        }
+        // Issue new device credential
+        do {
+            let response = try await api.issueLifetimeDevice(fingerprint: fingerprint)
+            try applyLifetimeDeviceResponse(response, fingerprint: fingerprint, userID: owner)
+            Log.account.notice("Lifetime device credential issued and stored")
+        } catch let error as VoxellaAPIError {
+            if case .http(let code, let message) = error {
+                Log.account.error("Lifetime device credential issue failed: \(code) - \(message)")
+                if code == 403 {
+                    throw AppAccessError.deviceCredentialBindFailed
+                }
+            }
+            throw error
+        } catch {
+            Log.account.error("Lifetime device credential store failed: \(Log.detail(error))")
+            throw AppAccessError.deviceCredentialBindFailed
         }
     }
 #endif
