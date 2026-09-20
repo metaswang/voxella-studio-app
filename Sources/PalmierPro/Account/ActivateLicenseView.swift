@@ -30,11 +30,24 @@ struct ActivateLicenseView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if alreadyLicensed {
-                Text("This Mac already has Lifetime access.")
-                    .foregroundStyle(.green)
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                        .accessibilityHidden(true)
+                    Text(LicenseKeyLocalCredential.isPresent()
+                         ? "License key activated"
+                         : "Lifetime unlocked")
+                        .foregroundStyle(.green)
+                        .fontWeight(.semibold)
+                }
+                Text(LicenseKeyLocalCredential.isPresent()
+                     ? "This Mac is unlocked with your license key. Manage devices below if you need a free slot on another Mac."
+                     : "This Mac already has Lifetime access.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     if LicenseKeyLocalCredential.isPresent() {
-                        Button("Manage Devices…") { showDevices = true }
+                        Button("Manage devices…") { showDevices = true }
                     }
                     Button("Done") { onClose() }
                         .keyboardShortcut(.defaultAction)

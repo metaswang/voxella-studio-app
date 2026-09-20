@@ -35,6 +35,9 @@ struct AccountPane: View {
     private var signedInBody: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
             trialCountdownSection
+#if !MAC_APP_STORE
+            licenseKeySection
+#endif
 
             if account.isPaid || account.appAccess.license == .lifetime {
                 subscriptionSection
@@ -302,10 +305,76 @@ struct AccountPane: View {
     private var signedOutBody: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
             trialCountdownSection
+#if !MAC_APP_STORE
+            licenseKeySection
+#endif
             AccountSignInView()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+
+#if !MAC_APP_STORE
+    private var licenseKeySection: some View {
+        SettingsGroup(title: "License key") {
+            card {
+                if isLicenseKeyRedeemed {
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundStyle(AppTheme.Status.successColor)
+                            .accessibilityHidden(true)
+                        Text("Activated")
+                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                            .foregroundStyle(AppTheme.Status.successColor)
+                    }
+                    Text("License key redeemed on this Mac")
+                        .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+                    Text(licenseKeyRedeemedDetail)
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let offlineUntil = licenseKeyOfflineValidUntilText {
+                        Text(offlineUntil)
+                            .font(.system(size: AppTheme.FontSize.xs))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    }
+                    Button("Manage devices…") {
+                        ActivateLicenseWindowController.shared.show()
+                    }
+                    .buttonStyle(.capsule(.secondary, size: .regular))
+                } else {
+                    Text("Redeem a license key")
+                        .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+                    Text("Paste a key from your purchase or reseller to unlock Lifetime on this Mac. Sign-in is optional.")
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Redeem license key") {
+                        ActivateLicenseWindowController.shared.show()
+                    }
+                    .buttonStyle(.capsule(.secondary, size: .regular))
+                }
+            }
+        }
+    }
+
+    private var isLicenseKeyRedeemed: Bool {
+        LicenseKeyLocalCredential.isPresent()
+    }
+
+    private var licenseKeyRedeemedDetail: String {
+        "This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime."
+    }
+
+    private var licenseKeyOfflineValidUntilText: String? {
+        guard let record = try? LicenseKeyLocalCredential.load(),
+              record.isChronologicallyValid(at: .now) else { return nil }
+        let formatted = record.expiresAt.formatted(date: .abbreviated, time: .shortened)
+        return "Offline access valid until \(formatted)"
+    }
+#endif
 
     @ViewBuilder
     private var trialCountdownSection: some View {
