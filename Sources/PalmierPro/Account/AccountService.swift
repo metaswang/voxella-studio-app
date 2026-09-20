@@ -1590,16 +1590,21 @@ final class AccountService {
             if isSignedIn {
                 // Best-effort: associate key/device with the signed-in account.
                 if let token = try? LicenseKeyLocalCredential.load()?.token {
-                    _ = try? await api.linkLicenseKeyAccount(
-                        token: token,
-                        key: nil,
-                        fingerprint: fingerprint
-                    )
+                    do {
+                        _ = try await api.linkLicenseKeyAccount(
+                            token: token,
+                            key: nil,
+                            fingerprint: fingerprint
+                        )
+                        Log.account.notice("License key linked to account")
+                    } catch {
+                        Log.account.warning("License key account link failed (non-blocking): \(error.localizedDescription)")
+                    }
                 }
             }
             Log.account.notice("License key activated on this Mac")
         } catch {
-            Log.account.warning("License key activate failed: \(Log.detail(error))")
+            Log.account.warning("License key activate failed (key redacted)")
             lastError = error.localizedDescription
             throw error
         }

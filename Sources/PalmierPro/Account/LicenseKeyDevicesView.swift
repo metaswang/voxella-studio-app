@@ -9,6 +9,7 @@ struct LicenseKeyDevicesView: View {
     @State private var isLoading = false
     @State private var statusMessage: String?
     @State private var unbindingFingerprint: String?
+    @State private var confirmUnbindDevice: LicenseKeyDeviceAPIItem?
     var onClose: () -> Void = {}
 
     var body: some View {
@@ -45,7 +46,7 @@ struct LicenseKeyDevicesView: View {
                             }
                             Spacer()
                             Button("Unbind") {
-                                Task { await unbind(device.fingerprint) }
+                                confirmUnbindDevice = device
                             }
                             .disabled(unbindingFingerprint != nil)
                         }
@@ -72,6 +73,18 @@ struct LicenseKeyDevicesView: View {
         .padding(24)
         .frame(width: 480)
         .task { await reload() }
+        .alert("Unbind Device?", isPresented: .constant(confirmUnbindDevice != nil), presenting: confirmUnbindDevice) { device in
+            Button("Cancel", role: .cancel) {
+                confirmUnbindDevice = nil
+            }
+            Button("Unbind", role: .destructive) {
+                let fingerprint = device.fingerprint
+                confirmUnbindDevice = nil
+                Task { await unbind(fingerprint) }
+            }
+        } message: { device in
+            Text("This will free a device slot for this license key. \(device.isCurrent ? "This Mac will lose Lifetime access." : "The device will need to be re-activated to regain access.")")
+        }
     }
 
     @MainActor
@@ -91,6 +104,9 @@ struct LicenseKeyDevicesView: View {
 
     @MainActor
     private func unbind(_ fingerprint: String) async {
+        let currentFingerprint = try? DeviceFingerprint.current()
+        let isUnbindingThisMac = (currentFingerprint == fingerprint)
+        
         unbindingFingerprint = fingerprint
         statusMessage = nil
         defer { unbindingFingerprint = nil }
@@ -99,7 +115,7 @@ struct LicenseKeyDevicesView: View {
             devices = response.devices
             maxDevices = response.maxDevices
             devicesUsed = response.devicesUsed
-            if !LicenseKeyLocalCredential.isPresent() {
+            if isUnbindingThisMac {
                 onClose()
             }
         } catch {
