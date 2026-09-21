@@ -173,4 +173,21 @@ struct EditorUndoTests {
         #expect(manager.groupingLevel == 0)
         #expect(manager.canUndo == false)
     }
+
+    @Test func redoLatestRestoresAndReportsActionName() {
+        let (undo, manager, counter) = harness()
+        setCounter(1, actionName: "Set Counter", counter: counter, undo: undo)
+
+        #expect(undo.canUndo)
+        #expect(!undo.canRedo)
+        #expect(undo.undoLatest() == "Set Counter")
+        #expect(counter.value == 0)
+        #expect(!undo.canUndo)
+        #expect(undo.canRedo)
+        #expect(undo.redoLatest() == "Set Counter")
+        #expect(counter.value == 1)
+        #expect(undo.canUndo)
+        #expect(!undo.canRedo)
+        withExtendedLifetime(manager) {}
+    }
 }

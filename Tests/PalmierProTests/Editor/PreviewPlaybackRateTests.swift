@@ -31,15 +31,6 @@ struct PreviewPlaybackRateTests {
         #expect(VideoEngine.frameCount(for: duration, fps: 30) == 123)
     }
 
-    @Test func audioMeteringStopsAboveDoubleSpeed() {
-        #expect(PreviewPlaybackRate.allCases.filter(\.allowsAudioMetering) == [
-            .half,
-            .threeQuarters,
-            .normal,
-            .oneAndHalf,
-            .double,
-        ])
-    }
 
     @Test func selectionUpdatesThePlayerDefaultRate() {
         let editor = EditorViewModel()
@@ -58,9 +49,8 @@ struct PreviewPlaybackRateTests {
     }
 
     @Test func visualRefreshNeverSeeksDuringPlayback() {
-        #expect(VideoEngine.visualRefreshAction(isPlaying: true, playbackRate: .normal) == .meterPlayback)
-        #expect(VideoEngine.visualRefreshAction(isPlaying: true, playbackRate: .quadruple) == .none)
-        #expect(VideoEngine.visualRefreshAction(isPlaying: false, playbackRate: .quadruple) == .seekToActiveFrame)
+        #expect(VideoEngine.visualRefreshAction(isPlaying: true) == .none)
+        #expect(VideoEngine.visualRefreshAction(isPlaying: false) == .seekToActiveFrame)
     }
 
     @Test func rateChangeDoesNotStartDeferredPlayback() {
@@ -133,22 +123,5 @@ struct PreviewPlaybackRateTests {
         NotificationCenter.default.post(name: AVPlayerItem.didPlayToEndTimeNotification, object: otherItem)
 
         #expect(editor.isPlaying)
-    }
-
-    @Test func fastPlaybackRateResetsTheAudioMeter() {
-        let editor = EditorViewModel()
-        let engine = VideoEngine(editor: editor)
-        editor.videoEngine = engine
-        defer {
-            engine.teardown()
-            editor.videoEngine = nil
-        }
-        editor.audioMeter.ingest(AudioMeterAnalysis(leftPeak: 1, rightPeak: 0.5), at: 100)
-
-        editor.setPlaybackRate(.quadruple)
-
-        let display = editor.audioMeter.display(at: 100)
-        #expect(display.left.levelDb == AudioMeterChannelState.floorDb)
-        #expect(display.right.levelDb == AudioMeterChannelState.floorDb)
     }
 }

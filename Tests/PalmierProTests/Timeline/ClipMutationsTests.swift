@@ -696,3 +696,50 @@ struct ClearRegionTests {
         #expect(e.timeline.tracks[0].clips[0].durationFrames == 30)
     }
 }
+
+
+@Suite("EditorViewModel — timeline undo/redo")
+@MainActor
+struct TimelineUndoRedoTests {
+    @Test func moveClipsUndoRedoRoundTrip() {
+        let e = editor([
+            Fixtures.videoTrack(clips: [Fixtures.clip(id: "c1", start: 0, duration: 60)]),
+            Fixtures.videoTrack(clips: []),
+        ])
+        let undoManager = UndoManager()
+        e.undo.attach(undoManager)
+
+        e.moveClips([(clipId: "c1", toTrack: 1, toFrame: 100)])
+        #expect(e.undo.canUndo)
+        #expect(e.timeline.tracks[1].clips.contains { $0.id == "c1" && $0.startFrame == 100 })
+
+        #expect(e.undo.undoLatest() == "Move Clip")
+        #expect(e.timeline.tracks[0].clips.contains { $0.id == "c1" && $0.startFrame == 0 })
+        #expect(e.undo.canRedo)
+
+        #expect(e.undo.redoLatest() == "Move Clip")
+        #expect(e.timeline.tracks[1].clips.contains { $0.id == "c1" && $0.startFrame == 100 })
+    }
+
+    @Test func commitTrimUndoRedoRoundTrip() {
+        let e = editor([
+            Fixtures.videoTrack(clips: [Fixtures.clip(id: "c1", start: 0, duration: 120)]),
+        ])
+        let undoManager = UndoManager()
+        e.undo.attach(undoManager)
+
+        e.commitTrim(clipId: "c1", edge: .right, deltaFrames: -30, propagateToLinked: false)
+        let trimmed = e.timeline.tracks[0].clips.first { $0.id == "c1" }
+        #expect(trimmed?.durationFrames == 90)
+        #expect(e.undo.canUndo)
+
+        _ = e.undo.undoLatest()
+        let restored = e.timeline.tracks[0].clips.first { $0.id == "c1" }
+        #expect(restored?.durationFrames == 120)
+        #expect(e.undo.canRedo)
+
+        _ = e.undo.redoLatest()
+        let redone = e.timeline.tracks[0].clips.first { $0.id == "c1" }
+        #expect(redone?.durationFrames == 90)
+    }
+}

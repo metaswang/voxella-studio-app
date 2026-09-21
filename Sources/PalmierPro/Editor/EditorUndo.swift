@@ -5,10 +5,36 @@ final class EditorUndo {
     private weak var manager: UndoManager?
     private var transactionActive = false
     private var transactionGroupOpened = false
+    private var stackObservers: [NSObjectProtocol] = []
     var onActionCommitted: (() -> Void)?
+    var onStackChanged: (() -> Void)?
 
     func attach(_ manager: UndoManager?) {
+        removeStackObservers()
         self.manager = manager
+        guard let manager else { return }
+        let center = NotificationCenter.default
+        let names: [Notification.Name] = [
+            .NSUndoManagerDidUndoChange,
+            .NSUndoManagerDidRedoChange,
+            .NSUndoManagerDidCloseUndoGroup,
+        ]
+        for name in names {
+            let token = center.addObserver(forName: name, object: manager, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.onStackChanged?()
+                }
+            }
+            stackObservers.append(token)
+        }
+    }
+
+    private func removeStackObservers() {
+        let center = NotificationCenter.default
+        for token in stackObservers {
+            center.removeObserver(token)
+        }
+        stackObservers.removeAll()
     }
 
     func perform<T>(_ actionName: String, _ work: () throws -> T) rethrows -> T {
@@ -66,10 +92,20 @@ final class EditorUndo {
 
     var isRegistrationEnabled: Bool { manager?.isUndoRegistrationEnabled ?? true }
 
+    var canUndo: Bool { manager?.canUndo ?? false }
+    var canRedo: Bool { manager?.canRedo ?? false }
+
     func undoLatest() -> String? {
         guard let manager, manager.canUndo else { return nil }
         let actionName = manager.undoActionName
         manager.undo()
+        return actionName
+    }
+
+    func redoLatest() -> String? {
+        guard let manager, manager.canRedo else { return nil }
+        let actionName = manager.redoActionName
+        manager.redo()
         return actionName
     }
 
