@@ -92,8 +92,13 @@ final class EditorUndo {
 
     var isRegistrationEnabled: Bool { manager?.isUndoRegistrationEnabled ?? true }
 
+    /// The UndoManager currently attached; same instance used by withTimelineSwap/commitTrim.
+    var attachedUndoManager: UndoManager? { manager }
+
     var canUndo: Bool { manager?.canUndo ?? false }
     var canRedo: Bool { manager?.canRedo ?? false }
+    var undoActionName: String { manager?.undoActionName ?? "" }
+    var redoActionName: String { manager?.redoActionName ?? "" }
 
     func undoLatest() -> String? {
         guard let manager, manager.canUndo else { return nil }

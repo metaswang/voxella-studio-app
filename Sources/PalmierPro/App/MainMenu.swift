@@ -101,8 +101,11 @@ enum MainMenuBuilder {
         let item = NSMenuItem()
         item.identifier = editMenuIdentifier
         let menu = NSMenu(title: L10n.string("Edit"))
-        menu.addItem(withTitle: L10n.string("Undo"), action: Selector(("undo:")), keyEquivalent: "z")
-        menu.addItem(withTitle: L10n.string("Redo"), action: Selector(("redo:")), keyEquivalent: "Z")
+        // Use editor-specific selectors so Cmd+Z reaches EditorUndo (not an empty
+        // first-responder UndoManager / disabled AppKit undo:). Text fields still
+        // get field-editor undo via EditorSessionController when focused.
+        menu.addItem(withTitle: L10n.string("Undo"), action: #selector(EditorActions.undoEditor(_:)), keyEquivalent: "z")
+        menu.addItem(withTitle: L10n.string("Redo"), action: #selector(EditorActions.redoEditor(_:)), keyEquivalent: "Z")
         menu.addItem(.separator())
         menu.addItem(withTitle: L10n.string("Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         menu.addItem(withTitle: L10n.string("Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
@@ -255,6 +258,8 @@ enum MainMenuBuilder {
 
 /// Actions dispatched through the responder chain to reach the active EditorViewModel.
 @MainActor @objc protocol EditorActions {
+    func undoEditor(_ sender: Any?)
+    func redoEditor(_ sender: Any?)
     func splitAtPlayhead(_ sender: Any?)
     func trimStartToPlayhead(_ sender: Any?)
     func trimEndToPlayhead(_ sender: Any?)

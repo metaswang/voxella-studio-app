@@ -104,6 +104,23 @@ struct EditorUndoTests {
         withExtendedLifetime(manager) {}
     }
 
+    @Test func attachedManagerMatchesUndoRedoSurface() {
+        let (undo, manager, counter) = harness()
+        #expect(undo.attachedUndoManager === manager)
+        #expect(undo.canUndo == false)
+        #expect(undo.canRedo == false)
+
+        setCounter(1, actionName: "Move Clip", counter: counter, undo: undo)
+        #expect(undo.canUndo)
+        #expect(undo.undoActionName == "Move Clip")
+        #expect(undo.undoLatest() == "Move Clip")
+        #expect(counter.value == 0)
+        #expect(undo.canRedo)
+        #expect(undo.redoActionName == "Move Clip")
+        #expect(undo.redoLatest() == "Move Clip")
+        #expect(counter.value == 1)
+    }
+
     @Test func replayingAnActionReportsNoNewCommit() {
         let (undo, manager, counter) = harness()
         setCounter(1, actionName: "Set Counter", counter: counter, undo: undo)
