@@ -1334,6 +1334,10 @@
 "We read every message. We won't email you, as requested." = "我们会阅读每一条反馈，并会按照您的要求不发送邮件。";
 "Couldn’t copy voice input to the clipboard." = "无法将语音输入复制到剪贴板。";
 
+"Source file unavailable. It may have been moved or deleted. Restore it to its original location to play or re-transcribe this session." = "源文件不可用。它可能已被移动或删除。请将文件恢复到原位置后再播放或重新转录此 Session。";
+"Media file not found" = "找不到媒体文件";
+"The original media file for this session is no longer available. Restore it to its original location before re-transcribing." = "此 Session 的原始媒体文件已不可用。请将文件恢复到原位置后再重新转录。";
+
 /* 许可证密钥激活和设备管理 */
 "Activate License" = "激活许可证";
 "Activate License…" = "激活许可证…";

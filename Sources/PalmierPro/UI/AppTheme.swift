@@ -610,14 +610,15 @@ enum AppTheme {
         static var tipVerticalInset: CGFloat { AppTheme.zoomed(12) }
         static var emptyStateMinHeight: CGFloat { AppTheme.zoomed(260) }
         static var summaryPanelMinHeight: CGFloat { AppTheme.zoomed(160) }
-        static var waveformHeight: CGFloat { AppTheme.zoomed(54) }
-        static var sessionAudioCanvasHeight: CGFloat {
-            AppTheme.Spacing.lgXl
+        static var waveformHeight: CGFloat { AppTheme.zoomed(38) }
+        static var audioSubtitleHeight: CGFloat { AppTheme.zoomed(44) }
+        static func sessionAudioCanvasHeight(showsSubtitles: Bool) -> CGFloat {
+            let controlsHeight = AppTheme.Spacing.lgXl
                 + waveformHeight
                 + AppTheme.Spacing.smMd
                 + AppTheme.IconSize.xl
-                + AppTheme.Spacing.md
                 + AppTheme.Spacing.lgXl
+            return controlsHeight + (showsSubtitles ? AppTheme.Spacing.smMd + audioSubtitleHeight : 0)
         }
         static var waveformBarStep: CGFloat { AppTheme.zoomed(5) }
         static var waveformBarSpacing: CGFloat { AppTheme.zoomed(2) }

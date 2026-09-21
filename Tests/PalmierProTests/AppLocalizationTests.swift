@@ -99,6 +99,20 @@ struct AppLocalizationTests {
         #expect(simplifiedChinese == english)
     }
 
+    @Test func missingSourceMediaKeysExistInEverySupportedLanguage() throws {
+        let requiredKeys: Set<String> = [
+            "Source file unavailable. It may have been moved or deleted. Restore it to its original location to play or re-transcribe this session.",
+            "Media file not found",
+            "The original media file for this session is no longer available. Restore it to its original location before re-transcribing.",
+        ]
+        let supportedLanguages = ["en", "zh-Hans", "de", "ja", "es", "pt-BR", "fr"]
+
+        for identifier in supportedLanguages {
+            let missing = requiredKeys.subtracting(try localizedKeys(for: identifier))
+            #expect(missing.isEmpty, "Missing source media keys for \(identifier): \(missing)")
+        }
+    }
+
     @Test func simplifiedChineseDoesNotAccidentallyReuseEnglishUIValues() throws {
         let english = try localizedValues(for: "en")
         let simplifiedChinese = try localizedValues(for: "zh-Hans")

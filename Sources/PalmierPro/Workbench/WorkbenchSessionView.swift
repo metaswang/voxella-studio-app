@@ -135,6 +135,7 @@ struct WorkbenchSessionDetailView: View {
     @State private var showExportSheet = false
     @State private var showDubOptionsSheet = false
     @State private var showRetranscribeSheet = false
+    @State private var showMissingSourceMediaAlert = false
     @State private var showTemplateLoginAlert = false
     @State private var showTemplateSheet = false
     @State private var showSummaryRefinementSheet = false
@@ -284,12 +285,27 @@ struct WorkbenchSessionDetailView: View {
                     },
                     onCancel: { showRetranscribeSheet = false },
                     onContinue: { submission in
+                        guard !WorkbenchSession.isSourceMediaMissing(at: job.sourceURL) else {
+                            showRetranscribeSheet = false
+                            showMissingSourceMediaAlert = true
+                            return
+                        }
                         showRetranscribeSheet = false
                         store.retranscribe(transcriptionID, submission: submission)
                     }
                 )
                 .appZoomEnvironment(presentationBoundary: true)
             }
+        }
+        .alert(
+            L10n.string("Media file not found"),
+            isPresented: $showMissingSourceMediaAlert
+        ) {
+            Button(L10n.string("OK"), role: .cancel) {}
+        } message: {
+            Text(L10n.string(
+                "The original media file for this session is no longer available. Restore it to its original location before re-transcribing."
+            ))
         }
         .alert(L10n.string("My Template"), isPresented: $showTemplateLoginAlert) {
             Button(L10n.string("Open voxstudio.me")) {
@@ -681,7 +697,7 @@ struct WorkbenchSessionDetailView: View {
                         .foregroundStyle(AppTheme.Status.warningColor)
                         .help(L10n.string("Open source page"))
                     } else if let filename = session.originalFilename {
-                        Label(filename, systemImage: "doc")
+                        sourceFileLabel(filename, isMissing: session.isSourceMediaMissing)
                             .lineLimit(1)
                     }
                     SessionPlacementIndicators(
@@ -829,7 +845,11 @@ struct WorkbenchSessionDetailView: View {
                 }
                 .disabled(isProcessing || (session.transcript == nil && session.sourceURL == nil))
                 Button(L10n.string("Re-transcribe")) {
-                    showRetranscribeSheet = true
+                    if session.isSourceMediaMissing {
+                        showMissingSourceMediaAlert = true
+                    } else {
+                        showRetranscribeSheet = true
+                    }
                 }
                 .disabled(isProcessing || session.sourceURL == nil)
             }
@@ -853,6 +873,33 @@ struct WorkbenchSessionDetailView: View {
         .menuIndicator(.hidden)
         .help(L10n.string("Session options"))
         .accessibilityLabel(L10n.string("Session options"))
+    }
+
+    private func sourceFileLabel(_ filename: String, isMissing: Bool) -> some View {
+        let accessibilityLabel = isMissing
+            ? filename + ". " + L10n.string(
+                "Source file unavailable. It may have been moved or deleted. Restore it to its original location to play or re-transcribe this session."
+            )
+            : filename
+
+        return HStack(spacing: AppTheme.Spacing.xs) {
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: "doc")
+                if isMissing {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: AppTheme.FontSize.xxs, weight: .bold))
+                        .foregroundStyle(AppTheme.Status.warningColor)
+                        .background(AppTheme.Background.surfaceColor, in: Circle())
+                        .offset(x: 3, y: 3)
+                }
+            }
+            Text(filename)
+        }
+        .help(isMissing ? L10n.string(
+            "Source file unavailable. It may have been moved or deleted. Restore it to its original location to play or re-transcribe this session."
+        ) : "")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(accessibilityLabel))
     }
 
     private func tabBar(_ session: WorkbenchSession) -> some View {
@@ -1451,20 +1498,22 @@ private struct SessionMediaPlayer: View {
     @State private var playback = SessionPlaybackController()
     @State private var hasLoadedPlayback = false
 
-    private let audioSubtitleStageHeight: CGFloat = 58
-
     private var showsVideoCanvas: Bool {
         prefersVideoCanvas
     }
 
     private var audioChromeHeight: CGFloat {
-        var height = AppTheme.Workbench.sessionAudioCanvasHeight
+        var height = audioCanvasHeight
         if allowsTrackSelection {
             height += AppTheme.Spacing.md
                 + AppTheme.Spacing.sm
                 + AppTheme.Workbench.sessionTabBarMinHeight
         }
         return height
+    }
+
+    private var audioCanvasHeight: CGFloat {
+        AppTheme.Workbench.sessionAudioCanvasHeight(showsSubtitles: showsAudioSubtitle)
     }
 
     var body: some View {
@@ -1636,37 +1685,65 @@ private struct SessionMediaPlayer: View {
             let currentTime = playback.currentTime
             let cueText = playback.activeSubtitleText(at: currentTime)
             VStack(spacing: AppTheme.Spacing.smMd) {
-                if playback.subtitleTrack?.cues.isEmpty == false
-                    || playback.translationTracks.contains(where: { !$0.track.cues.isEmpty }) {
-                    ZStack {
-                        if let cueText {
-                            Text(cueText)
-                                .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
-                                .multilineTextAlignment(.center)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, AppTheme.Spacing.lg)
-                                .padding(.vertical, AppTheme.Spacing.smMd)
-                                .background(
-                                    Color.black.opacity(AppTheme.Opacity.medium),
-                                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
-                                )
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: audioSubtitleStageHeight)
-                    .allowsHitTesting(false)
-                }
-
                 AudioWaveformView(
                     peaks: playback.peaks,
                     progress: playback.duration > 0 ? currentTime / playback.duration : 0
                 )
                 .frame(height: AppTheme.Workbench.waveformHeight)
+                .padding(.horizontal, AppTheme.Spacing.sm)
+
                 transportRow(currentTime: currentTime, includeAdvancedControls: false)
+
+                if showsAudioSubtitle {
+                    audioSubtitle(cueText)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
             .padding(AppTheme.Spacing.lgXl)
         }
-        .frame(height: AppTheme.Workbench.sessionAudioCanvasHeight)
+        .frame(height: audioCanvasHeight)
+        .animation(.easeInOut(duration: 0.18), value: showsAudioSubtitle)
+    }
+
+    private var hasAudioSubtitles: Bool {
+        playback.subtitleTrack?.cues.isEmpty == false
+            || playback.translationTracks.contains(where: { !$0.track.cues.isEmpty })
+    }
+
+    private var showsAudioSubtitle: Bool {
+        hasAudioSubtitles && playback.subtitleMode != .off
+    }
+
+    private func audioSubtitle(_ cueText: String?) -> some View {
+        HStack(spacing: AppTheme.Spacing.smMd) {
+            Image(systemName: "captions.bubble.fill")
+                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                .foregroundStyle(AppTheme.Accent.primary)
+
+            Text(cueText ?? " ")
+                .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.medium))
+                .multilineTextAlignment(.leading)
+                .lineLimit(2)
+                .foregroundStyle(AppTheme.Text.primaryColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, AppTheme.Spacing.md)
+        .frame(maxWidth: .infinity)
+        .frame(height: AppTheme.Workbench.audioSubtitleHeight)
+        .background(
+            AppTheme.Accent.primary.opacity(AppTheme.Opacity.faint),
+            in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
+                .stroke(AppTheme.Accent.primary.opacity(AppTheme.Opacity.subtle), lineWidth: 1)
+        }
+        .contentTransition(.opacity)
+        .animation(.easeOut(duration: 0.16), value: cueText)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(L10n.string("Current subtitle"))
+        .accessibilityValue(cueText ?? "")
     }
 
     private func videoControls(currentTime: Double) -> some View {
@@ -1721,8 +1798,11 @@ private struct SessionMediaPlayer: View {
 
             Spacer(minLength: AppTheme.Spacing.sm)
 
-            if includeAdvancedControls {
+            if playback.subtitleTrack != nil || !playback.translationTracks.isEmpty {
                 subtitleMenu
+            }
+
+            if includeAdvancedControls {
                 speedMenu
                 Button {
                     playback.toggleFullscreen()
@@ -1738,53 +1818,68 @@ private struct SessionMediaPlayer: View {
     }
 
     private var subtitleMenu: some View {
-        Menu {
+        HStack(spacing: 0) {
             Button {
-                playback.subtitleMode = .off
+                playback.toggleSubtitles()
             } label: {
-                labelWithCheck("Off", selected: playback.subtitleMode == .off)
+                Text("CC")
+                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                    .padding(.leading, AppTheme.Spacing.smMd)
+                    .padding(.trailing, AppTheme.Spacing.xs)
+                    .padding(.vertical, AppTheme.Spacing.xs)
+                    .contentShape(Rectangle())
             }
-            Button {
-                playback.subtitleMode = .original
-            } label: {
-                labelWithCheck("Original", selected: playback.subtitleMode == .original)
-            }
+            .buttonStyle(.plain)
+            .help(L10n.string(playback.subtitleMode == .off ? "Show subtitles" : "Hide subtitles"))
+
             if !playback.translationTracks.isEmpty {
-                Divider()
-                ForEach(playback.translationTracks) { track in
-                    Button {
-                        playback.subtitleMode = .translation(track.languageCode)
-                    } label: {
-                        labelWithCheck(
-                            track.displayLanguageLabel,
-                            selected: {
-                                if case .translation(let code) = playback.subtitleMode {
-                                    return code.caseInsensitiveCompare(track.languageCode) == .orderedSame
-                                }
-                                return false
-                            }()
-                        )
+                Menu {
+                    if playback.subtitleTrack != nil {
+                        Button {
+                            playback.selectSubtitleMode(.original)
+                        } label: {
+                            labelWithCheck("Original", selected: playback.subtitleMode == .original)
+                        }
                     }
+                    if playback.subtitleTrack != nil { Divider() }
+                    ForEach(playback.translationTracks) { track in
+                        Button {
+                            playback.selectSubtitleMode(.translation(track.languageCode))
+                        } label: {
+                            labelWithCheck(
+                                track.displayLanguageLabel,
+                                selected: {
+                                    if case .translation(let code) = playback.subtitleMode {
+                                        return code.caseInsensitiveCompare(track.languageCode) == .orderedSame
+                                    }
+                                    return false
+                                }()
+                            )
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                        .frame(width: AppTheme.zoomed(20), height: AppTheme.zoomed(26))
+                        .contentShape(Rectangle())
                 }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize(horizontal: true, vertical: true)
             }
-        } label: {
-            Text("CC")
-                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
-                .padding(.horizontal, AppTheme.Spacing.smMd)
-                .padding(.vertical, AppTheme.Spacing.xs)
-                .background(
-                    playback.subtitleMode == .off
-                        ? AppTheme.Background.raisedColor
-                        : AppTheme.Text.primaryColor,
-                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
-                )
-                .foregroundStyle(
-                    playback.subtitleMode == .off
-                        ? AppTheme.Text.primaryColor
-                        : AppTheme.Background.baseColor
-                )
         }
-        .menuStyle(.borderlessButton)
+        .fixedSize(horizontal: true, vertical: true)
+        .foregroundStyle(
+            playback.subtitleMode == .off
+                ? AppTheme.Text.primaryColor
+                : AppTheme.Background.baseColor
+        )
+        .background(
+            playback.subtitleMode == .off
+                ? AppTheme.Background.raisedColor
+                : AppTheme.Text.primaryColor,
+            in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+        )
         .disabled(playback.subtitleTrack == nil && playback.translationTracks.isEmpty)
         .help(L10n.string("Subtitles"))
     }

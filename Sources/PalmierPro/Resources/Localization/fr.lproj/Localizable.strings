@@ -589,3 +589,7 @@
 "Enter a valid license key." = "Saisissez une clé de licence valide.";
 "License key credential not found. Please activate a license key first." = "Identifiants de clé de licence introuvables. Activez d’abord une clé de licence.";
 "License key credential not found." = "Identifiants de clé de licence introuvables.";
+
+"Source file unavailable. It may have been moved or deleted. Restore it to its original location to play or re-transcribe this session." = "Fichier source indisponible. Il a peut-être été déplacé ou supprimé. Restaurez-le à son emplacement d’origine pour lire ou retranscrire cette session.";
+"Media file not found" = "Fichier multimédia introuvable";
+"The original media file for this session is no longer available. Restore it to its original location before re-transcribing." = "Le fichier multimédia d’origine de cette session n’est plus disponible. Restaurez-le à son emplacement d’origine avant de retranscrire.";

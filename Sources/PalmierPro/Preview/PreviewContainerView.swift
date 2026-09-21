@@ -680,7 +680,8 @@ struct PreviewContainerView: View {
                             scrubFrame(
                                 locationX: value.location.x,
                                 width: geo.size.width,
-                                durationFrames: duration
+                                durationFrames: duration,
+                                thumbSize: thumbSize
                             ),
                             mode: .interactiveScrub
                         )
@@ -690,7 +691,8 @@ struct PreviewContainerView: View {
                             at: scrubFrame(
                                 locationX: value.location.x,
                                 width: geo.size.width,
-                                durationFrames: duration
+                                durationFrames: duration,
+                                thumbSize: thumbSize
                             )
                         )
                     }
@@ -737,9 +739,20 @@ struct PreviewContainerView: View {
         if shouldResume { editor.resumePlayback() }
     }
 
-    private func scrubFrame(locationX: CGFloat, width: CGFloat, durationFrames: Int) -> Int {
+    private func scrubFrame(
+        locationX: CGFloat,
+        width: CGFloat,
+        durationFrames: Int,
+        thumbSize: CGFloat
+    ) -> Int {
         guard width > 0 else { return 0 }
-        let fraction = max(0, min(1, locationX / width))
+        let travel = width - thumbSize
+        let fraction: CGFloat
+        if travel > 0 {
+            fraction = max(0, min(1, (locationX - thumbSize / 2) / travel))
+        } else {
+            fraction = max(0, min(1, locationX / width))
+        }
         return Int(fraction * CGFloat(max(0, durationFrames)))
     }
 
@@ -831,17 +844,19 @@ private struct PreviewScrubProgress: View {
     var body: some View {
         let frame = isTimeline ? editor.playheadState.timelineFrame : editor.playheadState.sourceFrame
         let duration = durationFrames
-        let progress = duration > 0 ? CGFloat(frame) / CGFloat(duration) : 0
+        let progress = duration > 0 ? min(1, max(0, CGFloat(frame) / CGFloat(duration))) : 0
         let g = geometry
+        let travel = max(0, g.size.width - g.thumbSize)
+        let thumbX = g.thumbSize / 2 + travel * progress
         ZStack(alignment: .leading) {
             Capsule()
                 .fill(AppTheme.Accent.primary)
-                .frame(width: max(0, g.size.width * progress), height: g.barHeight)
+                .frame(width: max(0, thumbX), height: g.barHeight)
             Circle()
                 .fill(AppTheme.Text.primaryColor)
                 .frame(width: g.thumbSize, height: g.thumbSize)
                 .shadow(AppTheme.Shadow.sm)
-                .position(x: g.size.width * progress, y: g.size.height / 2)
+                .position(x: thumbX, y: g.size.height / 2)
         }
     }
 }

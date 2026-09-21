@@ -1249,6 +1249,10 @@
 "We read every message. We won't email you, as requested." = "We read every message. We won't email you, as requested.";
 "Couldn’t copy voice input to the clipboard." = "Couldn’t copy voice input to the clipboard.";
 
+"Source file unavailable. It may have been moved or deleted. Restore it to its original location to play or re-transcribe this session." = "Source file unavailable. It may have been moved or deleted. Restore it to its original location to play or re-transcribe this session.";
+"Media file not found" = "Media file not found";
+"The original media file for this session is no longer available. Restore it to its original location before re-transcribing." = "The original media file for this session is no longer available. Restore it to its original location before re-transcribing.";
+
 /* License-key activation and device management */
 "Activate License" = "Activate License";
 "Activate License…" = "Activate License…";

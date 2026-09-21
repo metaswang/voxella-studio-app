@@ -36,6 +36,7 @@ final class SessionPlaybackController {
     private var highlightedCues: [SubtitleCue] = []
     private var loadGeneration = UUID()
     private var seekGeneration = UUID()
+    private var lastEnabledSubtitleMode: SessionSubtitleDisplayMode = .original
 
     func configureSubtitles(
         subtitleTrack: SubtitleTrack?,
@@ -69,6 +70,41 @@ final class SessionPlaybackController {
             return nil
         }
         return TranscriptSegmenter.renderedSubtitleText(cue.text).nilIfEmpty
+    }
+
+    func selectSubtitleMode(_ mode: SessionSubtitleDisplayMode) {
+        subtitleMode = mode
+        if mode != .off {
+            lastEnabledSubtitleMode = mode
+        }
+    }
+
+    func toggleSubtitles() {
+        if subtitleMode == .off {
+            if isAvailable(lastEnabledSubtitleMode) {
+                subtitleMode = lastEnabledSubtitleMode
+            } else if subtitleTrack != nil {
+                selectSubtitleMode(.original)
+            } else if let first = translationTracks.first {
+                selectSubtitleMode(.translation(first.languageCode))
+            }
+        } else {
+            lastEnabledSubtitleMode = subtitleMode
+            subtitleMode = .off
+        }
+    }
+
+    private func isAvailable(_ mode: SessionSubtitleDisplayMode) -> Bool {
+        switch mode {
+        case .off:
+            return false
+        case .original:
+            return subtitleTrack != nil
+        case .translation(let code):
+            return translationTracks.contains {
+                $0.languageCode.caseInsensitiveCompare(code) == .orderedSame
+            }
+        }
     }
 
     func applyPlaybackRate() {
@@ -295,9 +331,9 @@ final class SessionPlaybackController {
             posterImage = NSImage(data: data)
         }
         if subtitleTrack != nil {
-            subtitleMode = .original
+            selectSubtitleMode(.original)
         } else if let first = translationTracks.first {
-            subtitleMode = .translation(first.languageCode)
+            selectSubtitleMode(.translation(first.languageCode))
         } else {
             subtitleMode = .off
         }
@@ -539,13 +575,13 @@ struct SessionFullscreenChrome: View {
         Menu {
             Button {
                 chrome.revealControls()
-                playback.subtitleMode = .off
+                playback.selectSubtitleMode(.off)
             } label: {
                 labelWithCheck("Off", selected: playback.subtitleMode == .off)
             }
             Button {
                 chrome.revealControls()
-                playback.subtitleMode = .original
+                playback.selectSubtitleMode(.original)
             } label: {
                 labelWithCheck("Original", selected: playback.subtitleMode == .original)
             }
@@ -554,7 +590,7 @@ struct SessionFullscreenChrome: View {
                 ForEach(playback.translationTracks) { track in
                     Button {
                         chrome.revealControls()
-                        playback.subtitleMode = .translation(track.languageCode)
+                        playback.selectSubtitleMode(.translation(track.languageCode))
                     } label: {
                         labelWithCheck(
                             track.displayLanguageLabel,
@@ -654,7 +690,14 @@ struct SessionPlaybackSeekBar: View {
     var body: some View {
         GeometryReader { geometry in
             let width = max(geometry.size.width, 1)
-            let thumbX = width * displayedProgress
+            // Keep the thumb center inside the hit-test rect at both endpoints.
+            // When progress was 0 or 1, the old position put half of the thumb
+            // outside this rect, which made the end position impossible to grab.
+            let thumbX = Self.thumbPosition(
+                for: displayedProgress,
+                width: width,
+                thumbSize: thumbSize
+            )
 
             ZStack(alignment: .leading) {
                 Capsule()
@@ -713,9 +756,10 @@ struct SessionPlaybackSeekBar: View {
                     wasPlayingWhenDragStarted = isPlaying
                 }
 
-                let target = normalizedProgress(
+                let target = Self.normalizedProgress(
                     at: value.location.x,
-                    width: width
+                    width: width,
+                    thumbSize: thumbSize
                 )
                 if dragProgress == nil || abs(dragProgress! - target) > 0.001 {
                     dragProgress = target
@@ -728,9 +772,10 @@ struct SessionPlaybackSeekBar: View {
                     return
                 }
 
-                let target = normalizedProgress(
+                let target = Self.normalizedProgress(
                     at: value.location.x,
-                    width: width
+                    width: width,
+                    thumbSize: thumbSize
                 )
                 dragProgress = target
                 onSeek(target, wasPlayingWhenDragStarted)
@@ -738,9 +783,16 @@ struct SessionPlaybackSeekBar: View {
             }
     }
 
-    private func normalizedProgress(at x: CGFloat, width: CGFloat) -> Double {
+    static func thumbPosition(for progress: Double, width: CGFloat, thumbSize: CGFloat) -> CGFloat {
+        let travel = max(0, width - thumbSize)
+        return thumbSize / 2 + travel * CGFloat(progress)
+    }
+
+    static func normalizedProgress(at x: CGFloat, width: CGFloat, thumbSize: CGFloat) -> Double {
         guard width > 0 else { return 0 }
-        return min(1, max(0, Double(x / width)))
+        let travel = width - thumbSize
+        guard travel > 0 else { return min(1, max(0, Double(x / width))) }
+        return min(1, max(0, Double((x - thumbSize / 2) / travel)))
     }
 }
 

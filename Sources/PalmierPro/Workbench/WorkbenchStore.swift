@@ -1056,6 +1056,15 @@ struct WorkbenchSession: Identifiable, Sendable {
         sourceURL?.lastPathComponent
     }
 
+    var isSourceMediaMissing: Bool {
+        Self.isSourceMediaMissing(at: sourceURL)
+    }
+
+    static func isSourceMediaMissing(at url: URL?) -> Bool {
+        guard let url else { return false }
+        return !FileManager.default.fileExists(atPath: url.path)
+    }
+
     var masterAudioURL: URL? { sourceURL }
 
     /// Unprocessed master track. Always the true original so the session player

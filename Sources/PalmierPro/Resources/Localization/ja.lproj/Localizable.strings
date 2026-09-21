@@ -589,3 +589,7 @@
 "Enter a valid license key." = "有効なライセンスキーを入力してください。";
 "License key credential not found. Please activate a license key first." = "ライセンスキーの認証情報が見つかりません。先にライセンスキーを有効化してください。";
 "License key credential not found." = "ライセンスキーの認証情報が見つかりません。";
+
+"Source file unavailable. It may have been moved or deleted. Restore it to its original location to play or re-transcribe this session." = "ソースファイルを利用できません。移動または削除された可能性があります。このセッションを再生または再文字起こしするには、元の場所に戻してください。";
+"Media file not found" = "メディアファイルが見つかりません";
+"The original media file for this session is no longer available. Restore it to its original location before re-transcribing." = "このセッションの元のメディアファイルは利用できません。再文字起こしする前に、元の場所に戻してください。";

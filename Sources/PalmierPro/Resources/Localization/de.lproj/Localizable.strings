@@ -101,3 +101,7 @@
 "Cancel" = "Abbrechen";
 "Done" = "Fertig";
 "Refresh" = "Aktualisieren";
+
+"Source file unavailable. It may have been moved or deleted. Restore it to its original location to play or re-transcribe this session." = "Quelldatei nicht verfügbar. Sie wurde möglicherweise verschoben oder gelöscht. Stelle sie am ursprünglichen Speicherort wieder her, um diese Session abzuspielen oder erneut zu transkribieren.";
+"Media file not found" = "Mediendatei nicht gefunden";
+"The original media file for this session is no longer available. Restore it to its original location before re-transcribing." = "Die ursprüngliche Mediendatei dieser Session ist nicht mehr verfügbar. Stelle sie am ursprünglichen Speicherort wieder her, bevor du die Transkription erneut startest.";
