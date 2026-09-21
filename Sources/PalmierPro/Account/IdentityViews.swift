@@ -84,7 +84,7 @@ struct UserAvatarButton: View {
             .hoverHighlight()
         }
         .buttonStyle(.plain)
-        .help(account.isSignedIn ? "Account" : "Sign in")
+        .help(L10n.string(account.isSignedIn ? "Account" : "Sign in"))
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
             AccountPopoverCard()
         }
@@ -112,7 +112,7 @@ struct IdentityStrip: View {
             }
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                Text(account.displayPrimaryText)
+                Text(L10n.display(account.displayPrimaryText))
                     .font(.system(size: AppTheme.FontSize.md, weight: .medium))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                     .lineLimit(1)

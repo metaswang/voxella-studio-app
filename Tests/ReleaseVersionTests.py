@@ -97,5 +97,61 @@ class ReleaseVersionTests(unittest.TestCase):
         self.assertEqual(published.version, release_version.ReleaseVersion.parse("7.0.7"))
 
 
+    def test_bootstrap_increments_from_local_version_when_feed_is_missing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "appcast.xml"
+            path.write_text("")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(MODULE_PATH),
+                    "next",
+                    "--current",
+                    "7.0.15",
+                    "--current-build",
+                    "96",
+                    "--appcast",
+                    str(path),
+                    "--bootstrap",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.stdout.strip(), "7.0.16")
+            build = subprocess.run(
+                [
+                    sys.executable,
+                    str(MODULE_PATH),
+                    "plan",
+                    "--requested",
+                    "7.0.16",
+                    "--current",
+                    "7.0.15",
+                    "--current-build",
+                    "96",
+                    "--appcast",
+                    str(path),
+                    "--bootstrap",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(build.stdout.strip(), "97")
+
+    def test_missing_feed_without_bootstrap_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "appcast.xml"
+            path.write_text("")
+            result = subprocess.run(
+                [sys.executable, str(MODULE_PATH), "next", "--current", "7.0.15", "--appcast", str(path)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bootstrap", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

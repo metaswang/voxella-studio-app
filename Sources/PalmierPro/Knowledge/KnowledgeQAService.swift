@@ -378,7 +378,7 @@ struct KnowledgeQAService: Sendable {
                     continuation.finish()
                 } catch {
                     Self.logOutcome(.failed, request: request, detail: error.localizedDescription)
-                    continuation.yield(.failed(error.localizedDescription))
+                    continuation.yield(.failed(KnowledgeUserFacingCopy.message(for: error)))
                     continuation.finish()
                 }
             }
@@ -1240,8 +1240,8 @@ struct KnowledgeQAService: Sendable {
         } else {
             lines = [
                 isCatalogResult
-                    ? "I found matching sessions, but the answer model did not return a usable answer within the time limit. Here is the requested session metadata:"
-                    : "I found related transcript excerpts, but the answer model did not return a usable answer within the time limit. Here are the closest evidence excerpts:",
+                    ? "I found matching sessions, but AI answering did not return a usable answer within the time limit. Here is the requested session metadata:"
+                    : "I found related transcript excerpts, but AI answering did not return a usable answer within the time limit. Here are the closest evidence excerpts:",
                 "",
                 "Closest matches for “\(query)”:",
             ]
@@ -1313,11 +1313,11 @@ enum KnowledgeQAError: LocalizedError {
         case .sessionNotVisible:
             "Sign in to ask about this cloud session."
         case .invalidRerankerOutput:
-            "The local reranker returned an invalid result."
+            "Knowledge search could not rank the available information. Try again."
         case .invalidQueryPlan:
-            "The retrieval query planner returned an invalid result."
+            "Knowledge search could not prepare this question. Try again."
         case .timeout:
-            "The answer model took too long to respond. Showing transcript excerpts instead."
+            "AI answering took too long to respond. Showing transcript excerpts instead."
         }
     }
 }

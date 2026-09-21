@@ -171,6 +171,29 @@ struct ASREngineRouterTests {
         #expect(ASREngineLanguagePolicy.qwenLockLanguage(fromDetected: "Cantonese") == "Cantonese")
     }
 
+    @Test func weakLIDCoverageDoesNotPromptDecoderLanguage() {
+        let decision = ASREngineRouter.decide(
+            posterior: ["fa": 0.48, "en": 0.18, "lo": 0.09],
+            speechDuration: 4.4
+        )
+        #expect(decision.engine == .qwen)
+        #expect(decision.reason == .engineCoverage)
+        #expect(decision.topLanguage == "fa")
+        #expect(ASREngineLanguagePolicy.decoderLanguagePrompt(for: decision) == nil)
+    }
+
+    @Test func reliableQwenAnchorStillPromptsDecoderLanguage() {
+        var posterior: [String: Float] = [:]
+        for language in ASREngineLanguagePolicy.voxLingua107Languages {
+            posterior[language] = 0.001
+        }
+        posterior["fa"] = 0.92
+        let decision = ASREngineRouter.decide(posterior: posterior, speechDuration: 3)
+        #expect(decision.engine == .qwen)
+        #expect(decision.reason == .weightedEvidence)
+        #expect(ASREngineLanguagePolicy.decoderLanguagePrompt(for: decision) == "Persian")
+    }
+
     @Test func laterEnglishMajorityOverridesConflictingOpening() {
         let opening: [String: Float] = [
             "hy": 0.87,

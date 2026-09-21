@@ -5,6 +5,63 @@ import Testing
 @Suite("First-run setup")
 @MainActor
 struct OnboardingTests {
+    @Test func cancellingPendingFeaturesIsIndependentAndRetryable() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = LocalModelDownloadAuthorizationStore(rootURL: root)
+        let manager = LocalModelManager(restoreDownloads: false, authorizationStore: store)
+        manager.prepareFeatures([.search, .knowledgeRanking])
+        #expect(manager.preparationStatus(for: .search).isBusy)
+        #expect(manager.preparationStatus(for: .knowledgeRanking).isBusy)
+
+        manager.cancelFeature(.search)
+        #expect(!manager.preparationStatus(for: .search).isBusy)
+        #expect(manager.preparationStatus(for: .knowledgeRanking).isBusy)
+        #expect(manager.state(for: SearchIndexConfig.modelID).isBusy)
+        manager.prepareFeatures([.search])
+        #expect(manager.preparationStatus(for: .search).isBusy)
+        manager.cancelFeature(.knowledgeRanking)
+        #expect(manager.preparationStatus(for: .search).isBusy)
+        #expect(!manager.preparationStatus(for: .knowledgeRanking).isBusy)
+        manager.cancelFeature(.search)
+        #expect(!manager.state(for: SearchIndexConfig.modelID).isBusy)
+        // Let authorization continuations run: a cancelled request must never enqueue itself.
+        for _ in 0..<20 { await Task.yield() }
+        #expect(!manager.state(for: SearchIndexConfig.modelID).isBusy)
+        #expect(try await store.records().isEmpty)
+    }
+
+    @Test func cancellingSetupPreservesExplicitTaskDemand() {
+        let manager = LocalModelManager(restoreDownloads: false, authorizationStore: LocalModelDownloadAuthorizationStore(
+            rootURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        ))
+        manager.prepareFeatures([.search])
+        manager.download(SearchIndexConfig.modelID)
+        manager.cancelFeature(.search)
+        #expect(manager.state(for: SearchIndexConfig.modelID).isBusy)
+        #expect(!manager.preparationStatus(for: .search).isBusy)
+        manager.cancel(SearchIndexConfig.modelID)
+    }
+
+    @Test func allDownloadsCanBeSkippedAndRequestedLater() throws {
+        let name = "OnboardingTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let manager = LocalModelManager(restoreDownloads: false, authorizationStore: LocalModelDownloadAuthorizationStore(
+            rootURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        ))
+        let setup = OnboardingState(defaults: defaults)
+        setup.showSelection()
+        setup.prepare(startDownloads: manager.prepareFeatures)
+        for feature in LocalPreparationFeature.allCases { manager.cancelFeature(feature) }
+        #expect(LocalPreparationFeature.allCases.allSatisfy { !manager.preparationStatus(for: $0).isBusy })
+        setup.complete()
+        #expect(setup.isComplete)
+        #expect(OnboardingState(defaults: defaults).isComplete)
+        manager.download(SearchIndexConfig.modelID)
+        #expect(manager.state(for: SearchIndexConfig.modelID).isBusy)
+        manager.cancel(SearchIndexConfig.modelID)
+    }
+
     @Test func selectedFeaturesReuseTaskDependenciesAndDeduplicateSharedResources() {
         let features: Set<LocalPreparationFeature> = [.transcription, .dubbing]
         let ids = LocalPreparationFeature.requiredIDs(for: features, asrModelID: .whisperLargeV3Turbo8Bit)
@@ -60,7 +117,7 @@ struct OnboardingTests {
         defer { defaults.removePersistentDomain(forName: name) }
         let setup = OnboardingState(defaults: defaults)
         #expect(!setup.isComplete)
-        #expect(setup.selectedFeatures.isEmpty)
+        #expect(setup.selectedFeatures == Set(LocalPreparationFeature.allCases))
         setup.selectedFeatures = [.dubbing]
         setup.showSelection()
         var requests: [Set<LocalPreparationFeature>] = []
@@ -77,6 +134,15 @@ struct OnboardingTests {
         #expect(!setup.isComplete)
         #expect(setup.step == .features)
         #expect(OnboardingState(defaults: defaults).isComplete)
+    }
+
+    @Test func explicitlyEmptySelectionIsPreserved() throws {
+        let name = "OnboardingTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set([], forKey: OnboardingState.selectionKey)
+
+        #expect(OnboardingState(defaults: defaults).selectedFeatures.isEmpty)
     }
 
     @Test func unknownSavedFeaturesAreIgnored() throws {

@@ -34,7 +34,9 @@ class PublishedRelease:
     build: int
 
 
-def latest_published_release(appcast_path: Path) -> PublishedRelease:
+def latest_published_release_optional(appcast_path: Path) -> PublishedRelease | None:
+    if not appcast_path.is_file() or appcast_path.stat().st_size == 0:
+        return None
     root = ET.parse(appcast_path).getroot()
     releases: list[PublishedRelease] = []
     for item in root.findall("./channel/item"):
@@ -46,11 +48,18 @@ def latest_published_release(appcast_path: Path) -> PublishedRelease:
             raise ValueError(f"invalid published build number: {build_text}")
         releases.append(PublishedRelease(ReleaseVersion.parse(version_text), int(build_text)))
     if not releases:
-        raise ValueError("appcast contains no published releases")
+        return None
     return PublishedRelease(
         version=max(release.version for release in releases),
         build=max(release.build for release in releases),
     )
+
+
+def latest_published_release(appcast_path: Path) -> PublishedRelease:
+    published = latest_published_release_optional(appcast_path)
+    if published is None:
+        raise ValueError("appcast contains no published releases")
+    return published
 
 
 def planned_build(
@@ -93,9 +102,13 @@ def main() -> None:
     plan_parser.add_argument("--current-build", required=True, type=int)
     plan_parser.add_argument("--appcast", required=True, type=Path)
 
+    plan_parser.add_argument("--bootstrap", action="store_true")
+
     next_parser = subparsers.add_parser("next")
     next_parser.add_argument("--current", required=True)
+    next_parser.add_argument("--current-build", type=int)
     next_parser.add_argument("--appcast", required=True, type=Path)
+    next_parser.add_argument("--bootstrap", action="store_true")
 
     arguments = parser.parse_args()
     try:
@@ -103,13 +116,21 @@ def main() -> None:
             ReleaseVersion.parse(arguments.version)
             return
 
-        published = latest_published_release(arguments.appcast)
+        current = ReleaseVersion.parse(arguments.current)
+        published = latest_published_release_optional(arguments.appcast)
+        if published is None:
+            if not arguments.bootstrap:
+                raise ValueError("published Cloudflare appcast is missing; pass --bootstrap for the first R2 release")
+            current_build = arguments.current_build
+            if current_build is None:
+                raise ValueError("bootstrap requires --current-build")
+            published = PublishedRelease(current, current_build)
         if arguments.command == "next":
-            print(next_patch_version(ReleaseVersion.parse(arguments.current), published))
+            print(next_patch_version(current, published))
         else:
             build = planned_build(
                 requested=ReleaseVersion.parse(arguments.requested),
-                current=ReleaseVersion.parse(arguments.current),
+                current=current,
                 current_build=arguments.current_build,
                 published=published,
             )

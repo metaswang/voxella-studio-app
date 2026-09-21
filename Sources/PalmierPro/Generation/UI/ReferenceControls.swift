@@ -17,7 +17,11 @@ private struct ReferenceAssetPreview: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(asset.name), \(asset.type.trackLabel)")
+        .accessibilityLabel(L10n.format(
+            "%@, %@",
+            asset.name,
+            L10n.display(asset.type.trackLabel)
+        ))
         .task(id: "\(asset.id)|\(asset.url.path)|\(asset.generationStatus.serialized)") {
             guard case .none = asset.generationStatus else { return }
             await asset.loadLibraryThumbnail()
@@ -59,7 +63,7 @@ struct RefCard: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Remove \(asset.name)")
+                .accessibilityLabel(L10n.format("Remove %@", asset.name))
             }
     }
 }
@@ -113,7 +117,7 @@ struct FrameSlot: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            Text(label)
+            Text(L10n.display(label))
                 .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
 
@@ -133,7 +137,7 @@ struct FrameSlot: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Remove \(asset.name)")
+                        .accessibilityLabel(L10n.format("Remove %@", asset.name))
                     }
             } else {
                 RefDropZone(
@@ -144,8 +148,11 @@ struct FrameSlot: View {
                     if accepting.contains(dropped.type) {
                         onDrop(dropped)
                     } else {
-                        let kinds = accepting.map(\.rawValue).sorted().joined(separator: " or ")
-                        onError("Drop \(kinds) here.")
+                        let kinds = accepting
+                            .map { L10n.display($0.rawValue) }
+                            .sorted()
+                            .joined(separator: L10n.string(" or "))
+                        onError(L10n.format("Drop %@ here.", kinds))
                     }
                 }
             }

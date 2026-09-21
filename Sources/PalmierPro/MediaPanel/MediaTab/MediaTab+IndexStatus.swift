@@ -18,10 +18,10 @@ private struct MediaSearchIndexStatus: View {
             statusButton(icon: "sparkle.magnifyingglass", label: L10n.string("Download and enable smart search")) {
                 model.download()
             }
-            .help(L10n.string("Downloads a \(modelSizeLabel) local resources so you can search media visually."))
+            .help(L10n.format("Downloads %@ of local resources so you can search media visually.", modelSizeLabel))
         case .downloading(let fraction):
             HStack(spacing: AppTheme.Spacing.sm) {
-                statusIndicator(L10n.string("Downloading \(Int(fraction * 100))%"),
+                statusIndicator(L10n.format("Downloading %@%%", Int(fraction * 100)),
                                 help: L10n.string("Downloading the local resources that powers visual search."),
                                 progress: fraction)
                 Button(L10n.string("Cancel")) { model.cancelDownload() }
@@ -29,18 +29,22 @@ private struct MediaSearchIndexStatus: View {
                     .font(.system(size: AppTheme.FontSize.xs))
             }
         case .preparing:
-            statusIndicator(L10n.string("Preparing…"), help: L10n.string("Getting the search model ready."))
+            statusIndicator(L10n.string("Preparing…"), help: L10n.string("Getting smart search ready."))
         case .ready where search.searchFailure != nil:
             Label(L10n.string("Search unavailable"), systemImage: "exclamationmark.triangle")
-                .help(search.searchFailure ?? "")
+                .help(L10n.string("Smart search is temporarily unavailable. Try again later."))
                 .foregroundStyle(AppTheme.Status.errorColor)
         case .ready where search.indexingActive:
-            statusIndicator(L10n.string("Indexing \(min(search.batchCompleted + 1, search.batchTotal))/\(search.batchTotal)"),
+            statusIndicator(L10n.format(
+                "Indexing %@/%@",
+                min(search.batchCompleted + 1, search.batchTotal),
+                search.batchTotal
+            ),
                             help: L10n.string("Analyzing media so you can search it."),
                             progress: search.indexingProgress)
         case .failed where model.enabled:
             statusButton(icon: "exclamationmark.triangle", label: L10n.string("Retry")) { model.download() }
-                .help(L10n.string("Visual search model download failed. Check your connection and try again."))
+                .help(L10n.string("Smart search could not be prepared. Check your connection and try again."))
         default:
             EmptyView()
         }

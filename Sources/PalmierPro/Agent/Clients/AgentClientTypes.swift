@@ -28,7 +28,15 @@ enum AgentProvider: String, CaseIterable, Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !environmentValue.isEmpty { return environmentValue }
         #endif
-        return KeychainStore.load(account: credentialStorage.account) ?? ""
+        do {
+            return try KeychainStore.loadProtected(account: credentialStorage.account).get() ?? ""
+        } catch {
+            return ""
+        }
+    }
+
+    var credentialStatus: CredentialLoadResult {
+        KeychainStore.loadProtected(account: credentialStorage.account)
     }
 
     @concurrent
@@ -37,11 +45,16 @@ enum AgentProvider: String, CaseIterable, Sendable {
     }
 
     @concurrent
-    func setAPIKey(_ key: String?) async {
+    func loadAPIKeyResult() async -> CredentialLoadResult {
+        credentialStatus
+    }
+
+    @concurrent
+    func setAPIKey(_ key: String?) async throws {
         if let key {
-            KeychainStore.save(key, account: credentialStorage.account)
+            try KeychainStore.saveProtected(key, account: credentialStorage.account)
         } else {
-            KeychainStore.delete(account: credentialStorage.account)
+            try KeychainStore.deleteProtected(account: credentialStorage.account)
         }
         NotificationCenter.default.post(name: .agentAPIKeyChanged, object: rawValue)
     }
@@ -200,7 +213,9 @@ struct OpenAIChatModelID: Hashable, Sendable {
     }
 
     var supportedReasoningEfforts: [AgentReasoningEffort] {
-        if majorVersion == 5, minorVersion == 6, !isNano {
+        if isNano {
+            [.minimal, .low, .medium, .high]
+        } else if majorVersion == 5, minorVersion == 6 {
             [.none, .low, .medium, .high, .xHigh, .max]
         } else {
             [.low, .medium, .high, .xHigh, .max]
@@ -405,14 +420,12 @@ enum AgentClientTransportError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .missingAPIKey(let provider):
-            "No \(provider.displayName) API key is set."
-        case .insufficientCredits(let message):
-            message.isEmpty ? "There are not enough credits for this AI request." : message
-        case .httpError(let provider, let status, let body):
-            "\(provider.displayName) API error (\(status)): \(body.prefix(500))"
-        case .streamError(let provider, let message):
-            "\(provider.displayName) stream error: \(message)"
+        case .missingAPIKey:
+            "Add your API key in Settings to use AI chat."
+        case .insufficientCredits:
+            "This AI service cannot complete the request right now. Try again later."
+        case .httpError, .streamError:
+            "This AI service cannot complete the request right now. Try again later."
         }
     }
 }

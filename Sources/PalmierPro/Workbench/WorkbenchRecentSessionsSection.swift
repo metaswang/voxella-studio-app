@@ -30,9 +30,9 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lgXl) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text("Continue recent \(modeTitle) sessions")
+                Text(L10n.format("Continue recent %@ sessions", L10n.string(key: modeTitle)))
                     .font(.system(size: AppTheme.FontSize.xl, weight: .semibold))
-                Text("Reopen a recent \(modeTitle) session to continue editing, translation, summary, or export.")
+                Text(L10n.format("Reopen a recent %@ session to continue editing, translation, summary, or export.", L10n.string(key: modeTitle)))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
@@ -59,7 +59,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
             HStack(spacing: AppTheme.Spacing.smMd) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(AppTheme.Text.mutedColor)
-                TextField("Search", text: $searchText)
+                TextField(L10n.string("Search"), text: $searchText)
                     .textFieldStyle(.plain)
                 if !searchText.isEmpty {
                     Button {
@@ -69,7 +69,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
                             .foregroundStyle(AppTheme.Text.mutedColor)
                     }
                     .buttonStyle(.plain)
-                    .help("Clear search")
+                    .help(L10n.string("Clear search"))
                 }
             }
             .padding(.horizontal, AppTheme.Spacing.lg)
@@ -87,14 +87,14 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
                         statusFilter = filter
                     } label: {
                         if statusFilter == filter {
-                            Label(LocalizedStringKey(filter.label), systemImage: "checkmark")
+                            Label(L10n.string(key: filter.label), systemImage: "checkmark")
                         } else {
-                            Text(LocalizedStringKey(filter.label))
+                            Text(L10n.string(key: filter.label))
                         }
                     }
                 }
             } label: {
-                Label("Filter", systemImage: "line.3.horizontal.decrease")
+                Label(L10n.string("Filter"), systemImage: "line.3.horizontal.decrease")
                     .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
                     .padding(.horizontal, AppTheme.Spacing.lg)
                     .frame(height: 44)
@@ -120,7 +120,11 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
                     )
             }
             .menuStyle(.borderlessButton)
-            .help(statusFilter == .all ? "Filter sessions" : "Filter: \(statusFilter.label)")
+            .help(
+                statusFilter == .all
+                    ? L10n.string("Filter sessions")
+                    : L10n.format("Filter: %@", L10n.string(key: statusFilter.label))
+            )
         }
     }
 
@@ -128,14 +132,14 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
         VStack(spacing: AppTheme.Spacing.md) {
             Text(
                 searchText.isEmpty && statusFilter == .all
-                    ? "No recent \(modeTitle) sessions yet"
-                    : "No matching sessions"
+                    ? String(format: L10n.string("No recent %@ sessions yet"), modeTitle)
+                    : L10n.string("No matching sessions")
             )
             .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
             Text(
                 searchText.isEmpty && statusFilter == .all
-                    ? "Create a session from this page, then reopen it here to continue editing, translation, summary, or export."
-                    : "Try a different search phrase or clear the status filter."
+                    ? L10n.string("Create a session from this page, then reopen it here to continue editing, translation, summary, or export.")
+                    : L10n.string("Try a different search phrase or clear the status filter.")
             )
             .font(.system(size: AppTheme.FontSize.sm))
             .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -143,7 +147,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
             .frame(maxWidth: 520)
 
             if searchText.isEmpty && statusFilter == .all, let onChooseMedia {
-                Button("Choose media", action: onChooseMedia)
+                Button(L10n.string("Choose media"), action: onChooseMedia)
                     .buttonStyle(.borderedProminent)
                     .padding(.top, AppTheme.Spacing.sm)
             }
@@ -217,10 +221,10 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
                                 }
                                 if let duration = session.duration {
                                     metaDot
-                                    Text("Duration \(formatDuration(duration))")
+                                    Text(L10n.format("Duration %@", formatDuration(duration)))
                                 }
                                 metaDot
-                                Text("Created \(session.createdAt.formatted(date: .numeric, time: .shortened))")
+                                Text(L10n.format("Created %@", session.createdAt.formatted(date: .numeric, time: .shortened)))
                             }
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.mutedColor)
@@ -244,24 +248,24 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
             .buttonStyle(.plain)
 
             Menu {
-                Button("Open session") { store.openSession(session.id) }
+                Button(L10n.string("Open session")) { store.openSession(session.id) }
                 if let transcriptionID = session.transcriptionID {
-                    Button("Re-transcribe and rebuild subtitles") {
+                    Button(L10n.string("Re-transcribe and rebuild subtitles")) {
                         retranscribe(transcriptionID)
                     }
                     .disabled(session.status.showsProcessing || session.status.showsQueued)
-                    Button(session.hasDub ? "Redub" : "Create dub") {
+                    Button(session.hasDub ? L10n.string("Redub") : L10n.string("Create dub")) {
                         createDub(for: transcriptionID)
                     }
                     .disabled(session.transcript == nil)
                 }
                 if let sourceURL = session.sourceURL {
-                    Button("Reveal source in Finder") {
+                    Button(L10n.string("Reveal source in Finder")) {
                         NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
                     }
                 }
                 Divider()
-                Button("Delete", role: .destructive) {
+                Button(L10n.string("Delete"), role: .destructive) {
                     delete(session)
                 }
             } label: {
@@ -272,24 +276,24 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
-            .help("Session options")
+            .help(L10n.string("Session options"))
         }
         .padding(.horizontal, AppTheme.Spacing.lg)
         .padding(.vertical, AppTheme.Spacing.lg)
         .contextMenu {
-            Button("Open session") { store.openSession(session.id) }
+            Button(L10n.string("Open session")) { store.openSession(session.id) }
             if let transcriptionID = session.transcriptionID {
-                Button("Re-transcribe and rebuild subtitles") { retranscribe(transcriptionID) }
-                Button(session.hasDub ? "Redub" : "Create dub") { createDub(for: transcriptionID) }
+                Button(L10n.string("Re-transcribe and rebuild subtitles")) { retranscribe(transcriptionID) }
+                Button(session.hasDub ? L10n.string("Redub") : L10n.string("Create dub")) { createDub(for: transcriptionID) }
                     .disabled(session.transcript == nil)
             }
             if let sourceURL = session.sourceURL {
-                Button("Reveal source in Finder") {
+                Button(L10n.string("Reveal source in Finder")) {
                     NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
                 }
             }
             Divider()
-            Button("Delete", role: .destructive) { delete(session) }
+            Button(L10n.string("Delete"), role: .destructive) { delete(session) }
         }
     }
 

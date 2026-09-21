@@ -117,7 +117,7 @@ struct InspectorView: View {
     private var marqueeSelectionSummary: some View {
         VStack {
             Spacer()
-            Text(L10n.string("\(editor.selectedClipIds.count) selected"))
+            Text(L10n.format("%@ selected", editor.selectedClipIds.count))
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
             Spacer()
@@ -255,7 +255,7 @@ struct InspectorView: View {
                 editor.applyTimelineSettings(fps: fps, width: editor.timeline.width, height: editor.timeline.height)
             } label: {
                 HStack {
-                    Text(verbatim: "\(fps) fps")
+                    Text(L10n.format("%@ fps", fps))
                     Spacer()
                     if editor.timeline.fps == fps {
                         Image(systemName: "checkmark")
@@ -1003,7 +1003,7 @@ struct InspectorView: View {
                     }
 
                     metadataSection(title: L10n.string("Generated")) {
-                        plainMetadataRow(label: L10n.string("Model"), value: ModelRegistry.displayName(for: gen.model))
+                        plainMetadataRow(label: L10n.string("Generated"), value: L10n.string("AI generation"))
                         if !gen.aspectRatio.isEmpty {
                             plainMetadataRow(
                                 label: L10n.string("Aspect Ratio"),

@@ -91,7 +91,7 @@ final class DubRewriteController {
                 isRunning = false
                 task = nil
                 guard result != segment.text else {
-                    errorMessage = "AI made no changes. Try different editing instructions."
+                    errorMessage = L10n.string("AI made no changes. Try different editing instructions.")
                     return
                 }
                 store.updateDubSegmentText(jobID, segmentIndex: segmentIndex, text: result)

@@ -398,7 +398,7 @@ struct PreviewContainerView: View {
             guard response == .OK, let url = panel.url else { return }
             let result = editor.relinkOfflineAssets(fromFolder: url)
             editor.mediaPanelToast = MediaPanelToast(
-                message: L10n.string("Relinked \(result.relinked) of \(result.total) offline clips.")
+                message: L10n.format("Relinked %@ of %@ offline clips.", result.relinked, result.total)
             )
         }
     }
@@ -451,9 +451,9 @@ struct PreviewContainerView: View {
                 Text(isUnprocessable ? L10n.string("Couldn't Prepare Media") : L10n.string("Media Offline"))
                     .font(.system(size: AppTheme.FontSize.lg, weight: .semibold))
                     .foregroundStyle(AppTheme.MediaOverlay.primaryColor)
-                Text(isUnprocessable
+                Text(L10n.string(isUnprocessable
                     ? "VoxStudio loaded this clip's source file but couldn't prepare it for playback. The file may be corrupt or in an unsupported format."
-                    : "VoxStudio couldn't load this clip's source file. It may be missing, on an ejected drive, or unreadable.")
+                    : "VoxStudio couldn't load this clip's source file. It may be missing, on an ejected drive, or unreadable."))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.MediaOverlay.secondaryColor)
                     .multilineTextAlignment(.center)
@@ -504,7 +504,7 @@ struct PreviewContainerView: View {
                     .font(.system(size: AppTheme.FontSize.lg, weight: .semibold))
                     .foregroundStyle(AppTheme.MediaOverlay.primaryColor)
                 ScrollView {
-                    Text(error)
+                    Text(L10n.display(error))
                         .font(.system(size: AppTheme.FontSize.md))
                         .foregroundStyle(AppTheme.MediaOverlay.secondaryColor)
                         .multilineTextAlignment(.center)

@@ -72,8 +72,9 @@ struct KnowledgeSkillSelectionTests {
 
         #expect(body["max_completion_tokens"] == .number(256))
         #expect(body["max_tokens"] == nil)
-        #expect(body["reasoning_effort"] == .string("none"))
+        #expect(body["reasoning_effort"] == .string("minimal"))
         #expect(body["reasoning"] == nil)
+        #expect(body["temperature"] == nil)
     }
 }
 
@@ -104,7 +105,7 @@ struct HostedSkillSelectionRequestTests {
         let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
         #expect(json["max_output_tokens"] as? Int == 256)
         let reasoning = try #require(json["reasoning"] as? [String: Any])
-        #expect(reasoning["effort"] as? String == "none")
+        #expect(reasoning["effort"] as? String == "minimal")
         let text = try #require(json["text"] as? [String: Any])
         let format = try #require(text["format"] as? [String: Any])
         #expect(format["type"] as? String == "json_schema")

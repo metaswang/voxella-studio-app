@@ -24,7 +24,11 @@ final class OnboardingState {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         isComplete = defaults.bool(forKey: Self.completionKey)
-        selectedFeatures = Set((defaults.stringArray(forKey: Self.selectionKey) ?? []).compactMap(LocalPreparationFeature.init(rawValue:)))
+        if let savedSelection = defaults.stringArray(forKey: Self.selectionKey) {
+            selectedFeatures = Set(savedSelection.compactMap(LocalPreparationFeature.init(rawValue:)))
+        } else {
+            selectedFeatures = Set(LocalPreparationFeature.allCases)
+        }
     }
 
     func showSelection() { step = .selection }

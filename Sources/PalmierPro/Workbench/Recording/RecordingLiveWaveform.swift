@@ -102,8 +102,8 @@ struct RecordingLiveWaveformView: View {
             )
         }
         .frame(height: AppTheme.Workbench.recordingWaveformHeight)
-        .accessibilityLabel("Recording waveform")
-        .accessibilityValue(isPaused ? "Paused" : "Live")
+        .accessibilityLabel(L10n.string("Recording waveform"))
+        .accessibilityValue(L10n.string(isPaused ? "Paused" : "Live"))
         .allowsHitTesting(false)
     }
 }

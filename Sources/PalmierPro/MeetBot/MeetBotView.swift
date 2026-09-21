@@ -204,7 +204,7 @@ struct MeetBotView: View {
                     .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                     .foregroundStyle(meeting.status == "failed" ? AppTheme.Status.errorColor : AppTheme.Text.tertiaryColor)
                 if let lastError = meeting.lastError, !lastError.isEmpty {
-                    Text(lastError)
+                    Text(L10n.display(lastError))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Status.errorColor)
                         .fixedSize(horizontal: false, vertical: true)
@@ -255,7 +255,7 @@ struct MeetBotView: View {
     }
 
     private func errorText(_ message: String) -> some View {
-        Text(message)
+        Text(L10n.display(message))
             .font(.system(size: AppTheme.FontSize.sm))
             .foregroundStyle(AppTheme.Status.errorColor)
             .fixedSize(horizontal: false, vertical: true)

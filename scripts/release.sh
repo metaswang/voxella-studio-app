@@ -3,17 +3,14 @@ set -euo pipefail
 
 # Usage: scripts/release.sh
 #
-# Full release pipeline:
-#   1. Preflight (on main, tree clean, tag free, in sync with origin)
-#   2. Auto-bump the patch version and CFBundleVersion
-#   3. Prompt for release notes in $EDITOR (prefilled with recent commits)
-#   4. Run bundle.sh release --dist
-#   5. Commit + push version bump
-#   6. Tag + push tag
-#   7. gh release create with the DMG and notes
-#   8. Update appcast.xml + commit + push
+# Default R2/Cloudflare publication:
+#   1. Auto-bump the patch version from the Cloudflare appcast
+#   2. Build, sign, notarize, staple, and Sparkle-sign the DMG
+#   3. prepare → upload → verify → cache-check → promote → postcheck on R2
 #
-# Bails out before anything public-visible if a preflight check fails.
+# First Cloudflare publication requires RELEASE_BOOTSTRAP=1.
+# Hugging Face publication is retired. RELEASE_TARGET=github remains an
+# explicit emergency path and is not the default.
 
 if [ $# -ne 0 ]; then
   echo "usage: $0" >&2
@@ -24,36 +21,161 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="$ROOT/Sources/PalmierPro/Resources/Info.plist"
 APPCAST="$ROOT/appcast.xml"
 DMG="$ROOT/.build/VoxStudio.dmg"
-FEED_URL="https://raw.githubusercontent.com/palmier-io/palmier-pro/main/appcast.xml"
-SPARKLE_ROOT="$ROOT/.build/artifacts/sparkle/Sparkle"
+SPARKLE_ROOT="$ROOT/.build/sparkle-tools"
 EXPECTED_PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$PLIST")"
+PUBLIC_APPCAST_URL="https://assets.voxstudio.me/downloads/voxstudio/appcast.xml"
+if python3 -c 'import boto3' >/dev/null 2>&1; then
+  R2_TOOL=(python3 "$ROOT/scripts/r2_release.py")
+else
+  R2_TOOL=(uv run --no-project --with boto3 python "$ROOT/scripts/r2_release.py")
+fi
+VERSION_TOOL=(uv run --no-project python "$ROOT/scripts/release_version.py")
+RELEASE_TARGET="${RELEASE_TARGET:-r2}"
 cd "$ROOT"
 
-if [ "${RELEASE_TARGET:-github}" = "huggingface" ] || [ "${RELEASE_TARGET:-github}" = "dmg" ]; then
-  if ! git diff-index --quiet HEAD -- && [ "${RELEASE_INCLUDE_WORKTREE:-0}" != "1" ]; then
-    echo "error: set RELEASE_INCLUDE_WORKTREE=1 to explicitly include pending work" >&2
+ensure_sparkle_tools() {
+  if [ -x "$SPARKLE_ROOT/bin/generate_keys" ]; then
+    return
+  fi
+  mkdir -p "$SPARKLE_ROOT"
+  ARCHIVE="$ROOT/.build/Sparkle-2.9.2.tar.xz"
+  curl -L --fail --silent --show-error \
+    "https://github.com/sparkle-project/Sparkle/releases/download/2.9.2/Sparkle-2.9.2.tar.xz" \
+    -o "$ARCHIVE"
+  tar -xJf "$ARCHIVE" -C "$SPARKLE_ROOT"
+  if [ ! -x "$SPARKLE_ROOT/bin/generate_keys" ]; then
+    echo "error: Sparkle generate_keys tool is unavailable" >&2
     exit 1
   fi
+}
+
+verify_sparkle_key() {
+  ensure_sparkle_tools
+  ACTUAL_PUBLIC_KEY="$("$SPARKLE_ROOT/bin/generate_keys" -p)"
+  if [ "$ACTUAL_PUBLIC_KEY" != "$EXPECTED_PUBLIC_KEY" ]; then
+    echo "error: Sparkle signing key does not match SUPublicEDKey; restore the original private key" >&2
+    exit 1
+  fi
+}
+
+require_worktree_ok() {
+  if ! git diff-index --quiet HEAD -- && [ "${RELEASE_INCLUDE_WORKTREE:-0}" != "1" ]; then
+    echo "error: set RELEASE_INCLUDE_WORKTREE=1 to explicitly include pending work" >&2
+    git status --short >&2
+    exit 1
+  fi
+}
+
+require_macos_15() {
   test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$PLIST")" = "15.0"
   rg -q 'platforms: \[\.macOS\(\.v15\)\]' "$ROOT/Package.swift"
+}
+
+if [ "$RELEASE_TARGET" = "huggingface" ]; then
+  echo "error: Hugging Face publication is retired; the default R2 flow is the supported release path" >&2
+  exit 1
+fi
+
+if [ "$RELEASE_TARGET" = "r2" ] || [ "$RELEASE_TARGET" = "dmg" ]; then
+  DELIVERY_ARGS=(--delivery-mode "${RELEASE_DELIVERY_MODE:-cache}")
+  if [ "${RELEASE_DELIVERY_MODE:-cache}" = "origin" ]; then
+    DELIVERY_ARGS+=(--origin-reason "${RELEASE_ORIGIN_REASON:-}")
+  fi
+  if [ "$RELEASE_TARGET" = "r2" ] && [ "${RELEASE_RESUME:-0}" = "1" ]; then
+    RESUME_ARGS=(resume "${DELIVERY_ARGS[@]}")
+    [ "${RELEASE_DRY_RUN:-0}" != "1" ] || RESUME_ARGS+=(--dry-run)
+    [ "${RELEASE_PROMOTE:-1}" = "1" ] || RESUME_ARGS+=(--skip-promote)
+    # Resume the staged, signed artifact without bumping or rebuilding it.
+    exec "${R2_TOOL[@]}" "${RESUME_ARGS[@]}"
+  fi
+  require_worktree_ok
+  require_macos_15
+  verify_sparkle_key
+
   LIVE_APPCAST="$(mktemp -t voxstudio-appcast.XXXXXX).xml"
-  trap 'rm -f "$LIVE_APPCAST"' EXIT
-  curl --fail --silent --show-error --location "$FEED_URL" --output "$LIVE_APPCAST"
+  NOTES_CLEAN=""
+  BUILD_LOG=""
+  cleanup() {
+    [ -z "$LIVE_APPCAST" ] || rm -f "$LIVE_APPCAST"
+    [ -z "$NOTES_CLEAN" ] || rm -f "$NOTES_CLEAN"
+    [ -z "$BUILD_LOG" ] || rm -f "$BUILD_LOG"
+  }
+  trap cleanup EXIT
+
+  FETCH_STATUS=0
+  "${R2_TOOL[@]}" fetch-appcast --output "$LIVE_APPCAST" || FETCH_STATUS=$?
+  BOOTSTRAP_ARGS=()
+  if [ "$FETCH_STATUS" -eq 2 ]; then
+    if [ "${RELEASE_BOOTSTRAP:-0}" != "1" ]; then
+      echo "error: Cloudflare appcast is not published yet; set RELEASE_BOOTSTRAP=1 for the first R2 release" >&2
+      exit 1
+    fi
+    : >"$LIVE_APPCAST"
+    BOOTSTRAP_ARGS=(--bootstrap)
+  elif [ "$FETCH_STATUS" -ne 0 ]; then
+    echo "error: failed to read the Cloudflare appcast" >&2
+    exit 1
+  fi
+
   CURRENT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
   CURRENT_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
-  VERSION="$(uv run --no-project python "$ROOT/scripts/release_version.py" next --current "$CURRENT_VERSION" --appcast "$LIVE_APPCAST")"
-  NEW_BUILD="$(uv run --no-project python "$ROOT/scripts/release_version.py" plan \
-    --requested "$VERSION" --current "$CURRENT_VERSION" --current-build "$CURRENT_BUILD" --appcast "$LIVE_APPCAST")"
-  echo "==> $RELEASE_TARGET artifact: $CURRENT_VERSION ($CURRENT_BUILD) -> $VERSION ($NEW_BUILD)"
+  VERSION="$("${VERSION_TOOL[@]}" next --current "$CURRENT_VERSION" --current-build "$CURRENT_BUILD" --appcast "$LIVE_APPCAST" ${BOOTSTRAP_ARGS[@]+"${BOOTSTRAP_ARGS[@]}"})"
+  NEW_BUILD="$("${VERSION_TOOL[@]}" plan \
+    --requested "$VERSION" \
+    --current "$CURRENT_VERSION" \
+    --current-build "$CURRENT_BUILD" \
+    --appcast "$LIVE_APPCAST" \
+    ${BOOTSTRAP_ARGS[@]+"${BOOTSTRAP_ARGS[@]}"})"
+  echo "==> R2 release: $CURRENT_VERSION ($CURRENT_BUILD) -> $VERSION ($NEW_BUILD)"
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_BUILD" "$PLIST"
+
   if [ "$RELEASE_TARGET" = "dmg" ]; then
     SPARKLE_SIGN_UPDATE_REQUIRED=0 ./scripts/bundle.sh release --dist
-  else
-    ./scripts/bundle.sh release --dist
+    echo "==> Artifact ready for verification: $DMG"
+    exit 0
   fi
-  echo "==> Artifact ready for verification: $DMG"
+
+  echo "==> Building signed + notarized DMG"
+  BUILD_LOG="$(mktemp -t voxstudio-build.XXXXXX).log"
+  ./scripts/bundle.sh release --dist 2>&1 | tee "$BUILD_LOG"
+  SIG_LINE="$(grep -E 'edSignature="[^"]+".*length="[0-9]+"' "$BUILD_LOG" | tail -1)"
+  SIGNATURE="$(echo "$SIG_LINE" | sed -E 's/.*edSignature="([^"]+)".*/\1/')"
+  LENGTH="$(echo "$SIG_LINE" | sed -E 's/.*length="([0-9]+)".*/\1/')"
+  if [ -z "$SIGNATURE" ] || ! [[ "$LENGTH" =~ ^[0-9]+$ ]]; then
+    echo "error: couldn't extract Sparkle signature or numeric length from build output" >&2
+    exit 1
+  fi
+
+  MINIMUM_SYSTEM_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$PLIST")"
+  RUN_ARGS=(
+    run
+    --dmg "$DMG"
+    --version "$VERSION"
+    --build "$NEW_BUILD"
+    --signature "$SIGNATURE"
+    --minimum-system-version "$MINIMUM_SYSTEM_VERSION"
+    "${DELIVERY_ARGS[@]}"
+  )
+  if [ "${RELEASE_DRY_RUN:-0}" = "1" ]; then
+    RUN_ARGS+=(--dry-run)
+  fi
+  if [ "${RELEASE_PROMOTE:-1}" != "1" ]; then
+    RUN_ARGS+=(--skip-promote)
+  fi
+  echo "==> Publishing to Cloudflare R2"
+  "${R2_TOOL[@]}" "${RUN_ARGS[@]}"
+  echo ""
+  echo "==> Released $VERSION ($NEW_BUILD)"
+  echo "    latest: https://assets.voxstudio.me/downloads/voxstudio/VoxStudio.dmg"
+  echo "    appcast: $PUBLIC_APPCAST_URL"
+  echo "    Sparkle length: $LENGTH"
   exit 0
+fi
+
+if [ "$RELEASE_TARGET" != "github" ]; then
+  echo "error: unknown RELEASE_TARGET=$RELEASE_TARGET" >&2
+  exit 1
 fi
 
 echo "==> Preflight"
@@ -87,6 +209,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
+FEED_URL="https://raw.githubusercontent.com/palmier-io/palmier-pro/main/appcast.xml"
 curl --fail --silent --show-error --location "$FEED_URL" --output "$LIVE_APPCAST"
 if ! cmp -s "$APPCAST" "$LIVE_APPCAST"; then
   echo "error: local appcast.xml differs from the published feed; sync it before releasing" >&2
@@ -109,18 +232,7 @@ if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
 fi
 echo "==> Release version: $CURRENT_VERSION -> $VERSION (patch increment)"
 
-if [ ! -x "$SPARKLE_ROOT/bin/generate_keys" ]; then
-  swift package resolve
-fi
-if [ ! -x "$SPARKLE_ROOT/bin/generate_keys" ]; then
-  echo "error: Sparkle generate_keys tool is unavailable" >&2
-  exit 1
-fi
-ACTUAL_PUBLIC_KEY="$("$SPARKLE_ROOT/bin/generate_keys" -p)"
-if [ "$ACTUAL_PUBLIC_KEY" != "$EXPECTED_PUBLIC_KEY" ]; then
-  echo "error: Sparkle signing key does not match SUPublicEDKey; restore the original private key" >&2
-  exit 1
-fi
+verify_sparkle_key
 
 echo "==> Generating release notes from commit log"
 NOTES_CLEAN="$(mktemp -t palmier-release.XXXXXX).md"
@@ -154,8 +266,6 @@ echo "==> Building signed + notarized DMG"
 BUILD_LOG="$(mktemp -t palmier-build.XXXXXX).log"
 ./scripts/bundle.sh release --dist 2>&1 | tee "$BUILD_LOG"
 
-# Only match the real signature line (which has length="<digits>"), not the
-# instruction hint text that bundle.sh also prints.
 SIG_LINE="$(grep -E 'edSignature="[^"]+".*length="[0-9]+"' "$BUILD_LOG" | tail -1)"
 SIGNATURE="$(echo "$SIG_LINE" | sed -E 's/.*edSignature="([^"]+)".*/\1/')"
 LENGTH="$(echo "$SIG_LINE" | sed -E 's/.*length="([0-9]+)".*/\1/')"

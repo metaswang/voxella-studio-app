@@ -54,6 +54,278 @@ enum LLMProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Curated providers that expose the OpenAI Chat Completions protocol used by
+/// the BYOK transport. Keep this list separate from `LLMProviderKind`: the
+/// latter describes request behavior, while this list describes a friendly
+/// setup preset that can be changed without breaking persisted configurations.
+struct LLMProviderPreset: Identifiable, Equatable, Sendable {
+    let id: String
+    let name: String
+    let baseURL: String
+    let defaultModel: String
+    let providerKind: LLMProviderKind
+    let detail: String
+    let isCustom: Bool
+
+    var defaultPrefix: String {
+        name.providerPrefix
+    }
+
+    var isLocal: Bool {
+        Self.isLocalBaseURL(baseURL)
+    }
+
+    static func isLocalBaseURL(_ baseURL: String) -> Bool {
+        guard let host = URL(string: baseURL.trimmingCharacters(in: .whitespacesAndNewlines))?.host?.lowercased() else {
+            return false
+        }
+        return host == "localhost" || host == "127.0.0.1" || host == "::1"
+    }
+
+    static let custom = LLMProviderPreset(
+        id: "custom",
+        name: "Custom provider",
+        baseURL: "",
+        defaultModel: "",
+        providerKind: .openAICompatible,
+        detail: "Any OpenAI-compatible endpoint",
+        isCustom: true
+    )
+
+    // Base URLs are OpenAI-compatible roots. The model field is a convenience
+    // only; users can always replace it with a model from their provider
+    // account. Local runtimes intentionally share the same editable preset
+    // flow as hosted providers.
+    static let presets: [LLMProviderPreset] = [
+        .init(
+            id: "openai",
+            name: "OpenAI",
+            baseURL: "https://api.openai.com/v1",
+            defaultModel: "gpt-5.4-nano",
+            providerKind: .openAI,
+            detail: "Official OpenAI API",
+            isCustom: false
+        ),
+        .init(
+            id: "openrouter",
+            name: "OpenRouter",
+            baseURL: "https://openrouter.ai/api/v1",
+            defaultModel: "",
+            providerKind: .openRouter,
+            detail: "One API for many model providers",
+            isCustom: false
+        ),
+        .init(
+            id: "google-gemini",
+            name: "Google Gemini",
+            baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+            defaultModel: "gemini-2.5-flash",
+            providerKind: .openAICompatible,
+            detail: "Gemini OpenAI-compatible endpoint",
+            isCustom: false
+        ),
+        .init(
+            id: "deepseek",
+            name: "DeepSeek",
+            baseURL: "https://api.deepseek.com/v1",
+            defaultModel: "deepseek-chat",
+            providerKind: .openAICompatible,
+            detail: "DeepSeek Chat / Reasoner API",
+            isCustom: false
+        ),
+        .init(
+            id: "groq",
+            name: "Groq",
+            baseURL: "https://api.groq.com/openai/v1",
+            defaultModel: "llama-3.3-70b-versatile",
+            providerKind: .openAICompatible,
+            detail: "Fast OpenAI-compatible inference",
+            isCustom: false
+        ),
+        .init(
+            id: "mistral",
+            name: "Mistral AI",
+            baseURL: "https://api.mistral.ai/v1",
+            defaultModel: "mistral-small-latest",
+            providerKind: .openAICompatible,
+            detail: "Mistral platform API",
+            isCustom: false
+        ),
+        .init(
+            id: "together-ai",
+            name: "Together AI",
+            baseURL: "https://api.together.xyz/v1",
+            defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            providerKind: .openAICompatible,
+            detail: "Open models through Together",
+            isCustom: false
+        ),
+        .init(
+            id: "fireworks-ai",
+            name: "Fireworks AI",
+            baseURL: "https://api.fireworks.ai/inference/v1",
+            defaultModel: "accounts/fireworks/models/llama-v3p1-8b-instruct",
+            providerKind: .openAICompatible,
+            detail: "Fast model inference API",
+            isCustom: false
+        ),
+        .init(
+            id: "xai",
+            name: "xAI",
+            baseURL: "https://api.x.ai/v1",
+            defaultModel: "grok-3-mini",
+            providerKind: .openAICompatible,
+            detail: "Grok API",
+            isCustom: false
+        ),
+        .init(
+            id: "perplexity",
+            name: "Perplexity",
+            baseURL: "https://api.perplexity.ai",
+            defaultModel: "sonar",
+            providerKind: .openAICompatible,
+            detail: "Search-focused Sonar API",
+            isCustom: false
+        ),
+        .init(
+            id: "deepinfra",
+            name: "DeepInfra",
+            baseURL: "https://api.deepinfra.com/v1/openai",
+            defaultModel: "",
+            providerKind: .deepInfra,
+            detail: "Hosted open models",
+            isCustom: false
+        ),
+        .init(
+            id: "minimax",
+            name: "MiniMax",
+            baseURL: "https://api.minimax.io/v1",
+            defaultModel: "MiniMax-M3",
+            providerKind: .miniMax,
+            detail: "MiniMax OpenAI-compatible API",
+            isCustom: false
+        ),
+        .init(
+            id: "zai",
+            name: "Z.AI",
+            baseURL: "https://api.z.ai/api/paas/v4",
+            defaultModel: "",
+            providerKind: .zAI,
+            detail: "GLM API",
+            isCustom: false
+        ),
+        .init(
+            id: "moonshot",
+            name: "Moonshot AI",
+            baseURL: "https://api.moonshot.ai/v1",
+            defaultModel: "kimi-k2.5",
+            providerKind: .openAICompatible,
+            detail: "Kimi API",
+            isCustom: false
+        ),
+        .init(
+            id: "siliconflow",
+            name: "SiliconFlow",
+            baseURL: "https://api.siliconflow.cn/v1",
+            defaultModel: "",
+            providerKind: .openAICompatible,
+            detail: "Hosted models in China",
+            isCustom: false
+        ),
+        .init(
+            id: "ollama",
+            name: "Ollama",
+            baseURL: "http://localhost:11434/v1",
+            defaultModel: "",
+            providerKind: .openAICompatible,
+            detail: "Local models on Ollama",
+            isCustom: false
+        ),
+        .init(
+            id: "lm-studio",
+            name: "LM Studio",
+            baseURL: "http://localhost:1234/v1",
+            defaultModel: "",
+            providerKind: .openAICompatible,
+            detail: "Local models in LM Studio",
+            isCustom: false
+        ),
+        .init(
+            id: "llama-cpp",
+            name: "llama.cpp",
+            baseURL: "http://localhost:8080/v1",
+            defaultModel: "",
+            providerKind: .openAICompatible,
+            detail: "Local llama-server / GGUF models",
+            isCustom: false
+        ),
+        .init(
+            id: "localai",
+            name: "LocalAI",
+            baseURL: "http://localhost:8080/v1",
+            defaultModel: "",
+            providerKind: .openAICompatible,
+            detail: "Local OpenAI-compatible runtime",
+            isCustom: false
+        ),
+        .init(
+            id: "vllm",
+            name: "vLLM",
+            baseURL: "http://localhost:8000/v1",
+            defaultModel: "",
+            providerKind: .openAICompatible,
+            detail: "High-throughput local model server",
+            isCustom: false
+        ),
+        .init(
+            id: "jan",
+            name: "Jan",
+            baseURL: "http://127.0.0.1:1337/v1",
+            defaultModel: "",
+            providerKind: .openAICompatible,
+            detail: "Jan local API powered by llama.cpp",
+            isCustom: false
+        ),
+        .init(
+            id: "litellm",
+            name: "LiteLLM",
+            baseURL: "http://localhost:4000/v1",
+            defaultModel: "",
+            providerKind: .openAICompatible,
+            detail: "Local multi-provider proxy",
+            isCustom: false
+        ),
+    ]
+
+    static let all: [LLMProviderPreset] = presets + [custom]
+
+    static func matching(_ profile: LLMProviderProfile) -> LLMProviderPreset? {
+        let candidates = all.filter { preset in
+            !preset.isCustom
+                && preset.providerKind == profile.provider
+                && preset.baseURL.caseInsensitiveCompare(profile.normalizedBaseURL) == .orderedSame
+        }
+        return candidates.first { $0.defaultPrefix == profile.normalizedPrefix }
+            ?? candidates.first
+    }
+}
+
+extension String {
+    var providerPrefix: String {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let scalarValue = value.unicodeScalars.map { scalar -> Character in
+            let isASCIIAlphaNumeric = (scalar.value >= 48 && scalar.value <= 57)
+                || (scalar.value >= 97 && scalar.value <= 122)
+            if isASCIIAlphaNumeric { return Character(String(scalar)) }
+            return "-"
+        }
+        var result = String(scalarValue)
+        while result.contains("--") { result = result.replacingOccurrences(of: "--", with: "-") }
+        let trimmed = result.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return trimmed.isEmpty ? "provider" : trimmed
+    }
+}
+
 struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     var provider: LLMProviderKind
@@ -265,7 +537,7 @@ enum LLMUseCase: String, Codable, CaseIterable, Identifiable, Sendable {
     var detail: String {
         switch self {
         case .translation: "Translates timed subtitle cues."
-        case .subtitleProcessing: "Segments subtitle cues. Repairs punctuation for Whisper; Qwen and Parakeet only segment."
+        case .subtitleProcessing: "Segments subtitle cues and cleans up punctuation when supported."
         case .skillSelection: "Routes knowledge-base questions with a bounded, low-latency selector."
         case .chat: "Plans and applies edits from the editor's left chat panel."
         case .graphExtraction: "Extracts a bounded entity and relation graph from indexed transcript chunks."
@@ -279,8 +551,10 @@ enum LLMUseCase: String, Codable, CaseIterable, Identifiable, Sendable {
         self == .skillSelection ? 256 : nil
     }
 
+    /// Hosted selector cannot inspect the server-side model. Send `minimal`
+    /// because reasoning-required models reject `none`.
     var defaultReasoningEffort: LLMReasoningEffort? {
-        self == .skillSelection ? LLMReasoningEffort.none : nil
+        self == .skillSelection ? .minimal : nil
     }
 }
 
@@ -309,6 +583,13 @@ enum LLMReasoningEffort: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 extension LLMReasoningEffort {
+    /// OpenRouter and other gateways use `vendor/model` ids. Capability checks
+    /// must look at the leaf model name.
+    static func leafModelName(_ modelName: String) -> String {
+        let normalized = modelName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.split(separator: "/").last.map(String.init) ?? normalized
+    }
+
     /// Returns the effort values that the chat picker can safely expose for a
     /// configured model. Known agent models reuse the same provider/model
     /// capability table as the editor agent; custom provider models remain
@@ -318,7 +599,7 @@ extension LLMReasoningEffort {
         let normalizedModel = modelName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let modelCandidates = [
             normalizedModel,
-            normalizedModel.split(separator: "/").last.map(String.init) ?? normalizedModel,
+            leafModelName(modelName),
         ]
 
         if let knownModel = modelCandidates.compactMap(AgentModel.persisted).first {
@@ -337,6 +618,18 @@ extension LLMReasoningEffort {
         }
 
         return allCases
+    }
+
+    static func lowestEffort(providerPrefix: String, modelName: String) -> Self {
+        let supported = supportedChatEfforts(providerPrefix: providerPrefix, modelName: modelName)
+        if supported.contains(.none) { return .none }
+        return supported.first ?? .minimal
+    }
+
+    /// GPT-5+ OpenAI chat models reject non-default temperature. Other
+    /// providers (Gemini, MiniMax, DeepSeek) still accept `temperature=0`.
+    static func supportsCustomTemperature(providerPrefix _: String, modelName: String) -> Bool {
+        OpenAIChatModelID(leafModelName(modelName)) == nil
     }
 }
 
@@ -428,7 +721,7 @@ struct LLMModelRoute: Codable, Equatable, Sendable {
         case .translation:
             LLMModelRoute(
                 primaryModel: "openai/gpt-5.4-nano",
-                fallbackModels: ["minimax/MiniMax-M3"],
+                fallbackModels: [],
                 policy: .default(for: useCase)
             )
         case .skillSelection:
@@ -440,24 +733,24 @@ struct LLMModelRoute: Codable, Equatable, Sendable {
         case .subtitleProcessing:
             LLMModelRoute(
                 primaryModel: "openai/gpt-5.6-luna",
-                fallbackModels: ["minimax/MiniMax-M3"],
+                fallbackModels: [],
                 policy: .default(for: useCase)
             )
         case .chat:
             LLMModelRoute(
-                primaryModel: "minimax/MiniMax-M3",
+                primaryModel: "",
                 fallbackModels: ["openai/gpt-5.4-nano"],
                 policy: .default(for: useCase)
             )
         case .graphExtraction:
             LLMModelRoute(
-                primaryModel: "minimax/MiniMax-M3",
+                primaryModel: "",
                 fallbackModels: ["openai/gpt-5.4-nano"],
                 policy: .default(for: useCase)
             )
         case .graphQueryUnderstanding:
             LLMModelRoute(
-                primaryModel: "minimax/MiniMax-M3",
+                primaryModel: "",
                 fallbackModels: ["openai/gpt-5.4-nano"],
                 policy: .default(for: useCase)
             )
@@ -530,38 +823,45 @@ struct LLMRuntimeConfiguration: Sendable {
         self.reasoningEffort = reasoningEffort
     }
 
+    var diagnosticDescription: String {
+        let host = endpoint.host ?? "unknown"
+        let extra = LLMJSONValue.compactLogObject(resolvedExtraBody)
+        return "model=\(modelIdentifier) provider=\(profile.normalizedPrefix) host=\(host) extra=\(extra)"
+    }
+
+    var lowestReasoningEffort: LLMReasoningEffort {
+        LLMReasoningEffort.lowestEffort(
+            providerPrefix: profile.normalizedPrefix,
+            modelName: modelName
+        )
+    }
+
     var openAICompatibleRequestOptions: LLMOpenAICompatibleRequestOptions {
         var options = providerRequestOptions
         if useCase == .chat, let reasoningEffort {
             options.reasoningEffort = reasoningEffort.rawValue
         }
-        if useCase == .skillSelection {
-            options.suppressThinking(
-                canDisableThinking: canDisableThinking,
-                disableReasoning: disablesReasoningForStructuredOutput
-            )
-            options.temperature = 0
+        switch useCase {
+        case .skillSelection:
+            applyStructuredOutputConstraints(to: &options)
             options.maxOutputTokens = 256
-        } else if useCase == .subtitleProcessing || useCase == .translation {
-            options.suppressThinking(
-                canDisableThinking: canDisableThinking,
-                disableReasoning: disablesReasoningForStructuredOutput
-            )
-            options.temperature = 0
-            options.maxOutputTokens = useCase == .translation ? 8_192 : 4_096
+        case .subtitleProcessing:
+            applyStructuredOutputConstraints(to: &options)
+            options.maxOutputTokens = 4_096
+        case .translation:
+            applyStructuredOutputConstraints(to: &options)
+            options.maxOutputTokens = 8_192
+        case .chat, .graphExtraction, .graphQueryUnderstanding, .none:
+            break
         }
         return options
     }
 
     private var providerRequestOptions: LLMOpenAICompatibleRequestOptions {
-        let host = endpoint.host?.lowercased() ?? ""
         let normalizedModel = modelName
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        let isMiniMax = profile.provider == .miniMax
-            || profile.normalizedPrefix == LLMProviderKind.miniMax.defaultPrefix
-            || host.hasSuffix("minimax.io")
-        if isMiniMax {
+        if isMiniMaxProvider {
             return LLMOpenAICompatibleRequestOptions(
                 reasoningSplit: true,
                 thinkingType: normalizedModel == "minimax-m3" ? "disabled" : nil
@@ -571,30 +871,62 @@ struct LLMRuntimeConfiguration: Sendable {
         // DeepSeek V4 defaults to thinking mode with high effort. Structured
         // subtitle/translation completions wait for the full non-streaming
         // response, so leave thinking disabled unless the caller opts in.
-        let isDeepSeek = profile.normalizedPrefix.caseInsensitiveCompare("deepseek") == .orderedSame
-            || host.contains("deepseek.com")
-            || normalizedModel.hasPrefix("deepseek-")
-        if isDeepSeek {
+        if isDeepSeekProvider {
             return LLMOpenAICompatibleRequestOptions(thinkingType: "disabled")
         }
 
         return .init()
     }
 
-    private var canDisableThinking: Bool {
-        let host = endpoint.host?.lowercased() ?? ""
-        let isMiniMax = profile.provider == .miniMax
-            || profile.normalizedPrefix == LLMProviderKind.miniMax.defaultPrefix
-            || host.hasSuffix("minimax.io")
-        guard isMiniMax else { return true }
-        return modelName
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() == "minimax-m3"
+    private func applyStructuredOutputConstraints(
+        to options: inout LLMOpenAICompatibleRequestOptions
+    ) {
+        if isMiniMaxProvider || isDeepSeekProvider {
+            if supportsCustomTemperature {
+                options.temperature = 0
+            }
+            return
+        }
+        if isGeminiFamily {
+            options.thinkingType = "disabled"
+            options.reasoningEnabled = false
+            options.reasoningEffort = nil
+            options.temperature = 0
+            return
+        }
+        options.thinkingType = nil
+        options.reasoningEnabled = nil
+        options.reasoningEffort = lowestReasoningEffort.rawValue
+        if supportsCustomTemperature {
+            options.temperature = 0
+        }
     }
 
-    // OpenRouter/Gemini treat reasoning.effort as enabling thinking.
-    private var disablesReasoningForStructuredOutput: Bool {
-        if profile.isOpenRouter { return true }
+    private var supportsCustomTemperature: Bool {
+        LLMReasoningEffort.supportsCustomTemperature(
+            providerPrefix: profile.normalizedPrefix,
+            modelName: modelName
+        )
+    }
+
+    private var isMiniMaxProvider: Bool {
+        let host = endpoint.host?.lowercased() ?? ""
+        return profile.provider == .miniMax
+            || profile.normalizedPrefix == LLMProviderKind.miniMax.defaultPrefix
+            || host.hasSuffix("minimax.io")
+    }
+
+    private var isDeepSeekProvider: Bool {
+        let host = endpoint.host?.lowercased() ?? ""
+        let normalizedModel = modelName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return profile.normalizedPrefix.caseInsensitiveCompare("deepseek") == .orderedSame
+            || host.contains("deepseek.com")
+            || normalizedModel.hasPrefix("deepseek-")
+    }
+
+    private var isGeminiFamily: Bool {
         let host = endpoint.host?.lowercased() ?? ""
         let model = modelName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if model.contains("gemini") { return true }
@@ -628,24 +960,6 @@ struct LLMOpenAICompatibleRequestOptions: Equatable, Sendable {
         self.reasoningEnabled = reasoningEnabled
         self.temperature = temperature
         self.maxOutputTokens = maxOutputTokens
-    }
-
-    mutating func suppressThinking(
-        canDisableThinking: Bool,
-        disableReasoning: Bool = false
-    ) {
-        let hadProviderThinking = thinkingType != nil || reasoningSplit != nil
-        if thinkingType == nil, canDisableThinking {
-            thinkingType = "disabled"
-        }
-        if disableReasoning {
-            reasoningEnabled = false
-            reasoningEffort = nil
-            return
-        }
-        if reasoningEffort == nil, !hadProviderThinking {
-            reasoningEffort = "none"
-        }
     }
 
     var extraBody: [String: LLMJSONValue] {
@@ -691,6 +1005,11 @@ struct LLMRuntimeRoute: Sendable {
     let useCase: LLMUseCase
     let configurations: [LLMRuntimeConfiguration]
     let policy: LLMRequestPolicy
+
+    var diagnosticDescription: String {
+        let routes = configurations.map(\.diagnosticDescription).joined(separator: " | ")
+        return "use_case=\(useCase.rawValue) timeout_s=\(Int(policy.timeoutSeconds)) attempts=\(policy.maximumAttemptsPerModel) routes=\(configurations.count) [\(routes)]"
+    }
 }
 
 enum LLMConfigurationError: LocalizedError {
@@ -722,15 +1041,15 @@ enum LLMConfigurationError: LocalizedError {
         case .duplicateProviderPrefix(let prefix):
             "The provider prefix “\(prefix)” is already in use."
         case .missingModel:
-            "Enter a model name."
-        case .invalidModelReference(let value):
-            "Use provider/model format for “\(value)”."
-        case .missingProvider(let prefix):
-            "No provider is configured with the prefix “\(prefix)”."
+            "Complete the AI service setup before continuing."
+        case .invalidModelReference:
+            "The AI service setup is invalid. Review the connection settings."
+        case .missingProvider:
+            "The selected AI service is no longer available. Review the connection settings."
         case .missingAPIKey:
             "Add an API key in Settings > AI before running this flow."
         case .noConfiguredModel(let useCase):
-            "Configure an API key and an available provider/model route for \(useCase.title.lowercased())."
+            "Configure an API key and an available AI service for \(useCase.title.lowercased())."
         case .invalidTimeout:
             "Set timeout between 3 and 1,800 seconds."
         case .invalidRetryCount:
@@ -784,6 +1103,8 @@ final class LLMSettingsStore {
     private static let useBYOKKey = "voxella.llm.use-byok.v1"
     private static let chatReasoningEffortKey = "voxella.llm.chat-reasoning-effort.v1"
     private static let useBYOKMigrationKey = "voxella.llm.migration.use-byok.v1"
+    private static let defaultMiniMaxProviderMigrationKey = "voxella.llm.migration.remove-default-minimax-provider.v2"
+    private static let legacyDefaultMiniMaxProviderMigrationKey = "voxella.llm.migration.remove-default-minimax-provider.v1"
     private static let credentialAvailabilityDefaultsKey = "voxella.llm.credential-availability.v1"
 
     private(set) var providers: [LLMProviderProfile]
@@ -843,9 +1164,9 @@ final class LLMSettingsStore {
             providers = saved.providers
             routes = saved.routes
         case .invalid:
-            providers = [.defaultOpenAI, .defaultMiniMax]
+            providers = [.defaultOpenAI]
             routes = Self.defaultRoutes
-            configurationError = "Saved AI settings could not be read. They were left unchanged."
+            configurationError = L10n.string("Saved AI settings could not be read. They were left unchanged.")
         case .missing:
             if let data = defaults.data(forKey: Self.legacyProfileDefaultsKey),
                let legacy = try? JSONDecoder().decode(LLMProviderProfile.self, from: data) {
@@ -865,7 +1186,7 @@ final class LLMSettingsStore {
                 routes = migrated.routes
                 shouldPersist = true
             } else {
-                providers = [.defaultOpenAI, .defaultMiniMax]
+                providers = [.defaultOpenAI]
                 routes = Self.defaultRoutes
                 shouldPersist = true
             }
@@ -882,6 +1203,9 @@ final class LLMSettingsStore {
             shouldPersist = true
         }
         if migrateSubtitleTimeoutIfNeeded() {
+            shouldPersist = true
+        }
+        if migrateDefaultMiniMaxProviderIfNeeded() {
             shouldPersist = true
         }
         if normalizeRoutesForProviderRouting() {
@@ -1047,6 +1371,27 @@ final class LLMSettingsStore {
         return profile.id
     }
 
+    @discardableResult
+    func addProvider(preset: LLMProviderPreset) -> UUID {
+        let prefix = uniquePrefix(basedOn: preset.defaultPrefix)
+        let profile = LLMProviderProfile(
+            provider: preset.providerKind,
+            prefix: prefix,
+            displayName: preset.name,
+            baseURL: preset.baseURL,
+            model: preset.defaultModel,
+            openRouterRouting: preset.providerKind == .openRouter
+                ? LLMOpenRouterRouting(enabled: true, sort: .latency)
+                : .init()
+        )
+        providers.append(profile)
+        persist()
+        credentialAvailability[profile.id] = false
+        persistCredentialAvailability()
+        notifyConfigurationChanged()
+        return profile.id
+    }
+
     func updateProvider(_ profile: LLMProviderProfile) throws {
         let validated = try profile.validated()
         guard !providers.contains(where: {
@@ -1071,7 +1416,6 @@ final class LLMSettingsStore {
         guard let profile = provider(id: id) else { return }
         try await Task.detached(priority: .userInitiated) {
             try KeychainStore.deleteProtected(account: profile.credentialAccount)
-            try KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
         }.value
         providers.removeAll { $0.id == id }
         credentialAvailability[id] = nil
@@ -1113,6 +1457,9 @@ final class LLMSettingsStore {
             for profile in profiles {
                 do {
                     statuses[profile.id] = try await loadCredential(for: profile) != nil
+                } catch let error as KeychainStoreError where error == .temporarilyUnavailable || error == .configurationError || error == .corrupted {
+                    statuses[profile.id] = credentialAvailability[profile.id] ?? false
+                    statusError = error.localizedDescription
                 } catch {
                     statuses[profile.id] = false
                     statusError = error.localizedDescription
@@ -1197,6 +1544,9 @@ final class LLMSettingsStore {
         for profile in profiles {
             do {
                 statuses[profile.id] = try await loadCredential(for: profile) != nil
+            } catch let error as KeychainStoreError where error == .temporarilyUnavailable || error == .configurationError || error == .corrupted {
+                statuses[profile.id] = credentialAvailability[profile.id] ?? false
+                statusError = error.localizedDescription
             } catch {
                 statuses[profile.id] = false
                 statusError = error.localizedDescription
@@ -1301,7 +1651,6 @@ final class LLMSettingsStore {
         credentialGeneration += 1
         try await Task.detached(priority: .userInitiated) {
             try KeychainStore.deleteProtected(account: profile.credentialAccount)
-            try KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
         }.value
         guard provider(id: providerID)?.credentialAccount == profile.credentialAccount else { return }
         let availabilityChanged = credentialAvailability[providerID] != false
@@ -1321,7 +1670,7 @@ final class LLMSettingsStore {
     }
 
     private nonisolated static func loadCredentialSynchronously(for profile: LLMProviderProfile) throws -> String? {
-        try KeychainStore.loadProtected(account: profile.credentialAccount, legacyAccount: profile.legacyCredentialAccount)
+        try KeychainStore.loadProtected(account: profile.credentialAccount).get()
     }
 
     private func restoreCredentialAvailability() {
@@ -1359,10 +1708,18 @@ final class LLMSettingsStore {
             let parsed = try Self.parseModelReference(reference)
             guard let profile = providers.first(where: {
                 $0.normalizedPrefix.caseInsensitiveCompare(parsed.prefix) == .orderedSame
-            }) else { continue }
+            }) else {
+                Log.llm.warning(
+                    "byok route skip use_case=\(useCase.rawValue) model=\(reference) reason=missing_provider"
+                )
+                continue
+            }
             let validated = try profile.validated()
             do {
                 guard let key = try await loadCredential(for: validated) else {
+                    Log.llm.warning(
+                        "byok route skip use_case=\(useCase.rawValue) model=\(reference) provider=\(validated.normalizedPrefix) reason=missing_api_key"
+                    )
                     continue
                 }
                 configurations.append(LLMRuntimeConfiguration(
@@ -1375,11 +1732,17 @@ final class LLMSettingsStore {
                     reasoningEffort: reasoningEffort
                 ))
             } catch {
+                Log.llm.warning(
+                    "byok route skip use_case=\(useCase.rawValue) model=\(reference) provider=\(validated.normalizedPrefix) reason=credential_error error=\(LLMDiagnostics.description(error))"
+                )
                 firstCredentialError = firstCredentialError ?? error
             }
         }
 
         if configurations.isEmpty {
+            Log.llm.warning(
+                "byok route empty use_case=\(useCase.rawValue) models=\(route.modelChain.joined(separator: ","))"
+            )
             if let firstCredentialError { throw firstCredentialError }
             throw LLMConfigurationError.noConfiguredModel(useCase)
         }
@@ -1544,10 +1907,92 @@ final class LLMSettingsStore {
         if !result.contains(where: { $0.normalizedPrefix == "openai" }) {
             result.append(.defaultOpenAI)
         }
-        if !result.contains(where: { $0.normalizedPrefix == "minimax" }) {
-            result.append(.defaultMiniMax)
-        }
         return result
+    }
+
+    @discardableResult
+    private func migrateDefaultMiniMaxProviderIfNeeded() -> Bool {
+        let wasPreviousMigrationApplied = defaults.bool(
+            forKey: Self.legacyDefaultMiniMaxProviderMigrationKey
+        )
+        guard !defaults.bool(forKey: Self.defaultMiniMaxProviderMigrationKey) else { return false }
+        defaults.set(true, forKey: Self.defaultMiniMaxProviderMigrationKey)
+
+        let defaultMiniMax = LLMProviderProfile.defaultMiniMax
+        let defaultOpenAI = LLMProviderProfile.defaultOpenAI
+        var changed = false
+        guard providers.count == 2,
+              providers.contains(where: { $0 == defaultOpenAI }),
+              let index = providers.firstIndex(where: { $0 == defaultMiniMax }) else {
+            guard wasPreviousMigrationApplied,
+                  providers.count == 1,
+                  providers[0] == defaultOpenAI else {
+                return false
+            }
+            return migrateRoutesAfterPreviousDefaultMigration()
+        }
+
+        providers.remove(at: index)
+        if providers.isEmpty {
+            providers = [defaultOpenAI]
+        }
+        changed = true
+
+        guard let retiredReference = defaultMiniMax.defaultModelReference?.normalizedModelReference else {
+            return changed
+        }
+        for useCase in LLMUseCase.allCases {
+            guard let route = routes[useCase] else { continue }
+            let primaryWasRetired = route.primaryModel.normalizedModelReference == retiredReference
+            let fallbackModels = route.fallbackModels.filter {
+                $0.normalizedModelReference != retiredReference
+            }
+            guard primaryWasRetired || fallbackModels != route.fallbackModels else { continue }
+            routes[useCase] = LLMModelRoute(
+                primaryModel: primaryWasRetired ? "" : route.primaryModel,
+                fallbackModels: fallbackModels,
+                policy: route.policy
+            )
+            changed = true
+        }
+        return changed
+    }
+
+    private func migrateRoutesAfterPreviousDefaultMigration() -> Bool {
+        let openAIReference = "openai/gpt-5.4-nano"
+        let subtitleReference = "openai/gpt-5.6-luna"
+        var changed = false
+
+        for useCase in LLMUseCase.allCases {
+            guard let route = routes[useCase] else { continue }
+            switch useCase {
+            case .subtitleProcessing:
+                guard route.primaryModel.normalizedModelReference == subtitleReference,
+                      route.fallbackModels.map(\.normalizedModelReference) == [openAIReference] else {
+                    continue
+                }
+                routes[useCase] = LLMModelRoute(
+                    primaryModel: route.primaryModel,
+                    fallbackModels: [],
+                    policy: route.policy
+                )
+                changed = true
+            case .chat, .graphExtraction, .graphQueryUnderstanding:
+                guard route.primaryModel.normalizedModelReference == openAIReference,
+                      route.fallbackModels.isEmpty else {
+                    continue
+                }
+                routes[useCase] = LLMModelRoute(
+                    primaryModel: "",
+                    fallbackModels: [route.primaryModel],
+                    policy: route.policy
+                )
+                changed = true
+            case .translation, .skillSelection:
+                continue
+            }
+        }
+        return changed
     }
 
     private static func migratedRoutes(
@@ -1751,7 +2196,6 @@ final class LLMSettingsStore {
     ) async throws {
         try await Task.detached(priority: .userInitiated) {
             try KeychainStore.saveProtected(value, account: profile.credentialAccount)
-            try? KeychainStore.deleteProtected(account: profile.legacyCredentialAccount)
         }.value
     }
 }

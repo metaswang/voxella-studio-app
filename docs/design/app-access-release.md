@@ -4,7 +4,7 @@
 
 ## 发布路径
 
-DMG 通过浏览器打开现有 Stripe Checkout 与 billing portal。正式构建使用 `BundledSpeech,SparkleUpdates`，不启用 `MacAppStore` trait，不使用 `--mas`。本次无需 Mac App Store 商品、描述文件或 Apple 私钥。
+DMG 通过浏览器打开现有 Stripe Checkout 与 billing portal。正式构建使用 `BundledSpeech`，不启用 `MacAppStore` trait，不使用 `--mas`。运行时不再嵌入 Sparkle 安装器；appcast 仍用于检查版本并提供下载链接。本次无需 Mac App Store 商品。Developer ID 签名需要授权钥匙串 access group 的 provisioning profile。
 
 仅打包使用 `RELEASE_TARGET=dmg ./scripts/release.sh`；如需包含已检查的工作区修改，另外设置 `RELEASE_INCLUDE_WORKTREE=1`。该路径自动递增版本并完成 Developer ID 签名、公证和 DMG，不提交代码、不上传文件，也不要求用于发布 Sparkle 更新源的签名元数据。其他发布路径仍保留 Sparkle 签名检查。
 

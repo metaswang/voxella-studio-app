@@ -162,7 +162,7 @@ struct ExportView: View {
                 }
 
                 if let submissionError {
-                    Text(submissionError)
+                    Text(L10n.display(submissionError))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Status.errorColor)
                         .padding(.top, AppTheme.Spacing.sm)
@@ -228,7 +228,7 @@ struct ExportView: View {
             Divider().opacity(AppTheme.Opacity.moderate)
 
             settingRow(label: L10n.string("Frame Rate")) {
-                Text(verbatim: "\(exportTimeline.fps) fps")
+                Text(L10n.format("%@ fps", exportTimeline.fps))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
         }
@@ -296,7 +296,7 @@ struct ExportView: View {
             if palmierSummary.missing > 0 {
                 Text(palmierSummary.missing == 1
                     ? L10n.string("1 media file is missing and will be skipped.")
-                    : L10n.string("\(palmierSummary.missing) media files are missing and will be skipped."))
+                    : L10n.format("%@ media files are missing and will be skipped.", palmierSummary.missing))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Status.errorColor)
             }
@@ -414,7 +414,7 @@ struct ExportView: View {
         }
         .padding(.horizontal, AppTheme.Spacing.lg)
         .padding(.vertical, AppTheme.Spacing.sm)
-        .help(job.error ?? job.outputURL.path)
+        .help(job.error.map(L10n.display) ?? job.outputURL.path)
         .overlay(alignment: .bottom) {
             Divider().opacity(AppTheme.Opacity.moderate)
         }
@@ -595,7 +595,7 @@ struct ExportView: View {
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text(L10n.string("Compatibility: \(format.compatibilityLabel)"))
+                    Text(L10n.format("Compatibility: %@", format.compatibilityLabel))
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                         .foregroundStyle(AppTheme.Text.secondaryColor)
                         .fixedSize(horizontal: false, vertical: true)

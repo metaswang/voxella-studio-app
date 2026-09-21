@@ -50,7 +50,7 @@ struct KnowledgeAgentRuntime: Sendable {
                 } catch is CancellationError {
                     continuation.finish()
                 } catch {
-                    continuation.yield(.failed(error.localizedDescription))
+                    continuation.yield(.failed(KnowledgeUserFacingCopy.message(for: error)))
                     continuation.finish()
                 }
             }

@@ -11,16 +11,11 @@ struct AIRequestOverridesView: View {
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-                if profile.isOpenRouter {
-                    openRouterRouting
-                    Divider()
-                }
-
                 genericExtraBody
             }
             .padding(.top, AppTheme.Spacing.sm)
         } label: {
-            Label("Request Overrides", systemImage: "slider.horizontal.3")
+            Label(L10n.string("Request Overrides"), systemImage: "slider.horizontal.3")
                 .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
                 .foregroundStyle(AppTheme.Text.primaryColor)
         }
@@ -30,7 +25,7 @@ struct AIRequestOverridesView: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             SettingsToggleRow(
                 title: "Provider Routing",
-                subtitle: "Choose preferred OpenRouter endpoints for this model.",
+                subtitle: "Choose preferred service endpoints.",
                 isOn: $profile.openRouterRouting.enabled
             )
 
@@ -39,7 +34,7 @@ struct AIRequestOverridesView: View {
 
                 if !profile.openRouterRouting.order.isEmpty {
                     Label(
-                        "Explicit provider order takes precedence; routing sort is ignored.",
+                        L10n.string("Explicit provider order takes precedence; routing sort is ignored."),
                         systemImage: "info.circle"
                     )
                     .font(.system(size: AppTheme.FontSize.xs))
@@ -54,18 +49,18 @@ struct AIRequestOverridesView: View {
                 )
 
                 HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
-                    Text("Routing preference")
+                    Text(L10n.string("Routing preference"))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.secondaryColor)
                     Picker(
-                        "Routing preference",
+                        L10n.string("Routing preference"),
                         selection: Binding(
                             get: { profile.openRouterRouting.sort ?? .defaultOrder },
                             set: { profile.openRouterRouting.sort = $0 == .defaultOrder ? nil : $0 }
                         )
                     ) {
                         ForEach(LLMOpenRouterSort.allCases) { sort in
-                            Text(sort.label).tag(sort)
+                            Text(L10n.string(key: sort.label)).tag(sort)
                         }
                     }
                     .labelsHidden()
@@ -78,12 +73,12 @@ struct AIRequestOverridesView: View {
 
     private var providerOrderEditor: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            Text("Provider order")
+            Text(L10n.string("Provider order"))
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
 
             if profile.openRouterRouting.order.isEmpty {
-                Text("No preferred providers. OpenRouter will choose the endpoint.")
+                Text(L10n.string("No preferred providers. OpenRouter will choose the endpoint."))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             } else {
@@ -106,7 +101,7 @@ struct AIRequestOverridesView: View {
                                     )
                             }
                             .buttonStyle(.borderless)
-                            .help("Remove provider")
+                            .help(L10n.string("Remove provider"))
                         }
                         .listRowInsets(EdgeInsets(
                             top: AppTheme.Spacing.xs,
@@ -127,11 +122,11 @@ struct AIRequestOverridesView: View {
             }
 
             HStack(spacing: AppTheme.Spacing.sm) {
-                TextField("Provider or endpoint slug", text: $newProvider)
+                TextField(L10n.string("Provider or endpoint slug"), text: $newProvider)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: AppTheme.FontSize.sm, design: .monospaced))
                     .onSubmit(addProvider)
-                Button("Add", action: addProvider)
+                Button(L10n.string("Add"), action: addProvider)
                     .buttonStyle(.capsule(.secondary, size: .regular))
                     .disabled(!canAddProvider)
             }
@@ -141,10 +136,10 @@ struct AIRequestOverridesView: View {
     private var genericExtraBody: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                Text("Extra Body JSON")
+                Text(L10n.string("Extra Body JSON"))
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
-                Text("Additional fields sent with OpenAI-compatible chat completion requests.")
+                Text(L10n.string("Additional fields sent with OpenAI-compatible chat completion requests."))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
@@ -177,7 +172,7 @@ struct AIRequestOverridesView: View {
             }
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text("Generated request parameters")
+                Text(L10n.string("Generated request parameters"))
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                 Text(generatedPreview)

@@ -7,7 +7,7 @@ struct ListenTrackEnhancerTests {
     @Test func sidecarPathSitsBesideMaster() {
         let master = URL(fileURLWithPath: "/tmp/Recordings/Recording-20260904-120000.m4a")
         let listen = ListenTrackLocator.sidecarURL(forMaster: master)
-        #expect(listen.lastPathComponent == "Recording-20260904-120000.listen.m4a")
+        #expect(listen.lastPathComponent == "Recording-20260904-120000.listen-moss2.m4a")
         #expect(listen.deletingLastPathComponent() == master.deletingLastPathComponent())
     }
 

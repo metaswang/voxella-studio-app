@@ -26,6 +26,7 @@ struct AgentProviderTests {
         #expect(AgentModel.allCases.filter(\.requiresPaidHostedPlan) == [.fable5, .sol])
         let anthropicEfforts: [AgentReasoningEffort] = [.low, .medium, .high, .xHigh, .max]
         let openAIEfforts: [AgentReasoningEffort] = [.none, .low, .medium, .high, .xHigh, .max]
+        let nanoEfforts: [AgentReasoningEffort] = [.minimal, .low, .medium, .high]
         #expect(AgentModel.allCases.filter { $0.provider == .anthropic }
             .allSatisfy { $0.supportedReasoningEfforts == anthropicEfforts })
         #expect(AgentModel.allCases.filter {
@@ -33,10 +34,12 @@ struct AgentProviderTests {
             return model.majorVersion == 5 && model.minorVersion == 6 && !model.isNano
         }
             .allSatisfy { $0.supportedReasoningEfforts == openAIEfforts })
+        #expect(AgentModel.nano.supportedReasoningEfforts == nanoEfforts)
+        #expect(AgentModel.nano54.supportedReasoningEfforts == nanoEfforts)
         #expect(AgentModel.astra.supportedReasoningEfforts
             == [.low, .medium, .high, .xHigh, .max])
         #expect(OpenAIChatModelID("gpt-5.6-nano")?.supportedReasoningEfforts
-            == [.low, .medium, .high, .xHigh, .max])
+            == nanoEfforts)
     }
 
     @Test func discoveredOpenAIModelsKeepOnlySupportedChatVersionsAndEfforts() throws {
@@ -69,6 +72,26 @@ struct AgentProviderTests {
             providerPrefix: "openai",
             modelName: "gpt-5.6-luna"
         ) == [.none, .low, .medium, .high, .xHigh, .max])
+        #expect(LLMReasoningEffort.supportedChatEfforts(
+            providerPrefix: "openai",
+            modelName: "gpt-5-nano"
+        ) == [.minimal, .low, .medium, .high])
+        #expect(LLMReasoningEffort.supportedChatEfforts(
+            providerPrefix: "openrouter",
+            modelName: "openai/gpt-5-nano"
+        ) == [.minimal, .low, .medium, .high])
+        #expect(LLMReasoningEffort.lowestEffort(
+            providerPrefix: "openai",
+            modelName: "gpt-5-nano"
+        ) == .minimal)
+        #expect(LLMReasoningEffort.lowestEffort(
+            providerPrefix: "openai",
+            modelName: "gpt-5.6-luna"
+        ) == .none)
+        #expect(!LLMReasoningEffort.supportsCustomTemperature(
+            providerPrefix: "openai",
+            modelName: "gpt-5-nano"
+        ))
         #expect(LLMReasoningEffort.supportedChatEfforts(
             providerPrefix: "claude",
             modelName: "claude-opus-4-8"

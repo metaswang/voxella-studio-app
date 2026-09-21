@@ -105,7 +105,10 @@ struct HomeView: View {
             tips.show(
                 WorkbenchTip(
                     id: "trial-started.\(Int64(trial.endsAt.timeIntervalSince1970))",
-                    message: "Your trial has started. \(trial.sidebarLabel).",
+                    message: L10n.format(
+                        "Your trial has started. %@.",
+                        localizedTrialSidebarLabel(trial)
+                    ),
                     kind: .info,
                     actionLabel: trialPurchaseActionLabel,
                     action: .openAppAccess,
@@ -129,7 +132,10 @@ struct HomeView: View {
         tips.show(
             WorkbenchTip(
                 id: "trial-reminder.\(Int64(trial.endsAt.timeIntervalSince1970))",
-                message: "Your trial has \(trial.sidebarLabel). Existing projects remain available.",
+                message: L10n.format(
+                    "Your trial has %@. Existing projects remain available.",
+                    localizedTrialSidebarLabel(trial)
+                ),
                 kind: .warning,
                 actionLabel: trialPurchaseActionLabel,
                 action: .openAppAccess,

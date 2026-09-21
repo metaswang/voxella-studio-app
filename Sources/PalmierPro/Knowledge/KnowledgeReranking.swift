@@ -102,7 +102,7 @@ actor RerankerService: KnowledgeReranking {
         guard !chunks.isEmpty else { return [] }
         #if BUNDLED_SPEECH
         guard LocalModelManager.isInstalled(.qwen3Reranker06B4Bit) else {
-            throw LocalAIError.incompleteModel("Qwen3 Reranker 0.6B 4-bit")
+            throw LocalAIError.incompleteModel("knowledge search resources")
         }
         return try await MLXRerankerRuntime.shared.scores(query: query, chunks: chunks)
         #else
@@ -173,8 +173,8 @@ private enum RerankerRuntimeError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .missingVerdictTokens: "The reranker tokenizer does not expose single-token yes/no verdicts."
-        case .emptyPrompt: "The reranker prompt was empty."
+        case .missingVerdictTokens: "Knowledge search resources could not be loaded."
+        case .emptyPrompt: "Knowledge search could not process this request."
         }
     }
 }

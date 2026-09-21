@@ -167,11 +167,11 @@ struct ClipRangeControl: View {
             }
 
             HStack {
-                Text("Start: \(formatClock(range.lowerBound))")
+                Text(L10n.format("Start %@", formatClock(range.lowerBound)))
                 Spacer()
-                Text("End: \(formatClock(range.upperBound))")
+                Text(L10n.format("End %@", formatClock(range.upperBound)))
                 Spacer()
-                Text("Len: \(formatClock(range.upperBound - range.lowerBound))")
+                Text(L10n.format("Length %@", formatClock(range.upperBound - range.lowerBound)))
             }
             .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
             .foregroundStyle(AppTheme.Text.mutedColor)
@@ -205,7 +205,7 @@ struct ClipRangeControl: View {
             RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
                 .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
         }
-        .accessibilityLabel("Clip preview")
+        .accessibilityLabel(L10n.string("Clip preview"))
     }
 
     private var timeline: some View {

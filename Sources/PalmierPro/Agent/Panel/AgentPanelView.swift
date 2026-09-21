@@ -128,94 +128,6 @@ struct AgentPanelView: View {
         }
     }
 
-    private var modelPicker: some View {
-        Menu {
-            ForEach(service.availableModels, id: \.self) { model in
-                Button {
-                    service.model = model
-                } label: {
-                    menuOptionLabel(
-                        model.displayName,
-                        selected: model == service.model
-                    )
-                }
-                .disabled(!service.canSelectModel(model))
-            }
-        } label: {
-            footerPickerLabel(service.model.displayName) {
-                switch service.model.provider {
-                case .anthropic:
-                    ExternalAgentLogo(agent: .claude, size: AppTheme.IconSize.xs)
-                case .openAI:
-                    ProviderLogo(iconKey: "openai", size: AppTheme.IconSize.xs)
-                }
-            }
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .layoutPriority(1)
-        .accessibilityLabel(L10n.string("Model"))
-        .accessibilityValue(Text(verbatim: service.model.displayName))
-        .help(L10n.string("Model"))
-    }
-
-    private var reasoningEffortPicker: some View {
-        Menu {
-            ForEach(service.reasoningEffortsForCurrentTransport, id: \.self) { effort in
-                Button {
-                    service.reasoningEffort = effort
-                } label: {
-                    menuOptionLabel(
-                        L10n.string(key: effort.labelKey),
-                        selected: effort == service.reasoningEffort
-                    )
-                }
-            }
-        } label: {
-            footerPickerLabel(L10n.string(key: service.reasoningEffort.labelKey)) {
-                Image(systemName: "brain.head.profile")
-                    .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.medium))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
-                    .frame(width: AppTheme.IconSize.xxs, height: AppTheme.IconSize.xxs)
-                    .accessibilityHidden(true)
-            }
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .accessibilityLabel(L10n.string("Reasoning effort"))
-        .accessibilityValue(L10n.string(key: service.reasoningEffort.labelKey))
-        .help(L10n.string("Reasoning effort"))
-    }
-
-    private func footerPickerLabel<Artwork: View>(
-        _ title: String,
-        @ViewBuilder artwork: () -> Artwork
-    ) -> some View {
-        HStack(spacing: AppTheme.Spacing.xs) {
-            Text(verbatim: title)
-                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
-                .foregroundStyle(AppTheme.Text.secondaryColor)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            artwork()
-                .frame(width: AppTheme.IconSize.xs, height: AppTheme.IconSize.xs)
-                .clipped()
-        }
-    }
-
-    @ViewBuilder
-    private func menuOptionLabel(_ title: String, selected: Bool) -> some View {
-        if selected {
-            Label {
-                Text(verbatim: title)
-            } icon: {
-                Image(systemName: "checkmark")
-            }
-        } else {
-            Text(verbatim: title)
-        }
-    }
-
     @ViewBuilder
     private var byokIndicator: some View {
         if let provider = service.activeBYOKProvider {
@@ -354,17 +266,18 @@ struct AgentPanelView: View {
     private func errorMessage(_ error: AgentServiceError) -> String {
         switch error {
         case .unauthenticated:
-            L10n.string("Sign in or enable BYOK to use AI chat.")
+            return L10n.string("Sign in or enable BYOK to use AI chat.")
         case .insufficientCredits:
-            L10n.string("You do not have enough credits for this AI request.")
+            return L10n.string("You do not have enough credits for this AI request.")
         case .upstream(let message):
-            message
-        case .unavailable(let model):
-            AITransportPolicy.current == .unavailable
+            Log.agent.error("agent upstream failure: \(message)")
+            return L10n.string("AI chat is temporarily unavailable. Please try again.")
+        case .unavailable:
+            return AITransportPolicy.current == .unavailable
                 ? L10n.string("Sign in to use hosted AI, or enable BYOK in Settings.")
-                : model.provider.chatPresentation.unavailableMessage
+                : L10n.string("AI chat is temporarily unavailable. Please try again.")
         case .refusal:
-            L10n.string("The selected model refused this request. Revise the prompt and try again.")
+            return L10n.string("AI chat could not complete this request. Revise the prompt and try again.")
         }
     }
 
@@ -450,10 +363,9 @@ struct AgentPanelView: View {
                 onSend: submit,
                 onCancel: { service.cancel() }
             ) {
-                if service.route != .hosted {
-                    modelPicker
-                }
-                reasoningEffortPicker
+                Label(L10n.string("AI assistant"), systemImage: "sparkles")
+                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
                 byokIndicator
             }
         }
@@ -599,14 +511,14 @@ private extension AgentProvider {
             (
                 L10n.string("using Anthropic API key"),
                 L10n.string("Streaming through your Anthropic API key (BYOK)"),
-                L10n.string("Add an Anthropic API key to use this model."),
+                L10n.string("Add your API key to use AI chat."),
                 L10n.string("or add your own Anthropic key")
             )
         case .openAI:
             (
                 L10n.string("using OpenAI API key"),
                 L10n.string("Streaming through your OpenAI API key (BYOK)"),
-                L10n.string("Add an OpenAI API key to use this model."),
+                L10n.string("Add your API key to use AI chat."),
                 L10n.string("or add your own OpenAI key")
             )
         }

@@ -28,25 +28,25 @@ extension TimelineView {
         if report.synced.isEmpty, let first = report.failures.first {
             return report.failures.count == 1
                 ? first.message
-                : L10n.string("Couldn't align \(report.failures.count) clips.")
+                : L10n.format("Couldn't align %@ clips.", report.failures.count)
         }
         let byTimecode = report.synced.count(where: { $0.method == .timecode })
         let byAudio = report.synced.count - byTimecode
         let summary = report.synced.count == 1
             ? L10n.string("Synchronized 1 clip")
-            : L10n.string("Synchronized \(report.synced.count) clips")
+            : L10n.format("Synchronized %@ clips", report.synced.count)
         var details: [String] = []
         switch (byTimecode, byAudio) {
         case (0, _): details.append(L10n.string("by audio"))
         case (_, 0): details.append(L10n.string("by timecode"))
-        default: details.append(L10n.string("\(byTimecode) by timecode, \(byAudio) by audio"))
+        default: details.append(L10n.format("%@ by timecode, %@ by audio", byTimecode, byAudio))
         }
         if report.shiftedFrames > 0 { details.append(L10n.string("group moved right to fit")) }
         if !report.retimed.isEmpty { details.append(L10n.string("drift-corrected")) }
         if !report.retimeSkipped.isEmpty {
             details.append(L10n.string("drift correction skipped — it would overwrite an adjacent clip"))
         }
-        if !report.failures.isEmpty { details.append(L10n.string("\(report.failures.count) couldn't align")) }
-        return L10n.string("\(summary): \(details.joined(separator: ", ")).")
+        if !report.failures.isEmpty { details.append(L10n.format("%@ couldn't align", report.failures.count)) }
+        return L10n.format("%@: %@.", summary, details.joined(separator: ", "))
     }
 }

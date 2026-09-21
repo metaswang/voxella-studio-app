@@ -129,10 +129,10 @@ struct AudioModelConfig: Identifiable, Sendable {
     func validate(spanSeconds: Double) -> String? {
         let s = Int(spanSeconds.rounded())
         if s < minSeconds {
-            return "\(displayName) needs at least \(minSeconds)s of source media (selection is \(s)s)."
+            return "This audio option needs at least \(minSeconds)s of source media (selection is \(s)s)."
         }
         if s > maxSeconds {
-            return "\(displayName) accepts at most \(maxSeconds)s of source media (selection is \(s)s)."
+            return "This audio option accepts at most \(maxSeconds)s of source media (selection is \(s)s)."
         }
         return nil
     }
@@ -157,7 +157,7 @@ struct AudioModelConfig: Identifiable, Sendable {
     func validate(params: AudioGenerationParams) -> String? {
         let promptLen = params.prompt.trimmingCharacters(in: .whitespaces).count
         if inputs.contains(.text), promptLen < minPromptLength {
-            return "\(displayName) requires prompt ≥ \(minPromptLength) characters (got \(promptLen))."
+            return "This audio option requires a prompt of at least \(minPromptLength) characters (got \(promptLen))."
         }
         if let allowed = voices, let v = params.voice, !v.isEmpty, !allowed.contains(v) {
             let shown = Array(allowed.prefix(6)) + (allowed.count > 6 ? ["…"] : [])
@@ -171,7 +171,7 @@ struct AudioModelConfig: Identifiable, Sendable {
         }
         if let range = durationRange, let duration = params.durationSeconds,
            !(range.minimum...range.maximum).contains(duration) {
-            return "\(displayName) duration must be \(range.minimum)-\(range.maximum) seconds."
+            return "This audio option duration must be \(range.minimum)-\(range.maximum) seconds."
         }
         if let allowed = targetLanguages {
             guard let language = params.targetLanguage, !language.isEmpty else {

@@ -166,7 +166,7 @@ struct CaptionTab: View {
             Divider()
 
             if captionTrackIndices.isEmpty {
-                Text("No Tracks")
+                Text(L10n.string("No Tracks"))
             } else {
                 ForEach(captionTrackIndices, id: \.self) { index in
                     if editor.timeline.tracks.indices.contains(index) {
@@ -176,7 +176,12 @@ struct CaptionTab: View {
                             selectedTrackId = track.id
                         } label: {
                             Label(
-                                "\(trackTitle(index)) · \(count) \(count == 1 ? "clip" : "clips")",
+                                L10n.format(
+                                    "%@ · %@ %@",
+                                    trackTitle(index),
+                                    count,
+                                    L10n.string(count == 1 ? "clip" : "clips")
+                                ),
                                 systemImage: selectedTrackId == track.id ? "checkmark" : ""
                             )
                         }
@@ -338,7 +343,7 @@ struct CaptionTab: View {
         note = nil
         let sourceIds = sourceClipIds
         if selectedTrackId != nil && sourceIds.isEmpty {
-            note = "No audio selected."
+            note = L10n.string("No audio selected.")
             return
         }
         let request = EditorViewModel.CaptionRequest(
@@ -356,7 +361,9 @@ struct CaptionTab: View {
             isGenerating = true
             defer { isGenerating = false }
             do {
-                if try await editor.generateCaptions(for: request).isEmpty { note = "No speech detected." }
+                if try await editor.generateCaptions(for: request).isEmpty {
+                    note = L10n.string("No speech detected.")
+                }
             } catch {
                 note = error.localizedDescription
             }

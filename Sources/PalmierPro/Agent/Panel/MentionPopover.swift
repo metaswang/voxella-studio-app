@@ -58,7 +58,7 @@ struct MentionPopover: View {
         if candidates.isEmpty {
             Text(query.isEmpty
                 ? L10n.string(key: tab.localizedEmptyLabel)
-                : L10n.string("No matches for \"\(query)\""))
+                : L10n.format("No matches for \"%@\"", query))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.mutedColor)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

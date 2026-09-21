@@ -19,7 +19,7 @@ struct MatteSheet: View {
             }
             row(icon: "aspectratio", label: L10n.string("Aspect")) {
                 Picker(String(), selection: $aspect) {
-                    ForEach(MatteAspect.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(MatteAspect.allCases) { Text(L10n.string(key: $0.rawValue)).tag($0) }
                 }
                 .labelsHidden()
             }
@@ -30,7 +30,7 @@ struct MatteSheet: View {
                     .monospacedDigit()
             }
             if let error {
-                Text(error)
+                Text(L10n.display(error))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Status.errorColor)
             }

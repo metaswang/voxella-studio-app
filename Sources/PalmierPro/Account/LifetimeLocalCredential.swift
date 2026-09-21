@@ -57,7 +57,7 @@ enum LifetimeLocalCredential {
         userID: UUID? = nil,
         publicKeyRaw: Data = LifetimeDeviceLicense.publicKeyRaw,
         read: () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: LifetimeLocalCredential.keychainAccount)
+            try KeychainStore.loadThisDeviceOnly(account: LifetimeLocalCredential.keychainAccount).get()
         }
     ) throws -> Record? {
         guard let value = try read(),
@@ -106,7 +106,7 @@ enum LifetimeLocalCredential {
         fingerprint: String? = nil,
         at date: Date = .now,
         read: () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: LifetimeLocalCredential.keychainAccount)
+            try KeychainStore.loadThisDeviceOnly(account: LifetimeLocalCredential.keychainAccount).get()
         },
         publicKeyRaw: Data = LifetimeDeviceLicense.publicKeyRaw
     ) -> Bool {

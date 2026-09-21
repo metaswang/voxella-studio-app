@@ -9,12 +9,16 @@ struct AccountPane: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             if let promotion = account.lifetimePromotion, promotion.credits > 0,
                let end = ISO8601DateFormatter().date(from: promotion.endsAt), end > .now {
-                Text("Lifetime includes \(promotion.credits.formatted()) bonus credits when purchased before \(end.formatted(date: .abbreviated, time: .shortened)).")
+                Text(L10n.format(
+                    "Lifetime includes %@ bonus credits when purchased before %@.",
+                    promotion.credits.formatted(),
+                    end.formatted(date: .abbreviated, time: .shortened)
+                ))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
             }
             if account.isLoading {
-                Text("Loading…")
+                Text(L10n.string("Loading…"))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             } else if account.isSignedIn {
@@ -24,9 +28,16 @@ struct AccountPane: View {
             }
 
             if let error = account.lastError {
-                Text(error)
+                Text(L10n.display(error))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Status.errorColor)
+                    .frame(maxWidth: AppTheme.Auth.contentWidth, alignment: .leading)
+            }
+
+            if let storeMessage = account.credentialStoreMessage {
+                Text(L10n.display(storeMessage))
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Status.warningColor)
                     .frame(maxWidth: AppTheme.Auth.contentWidth, alignment: .leading)
             }
         }
@@ -57,7 +68,7 @@ struct AccountPane: View {
             }
 #endif
 
-            Button("Sign out") {
+            Button(L10n.string("Sign out")) {
                 Task { await account.signOut() }
             }
             .buttonStyle(.capsule(.secondary, size: .regular))
@@ -70,7 +81,7 @@ struct AccountPane: View {
 
     private func trialSection(_ presentation: TrialPresentation) -> some View {
         SettingsGroup(title: "Free trial") {
-            TrialDetailsView(presentation: presentation)
+            TrialDetailsView(presentation: presentation, showsPurchaseAction: false)
                 .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
                 .overlay {
                     RoundedRectangle(cornerRadius: AppTheme.Radius.md)
@@ -81,114 +92,23 @@ struct AccountPane: View {
 
     @ViewBuilder
     private var unpaidSection: some View {
-        SettingsGroup(title: "Subscription") {
-#if MAC_APP_STORE
-            AppStoreOffersView(credits: false)
-#else
-            if account.availablePlans.isEmpty {
-                Text("No subscription plans are available.")
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
-            } else {
-                VStack(spacing: AppTheme.Spacing.md) {
-                    if account.isAppAccessEnforced {
-                        lifetimeCard
-                    }
-                    ForEach(Array(account.availablePlans.enumerated()), id: \.element.id) { index, plan in
-                        planCard(plan: plan, isPrimary: index == 0)
-                    }
-                }
-
-                Text("Credits cover AI generation and chat.")
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-#endif
+        SettingsGroup(title: "Choose your access") {
+            AppAccessOffersView()
         }
     }
-
-#if !MAC_APP_STORE
-    private var lifetimeCard: some View {
-        card {
-            cardCaption("Lifetime")
-            Text("Own the Mac app permanently. AI credits are available separately.")
-                .font(.system(size: AppTheme.FontSize.sm))
-                .foregroundStyle(AppTheme.Text.secondaryColor)
-            Button("Buy Lifetime") {
-                Task { await account.purchaseLifetime() }
-            }
-            .buttonStyle(.capsule(.secondary, size: .regular))
-#if MAC_APP_STORE
-            Button("Restore purchases") {
-                Task { await account.restorePurchases() }
-            }
-            .buttonStyle(.borderless)
-#endif
-        }
-    }
-
-    private func planCard(plan: AvailablePlan, isPrimary: Bool) -> some View {
-        card {
-            cardCaption(plan.tier.planLabel)
-
-            HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.xs) {
-                Text("$\(plan.effectiveMonthlyPriceUsd)")
-                    .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.semibold))
-                    .foregroundStyle(AppTheme.Text.primaryColor)
-                if plan.hasDiscount {
-                    Text("$\(plan.monthlyPriceUsd)")
-                        .font(.system(size: AppTheme.FontSize.sm))
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
-                        .strikethrough()
-                }
-                Text("/ month")
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
-            }
-
-            if let credits = plan.monthlyBudgetCredits {
-                Text("\(credits.formatted()) credits / month")
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Text.secondaryColor)
-                    .monospacedDigit()
-            }
-
-            Spacer(minLength: AppTheme.Spacing.xs)
-
-            upgradeButton(for: plan, isPrimary: isPrimary)
-        }
-    }
-
-    private func upgradeButton(for plan: AvailablePlan, isPrimary: Bool) -> some View {
-        let label = "Upgrade to \(plan.tier.upgradeLabel)"
-        return Button {
-            Task { await account.subscribe(tier: plan.tier) }
-        } label: {
-            Text(label).frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.capsule(
-            isPrimary ? .prominent : .secondary,
-            size: .regular,
-            fill: isPrimary ? nil : AnyShapeStyle(AppTheme.Background.raisedColor)
-        ))
-        .pointerStyle(.link)
-    }
-
-#endif
 
     private var subscriptionSection: some View {
         SettingsGroup(title: "Subscription") {
             card {
                 HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                        Text(account.appAccessLabel)
+                        Text(account.localizedAppAccessLabel)
                             .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                             .foregroundStyle(AppTheme.Text.primaryColor)
 
                         if account.account?.user.cancelAtPeriodEnd == true,
                            let date = formattedPeriodEnd {
-                            Text("Cancels \(date)")
+                            Text(L10n.format("Cancels %@", date))
                                 .font(.system(size: AppTheme.FontSize.sm))
                                 .foregroundStyle(AppTheme.Status.warningColor)
                         }
@@ -200,7 +120,7 @@ struct AccountPane: View {
                         Task { await account.manageSubscription() }
                     } label: {
                         HStack(spacing: AppTheme.Spacing.xs) {
-                            Text("Manage subscription")
+                            Text(L10n.string("Manage subscription"))
                             Image(systemName: "arrow.up.right")
                                 .font(.system(
                                     size: AppTheme.FontSize.xs,
@@ -240,7 +160,7 @@ struct AccountPane: View {
             Spacer(minLength: AppTheme.Spacing.sm)
 
             if let date = formattedPeriodEnd {
-                Text("Resets \(date)")
+                Text(L10n.format("Resets %@", date))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
@@ -264,7 +184,7 @@ struct AccountPane: View {
             }
 #endif
 
-            Text("Purchased credits never expire. Subscription credits reset at renewal.")
+            Text(L10n.string("Purchased credits never expire. Subscription credits reset at renewal."))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .fixedSize(horizontal: false, vertical: true)
@@ -272,7 +192,7 @@ struct AccountPane: View {
     }
 
     private func cardCaption(_ text: String) -> some View {
-        Text(text)
+        Text(L10n.string(text))
             .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.regular))
             .foregroundStyle(AppTheme.Text.tertiaryColor)
     }
@@ -308,6 +228,11 @@ struct AccountPane: View {
 #if !MAC_APP_STORE
             licenseKeySection
 #endif
+#if MAC_APP_STORE
+            AppStoreOffersView(credits: false)
+#else
+            unpaidSection
+#endif
             AccountSignInView()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -316,18 +241,18 @@ struct AccountPane: View {
 
 #if !MAC_APP_STORE
     private var licenseKeySection: some View {
-        SettingsGroup(title: "License key") {
+        SettingsGroup(title: L10n.string("License key")) {
             card {
                 if isLicenseKeyRedeemed {
                     HStack(spacing: AppTheme.Spacing.sm) {
                         Image(systemName: "checkmark.seal.fill")
                             .foregroundStyle(AppTheme.Status.successColor)
                             .accessibilityHidden(true)
-                        Text("Activated")
+                        Text(L10n.string("Activated"))
                             .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
                             .foregroundStyle(AppTheme.Status.successColor)
                     }
-                    Text("License key redeemed on this Mac")
+                    Text(L10n.string("License key redeemed on this Mac"))
                         .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                         .foregroundStyle(AppTheme.Text.primaryColor)
                     Text(licenseKeyRedeemedDetail)
@@ -339,19 +264,19 @@ struct AccountPane: View {
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.tertiaryColor)
                     }
-                    Button("Manage devices…") {
+                    Button(L10n.string("Manage devices…")) {
                         ActivateLicenseWindowController.shared.show()
                     }
                     .buttonStyle(.capsule(.secondary, size: .regular))
                 } else {
-                    Text("Redeem a license key")
+                    Text(L10n.string("Redeem a license key"))
                         .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                         .foregroundStyle(AppTheme.Text.primaryColor)
-                    Text("Paste a key from your purchase or reseller to unlock Lifetime on this Mac. Sign-in is optional.")
+                    Text(L10n.string("Paste a key from your purchase or reseller to unlock Lifetime on this Mac. Sign-in is optional."))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.secondaryColor)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button("Redeem license key") {
+                    Button(L10n.string("Redeem license key")) {
                         ActivateLicenseWindowController.shared.show()
                     }
                     .buttonStyle(.capsule(.secondary, size: .regular))
@@ -365,14 +290,14 @@ struct AccountPane: View {
     }
 
     private var licenseKeyRedeemedDetail: String {
-        "This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime."
+        L10n.string("This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime.")
     }
 
     private var licenseKeyOfflineValidUntilText: String? {
         guard let record = try? LicenseKeyLocalCredential.load(),
               record.isChronologicallyValid(at: .now) else { return nil }
         let formatted = record.expiresAt.formatted(date: .abbreviated, time: .shortened)
-        return "Offline access valid until \(formatted)"
+        return L10n.format("Offline access valid until %@", formatted)
     }
 #endif
 
@@ -398,21 +323,21 @@ struct AccountPane: View {
     }
 
     private var deviceManagementSection: some View {
-        SettingsGroup(title: "License Key") {
+        SettingsGroup(title: L10n.string("License key")) {
             card {
                 HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                        Text("Device Management")
+                        Text(L10n.string("Device Management"))
                             .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                             .foregroundStyle(AppTheme.Text.primaryColor)
-                        Text("View and manage devices activated with your license key")
+                        Text(L10n.string("View and manage devices activated with your license key"))
                             .font(.system(size: AppTheme.FontSize.sm))
                             .foregroundStyle(AppTheme.Text.secondaryColor)
                     }
 
                     Spacer(minLength: AppTheme.Spacing.lg)
 
-                    Button("Manage Devices…") {
+                    Button(L10n.string("Manage devices…")) {
                         showDeviceManagement = true
                     }
                     .buttonStyle(accountSecondaryButtonStyle)

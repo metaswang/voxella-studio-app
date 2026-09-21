@@ -62,12 +62,12 @@ struct SkillsPane: View {
 
     private var introduction: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            Text("Install skills to give the in-app agent specialized workflows.")
+            Text(L10n.string("Install skills to give the in-app agent specialized workflows."))
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
 
             if let url = URL(string: "https://github.com/voxstudio-me/voxstudio-skills") {
-                Link("Browse Community Skills ↗", destination: url)
+                Link(L10n.string("Browse Community Skills ↗"), destination: url)
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Accent.link)
                     .pointerStyle(.link)
@@ -106,13 +106,13 @@ struct SkillsPane: View {
                     .hoverHighlight(cornerRadius: AppTheme.Radius.sm)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("New skill")
-            .help("New skill")
+            .accessibilityLabel(L10n.string("New skill"))
+            .help(L10n.string("New skill"))
 
             Menu {
-                Button("Open Skills Folder", systemImage: "folder") { store.openFolder() }
+                Button(L10n.string("Open Skills Folder"), systemImage: "folder") { store.openFolder() }
                 Divider()
-                Button("Refresh Community Skills", systemImage: "arrow.clockwise") {
+                Button(L10n.string("Refresh Community Skills"), systemImage: "arrow.clockwise") {
                     Task { await catalog.refresh() }
                 }
             } label: {
@@ -126,8 +126,8 @@ struct SkillsPane: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .accessibilityLabel("Skill actions")
-            .help("Skill actions")
+            .accessibilityLabel(L10n.string("Skill actions"))
+            .help(L10n.string("Skill actions"))
         }
     }
 
@@ -138,11 +138,11 @@ struct SkillsPane: View {
                 .foregroundStyle(AppTheme.Text.mutedColor)
                 .accessibilityHidden(true)
 
-            TextField("Search skills", text: $query)
+            TextField(L10n.string("Search skills"), text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.primaryColor)
-                .accessibilityLabel("Search skills")
+                .accessibilityLabel(L10n.string("Search skills"))
 
             if !query.isEmpty {
                 Button {
@@ -153,8 +153,8 @@ struct SkillsPane: View {
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear search")
-                .help("Clear search")
+                .accessibilityLabel(L10n.string("Clear search"))
+                .help(L10n.string("Clear search"))
             }
         }
         .padding(.horizontal, AppTheme.Spacing.md)
@@ -203,14 +203,14 @@ struct SkillsPane: View {
             if catalog.isLoading, catalog.entries.isEmpty {
                 HStack(spacing: AppTheme.Spacing.smMd) {
                     ProgressView().controlSize(.small)
-                    Text("Loading community skills…")
+                    Text(L10n.string("Loading community skills…"))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(AppTheme.Spacing.xlXxl)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Loading community skills")
+                .accessibilityLabel(L10n.string("Loading community skills"))
             } else if communityEntries.isEmpty {
                 if query.isEmpty, let error = catalog.lastError {
                     SkillEmptyState(

@@ -1,13 +1,25 @@
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+    private static let automaticTerminationReason =
+        "VoxStudio manages its own windows, background work, and orderly shutdown."
+
     private var isTerminating = false
     private var didFinishLaunching = false
     private var pendingOpenURLs: [URL] = []
     private var searchEmbeddingPrewarmTask: Task<Void, Never>?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // VoxStudio owns its window lifecycle instead of using an NSDocument app.
+        // When launched through LaunchServices, AppKit can otherwise decide the
+        // process is auto-quittable during a route/window transition (for example,
+        // while opening a recording session) and terminate it without a crash.
+        ProcessInfo.processInfo.disableAutomaticTermination(Self.automaticTerminationReason)
         _ = AppAppearancePreferences.shared
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -134,6 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
 #if !MAC_APP_STORE
+    @MainActor
     @objc func showActivateLicense(_ sender: Any?) {
         ActivateLicenseWindowController.shared.show()
     }

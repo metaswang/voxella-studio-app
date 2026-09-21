@@ -22,10 +22,10 @@ struct TranscriptionAIUpgradePrompt: View {
                 .foregroundStyle(AppTheme.Accent.primary)
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text("Make the first transcript ready to use")
+                Text(L10n.string("Make the first transcript ready to use"))
                     .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.semibold))
                     .foregroundStyle(AppTheme.Text.primaryColor)
-                Text("Your Mac can create a basic transcript now. Unlock VoxStudio AI to turn raw speech recognition into polished text and production-ready subtitles automatically.")
+                Text(L10n.string("Your Mac can create a basic transcript now. Unlock VoxStudio AI to turn raw speech recognition into polished text and production-ready subtitles automatically."))
                     .font(.system(size: AppTheme.FontSize.md))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .fixedSize(horizontal: false, vertical: true)
@@ -42,7 +42,7 @@ struct TranscriptionAIUpgradePrompt: View {
                     SettingsWindowController.shared.show(tab: .account)
                     dismiss()
                 } label: {
-                    Label(account.isSignedIn ? "Upgrade for polished transcripts" : "Explore VoxStudio plans", systemImage: "arrow.up.circle.fill")
+                    Label(L10n.string(account.isSignedIn ? "Upgrade for polished transcripts" : "Explore VoxStudio plans"), systemImage: "arrow.up.circle.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.capsule(.prominent, size: .regular))
@@ -51,12 +51,12 @@ struct TranscriptionAIUpgradePrompt: View {
                     SettingsWindowController.shared.show(tab: .ai)
                     dismiss()
                 } label: {
-                    Label("Use my own API key", systemImage: "key.fill")
+                    Label(L10n.string("Use my own API key"), systemImage: "key.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.capsule(.secondary, size: .regular))
 
-                Button("Continue with basic transcript") {
+                Button(L10n.string("Continue with basic transcript")) {
                     dismiss()
                     onContinueWithoutAI()
                 }
@@ -64,7 +64,7 @@ struct TranscriptionAIUpgradePrompt: View {
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
 
-            Text("Basic transcription still includes timestamped transcript segments. AI subtitles, correction, punctuation, translation, and summaries are skipped.")
+            Text(L10n.string("Basic transcription still includes timestamped transcript segments. AI subtitles, correction, punctuation, translation, and summaries are skipped."))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.mutedColor)
                 .fixedSize(horizontal: false, vertical: true)
@@ -75,7 +75,7 @@ struct TranscriptionAIUpgradePrompt: View {
     }
 
     private func benefit(_ title: String, systemImage: String) -> some View {
-        Label(title, systemImage: systemImage)
+        Label(L10n.display(title), systemImage: systemImage)
             .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
             .foregroundStyle(AppTheme.Text.secondaryColor)
     }

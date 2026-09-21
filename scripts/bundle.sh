@@ -4,7 +4,7 @@ set -euo pipefail
 # Usage:
 #   scripts/bundle.sh [release|debug]           # ad-hoc signed dev build
 #   scripts/bundle.sh debug --fast              # fastest: skip dSYM
-#   scripts/bundle.sh debug --sign              # signed Developer ID-compatible app
+#   scripts/bundle.sh debug --sign              # signed Developer ID-compatible app (requires DEVELOPER_ID_PROVISIONING_PROFILE)
 #   scripts/bundle.sh release --sign            # signed Developer ID-compatible app
 #   scripts/bundle.sh release --mas             # Mac App Store app + installer package
 #   scripts/bundle.sh release --dist            # Developer ID + notarize + staple + DMG
@@ -53,18 +53,26 @@ fi
 
 echo "==> Building ($CONFIG)"
 TRAITS="BundledSpeech"
-if [ "$MODE" != "mas" ]; then
-  TRAITS="$TRAITS,SparkleUpdates"
-else
+if [ "$MODE" = "mas" ]; then
   TRAITS="$TRAITS,MacAppStore"
 fi
 BUILD_ARGS=(-c "$CONFIG" --traits "$TRAITS")
+
+# SwiftPM invokes the Metal compiler for the app's CI kernels. Xcode ships
+# this as an optional component, so fail early with the exact remediation
+# instead of emitting one error per .metal source halfway through the build.
+if ! xcrun -sdk macosx metal -v >/dev/null 2>&1; then
+  echo "!! Metal Toolchain is not installed for the selected Xcode." >&2
+  echo "!! Install it with: xcodebuild -downloadComponent MetalToolchain" >&2
+  exit 1
+fi
+python3 "$ROOT/scripts/build_metal.py" preflight
+
 swift build "${BUILD_ARGS[@]}"
 BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
 BIN="$BIN_DIR/VoxStudio"
-SPARKLE_ROOT="$ROOT/.build/artifacts/sparkle/Sparkle"
-SPARKLE_FRAMEWORK="$BIN_DIR/Sparkle.framework"
-SPARKLE_SIGN_UPDATE="$SPARKLE_ROOT/bin/sign_update"
+SPARKLE_TOOLS="$ROOT/.build/sparkle-tools"
+SPARKLE_SIGN_UPDATE="$SPARKLE_TOOLS/bin/sign_update"
 echo "==> Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
@@ -84,12 +92,6 @@ if [ "$MODE" = "mas" ]; then
   for key in SUAutomaticallyUpdate SUEnableAutomaticChecks SUFeedURL SUPublicEDKey SUScheduledCheckInterval; do
     /usr/libexec/PlistBuddy -c "Delete :$key" "$APP/Contents/Info.plist" 2>/dev/null || true
   done
-elif [ -d "$SPARKLE_FRAMEWORK" ]; then
-  echo "==> Embedding Sparkle.framework"
-  /usr/bin/ditto "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
-else
-  echo "!! missing Sparkle.framework at $SPARKLE_FRAMEWORK" >&2
-  exit 1
 fi
 
 inject_plist() {
@@ -178,23 +180,18 @@ else
   exit 1
 fi
 
-if ! ls "$RES_BUNDLE"/*.metallib >/dev/null 2>&1; then
-  echo "!! no .metallib in SwiftPM resource bundle at $RES_BUNDLE — Metal effects would be missing" >&2
-  exit 1
-fi
-cp "$RES_BUNDLE"/*.metallib "$APP/Contents/Resources/"
-
-MLX_METALLIB="$ROOT/.build/$CONFIG/mlx.metallib"
-if [ ! -f "$MLX_METALLIB" ]; then
-  echo "==> Building MLX metallib ($CONFIG)"
-  BUILD_DIR="$ROOT/.build" "$ROOT/.build/checkouts/speech-swift/scripts/build_mlx_metallib.sh" "$CONFIG"
-fi
-if [ ! -f "$MLX_METALLIB" ]; then
-  echo "!! missing $MLX_METALLIB — on-device speech features (VAD, speaker ID) would die silently" >&2
-  exit 1
-fi
+# Always evaluate the compiler/source/target cache, including CI kernels that
+# SwiftPM may have cached under an older toolchain. One library serves M1–M4.
+METAL_DIR="$ROOT/.build/metal/$CONFIG"
+python3 "$ROOT/scripts/build_metal.py" prepare --output "$METAL_DIR"
+for source in "$ROOT"/Metal/*.metal; do
+  name="$(basename "$source" .metal).metallib"
+  cp "$METAL_DIR/$name" "$APP/Contents/Resources/$name"
+done
 mkdir -p "$APP/Contents/Resources/mlx-swift_Cmlx.bundle"
-cp "$MLX_METALLIB" "$APP/Contents/Resources/mlx-swift_Cmlx.bundle/default.metallib"
+cp "$METAL_DIR/mlx.metallib" "$APP/Contents/Resources/mlx-swift_Cmlx.bundle/default.metallib"
+cp "$METAL_DIR/metal-build.json" "$APP/Contents/Resources/metal-build.json"
+python3 "$ROOT/scripts/verify_metal.py" "$APP"
 
 echo "==> Clearing extended attributes before signing"
 xattr -cr "$APP"
@@ -202,32 +199,30 @@ xattr -cr "$APP"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/VoxStudio"
 touch "$APP"
 
-sign_sparkle() {
-  local identity="$1" timestamp="$2"
-  local current="$APP/Contents/Frameworks/Sparkle.framework/Versions/Current"
-  [ -d "$current" ] || return
-
-  echo "==> Codesigning Sparkle helpers"
-  for helper in \
-      "$current/Autoupdate" \
-      "$current/Updater.app/Contents/MacOS/Updater" \
-      "$current/Updater.app" \
-      "$current/XPCServices/Downloader.xpc/Contents/MacOS/Downloader" \
-      "$current/XPCServices/Downloader.xpc" \
-      "$current/XPCServices/Installer.xpc/Contents/MacOS/Installer" \
-      "$current/XPCServices/Installer.xpc"; do
-    if [ -e "$helper" ]; then
-      codesign --force --options runtime "$timestamp" --sign "$identity" "$helper"
-    fi
-  done
-  codesign --force --options runtime "$timestamp" --sign "$identity" \
-    "$APP/Contents/Frameworks/Sparkle.framework"
+ensure_sparkle_tools() {
+  if [ -x "$SPARKLE_SIGN_UPDATE" ]; then
+    return
+  fi
+  mkdir -p "$SPARKLE_TOOLS"
+  local archive="$ROOT/.build/Sparkle-2.9.2.tar.xz"
+  echo "==> Downloading Sparkle 2.9.2 tools for appcast signing"
+  curl -L --fail --silent --show-error \
+    "https://github.com/sparkle-project/Sparkle/releases/download/2.9.2/Sparkle-2.9.2.tar.xz" \
+    -o "$archive"
+  tar -xJf "$archive" -C "$SPARKLE_TOOLS"
+  if [ ! -x "$SPARKLE_SIGN_UPDATE" ] && [ -x "$SPARKLE_TOOLS/Sparkle.framework/Versions/Current/../../../bin/sign_update" ]; then
+    SPARKLE_SIGN_UPDATE="$SPARKLE_TOOLS/bin/sign_update"
+  fi
+  if [ ! -x "$SPARKLE_SIGN_UPDATE" ]; then
+    echo "!! Sparkle sign_update is still missing after download" >&2
+    ls -la "$SPARKLE_TOOLS" >&2 || true
+    exit 1
+  fi
 }
 
 if [ "$MODE" = "fast" ]; then
-  sign_sparkle - --timestamp=none
   echo "==> Ad-hoc signing main app (no timestamp)"
-  echo "!! Ad-hoc builds use the login keychain and may request access after a rebuild." >&2
+  echo "!! Ad-hoc builds use an isolated in-memory credential store and do not access production Keychain items." >&2
   codesign --force --options runtime --entitlements "$DEBUG_ENTITLEMENTS" --sign - "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
   echo "==> Done: $APP (fast mode — stable identity, no dSYM)"
@@ -241,8 +236,7 @@ dsymutil "$APP/Contents/MacOS/VoxStudio" -o "$DSYM"
 
 if [ "$MODE" = "dev" ]; then
   echo "==> Ad-hoc signing dev app"
-  echo "!! Ad-hoc builds use the login keychain and may request access after a rebuild." >&2
-  sign_sparkle - --timestamp=none
+  echo "!! Ad-hoc builds use an isolated in-memory credential store and do not access production Keychain items." >&2
   codesign --force --options runtime --entitlements "$DEBUG_ENTITLEMENTS" --sign - "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
   echo "==> Done: $APP (ad-hoc signed)"
@@ -284,6 +278,9 @@ if [ "$TEAM_IDENTIFIER" != "$cert_ou" ]; then
   exit 1
 fi
 
+EXPECTED_APP_ID="$TEAM_IDENTIFIER.com.voxella.studio"
+EXPECTED_ACCESS_GROUP="$TEAM_IDENTIFIER.com.voxella.studio"
+
 if [ "$MODE" = "mas" ]; then
   PROVISIONING_PROFILE="${PROVISIONING_PROFILE:-}"
   PROVISIONING_PROFILE="${PROVISIONING_PROFILE/#\~/$HOME}"
@@ -291,57 +288,101 @@ if [ "$MODE" = "mas" ]; then
     echo "!! MAS_PROVISIONING_PROFILE is required for --mas" >&2
     exit 1
   fi
-  if [ ! -f "$PROVISIONING_PROFILE" ]; then
-    echo "!! provisioning profile not found: $PROVISIONING_PROFILE" >&2
+elif [ "$MODE" = "sign" ] || [ "$MODE" = "dist" ]; then
+  PROVISIONING_PROFILE="${DEVELOPER_ID_PROVISIONING_PROFILE:-${PROVISIONING_PROFILE:-}}"
+  PROVISIONING_PROFILE="${PROVISIONING_PROFILE/#\~/$HOME}"
+  ENTITLEMENTS_TEMPLATE="${ENTITLEMENTS_TEMPLATE:-$DEVELOPER_ID_ENTITLEMENTS}"
+  if [ -z "$PROVISIONING_PROFILE" ]; then
+    echo "!! DEVELOPER_ID_PROVISIONING_PROFILE is required for --sign/--dist so Keychain access groups can be authorized" >&2
     exit 1
   fi
-
-  PROFILE_PLIST="$(mktemp -t palmierpro-profile)"
-  SIGNING_ENTITLEMENTS="$(mktemp -t palmierpro-entitlements)"
-  trap 'rm -f "$PROFILE_PLIST" "$SIGNING_ENTITLEMENTS"' EXIT
-  security cms -D -i "$PROVISIONING_PROFILE" > "$PROFILE_PLIST"
-  profile_team="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$PROFILE_PLIST")"
-  profile_app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$PROFILE_PLIST")"
-  if [ "$profile_team" != "$TEAM_IDENTIFIER" ]; then
-    echo "!! provisioning profile team $profile_team does not match $TEAM_IDENTIFIER" >&2
-    exit 1
-  fi
-  if [ "$profile_app_id" != "$TEAM_IDENTIFIER.com.voxella.studio" ]; then
-    echo "!! provisioning profile application-identifier is $profile_app_id" >&2
-    exit 1
-  fi
-
-  echo "==> Embedding provisioning profile"
-  cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
-  chmod 644 "$APP/Contents/embedded.provisionprofile"
-  sed "s/__TEAM_IDENTIFIER__/$TEAM_IDENTIFIER/g" \
-    "$ENTITLEMENTS_TEMPLATE" > "$SIGNING_ENTITLEMENTS"
 fi
+
+if [ -z "$PROVISIONING_PROFILE" ]; then
+  echo "!! provisioning profile is required" >&2
+  exit 1
+fi
+if [ ! -f "$PROVISIONING_PROFILE" ]; then
+  echo "!! provisioning profile not found: $PROVISIONING_PROFILE" >&2
+  exit 1
+fi
+
+PROFILE_PLIST="$(mktemp -t palmierpro-profile)"
+SIGNING_ENTITLEMENTS="$(mktemp -t palmierpro-entitlements)"
+trap 'rm -f "$PROFILE_PLIST" "$SIGNING_ENTITLEMENTS"' EXIT
+security cms -D -i "$PROVISIONING_PROFILE" > "$PROFILE_PLIST"
+profile_team="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$PROFILE_PLIST")"
+profile_app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$PROFILE_PLIST")"
+profile_access_group="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:keychain-access-groups:0' "$PROFILE_PLIST" 2>/dev/null || true)"
+if [ "$profile_team" != "$TEAM_IDENTIFIER" ]; then
+  echo "!! provisioning profile team $profile_team does not match $TEAM_IDENTIFIER" >&2
+  exit 1
+fi
+if [ "$profile_app_id" != "$EXPECTED_APP_ID" ]; then
+  echo "!! provisioning profile application-identifier is $profile_app_id, expected $EXPECTED_APP_ID" >&2
+  exit 1
+fi
+if [ "$profile_access_group" != "$EXPECTED_ACCESS_GROUP" ] \
+    && [ "$profile_access_group" != "$TEAM_IDENTIFIER.*" ]; then
+  echo "!! provisioning profile keychain-access-groups[0] is ${profile_access_group:-missing}, expected $EXPECTED_ACCESS_GROUP or $TEAM_IDENTIFIER.*" >&2
+  exit 1
+fi
+
+profile_certificate="$(
+  security cms -D -i "$PROVISIONING_PROFILE" |
+    plutil -extract DeveloperCertificates.0 raw -o - - |
+    base64 --decode |
+    openssl x509 -inform DER -noout -subject -nameopt RFC2253 |
+    awk -F, '{
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^CN=/) {
+          sub(/^CN=/, "", $i)
+          print $i
+          exit
+        }
+      }
+    }'
+)"
+if [ -z "$profile_certificate" ]; then
+  echo "!! could not determine the signing certificate from $PROVISIONING_PROFILE" >&2
+  exit 1
+fi
+
+# The local debug profile is an Apple Development profile, while .env keeps
+# the Developer ID identity for distribution. Do not combine those identities:
+# AMFI rejects an otherwise valid app when its embedded profile is signed by a
+# different certificate. Use the profile-bound identity for the local launch
+# path only; MAS and Developer ID distribution keep their explicit identities.
+if [ "$CONFIG" = "debug" ] && [ "$MODE" = "sign" ] \
+    && [[ "$profile_certificate" == Apple\ Development:* ]]; then
+  if ! security find-certificate -p -c "$profile_certificate" >/dev/null 2>&1; then
+    echo "!! profile certificate is not installed in the login keychain: $profile_certificate" >&2
+    exit 1
+  fi
+  echo "==> Using profile-bound development identity: $profile_certificate"
+  SIGNING_IDENTITY="$profile_certificate"
+fi
+if [ "$profile_certificate" != "$SIGNING_IDENTITY" ]; then
+  echo "!! provisioning profile is bound to $profile_certificate, but the selected signing identity is $SIGNING_IDENTITY" >&2
+  echo "!! use a matching profile/certificate pair; do not mix Developer ID and Apple Development/MAS signing." >&2
+  exit 1
+fi
+
+echo "==> Embedding provisioning profile"
+cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
+chmod 644 "$APP/Contents/embedded.provisionprofile"
+sed "s/__TEAM_IDENTIFIER__/$TEAM_IDENTIFIER/g" \
+  "$ENTITLEMENTS_TEMPLATE" > "$SIGNING_ENTITLEMENTS"
 
 # The downloaded provisioning profile can carry quarantine/metadata xattrs.
-# Apple rejects MAS/TestFlight packages containing those attributes.
-if [ "$MODE" = "mas" ]; then
-  echo "==> Clearing extended attributes after embedding provisioning profile"
-  xattr -cr "$APP"
-fi
+echo "==> Clearing extended attributes after embedding provisioning profile"
+xattr -cr "$APP"
 
 echo "==> Codesigning main app ($SIGNING_IDENTITY / $TEAM_IDENTIFIER)"
 if [ "$MODE" = "mas" ]; then
   bash scripts/check-mas-billing.sh "$APP"
 fi
-if [ "$MODE" != "mas" ]; then
-  if [ "$MODE" = "dist" ]; then
-    sign_sparkle "$SIGNING_IDENTITY" --timestamp
-  else
-    sign_sparkle "$SIGNING_IDENTITY" --timestamp=none
-  fi
-fi
-CODESIGN_ARGS=(--force --sign "$SIGNING_IDENTITY")
-if [ "$MODE" = "mas" ]; then
-  CODESIGN_ARGS+=(--entitlements "$SIGNING_ENTITLEMENTS")
-elif [ "$MODE" = "sign" ] || [ "$MODE" = "dist" ]; then
-  CODESIGN_ARGS+=(--entitlements "$DEVELOPER_ID_ENTITLEMENTS")
-fi
+CODESIGN_ARGS=(--force --sign "$SIGNING_IDENTITY" --entitlements "$SIGNING_ENTITLEMENTS")
 if [ "$MODE" != "mas" ]; then
   CODESIGN_ARGS+=(--options runtime)
 fi
@@ -358,26 +399,40 @@ if [ "$signed_team" != "$TEAM_IDENTIFIER" ]; then
   echo "!! signed TeamIdentifier=$signed_team, expected $TEAM_IDENTIFIER" >&2
   exit 1
 fi
+
+SIGNED_ENTITLEMENTS="$(codesign -d --entitlements :- "$APP" 2>/dev/null)"
+if ! printf '%s' "$SIGNED_ENTITLEMENTS" | grep -q '<key>keychain-access-groups</key>'; then
+  echo "!! signed app is missing keychain-access-groups" >&2
+  exit 1
+fi
+if ! printf '%s' "$SIGNED_ENTITLEMENTS" | grep -q "$EXPECTED_ACCESS_GROUP"; then
+  echo "!! signed keychain-access-groups does not include $EXPECTED_ACCESS_GROUP" >&2
+  exit 1
+fi
+if ! printf '%s' "$SIGNED_ENTITLEMENTS" | grep -q "$EXPECTED_APP_ID"; then
+  echo "!! signed application-identifier does not match $EXPECTED_APP_ID" >&2
+  exit 1
+fi
 if [ "$MODE" != "mas" ]; then
-  if [ -e "$APP/Contents/embedded.provisionprofile" ]; then
-    echo "!! Developer ID builds must not embed a provisioning profile" >&2
-    exit 1
-  fi
-  if codesign -d --entitlements :- "$APP" 2>/dev/null | grep -Eq '<key>(com\.apple\.developer\.applesignin|com\.apple\.developer\.team-identifier|keychain-access-groups)</key>'; then
-    echo "!! Developer ID builds must not contain restricted Apple sign-in entitlements" >&2
+  if printf '%s' "$SIGNED_ENTITLEMENTS" | grep -q 'com.apple.developer.applesignin'; then
+    echo "!! Developer ID builds must not contain Apple sign-in entitlements" >&2
     exit 1
   fi
 fi
-if [ "$MODE" = "mas" ] && ! codesign -d --entitlements - "$APP" 2>/dev/null | grep -q 'com.apple.developer.applesignin'; then
+if [ "$MODE" = "mas" ] && ! printf '%s' "$SIGNED_ENTITLEMENTS" | grep -q 'com.apple.developer.applesignin'; then
   echo "!! signed MAS app is missing com.apple.developer.applesignin" >&2
   exit 1
 fi
+if [ ! -e "$APP/Contents/embedded.provisionprofile" ]; then
+  echo "!! signed app is missing embedded.provisionprofile" >&2
+  exit 1
+fi
+if [ -e "$APP/Contents/Frameworks/Sparkle.framework" ] \
+    || otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q Sparkle; then
+  echo "!! runtime Sparkle installer must not be embedded or linked" >&2
+  exit 1
+fi
 if [ "$MODE" = "mas" ]; then
-  if [ -e "$APP/Contents/Frameworks/Sparkle.framework" ] \
-      || otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q Sparkle; then
-    echo "!! Mac App Store builds must not contain Sparkle" >&2
-    exit 1
-  fi
   for key in SUAutomaticallyUpdate SUEnableAutomaticChecks SUFeedURL SUPublicEDKey SUScheduledCheckInterval; do
     if /usr/libexec/PlistBuddy -c "Print :$key" "$APP/Contents/Info.plist" >/dev/null 2>&1; then
       echo "!! Mac App Store builds must not contain $key" >&2
@@ -385,11 +440,7 @@ if [ "$MODE" = "mas" ]; then
     fi
   done
 else
-  if ! otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q '@rpath/Sparkle.framework'; then
-    echo "!! Developer ID builds must link the embedded Sparkle.framework" >&2
-    exit 1
-  fi
-  for key in SUAutomaticallyUpdate SUEnableAutomaticChecks SUFeedURL SUPublicEDKey SUScheduledCheckInterval; do
+  for key in SUFeedURL SUPublicEDKey; do
     if ! /usr/libexec/PlistBuddy -c "Print :$key" "$APP/Contents/Info.plist" >/dev/null 2>&1; then
       echo "!! Developer ID builds require $key" >&2
       exit 1
@@ -441,11 +492,8 @@ xcrun stapler staple "$DMG"
 
 SPARKLE_SIGNATURE=""
 if [ "${SPARKLE_SIGN_UPDATE_REQUIRED:-1}" = "1" ]; then
-  if [ ! -x "$SPARKLE_SIGN_UPDATE" ]; then
-    echo "!! missing Sparkle sign_update tool at $SPARKLE_SIGN_UPDATE" >&2
-    exit 1
-  fi
-  echo "==> Signing DMG for Sparkle"
+  ensure_sparkle_tools
+  echo "==> Signing DMG for existing Sparkle appcast clients"
   SPARKLE_SIGNATURE="$("$SPARKLE_SIGN_UPDATE" "$DMG")"
 fi
 

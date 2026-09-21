@@ -259,6 +259,26 @@ enum AppAccessPolicy: Equatable, Sendable {
     }
 }
 
+enum CredentialStoreStatus: Equatable, Sendable {
+    case ready
+    case temporarilyUnavailable
+    case configurationError
+    case pendingNetworkRestore
+
+    var inlineMessage: String? {
+        switch self {
+        case .ready:
+            nil
+        case .temporarilyUnavailable:
+            "Secure credential storage is temporarily unavailable. Your projects were left unchanged."
+        case .configurationError:
+            "This build cannot store credentials. Use a signed VoxStudio build to save sign-in and API keys."
+        case .pendingNetworkRestore:
+            "Connect to the internet to restore your trial or purchase. Local projects were left unchanged."
+        }
+    }
+}
+
 enum AppAccessError: LocalizedError, Equatable, Sendable {
     case signInRequired
     case trialExpired

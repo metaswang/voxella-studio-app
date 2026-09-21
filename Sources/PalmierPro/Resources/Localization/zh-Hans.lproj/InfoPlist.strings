@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "VoxStudio 会在录制转写会话或本地参考声音时使用麦克风。";
+"NSScreenCaptureUsageDescription" = "VoxStudio 会在录制转写会话时捕捉显示器、窗口或系统音频。";

@@ -103,7 +103,7 @@ final class VoiceInputCoordinator {
         guard canSubmit else { return false }
         if let onInsert {
             guard onInsert(draft) else {
-                errorMessage = "The input changed. Copy the recognized text before recording again."
+                errorMessage = L10n.string("The input changed. Copy the recognized text before recording again.")
                 return false
             }
             draft = ""
@@ -112,7 +112,7 @@ final class VoiceInputCoordinator {
         }
         pasteboard.clearContents()
         guard pasteboard.setString(draft, forType: .string) else {
-            errorMessage = "Couldn’t copy voice input to the clipboard."
+            errorMessage = L10n.string("Couldn’t copy voice input to the clipboard.")
             return false
         }
         draft = ""

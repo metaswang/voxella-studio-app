@@ -81,12 +81,12 @@ struct GenerationReferencesStrip: View {
             .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
             .overlay(RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
                 .strokeBorder(Color.white.opacity(AppTheme.Opacity.faint), lineWidth: AppTheme.BorderWidth.hairline))
-            Text(label)
+            Text(L10n.display(label))
                 .font(.system(size: AppTheme.FontSize.xxs, weight: .medium))
                 .foregroundStyle(AppTheme.Text.mutedColor)
                 .lineLimit(1)
         }
-        .help("\(label) · \(asset.name)")
+        .help(L10n.format("%@ · %@", L10n.display(label), asset.name))
         .onTapGesture {
             editor.selectMediaAsset(asset)
             editor.mediaPanelRevealAssetId = asset.id

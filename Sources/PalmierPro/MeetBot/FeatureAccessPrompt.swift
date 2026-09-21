@@ -28,7 +28,7 @@ struct FeatureAccessPrompt: View {
             }
 
             if let error = account.lastError, isWorking == false {
-                Text(error)
+                Text(L10n.display(error))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Status.errorColor)
                     .fixedSize(horizontal: false, vertical: true)
@@ -118,7 +118,7 @@ struct FeatureAccessPrompt: View {
     private func planCard(_ plan: AvailablePlan, isPrimary: Bool) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.sm) {
-                Text(plan.tier.planLabel)
+                Text(plan.tier.localizedPlanLabel)
                     .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
                     .foregroundStyle(AppTheme.Text.primaryColor)
 
@@ -167,7 +167,7 @@ struct FeatureAccessPrompt: View {
                     }
                     Text(String(
                         format: L10n.string("Upgrade to %@"),
-                        plan.tier.upgradeLabel
+                        plan.tier.localizedUpgradeLabel
                     ))
                 }
                 .frame(maxWidth: .infinity)

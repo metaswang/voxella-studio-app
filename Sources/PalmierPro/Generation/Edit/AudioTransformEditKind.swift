@@ -67,10 +67,10 @@ enum AudioTransformEditKind: CaseIterable, Equatable {
             return .disabled(reason: "Generation in progress")
         }
         guard let model else {
-            return .disabled(reason: "\(title) model not available")
+            return .disabled(reason: "This audio option is not available")
         }
         guard model.acceptsSource(asset.type) else {
-            return .disabled(reason: "\(model.displayName) does not accept this media")
+            return .disabled(reason: "This audio option does not accept this media")
         }
         let duration = effectiveDurationOverride ?? asset.duration
         guard duration > 0 else {

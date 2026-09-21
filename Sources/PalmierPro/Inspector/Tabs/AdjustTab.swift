@@ -194,7 +194,7 @@ extension InspectorView {
                 if state.hasEffects {
                     EditorResetButton(
                         title: title,
-                        action: { resetEffects(effectIds, clips: clips, actionName: "Reset \(title)") }
+                        action: { resetEffects(effectIds, clips: clips, actionName: L10n.format("Reset %@", title)) }
                     )
                 }
                 Toggle(String(), isOn: Binding(
@@ -205,9 +205,9 @@ extension InspectorView {
                 .labelsHidden()
                 .disabled(!state.hasEffects)
                 .help(state.hasEffects
-                    ? L10n.string("Enable: \(title)")
+                    ? L10n.format("Enable: %@", title)
                     : L10n.string("No adjustments yet"))
-                .accessibilityLabel(L10n.string("Enable: \(title)"))
+                .accessibilityLabel(L10n.format("Enable: %@", title))
             }
         ) {
             Group {
@@ -671,7 +671,7 @@ extension InspectorView {
     }
 
     private func setSectionEnabled(_ ids: Set<String>, clips: [Clip], enabled: Bool) {
-        commitEffects(clips, actionName: enabled ? "Enable Section" : "Disable Section") { effects in
+        commitEffects(clips, actionName: L10n.string(enabled ? "Enable Section" : "Disable Section")) { effects in
             for i in effects.indices where ids.contains(effects[i].type) {
                 effects[i].enabled = enabled
             }

@@ -5,11 +5,11 @@ enum SkillCommunityState: Equatable {
     case update
     case modified
 
-    var label: String {
+    @MainActor var label: String {
         switch self {
-        case .upToDate: "Community"
-        case .update: "Update available"
-        case .modified: "Modified"
+        case .upToDate: L10n.string("Community")
+        case .update: L10n.string("Update available")
+        case .modified: L10n.string("Modified")
         }
     }
 
@@ -43,7 +43,7 @@ struct SkillCollectionButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: AppTheme.Spacing.sm) {
-                Text(title)
+                Text(L10n.string(title))
                 Text(count.formatted())
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
@@ -59,7 +59,7 @@ struct SkillCollectionButton: View {
             .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(title), \(count.formatted()) skills")
+        .accessibilityLabel(L10n.format("%@, %@ skills", title, count.formatted()))
     }
 }
 
@@ -79,7 +79,7 @@ struct SkillRow: View {
             summary
                 .frame(maxWidth: .infinity)
 
-            Text(status)
+            Text(L10n.string(status))
                 .font(.system(size: AppTheme.FontSize.smMd))
                 .foregroundStyle(statusColor)
                 .lineLimit(1)
@@ -89,9 +89,9 @@ struct SkillRow: View {
                 if working {
                     ProgressView()
                         .controlSize(.small)
-                        .accessibilityLabel("Working on \(name)")
+                        .accessibilityLabel(L10n.format("Working on %@", name))
                 } else {
-                    Button(actionTitle, action: action)
+                    Button(L10n.string(actionTitle), action: action)
                         .buttonStyle(.capsule(
                             actionTitle == "Install" ? .prominent : .secondary,
                             fill: actionTitle == "Install" ? nil : AnyShapeStyle(AppTheme.Background.raisedColor)
@@ -113,7 +113,7 @@ struct SkillRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Open \(name)")
+            .accessibilityLabel(L10n.format("Open %@", name))
         } else {
             SkillRowSummary(systemImage: systemImage, name: name, description: description)
         }
@@ -156,15 +156,15 @@ struct SkillEmptyState: View {
                 .font(.system(size: AppTheme.FontSize.xl))
                 .foregroundStyle(AppTheme.Text.mutedColor)
                 .accessibilityHidden(true)
-            Text(title)
+            Text(L10n.string(title))
                 .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.regular))
                 .foregroundStyle(AppTheme.Text.primaryColor)
-            Text(message)
+            Text(L10n.string(message))
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Button(actionTitle, action: action)
+            Button(L10n.string(actionTitle), action: action)
                 .buttonStyle(.capsule(.secondary, fill: AnyShapeStyle(AppTheme.Background.raisedColor)))
         }
         .frame(maxWidth: .infinity)
@@ -190,7 +190,7 @@ struct SkillCategorySection<Content: View>: View {
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .accessibilityHidden(true)
-                Text(category.title)
+                Text(L10n.string(category.title))
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                 Text(count.formatted())
@@ -202,7 +202,7 @@ struct SkillCategorySection<Content: View>: View {
             }
             .padding(.horizontal, AppTheme.Spacing.smMd)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(category.title), \(count.formatted()) skills")
+            .accessibilityLabel(L10n.format("%@, %@ skills", category.title, count.formatted()))
 
             content
         }

@@ -6,8 +6,7 @@ struct LocalFeaturePreparationRow: View {
     @State private var showsRemovalConfirmation = false
     @Bindable private var manager = LocalModelManager.shared
 
-    private var ids: [LocalModelID] { feature.requiredIDs(asrModelID: manager.activeASRModelID) }
-    private var status: LocalPreparationStatus { manager.preparationStatus(for: ids) }
+    private var status: LocalPreparationStatus { manager.preparationStatus(for: feature) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
@@ -28,7 +27,7 @@ struct LocalFeaturePreparationRow: View {
                         .foregroundStyle(AppTheme.Status.successColor)
                 } else if status.isBusy {
                     Button(L10n.string("Cancel download")) {
-                        for id in ids where manager.state(for: id).isBusy { manager.cancel(id) }
+                        manager.cancelFeature(feature)
                     }
                     .buttonStyle(.borderless)
                 } else {
@@ -47,7 +46,7 @@ struct LocalFeaturePreparationRow: View {
             if status.isBusy {
                 ProgressView(value: status.progress)
                     .accessibilityLabel(L10n.string(feature.title))
-                Text(L10n.string("Downloading resources…") + " \(Int((status.progress * 100).rounded()))%")
+                Text(L10n.display(status.userFacingMessage))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
             } else if status.hasFailure {

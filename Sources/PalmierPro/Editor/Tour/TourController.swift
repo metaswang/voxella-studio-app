@@ -136,7 +136,7 @@ final class TourController {
         // Only shown when the "Smart search" button is present (model not yet installed).
         if smartSearchAvailable(editor: editor) {
             steps.append(TourStep(kind: .spotlight(.element(.smartSearch)), title: "Smart search",
-                                  instruction: "Download a local model to index your media, then search clips by describing them. The model runs on-device and nothing leaves your Mac."))
+                                  instruction: "Prepare local search resources to index your media, then search clips by describing them. Processing stays on your Mac."))
         }
         steps += [
             TourStep(kind: .spotlight(.panel(.preview)), title: "Preview",

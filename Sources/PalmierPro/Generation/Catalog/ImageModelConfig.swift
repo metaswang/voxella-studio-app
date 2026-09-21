@@ -58,10 +58,10 @@ struct ImageModelConfig: Identifiable, Sendable {
             return unsupportedValue(model: displayName, field: "quality", value: q, allowed: allowed)
         }
         if imageRefCount > 0, !supportsImageReference {
-            return "\(displayName) does not accept reference images."
+            return "This image option does not accept reference images."
         }
         if numImages < 1 || numImages > maxImages {
-            return "\(displayName) supports 1…\(maxImages) image\(maxImages == 1 ? "" : "s") per request (got \(numImages))."
+            return "This image option supports 1…\(maxImages) image\(maxImages == 1 ? "" : "s") per request (got \(numImages))."
         }
         return nil
     }

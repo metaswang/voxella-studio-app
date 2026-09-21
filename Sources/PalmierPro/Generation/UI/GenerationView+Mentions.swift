@@ -42,7 +42,7 @@ extension GenerationView {
                         Text("@\(tag.label)")
                             .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                             .foregroundStyle(AppTheme.Text.primaryColor)
-                        Text(tag.kindLabel)
+                        Text(L10n.display(tag.kindLabel))
                             .font(.system(size: AppTheme.FontSize.xxs))
                             .foregroundStyle(AppTheme.Text.tertiaryColor)
                         Spacer(minLength: 0)

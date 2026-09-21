@@ -14,17 +14,17 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var label: String {
+    @MainActor var label: String {
         switch self {
-        case .account: return "Account"
-        case .calendar: return "Calendar"
-        case .general: return "General"
-        case .voiceLibrary: return "Voice Library"
-        case .models: return "Local Features"
-        case .ai: return "AI Service"
-        case .agent: return "MCP"
-        case .skills: return "Skills"
-        case .storage: return "Storage"
+        case .account: return L10n.string("Account")
+        case .calendar: return L10n.string("Calendar")
+        case .general: return L10n.string("General")
+        case .voiceLibrary: return L10n.string("Voice Library")
+        case .models: return L10n.string("Local Features")
+        case .ai: return L10n.string("AI Service")
+        case .agent: return L10n.string("MCP")
+        case .skills: return L10n.string("Skills")
+        case .storage: return L10n.string("Storage")
         }
     }
 
@@ -45,6 +45,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @State private var selectedTab: SettingsTab
+    @State private var providerConnectionStates: [UUID: ProviderConnectionState] = [:]
 
     init(initialTab: SettingsTab = .account) {
         _selectedTab = State(initialValue: initialTab)
@@ -59,7 +60,10 @@ struct SettingsView: View {
             SettingsSidebar(selectedTab: $selectedTab, visibleTabs: visibleTabs)
                 .frame(width: AppTheme.Settings.sidebarWidth)
 
-            SettingsDetail(tab: selectedTab)
+            SettingsDetail(
+                tab: selectedTab,
+                providerConnectionStates: $providerConnectionStates
+            )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(AppTheme.Background.surfaceColor)
         }
@@ -110,6 +114,7 @@ private struct SettingsSidebar: View {
 
 private struct SettingsDetail: View {
     let tab: SettingsTab
+    @Binding var providerConnectionStates: [UUID: ProviderConnectionState]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -146,7 +151,7 @@ private struct SettingsDetail: View {
                             case .general:
                                 AppearanceSettingsPane()
                                 LanguageSettingsPane()
-#if SPARKLE_UPDATES
+#if !MAC_APP_STORE
                                 SettingsSection(title: "Updates") {
                                     UpdatesPane(updater: AppUpdater.shared)
                                 }
@@ -166,7 +171,7 @@ private struct SettingsDetail: View {
                             case .models, .voiceLibrary:
                                 EmptyView()
                             case .ai:
-                                AISettingsPane()
+                                AISettingsPane(connectionStates: $providerConnectionStates)
                             case .agent:
                                 AgentPane()
                             case .skills:
@@ -195,7 +200,7 @@ struct SettingsSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
-            Text(title)
+            Text(L10n.string(title))
                 .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.regular))
                 .foregroundStyle(AppTheme.Text.primaryColor)
 
@@ -216,7 +221,7 @@ struct SettingsGroup<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
-            Text(title)
+            Text(L10n.string(title))
                 .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.regular))
                 .foregroundStyle(AppTheme.Text.primaryColor)
             content()
@@ -232,10 +237,10 @@ struct SettingsToggleRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text(title)
+                Text(L10n.string(title))
                     .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                     .foregroundStyle(AppTheme.Text.primaryColor)
-                Text(subtitle)
+                Text(L10n.string(subtitle))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .fixedSize(horizontal: false, vertical: true)
@@ -247,8 +252,8 @@ struct SettingsToggleRow: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.mini)
-                .accessibilityLabel(title)
-                .accessibilityHint(subtitle)
+                .accessibilityLabel(L10n.string(title))
+                .accessibilityHint(L10n.string(subtitle))
         }
         .frame(maxWidth: .infinity)
     }
@@ -273,7 +278,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let window = NSWindow(contentViewController: hosting)
         window.setContentSize(AppTheme.Window.settingsDefault)
         window.minSize = AppTheme.Window.settingsMin
-        window.title = "Settings"
+        window.title = L10n.string("Settings")
         window.backgroundColor = AppTheme.Background.base.withAlphaComponent(0.4)
         window.isOpaque = false
         window.titleVisibility = .hidden

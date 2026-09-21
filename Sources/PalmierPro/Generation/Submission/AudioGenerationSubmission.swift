@@ -131,14 +131,14 @@ struct AudioGenerationSubmission {
         @MainActor
         func validate(for model: AudioModelConfig) -> String? {
             if imageRefs.count > model.maxReferenceImages {
-                return "\(model.displayName) accepts at most \(model.maxReferenceImages) image reference(s)."
+                return "This audio option accepts at most \(model.maxReferenceImages) image reference(s)."
             }
             if audioRefs.count > model.maxReferenceAudios {
-                return "\(model.displayName) accepts at most \(model.maxReferenceAudios) audio references."
+                return "This audio option accepts at most \(model.maxReferenceAudios) audio references."
             }
             if model.referenceImagesAndAudiosExclusive,
                !imageRefs.isEmpty, !audioRefs.isEmpty {
-                return "\(model.displayName) uses either image or audio references, not both."
+                return "This audio option uses either image or audio references, not both."
             }
             if imageRefs.contains(where: { $0.type != .image }) {
                 return "Image references must be image assets."

@@ -1,0 +1,245 @@
+{
+  "origin": {
+    "url": "https://assets.voxstudio.me/downloads/voxstudio/releases/7.0.16-97/ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a/VoxStudio.dmg",
+    "size": 91824974,
+    "sha256": "ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a",
+    "mode": "origin",
+    "checks": [
+      {
+        "case": "latest-GET",
+        "status": 302
+      },
+      {
+        "case": "latest-HEAD",
+        "status": 302
+      },
+      {
+        "case": "latest-safe-restart",
+        "validator": null,
+        "status": 200
+      },
+      {
+        "case": "latest-safe-restart",
+        "validator": "\"wrong\"",
+        "status": 200
+      },
+      {
+        "case": "latest-safe-restart",
+        "validator": "W/\"ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a\"",
+        "status": 200
+      },
+      {
+        "case": "latest-safe-restart",
+        "validator": "Sat, 01 Jan 2000 00:00:00 GMT",
+        "status": 200
+      },
+      {
+        "case": "interrupted-full",
+        "CF-Ray": "a3d8225f4ccc1e3b-SIN",
+        "X-VoxStudio-Release-Cache": "ORIGIN",
+        "X-VoxStudio-Cache-Version": null,
+        "Content-Length": "91824974",
+        "Content-Range": null,
+        "ETag": "\"ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a\"",
+        "received_bytes": 20971520
+      },
+      {
+        "case": "resume",
+        "CF-Ray": "a3d8228efc8fdaa5-SIN",
+        "X-VoxStudio-Release-Cache": "ORIGIN",
+        "X-VoxStudio-Cache-Version": null,
+        "Content-Length": "70853454",
+        "Content-Range": "bytes 20971520-91824973/91824974",
+        "ETag": "\"ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a\""
+      },
+      {
+        "case": "warm-range",
+        "CF-Ray": "a3d82318af98ce41-SIN",
+        "X-VoxStudio-Release-Cache": "ORIGIN",
+        "X-VoxStudio-Cache-Version": null,
+        "Content-Length": "4096",
+        "Content-Range": "bytes 0-4095/91824974",
+        "ETag": "\"ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a\""
+      }
+    ]
+  },
+  "cache": {
+    "url": "https://assets.voxstudio.me/downloads/voxstudio/releases/7.0.16-97/ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a/VoxStudio.dmg",
+    "size": 91824974,
+    "sha256": "ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a",
+    "mode": "cache",
+    "checks": [
+      {
+        "case": "latest-GET",
+        "status": 302
+      },
+      {
+        "case": "latest-HEAD",
+        "status": 302
+      },
+      {
+        "case": "latest-safe-restart",
+        "validator": null,
+        "status": 200
+      },
+      {
+        "case": "latest-safe-restart",
+        "validator": "\"wrong\"",
+        "status": 200
+      },
+      {
+        "case": "latest-safe-restart",
+        "validator": "W/\"ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a\"",
+        "status": 200
+      },
+      {
+        "case": "latest-safe-restart",
+        "validator": "Sat, 01 Jan 2000 00:00:00 GMT",
+        "status": 200
+      },
+      {
+        "case": "interrupted-full",
+        "CF-Ray": "a3d8259a78a3ce73-SIN",
+        "X-VoxStudio-Release-Cache": "HIT",
+        "X-VoxStudio-Cache-Version": "b0d9b11d-8a94-4ea1-821d-6d9123a9a4b9",
+        "Content-Length": "91824974",
+        "Content-Range": null,
+        "ETag": "\"ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a\"",
+        "received_bytes": 20971520
+      },
+      {
+        "case": "resume",
+        "CF-Ray": "a3d8265269873fad-SIN",
+        "X-VoxStudio-Release-Cache": "HIT",
+        "X-VoxStudio-Cache-Version": "b0d9b11d-8a94-4ea1-821d-6d9123a9a4b9",
+        "Content-Length": "70853454",
+        "Content-Range": "bytes 20971520-91824973/91824974",
+        "ETag": "\"ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a\""
+      },
+      {
+        "case": "warm-range",
+        "CF-Ray": "a3d82706e84bce26-SIN",
+        "X-VoxStudio-Release-Cache": "HIT",
+        "X-VoxStudio-Cache-Version": "b0d9b11d-8a94-4ea1-821d-6d9123a9a4b9",
+        "Content-Length": "4096",
+        "Content-Range": "bytes 0-4095/91824974",
+        "ETag": "\"ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a\""
+      }
+    ]
+  },
+  "concurrency": [
+    {
+      "cancelled": true,
+      "status": 200,
+      "cache": "HIT",
+      "ray": "a3d828823ac2c26b-SIN",
+      "received_bytes": 1048576
+    },
+    {
+      "cancelled": false,
+      "status": 200,
+      "cache": "MISS",
+      "ray": "a3d828819dd2fdfb-SIN",
+      "size": 91705351,
+      "sha256": "47652587b63018c9a903471200ccd49759c4a1b10a331c4ea78680ea71d28a1a"
+    },
+    {
+      "cache": "HIT",
+      "range": "bytes 0-3/91705351"
+    }
+  ],
+  "safari": {
+    "macOS": "26.6.1",
+    "Safari": "27.0",
+    "pause_at_mb": 51.6,
+    "quit_reopen_resume": true,
+    "completed_bytes": 91824974,
+    "sha256": "ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a",
+    "sparkle_ed25519_verified": true
+  },
+  "deployments": {
+    "before": "c8ae4e21-cfd3-48d2-a6f1-ad15d4725cde",
+    "safe_origin_gateway": "f4d8e90e-3d9a-4e01-8084-d8c968646e7e",
+    "cache_gateway": "c2b41159-a8fc-4f5b-9efc-a5393e0caf7f",
+    "private_cache": "b0d9b11d-8a94-4ea1-821d-6d9123a9a4b9",
+    "final_cache_gateway": "b15ce9f4-53a4-4ce1-9fc0-1a8d760ae0e4"
+  },
+  "not_verified": [
+    "Safari 18 / macOS 15",
+    "legacy Sparkle installer end-to-end",
+    "other client networks/POPs",
+    "historical failed Safari task without a reliable validator",
+    "VoxStudio in-app update UI (app was not running)"
+  ],
+  "tests": {
+    "worker": 43,
+    "publisher": 16,
+    "release_version": 10,
+    "typescript": "passed",
+    "shell_syntax": "passed"
+  },
+  "final_gateway_verification": {
+    "url": "https://assets.voxstudio.me/downloads/voxstudio/releases/7.0.16-97/ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a/VoxStudio.dmg",
+    "size": 91824974,
+    "sha256": "ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a",
+    "mode": "cache",
+    "checks": [
+      {
+        "case": "latest-GET",
+        "status": 302
+      },
+      {
+        "case": "latest-HEAD",
+        "status": 302
+      },
+      {
+        "case": "latest-safe-restart",
+        "validator": null,
+        "status": 200
+      },
+      {
+        "case": "latest-safe-restart",
+        "validator": "\"wrong\"",
+        "status": 200
+      },
+      {
+        "case": "latest-safe-restart",
+        "validator": "W/\"ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a\"",
+        "status": 200
+      },
+      {
+        "case": "latest-safe-restart",
+        "validator": "Sat, 01 Jan 2000 00:00:00 GMT",
+        "status": 200
+      },
+      {
+        "case": "interrupted-full",
+        "CF-Ray": "a3d835b1b88e81ae-SIN",
+        "X-VoxStudio-Release-Cache": "HIT",
+        "X-VoxStudio-Cache-Version": "b0d9b11d-8a94-4ea1-821d-6d9123a9a4b9",
+        "Content-Length": "91824974",
+        "Content-Range": null,
+        "ETag": "\"ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a\"",
+        "received_bytes": 20971520
+      },
+      {
+        "case": "resume",
+        "CF-Ray": "a3d835d42b81ce65-SIN",
+        "X-VoxStudio-Release-Cache": "HIT",
+        "X-VoxStudio-Cache-Version": "b0d9b11d-8a94-4ea1-821d-6d9123a9a4b9",
+        "Content-Length": "70853454",
+        "Content-Range": "bytes 20971520-91824973/91824974",
+        "ETag": "\"ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a\""
+      },
+      {
+        "case": "warm-range",
+        "CF-Ray": "a3d83661ecbe34c9-SIN",
+        "X-VoxStudio-Release-Cache": "HIT",
+        "X-VoxStudio-Cache-Version": "b0d9b11d-8a94-4ea1-821d-6d9123a9a4b9",
+        "Content-Length": "4096",
+        "Content-Range": "bytes 0-4095/91824974",
+        "ETag": "\"ec61144222827d4393ba8b7ac057e2f2b5292cdfda262e117a7febf795a7b58a\""
+      }
+    ]
+  }
+}

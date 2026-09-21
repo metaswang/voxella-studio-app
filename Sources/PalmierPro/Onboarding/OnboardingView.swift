@@ -3,10 +3,10 @@ import SwiftUI
 struct FirstRunRootView: View {
     @Bindable private var onboarding = OnboardingState.shared
     @Bindable private var appState = AppState.shared
-
     var body: some View {
         Group {
-            if !onboarding.isComplete && appState.editorPresentation != .active {
+            if !onboarding.isComplete
+                && appState.editorPresentation != .active {
                 OnboardingView(state: onboarding)
             } else {
                 HomeView()
@@ -177,7 +177,7 @@ struct OnboardingView: View {
             }
             downloadNotice
             if status.isBusy {
-                Text(L10n.string("You can continue while downloads finish. Approved downloads resume when you reopen the app."))
+                Text(L10n.string("These speech resources are being prepared on this Mac. You can continue while setup finishes; it will resume when you reopen the app."))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
             }
         }

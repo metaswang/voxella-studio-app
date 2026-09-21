@@ -742,7 +742,7 @@ enum TranscriptionError: LocalizedError {
         case .unsupportedLocale(let id):
             return "On-device transcription is not available for \(id)."
         case .modelInstallFailed(let reason):
-            return "Could not install the on-device speech model: \(reason)"
+            return "Could not prepare on-device speech resources. Try again."
         case .decodeFailed:
             return "Could not parse transcription result."
         case .audioExtractionFailed(let reason):

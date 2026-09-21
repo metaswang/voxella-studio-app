@@ -3,6 +3,8 @@ import SwiftUI
 
 @MainActor
 final class VoiceInputPanelController: NSObject, NSWindowDelegate {
+    private static let savedOriginDefaultsKey = "VoxStudioVoiceInputPanelOrigin-v1"
+
     private weak var coordinator: VoiceInputCoordinator?
     private var panel: VoiceInputPanel?
     private var focusRetryScheduled = false
@@ -43,10 +45,7 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
             height: unscaledPanelHeight,
             keepingCenterOf: panel
         )
-        panel.setFrameOrigin(NSPoint(
-            x: visibleFrame.midX - panel.frame.width / 2,
-            y: visibleFrame.midY - panel.frame.height / 2
-        ))
+        restoreSavedOriginOrCenter(panel, on: visibleFrame)
         panel.orderFrontRegardless()
         panel.makeKeyAndOrderFront(nil)
         restoreEditorFocus()
@@ -74,6 +73,10 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         coordinator?.dismiss()
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        savePanelOrigin()
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
@@ -108,10 +111,11 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
             defer: false
         )
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + AppTheme.SpeechInput.quickInputPanelLevelOffset)
-        panel.title = "Voice Input"
+        panel.title = L10n.string("Voice Input")
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = false
+        panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -122,6 +126,7 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
         let contentView = NSHostingView(
             rootView: VoiceInputPanelView(coordinator: coordinator!)
                 .appZoomEnvironment()
+                .appLocalization()
         )
         contentView.wantsLayer = true
         contentView.layer?.backgroundColor = NSColor.clear.cgColor
@@ -160,6 +165,47 @@ final class VoiceInputPanelController: NSObject, NSWindowDelegate {
             x: center.x - panel.frame.width / 2,
             y: center.y - panel.frame.height / 2
         ))
+    }
+
+    private func restoreSavedOriginOrCenter(_ panel: NSPanel, on visibleFrame: NSRect) {
+        if let savedOrigin = savedPanelOrigin {
+            let savedFrame = panel.frame.offsetBy(
+                dx: savedOrigin.x - panel.frame.origin.x,
+                dy: savedOrigin.y - panel.frame.origin.y
+            )
+            guard NSScreen.screens.contains(where: { $0.visibleFrame.intersects(savedFrame) }) else {
+                centerPanel(panel, in: visibleFrame)
+                return
+            }
+            panel.setFrameOrigin(savedOrigin)
+            return
+        }
+
+        centerPanel(panel, in: visibleFrame)
+    }
+
+    private func centerPanel(_ panel: NSPanel, in visibleFrame: NSRect) {
+        panel.setFrameOrigin(NSPoint(
+            x: visibleFrame.midX - panel.frame.width / 2,
+            y: visibleFrame.midY - panel.frame.height / 2
+        ))
+    }
+
+    private var savedPanelOrigin: NSPoint? {
+        guard let values = UserDefaults.standard.dictionary(forKey: Self.savedOriginDefaultsKey),
+              let x = (values["x"] as? NSNumber)?.doubleValue,
+              let y = (values["y"] as? NSNumber)?.doubleValue else {
+            return nil
+        }
+        return NSPoint(x: x, y: y)
+    }
+
+    private func savePanelOrigin() {
+        guard let origin = panel?.frame.origin else { return }
+        UserDefaults.standard.set(
+            ["x": Double(origin.x), "y": Double(origin.y)],
+            forKey: Self.savedOriginDefaultsKey
+        )
     }
 
     private func focusTarget(in view: NSView) -> VoiceInputFocusTarget? {
@@ -209,7 +255,7 @@ private struct VoiceInputPanelView: View {
             ZStack(alignment: .topLeading) {
                 NativePlaceholderTextEditor(
                     text: $coordinator.draft,
-                    placeholder: "Speak or type…",
+                    placeholder: L10n.string("Speak or type…"),
                     fontSize: AppTheme.FontSize.mdLg,
                     textInset: NSSize(width: AppTheme.Spacing.xs, height: AppTheme.Spacing.xs),
                     showsVerticalScroller: false,
@@ -251,7 +297,7 @@ private struct VoiceInputPanelView: View {
             }
             .buttonStyle(.plain)
             .disabled(coordinator.isBusy)
-            .accessibilityLabel(coordinator.recorder.isRecording ? "Stop recording" : "Start recording")
+            .accessibilityLabel(L10n.string(coordinator.recorder.isRecording ? "Stop recording" : "Start recording"))
         }
         .padding(AppTheme.Spacing.mdLg)
         .background(AppTheme.Background.baseColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
@@ -265,7 +311,7 @@ private struct VoiceInputPanelView: View {
     private var status: some View {
         if let error = coordinator.recorder.errorMessage ?? coordinator.errorMessage {
             HStack(spacing: AppTheme.Spacing.smMd) {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
+                Label(L10n.display(error), systemImage: "exclamationmark.triangle.fill")
                 if coordinator.recorder.needsMicrophoneSettings {
                     Button("Open System Settings", action: coordinator.recorder.openMicrophoneSettings)
                         .buttonStyle(.link)
@@ -286,7 +332,7 @@ private struct VoiceInputPanelView: View {
                     .foregroundStyle(AppTheme.Status.successColor)
             case .failed(let message):
                 HStack(spacing: AppTheme.Spacing.smMd) {
-                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                    Label(L10n.display(message), systemImage: "exclamationmark.triangle.fill")
                     Button("Retry", action: coordinator.retryRecognition)
                         .buttonStyle(.link)
                 }
@@ -298,7 +344,11 @@ private struct VoiceInputPanelView: View {
     }
 
     private var footer: some View {
-        Text(coordinator.insertsIntoField ? "Return: Insert & Close   ⇧Return: New Line   Esc: Close" : "Return: Copy & Close   ⇧Return: New Line   Esc: Close")
+        Text(L10n.string(
+            coordinator.insertsIntoField
+                ? "Return: Insert & Close   ⇧Return: New Line   Esc: Close"
+                : "Return: Copy & Close   ⇧Return: New Line   Esc: Close"
+        ))
             .font(.system(size: AppTheme.FontSize.xs))
             .foregroundStyle(AppTheme.Text.tertiaryColor)
             .frame(maxWidth: .infinity, alignment: .center)

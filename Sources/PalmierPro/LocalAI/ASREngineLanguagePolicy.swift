@@ -149,6 +149,24 @@ enum ASREngineLanguagePolicy {
         return qwenPromptNames[iso]
     }
 
+    /// Decoder language is only locked when LID produced a reliable language
+    /// anchor. Engine coverage still selects Qwen/Parakeet/Whisper, but a weak
+    /// top language must not prompt the recognizer.
+    static func decoderLanguagePrompt(for route: ASREngineRouteDecision) -> String? {
+        switch route.reason {
+        case .userLocked, .weightedEvidence:
+            switch route.engine {
+            case .qwen: qwenPromptLanguage(from: route.topLanguage)
+            case .whisper: route.whisperHint ?? whisperLanguageCode(from: route.topLanguage)
+            case .parakeet: nil
+            }
+        case .whisperLanguage:
+            route.whisperHint
+        default:
+            nil
+        }
+    }
+
     static func isoCode(fromQwenLanguage name: String?) -> String? {
         guard let name else { return nil }
         let trimmed = name.split(separator: ",").first

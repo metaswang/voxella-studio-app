@@ -51,7 +51,7 @@ struct DubOutputPlayer: View {
                         Image(systemName: "gobackward.10")
                     }
                     .buttonStyle(.borderless)
-                    .help("Rewind \(Int(AppTheme.Workbench.dubSeekStepSeconds)) seconds")
+                    .help(L10n.format("Rewind %@ seconds", Int(AppTheme.Workbench.dubSeekStepSeconds)))
                     .disabled(playback.player == nil)
 
                     Button {
@@ -69,7 +69,7 @@ struct DubOutputPlayer: View {
                     .buttonStyle(.borderedProminent)
                     .buttonBorderShape(.circle)
                     .disabled(playback.player == nil)
-                    .help(playback.isPlaying ? "Pause" : "Play")
+                    .help(L10n.string(playback.isPlaying ? "Pause" : "Play"))
 
                     Button {
                         playback.seekBy(
@@ -80,7 +80,7 @@ struct DubOutputPlayer: View {
                         Image(systemName: "goforward.10")
                     }
                     .buttonStyle(.borderless)
-                    .help("Forward \(Int(AppTheme.Workbench.dubSeekStepSeconds)) seconds")
+                    .help(L10n.format("Forward %@ seconds", Int(AppTheme.Workbench.dubSeekStepSeconds)))
                     .disabled(playback.player == nil)
 
                     Spacer(minLength: 0)
@@ -104,7 +104,7 @@ struct DubOutputPlayer: View {
                     }
                     .menuStyle(.borderlessButton)
                     .disabled(playback.player == nil)
-                    .help("Playback speed")
+                    .help(L10n.string("Playback speed"))
                 }
             }
         }

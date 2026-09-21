@@ -82,6 +82,43 @@ enum LLMJSONValue: Codable, Equatable, Sendable {
             destination[key] = .object(merged)
         }
     }
+
+    var compactLogValue: String {
+        switch self {
+        case .null:
+            return "null"
+        case .bool(let value):
+            return value ? "true" : "false"
+        case .number(let value):
+            if value.rounded() == value,
+               value >= Double(Int.min),
+               value <= Double(Int.max) {
+                return String(Int(value))
+            }
+            return String(value)
+        case .string(let value):
+            return String(value.prefix(48))
+        case .array(let values):
+            return "[\(values.count)]"
+        case .object(let object):
+            let pairs = object.keys.sorted().map { key in
+                "\(key)=\(object[key]?.compactLogValue ?? "nil")"
+            }
+            return "{\(pairs.joined(separator: ","))}"
+        }
+    }
+
+    static func compactLogObject(
+        _ object: [String: LLMJSONValue],
+        limit: Int = 400
+    ) -> String {
+        guard !object.isEmpty else { return "none" }
+        let text = object.keys.sorted().map { key in
+            "\(key)=\(object[key]?.compactLogValue ?? "nil")"
+        }.joined(separator: ",")
+        if text.count <= limit { return text }
+        return String(text.prefix(limit)) + "…"
+    }
 }
 
 enum LLMOpenRouterSort: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -195,7 +232,7 @@ extension LLMRuntimeConfiguration {
                 // `max_tokens` name. Compatible gateways still expect it.
                 result.removeValue(forKey: "max_tokens")
                 result["max_completion_tokens"] = .number(256)
-                result["reasoning_effort"] = .string("none")
+                result["reasoning_effort"] = .string(lowestReasoningEffort.rawValue)
                 result.removeValue(forKey: "reasoning")
                 result.removeValue(forKey: "thinking")
                 result.removeValue(forKey: "reasoning_split")

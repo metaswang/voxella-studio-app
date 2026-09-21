@@ -14,38 +14,38 @@ struct LicenseKeyDevicesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("License Key Devices")
+            Text(L10n.string("License Key Devices"))
                 .font(.title2.weight(.semibold))
-            Text("This key can be used on up to \(maxDevices) Macs. Unbind a device to free a slot.")
+            Text(L10n.format("This key can be used on up to %d Macs. Unbind a device to free a slot.", maxDevices))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             if isLoading && devices.isEmpty {
-                ProgressView("Loading…")
+                ProgressView(L10n.string("Loading…"))
             } else if devices.isEmpty {
-                Text("No active devices.")
+                Text(L10n.string("No active devices."))
                     .foregroundStyle(.secondary)
             } else {
-                Text("\(devicesUsed) / \(maxDevices) devices")
+                Text(L10n.format("%d / %d devices", devicesUsed, maxDevices))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 List {
                     ForEach(devices) { device in
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(device.deviceLabel?.isEmpty == false ? device.deviceLabel! : "Mac")
+                                Text(device.deviceLabel?.isEmpty == false ? device.deviceLabel! : L10n.string("Mac"))
                                     .font(.body.weight(.medium))
                                 Text(device.fingerprintMasked)
                                     .font(.system(.caption, design: .monospaced))
                                     .foregroundStyle(.secondary)
                                 if device.isCurrent {
-                                    Text("This Mac")
+                                    Text(L10n.string("This Mac"))
                                         .font(.caption2)
                                         .foregroundStyle(.green)
                                 }
                             }
                             Spacer()
-                            Button("Unbind") {
+                            Button(L10n.string("Unbind")) {
                                 confirmUnbindDevice = device
                             }
                             .disabled(unbindingFingerprint != nil)
@@ -57,33 +57,35 @@ struct LicenseKeyDevicesView: View {
             }
 
             if let statusMessage {
-                Text(statusMessage)
+                Text(L10n.display(statusMessage))
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack {
                 Spacer()
-                Button("Refresh") { Task { await reload() } }
+                Button(L10n.string("Refresh")) { Task { await reload() } }
                     .disabled(isLoading)
-                Button("Done") { onClose() }
+                Button(L10n.string("Done")) { onClose() }
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)
         .frame(width: 480)
         .task { await reload() }
-        .alert("Unbind Device?", isPresented: .constant(confirmUnbindDevice != nil), presenting: confirmUnbindDevice) { device in
-            Button("Cancel", role: .cancel) {
+        .alert(L10n.string("Unbind Device?"), isPresented: .constant(confirmUnbindDevice != nil), presenting: confirmUnbindDevice) { device in
+            Button(L10n.string("Cancel"), role: .cancel) {
                 confirmUnbindDevice = nil
             }
-            Button("Unbind", role: .destructive) {
+            Button(L10n.string("Unbind"), role: .destructive) {
                 let fingerprint = device.fingerprint
                 confirmUnbindDevice = nil
                 Task { await unbind(fingerprint) }
             }
         } message: { device in
-            Text("This will free a device slot for this license key. \(device.isCurrent ? "This Mac will lose Lifetime access." : "The device will need to be re-activated to regain access.")")
+            Text(L10n.string(device.isCurrent
+                ? "This will free a device slot for this license key. This Mac will lose Lifetime access."
+                : "This will free a device slot for this license key. The device will need to be re-activated to regain access."))
         }
     }
 

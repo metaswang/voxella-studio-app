@@ -83,9 +83,9 @@ struct WorkbenchRecentDubSessionsSection: View {
                         statusFilter = filter
                     } label: {
                         if statusFilter == filter {
-                            Label(LocalizedStringKey(filter.label), systemImage: "checkmark")
+                            Label(L10n.string(key: filter.label), systemImage: "checkmark")
                         } else {
-                            Text(LocalizedStringKey(filter.label))
+                            Text(L10n.string(key: filter.label))
                         }
                     }
                 }
@@ -116,7 +116,11 @@ struct WorkbenchRecentDubSessionsSection: View {
                     )
             }
             .menuStyle(.borderlessButton)
-            .help(statusFilter == .all ? "Filter sessions" : "Filter: \(statusFilter.label)")
+            .help(
+                statusFilter == .all
+                    ? L10n.string("Filter sessions")
+                    : L10n.format("Filter: %@", L10n.string(key: statusFilter.label))
+            )
         }
     }
 
@@ -124,14 +128,14 @@ struct WorkbenchRecentDubSessionsSection: View {
         VStack(spacing: AppTheme.Spacing.md) {
             Text(
                 searchText.isEmpty && statusFilter == .all
-                    ? "No recent dub sessions yet"
-                    : "No matching sessions"
+                    ? L10n.string("No recent dub sessions yet")
+                    : L10n.string("No matching sessions")
             )
             .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
             Text(
                 searchText.isEmpty && statusFilter == .all
-                    ? "Generate a dub above to return to it here."
-                    : "Try a different search phrase or clear the status filter."
+                    ? L10n.string("Generate a dub above to return to it here.")
+                    : L10n.string("Try a different search phrase or clear the status filter.")
             )
             .font(.system(size: AppTheme.FontSize.sm))
             .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -204,14 +208,14 @@ struct WorkbenchRecentDubSessionsSection: View {
                                 .foregroundStyle(AppTheme.Text.primaryColor)
                                 .lineLimit(1)
                             HStack(spacing: AppTheme.Spacing.sm) {
-                                Text(session.source == .media ? "Transcript dub" : "Dub")
+                                Text(session.source == .media ? L10n.string("Transcript dub") : L10n.string("Dub"))
                                     .foregroundStyle(AppTheme.Accent.link)
                                 metaDot
                                 if let duration = session.duration {
-                                    Text("Duration \(formatDuration(duration))")
+                                    Text(L10n.format("Duration %@", formatDuration(duration)))
                                     metaDot
                                 }
-                                Text("Created \(session.createdAt.formatted(date: .numeric, time: .shortened))")
+                                Text(L10n.format("Created %@", session.createdAt.formatted(date: .numeric, time: .shortened)))
                             }
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.mutedColor)
@@ -258,23 +262,23 @@ struct WorkbenchRecentDubSessionsSection: View {
                 .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
-        .help("Session options")
+        .help(L10n.string("Session options"))
     }
 
     @ViewBuilder
     private func sessionMenuActions(_ session: WorkbenchSession) -> some View {
-        Button("Open session") { store.openSession(session.id) }
+        Button(L10n.string("Open session")) { store.openSession(session.id) }
         if let dubID = session.dubID {
-            Button("Edit dub") { store.openDub(dubID) }
-            Button("Regenerate") { regenerate(dubID) }
+            Button(L10n.string("Edit dub")) { store.openDub(dubID) }
+            Button(L10n.string("Regenerate")) { regenerate(dubID) }
                 .disabled(!canRegenerate(dubID))
             if let outputURL = session.outputURL {
-                Button("Reveal dub in Finder") {
+                Button(L10n.string("Reveal dub in Finder")) {
                     NSWorkspace.shared.activateFileViewerSelecting([outputURL])
                 }
             }
             Divider()
-            Button("Delete dub", role: .destructive) {
+            Button(L10n.string("Delete dub"), role: .destructive) {
                 store.deleteDub(dubID)
             }
         }

@@ -24,7 +24,7 @@ struct CreditSummaryView: View {
                     compactView(left: left, budget: budget, remaining: remaining)
                 }
                 .buttonStyle(.plain)
-                .help("Manage credits")
+                .help(L10n.string("Manage credits"))
                 .popover(isPresented: $showActions, arrowEdge: .bottom) {
                     CreditActionsPopover(isPresented: $showActions)
                 }
@@ -66,7 +66,7 @@ struct CreditSummaryView: View {
             Capsule().stroke(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.hairline)
         )
         .fixedSize(horizontal: true, vertical: false)
-        .help("\(left.formatted()) of \(budget.formatted()) credits remaining this period")
+        .help(L10n.format("%@ of %@ credits remaining this period", left, budget))
     }
 
     /// Tint by remaining ratio — full bar is healthy, drained bar is alarming.
@@ -95,7 +95,7 @@ private struct CreditActionsPopover: View {
             }
 
             if let error = account.lastError {
-                Text(error)
+                Text(L10n.display(error))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
@@ -138,7 +138,7 @@ private struct CreditActionsPopover: View {
 
     @ViewBuilder
     private func sectionCaption(_ text: String) -> some View {
-        Text(text)
+        Text(L10n.string(key: text))
             .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
             .foregroundStyle(AppTheme.Text.tertiaryColor)
     }

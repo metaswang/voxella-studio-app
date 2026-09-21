@@ -50,7 +50,7 @@ struct InlineVoiceInputControl: View {
                             .monospacedDigit()
                     } else if coordinator.isBusy {
                         ProgressView().controlSize(.small)
-                        Text(coordinator.recognition.isRecognizing ? "Transcribing…" : "Preparing microphone…")
+                        Text(L10n.string(coordinator.recognition.isRecognizing ? "Transcribing…" : "Preparing microphone…"))
                     }
                     if coordinator.isBusy || coordinator.recorder.isRecording {
                         Button("Cancel") { coordinator.dismiss() }
@@ -65,8 +65,8 @@ struct InlineVoiceInputControl: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled(coordinator?.isBusy == true)
-                .help(coordinator?.recorder.isRecording == true ? "Stop and transcribe" : "Voice input")
-                .accessibilityLabel(coordinator?.recorder.isRecording == true ? "Stop and transcribe" : "Voice input")
+                .help(L10n.string(coordinator?.recorder.isRecording == true ? "Stop and transcribe" : "Voice input"))
+                .accessibilityLabel(L10n.string(coordinator?.recorder.isRecording == true ? "Stop and transcribe" : "Voice input"))
             }
             .font(.system(size: AppTheme.FontSize.xs))
             if let coordinator {
@@ -102,7 +102,7 @@ struct InlineVoiceInputControl: View {
                 } else if coordinator.isBusy {
                     ProgressView()
                         .controlSize(.mini)
-                        .accessibilityLabel("Preparing voice input")
+                        .accessibilityLabel(L10n.string("Preparing voice input"))
                 }
             }
 
@@ -125,12 +125,12 @@ struct InlineVoiceInputControl: View {
         }
         .buttonStyle(.borderless)
         .disabled(coordinator?.isBusy == true)
-        .help(coordinator?.recorder.isRecording == true ? "Stop and transcribe" : "Voice input")
-        .accessibilityLabel(coordinator?.recorder.isRecording == true ? "Stop and transcribe" : "Voice input")
+        .help(L10n.string(coordinator?.recorder.isRecording == true ? "Stop and transcribe" : "Voice input"))
+        .accessibilityLabel(L10n.string(coordinator?.recorder.isRecording == true ? "Stop and transcribe" : "Voice input"))
     }
 
     private func error(_ message: String) -> some View {
-        Text(message)
+        Text(L10n.display(message))
             .font(.system(size: AppTheme.FontSize.xs))
             .foregroundStyle(AppTheme.Status.errorColor)
             .fixedSize(horizontal: false, vertical: true)

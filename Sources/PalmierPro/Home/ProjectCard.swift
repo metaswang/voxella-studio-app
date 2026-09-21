@@ -188,7 +188,7 @@ struct ProjectEntryContextActions: View {
             }
             Divider()
         }
-        Button("Remove from Recents") { onRemove(entry.url) }
-        Button("Delete Project", role: .destructive, action: onDelete)
+                Button(L10n.string("Remove from Recents")) { onRemove(entry.url) }
+                Button(L10n.string("Delete Project"), role: .destructive, action: onDelete)
     }
 }

@@ -20,7 +20,11 @@ struct ASRCoverageRepairTests {
         #expect(hole.end < 153.2)
         #expect(hole.end - hole.start > 25)
 
-        let retry = ASRCoverageRepair.retryRanges(from: uncovered, audioDuration: 180)
+        let retry = ASRCoverageRepair.retryRanges(
+            from: uncovered,
+            firstPassCovered: covered,
+            audioDuration: 180
+        )
         let retryRange = try #require(retry.first)
         #expect(retry.count == 1)
         #expect(retryRange.start > 125.644)
@@ -41,6 +45,75 @@ struct ASRCoverageRepairTests {
             .init(start: 5.16, end: 8),
             .init(start: 8.4, end: 19.8),
         ]
+
+        let uncovered = ASRCoverageRepair.uncoveredSpeech(mask: mask, covered: covered)
+        #expect(uncovered.isEmpty)
+    }
+
+    @Test func retriesShortTrailingSpeechAfterAFirstPassEarlyStop() throws {
+        let mask = speechMask(duration: 4.27, alignable: [(0.50, 2.50), (2.95, 3.60)])
+        let covered = [ASRSpeechRange(start: 0.43, end: 2.80)]
+
+        let uncovered = ASRCoverageRepair.uncoveredSpeech(mask: mask, covered: covered)
+        let hole = try #require(uncovered.first)
+        #expect(uncovered.count == 1)
+        #expect(hole.start > 3.0)
+        #expect(hole.start < 3.1)
+        #expect(hole.end > 3.55)
+        #expect(hole.end - hole.start >= 0.40)
+        #expect(hole.end - hole.start < 0.75)
+
+        let retry = ASRCoverageRepair.retryRanges(
+            from: uncovered,
+            firstPassCovered: covered,
+            audioDuration: 4.27
+        )
+        let retryRange = try #require(retry.first)
+        #expect(retry.count == 1)
+        #expect(retryRange.start >= 2.80 - 1e-6)
+        #expect(retryRange.start < 3.05)
+        #expect(retryRange.end >= 3.60)
+
+        let locked = ASRChunkPlanner.chunks(
+            speechRanges: retry,
+            audioDuration: 4.27,
+            configuration: ASRChunkPlannerConfiguration(
+                maximumWindowDuration: 90,
+                boundaryContextDuration: 0,
+                maximumMergeGap: 0
+            ),
+            allowedRanges: retry
+        )
+        let lockedChunk = try #require(locked.first)
+        #expect(lockedChunk.inputStart >= 2.80 - 1e-6)
+        #expect(lockedChunk.inputEnd <= 4.27 + 1e-6)
+    }
+
+    @Test func retriesShortLeadingSpeechBeforeTheFirstWord() throws {
+        let mask = speechMask(duration: 5, alignable: [(0.40, 4.80)])
+        let covered = [ASRSpeechRange(start: 1.20, end: 4.50)]
+
+        let uncovered = ASRCoverageRepair.uncoveredSpeech(mask: mask, covered: covered)
+        let hole = try #require(uncovered.first)
+        #expect(uncovered.count == 1)
+        #expect(hole.start < 0.5)
+        #expect(hole.end > 0.9)
+        #expect(hole.end - hole.start >= 0.40)
+        #expect(hole.end - hole.start < 0.75)
+
+        let retry = ASRCoverageRepair.retryRanges(
+            from: uncovered,
+            firstPassCovered: covered,
+            audioDuration: 5
+        )
+        let retryRange = try #require(retry.first)
+        #expect(retryRange.end <= 1.20 + 1e-6)
+        #expect(retryRange.start < 0.5)
+    }
+
+    @Test func ignoresTrailingHolesShorterThanTheEdgeThreshold() {
+        let mask = speechMask(duration: 4, alignable: [(0.4, 3.2)])
+        let covered = [ASRSpeechRange(start: 0.43, end: 2.90)]
 
         let uncovered = ASRCoverageRepair.uncoveredSpeech(mask: mask, covered: covered)
         #expect(uncovered.isEmpty)

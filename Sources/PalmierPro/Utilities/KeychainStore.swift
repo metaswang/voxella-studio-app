@@ -1,246 +1,293 @@
 import Foundation
+import LocalAuthentication
 import Security
 
-enum KeychainStoreError: LocalizedError {
+enum CredentialLoadResult: Equatable, Sendable {
+    case present(String)
+    case notConfigured
+    case temporarilyUnavailable
+    case configurationError
+    case corrupted
+
+    var value: String? {
+        if case .present(let value) = self { return value }
+        return nil
+    }
+
+    func get() throws -> String? {
+        switch self {
+        case .present(let value):
+            return value
+        case .notConfigured:
+            return nil
+        case .temporarilyUnavailable:
+            throw KeychainStoreError.temporarilyUnavailable
+        case .configurationError:
+            throw KeychainStoreError.configurationError
+        case .corrupted:
+            throw KeychainStoreError.corrupted
+        }
+    }
+
+    var statusMessage: String? {
+        switch self {
+        case .present, .notConfigured:
+            nil
+        case .temporarilyUnavailable:
+            KeychainStoreError.temporarilyUnavailable.localizedDescription
+        case .configurationError:
+            KeychainStoreError.configurationError.localizedDescription
+        case .corrupted:
+            KeychainStoreError.corrupted.localizedDescription
+        }
+    }
+}
+
+enum KeychainStoreError: LocalizedError, Equatable, Sendable {
     case invalidValue
-    case unexpectedData
-    case status(OSStatus)
+    case temporarilyUnavailable
+    case configurationError
+    case corrupted
 
     var errorDescription: String? {
         switch self {
         case .invalidValue:
             "The credential is empty."
-        case .unexpectedData:
-            "The credential stored in Keychain is invalid."
-        case .status(let status):
-            SecCopyErrorMessageString(status, nil) as String?
-                ?? "Keychain operation failed (\(status))."
+        case .temporarilyUnavailable:
+            "Secure credential storage is temporarily unavailable."
+        case .configurationError:
+            "This build is not configured for secure credential storage."
+        case .corrupted:
+            "The stored credential is unreadable. Enter it again."
         }
+    }
+
+    var isInteractionNotAllowed: Bool {
+        self == .temporarilyUnavailable
     }
 }
 
+protocol CredentialStoreBackend: Sendable {
+    func load(account: String, background: Bool) -> CredentialLoadResult
+    func save(_ value: String, account: String, background: Bool) throws
+    func delete(account: String, background: Bool) throws
+}
+
+struct SecurityItemClient: Sendable {
+    var add: @Sendable (CFDictionary) -> OSStatus
+    var update: @Sendable (CFDictionary, CFDictionary) -> OSStatus
+    var copyMatching: @Sendable (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus
+    var delete: @Sendable (CFDictionary) -> OSStatus
+
+    static let live = SecurityItemClient(
+        add: { SecItemAdd($0, nil) },
+        update: { SecItemUpdate($0, $1) },
+        copyMatching: { SecItemCopyMatching($0, $1) },
+        delete: { SecItemDelete($0) }
+    )
+}
+
 enum KeychainStore {
-    private static let legacyService: String = Bundle.main.bundleIdentifier ?? "com.voxella.studio"
-    private static let protectedService = "com.voxella.studio.credentials"
-    private static let migrationLock = NSLock()
+    static let service = "com.voxella.studio.credentials.v3"
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var overrideBackend: (any CredentialStoreBackend)?
+    private static let defaultBackend: any CredentialStoreBackend = makeDefaultBackend()
+
+    static var backend: any CredentialStoreBackend {
+        lock.withLock { () -> any CredentialStoreBackend in
+            overrideBackend ?? defaultBackend
+        }
+    }
+
+    static var usesIsolatedMemoryStore: Bool {
+        backend is MemoryCredentialStore
+    }
 
     static func accessibility(background: Bool) -> CFString {
         background ? kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly : kSecAttrAccessibleWhenUnlockedThisDeviceOnly
     }
 
-    private enum Backend {
-        case dataProtection
-        case login
-    }
-
-    private static let preferredBackend: Backend = {
-        guard let task = SecTaskCreateFromSelf(nil) else { return .login }
-        let entitlement = SecTaskCopyValueForEntitlement(
-            task,
-            "keychain-access-groups" as CFString,
-            nil
-        )
-        return entitlement == nil ? .login : .dataProtection
-    }()
-
-    static func save(_ value: String, account: String) {
-        let data = Data(value.utf8)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: legacyService,
-            kSecAttrAccount as String: account,
-        ]
-        let attrs: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
-        ]
-        let status = SecItemUpdate(query as CFDictionary, attrs as CFDictionary)
-        if status == errSecItemNotFound {
-            var insert = query
-            insert.merge(attrs) { _, new in new }
-            SecItemAdd(insert as CFDictionary, nil)
-        }
-    }
-
-    static func load(account: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: legacyService,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data,
-              let value = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-              !value.isEmpty
-        else { return nil }
-        return value
-    }
-
-    static func delete(account: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: legacyService,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(query as CFDictionary)
+    static func loadProtected(account: String) -> CredentialLoadResult {
+        backend.load(account: account, background: false)
     }
 
     static func saveProtected(_ value: String, account: String) throws {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            throw KeychainStoreError.invalidValue
-        }
-        try migrationLock.withLock {
-            try migration(account: account).save(trimmed)
-        }
-    }
-
-    static func loadProtected(account: String) throws -> String? {
-        try migrationLock.withLock { try migration(account: account).load() }
-    }
-
-    static func loadProtected(account: String, legacyAccount: String) throws -> String? {
-        try migrationLock.withLock {
-            let current = migration(account: account)
-            if let record = try current.read() { return record.value }
-            if let value = try current.load() { return value }
-            let legacy = migration(account: legacyAccount)
-            guard let value = try legacy.load() else { return nil }
-            try current.save(value)
-            try legacy.delete()
-            return value
-        }
-    }
-
-    static func containsProtected(account: String) throws -> Bool {
-        try loadProtected(account: account) != nil
+        try save(value, account: account, background: false)
     }
 
     static func deleteProtected(account: String) throws {
-        try migrationLock.withLock { try migration(account: account).delete() }
+        try backend.delete(account: account, background: false)
+    }
+
+    static func loadThisDeviceOnly(account: String) -> CredentialLoadResult {
+        backend.load(account: account, background: true)
     }
 
     static func saveThisDeviceOnly(_ value: String, account: String) throws {
-        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { throw KeychainStoreError.invalidValue }
-        try migrationLock.withLock {
-            try migration(account: account, background: true).save(value)
-        }
-    }
-
-    static func loadThisDeviceOnly(account: String) throws -> String? {
-        try migrationLock.withLock { try migration(account: account, background: true).load() }
+        try save(value, account: account, background: true)
     }
 
     static func deleteThisDeviceOnly(account: String) throws {
-        try migrationLock.withLock { try migration(account: account, background: true).delete() }
+        try backend.delete(account: account, background: true)
     }
 
-    private static func migration(account: String, background: Bool = false) -> CredentialMigration {
-        let service = protectedService + ".v2"
-        return CredentialMigration(
-            read: {
-                guard let encoded = try loadItem(account: account, backend: preferredBackend, service: service) else { return nil }
-                return try JSONDecoder().decode(CredentialMigration.Record.self, from: Data(encoded.utf8))
-            },
-            write: { record in
-                let data = try JSONEncoder().encode(record)
-                try upsert(data, account: account, backend: preferredBackend, service: service, background: background)
-            },
-            readLegacy: {
-                let protectedValue: String?
-                do {
-                    protectedValue = try loadItem(account: account, backend: .dataProtection)
-                } catch KeychainStoreError.status(errSecMissingEntitlement) {
-                    protectedValue = nil
-                }
-                return try protectedValue ?? loadItem(account: account, backend: .login)
-            },
-            removeLegacy: {
-                try deleteItem(account: account, backend: .login)
-                do {
-                    try deleteItem(account: account, backend: .dataProtection)
-                } catch KeychainStoreError.status(errSecMissingEntitlement) where preferredBackend == .login {
-                    Log.app.warning("Legacy credential cleanup unavailable: missing data-protection entitlement; authoritative record retained")
-                }
-            }
-        )
+    static func testingInstallBackend(_ backend: (any CredentialStoreBackend)?) {
+        lock.withLock { overrideBackend = backend }
     }
 
-    private static func upsert(_ data: Data, account: String, backend: Backend, service: String, background: Bool) throws {
-        var query = protectedQuery(account: account, backend: backend, service: service)
-        if backend == .login, background {
-            query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+    static func testingResetMemoryStore() {
+        if let memory = backend as? MemoryCredentialStore {
+            memory.removeAll()
         }
-        var attributes: [String: Any] = [kSecValueData as String: data]
-        if backend == .dataProtection {
-            attributes[kSecAttrAccessible as String] = accessibility(background: background)
-        }
+    }
 
-        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+    private static func save(_ value: String, account: String, background: Bool) throws {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw KeychainStoreError.invalidValue }
+        try backend.save(trimmed, account: account, background: background)
+    }
+
+    private static func makeDefaultBackend() -> any CredentialStoreBackend {
+        if let accessGroup = installedAccessGroup() {
+            return DataProtectionCredentialStore(accessGroup: accessGroup, security: .live)
+        }
+        return MemoryCredentialStore()
+    }
+
+    static func installedAccessGroup() -> String? {
+        guard let task = SecTaskCreateFromSelf(nil) else { return nil }
+        guard let entitlement = SecTaskCopyValueForEntitlement(
+            task,
+            "keychain-access-groups" as CFString,
+            nil
+        ) else { return nil }
+        let groups = (entitlement as? [String]) ?? ((entitlement as? NSArray) as? [String])
+        return groups?.first { !$0.isEmpty }
+    }
+}
+
+final class MemoryCredentialStore: CredentialStoreBackend, @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [String: String] = [:]
+
+    func load(account: String, background: Bool) -> CredentialLoadResult {
+        _ = background
+        return lock.withLock { () -> CredentialLoadResult in
+            guard let value = items[account] else { return .notConfigured }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return .corrupted }
+            return .present(trimmed)
+        }
+    }
+
+    func save(_ value: String, account: String, background: Bool) throws {
+        _ = background
+        lock.withLock { items[account] = value }
+    }
+
+    func delete(account: String, background: Bool) throws {
+        _ = background
+        lock.withLock { items[account] = nil }
+    }
+
+    func removeAll() {
+        lock.withLock { items.removeAll() }
+    }
+}
+
+struct DataProtectionCredentialStore: CredentialStoreBackend {
+    let accessGroup: String
+    let security: SecurityItemClient
+
+    func load(account: String, background: Bool) -> CredentialLoadResult {
+        var query = baseQuery(account: account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = security.copyMatching(query as CFDictionary, &item)
+        switch status {
+        case errSecSuccess:
+            guard let data = item as? Data,
+                  let value = String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty
+            else { return .corrupted }
+            return .present(value)
+        case errSecItemNotFound:
+            return .notConfigured
+        default:
+            return mapLoadStatus(status)
+        }
+    }
+
+    func save(_ value: String, account: String, background: Bool) throws {
+        let data = Data(value.utf8)
+        let query = baseQuery(account: account)
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: KeychainStore.accessibility(background: background),
+        ]
+        let updateStatus = security.update(query as CFDictionary, attributes as CFDictionary)
         if updateStatus == errSecSuccess { return }
         guard updateStatus == errSecItemNotFound else {
-            throw KeychainStoreError.status(updateStatus)
+            throw mapThrowingStatus(updateStatus)
         }
 
         var insert = query
         insert.merge(attributes) { _, new in new }
-        let insertStatus = SecItemAdd(insert as CFDictionary, nil)
+        let insertStatus = security.add(insert as CFDictionary)
         guard insertStatus == errSecSuccess else {
-            throw KeychainStoreError.status(insertStatus)
+            throw mapThrowingStatus(insertStatus)
         }
     }
 
-    private static func loadItem(account: String, backend: Backend, service: String = protectedService) throws -> String? {
-        var query = protectedQuery(account: account, backend: backend, service: service)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        // A stale login-keychain ACL must not block app launch with repeated modal
-        // authorization prompts. Explicit credential saves can still repair the item.
-        if backend == .login {
-            query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
-        }
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess else { throw KeychainStoreError.status(status) }
-        guard let data = item as? Data,
-              let value = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-              !value.isEmpty else {
-            throw KeychainStoreError.unexpectedData
-        }
-        return value
-    }
-
-    private static func deleteItem(account: String, backend: Backend) throws {
-        let status = SecItemDelete(protectedQuery(account: account, backend: backend) as CFDictionary)
+    func delete(account: String, background: Bool) throws {
+        _ = background
+        let status = security.delete(baseQuery(account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainStoreError.status(status)
+            throw mapThrowingStatus(status)
         }
     }
 
-    private static func protectedQuery(account: String, backend: Backend, service: String = protectedService) -> [String: Any] {
-        var query: [String: Any] = [
+    func baseQuery(account: String) -> [String: Any] {
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        return [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
+            kSecAttrService as String: KeychainStore.service,
             kSecAttrAccount as String: account,
+            kSecAttrAccessGroup as String: accessGroup,
+            kSecUseDataProtectionKeychain as String: true,
+            kSecAttrSynchronizable as String: false,
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail,
+            kSecUseAuthenticationContext as String: context,
         ]
-        if backend == .dataProtection {
-            query[kSecUseDataProtectionKeychain as String] = true
-            query[kSecAttrSynchronizable as String] = false
-        }
-        return query
     }
-}
 
-extension KeychainStoreError {
-    var isInteractionNotAllowed: Bool {
-        if case .status(errSecInteractionNotAllowed) = self { return true }
-        return false
+    private func mapLoadStatus(_ status: OSStatus) -> CredentialLoadResult {
+        switch status {
+        case errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled:
+            .temporarilyUnavailable
+        case errSecMissingEntitlement, errSecInvalidOwnerEdit, errSecNotAvailable:
+            .configurationError
+        case errSecDecode, errSecInvalidValue:
+            .corrupted
+        default:
+            .temporarilyUnavailable
+        }
+    }
+
+    private func mapThrowingStatus(_ status: OSStatus) -> KeychainStoreError {
+        switch mapLoadStatus(status) {
+        case .temporarilyUnavailable:
+            .temporarilyUnavailable
+        case .configurationError:
+            .configurationError
+        case .corrupted:
+            .corrupted
+        case .present, .notConfigured:
+            .temporarilyUnavailable
+        }
     }
 }

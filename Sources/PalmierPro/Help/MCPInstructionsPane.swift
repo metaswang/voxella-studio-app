@@ -39,7 +39,7 @@ struct MCPInstructionsPane: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
-                Text("Connect an external agent to inspect and edit the active VoxStudio project.")
+                Text(L10n.string("Connect an external agent to inspect and edit the active VoxStudio project."))
                     .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.regular))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .fixedSize(horizontal: false, vertical: true)
@@ -59,7 +59,7 @@ struct MCPInstructionsPane: View {
         }
         .appScrollEdgeEffect(.top)
         .alert(
-            "Unable to open Claude Desktop",
+            L10n.string("Unable to open Claude Desktop"),
             isPresented: Binding(
                 get: { claudeInstallError != nil },
                 set: { if !$0 { claudeInstallError = nil } }
@@ -67,7 +67,7 @@ struct MCPInstructionsPane: View {
         ) {
             Button("Dismiss") { claudeInstallError = nil }
         } message: {
-            Text(claudeInstallError ?? "Try again.")
+            Text(claudeInstallError.map(L10n.display) ?? L10n.string("Try again."))
         }
     }
 
@@ -169,7 +169,7 @@ struct MCPInstructionsPane: View {
                 Text(name)
                     .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                     .foregroundStyle(AppTheme.Text.primaryColor)
-                Text(description)
+                Text(L10n.string(key: description))
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.regular))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .fixedSize(horizontal: false, vertical: true)
@@ -180,7 +180,7 @@ struct MCPInstructionsPane: View {
     private func externalAction(_ label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: AppTheme.Spacing.xxs) {
-                Text(label)
+                Text(L10n.string(key: label))
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.regular))
             }
@@ -268,7 +268,7 @@ private struct ManualFallback: View {
 
             if expanded {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                    Text(intro)
+                    Text(L10n.string(key: intro))
                         .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.regular))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                         .fixedSize(horizontal: false, vertical: true)
@@ -300,7 +300,7 @@ private struct CopyButton: View {
                 .hoverHighlight()
         }
         .buttonStyle(.plain)
-        .help(copied ? "Copied" : "Copy")
+        .help(L10n.string(copied ? "Copied" : "Copy"))
     }
 
     private func copy() {

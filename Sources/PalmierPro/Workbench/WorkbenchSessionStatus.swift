@@ -8,9 +8,9 @@ struct SessionProcessingSnapshot: Equatable, Sendable {
 
         var defaultStageTitle: String {
             switch self {
-            case .transcription: "Transcription"
-            case .translation: "Translation"
-            case .dubbing: "Dubbing"
+            case .transcription: L10n.key("Transcription")
+            case .translation: L10n.key("Translation")
+            case .dubbing: L10n.key("Dubbing")
             }
         }
 
@@ -24,8 +24,8 @@ struct SessionProcessingSnapshot: Equatable, Sendable {
 
         var countUnit: String {
             switch self {
-            case .translation: "batches"
-            case .transcription, .dubbing: "steps"
+            case .translation: L10n.key("batches")
+            case .transcription, .dubbing: L10n.key("steps")
             }
         }
     }
@@ -51,7 +51,7 @@ struct SessionProcessingSnapshot: Equatable, Sendable {
     ) {
         self.kind = kind
         self.fraction = Self.normalizedFraction(fraction)
-        self.message = Self.normalizedMessage(message, fallback: "Processing media…")
+        self.message = Self.normalizedMessage(message, fallback: L10n.key("Processing media…"))
         self.stageTitle = stageTitle
         self.completed = completed
         self.total = total
@@ -62,7 +62,7 @@ struct SessionProcessingSnapshot: Equatable, Sendable {
     init(job: WorkbenchTranscriptionJob) {
         self.kind = job.normalizedTargetLanguageCode == nil ? .transcription : .translation
         self.fraction = Self.normalizedFraction(job.progress)
-        self.message = Self.normalizedMessage(job.progressMessage, fallback: "Processing media…")
+        self.message = Self.normalizedMessage(job.progressMessage, fallback: L10n.key("Processing media…"))
         self.stageTitle = job.flowProgressStage?.title ?? job.progressStage?.title
         self.completed = job.progressCompleted
         self.total = job.progressTotal
@@ -73,7 +73,7 @@ struct SessionProcessingSnapshot: Equatable, Sendable {
     init(job: WorkbenchDubJob) {
         self.kind = .dubbing
         self.fraction = Self.normalizedFraction(job.progress)
-        self.message = Self.normalizedMessage(job.progressMessage, fallback: "Generating dub…")
+        self.message = Self.normalizedMessage(job.progressMessage, fallback: L10n.key("Generating dub…"))
         self.stageTitle = job.flowProgressStage?.title
         self.completed = job.progressCompleted
         self.total = job.progressTotal
@@ -156,7 +156,7 @@ struct SessionStatusBadge: View {
                         .tracking(AppTheme.Tracking.wide)
                         .foregroundStyle(color)
                         .lineLimit(1)
-                    Text(processing.message)
+                    Text(L10n.display(processing.message))
                         .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
                         .foregroundStyle(AppTheme.Text.primaryColor)
                         .lineLimit(1)
@@ -175,11 +175,11 @@ struct SessionStatusBadge: View {
             progressBar(processing)
 
             HStack(spacing: AppTheme.Spacing.xs) {
-                Text(processing.progressDetail ?? "Preparing next step…")
+                Text(L10n.display(processing.progressDetail ?? "Preparing next step…"))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: AppTheme.Spacing.xs)
-                Label(processing.locationLabel, systemImage: processing.locationSystemImage)
+                Label(L10n.string(key: processing.locationLabel), systemImage: processing.locationSystemImage)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -205,7 +205,7 @@ struct SessionStatusBadge: View {
                 .strokeBorder(color.opacity(AppTheme.Opacity.moderate), lineWidth: AppTheme.BorderWidth.thin)
         }
         .shadow(AppTheme.Shadow.sm)
-        .help(processing.message)
+        .help(L10n.display(processing.message))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(activeTitle(for: processing))
         .accessibilityValue(accessibilityValue(for: processing))
@@ -243,8 +243,8 @@ struct SessionStatusBadge: View {
     private func activeTitle(for processing: SessionProcessingSnapshot) -> String {
         let activity = status.displayTaskState == .cancelling
             ? L10n.string("Cancelling")
-            : processing.resolvedStageTitle
-        return status.hasUsableResult ? "\(L10n.string("Ready")) · \(activity)" : activity
+            : L10n.string(key: processing.resolvedStageTitle)
+        return status.hasUsableResult ? L10n.format("Ready · %@", activity) : activity
     }
 
     private func activityIcon(_ processing: SessionProcessingSnapshot) -> some View {
@@ -311,11 +311,11 @@ struct SessionStatusBadge: View {
 
     private func accessibilityValue(for processing: SessionProcessingSnapshot) -> String {
         var values = [
-            processing.message,
+            L10n.display(processing.message),
             processing.fraction.formatted(.percent.precision(.fractionLength(0))),
         ]
         if let detail = processing.progressDetail {
-            values.append(detail)
+            values.append(L10n.display(detail))
         }
         return values.joined(separator: ", ")
     }

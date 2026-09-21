@@ -61,9 +61,8 @@ actor WeMMEmbeddingRuntime {
 
         var errorDescription: String? {
             switch self {
-            case .missingFile(let name): "WeMM model is missing \(name)."
-            case .invalidModelDimension: "WeMM model hidden size is invalid."
-            case .invalidOutputShape(let shape): "Unexpected WeMM output shape: \(shape)."
+            case .missingFile: "Smart search resources are incomplete. Prepare them again."
+            case .invalidModelDimension, .invalidOutputShape: "Smart search resources could not be loaded. Prepare them again."
             }
         }
     }

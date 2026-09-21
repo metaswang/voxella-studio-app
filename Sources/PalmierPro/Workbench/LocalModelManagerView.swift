@@ -27,7 +27,6 @@ struct LocalModelManagerView: View {
                 ForEach(LocalPreparationFeature.allCases) { feature in
                     LocalFeaturePreparationRow(feature: feature, allowsRemoval: true)
                 }
-                SpeakerIdentificationPreparationRow()
                 Button(L10n.string("Replay introduction")) {
                     LocalModelManagerWindowController.shared.close()
                     SettingsWindowController.shared.close()

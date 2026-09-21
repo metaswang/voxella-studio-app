@@ -24,14 +24,14 @@ struct WorkbenchTopTipBanner: View {
                 .foregroundStyle(foreground(for: tip.kind))
                 .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
 
-            Text(tip.message)
+            Text(L10n.display(tip.message))
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(foreground(for: tip.kind))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
 
             if tip.actionLabel != nil {
-                Button(tip.actionLabel ?? "") {
+                Button(L10n.display(tip.actionLabel ?? "")) {
                     tips.performAction()
                 }
                 .buttonStyle(.plain)
@@ -40,13 +40,13 @@ struct WorkbenchTopTipBanner: View {
                 .underline()
             }
 
-            Button("Dismiss") {
+            Button(L10n.string("Dismiss")) {
                 tips.hide()
             }
             .buttonStyle(.plain)
             .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
             .foregroundStyle(foreground(for: tip.kind))
-            .help("Dismiss")
+            .help(L10n.string("Dismiss"))
         }
         .padding(.horizontal, AppTheme.Spacing.lg)
         .padding(.vertical, AppTheme.Spacing.md)

@@ -50,11 +50,14 @@ struct RecordingPane: View {
     private var canUseCloudRepair: Bool { account.canUseCloudHighFidelityVoiceRepair }
 
     private var cloudRepairSubtitle: String {
-        if !account.isSignedIn { return "Sign in to enable cloud high-fidelity voice repair." }
-        if !account.isPaid { return "Upgrade to Starter or higher to enable cloud high-fidelity voice repair." }
+        if !account.isSignedIn { return L10n.string("Sign in to enable cloud high-fidelity voice repair.") }
+        if !account.isPaid { return L10n.string("Upgrade to Starter or higher to enable cloud high-fidelity voice repair.") }
         if let seconds = account.cloudBillingBalance?.estimatedSeconds[CloudUsageEstimate.vocalRepairUsageType] {
-            return "After recording, create a clearer repaired track for playback and audio export. Remaining Credits cover about \(CloudUsageEstimate.formatDuration(seconds)) of repair."
+            return L10n.format(
+                "After recording, create a clearer repaired track for playback and audio export. Remaining Credits cover about %@ of repair.",
+                CloudUsageEstimate.formatDuration(seconds)
+            )
         }
-        return "After recording, create a clearer repaired track for playback and audio export. Transcription always uses the untouched master."
+        return L10n.string("After recording, create a clearer repaired track for playback and audio export. Transcription always uses the untouched master.")
     }
 }

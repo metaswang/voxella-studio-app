@@ -135,6 +135,10 @@ final class AccountService {
     private(set) var appAccess = AppAccessSnapshot()
     private(set) var isOfflineAccount = false
     private(set) var lifetimePromotion: AppAccessResponse.Promotion?
+    private(set) var credentialStoreStatus: CredentialStoreStatus = .ready
+#if !MAC_APP_STORE
+    private(set) var isOpeningStripeCheckout = false
+#endif
 #if MAC_APP_STORE
     private(set) var isPurchasingAppStoreProduct = false
     @ObservationIgnored private var transactionUpdatesTask: Task<Void, Never>?
@@ -208,6 +212,10 @@ final class AccountService {
     var trialPresentation: TrialPresentation? {
         guard isAppAccessEnforced else { return nil }
         return appAccess.trialPresentation()
+    }
+
+    var credentialStoreMessage: String? {
+        credentialStoreStatus.inlineMessage
     }
 
     func consumeTrialStartedPresentation() async -> TrialPresentation.Active? {
@@ -321,7 +329,6 @@ final class AccountService {
         )
         reapplyLocalEntitlementOverlays()
         restoreSession()
-        Task { await self.alignDeviceTrialClockWithServer() }
         didBecomeActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
@@ -393,7 +400,7 @@ final class AccountService {
                 guard let token = try await VoxellaAuthService.shared.validAccessToken() else {
                     guard self.isCurrentSession(generation) else { return }
                     await self.rejectSession()
-                    await self.alignDeviceTrialClockWithServer()
+                    await self.reconcileDeviceTrialOnLaunch()
                     return
                 }
                 guard self.isCurrentSession(generation) else { return }
@@ -401,13 +408,13 @@ final class AccountService {
             } catch {
                 guard self.isCurrentSession(generation) else { return }
                 if AppAccessRefreshSchedule.permitsOfflineFallback(error), await self.restoreOfflineAccess(generation: generation) {
-                    await self.alignDeviceTrialClockWithServer()
+                    await self.reconcileDeviceTrialOnLaunch()
                     return
                 }
                 await self.rejectSession()
                 self.lastError = error.localizedDescription
             }
-            await self.alignDeviceTrialClockWithServer()
+            await self.reconcileDeviceTrialOnLaunch()
         }
     }
 
@@ -503,8 +510,15 @@ final class AccountService {
         } ?? []
         lastError = nil
         if Self.paidAccessEnabled, plansResponse?.appAccess != nil {
-            do { try await persistAppAccess() }
-            catch { lastError = "Offline access could not be saved: \(error.localizedDescription)" }
+            do {
+                try await persistAppAccess()
+            } catch {
+                retainEntitlementOnCredentialStoreError(error)
+                lastError = L10n.format(
+                    "Offline access could not be saved: %@",
+                    error.localizedDescription
+                )
+            }
             guard isCurrentSession(generation) else { return }
             await mergeDeviceTrialOnLoginIfNeeded()
             guard isCurrentSession(generation) else { return }
@@ -551,6 +565,9 @@ final class AccountService {
         appAccess = .init()
         availablePlans = []
         isBuyingCredits = false
+#if !MAC_APP_STORE
+        isOpeningStripeCheckout = false
+#endif
         // Device trial + Lifetime device credential survive logout / account clear (PR1 / PR2).
         reapplyLocalEntitlementOverlays()
     }
@@ -642,14 +659,19 @@ final class AccountService {
         // The Mac App Store build exposes one StoreKit product: Lifetime.
         await refreshAccountForFeatureAccess()
 #else
-        // DMG: first gated feature registers a signed device trial without sign-in (PR1.1).
-        // Verify only when ≥24h since last success or the token is near expiry — not on launch
-        // and not on every prepareNewContentAccess. PR4 account merge; PR2–PR3 Lifetime.
+        // DMG: first launch and first gated feature start a device trial without sign-in (PR1.1).
+        // Verify only when ≥24h since last success or the token is near expiry.
+        // Register failure falls back to a provisional local clock. PR4 account merge; PR2–PR3 Lifetime.
         do {
             try await ensureDeviceTrialStarted()
+        } catch AppAccessError.trialExpired {
+            lastError = AppAccessError.trialExpired.localizedDescription
+            throw AppAccessError.trialExpired
         } catch {
+            reapplyLocalEntitlementOverlays()
+            if appAccess.policy() == .allowed { return }
             lastError = error.localizedDescription
-            throw (error as? AppAccessError) ?? AppAccessError.verificationRequired
+            throw error as? AppAccessError ?? AppAccessError.verificationRequired
         }
         if appAccess.policy() == .allowed { return }
 
@@ -683,9 +705,14 @@ final class AccountService {
 
     private func applyLifetimeCredentialOverlayIfNeeded() {
         guard Self.paidAccessEnabled else { return }
-        guard let snapshot = try? LifetimeLocalCredential.activeSnapshot() else { return }
-        accessRequestID = UUID()
-        appAccess = snapshot
+        do {
+            guard let snapshot = try LifetimeLocalCredential.activeSnapshot() else { return }
+            accessRequestID = UUID()
+            appAccess = snapshot
+            markCredentialStoreReadyIfNeeded()
+        } catch {
+            retainEntitlementOnCredentialStoreError(error)
+        }
     }
 
     private func applyLicenseKeyCredentialOverlayIfNeeded() {
@@ -750,8 +777,13 @@ final class AccountService {
         if appAccess.hasActiveSubscription { return }
         // Only overlay when license is .none (no existing server entitlement).
         if appAccess.license != .none { return }
-        guard let snapshot = try? DeviceTrialClock.activeSnapshot() else { return }
-        appAccess = snapshot
+        do {
+            guard let snapshot = try DeviceTrialClock.activeSnapshot() else { return }
+            appAccess = snapshot
+            markCredentialStoreReadyIfNeeded()
+        } catch {
+            retainEntitlementOnCredentialStoreError(error)
+        }
     }
 
     /// After Lifetime purchase (or account refresh), issue/store signed device credential.
@@ -891,12 +923,20 @@ final class AccountService {
                deviceRecord.endsAt > serverEndsAt {
                 let fingerprint = try? DeviceFingerprint.current()
                 guard let fingerprint else {
-                    try? KeychainStore.deleteThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+                    do {
+                        try KeychainStore.deleteThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+                    } catch {
+                        retainEntitlementOnCredentialStoreError(error)
+                    }
                     reapplyLocalEntitlementOverlays()
                     return
                 }
                 if serverEndsAt <= .now {
-                    try? KeychainStore.deleteThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+                    do {
+                        try KeychainStore.deleteThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+                    } catch {
+                        retainEntitlementOnCredentialStoreError(error)
+                    }
                     reapplyLocalEntitlementOverlays()
                     return
                 }
@@ -918,9 +958,25 @@ final class AccountService {
     }
 
     private func ensureDeviceTrialStarted() async throws {
-        let fingerprint = try DeviceFingerprint.current()
+        let fingerprint: String
+        do {
+            fingerprint = try DeviceFingerprint.current()
+        } catch {
+            reapplyLocalEntitlementOverlays()
+            if appAccess.policy() == .allowed { return }
+            throw error
+        }
         let clientStartedAt = earliestDeviceTrialStartHint()
-        if let record = try? DeviceTrialClock.load(fingerprint: fingerprint) {
+        let localRecord: DeviceTrialClock.Record?
+        do {
+            localRecord = try DeviceTrialClock.load(fingerprint: fingerprint)
+        } catch {
+            if isBlockingCredentialStoreError(error) {
+                retainEntitlementOnCredentialStoreError(error)
+            }
+            localRecord = nil
+        }
+        if let record = localRecord {
             applyDeviceTrialRecord(record)
             if let clientStartedAt, record.startedAt > clientStartedAt.addingTimeInterval(1) {
                 do {
@@ -956,7 +1012,6 @@ final class AccountService {
             case .expired:
                 throw AppAccessError.trialExpired
             case .verificationRequired:
-                // Soft verify state (legacy): try online, but do not block mid-trial on failure.
                 do {
                     try await syncDeviceTrial(
                         fingerprint: fingerprint,
@@ -974,15 +1029,31 @@ final class AccountService {
             }
         }
 
-        // Prefer upgrading an existing provisional clock, else register from earliest hint.
-        if let provisional = try? DeviceTrialClock.loadProvisional(fingerprint: fingerprint) {
+        let provisional: DeviceTrialClock.ProvisionalRecord?
+        do {
+            provisional = try DeviceTrialClock.loadProvisional(fingerprint: fingerprint)
+        } catch {
+            if isBlockingCredentialStoreError(error) {
+                retainEntitlementOnCredentialStoreError(error)
+            }
+            provisional = nil
+        }
+        if let provisional {
             switch provisional.evaluation() {
             case .expired:
                 throw AppAccessError.trialExpired
             case .invalid:
-                try? DeviceTrialClock.clearProvisional()
+                do {
+                    try DeviceTrialClock.clearProvisional()
+                } catch {
+                    retainEntitlementOnCredentialStoreError(error)
+                }
             case .allowed, .verificationRequired:
                 applyProvisionalTrialRecord(provisional)
+                guard DeviceTrialBootstrap.shouldRetryNetworkSync(lastAttempt: deviceTrialVerifyAttempt) else {
+                    return
+                }
+                deviceTrialVerifyAttempt = .now
                 do {
                     try await syncDeviceTrial(
                         fingerprint: fingerprint,
@@ -993,36 +1064,60 @@ final class AccountService {
                 } catch AppAccessError.trialExpired {
                     throw AppAccessError.trialExpired
                 } catch {
-                    // Keep provisional local 14d; tip to activate when network returns.
-                    presentTrialActivationTip()
+                    Log.account.warning("Provisional device trial register unavailable")
                     return
                 }
             }
         }
 
-        // First gated feature (or wiped Keychain): register once. Not on launch.
+        guard DeviceTrialBootstrap.shouldRetryNetworkSync(lastAttempt: deviceTrialVerifyAttempt) else {
+            activateProvisionalDeviceTrial(fingerprint: fingerprint, startedAt: clientStartedAt)
+            return
+        }
+        deviceTrialVerifyAttempt = .now
         do {
             try await syncDeviceTrial(
                 fingerprint: fingerprint,
-                preferVerify: false,
-                clientStartedAt: clientStartedAt
+                preferVerify: DeviceTrialBootstrap.preferVerify(hasSignedToken: false),
+                clientStartedAt: clientStartedAt,
+                allowRegister: true
             )
+            markCredentialStoreReadyIfNeeded()
         } catch AppAccessError.trialExpired {
             throw AppAccessError.trialExpired
         } catch {
-            // Network / register failure with no signed token yet → provisional local 14d.
-            let startedAt = clientStartedAt ?? .now
-            let provisional = try DeviceTrialClock.storeProvisional(
-                startedAt: startedAt,
-                fingerprint: fingerprint
-            )
-            applyProvisionalTrialRecord(provisional)
-            presentTrialActivationTip()
+            activateProvisionalDeviceTrial(fingerprint: fingerprint, startedAt: clientStartedAt)
+            Log.account.warning("Device trial register unavailable; using provisional local clock")
         }
     }
 
-    /// Launch / restore: re-register so a server LEAST-backdated fingerprint replaces a later local JWT.
-    /// Mid-trial 24h verify skip would otherwise keep showing today+14d after the first device register.
+    /// First launch: start a local trial when none exists; only verify an already-signed token.
+    private func reconcileDeviceTrialOnLaunch() async {
+        guard Self.paidAccessEnabled else { return }
+        let hasSignedToken = (try? DeviceTrialClock.load()) != nil
+        switch DeviceTrialBootstrap.launchPath(
+            paidAccessEnabled: true,
+            hasLifetimeCredential: LifetimeLocalCredential.isPresent(),
+            hasSignedToken: hasSignedToken
+        ) {
+        case .skip:
+            return
+        case .verifyOnly:
+            await alignDeviceTrialClockWithServer()
+        case .startOrUpgrade:
+            do {
+                try await ensureDeviceTrialStarted()
+            } catch AppAccessError.trialExpired {
+                lastError = AppAccessError.trialExpired.localizedDescription
+                markCredentialStoreReadyIfNeeded()
+            } catch {
+                Log.account.warning("Device trial launch start unavailable")
+                reapplyLocalEntitlementOverlays()
+            }
+        }
+    }
+
+    /// Launch restore for a signed device-trial token. Does not mint a new trial.
     private func alignDeviceTrialClockWithServer() async {
         guard Self.paidAccessEnabled else { return }
         let fingerprint: String
@@ -1031,19 +1126,25 @@ final class AccountService {
         } catch {
             return
         }
-        let hasLocalClock = (try? DeviceTrialClock.load(fingerprint: fingerprint)) != nil
-            || (try? DeviceTrialClock.loadProvisional(fingerprint: fingerprint)) != nil
-            || DeviceTrialClock.loadStartHint() != nil
-            || ((try? KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount))?.isEmpty == false)
-        guard hasLocalClock else { return }
+        do {
+            _ = try DeviceTrialClock.load(fingerprint: fingerprint)
+        } catch {
+            if isBlockingCredentialStoreError(error) {
+                retainEntitlementOnCredentialStoreError(error)
+                return
+            }
+        }
         do {
             try await syncDeviceTrial(
                 fingerprint: fingerprint,
-                preferVerify: false,
-                clientStartedAt: earliestDeviceTrialStartHint()
+                preferVerify: true,
+                clientStartedAt: earliestDeviceTrialStartHint(),
+                allowRegister: false
             )
+            markCredentialStoreReadyIfNeeded()
         } catch AppAccessError.trialExpired {
             lastError = AppAccessError.trialExpired.localizedDescription
+            markCredentialStoreReadyIfNeeded()
         } catch {
             Log.account.warning("Device trial launch align unavailable")
         }
@@ -1091,6 +1192,33 @@ final class AccountService {
         )
     }
 
+    /// Persist (or overlay) a local 14-day clock when online register is unavailable.
+    private func activateProvisionalDeviceTrial(fingerprint: String, startedAt: Date?) {
+        let start = DeviceTrialBootstrap.provisionalStart(from: startedAt)
+        DeviceTrialClock.rememberClientStartHint(start)
+        if let existing = try? DeviceTrialClock.loadProvisional(fingerprint: fingerprint),
+           existing.evaluation() == .allowed || existing.evaluation() == .verificationRequired {
+            let earliest = min(existing.startedAt, start)
+            if earliest < existing.startedAt,
+               let updated = try? DeviceTrialClock.storeProvisional(startedAt: earliest, fingerprint: fingerprint) {
+                applyProvisionalTrialRecord(updated)
+                markCredentialStoreReadyIfNeeded()
+                return
+            }
+            applyProvisionalTrialRecord(existing)
+            markCredentialStoreReadyIfNeeded()
+            return
+        }
+        if let record = try? DeviceTrialClock.storeProvisional(startedAt: start, fingerprint: fingerprint) {
+            applyProvisionalTrialRecord(record)
+        } else {
+            applyProvisionalTrialRecord(
+                DeviceTrialClock.ProvisionalRecord(startedAt: start, fingerprint: fingerprint)
+            )
+        }
+        markCredentialStoreReadyIfNeeded()
+    }
+
     private func applyDeviceTrialRecord(_ record: DeviceTrialClock.Record) {
         guard let snapshot = record.snapshot() else { return }
         guard DeviceTrialLoginMerge.shouldReplaceEntitlement(current: appAccess, candidate: snapshot) else {
@@ -1103,7 +1231,8 @@ final class AccountService {
     private func syncDeviceTrial(
         fingerprint: String,
         preferVerify: Bool,
-        clientStartedAt: Date?
+        clientStartedAt: Date?,
+        allowRegister: Bool = true
     ) async throws {
         do {
             let response: DeviceTrialAPIResponse
@@ -1112,6 +1241,7 @@ final class AccountService {
                     response = try await api.verifyDeviceTrial(fingerprint: fingerprint)
                 } catch let error as VoxellaAPIError {
                     if case .http(let code, _) = error, code == 404 {
+                        guard allowRegister else { return }
                         response = try await api.registerDeviceTrial(
                             fingerprint: fingerprint,
                             clientStartedAt: clientStartedAt
@@ -1164,6 +1294,32 @@ final class AccountService {
             throw AppAccessError.trialExpired
         case .verificationRequired, .invalid:
             throw AppAccessError.verificationRequired
+        }
+    }
+
+    private func isBlockingCredentialStoreError(_ error: Error) -> Bool {
+        guard let error = error as? KeychainStoreError else { return false }
+        return error == .temporarilyUnavailable || error == .configurationError
+    }
+
+    private func retainEntitlementOnCredentialStoreError(_ error: Error) {
+        guard let error = error as? KeychainStoreError else { return }
+        switch error {
+        case .temporarilyUnavailable:
+            credentialStoreStatus = .temporarilyUnavailable
+        case .configurationError:
+            credentialStoreStatus = .configurationError
+        case .corrupted, .invalidValue:
+            break
+        }
+        Log.account.warning("Credential store unavailable error=\(error.localizedDescription)")
+    }
+
+    private func markCredentialStoreReadyIfNeeded() {
+        if credentialStoreStatus == .temporarilyUnavailable
+            || credentialStoreStatus == .configurationError
+            || credentialStoreStatus == .pendingNetworkRestore {
+            credentialStoreStatus = .ready
         }
     }
 
@@ -1426,7 +1582,12 @@ final class AccountService {
         authState = .unauthenticated
         clearAccount()
         do { try await clearOfflineAccess() }
-        catch { lastError = "Offline access could not be removed: \(error.localizedDescription)" }
+        catch {
+            lastError = L10n.format(
+                "Offline access could not be removed: %@",
+                error.localizedDescription
+            )
+        }
         // Priority after sign-out: Lifetime device credential first; else active device trial only.
         // Expired / missing trial token stays `.none` (no fabricated countdown).
         reapplyLocalEntitlementOverlays()
@@ -1500,7 +1661,12 @@ final class AccountService {
         authState = .unauthenticated
         clearAccount()
         do { try await clearOfflineAccess() }
-        catch { lastError = "Offline access could not be removed: \(error.localizedDescription)" }
+        catch {
+            lastError = L10n.format(
+                "Offline access could not be removed: %@",
+                error.localizedDescription
+            )
+        }
     }
 
     private func restoreOfflineAccess(generation: UUID) async -> Bool {
@@ -1517,7 +1683,11 @@ final class AccountService {
             lastError = nil
             return true
         } catch {
-            lastError = "Offline access is unavailable: \(error.localizedDescription)"
+            retainEntitlementOnCredentialStoreError(error)
+            lastError = L10n.format(
+                "Offline access is unavailable: %@",
+                error.localizedDescription
+            )
             return false
         }
     }
@@ -1543,10 +1713,17 @@ final class AccountService {
 #if MAC_APP_STORE
         lastError = "Only the Lifetime purchase is available in the Mac App Store version."
 #else
+        guard userID != nil else {
+            lastError = AppAccessError.signInRequired.localizedDescription
+            return
+        }
+        guard !isOpeningStripeCheckout else { return }
         guard tier.isPaid, let planID = availablePlan(for: tier)?.planID else {
             lastError = "The selected plan is unavailable."
             return
         }
+        isOpeningStripeCheckout = true
+        defer { isOpeningStripeCheckout = false }
         do {
             let result = try await api.createBillingCheckout(planID: planID)
             openInBrowser(result.checkoutURL)
@@ -1562,12 +1739,12 @@ final class AccountService {
         lastError = nil
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            let message = "Enter a valid license key."
+            let message = L10n.string("Enter a valid license key.")
             lastError = message
             throw VoxellaAPIError.http(400, message)
         }
         if LifetimeLocalCredential.isPresent() || appAccess.license == .lifetime {
-            let message = "This Mac already has Lifetime access."
+            let message = L10n.string("This Mac already has Lifetime access.")
             lastError = message
             throw VoxellaAPIError.http(400, message)
         }
@@ -1613,10 +1790,12 @@ final class AccountService {
     }
 
 
-#if !MAC_APP_STORE
     func listLicenseKeyDevices() async throws -> LicenseKeyDevicesListResponse {
         guard let record = try? LicenseKeyLocalCredential.load() else {
-            throw VoxellaAPIError.http(400, "License key credential not found. Please activate a license key first.")
+            throw VoxellaAPIError.http(
+                400,
+                L10n.string("License key credential not found. Please activate a license key first.")
+            )
         }
         let token = record.token
         let fingerprint = try? DeviceFingerprint.current()
@@ -1629,7 +1808,7 @@ final class AccountService {
 
     func unbindLicenseKeyDevice(fingerprint: String) async throws -> LicenseKeyDevicesListResponse {
         guard let record = try? LicenseKeyLocalCredential.load() else {
-            throw VoxellaAPIError.http(400, "License key credential not found.")
+            throw VoxellaAPIError.http(400, L10n.string("License key credential not found."))
         }
         let token = record.token
         let result = try await api.unbindLicenseKeyDevice(
@@ -1659,6 +1838,9 @@ final class AccountService {
 #if MAC_APP_STORE
         await purchaseAppStoreProduct(AppStoreProductID.lifetime.rawValue)
 #else
+        guard !isOpeningStripeCheckout else { return }
+        isOpeningStripeCheckout = true
+        defer { isOpeningStripeCheckout = false }
         do {
             let result = try await api.createLifetimeCheckout()
             openInBrowser(result.checkoutURL)
@@ -1696,7 +1878,11 @@ final class AccountService {
             return
         }
         guard (TopOffLimits.minDollars...TopOffLimits.maxDollars).contains(dollars) else {
-            lastError = "Amount must be $\(TopOffLimits.minDollars)–$\(TopOffLimits.maxDollars)."
+            lastError = L10n.format(
+                "Amount must be $%@–$%@.",
+                TopOffLimits.minDollars,
+                TopOffLimits.maxDollars
+            )
             return
         }
         if isBuyingCredits { return }
@@ -1785,9 +1971,9 @@ final class AccountService {
 
 extension AccountService {
     var displayPrimaryText: String {
-        if !isSignedIn { return "Signed out" }
+        if !isSignedIn { return L10n.string("Signed out") }
         let user = account?.user
-        return user?.displayName ?? user?.email ?? "Signed in"
+        return user?.displayName ?? user?.email ?? L10n.string("Signed in")
     }
 
     var displaySecondaryText: String? {
@@ -1805,5 +1991,30 @@ extension AccountService {
 
     func availablePlan(for tier: AccountTier) -> AvailablePlan? {
         availablePlans.first { $0.tier == tier }
+    }
+
+    var localizedAppAccessLabel: String {
+        guard isAppAccessEnforced else { return tier.localizedPlanLabel }
+        if appAccess.license == .lifetime || LifetimeLocalCredential.isPresent() {
+            return L10n.string("Lifetime")
+        }
+        if appAccess.subscriptionTier.isPaid,
+           appAccess.subscriptionEndsAt.map({ $0 > .now }) == true {
+            return appAccess.subscriptionTier.localizedPlanLabel
+        }
+        if appAccess.license == .trial { return L10n.string("Trial") }
+        return L10n.string("Free")
+    }
+}
+
+extension AccountTier {
+    @MainActor
+    var localizedUpgradeLabel: String {
+        L10n.string(key: upgradeLabel)
+    }
+
+    @MainActor
+    var localizedPlanLabel: String {
+        isPaid ? L10n.format("%@ plan", localizedUpgradeLabel) : L10n.string("Free")
     }
 }

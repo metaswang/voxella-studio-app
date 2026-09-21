@@ -94,7 +94,7 @@ extension InspectorView {
                         editor.setDenoise(
                             clipIds: Set(audios.map(\.id)),
                             enabled: false,
-                            actionName: "Reset Denoise"
+                            actionName: L10n.string("Reset Denoise")
                         )
                     }
                 ) {
@@ -112,7 +112,7 @@ extension InspectorView {
                                     clipIds: Set(audios.map(\.id)),
                                     enabled: true,
                                     amount: percent / 100,
-                                    actionName: "Change Denoise Strength"
+                                    actionName: L10n.string("Change Denoise Strength")
                                 )
                             }
                             .help(L10n.string("Blends denoised and original audio — lower this if voices sound thin or over-compressed."))
@@ -123,7 +123,7 @@ extension InspectorView {
                                 editor.setDenoise(
                                     clipIds: Set(audios.map(\.id)),
                                     enabled: enabled,
-                                    actionName: enabled ? "Enable Denoise" : "Disable Denoise"
+                                    actionName: L10n.string(enabled ? "Enable Denoise" : "Disable Denoise")
                                 )
                             }
                         ))
@@ -133,7 +133,7 @@ extension InspectorView {
                         .accessibilityLabel(L10n.string("Denoise"))
                     }
                 }
-                .help(L10n.string("Removes background noise from this audio using an on-device model."))
+                .help(L10n.string("Removes background noise from this audio using on-device processing."))
                 if baking {
                     HStack(spacing: AppTheme.Spacing.xs) {
                         ProgressView()

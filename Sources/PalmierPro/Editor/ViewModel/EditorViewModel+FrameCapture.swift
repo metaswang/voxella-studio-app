@@ -173,10 +173,11 @@ extension EditorViewModel {
             do {
                 let receipt = try await captureFrameToMedia(source: source, folderId: folderId)
                 let message = receipt.destinationFolderWasRemoved
-                    ? L10n.string(
-                        "Captured \(receipt.asset.name). The destination folder was removed, so the frame was saved at the top level of Media."
+                    ? L10n.format(
+                        "Captured %@. The destination folder was removed, so the frame was saved at the top level of Media.",
+                        receipt.asset.name
                     )
-                    : L10n.string("Captured \(receipt.asset.name).")
+                    : L10n.format("Captured %@.", receipt.asset.name)
                 mediaPanelToast = MediaPanelToast(
                     message: message,
                     kind: receipt.destinationFolderWasRemoved ? .warning : .success

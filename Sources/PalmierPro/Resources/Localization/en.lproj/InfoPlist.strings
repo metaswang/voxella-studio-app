@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "VoxStudio uses the microphone when you record a transcript session or a local reference voice.";
+"NSScreenCaptureUsageDescription" = "VoxStudio captures the display, a window, or system audio when you record a transcript session.";

@@ -78,7 +78,7 @@ enum DeviceTrialClock {
         fingerprint: String? = nil,
         publicKeyRaw: Data = DeviceTrialLicense.publicKeyRaw,
         read: () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount).get()
         }
     ) throws -> Record? {
         guard let value = try read(),
@@ -98,7 +98,7 @@ enum DeviceTrialClock {
     /// Plaintext PR1 startedAt, used only as a register hint. Not authority.
     static func legacyStartedAtHint(
         read: () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount).get()
         }
     ) -> Date? {
         guard let value = try? read(),
@@ -171,7 +171,7 @@ enum DeviceTrialClock {
     static func loadProvisional(
         fingerprint: String? = nil,
         read: () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.provisionalKeychainAccount)
+            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.provisionalKeychainAccount).get()
         }
     ) throws -> ProvisionalRecord? {
         guard let value = try read(),
@@ -196,7 +196,7 @@ enum DeviceTrialClock {
         _ startedAt: Date,
         at date: Date = .now,
         read: () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.startHintKeychainAccount)
+            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.startHintKeychainAccount).get()
         },
         write: (String) throws -> Void = {
             try KeychainStore.saveThisDeviceOnly($0, account: DeviceTrialClock.startHintKeychainAccount)
@@ -211,7 +211,7 @@ enum DeviceTrialClock {
 
     static func loadStartHint(
         read: () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.startHintKeychainAccount)
+            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.startHintKeychainAccount).get()
         }
     ) -> Date? {
         guard let value = try? read(),
@@ -240,7 +240,7 @@ enum DeviceTrialClock {
         fingerprint: String? = nil,
         publicKeyRaw: Data = DeviceTrialLicense.publicKeyRaw,
         read: () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount).get()
         }
     ) throws -> AppAccessSnapshot? {
         if let record = try load(fingerprint: fingerprint, publicKeyRaw: publicKeyRaw, read: read) {
@@ -264,7 +264,7 @@ enum DeviceTrialClock {
         fingerprint: String? = nil,
         publicKeyRaw: Data = DeviceTrialLicense.publicKeyRaw,
         read: () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount)
+            try KeychainStore.loadThisDeviceOnly(account: DeviceTrialClock.keychainAccount).get()
         }
     ) throws -> AppAccessSnapshot? {
         if let snapshot = try load(fingerprint: fingerprint, publicKeyRaw: publicKeyRaw, read: read)?.snapshot(at: date) {
@@ -355,5 +355,55 @@ enum DeviceTrialLoginMerge {
         durationDays: Int = DeviceTrialClock.durationDays
     ) -> Date {
         provisionalStartedAt.addingTimeInterval(TimeInterval(durationDays) * 86_400)
+    }
+}
+
+
+/// First-launch and register-failure policy for unsigned device trial.
+enum DeviceTrialBootstrap {
+    enum LaunchPath: Equatable, Sendable {
+        case skip
+        case verifyOnly
+        case startOrUpgrade
+    }
+
+    static func launchPath(
+        paidAccessEnabled: Bool,
+        hasLifetimeCredential: Bool,
+        hasSignedToken: Bool
+    ) -> LaunchPath {
+        guard paidAccessEnabled else { return .skip }
+        if hasLifetimeCredential || hasSignedToken { return .verifyOnly }
+        return .startOrUpgrade
+    }
+
+    /// First-run with no signed token must POST /device-trial directly, not verify-then-404.
+    static func preferVerify(hasSignedToken: Bool) -> Bool {
+        hasSignedToken
+    }
+
+    static func shouldRetryNetworkSync(at date: Date = .now, lastAttempt: Date?) -> Bool {
+        if let lastAttempt, date.timeIntervalSince(lastAttempt) < DeviceTrialClock.verifyRetryInterval {
+            return false
+        }
+        return true
+    }
+
+    static func shouldKeepLocalTrial(on error: AppAccessError) -> Bool {
+        error != .trialExpired
+    }
+
+    /// Launch / first-run must not surface "connect to the internet" when a local clock exists or will be created.
+    static func shouldSetPendingNetworkRestore(
+        hasLocalTrialClock: Bool,
+        hasLifetimeCredential: Bool
+    ) -> Bool {
+        _ = hasLocalTrialClock
+        _ = hasLifetimeCredential
+        return false
+    }
+
+    static func provisionalStart(from hint: Date?, at date: Date = .now) -> Date {
+        min(hint ?? date, date)
     }
 }

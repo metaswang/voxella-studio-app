@@ -83,7 +83,7 @@ struct WorkbenchLibraryView: View {
                         title: L10n.string("Meeting Recorder"),
                         detail: String(
                             format: L10n.string("Send a notetaker to Meet, Teams, or Zoom. Requires a %@ plan or higher."),
-                            AccountFeature.meetBot.minimumPlan.upgradeLabel
+                            AccountFeature.meetBot.minimumPlan.localizedUpgradeLabel
                         ),
                         icon: "calendar.badge.clock",
                         tint: AppTheme.Accent.meetingBotBadge
@@ -106,17 +106,17 @@ struct WorkbenchLibraryView: View {
                                 )
                                 .contextMenu {
                                     if let sourceURL = session.sourceURL {
-                                        Button("Reveal source in Finder") {
+                                        Button(L10n.string("Reveal source in Finder")) {
                                             NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
                                         }
                                     }
                                     if let outputURL = session.outputURL {
-                                        Button("Reveal dub in Finder") {
+                                        Button(L10n.string("Reveal dub in Finder")) {
                                             NSWorkspace.shared.activateFileViewerSelecting([outputURL])
                                         }
                                     }
                                     Divider()
-                                    Button("Delete", role: .destructive) {
+                                    Button(L10n.string("Delete"), role: .destructive) {
                                         sessionPendingDeletion = session
                                     }
                                 }
@@ -141,9 +141,9 @@ struct WorkbenchLibraryView: View {
         .background(AppTheme.Background.baseColor)
         .alert(item: $sessionPendingDeletion) { session in
             Alert(
-                title: Text("Delete session?"),
-                message: Text("\"\(session.title)\" and its saved workflow data will be removed."),
-                primaryButton: .destructive(Text("Delete")) {
+                title: Text(L10n.string("Delete session?")),
+                message: Text(L10n.format("\"%@\" and its saved workflow data will be removed.", session.title)),
+                primaryButton: .destructive(Text(L10n.string("Delete"))) {
                     store.deleteSession(session.id)
                 },
                 secondaryButton: .cancel()
@@ -231,8 +231,8 @@ enum WorkbenchFilePicker {
     @MainActor
     static func pickMediaFiles() async -> [URL] {
         let panel = NSOpenPanel()
-        panel.title = "Choose audio or video"
-        panel.message = "Select one or more files. Processing runs one file at a time."
+        panel.title = L10n.string("Choose audio or video")
+        panel.message = L10n.string("Select one or more files. Processing runs one file at a time.")
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = transcribableContentTypes
@@ -246,7 +246,7 @@ enum WorkbenchFilePicker {
     @MainActor
     static func pickAudio(title: String) async -> URL? {
         let panel = NSOpenPanel()
-        panel.title = title
+        panel.title = L10n.string(key: title)
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.audio]

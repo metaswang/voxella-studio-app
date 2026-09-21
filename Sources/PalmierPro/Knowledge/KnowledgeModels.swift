@@ -506,8 +506,8 @@ enum KnowledgeAnswerAvailability: Equatable {
         case .ready: nil
         case .localAccessRequired: "Trial or Lifetime access is required to use the local Knowledge Base."
         case .signInOrBYOKRequired: "Sign in or configure BYOK to ask your knowledge base."
-        case .byokAnswerRouteRequired: "Configure a chat model and API key in Settings → AI before asking."
-        case .byokGraphRouteRequired: "Configure Graph extraction and Graph query task models in Settings → AI, or turn off graph recall."
+        case .byokAnswerRouteRequired: "Configure an AI provider and API key in Settings → AI before asking."
+        case .byokGraphRouteRequired: "Configure the Knowledge Base AI tasks in Settings → AI, or turn off graph recall."
         case .hostedCreditsExhausted: "Hosted AI credits are exhausted. Manage credits or configure BYOK in Settings → AI."
         }
     }
@@ -588,6 +588,19 @@ struct KnowledgeListRow: Identifiable, Equatable, Sendable {
 
     var metaLabel: String {
         var parts: [String] = [originBadge, sessionType.label]
+        if let duration, duration > 0 {
+            parts.append(Self.formatDuration(duration))
+        }
+        parts.append(modifiedAt.formatted(date: .abbreviated, time: .omitted))
+        return parts.joined(separator: " · ")
+    }
+
+    @MainActor
+    var localizedMetaLabel: String {
+        var parts: [String] = [
+            L10n.string(originBadge),
+            L10n.string(key: sessionType.label),
+        ]
         if let duration, duration > 0 {
             parts.append(Self.formatDuration(duration))
         }

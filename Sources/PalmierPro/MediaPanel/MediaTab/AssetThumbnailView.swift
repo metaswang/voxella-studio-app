@@ -113,7 +113,7 @@ struct AssetThumbnailView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.message = L10n.string("Choose the source file for \"\(asset.name)\"")
+        panel.message = L10n.format("Choose the source file for \"%@\"", asset.name)
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             editor.relinkAsset(id: asset.id, to: url)
@@ -241,7 +241,7 @@ struct AssetThumbnailView: View {
             Text(L10n.string("Failed"))
                 .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
                 .foregroundStyle(AppTheme.MediaOverlay.secondaryColor)
-            Text(error)
+            Text(L10n.display(error))
                 .font(.system(size: AppTheme.FontSize.xxs))
                 .foregroundStyle(AppTheme.MediaOverlay.tertiaryColor)
                 .multilineTextAlignment(.center)
@@ -249,7 +249,7 @@ struct AssetThumbnailView: View {
                 .truncationMode(.tail)
                 .padding(.horizontal, AppTheme.Spacing.xs)
         }
-        .help(error)
+        .help(L10n.display(error))
     }
 
     private var missingThumbnail: some View {
@@ -261,7 +261,7 @@ struct AssetThumbnailView: View {
                 .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
                 .foregroundStyle(AppTheme.MediaOverlay.secondaryColor)
         }
-        .help("VoxStudio couldn't load this source file. It may be missing, on an ejected drive, or unreadable.")
+                .help(L10n.string("VoxStudio couldn't load this source file. It may be missing, on an ejected drive, or unreadable."))
     }
 
     private func formatDuration(_ seconds: Double) -> String {

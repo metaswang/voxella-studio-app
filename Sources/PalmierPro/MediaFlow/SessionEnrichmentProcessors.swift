@@ -35,6 +35,9 @@ struct SessionTitleLLMProcessor: Sendable {
         existingTitle: String?
     ) async throws -> SessionMetadataResult {
         let clipped = String(transcriptText.prefix(6_000))
+        Log.llm.notice(
+            "session metadata start transcript_chars=\(clipped.count) language=\(sourceLanguage ?? "unknown")"
+        )
         let system = """
         You create session metadata from transcript text only.
         Stay grounded. Never invent facts.
@@ -51,53 +54,63 @@ struct SessionTitleLLMProcessor: Sendable {
         Transcript:
         \(clipped)
         """
-        let raw = try await client.complete(system: system, user: user)
-        let parsed: ResponseEnvelope
         do {
-            parsed = try LLMStructuredOutputDecoder.decode(ResponseEnvelope.self, from: raw)
-        } catch {
-            Log.llm.warning(
-                "structured output decode failed use_case=session_metadata phase=initial "
-                    + "bytes=\(raw.utf8.count) error=\(String(describing: error))"
-            )
-            let repairSystem = """
-            Convert the candidate response into the required JSON object.
-            Return strict JSON only, with exactly these keys:
-            {"title":"<string>","tag_text":"<string>","internal_summary":"<string>"}
-            Do not add Markdown, code fences, comments, or extra keys.
-            Preserve only information present in the candidate. If a field is missing, use an empty string.
-            """
-            let candidate = String(raw.prefix(4_000))
-            let repairUser = """
-            The candidate response is not valid for the required schema:
-            <candidate>
-            \(candidate)
-            </candidate>
-            Return the corrected JSON object now.
-            """
-            let repairedRaw = try await client.complete(system: repairSystem, user: repairUser)
+            let raw = try await client.complete(system: system, user: user)
+            let parsed: ResponseEnvelope
             do {
-                parsed = try LLMStructuredOutputDecoder.decode(ResponseEnvelope.self, from: repairedRaw)
+                parsed = try LLMStructuredOutputDecoder.decode(ResponseEnvelope.self, from: raw)
             } catch {
                 Log.llm.warning(
-                    "structured output decode failed use_case=session_metadata phase=repair "
-                        + "bytes=\(repairedRaw.utf8.count) error=\(String(describing: error))"
+                    "structured output decode failed use_case=session_metadata phase=initial "
+                        + "bytes=\(raw.utf8.count) error=\(String(describing: error))"
                 )
-                throw error
+                let repairSystem = """
+                Convert the candidate response into the required JSON object.
+                Return strict JSON only, with exactly these keys:
+                {"title":"<string>","tag_text":"<string>","internal_summary":"<string>"}
+                Do not add Markdown, code fences, comments, or extra keys.
+                Preserve only information present in the candidate. If a field is missing, use an empty string.
+                """
+                let candidate = String(raw.prefix(4_000))
+                let repairUser = """
+                The candidate response is not valid for the required schema:
+                <candidate>
+                \(candidate)
+                </candidate>
+                Return the corrected JSON object now.
+                """
+                let repairedRaw = try await client.complete(system: repairSystem, user: repairUser)
+                do {
+                    parsed = try LLMStructuredOutputDecoder.decode(ResponseEnvelope.self, from: repairedRaw)
+                } catch {
+                    Log.llm.warning(
+                        "structured output decode failed use_case=session_metadata phase=repair "
+                            + "bytes=\(repairedRaw.utf8.count) error=\(String(describing: error))"
+                    )
+                    throw error
+                }
             }
+            let title = SessionTitlePolicy.compact(
+                parsed.title,
+                fallback: SessionTitlePolicy.compact(parsed.internalSummary ?? clipped)
+            )
+            let tag = SessionTitlePolicy.normalizeTag(parsed.tagText) ?? "general"
+            let summary = (parsed.internalSummary ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            Log.llm.notice(
+                "session metadata ok title_chars=\(title.count) tag=\(tag) summary_chars=\(min(summary.count, 800))"
+            )
+            return SessionMetadataResult(
+                title: title,
+                tagText: tag,
+                internalSummary: String(summary.prefix(800))
+            )
+        } catch {
+            Log.llm.warning(
+                "session metadata failed error=\(LLMDiagnostics.description(error))"
+            )
+            throw error
         }
-        let title = SessionTitlePolicy.compact(
-            parsed.title,
-            fallback: SessionTitlePolicy.compact(parsed.internalSummary ?? clipped)
-        )
-        let tag = SessionTitlePolicy.normalizeTag(parsed.tagText) ?? "general"
-        let summary = (parsed.internalSummary ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return SessionMetadataResult(
-            title: title,
-            tagText: tag,
-            internalSummary: String(summary.prefix(800))
-        )
     }
 }
 
@@ -256,8 +269,22 @@ struct TemplateSummaryLLMProcessor: Sendable {
             user += "\n9) Cover the full session. Unused concrete facts belong in a details section, not omitted after Key Points."
         }
 
-        let raw = try await client.complete(system: system, user: user)
-        return Self.sanitizeMarkdown(raw)
+        Log.llm.notice(
+            "session summary start template=\(template.id) name=\(template.name) transcript_chars=\(transcriptLines.count) instruction_chars=\(refinement.count) system_chars=\(system.count) user_chars=\(user.count)"
+        )
+        do {
+            let raw = try await client.complete(system: system, user: user)
+            let markdown = Self.sanitizeMarkdown(raw)
+            Log.llm.notice(
+                "session summary ok template=\(template.id) output_chars=\(markdown.count)"
+            )
+            return markdown
+        } catch {
+            Log.llm.warning(
+                "session summary failed template=\(template.id) transcript_chars=\(transcriptLines.count) user_chars=\(user.count) error=\(LLMDiagnostics.description(error))"
+            )
+            throw error
+        }
     }
 
     static func sanitizeMarkdown(_ raw: String) -> String {

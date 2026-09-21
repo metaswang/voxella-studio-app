@@ -45,7 +45,7 @@ final class SpeechInputController {
         let currentAttemptID = UUID()
         attemptID = currentAttemptID
         partialText = ""
-        state = .recognizing(fraction: 0, message: "Preparing local recognition…")
+        state = .recognizing(fraction: 0, message: L10n.string("Preparing local recognition…"))
         task = Task { @MainActor [weak self] in
             guard let self else { return }
             do {

@@ -1,7 +1,4 @@
 import AVFoundation
-#if BUNDLED_SPEECH
-import SpeechEnhancement
-#endif
 
 enum AudioEnhancer {
     static let cache = DiskCache(named: "EnhancedAudio")
@@ -27,7 +24,7 @@ enum AudioEnhancer {
         guard dry.contains(where: { !$0.isEmpty }) else { throw EnhanceError.noAudioTrack }
         var wet: [[Float]] = []
         for ch in dry.indices {
-            wet.append(try await modelBox.enhance(audio: dry[ch], sampleRate: SpeechEnhancer.sampleRate))
+            wet.append(try await MossFormerSpeechEnhancer.shared.enhance(audio: dry[ch], sampleRate: MossFormerSpeechEnhancer.sampleRate))
             dry[ch] = []
         }
         removeStaleCaches(for: mediaRef, keeping: outputURL)
@@ -47,29 +44,16 @@ enum AudioEnhancer {
 
     #if BUNDLED_SPEECH
     static func enhanceMonoSamples(_ samples: [Float], sampleRate: Int) async throws -> [Float] {
-        try await modelBox.enhance(audio: samples, sampleRate: sampleRate)
+        try await MossFormerSpeechEnhancer.shared.enhance(audio: samples, sampleRate: sampleRate)
     }
     #endif
 
     private static func denoisedURL(for sourceURL: URL, mediaRef: String) -> URL {
-        cache.directory.appendingPathComponent("\(mediaRef)_\(DiskCache.sizeMtimeTag(for: sourceURL))_wet.caf")
+        cache.directory.appendingPathComponent("\(mediaRef)_\(DiskCache.sizeMtimeTag(for: sourceURL))_moss2_wet.caf")
     }
 
     #if BUNDLED_SPEECH
-    private static let modelBox = ModelBox()
-
-    private actor ModelBox {
-        private var enhancer: SpeechEnhancer?
-
-        func enhance(audio: [Float], sampleRate: Int) async throws -> [Float] {
-            try await MLXRuntime.beginInference()
-            defer { MLXRuntime.endInference() }
-            if enhancer == nil { enhancer = try await SpeechEnhancer.fromPretrained() }
-            return try enhancer!.enhanceChunked(audio: audio, sampleRate: sampleRate)
-        }
-    }
-
-    private static var sampleRate: Double { Double(SpeechEnhancer.sampleRate) }
+    private static var sampleRate: Double { Double(MossFormerSpeechEnhancer.sampleRate) }
 
     private static func removeStaleCaches(for mediaRef: String, keeping keep: URL) {
         let fm = FileManager.default

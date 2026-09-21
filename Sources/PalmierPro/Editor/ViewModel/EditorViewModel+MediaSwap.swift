@@ -30,7 +30,10 @@ extension EditorViewModel {
     func completeMediaSwap(with asset: MediaAsset) {
         guard let clip = pendingSwapClip else { pendingSwapClipId = nil; return }
         guard clip.mediaType == asset.type else {
-            mediaPanelToast = MediaPanelToast(message: L10n.string("Can't swap this clip. Required media type: \(clip.mediaType.localizedTrackLabel)."))
+            mediaPanelToast = MediaPanelToast(message: L10n.format(
+                "Can't swap this clip. Required media type: %@.",
+                clip.mediaType.localizedTrackLabel
+            ))
             return
         }
         pendingSwapClipId = nil

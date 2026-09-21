@@ -51,20 +51,20 @@ struct MyProjectsSection: View {
                         .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Search projects")
-                .help("Search projects")
+                .accessibilityLabel(L10n.string("Search projects"))
+                .help(L10n.string("Search projects"))
             }
 
             if isSelecting {
-                Button("Delete \(selectedProjectIDs.count)", role: .destructive) {
+                Button(L10n.format("Delete %@", selectedProjectIDs.count), role: .destructive) {
                     prepareDeletion()
                 }
                 .buttonStyle(.capsule(fill: AnyShapeStyle(AppTheme.Status.errorColor)))
                 .disabled(selectedProjectIDs.isEmpty)
-                Button("Done") { endSelection() }
+                Button(L10n.string("Done")) { endSelection() }
                     .buttonStyle(.capsule)
             } else if !ProjectRegistry.shared.entries.isEmpty {
-                Button("Select") { isSelecting = true }
+                Button(L10n.string("Select")) { isSelecting = true }
                     .buttonStyle(.capsule)
             }
         }
@@ -80,13 +80,13 @@ struct MyProjectsSection: View {
         } message: {
             Text(deletionPrompt)
         }
-        .alert("Projects Couldn’t Be Deleted", isPresented: Binding(
+        .alert(L10n.string("Projects Couldn’t Be Deleted"), isPresented: Binding(
             get: { deletionMessage != nil },
             set: { if !$0 { deletionMessage = nil } }
         )) {
             Button("OK") { deletionMessage = nil }
         } message: {
-            Text(deletionMessage ?? "")
+            Text(deletionMessage.map(L10n.display) ?? "")
         }
         .onChange(of: ProjectRegistry.shared.entries.map(\.id)) { _, ids in
             selectedProjectIDs.formIntersection(ids)
@@ -99,7 +99,7 @@ struct MyProjectsSection: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.mutedColor)
-            TextField("Search projects", text: $searchQuery)
+            TextField(L10n.string("Search projects"), text: $searchQuery)
                 .textFieldStyle(.plain)
                 .font(.system(size: AppTheme.FontSize.sm))
                 .focused($isSearchFocused)
@@ -173,13 +173,15 @@ struct MyProjectsSection: View {
     }
 
     private var deletionTitle: String {
-        projectsPendingDeletion.count == 1 ? "Delete Project?" : "Delete Selected Projects?"
+        L10n.string(projectsPendingDeletion.count == 1 ? "Delete Project?" : "Delete Selected Projects?")
     }
 
     private var deletionPrompt: String {
-        projectsPendingDeletion.count == 1
-            ? "The project will be moved to the Trash."
-            : "The selected projects will be moved to the Trash."
+        L10n.string(
+            projectsPendingDeletion.count == 1
+                ? "The project will be moved to the Trash."
+                : "The selected projects will be moved to the Trash."
+        )
     }
 
     private func toggleSelection(_ id: UUID) {
@@ -209,7 +211,7 @@ struct MyProjectsSection: View {
     private func requestDeletion(_ entries: [ProjectEntry]) {
         let open = openProjects(in: entries)
         guard open.isEmpty else {
-            deletionMessage = "Close \(open.map(\.name).formatted()) before deleting."
+            deletionMessage = L10n.format("Close %@ before deleting.", open.map(\.name).formatted())
             return
         }
         projectsPendingDeletion = entries
@@ -225,7 +227,10 @@ struct MyProjectsSection: View {
                 if result.failedNames.isEmpty {
                     endSelection()
                 } else {
-                    deletionMessage = "Couldn’t move \(result.failedNames.formatted()) to the Trash."
+                    deletionMessage = L10n.format(
+                        "Couldn’t move %@ to the Trash.",
+                        result.failedNames.formatted()
+                    )
                 }
             } catch {
                 deletionMessage = error.localizedDescription

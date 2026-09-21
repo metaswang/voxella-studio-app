@@ -946,6 +946,160 @@ struct AppAccessTests {
         }
     }
 
+    @Test func firstLaunchWithoutSignedTokenStartsOrUpgradesTrial() {
+        #expect(
+            DeviceTrialBootstrap.launchPath(
+                paidAccessEnabled: true,
+                hasLifetimeCredential: false,
+                hasSignedToken: false
+            ) == .startOrUpgrade
+        )
+        #expect(
+            DeviceTrialBootstrap.launchPath(
+                paidAccessEnabled: true,
+                hasLifetimeCredential: false,
+                hasSignedToken: true
+            ) == .verifyOnly
+        )
+        #expect(
+            DeviceTrialBootstrap.launchPath(
+                paidAccessEnabled: true,
+                hasLifetimeCredential: true,
+                hasSignedToken: false
+            ) == .verifyOnly
+        )
+        #expect(
+            DeviceTrialBootstrap.launchPath(
+                paidAccessEnabled: false,
+                hasLifetimeCredential: false,
+                hasSignedToken: false
+            ) == .skip
+        )
+        #expect(!DeviceTrialBootstrap.preferVerify(hasSignedToken: false))
+        #expect(DeviceTrialBootstrap.preferVerify(hasSignedToken: true))
+    }
+
+    @Test func firstLaunchRegisterFailureUsesProvisionalAndAllowsUnsignedRecording() throws {
+        let fingerprint = DeviceFingerprint.hash(uuid: "first-launch-offline")
+        var stored: String?
+        let start = DeviceTrialBootstrap.provisionalStart(from: nil, at: now)
+        let provisional = try DeviceTrialClock.storeProvisional(
+            startedAt: start,
+            fingerprint: fingerprint,
+            write: { stored = $0 }
+        )
+        let snapshot = provisional.snapshot(at: now)
+        try AppAccessGate.requireNewContent(
+            enforced: true,
+            signedIn: false,
+            access: snapshot ?? .init(),
+            hasLocalLifetimeCredential: false,
+            at: now
+        )
+        guard case let .active(active)? = snapshot?.trialPresentation(at: now) else {
+            Issue.record("first-launch provisional must show remaining trial time")
+            return
+        }
+        #expect(active.remaining > 13 * 86_400)
+        #expect(DeviceTrialBootstrap.shouldKeepLocalTrial(on: .verificationRequired))
+        #expect(DeviceTrialBootstrap.shouldKeepLocalTrial(on: .signInRequired))
+        #expect(!DeviceTrialBootstrap.shouldKeepLocalTrial(on: .trialExpired))
+        #expect(
+            !DeviceTrialBootstrap.shouldSetPendingNetworkRestore(
+                hasLocalTrialClock: true,
+                hasLifetimeCredential: false
+            )
+        )
+        #expect(
+            !DeviceTrialBootstrap.shouldSetPendingNetworkRestore(
+                hasLocalTrialClock: false,
+                hasLifetimeCredential: false
+            )
+        )
+        #expect(
+            (try? AppAccessGate.requireNewContent(
+                enforced: true,
+                signedIn: false,
+                access: snapshot ?? .init(),
+                hasLocalLifetimeCredential: false,
+                at: now
+            )) != nil
+        )
+        _ = stored
+    }
+
+    @Test func signedTokenClearsProvisionalAndKeepsCountdown() throws {
+        let keys = DeviceTrialTestKeys()
+        let fingerprint = DeviceFingerprint.hash(uuid: "first-launch-register-success")
+        var provisionalStored: String? = "pending"
+        var signedStored: String?
+        let started = now.addingTimeInterval(-2 * 86_400)
+        let ends = started.addingTimeInterval(14 * 86_400)
+        _ = try DeviceTrialClock.storeProvisional(
+            startedAt: started,
+            fingerprint: fingerprint,
+            write: { provisionalStored = $0 }
+        )
+        let token = try keys.token(
+            fingerprint: fingerprint,
+            startedAt: started,
+            endsAt: ends,
+            issuedAt: now
+        )
+        let record = try DeviceTrialClock.store(
+            token: token,
+            fingerprint: fingerprint,
+            verifiedAt: now,
+            publicKeyRaw: keys.publicKeyRaw,
+            write: { signedStored = $0 }
+        )
+        #expect(record.snapshot(at: now)?.policy(at: now) == .allowed)
+        guard case .active? = record.snapshot(at: now)?.trialPresentation(at: now) else {
+            Issue.record("signed first-launch trial must show remaining time")
+            return
+        }
+        try AppAccessGate.requireNewContent(
+            enforced: true,
+            signedIn: false,
+            access: record.snapshot(at: now) ?? .init(),
+            hasLocalLifetimeCredential: false,
+            at: now
+        )
+        #expect(signedStored != nil)
+        _ = provisionalStored
+    }
+
+    @Test func laterRegisterPreservesProvisionalStartWithoutReopening() {
+        let started = now.addingTimeInterval(-3 * 86_400)
+        let preserved = DeviceTrialLoginMerge.expectedEndsPreservingProvisional(provisionalStartedAt: started)
+        let reopened = now.addingTimeInterval(14 * 86_400)
+        #expect(DeviceTrialBootstrap.provisionalStart(from: started, at: now) == started)
+        #expect(preserved == started.addingTimeInterval(14 * 86_400))
+        #expect(preserved != reopened)
+        #expect(
+            DeviceTrialLoginMerge.shouldClearProvisional(
+                serverTrialEndsAt: preserved,
+                provisionalEndsAt: preserved
+            )
+        )
+    }
+
+    @Test func firstRunRegisterRetriesRespectFiveMinuteBackoff() {
+        #expect(DeviceTrialBootstrap.shouldRetryNetworkSync(at: now, lastAttempt: nil))
+        #expect(
+            DeviceTrialBootstrap.shouldRetryNetworkSync(
+                at: now,
+                lastAttempt: now.addingTimeInterval(-DeviceTrialClock.verifyRetryInterval - 1)
+            )
+        )
+        #expect(
+            !DeviceTrialBootstrap.shouldRetryNetworkSync(
+                at: now,
+                lastAttempt: now.addingTimeInterval(-60)
+            )
+        )
+    }
+
     @Test func midTrialSignedTokenAllowsWhenOfflineValidUntilNilOrExpired() {
         let mid = AppAccessSnapshot(
             license: .trial,

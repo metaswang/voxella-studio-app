@@ -59,7 +59,7 @@ struct HelpView: View {
                 Image(systemName: tab.icon)
                     .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
                     .frame(width: AppTheme.zoomed(16))
-                Text(tab.rawValue)
+                Text(L10n.string(key: tab.rawValue))
                     .font(.system(size: AppTheme.FontSize.md, weight: isActive ? .medium : .regular))
                 Spacer()
             }
@@ -76,7 +76,7 @@ struct HelpView: View {
     private var detail: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(selectedTab.rawValue)
+                Text(L10n.string(key: selectedTab.rawValue))
                     .font(.system(size: AppTheme.FontSize.title2, weight: .light))
                     .tracking(AppTheme.Tracking.tight)
                     .foregroundStyle(AppTheme.Text.primaryColor)
@@ -105,12 +105,13 @@ final class HelpWindowController: NSWindowController {
     private init() {
         let initialView = HelpView()
             .appZoomEnvironment()
+            .appLocalization()
             .tint(AppTheme.Accent.primary)
         let hosting = NSHostingController(rootView: AnyView(initialView))
         let window = NSWindow(contentViewController: hosting)
         window.setContentSize(AppTheme.zoomed(NSSize(width: 900, height: 560)))
         window.minSize = AppTheme.zoomed(NSSize(width: 820, height: 520))
-        window.title = "Help"
+        window.title = L10n.string("Help")
         window.setFrameAutosaveName("VoxellaStudioHelp-v1")
         window.backgroundColor = AppTheme.Background.base.withAlphaComponent(0.4)
         window.isOpaque = false
@@ -146,6 +147,7 @@ final class HelpWindowController: NSWindowController {
             HelpView(initialTab: tab)
                 .id(UUID())
                 .appZoomEnvironment()
+                .appLocalization()
                 .tint(AppTheme.Accent.primary)
         )
         showWindow(nil)

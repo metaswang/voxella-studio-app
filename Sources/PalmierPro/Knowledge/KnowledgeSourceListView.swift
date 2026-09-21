@@ -23,7 +23,7 @@ struct KnowledgeSourceListView: View {
                     if workbench.isHydrating {
                         VStack(spacing: AppTheme.Spacing.md) {
                             ProgressView()
-                            Text("Loading saved sessions…")
+                            Text(L10n.string("Loading saved sessions…"))
                                 .font(.system(size: AppTheme.FontSize.sm))
                                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                         }
@@ -209,7 +209,7 @@ struct KnowledgeSourceListView: View {
                                     .fixedSize(horizontal: true, vertical: false)
                                     .layoutPriority(1)
                             }
-                            Text(row.metaLabel)
+                            Text(row.localizedMetaLabel)
                                 .font(.system(size: AppTheme.FontSize.xxs))
                                 .foregroundStyle(qaAble ? AppTheme.Text.secondaryColor : AppTheme.Text.tertiaryColor)
                                 .lineLimit(1)
@@ -324,9 +324,12 @@ private extension View {
 extension KnowledgeBaseController {
     var scopeSubtitleForAll: String {
         if WorkbenchStore.shared.isHydrating {
-            return "Loading saved sessions…"
+            return L10n.string("Loading saved sessions…")
         }
         let count = searchableSessionCount
-        return "Ask across \(count) session\(count == 1 ? "" : "s")"
+        return L10n.format(
+            count == 1 ? "Ask across %@ session" : "Ask across %@ sessions",
+            count
+        )
     }
 }

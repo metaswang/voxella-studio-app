@@ -79,15 +79,15 @@ extension GenerationView {
                     }
                 } label: {
                     if framesRefsMode == mode {
-                        Label(mode.rawValue, systemImage: "checkmark")
+                        Label(L10n.string(key: mode.rawValue), systemImage: "checkmark")
                     } else {
-                        Text(mode.rawValue)
+                        Text(L10n.string(key: mode.rawValue))
                     }
                 }
             }
         } label: {
             HStack(spacing: AppTheme.Spacing.xs) {
-                Text(framesRefsMode.rawValue)
+                Text(L10n.string(key: framesRefsMode.rawValue))
                     .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .lineLimit(1)
@@ -200,7 +200,7 @@ extension GenerationView {
         let inflight = editor.mediaAssets.filter(\.isGenerating).count
         Log.generation.notice("addRefAsset id=\(asset.id.prefix(8)) type=\(asset.type.rawValue) existing=\(refImages.count)+\(refVideos.count)+\(refAudios.count) inflightGen=\(inflight)")
         if allRefs.contains(where: { $0.id == asset.id }) {
-            flashDropError("\(asset.name) is already a reference")
+            flashDropError(L10n.format("%@ is already a reference", asset.name))
             return
         }
         if selectedType == .audio {
@@ -209,7 +209,7 @@ extension GenerationView {
             case .image: selection.imageRefs.append(asset)
             case .audio, .dub: selection.audioRefs.append(asset)
             case .video, .text, .lottie, .sequence:
-                flashDropError("\(audioModel.displayName) only accepts image or audio references.")
+                flashDropError(L10n.string("This audio option only accepts image or audio references."))
                 return
             }
             if let err = selection.validate(for: audioModel) {
@@ -223,8 +223,10 @@ extension GenerationView {
             case .video: selection.videoRefs.append(asset)
             case .audio, .dub: selection.audioRefs.append(asset)
             case .text, .lottie, .sequence:
-                let supported = activeReferenceTypes.map(\.rawValue).joined(separator: " and ")
-                flashDropError("\(videoModel.displayName) only accepts \(supported) references.")
+                let supported = activeReferenceTypes
+                    .map { L10n.display($0.rawValue) }
+                    .joined(separator: L10n.string(" and "))
+                flashDropError(L10n.format("This video option only accepts %@ references.", supported))
                 return
             }
             if let err = selection.validate(for: videoModel) {
@@ -242,7 +244,7 @@ extension GenerationView {
 
     func flashDropError(_ message: String) {
         dropErrorTask?.cancel()
-        dropError = message
+        dropError = L10n.display(message)
         dropErrorTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(3))
             if !Task.isCancelled { dropError = nil }
@@ -310,9 +312,9 @@ extension GenerationView {
                     iconName: "photo.badge.plus"
                 ) { asset in
                     if asset.type != .image {
-                        flashDropError("Drop image here.")
+                        flashDropError(L10n.string("Drop image here."))
                     } else if imageReferences.contains(where: { $0.id == asset.id }) {
-                        flashDropError("\(asset.name) is already a reference")
+                        flashDropError(L10n.format("%@ is already a reference", asset.name))
                     } else {
                         imageReferences.append(asset)
                     }

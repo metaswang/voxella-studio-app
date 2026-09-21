@@ -69,25 +69,25 @@ struct TourOverlay: View {
     private func callout(_ step: TourStep) -> some View {
         let index = tour.stepIndex ?? 0
         return VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            Text("Step \(index) of \(tour.spotlightCount)")
+            Text(L10n.format("Step %@ of %@", index, tour.spotlightCount))
                 .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
-            Text(step.title)
+            Text(L10n.string(key: step.title))
                 .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
                 .foregroundStyle(AppTheme.Text.primaryColor)
-            Text(step.instruction)
+            Text(L10n.string(key: step.instruction))
                 .font(.system(size: AppTheme.FontSize.smMd))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: AppTheme.Spacing.sm) {
-                Button("Skip") { tour.end() }
+                Button(L10n.string("Skip")) { tour.end() }
                     .buttonStyle(.capsule)
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Back") { tour.back() }
+                Button(L10n.string("Back")) { tour.back() }
                     .buttonStyle(.capsule)
-                Button("Next") { tour.advance() }
+                Button(L10n.string("Next")) { tour.advance() }
                     .buttonStyle(.capsule(.prominent))
                     .keyboardShortcut(.defaultAction)
             }
@@ -102,11 +102,11 @@ struct TourOverlay: View {
     private func introCard(_ step: TourStep) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text(step.title)
+                Text(L10n.string(key: step.title))
                     .font(.system(size: AppTheme.FontSize.title2, weight: .light))
                     .tracking(AppTheme.Tracking.tight)
                     .foregroundStyle(AppTheme.Text.primaryColor)
-                Text(step.instruction)
+                Text(L10n.string(key: step.instruction))
                     .font(.system(size: AppTheme.FontSize.smMd))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .fixedSize(horizontal: false, vertical: true)
@@ -144,21 +144,21 @@ struct TourOverlay: View {
     private func outroCard(_ step: TourStep) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text(step.title)
+                Text(L10n.string(key: step.title))
                     .font(.system(size: AppTheme.FontSize.title1, weight: .semibold))
                     .foregroundStyle(AppTheme.Text.primaryColor)
-                Text(step.instruction)
+                Text(L10n.string(key: step.instruction))
                     .font(.system(size: AppTheme.FontSize.smMd))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
             VStack(spacing: 0) {
-                linkRow("Local Models", "shippingbox.fill") { LocalModelManager.shared.presentManager() }
+                linkRow("Local Features", "shippingbox.fill") { LocalModelManager.shared.presentManager() }
                 linkRow("Keyboard Shortcuts", "keyboard") { HelpWindowController.shared.show(tab: .shortcuts) }
             }
             HStack {
                 Spacer()
-                Button("Start creating") { tour.end() }
+                Button(L10n.string("Start creating")) { tour.end() }
                     .buttonStyle(.capsule(.prominent, size: .regular))
                     .keyboardShortcut(.defaultAction)
             }
@@ -174,7 +174,7 @@ struct TourOverlay: View {
                     .font(.system(size: AppTheme.FontSize.smMd))
                     .foregroundStyle(AppTheme.Accent.primary)
                     .frame(width: AppTheme.IconSize.sm)
-                Text(title)
+                Text(L10n.string(key: title))
                     .font(.system(size: AppTheme.FontSize.smMd))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                 Spacer()

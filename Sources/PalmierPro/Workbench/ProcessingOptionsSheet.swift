@@ -52,31 +52,37 @@ struct ProcessingOptionsSheet: View {
     }
 
     private var titleText: String {
+        let key: String
         switch mode {
-        case .upload: "Processing options"
-        case .retranscribe: "Re-transcribe"
+        case .upload: key = "Processing options"
+        case .retranscribe: key = "Re-transcribe"
         }
+        return L10n.string(key)
     }
 
     private var descriptionText: String {
+        let key: String
         switch mode {
         case .upload:
-            "Optionally clip the media and enable translation before processing."
+            key = "Optionally clip the media and enable translation before processing."
         case .retranscribe:
-            "Reprocess the media and replace the transcript after it completes."
+            key = "Reprocess the media and replace the transcript after it completes."
         }
+        return L10n.string(key)
     }
 
     private var continueLabel: String {
         if computeDestination == .local, !localModelPlan.missingItems.isEmpty {
-            return models.isPreparing(localModelPlan)
-                ? "Prepare and transcribe"
-                : "Download and transcribe"
+            return L10n.string(models.isPreparing(localModelPlan)
+                ? "Continue speech setup & transcribe"
+                : "Prepare speech features & transcribe")
         }
-        return switch mode {
-        case .upload: "Transcribe"
-        case .retranscribe: "Re-transcribe"
+        let key: String
+        switch mode {
+        case .upload: key = "Transcribe"
+        case .retranscribe: key = "Re-transcribe"
         }
+        return L10n.string(key)
     }
 
     private var placement: TranscriptionPlacement {
@@ -113,7 +119,7 @@ struct ProcessingOptionsSheet: View {
                             cloudComputeCard
                         }
                         if let cloudAccessError {
-                            Text(cloudAccessError)
+                            Text(L10n.display(cloudAccessError))
                                 .font(.system(size: AppTheme.FontSize.xs))
                                 .foregroundStyle(AppTheme.Status.errorColor)
                         }
@@ -186,17 +192,19 @@ struct ProcessingOptionsSheet: View {
     }
 
     private var fileSummary: some View {
-        HStack(spacing: AppTheme.Spacing.md) {
+        let title = mediaURLs.count == 1
+            ? mediaURLs[0].lastPathComponent
+            : L10n.format("%@ files selected", mediaURLs.count)
+        let detail = mediaURLs.count > 1
+            ? L10n.string("Files are processed one at a time to protect memory and GPU.")
+            : mediaURLs[0].path
+        return HStack(spacing: AppTheme.Spacing.md) {
             Image(systemName: mediaURLs.count > 1 ? "doc.on.doc" : "doc")
                 .foregroundStyle(Color.indigo)
             VStack(alignment: .leading, spacing: 2) {
-                Text(mediaURLs.count == 1
-                      ? mediaURLs[0].lastPathComponent
-                      : "\(mediaURLs.count) files selected")
+                Text(title)
                     .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
-                Text(mediaURLs.count > 1
-                      ? "Files are processed one at a time to protect memory and GPU."
-                      : mediaURLs[0].path)
+                Text(detail)
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
                     .lineLimit(2)
@@ -211,7 +219,7 @@ struct ProcessingOptionsSheet: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             Text("Session title")
                 .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
-            TextField(SessionTitlePolicy.autoGeneratePlaceholder, text: $sessionTitle)
+            TextField(L10n.string(key: SessionTitlePolicy.autoGeneratePlaceholder), text: $sessionTitle)
                 .textFieldStyle(.roundedBorder)
         }
     }
@@ -244,7 +252,7 @@ struct ProcessingOptionsSheet: View {
 
     private func processingMenuLabel(_ title: String) -> some View {
         HStack(spacing: AppTheme.Spacing.smMd) {
-            Text(title)
+            Text(L10n.string(key: title))
                 .lineLimit(1)
             Spacer(minLength: AppTheme.Spacing.sm)
             Image(systemName: "chevron.up.chevron.down")
@@ -260,7 +268,7 @@ struct ProcessingOptionsSheet: View {
 
     private func menuItemLabel(_ title: String, selected: Bool) -> some View {
         HStack {
-            Text(title)
+            Text(L10n.string(key: title))
             Spacer()
             if selected {
                 Image(systemName: "checkmark")
@@ -276,7 +284,7 @@ struct ProcessingOptionsSheet: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: showAdvanced ? "chevron.up" : "chevron.down")
-                Text("Advanced settings")
+                Text(L10n.string("Advanced settings"))
             }
             .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
             .foregroundStyle(Color.indigo)
@@ -287,7 +295,7 @@ struct ProcessingOptionsSheet: View {
     private var advancedSection: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Speaker count")
+                Text(L10n.string("Speaker count"))
                     .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
                 Menu {
                     ForEach(SpeakerCountOption.allCases) { option in
@@ -304,7 +312,7 @@ struct ProcessingOptionsSheet: View {
                 .menuIndicator(.hidden)
             }
 
-            Toggle("Segment subtitles", isOn: $enableSubtitleSegmentation)
+            Toggle(L10n.string("Segment subtitles"), isOn: $enableSubtitleSegmentation)
                 .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
                 .toggleStyle(.checkbox)
 
@@ -321,19 +329,19 @@ struct ProcessingOptionsSheet: View {
     private var clipSection: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             Toggle(isOn: clipEnabledBinding) {
-                Text(requiresCloudDurationClip ? "Clip (required for cloud)" : "Clip (optional)")
+                Text(L10n.string(requiresCloudDurationClip ? "Clip (required for cloud)" : "Clip (optional)"))
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
             }
             .toggleStyle(.checkbox)
             .disabled(requiresCloudDurationClip)
             if requiresCloudDurationClip {
-                Text(RecordingDurationLimit.cloudClipNotice(hasFeatureAccess: account.hasFeatureAccess))
+                Text(L10n.display(RecordingDurationLimit.cloudClipNotice(hasFeatureAccess: account.hasFeatureAccess)))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Status.warningColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if enableClip {
-                Text("Select a time range. The session keeps only this portion.")
+                Text(L10n.string("Select a time range. The session keeps only this portion."))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
                 ClipRangeControl(
@@ -472,9 +480,9 @@ struct ProcessingOptionsSheet: View {
     ) -> some View {
         Toggle(isOn: isOn) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                Text(title)
+                Text(L10n.string(key: title))
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
-                Text(detail)
+                Text(L10n.display(detail))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
             }
@@ -512,7 +520,10 @@ struct ProcessingOptionsSheet: View {
         case .lowBalance(let remaining):
             cloudNotice(
                 title: "Cloud credit balance",
-                detail: "After this media, your balance covers about \(CloudTranscriptionQuota.formatDuration(remaining)) more of this cloud workflow.",
+                detail: L10n.format(
+                    "After this media, your balance covers about %@ more of this cloud workflow.",
+                    CloudTranscriptionQuota.formatDuration(remaining)
+                ),
                 color: AppTheme.Status.warningColor
             )
         case .none:
@@ -536,9 +547,9 @@ struct ProcessingOptionsSheet: View {
 
     private func cloudNotice(title: String, detail: String, color: Color) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            Text(title)
+            Text(L10n.string(key: title))
                 .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
-            Text(detail)
+            Text(L10n.display(detail))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
         }
@@ -552,20 +563,24 @@ struct ProcessingOptionsSheet: View {
 
     private func insufficientCreditCopy(_ quota: CloudTranscriptionQuota) -> String {
         let available = quota.affordableMediaSeconds
-            .map(CloudTranscriptionQuota.formatDuration) ?? "no remaining time"
+            .map(CloudTranscriptionQuota.formatDuration) ?? L10n.string("no remaining time")
         let media = CloudTranscriptionQuota.formatDuration(quota.durationSeconds)
-        return "This media is \(media), but your balance covers about \(available). Upgrade to Pro or add credits to continue in the Cloud."
+        return L10n.format(
+            "This media is %@, but your balance covers about %@. Upgrade to Pro or add credits to continue in the Cloud.",
+            media,
+            available
+        )
     }
 
     private var footer: some View {
         HStack {
             if isPreparingCloud {
-                Text(TaskPlacementCopy.checkingCloudAccount)
+                Text(L10n.string(TaskPlacementCopy.checkingCloudAccount))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
             }
             Spacer()
-            Button("Cancel", action: onCancel)
+            Button(L10n.string("Cancel"), action: onCancel)
                 .keyboardShortcut(.cancelAction)
             Button(continueLabel) {
                 Task { await prepareAndSubmit() }

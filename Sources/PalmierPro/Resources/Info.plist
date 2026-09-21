@@ -96,7 +96,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>7.0.12</string>
+	<string>7.0.24</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -110,7 +110,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>92</string>
+	<string>105</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.video</string>
 	<key>LSMinimumSystemVersion</key>
@@ -140,16 +140,10 @@
 			</array>
 		</dict>
 	</array>
-	<key>SUAutomaticallyUpdate</key>
-	<true/>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
 	<key>SUFeedURL</key>
-	<string>https://huggingface.co/hfadam/VoxStudio.app/raw/main/appcast.xml</string>
+	<string>https://assets.voxstudio.me/downloads/voxstudio/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>Cw7SzLF1icfIbV78YqnNf9D8YClygHEhiSXbMYetCUg=</string>
-	<key>SUScheduledCheckInterval</key>
-	<integer>86400</integer>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

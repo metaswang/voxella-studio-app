@@ -73,7 +73,7 @@ struct AccountSignInView: View {
                 Text("Email")
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
-                TextField("your@email.com", text: $email)
+            TextField(L10n.string("your@email.com"), text: $email)
                     .textFieldStyle(.plain)
                     .textContentType(.username)
                     .autocorrectionDisabled()
@@ -110,7 +110,7 @@ struct AccountSignInView: View {
                     }
                     .buttonStyle(.plain)
                     .hoverHighlight(cornerRadius: AppTheme.Radius.xs)
-                    .help(isPasswordVisible ? "Hide password" : "Show password")
+                    .help(L10n.string(isPasswordVisible ? "Hide password" : "Show password"))
                 }
                 .authFieldChrome(isFocused: focusedField == .password)
             }
@@ -122,7 +122,7 @@ struct AccountSignInView: View {
                             .controlSize(.small)
                             .tint(AppTheme.Auth.primaryForeground)
                     }
-                    Text(account.isSigningIn ? "Signing in…" : "Sign in")
+                    Text(L10n.string(account.isSigningIn ? "Signing in…" : "Sign in"))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -179,7 +179,7 @@ struct AccountSignInView: View {
                         .frame(width: AppTheme.IconSize.md)
                         .accessibilityHidden(true)
                 }
-                Text(title)
+                Text(L10n.string(key: title))
             }
             .frame(maxWidth: .infinity)
         }

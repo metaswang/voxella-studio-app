@@ -51,11 +51,11 @@ struct DubProcessingOptionsSheet: View {
 
     private var continueLabel: String {
         if !cloudComputeSelected, !localModelPlan.missingItems.isEmpty {
-            return models.isPreparing(localModelPlan)
+            return L10n.string(models.isPreparing(localModelPlan)
                 ? "Prepare and generate"
-                : "Download and generate"
+                : "Download and generate")
         }
-        return account.isSignedIn || !placement.needsAuthentication ? "Continue" : "Sign in and continue"
+        return L10n.string(account.isSignedIn || !placement.needsAuthentication ? "Continue" : "Sign in and continue")
     }
 
     private var notice: CloudCreditNotice {
@@ -97,7 +97,7 @@ struct DubProcessingOptionsSheet: View {
                         cloudStorageAccessCard
                     }
                     if let cloudAccessError {
-                        Text(cloudAccessError)
+                        Text(L10n.display(cloudAccessError))
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Status.errorColor)
                     }
@@ -119,9 +119,9 @@ struct DubProcessingOptionsSheet: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text("Dub processing options")
+                Text(L10n.string("Dub processing options"))
                     .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.semibold))
-                Text("Choose where the session is kept and where dubbed audio is generated.")
+                Text(L10n.string("Choose where the session is kept and where dubbed audio is generated."))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
@@ -144,7 +144,11 @@ struct DubProcessingOptionsSheet: View {
             Text(job.displayTitle)
                 .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.semibold))
             let count = (job.segments ?? []).count
-            Text("\(count) script segments · ~\(CloudUsageEstimate.formatDuration(estimatedScriptDuration))")
+            Text(L10n.format(
+                "%@ script segments · ~%@",
+                count,
+                CloudUsageEstimate.formatDuration(estimatedScriptDuration)
+            ))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.mutedColor)
         }
@@ -212,9 +216,9 @@ struct DubProcessingOptionsSheet: View {
     ) -> some View {
         Toggle(isOn: isOn) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                Text(title)
+                Text(L10n.string(key: title))
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
-                Text(detail)
+                Text(L10n.string(key: detail))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
             }
@@ -224,21 +228,20 @@ struct DubProcessingOptionsSheet: View {
 
     @ViewBuilder
     private var cloudCreditCard: some View {
-        let message = notice.message
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             HStack(spacing: AppTheme.Spacing.sm) {
                 Image(systemName: notice == .none ? "checkmark.circle.fill" : "cloud")
                     .foregroundStyle(noticeColor)
-                Text("VoxStudio Cloud")
+                Text(L10n.string("VoxStudio Cloud"))
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
             }
-            if let message {
+            if let message = localizedNoticeMessage {
                 Text(message)
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
             }
             if estimateError {
-                Button("Try again") {
+                Button(L10n.string("Try again")) {
                     estimateReloadID = UUID()
                 }
                 .buttonStyle(.borderless)
@@ -266,9 +269,9 @@ struct DubProcessingOptionsSheet: View {
 
     private func cloudNotice(title: String, detail: String, color: Color) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            Text(title)
+            Text(L10n.string(key: title))
                 .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
-            Text(detail)
+            Text(L10n.string(key: detail))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
         }
@@ -296,13 +299,13 @@ struct DubProcessingOptionsSheet: View {
                 HStack(spacing: AppTheme.Spacing.sm) {
                     ProgressView()
                         .controlSize(.small)
-                    Text(account.isSignedIn ? "Checking cloud credits…" : TaskPlacementCopy.signingIn)
+                    Text(L10n.string(account.isSignedIn ? "Checking cloud credits…" : TaskPlacementCopy.signingIn))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
             }
             Spacer()
-            Button("Cancel", action: onCancel)
+            Button(L10n.string("Cancel"), action: onCancel)
                 .keyboardShortcut(.cancelAction)
                 .disabled(isPreparingCloud)
             Button(continueLabel) {
@@ -316,6 +319,32 @@ struct DubProcessingOptionsSheet: View {
         .padding(AppTheme.Spacing.xl)
         .background(AppTheme.Background.surfaceColor.opacity(AppTheme.Opacity.prominent))
         .overlay(alignment: .top) { Divider() }
+    }
+
+    private var localizedNoticeMessage: String? {
+        switch notice {
+        case .signIn:
+            return L10n.string(TaskPlacementCopy.cloudAccountRequired)
+        case .checking:
+            return L10n.string(TaskPlacementCopy.checkingCloudAccount)
+        case .failed:
+            return L10n.string(TaskPlacementCopy.cloudCreditsUnavailable)
+        case .freeUpgrade:
+            return L10n.string(TaskPlacementCopy.freeCloudUpgrade)
+        case let .insufficient(mediaDuration, availableDuration):
+            return L10n.format(
+                "This media is %@, but your balance covers about %@. Upgrade to Pro or add credits to continue in the Cloud.",
+                CloudUsageEstimate.formatDuration(mediaDuration),
+                CloudUsageEstimate.formatDuration(availableDuration)
+            )
+        case let .lowBalance(remainingSeconds):
+            return L10n.format(
+                "After this media, your balance covers about %@ more of this cloud workflow.",
+                CloudUsageEstimate.formatDuration(remainingSeconds)
+            )
+        case .none:
+            return nil
+        }
     }
 
     private func loadEstimate() async {

@@ -35,32 +35,32 @@ struct SpeechTab: View {
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .labelsHidden()
-                .accessibilityLabel("Mark Speakers")
+                .accessibilityLabel(L10n.string("Mark Speakers"))
             }
             HStack(spacing: AppTheme.Spacing.sm) {
                 if models.hasRequiredModels(for: .transcribe) {
-                    Button(editor.projectSpeakers.isEmpty ? "Identify Speakers" : "Refresh") {
+                    Button(L10n.string(editor.projectSpeakers.isEmpty ? "Identify Speakers" : "Refresh")) {
                         editor.identifySpeakers(transcribeMissing: true)
                     }
                     .controlSize(.small)
                     .disabled(editor.speakerIdentifyInFlight)
-                    .help("Matches voices across clips on this Mac. Local transcripts and voice fingerprints are cached, so re-runs are fast.")
+                    .help(L10n.string("Matches voices across clips on this Mac. Local transcripts and voice fingerprints are cached, so re-runs are fast."))
                 } else {
-                    Button("Prepare Local Features…") { models.presentManager() }
+                    Button(L10n.string("Prepare Local Features…")) { models.presentManager() }
                         .controlSize(.small)
-                    Text("Required for speaker detection")
+                    Text(L10n.string("Required for speaker detection"))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
             }
             if let error = editor.speakerIdentifyError {
-                Text(error)
+                Text(L10n.display(error))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Status.errorColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !editor.projectSpeakers.isEmpty {
-                Text("Labels")
+                Text(L10n.string("Labels"))
                     .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .padding(.top, AppTheme.Spacing.xs)
@@ -73,7 +73,7 @@ struct SpeechTab: View {
                     ))
                     .labelsHidden()
                     .controlSize(.small)
-                    TextField("Name", text: Binding(
+                    TextField(L10n.string("Name"), text: Binding(
                         get: { editor.projectSpeakers.first(where: { $0.id == speaker.id })?.name ?? speaker.name },
                         set: { editor.renameSpeaker(id: speaker.id, name: $0) }
                     ))
@@ -87,7 +87,7 @@ struct SpeechTab: View {
                             .foregroundStyle(AppTheme.Text.tertiaryColor)
                     }
                     .buttonStyle(.plain)
-                    .help("Removes this label and tint. Identify recreates it if the voice is still present.")
+                    .help(L10n.string("Removes this label and tint. Identify recreates it if the voice is still present."))
                 }
             }
         }
@@ -107,15 +107,15 @@ struct SpeechTab: View {
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .labelsHidden()
-                .accessibilityLabel("Mark Silence")
+                .accessibilityLabel(L10n.string("Mark Silence"))
             }
             if editor.speechAnalyzingCount > 0 {
                 HStack(spacing: AppTheme.Spacing.xs) {
                     ProgressView()
                         .controlSize(.small)
                     Text(editor.speechAnalyzingCount == 1
-                        ? "Detecting speech…"
-                        : "Detecting speech in \(editor.speechAnalyzingCount) files…")
+                        ? L10n.string("Detecting speech…")
+                        : L10n.format("Detecting speech in %@ files…", editor.speechAnalyzingCount))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
@@ -127,12 +127,12 @@ struct SpeechTab: View {
     private var removeSilenceRow: some View {
         let count = editor.allDeadAir().reduce(0) { $0 + $1.ranges.count }
         return HStack(spacing: AppTheme.Spacing.sm) {
-            Button("Remove Silence") { editor.removeAllDeadAir() }
+            Button(L10n.string("Remove Silence")) { editor.removeAllDeadAir() }
                 .controlSize(.small)
                 .disabled(count == 0)
-                .help("Ripple-deletes every silent section; downstream clips close the gaps.")
+                .help(L10n.string("Ripple-deletes every silent section; downstream clips close the gaps."))
             if count > 0 {
-                Text(count == 1 ? "1 section" : "\(count) sections")
+                Text(count == 1 ? L10n.string("1 section") : L10n.format("%@ sections", count))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
             }

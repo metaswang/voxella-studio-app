@@ -1050,5 +1050,18 @@
                 type="application/octet-stream"
                 sparkle:edSignature="I0tRbvZv8DZjhLIEeu3BVGQra61xzPvqN94Yts2HitCnY+bWb49we1BOZvBjeENY3fzKi4AQgKf0IdIb+endDQ=="/>
         </item>
+        <item>
+            <title>Version 7.0.14</title>
+            <pubDate>Fri, 18 Sep 2026 00:00:00 +0800</pubDate>
+            <sparkle:version>95</sparkle:version>
+            <sparkle:shortVersionString>7.0.14</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure
+                url="https://huggingface.co/hfadam/VoxStudio.app/resolve/main/VoxStudio.dmg?download=true"
+                length="91771362"
+                type="application/octet-stream"
+                sparkle:edSignature="1z0lqH7ilc9DdBEI1WHb4Gmme8ezoDF7tqWlnXdpeNlMOYf8Jjfq0UZv2Bjoaq5KtkKSEqtfcEd2F2PpfgDiCA=="/>
+        </item>
     </channel>
 </rss>

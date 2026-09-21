@@ -7,7 +7,7 @@ final class TimelineView: NSView {
     private(set) var inputController: TimelineInputController!
     private var playheadOverlay: PlayheadOverlay!
     private(set) var snapOverlay: SnapIndicatorOverlay!
-    private var generatingClipOverlays: [String: NSHostingView<ClipGeneratingOverlay>] = [:]
+    private var generatingClipOverlays: [String: NSHostingView<AnyView>] = [:]
     private var clipDisplayRects: [String: NSRect] = [:]
     private var derivedCacheRevision: Int = -1
     private var cachedLinkOffsets: [String: Int] = [:]
@@ -852,8 +852,8 @@ final class TimelineView: NSView {
         }
     }
 
-    private func makeGeneratingClipOverlay(for clipId: String) -> NSHostingView<ClipGeneratingOverlay> {
-        let view = NSHostingView(rootView: ClipGeneratingOverlay())
+    private func makeGeneratingClipOverlay(for clipId: String) -> NSHostingView<AnyView> {
+        let view = NSHostingView(rootView: AnyView(ClipGeneratingOverlay().appLocalization()))
         view.autoresizingMask = []
         addSubview(view)
         generatingClipOverlays[clipId] = view
@@ -1117,7 +1117,7 @@ final class TimelineView: NSView {
             let menu = NSMenu()
             let current = clip.fadeInterpolation(edge)
             let mk: (String, Interpolation) -> NSMenuItem = { title, interp in
-                let item = NSMenuItem(title: title, action: #selector(self.performSetFadeInterpolation(_:)), keyEquivalent: "")
+                let item = NSMenuItem(title: L10n.string(key: title), action: #selector(self.performSetFadeInterpolation(_:)), keyEquivalent: "")
                 item.target = self
                 item.state = current == interp ? .on : .off
                 item.representedObject = [
@@ -1138,7 +1138,7 @@ final class TimelineView: NSView {
             let menu = NSMenu()
             let current = editor.interpolation(clipId: clip.id, property: .volume, atFrame: kfFrame) ?? .smooth
             let mk: (String, Interpolation) -> NSMenuItem = { title, interp in
-                let item = NSMenuItem(title: title, action: #selector(self.performSetVolumeKfInterpolation(_:)), keyEquivalent: "")
+                let item = NSMenuItem(title: L10n.string(key: title), action: #selector(self.performSetVolumeKfInterpolation(_:)), keyEquivalent: "")
                 item.target = self
                 item.state = current == interp ? .on : .off
                 item.representedObject = ["clipId": clip.id, "frame": kfFrame, "interp": interp.rawValue] as [String: Any]

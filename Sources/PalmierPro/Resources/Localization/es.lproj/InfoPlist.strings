@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "VoxStudio usa el micrófono al grabar una sesión de transcripción o una voz de referencia local.";
+"NSScreenCaptureUsageDescription" = "VoxStudio captura la pantalla, una ventana o el audio del sistema al grabar una sesión de transcripción.";

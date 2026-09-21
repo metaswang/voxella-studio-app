@@ -214,33 +214,33 @@ struct TranscribeWorkbenchView: View {
                 Image(systemName: "waveform.badge.checkmark")
                     .foregroundStyle(AppTheme.Status.successColor)
                 VStack(alignment: .leading, spacing: AppTheme.zoomed(3)) {
-                    Text(diagnostics.backend.title)
+                    Text("Speaker identification")
                         .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
                     HStack(spacing: AppTheme.Spacing.smMd) {
-                        Text("\(diagnostics.detectedSpeakerCount) detected")
+                        Text(L10n.format("%@ detected", diagnostics.detectedSpeakerCount))
                         if let rtf = diagnostics.realTimeFactor {
-                            Text("RTF \(rtf.formatted(.number.precision(.fractionLength(2))))")
+                            Text(L10n.format("RTF %@", rtf.formatted(.number.precision(.fractionLength(2)))))
                         }
                         if diagnostics.processedChunks > 0 {
-                            Text("\(diagnostics.processedChunks) chunks")
+                            Text(L10n.format("%@ chunks", diagnostics.processedChunks))
                         }
                         if let coverage = diagnostics.speechCoverage {
-                            Text("\(Int((coverage * 100).rounded()))% speech")
+                            Text(L10n.format("%@%% speech", Int((coverage * 100).rounded())))
                         }
                         if let processed = diagnostics.processedAudioDuration {
-                            Text("\(processed.formatted(.number.precision(.fractionLength(0))))s processed")
+                            Text(L10n.format("%@s processed", processed.formatted(.number.precision(.fractionLength(0)))))
                         }
                     }
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
                     ForEach(diagnostics.warnings, id: \.self) { warning in
-                        Text(warning)
+                        Text(L10n.display(warning))
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Status.warningColor)
                     }
                 }
                 Spacer()
-                Button("Reveal diagnostics") {
+                Button(L10n.string("Reveal diagnostics")) {
                     Task { try? await store.revealTranscriptionDiagnostics(job.id) }
                 }
                 .buttonStyle(.borderless)
@@ -258,7 +258,7 @@ struct TranscribeWorkbenchView: View {
     }
 
     private func recognitionCard(_ job: WorkbenchTranscriptionJob) -> some View {
-        GroupBox("Recognition") {
+        GroupBox(L10n.string("Recognition")) {
             VStack(spacing: AppTheme.Spacing.mdLg) {
                 HStack {
                     Text("Language")
@@ -266,7 +266,7 @@ struct TranscribeWorkbenchView: View {
                     Picker("Language", selection: languageBinding(job.id)) {
                         ForEach(WorkbenchTranscriptionLanguage.allCases) { option in
                             if option == .english { Divider() }
-                            Text(option.label).tag(option.languageCode)
+                            Text(L10n.string(key: option.label)).tag(option.languageCode)
                         }
                     }
                     .labelsHidden()
@@ -277,7 +277,7 @@ struct TranscribeWorkbenchView: View {
                     Spacer()
                     Picker("Speakers", selection: speakerBinding(job.id)) {
                         ForEach(SpeakerCountOption.allCases) { option in
-                            Text(option.label).tag(option)
+                            Text(L10n.string(key: option.label)).tag(option)
                         }
                     }
                     .labelsHidden()
@@ -298,20 +298,26 @@ struct TranscribeWorkbenchView: View {
     }
 
     private func recognitionPrivacyCopy(for job: WorkbenchTranscriptionJob) -> String {
-        TaskPlacementCopy.summaryLine(storage: job.storage, compute: job.compute)
+        L10n.format(
+            "%@: %@ · %@: %@",
+            L10n.string(TaskPlacementCopy.keepSessionTitle),
+            L10n.string(key: job.storage.label),
+            L10n.string(TaskPlacementCopy.processWithTitle),
+            L10n.string(key: job.compute.label)
+        )
     }
 
     private func subtitleFlowCard(_ job: WorkbenchTranscriptionJob) -> some View {
-        GroupBox("Subtitle flow") {
+        GroupBox(L10n.string("Subtitle flow")) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
                 Toggle(
-                    "Clean and segment subtitles with the configured LLM",
+                    L10n.string("Clean and segment subtitles with the configured LLM"),
                     isOn: subtitleProcessingBinding(job.id)
                 )
                 .disabled(job.normalizedTargetLanguageCode != nil)
 
                 if job.normalizedTargetLanguageCode != nil {
-                    Text("Translation includes subtitle cleanup and segmentation so timing and speaker boundaries stay aligned.")
+                    Text(L10n.string("Translation includes subtitle cleanup and segmentation so timing and speaker boundaries stay aligned."))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
@@ -325,7 +331,7 @@ struct TranscribeWorkbenchView: View {
                         ForEach(WorkbenchTranscriptionLanguage.allCases.filter {
                             $0.languageCode != nil
                         }) { option in
-                            Text(option.label).tag(option.languageCode ?? "")
+                            Text(L10n.string(key: option.label)).tag(option.languageCode ?? "")
                         }
                     }
                     .labelsHidden()
@@ -345,12 +351,12 @@ struct TranscribeWorkbenchView: View {
                         )
                     Text(isConfigured
                         ? llmRouteDescription(for: useCase)
-                        : "An API key is required only for enabled AI steps.")
+                        : L10n.string("An API key is required only for enabled AI steps."))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                         .lineLimit(1)
                     Spacer()
-                    Button("AI Settings…") {
+                    Button(L10n.string("AI Settings…")) {
                         SettingsWindowController.shared.show(tab: .ai)
                     }
                     .buttonStyle(.borderless)
@@ -359,11 +365,11 @@ struct TranscribeWorkbenchView: View {
                 if job.result != nil,
                    !(job.targetLanguageCode ?? "").isEmpty {
                     HStack {
-                        Text("Existing transcript can be translated without repeating ASR.")
+                        Text(L10n.string("Existing transcript can be translated without repeating ASR."))
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.tertiaryColor)
                         Spacer()
-                        Button("Translate") {
+                        Button(L10n.string("Translate")) {
                             store.runTranslation(job.id)
                         }
                         .buttonStyle(.borderedProminent)
@@ -384,15 +390,15 @@ struct TranscribeWorkbenchView: View {
                 HStack {
                     HStack(spacing: AppTheme.zoomed(7)) {
                         if let stage = job.flowProgressStage {
-                            Text(stage.title.uppercased())
+                            Text(L10n.string(key: stage.title).uppercased())
                                 .font(.system(size: AppTheme.FontSize.xxs, weight: .bold))
                                 .foregroundStyle(AppTheme.Text.mutedColor)
                         } else if let stage = job.progressStage {
-                            Text(stage.title.uppercased())
+                            Text(L10n.string(key: stage.title).uppercased())
                                 .font(.system(size: AppTheme.FontSize.xxs, weight: .bold))
                                 .foregroundStyle(AppTheme.Text.mutedColor)
                         }
-                        Text(job.progressMessage)
+                        Text(L10n.display(job.progressMessage))
                     }
                     Spacer()
                     Text(job.progress.formatted(.percent.precision(.fractionLength(0))))
@@ -404,7 +410,7 @@ struct TranscribeWorkbenchView: View {
         }
 
         if let error = job.errorMessage {
-            Label(error, systemImage: "exclamationmark.triangle.fill")
+            Label(L10n.display(error), systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Status.errorColor)
                 .padding(AppTheme.Spacing.mdLg)
@@ -416,12 +422,12 @@ struct TranscribeWorkbenchView: View {
            job.resolvedCloudSyncState == .pending {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 Label(
-                    job.pendingCloudSyncError ?? "The local result has not been saved to VoxStudio Cloud.",
+                    L10n.display(job.pendingCloudSyncError ?? "The local result has not been saved to VoxStudio Cloud."),
                     systemImage: "icloud.and.arrow.up"
                 )
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Status.warningColor)
-                Button("Retry cloud sync") {
+                Button(L10n.string("Retry cloud sync")) {
                     store.retryTranscriptionCloudSync(job.id)
                 }
                 .buttonStyle(.borderless)
@@ -435,20 +441,20 @@ struct TranscribeWorkbenchView: View {
     private func transcriptEditor(_ job: WorkbenchTranscriptionJob) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
             HStack {
-                Text(job.currentTrack == .translation ? "Translation" : "Transcript")
+                Text(job.currentTrack == .translation ? L10n.string("Translation") : L10n.string("Transcript"))
                     .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
                 Spacer()
                 if job.translationTrack != nil {
-                    Picker("Track", selection: selectedTrackBinding(job.id)) {
-                        Text("Source").tag(WorkbenchTranscriptTrack.source)
-                        Text("Translation").tag(WorkbenchTranscriptTrack.translation)
+                    Picker(L10n.string("Track"), selection: selectedTrackBinding(job.id)) {
+                        Text(L10n.string("Source")).tag(WorkbenchTranscriptTrack.source)
+                        Text(L10n.string("Translation")).tag(WorkbenchTranscriptTrack.translation)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     .frame(width: AppTheme.zoomed(190))
                 }
                 if let result = job.displayedResult {
-                    Text("\(result.words.count) timed words")
+                    Text(L10n.format("%@ timed words", result.words.count))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
@@ -506,7 +512,7 @@ struct TranscribeWorkbenchView: View {
                     .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
                 Spacer()
                 if !job.speakerLabels.isEmpty {
-                    Text("\(job.speakerLabels.count) speakers")
+                    Text(L10n.format("%@ speakers", job.speakerLabels.count))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
@@ -546,11 +552,11 @@ struct TranscribeWorkbenchView: View {
                                         action: .add(start: segment.start, end: segment.end)
                                     )
                                 } label: {
-                                    Label("Add Speaker…", systemImage: "person.badge.plus")
+                                    Label(L10n.string("Add Speaker…"), systemImage: "person.badge.plus")
                                 }
                             } label: {
                                 HStack(spacing: AppTheme.Spacing.xxs) {
-                                    Text(segment.speaker ?? "Speech")
+                                    Text(segment.speaker ?? L10n.string("Speech"))
                                     Image(systemName: "chevron.down")
                                         .font(.system(size: AppTheme.FontSize.micro))
                                 }
@@ -558,7 +564,7 @@ struct TranscribeWorkbenchView: View {
                                 .foregroundStyle(speakerColor(segment.speaker))
                             }
                             .menuStyle(.borderlessButton)
-                            .help("Assign a speaker to this segment")
+                            .help(L10n.string("Assign a speaker to this segment"))
 
                             if let speaker = segment.speaker {
                                 Button {
@@ -571,8 +577,8 @@ struct TranscribeWorkbenchView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .foregroundStyle(AppTheme.Text.mutedColor)
-                                .help("Rename \(speaker) in the full transcript")
-                                .accessibilityLabel("Rename \(speaker)")
+                                .help(L10n.format("Rename %@ in the full transcript", speaker))
+                                .accessibilityLabel(L10n.format("Rename %@", speaker))
                             }
                             Spacer()
                             Text("\(formatTime(segment.start)) – \(formatTime(segment.end))")
@@ -628,7 +634,7 @@ struct TranscribeWorkbenchView: View {
                     HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(AppTheme.Status.warningColor)
-                        Text(message)
+                        Text(L10n.display(message))
                             .font(.system(size: AppTheme.FontSize.sm))
                             .foregroundStyle(AppTheme.Text.primaryColor)
                         Spacer()
@@ -720,16 +726,16 @@ struct TranscribeWorkbenchView: View {
 
     private var transcriptionEntryBar: some View {
         HStack(spacing: AppTheme.Spacing.smMd) {
-            Text("TRANSCRIPTION ENTRY")
+            Text(L10n.string("TRANSCRIPTION ENTRY"))
                 .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                 .foregroundStyle(AppTheme.Text.mutedColor)
-            entryModeButton("Import files", systemImage: "square.and.arrow.down", active: entryMode == .importFiles) {
+            entryModeButton(L10n.string("Import files"), systemImage: "square.and.arrow.down", active: entryMode == .importFiles) {
                 entryMode = .importFiles
             }
-            entryModeButton("Net video", systemImage: "video", active: entryMode == .netVideo) {
+            entryModeButton(L10n.string("Net video"), systemImage: "video", active: entryMode == .netVideo) {
                 entryMode = .netVideo
             }
-            entryModeButton("Record", systemImage: "video.circle", active: entryMode == .record) {
+            entryModeButton(L10n.string("Record"), systemImage: "video.circle", active: entryMode == .record) {
                 entryMode = .record
             }
             Spacer(minLength: AppTheme.Spacing.md)
@@ -782,19 +788,19 @@ struct TranscribeWorkbenchView: View {
     private var entryBarCaption: String {
         switch entryMode {
         case .netVideo:
-            "Paste a YouTube link, extract audio on this Mac, then transcribe"
+            L10n.string("Paste a YouTube link, extract audio on this Mac, then transcribe")
         case .record:
-            "Record this Mac, then transcribe the local file"
+            L10n.string("Record this Mac, then transcribe the local file")
         case .importFiles:
-            "Fastest path from local files to a structured transcript workspace"
+            L10n.string("Fastest path from local files to a structured transcript workspace")
         }
     }
 
     private var recentSessionsTitle: String {
         switch entryMode {
-        case .netVideo: "Net Video"
-        case .record: "Record"
-        case .importFiles: "Import Files"
+        case .netVideo: L10n.string("Net Video")
+        case .record: L10n.string("Record")
+        case .importFiles: L10n.string("Import Files")
         }
     }
 
@@ -812,23 +818,23 @@ struct TranscribeWorkbenchView: View {
 
     private var importFilesHero: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-            Label("BEST FOR MEETINGS AND INTERVIEWS", systemImage: "sparkles")
+            Label(L10n.string("BEST FOR MEETINGS AND INTERVIEWS"), systemImage: "sparkles")
                 .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                 .foregroundStyle(AppTheme.Accent.link)
                 .padding(.horizontal, AppTheme.Spacing.md)
                 .padding(.vertical, AppTheme.Spacing.sm)
                 .background(AppTheme.Accent.link.opacity(AppTheme.Opacity.soft), in: Capsule())
-            Text("Import audio or video and turn it into a searchable transcript workspace.")
+            Text(L10n.string("Import audio or video and turn it into a searchable transcript workspace."))
                 .font(.system(size: AppTheme.FontSize.title2, weight: AppTheme.FontWeight.semibold))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Choose files, confirm processing options, then watch local progress before the session workspace opens.")
+            Text(L10n.string("Choose files, confirm processing options, then watch local progress before the session workspace opens."))
                 .font(.system(size: AppTheme.FontSize.md))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .center, spacing: AppTheme.Spacing.mdLg) {
-                Button("Choose media") { importMedia() }
+                Button(L10n.string("Choose media")) { importMedia() }
                     .buttonStyle(.borderedProminent)
-                Text("Supports multiple audio and video files · processed one at a time")
+                Text(L10n.string("Supports multiple audio and video files · processed one at a time"))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
             }
@@ -837,22 +843,22 @@ struct TranscribeWorkbenchView: View {
 
     private var netVideoHero: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-            Label("BEST FOR PUBLIC TALKS, INTERVIEWS, AND PUBLISHED VIDEO", systemImage: "sparkles")
+            Label(L10n.string("BEST FOR PUBLIC TALKS, INTERVIEWS, AND PUBLISHED VIDEO"), systemImage: "sparkles")
                 .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                 .foregroundStyle(AppTheme.Accent.link)
                 .padding(.horizontal, AppTheme.Spacing.md)
                 .padding(.vertical, AppTheme.Spacing.sm)
                 .background(AppTheme.Accent.link.opacity(AppTheme.Opacity.soft), in: Capsule())
-            Text("Paste a public YouTube link and turn published content into editable text.")
+            Text(L10n.string("Paste a public YouTube link and turn published content into editable text."))
                 .font(.system(size: AppTheme.FontSize.title2, weight: AppTheme.FontWeight.semibold))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Audio is extracted on this Mac. Local YouTubeKit runs first; the author's remote server is only used if local extraction fails. Video is not downloaded.")
+            Text(L10n.string("Audio is extracted on this Mac. Local YouTubeKit runs first; the author's remote server is only used if local extraction fails. Video is not downloaded."))
                 .font(.system(size: AppTheme.FontSize.md))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text("Paste a public YouTube URL")
+                Text(L10n.string("Paste a public YouTube URL"))
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
                 TextField("https://www.youtube.com/watch?v=…", text: $netVideoURL)
                     .textFieldStyle(.plain)
@@ -881,18 +887,18 @@ struct TranscribeWorkbenchView: View {
                     Spacer()
                 }
                 if netVideoURLIsInvalid {
-                    Text("Paste a public YouTube watch, Shorts, or youtu.be URL.")
+                    Text(L10n.string("Paste a public YouTube watch, Shorts, or youtu.be URL."))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Status.errorColor)
                 }
             }
 
             HStack(alignment: .center, spacing: AppTheme.Spacing.mdLg) {
-                Button("Extract audio") { extractNetVideo() }
+                Button(L10n.string("Extract audio")) { extractNetVideo() }
                     .buttonStyle(.borderedProminent)
                     .disabled(!canExtractNetVideo)
                 if netVideoPhase.isInProgress {
-                    Button("Cancel", role: .cancel) {
+                    Button(L10n.string("Cancel"), role: .cancel) {
                         netVideoTask?.cancel()
                         netVideoTask = nil
                         netVideoPhase = .idle
@@ -902,13 +908,13 @@ struct TranscribeWorkbenchView: View {
             }
 
             if case .failed(let message) = netVideoPhase {
-                Text(message)
+                Text(L10n.display(message))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Status.errorColor)
             }
             if netVideoPhase.isInProgress {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text(netVideoPhase.statusText)
+                    Text(L10n.display(netVideoPhase.statusText))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                     if let fraction = netVideoPhase.downloadFraction {
@@ -944,7 +950,7 @@ struct TranscribeWorkbenchView: View {
             Label("QUICK START", systemImage: icon)
                 .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                 .foregroundStyle(AppTheme.Accent.link)
-            Text(title)
+            Text(L10n.string(key: title))
                 .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
             ForEach(Array(steps.enumerated()), id: \.offset) { index, title in
                 HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
@@ -952,7 +958,7 @@ struct TranscribeWorkbenchView: View {
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.bold))
                         .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
                         .background(AppTheme.Accent.primary.opacity(AppTheme.Opacity.soft), in: Circle())
-                    Text(title)
+                    Text(L10n.string(key: title))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
@@ -976,9 +982,9 @@ struct TranscribeWorkbenchView: View {
             Label(eyebrow, systemImage: systemImage)
                 .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                 .foregroundStyle(AppTheme.Text.mutedColor)
-            Text(title)
+            Text(L10n.string(key: title))
                 .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
-            Text(detail)
+            Text(L10n.string(key: detail))
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1288,17 +1294,17 @@ private struct SpeakerNameEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lgXl) {
-            Text(request.title)
+            Text(L10n.string(key: request.title))
                 .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.semibold))
-            TextField("Speaker name", text: $name)
+        TextField(L10n.string("Speaker name"), text: $name)
                 .textFieldStyle(.roundedBorder)
                 .focused($isFocused)
-                .accessibilityLabel("Speaker name")
+                .accessibilityLabel(L10n.string("Speaker name"))
             HStack(spacing: AppTheme.Spacing.smMd) {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button(request.commitLabel) {
+                Button(L10n.string(key: request.commitLabel)) {
                     onCommit(name)
                     dismiss()
                 }

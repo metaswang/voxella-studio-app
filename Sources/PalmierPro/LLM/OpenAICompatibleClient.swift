@@ -92,10 +92,14 @@ struct OpenAICompatibleClient: LLMConfigurableTextClient {
         guard let http = response as? HTTPURLResponse else {
             throw LLMClientError.nonHTTPResponse
         }
-            guard (200..<300).contains(http.statusCode) else {
-                throw LLMClientError.provider(
+        guard (200..<300).contains(http.statusCode) else {
+            let message = Self.providerErrorMessage(from: data)
+            Log.llm.warning(
+                "provider error \(configuration.diagnosticDescription) status=\(http.statusCode) bytes=\(data.count) message=\(message ?? "none") body=\(LLMDiagnostics.preview(data))"
+            )
+            throw LLMClientError.provider(
                 status: http.statusCode,
-                message: Self.providerErrorMessage(from: data),
+                message: message,
                 retryAfterSeconds: Self.retryAfterSeconds(from: http)
             )
         }
@@ -103,11 +107,17 @@ struct OpenAICompatibleClient: LLMConfigurableTextClient {
         do {
             decoded = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
         } catch {
+            Log.llm.warning(
+                "invalid response \(configuration.diagnosticDescription) bytes=\(data.count) body=\(LLMDiagnostics.preview(data)) error=\(String(describing: error))"
+            )
             throw LLMClientError.invalidResponse
         }
         guard let content = decoded.choices.first?.message.textContent?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !content.isEmpty else {
+            Log.llm.warning(
+                "empty response \(configuration.diagnosticDescription) bytes=\(data.count) body=\(LLMDiagnostics.preview(data))"
+            )
             throw LLMClientError.emptyResponse
         }
         return content
@@ -216,12 +226,13 @@ struct ResilientLLMTextClient: LLMConfigurableTextClient {
                     let failure = LLMAttemptFailure(
                         model: entry.configuration.modelIdentifier,
                         attempt: attempt,
-                        reason: Self.failureDescription(error)
+                        reason: Self.failureDescription(error),
+                        detail: Self.failureDetail(error)
                     )
                     failures.append(failure)
                     let retryable = Self.isRetryable(error)
                     Log.llm.warning(
-                        "request failed use_case=\(route.useCase.rawValue) model=\(entry.configuration.modelIdentifier) attempt=\(attempt) elapsed_ms=\(elapsedMilliseconds) retryable=\(retryable) reason=\(failure.reason) detail=\(Self.failureDetail(error))"
+                        "request failed \(entry.configuration.diagnosticDescription) attempt=\(attempt) elapsed_ms=\(elapsedMilliseconds) retryable=\(retryable) reason=\(failure.reason) detail=\(Self.failureDetail(error))"
                     )
                     guard retryable else { continue }
                     let delay = Self.retryDelay(
@@ -235,6 +246,9 @@ struct ResilientLLMTextClient: LLMConfigurableTextClient {
             guard attempt < attempts, let retryDelay, retryDelay > 0 else { break }
             try await sleeper(.seconds(retryDelay))
         }
+        Log.llm.warning(
+            "request exhausted \(route.diagnosticDescription) failures=\(LLMClientError.failureSummary(failures))"
+        )
         throw LLMClientError.exhausted(failures)
     }
 
@@ -366,6 +380,14 @@ struct LLMAttemptFailure: Equatable, Sendable {
     let model: String
     let attempt: Int
     let reason: String
+    let detail: String
+
+    init(model: String, attempt: Int, reason: String, detail: String = "") {
+        self.model = model
+        self.attempt = attempt
+        self.reason = reason
+        self.detail = detail
+    }
 }
 
 enum LLMClientError: LocalizedError, Sendable {
@@ -381,31 +403,17 @@ enum LLMClientError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .nonHTTPResponse:
-            return "The LLM provider returned a non-HTTP response."
+            return "The AI service returned an unexpected response. Try again later."
         case .timeout:
-            return "The LLM request timed out."
-        case .transport(_, let message):
-            return "The LLM request failed: \(message)"
-        case .provider(let status, let message, _):
-            if let message, !message.isEmpty {
-                return "The LLM provider returned HTTP \(status): \(message)"
-            } else {
-                return "The LLM provider returned HTTP \(status)."
-            }
-        case .insufficientCredits(let message):
-            return message
+            return "The AI request took too long. Try again."
+        case .transport, .provider, .insufficientCredits:
+            return "The AI service cannot complete the request right now. Try again later."
         case .invalidResponse:
-            return "The LLM provider returned an unsupported response."
+            return "The AI service returned an unsupported response. Try again later."
         case .emptyResponse:
-            return "The LLM provider returned an empty response."
-        case .exhausted(let failures):
-            if let recoveryMessage = Self.openRouterAuthenticationRecoveryMessage(for: failures) {
-                return recoveryMessage
-            }
-            guard !failures.isEmpty else {
-                return "All configured LLM models are temporarily unavailable."
-            }
-            return "All configured LLM models failed: \(Self.failureSummary(failures))"
+            return "The AI service returned no answer. Try again."
+        case .exhausted:
+            return "The AI service cannot complete the request right now. Try again later."
         }
     }
 
@@ -431,10 +439,16 @@ enum LLMClientError: LocalizedError, Sendable {
         """
     }
 
-    private static func failureSummary(_ failures: [LLMAttemptFailure]) -> String {
+    static func failureSummary(_ failures: [LLMAttemptFailure]) -> String {
         failures
             .suffix(4)
-            .map { "\($0.model) (\($0.reason))" }
+            .map { failure in
+                let detail = failure.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+                if detail.isEmpty || detail == failure.reason {
+                    return "\(failure.model) (\(failure.reason))"
+                }
+                return "\(failure.model) (\(failure.reason): \(detail))"
+            }
             .joined(separator: "; ")
     }
 
@@ -471,8 +485,10 @@ enum LLMClientError: LocalizedError, Sendable {
             return "invalid_response"
         case .emptyResponse:
             return "empty_response"
-        case .exhausted:
-            return "exhausted"
+        case .exhausted(let failures):
+            return failures.isEmpty
+                ? "exhausted"
+                : "exhausted failures=\(Self.failureSummary(failures))"
         }
     }
 
@@ -491,5 +507,51 @@ enum LLMClientError: LocalizedError, Sendable {
         case .insufficientCredits, .exhausted:
             return false
         }
+    }
+}
+
+enum LLMDiagnostics {
+    static func description(_ error: Error) -> String {
+        if let error = error as? LLMClientError {
+            return error.logDescription
+        }
+        return String(describing: error)
+    }
+
+    static func userFacing(_ error: Error) -> String {
+        let generic = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail: String
+        if let error = error as? LLMClientError {
+            switch error {
+            case .exhausted(let failures):
+                detail = LLMClientError.failureSummary(failures)
+            case .provider(let status, let message, _):
+                let message = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                detail = message.isEmpty ? "HTTP \(status)" : "HTTP \(status): \(message)"
+            case .transport(_, let message):
+                detail = message
+            case .insufficientCredits(let message):
+                detail = message
+            case .timeout, .nonHTTPResponse, .invalidResponse, .emptyResponse:
+                detail = error.logDescription
+            }
+        } else {
+            detail = description(error)
+        }
+        let trimmed = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              trimmed.caseInsensitiveCompare(generic) != .orderedSame,
+              !generic.localizedCaseInsensitiveContains(trimmed) else {
+            return generic
+        }
+        return generic + "\n" + trimmed
+    }
+
+    static func preview(_ data: Data, limit: Int = 240) -> String {
+        let raw = String(data: data.prefix(limit * 2), encoding: .utf8)
+            ?? "binary_bytes=\(data.count)"
+        let collapsed = raw.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        if collapsed.count <= limit { return collapsed }
+        return String(collapsed.prefix(limit)) + "…"
     }
 }

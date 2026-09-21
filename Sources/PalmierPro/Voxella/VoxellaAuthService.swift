@@ -136,7 +136,7 @@ final class ASWebAuthenticationSessionController: NSObject, ASWebAuthenticationP
 
 actor VoxellaAuthService {
     static let shared = VoxellaAuthService(
-        loadOwner: { try KeychainStore.loadThisDeviceOnly(account: "voxella.auth.owner").flatMap(UUID.init(uuidString:)) },
+        loadOwner: { try KeychainStore.loadThisDeviceOnly(account: "voxella.auth.owner").get().flatMap(UUID.init(uuidString:)) },
         saveOwner: { try KeychainStore.saveThisDeviceOnly($0.uuidString, account: "voxella.auth.owner") },
         deleteOwner: { try KeychainStore.deleteThisDeviceOnly(account: "voxella.auth.owner") }
     )
@@ -176,7 +176,7 @@ actor VoxellaAuthService {
         tokens: any VoxellaAuthTokenExchanging = VoxellaAuthTokenClient(),
         now: @escaping @Sendable () -> Date = Date.init,
         loadRefresh: @escaping @Sendable () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: VoxellaAuthService.refreshAccount)
+            try KeychainStore.loadThisDeviceOnly(account: VoxellaAuthService.refreshAccount).get()
         },
         saveRefresh: @escaping @Sendable (String) throws -> Void = { value in
             try KeychainStore.saveThisDeviceOnly(value, account: VoxellaAuthService.refreshAccount)

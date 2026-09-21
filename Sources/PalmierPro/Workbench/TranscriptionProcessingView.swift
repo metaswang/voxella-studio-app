@@ -4,6 +4,7 @@ struct TranscriptionProcessingView: View {
     let jobID: UUID
 
     @Bindable private var store = WorkbenchStore.shared
+    @Bindable private var models = LocalModelManager.shared
     @State private var events: [ProcessingLogEvent] = []
     @State private var showAdvanced = false
     @State private var wavePhase: CGFloat = 0
@@ -26,7 +27,7 @@ struct TranscriptionProcessingView: View {
                     processingCard(job)
                     advancedDetails(for: job)
                 } else {
-                    ContentUnavailableView("Processing job unavailable", systemImage: "waveform")
+                    ContentUnavailableView(L10n.string("Processing job unavailable"), systemImage: "waveform")
                 }
             }
             .padding(AppTheme.Spacing.xxl)
@@ -41,9 +42,9 @@ struct TranscriptionProcessingView: View {
         }
         .onChange(of: job?.state) { _, state in
             if state == .completed {
-                appendEvent("Transcription completed")
+                appendEvent(L10n.string("Transcription completed"))
             } else if state == .failed {
-                appendEvent(job?.errorMessage ?? "Processing failed")
+                appendEvent(job?.errorMessage.map(L10n.display) ?? L10n.string("Processing failed"))
             }
         }
         .onAppear {
@@ -61,7 +62,7 @@ struct TranscriptionProcessingView: View {
                 Label(job.sourceURL.lastPathComponent, systemImage: "doc")
                 Text(job.createdAt.formatted(date: .abbreviated, time: .shortened))
                 if let batchPosition {
-                    Text("File \(batchPosition.current) of \(batchPosition.total)")
+                    Text(L10n.format("File %@ of %@", batchPosition.current, batchPosition.total))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(Color.indigo.opacity(0.18), in: Capsule())
@@ -76,7 +77,7 @@ struct TranscriptionProcessingView: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(job.state == .failed ? "Needs attention" : "Processing")
+                    Text(L10n.string(job.state == .failed ? "Needs attention" : "Processing"))
                         .font(.system(size: AppTheme.FontSize.xl, weight: .semibold))
                     Text(etaText(for: job))
                         .font(.system(size: AppTheme.FontSize.sm))
@@ -86,7 +87,7 @@ struct TranscriptionProcessingView: View {
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
                 Spacer()
-                Button("Cancel") {
+                Button(L10n.string("Cancel")) {
                     store.cancelActiveTranscriptionBatch()
                 }
                 .buttonStyle(.borderless)
@@ -95,7 +96,7 @@ struct TranscriptionProcessingView: View {
             }
 
             if let error = job.errorMessage, job.state == .failed {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
+                Label(L10n.display(error), systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Status.errorColor)
                     .padding(12)
@@ -109,9 +110,13 @@ struct TranscriptionProcessingView: View {
                 .tint(.indigo)
                 .animation(.easeInOut(duration: 0.35), value: job.progress)
 
-            Text(job.progressMessage)
+            Text(L10n.display(job.progressMessage))
                 .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
+
+            if isPreparingLocalModels(job) {
+                localModelDownloadPanel(for: job)
+            }
 
             milestoneList(for: job)
 
@@ -153,6 +158,105 @@ struct TranscriptionProcessingView: View {
                 )
         }
         .shadow(color: Color.indigo.opacity(0.12), radius: 24, y: 10)
+    }
+
+    private func isPreparingLocalModels(_ job: WorkbenchTranscriptionJob) -> Bool {
+        job.compute == .local && job.progressStep == "preparing_models"
+    }
+
+    private func localModelPlan(for job: WorkbenchTranscriptionJob) -> LocalModelInstallPlan {
+        models.installPlan(languageCode: job.languageCode, speakerCount: job.speakerCount.count)
+    }
+
+    private func localModelDownloadPanel(for job: WorkbenchTranscriptionJob) -> some View {
+        let plan = localModelPlan(for: job)
+        let status = models.preparationStatus(for: plan.items.map(\.id))
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(L10n.string("Preparing speech features"), systemImage: "arrow.down.circle.fill")
+                    .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
+                Spacer()
+                Text("\(Int((status.progress * 100).rounded()))%")
+                    .font(.system(size: AppTheme.FontSize.xs, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+            }
+            Text(L10n.string("Speech processing runs on this Mac. This first-time setup can take several minutes; the resources are reused for future files."))
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+            ProgressView(value: min(max(status.progress, 0), 1))
+                .tint(.indigo)
+            Text(L10n.display(status.userFacingMessage))
+                .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
+                .foregroundStyle(AppTheme.Text.primaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                ForEach(plan.items) { item in
+                    localModelRow(item, state: models.state(for: item.id))
+                }
+            }
+            Text(L10n.format(
+                "Downloaded %@ of %@",
+                LocalModelInstallPlan.formatBytes(status.completedBytes),
+                LocalModelInstallPlan.formatBytes(status.totalBytes)
+            ))
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.mutedColor)
+        }
+        .padding(AppTheme.Spacing.mdLg)
+        .background(Color.indigo.opacity(0.10), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+                .strokeBorder(Color.indigo.opacity(0.24), lineWidth: 1)
+        }
+    }
+
+    private func localModelRow(
+        _ item: LocalModelInstallPlan.Item,
+        state: LocalModelDownloadState
+    ) -> some View {
+        HStack(spacing: AppTheme.Spacing.sm) {
+            Image(systemName: modelStateIcon(state))
+                .foregroundStyle(modelStateColor(state))
+                .frame(width: 16)
+            Text(L10n.display(item.userFacingTitle))
+                .font(.system(size: AppTheme.FontSize.xs))
+                .lineLimit(1)
+            Spacer(minLength: AppTheme.Spacing.sm)
+            Text(L10n.string(modelStateLabel(state)))
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.mutedColor)
+        }
+    }
+
+    private func modelStateIcon(_ state: LocalModelDownloadState) -> String {
+        switch state {
+        case .installed: "checkmark.circle.fill"
+        case .queued, .downloading, .verifying: "arrow.down.circle.fill"
+        case .failed: "exclamationmark.circle.fill"
+        case .notInstalled: "circle"
+        }
+    }
+
+    private func modelStateColor(_ state: LocalModelDownloadState) -> Color {
+        switch state {
+        case .installed: AppTheme.Status.successColor
+        case .queued, .downloading, .verifying: AppTheme.Accent.primary
+        case .failed: AppTheme.Status.errorColor
+        case .notInstalled: AppTheme.Text.mutedColor
+        }
+    }
+
+    private func modelStateLabel(_ state: LocalModelDownloadState) -> String {
+        switch state {
+        case .installed: "Ready"
+        case .queued: "Waiting"
+        case .downloading: "Downloading"
+        case .verifying: "Verifying"
+        case .failed: "Needs retry"
+        case .notInstalled: "Not downloaded"
+        }
     }
 
     private var waveBars: some View {
@@ -214,11 +318,11 @@ struct TranscriptionProcessingView: View {
                 }
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(milestone.title)
+                Text(L10n.string(key: milestone.title))
                     .font(.system(size: AppTheme.FontSize.smMd, weight: state == .active ? .semibold : .medium))
                     .foregroundStyle(state == .pending ? AppTheme.Text.mutedColor : AppTheme.Text.primaryColor)
                 if let detail {
-                    Text(detail)
+                    Text(L10n.display(detail))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                         .fixedSize(horizontal: false, vertical: true)
@@ -237,7 +341,7 @@ struct TranscriptionProcessingView: View {
 
                 LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
                     ForEach(events) { event in
-                        Text("\(event.time)  \(event.message)")
+                        Text(verbatim: "\(event.time)  \(L10n.display(event.message))")
                             .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
                             .foregroundStyle(AppTheme.Text.secondaryColor)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -247,10 +351,10 @@ struct TranscriptionProcessingView: View {
             }
         } label: {
             HStack {
-                Text("Advanced Details")
+                Text(L10n.string("Advanced Details"))
                     .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
                 Spacer()
-                Text("\(events.count) events")
+                Text(L10n.format("%@ events", events.count))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
             }
@@ -261,21 +365,21 @@ struct TranscriptionProcessingView: View {
 
     private func cloudPipelineDetails(for job: WorkbenchTranscriptionJob) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
-            Text("Cloud pipeline")
+            Text(L10n.string("Cloud pipeline"))
                 .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
-            Text("Speech recognition and result assembly run in VoxStudio Cloud. This Mac does not need additional downloads for this task.")
+            Text(L10n.string("Speech recognition and result assembly run in VoxStudio Cloud. This Mac does not need additional downloads for this task."))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .fixedSize(horizontal: false, vertical: true)
 
             ForEach(ProcessingMilestone.allCases) { milestone in
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text(milestone.title)
+                    Text(L10n.string(key: milestone.title))
                         .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                         .foregroundStyle(AppTheme.Text.primaryColor)
                     ForEach(cloudPipelineLines(for: milestone, job: job), id: \.self) { line in
-                        Text(line)
+                        Text(L10n.display(line))
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.tertiaryColor)
                             .fixedSize(horizontal: false, vertical: true)
@@ -291,53 +395,56 @@ struct TranscriptionProcessingView: View {
     ) -> [String] {
         switch milestone {
         case .preparing:
-            return ["Cloud session setup and secure media transfer"]
+            return [L10n.string("Cloud session setup and secure media transfer")]
         case .preprocessing:
-            return ["Audio preparation managed by VoxStudio Cloud"]
+            return [L10n.string("Audio preparation managed by VoxStudio Cloud")]
         case .speechRecognition:
             if let current = job.progressCompleted, let total = job.progressTotal, total > 0 {
-                return ["Cloud speech recognition · \(current) of \(total) segments"]
+                return [L10n.format("Cloud speech recognition · %@ of %@ segments", current, total)]
             }
-            return ["Cloud speech recognition"]
+            return [L10n.string("Cloud speech recognition")]
         case .finalizing:
-            return [job.normalizedTargetLanguageCode == nil
+            return [L10n.string(job.normalizedTargetLanguageCode == nil
                 ? "Transcript and subtitle assembly in VoxStudio Cloud"
-                : "Transcript, subtitle, and translation assembly in VoxStudio Cloud"]
+                : "Transcript, subtitle, and translation assembly in VoxStudio Cloud")]
         case .completed:
-            return ["Result committed to the session"]
+            return [L10n.string("Result committed to the session")]
         }
     }
 
     private func etaText(for job: WorkbenchTranscriptionJob) -> String {
-        if job.state == .failed { return "Processing stopped" }
-        if job.state == .cancelling { return "Cancelling…" }
-        if job.state == .completed { return "Completed" }
+        if job.state == .failed { return L10n.string("Processing stopped") }
+        if job.state == .cancelling { return L10n.string("Cancelling…") }
+        if job.state == .completed { return L10n.string("Completed") }
         if job.compute == .local,
            store.isTranscriptionQueued(jobID),
            job.state == .queued {
-            return "Estimated: waiting for the local ASR slot"
+            return L10n.string("Estimated: waiting for local speech processing")
+        }
+        if isPreparingLocalModels(job) {
+            return L10n.string("Preparing speech features — first-time setup may take several minutes")
         }
         if job.flowProgressStage == .transcription,
            job.progressStep == LocalSpeechStage.detectingSpeech.rawValue,
            let completed = job.progressCompleted,
            let total = job.progressTotal,
            total > 0 {
-            return completed >= total ? "Speech check complete" : job.progressMessage
+            return completed >= total ? L10n.string("Speech check complete") : L10n.display(job.progressMessage)
         }
         if job.progress < 0.08 {
-            return "Estimated: about <1 min left"
+            return L10n.string("Estimated: about <1 min left")
         }
         if job.progress < 0.55 {
-            return "Estimated: a few minutes left"
+            return L10n.string("Estimated: a few minutes left")
         }
-        return "Estimated: wrapping up"
+        return L10n.string("Estimated: wrapping up")
     }
 
     private func metaLine(for job: WorkbenchTranscriptionJob) -> String {
         if job.compute == .local,
            store.isTranscriptionQueued(jobID),
            job.state == .queued {
-            return "Queued • Local serial processing"
+            return L10n.string("Queued • Local serial processing")
         }
         if job.compute == .cloud,
            job.isActivelyProcessing,
@@ -345,19 +452,22 @@ struct TranscriptionProcessingView: View {
            let total = job.progressTotal,
            total > 0 {
             let boundedCompleted = min(max(completed, 0), total)
-            return "Transcribing: \(boundedCompleted)/\(total) • VoxStudio Cloud"
+            return L10n.format("Transcribing: %@/%@ • VoxStudio Cloud", boundedCompleted, total)
+        }
+        if isPreparingLocalModels(job) {
+            return L10n.string("Preparing speech features • This Mac")
         }
         if job.isActivelyProcessing {
-            let location = job.compute == .cloud ? "VoxStudio Cloud" : TaskPlacementCopy.thisMac
+            let location = L10n.string(job.compute == .cloud ? "VoxStudio Cloud" : "This Mac")
             if let completed = job.progressCompleted,
                let total = job.progressTotal,
                total > 0 {
                 let boundedCompleted = min(max(completed, 0), total)
-                return "\(job.progressStep ?? "processing"): \(boundedCompleted)/\(total) • \(location)"
+                return L10n.format("Processing: %@/%@ • %@", boundedCompleted, total, location)
             }
-            return "\(job.progressStep ?? "processing") • \(location)"
+            return L10n.format("Processing • %@", location)
         }
-        return job.state.label
+        return L10n.display(job.state.label)
     }
 
     private func activeMilestone(for job: WorkbenchTranscriptionJob) -> ProcessingMilestone {
@@ -373,6 +483,9 @@ struct TranscriptionProcessingView: View {
             break
         }
         let step = (job.progressStep ?? "").lowercased()
+        if step == "preparing_models" {
+            return .preparing
+        }
         if ["finalizing", "subtitle", "translate", "translation"].contains(where: { step.contains($0) }) {
             return .finalizing
         }
@@ -404,27 +517,30 @@ struct TranscriptionProcessingView: View {
         guard milestone == active else { return nil }
         switch milestone {
         case .preparing:
+            if isPreparingLocalModels(job) {
+                return L10n.string("Preparing and verifying the speech resources listed above. They stay on this Mac for future files.")
+            }
             return job.compute == .cloud
-                ? "Preparing your session in VoxStudio Cloud."
-                : "Your file is queued. Only one local transcription runs at a time to protect GPU memory."
+                ? L10n.string("Preparing your session in VoxStudio Cloud.")
+                : L10n.string("Your file is queued. Only one local transcription runs at a time to protect GPU memory.")
         case .preprocessing:
             return job.compute == .cloud
-                ? "VoxStudio Cloud is preparing the media."
-                : "We’re cleaning and optimizing the audio so speech can be recognized more accurately."
+                ? L10n.string("VoxStudio Cloud is preparing the media.")
+                : L10n.string("We’re cleaning and optimizing the audio so speech can be recognized more accurately.")
         case .speechRecognition:
-            return job.progressMessage
+            return L10n.display(job.progressMessage)
         case .finalizing:
             return job.compute == .cloud
-                ? "VoxStudio Cloud is assembling the transcript and optional translation."
-                : "Polishing timings, speakers, and optional translation."
+                ? L10n.string("VoxStudio Cloud is assembling the transcript and optional translation.")
+                : L10n.string("Polishing timings, speakers, and optional translation.")
         case .completed:
-            return "Opening your session…"
+            return L10n.string("Opening your session…")
         }
     }
 
     private func seedEvents() {
         guard events.isEmpty else { return }
-        appendEvent(job?.compute == .cloud ? "Cloud processing started" : "Local processing started")
+        appendEvent(L10n.string(job?.compute == .cloud ? "Cloud processing started" : "Local processing started"))
         if let message = job?.progressMessage {
             appendEvent(message)
         }

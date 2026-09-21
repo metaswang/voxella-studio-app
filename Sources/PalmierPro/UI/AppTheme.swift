@@ -187,6 +187,7 @@ enum AppTheme {
     // MARK: - Authentication
 
     enum Auth {
+        static var purchaseWindowWidth: CGFloat { AppTheme.zoomed(520) }
         static var purchaseWindowHeight: CGFloat { AppTheme.zoomed(640) }
         static var contentWidth: CGFloat { AppTheme.zoomed(380) }
         static var providerButtonHeight: CGFloat { AppTheme.zoomed(44) }

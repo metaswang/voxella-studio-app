@@ -6,7 +6,6 @@ struct KnowledgeChatPane: View {
     @Bindable var controller: KnowledgeBaseController
     @Bindable private var workbench = WorkbenchStore.shared
     @Bindable private var models = LocalModelManager.shared
-    @Bindable private var llmSettings = LLMSettingsStore.shared
     @FocusState private var inputFocused: Bool
     @State private var isClearHovered = false
 
@@ -49,7 +48,6 @@ struct KnowledgeChatPane: View {
         }
         .background(chatBackground)
         .onAppear {
-            llmSettings.synchronizeChatModelSelection()
             controller.syncModelPlan(livePlan)
         }
         .onChange(of: livePlan) { _, newPlan in
@@ -117,12 +115,6 @@ struct KnowledgeChatPane: View {
             .disabled(controller.messages.isEmpty || controller.isAnswering || controller.isClearingHistory)
             .accessibilityLabel(L10n.string("Clear chat history"))
             .help(L10n.string("Clear chat history"))
-            if !controller.isAnswering, let modelStatusText = controller.modelStatusText {
-                Text(modelStatusText)
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
-                    .lineLimit(1)
-            }
         }
         .padding(.horizontal, AppTheme.Spacing.mdLg)
         .frame(height: AppTheme.Workbench.toolbarHeight)
@@ -390,7 +382,7 @@ struct KnowledgeChatPane: View {
                 Spacer(minLength: 0)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text("\(L10n.string("Sources")), \(citations.count)"))
+            .accessibilityLabel(Text(L10n.format("%@, %@", L10n.string("Sources"), citations.count)))
             .help(L10n.string("Select a source to open its matching transcript"))
 
             FlowCitationChips(citations: citations) { ref in
@@ -398,7 +390,7 @@ struct KnowledgeChatPane: View {
             }
 
             if citations.count > 8 {
-                Text("+\(citations.count - 8) \(L10n.string("more sources"))")
+                Text(L10n.format("+%@ %@", citations.count - 8, L10n.string("more sources")))
                     .font(.system(size: AppTheme.FontSize.xxs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
                     .padding(.leading, AppTheme.Spacing.smMd)
@@ -409,7 +401,7 @@ struct KnowledgeChatPane: View {
     private func accessBanner(_ message: String) -> some View {
         HStack {
             Image(systemName: "lock.fill")
-            Text(message)
+            Text(L10n.display(message))
                 .lineLimit(2)
             Spacer(minLength: 0)
             Button(L10n.string("View plans")) {
@@ -428,7 +420,7 @@ struct KnowledgeChatPane: View {
     private func qaBlockedBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
             Image(systemName: "text.badge.xmark")
-            Text(message)
+            Text(L10n.display(message))
                 .lineLimit(3)
             Spacer(minLength: 0)
         }
@@ -442,7 +434,7 @@ struct KnowledgeChatPane: View {
     private func answerAvailabilityBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
             Image(systemName: "sparkles.rectangle.stack")
-            Text(message)
+            Text(L10n.display(message))
                 .lineLimit(3)
             Spacer(minLength: AppTheme.Spacing.zero)
             recoveryActions(controller.answerRecoveryActions)
@@ -457,7 +449,7 @@ struct KnowledgeChatPane: View {
     private func recoveryActions(_ actions: [KnowledgeRecoveryAction]) -> some View {
         HStack(spacing: AppTheme.Spacing.sm) {
             ForEach(actions, id: \.rawValue) { action in
-                Button(recoveryLabel(action)) {
+                Button(L10n.string(key: recoveryLabel(action))) {
                     controller.performRecoveryAction(action)
                 }
                 .buttonStyle(.borderless)
@@ -468,13 +460,13 @@ struct KnowledgeChatPane: View {
 
     private func recoveryLabel(_ action: KnowledgeRecoveryAction) -> String {
         switch action {
-        case .account: "Manage credits"
-        case .aiSettings: "Configure BYOK"
+        case .account: L10n.key("Manage credits")
+        case .aiSettings: L10n.key("Configure BYOK")
         }
     }
 
     private func errorBanner(_ message: String) -> some View {
-        Text(message)
+        Text(L10n.display(message))
             .font(.system(size: AppTheme.FontSize.xs))
             .foregroundStyle(.orange)
             .padding(.horizontal, AppTheme.Spacing.lg)
@@ -548,14 +540,11 @@ struct KnowledgeChatPane: View {
             }
 
             HStack(spacing: AppTheme.Spacing.sm) {
-                if isBYOK {
-                    modelPicker
-                    reasoningPicker
-                    Spacer(minLength: AppTheme.Spacing.sm)
-                } else {
-                    hostedModelBadge
-                    Spacer(minLength: AppTheme.Spacing.sm)
-                }
+                KnowledgeComposerControlLabel(
+                    title: L10n.string("AI assistant"),
+                    systemImage: "sparkles"
+                )
+                Spacer(minLength: AppTheme.Spacing.sm)
             }
         }
         .padding(.horizontal, AppTheme.Spacing.md)
@@ -573,80 +562,6 @@ struct KnowledgeChatPane: View {
         .padding(.vertical, AppTheme.Spacing.md)
     }
 
-    private var isBYOK: Bool {
-        AITransportPolicy.current == .byok
-    }
-
-    private var modelPicker: some View {
-        let selectedModel = llmSettings.effectiveChatModelReference
-        return Menu {
-            ForEach(llmSettings.chatModelOptions) { option in
-                Button {
-                    llmSettings.selectChatModel(option)
-                } label: {
-                    if option.id == normalizedModelReference(selectedModel) {
-                        Label {
-                            Text(verbatim: option.reference)
-                        } icon: {
-                            Image(systemName: "checkmark")
-                        }
-                    } else {
-                        Text(verbatim: option.reference)
-                    }
-                }
-                .disabled(!option.isAvailable)
-            }
-        } label: {
-            KnowledgeComposerControlLabel(
-                title: selectedModel,
-                systemImage: "key.fill"
-            )
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .layoutPriority(1)
-        .accessibilityLabel(L10n.string("Chat model"))
-        .accessibilityValue(Text(verbatim: selectedModel))
-        .help(Text(verbatim: selectedModel))
-    }
-
-    private var hostedModelBadge: some View {
-        KnowledgeComposerControlLabel(
-            title: L10n.string("Hosted AI"),
-            systemImage: "cloud"
-        )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L10n.string("Chat model"))
-        .accessibilityValue(L10n.string("Hosted AI"))
-        .help(L10n.string("Hosted AI"))
-    }
-
-    private var reasoningPicker: some View {
-        Menu {
-            ForEach(llmSettings.chatReasoningEffortsForCurrentModel) { effort in
-                Button {
-                    llmSettings.chatReasoningEffort = effort
-                } label: {
-                    if effort == llmSettings.effectiveChatReasoningEffort {
-                        Label(L10n.string(key: effort.labelKey), systemImage: "checkmark")
-                    } else {
-                        Text(L10n.string(key: effort.labelKey))
-                    }
-                }
-            }
-        } label: {
-            KnowledgeComposerControlLabel(
-                title: L10n.string(key: llmSettings.effectiveChatReasoningEffort.labelKey),
-                systemImage: "brain.head.profile"
-            )
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .accessibilityLabel(L10n.string("Reasoning effort"))
-        .accessibilityValue(L10n.string(key: llmSettings.effectiveChatReasoningEffort.labelKey))
-        .help(L10n.string("Reasoning effort"))
-    }
-
     private var canSend: Bool {
         !controller.isAnswering
             && !controller.isPreparingKnowledgeModels
@@ -662,9 +577,6 @@ struct KnowledgeChatPane: View {
             && controller.canAskCurrentScope
     }
 
-    private func normalizedModelReference(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
 }
 
 private struct KnowledgeComposerControlLabel: View {
@@ -879,7 +791,7 @@ private struct KnowledgeAnswerStatusControl: View {
                         .foregroundStyle(Color(red: 0.12, green: 0.48, blue: 0.72))
                         .textCase(.uppercase)
                         .tracking(0.7)
-                    Text(status)
+                    Text(L10n.display(status))
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                         .foregroundStyle(AppTheme.Text.primaryColor)
                         .lineLimit(1)
@@ -936,7 +848,7 @@ private struct KnowledgeAnswerStatusControl: View {
         .shadow(color: Color(red: 0.18, green: 0.49, blue: 0.86).opacity(0.16), radius: 8, y: 3)
         .frame(maxWidth: 238)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("\(L10n.string("Answering")): \(status)"))
+        .accessibilityLabel(Text(L10n.format("Answering: %@", L10n.display(status))))
     }
 }
 
@@ -1038,7 +950,7 @@ private struct FlowCitationChips: View {
                 .buttonStyle(.plain)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .help(L10n.string("Open transcript"))
-                .accessibilityLabel(Text("\(L10n.string("Open transcript")): \(ref.chipLabel)"))
+                .accessibilityLabel(Text(L10n.format("Open transcript: %@", ref.chipLabel)))
                 .accessibilityHint(L10n.string("Select a source to open its matching transcript"))
             }
         }
@@ -1268,7 +1180,7 @@ private struct KnowledgeRecentSessionRow: View {
                             .truncationMode(.tail)
 
                         HStack(spacing: AppTheme.Spacing.xs) {
-                            Text(session.sessionType.label)
+                            Text(L10n.string(key: session.sessionType.label))
                             metaDot
                             Text(session.storage == .cloud ? L10n.string("Cloud") : L10n.string("Local"))
                             if let duration = session.duration {
@@ -1281,9 +1193,9 @@ private struct KnowledgeRecentSessionRow: View {
                         .lineLimit(1)
 
                         HStack(spacing: AppTheme.Spacing.xs) {
-                            Text(verbatim: "Created " + session.createdAt.formatted(date: .abbreviated, time: .shortened))
+                            Text(L10n.format("Created %@", session.createdAt.formatted(date: .abbreviated, time: .shortened)))
                             metaDot
-                            Text(verbatim: "Updated " + session.modifiedAt.formatted(date: .abbreviated, time: .shortened))
+                            Text(L10n.format("Updated %@", session.modifiedAt.formatted(date: .abbreviated, time: .shortened)))
                         }
                         .font(.system(size: AppTheme.FontSize.xxs))
                         .foregroundStyle(AppTheme.Text.mutedColor)

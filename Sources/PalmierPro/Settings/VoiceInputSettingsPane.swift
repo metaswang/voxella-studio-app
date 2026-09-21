@@ -6,26 +6,26 @@ struct VoiceInputSettingsPane: View {
     var body: some View {
         HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text("Voice input shortcut")
+                Text(L10n.string("Voice input shortcut"))
                     .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                     .foregroundStyle(AppTheme.Text.primaryColor)
-                Text("Show the voice input window from any app.")
+                Text(L10n.string("Show the voice input window from any app."))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                 if let registrationError = preferences.registrationError {
-                    Text(registrationError)
+                    Text(L10n.display(registrationError))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Status.errorColor)
                 }
             }
             Spacer(minLength: AppTheme.Spacing.lg)
-            Picker("Voice input shortcut", selection: $preferences.option) {
+            Picker(L10n.string("Voice input shortcut"), selection: $preferences.option) {
                 ForEach(VoiceInputShortcutOption.allCases) { option in
                     Text(option.label).tag(option)
                 }
             }
             .labelsHidden()
-            Button("Restore Default", action: preferences.restoreDefault)
+            Button(L10n.string("Restore Default"), action: preferences.restoreDefault)
                 .buttonStyle(.borderless)
         }
         .frame(maxWidth: .infinity)

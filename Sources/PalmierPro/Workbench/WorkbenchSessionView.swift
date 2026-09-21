@@ -30,7 +30,7 @@ struct RecentSessionsView: View {
                             .foregroundStyle(AppTheme.Text.tertiaryColor)
                     }
                     Spacer()
-                    TextField("Search sessions", text: $searchText)
+                    TextField(L10n.string("Search sessions"), text: $searchText)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: AppTheme.Workbench.searchWidth)
                 }
@@ -55,11 +55,11 @@ struct RecentSessionsView: View {
                     .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
                 } else if filteredSessions.isEmpty {
                     ContentUnavailableView(
-                        searchText.isEmpty ? "No sessions yet" : "No matching sessions",
+                        searchText.isEmpty ? L10n.string("No sessions yet") : L10n.string("No matching sessions"),
                         systemImage: "clock",
                         description: Text(searchText.isEmpty
-                            ? "Transcribe media or create a dub to start a session."
-                            : "Try a different session name or transcript phrase.")
+                            ? L10n.string("Transcribe media or create a dub to start a session.")
+                            : L10n.string("Try a different session name or transcript phrase."))
                     )
                     .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.emptyStateMinHeight)
                     .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
@@ -74,17 +74,17 @@ struct RecentSessionsView: View {
                             )
                             .contextMenu {
                                 if let sourceURL = session.sourceURL {
-                                    Button("Reveal source in Finder") {
+                                    Button(L10n.string("Reveal source in Finder")) {
                                         NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
                                     }
                                 }
                                 if let outputURL = session.outputURL {
-                                    Button("Reveal dub in Finder") {
+                                    Button(L10n.string("Reveal dub in Finder")) {
                                         NSWorkspace.shared.activateFileViewerSelecting([outputURL])
                                     }
                                 }
                                 Divider()
-                                Button("Delete", role: .destructive) {
+                                Button(L10n.string("Delete"), role: .destructive) {
                                     sessionPendingDeletion = session
                                 }
                             }
@@ -99,9 +99,14 @@ struct RecentSessionsView: View {
         .background(AppTheme.Background.baseColor)
         .alert(item: $sessionPendingDeletion) { session in
             Alert(
-                title: Text("Delete session?"),
-                message: Text("\"\(session.title)\" and its saved workflow data will be removed."),
-                primaryButton: .destructive(Text("Delete")) {
+                title: Text(L10n.string("Delete session?")),
+                message: Text(
+                    L10n.format(
+                        "\"%@\" and its saved workflow data will be removed.",
+                        session.title
+                    )
+                ),
+                primaryButton: .destructive(Text(L10n.string("Delete"))) {
                     store.deleteSession(session.id)
                 },
                 secondaryButton: .cancel()
@@ -164,9 +169,9 @@ struct WorkbenchSessionDetailView: View {
                 }
             } else {
                 ContentUnavailableView(
-                    "Session unavailable",
+                    L10n.string("Session unavailable"),
                     systemImage: "doc.text.magnifyingglass",
-                    description: Text("Choose a session from Recent.")
+                    description: Text(L10n.string("Choose a session from Recent."))
                 )
             }
         }
@@ -286,21 +291,26 @@ struct WorkbenchSessionDetailView: View {
                 .appZoomEnvironment(presentationBoundary: true)
             }
         }
-        .alert("My Template", isPresented: $showTemplateLoginAlert) {
-            Button("Open voxstudio.me") {
+        .alert(L10n.string("My Template"), isPresented: $showTemplateLoginAlert) {
+            Button(L10n.string("Open voxstudio.me")) {
                 if let url = URL(string: "https://voxstudio.me") {
                     NSWorkspace.shared.open(url)
                 }
             }
-            Button("OK", role: .cancel) {}
+            Button(L10n.string("OK"), role: .cancel) {}
         } message: {
-            Text("Sign in at voxstudio.me to choose and edit summary templates.")
+            Text(L10n.string("Sign in at voxstudio.me to choose and edit summary templates."))
         }
         .alert(item: $sessionPendingDeletion) { session in
             Alert(
-                title: Text("Delete session?"),
-                message: Text("\"\(session.title)\" and its saved workflow data will be removed."),
-                primaryButton: .destructive(Text("Delete")) {
+                title: Text(L10n.string("Delete session?")),
+                message: Text(
+                    L10n.format(
+                        "\"%@\" and its saved workflow data will be removed.",
+                        session.title
+                    )
+                ),
+                primaryButton: .destructive(Text(L10n.string("Delete"))) {
                     store.deleteSession(session.id)
                 },
                 secondaryButton: .cancel()
@@ -567,12 +577,10 @@ struct WorkbenchSessionDetailView: View {
             secondaryAudioURL: secondaryAudioURL,
             showsFilename: false,
             prefersVideoCanvas: hasInlineVideo,
-            subtitleTrack: hasInlineVideo
-                ? (selectedTrack == .dub
-                    ? session.dubSubtitleTrack
-                    : session.subtitleTrack)
-                : nil,
-            translationTracks: hasInlineVideo ? session.translationTracks : [],
+            subtitleTrack: selectedTrack == .dub
+                ? session.dubSubtitleTrack
+                : session.subtitleTrack,
+            translationTracks: session.translationTracks,
             highlightCues: playbackCues,
             activeCueID: $activePlaybackCueID,
             cuePlaybackRequest: $cuePlaybackRequest,
@@ -642,7 +650,7 @@ struct WorkbenchSessionDetailView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
-                        .help("Rename session")
+                        .help(L10n.string("Rename session"))
                     }
                 }
                 HStack(spacing: AppTheme.Spacing.md) {
@@ -671,7 +679,7 @@ struct WorkbenchSessionDetailView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(AppTheme.Status.warningColor)
-                        .help("Open source page")
+                        .help(L10n.string("Open source page"))
                     } else if let filename = session.originalFilename {
                         Label(filename, systemImage: "doc")
                             .lineLimit(1)
@@ -704,14 +712,14 @@ struct WorkbenchSessionDetailView: View {
                         if isOpeningClip {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("Opening…")
+                            Text(L10n.string("Opening…"))
                         } else {
-                            Label("Create clip", systemImage: "timeline.selection")
+                            Label(L10n.string("Create clip"), systemImage: "timeline.selection")
                         }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(isOpeningClip)
-                    .help("Open the video editor and place this session on the timeline")
+                    .help(L10n.string("Open the video editor and place this session on the timeline"))
                 }
                 Button {
                     if session.transcriptionID != nil {
@@ -720,7 +728,7 @@ struct WorkbenchSessionDetailView: View {
                         openWorkflow(session)
                     }
                 } label: {
-                    Label(session.hasDub ? "Re-dub" : "Create dub", systemImage: "waveform.and.mic")
+                    Label(L10n.string(session.hasDub ? "Re-dub" : "Create dub"), systemImage: "waveform.and.mic")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isOpeningClip)
@@ -765,10 +773,10 @@ struct WorkbenchSessionDetailView: View {
                             .foregroundStyle(AppTheme.Status.warningColor)
                     }
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                        Text(
+                        Text(L10n.display(
                             session.cloudSyncError
                                 ?? "Saving changes to VoxStudio Cloud…"
-                        )
+                        ))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(
                             session.cloudSyncError == nil
@@ -776,7 +784,7 @@ struct WorkbenchSessionDetailView: View {
                                 : AppTheme.Status.warningColor
                         )
                         if session.cloudSyncError != nil {
-                            Button("Retry cloud sync") {
+                            Button(L10n.string("Retry cloud sync")) {
                                 store.retryCloudSessionSync(session.id)
                             }
                             .buttonStyle(.borderless)
@@ -795,9 +803,13 @@ struct WorkbenchSessionDetailView: View {
         if let dub = store.dubs.first(where: { $0.id == dubID }),
            let revisions = dub.revisions,
            revisions.count > 1 {
-            Picker("Revision", selection: revisionBinding(dubID)) {
+            Picker(L10n.string("Revision"), selection: revisionBinding(dubID)) {
                 ForEach(Array(revisions.enumerated()), id: \.element.id) { offset, revision in
-                    Text("Version \(offset + 1) · \(revision.createdAt.formatted(date: .omitted, time: .shortened))")
+                    Text(L10n.format(
+                        "Version %@ · %@",
+                        offset + 1,
+                        revision.createdAt.formatted(date: .omitted, time: .shortened)
+                    ))
                         .tag(revision.id as UUID?)
                 }
             }
@@ -810,24 +822,24 @@ struct WorkbenchSessionDetailView: View {
         let isProcessing = session.status.showsProcessing || session.status.showsQueued
         return Menu {
             if session.transcriptionID != nil {
-                Button(session.subtitleTrack == nil ? "Segment subtitles" : "Re-segment subtitles") {
+                Button(L10n.string(session.subtitleTrack == nil ? "Segment subtitles" : "Re-segment subtitles")) {
                     if let transcriptionID = session.transcriptionID {
                         store.prepareSubtitles(transcriptionID)
                     }
                 }
                 .disabled(isProcessing || (session.transcript == nil && session.sourceURL == nil))
-                Button("Re-transcribe") {
+                Button(L10n.string("Re-transcribe")) {
                     showRetranscribeSheet = true
                 }
                 .disabled(isProcessing || session.sourceURL == nil)
             }
             if session.isRemoteOnly, session.status.displayTaskState == .unknown {
-                Button("Refresh status") {
+                Button(L10n.string("Refresh status")) {
                     Task { await store.refreshRemoteSessions() }
                 }
             }
             Divider()
-            Button("Delete", role: .destructive) {
+            Button(L10n.string("Delete"), role: .destructive) {
                 sessionPendingDeletion = session
             }
         } label: {
@@ -839,8 +851,8 @@ struct WorkbenchSessionDetailView: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .help("Session options")
-        .accessibilityLabel("Session options")
+        .help(L10n.string("Session options"))
+        .accessibilityLabel(L10n.string("Session options"))
     }
 
     private func tabBar(_ session: WorkbenchSession) -> some View {
@@ -908,8 +920,8 @@ struct WorkbenchSessionDetailView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
-        .help(help)
+        .accessibilityLabel(L10n.string(key: accessibilityLabel))
+        .help(L10n.string(key: help))
     }
 
     @ViewBuilder
@@ -923,7 +935,7 @@ struct WorkbenchSessionDetailView: View {
                 Button {
                     selectedTab = tab
                 } label: {
-                    Text(tab.title)
+                    Text(L10n.string(key: tab.title))
                         .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
                         .frame(maxWidth: .infinity, minHeight: 24)
                         .contentShape(Rectangle())
@@ -945,7 +957,7 @@ struct WorkbenchSessionDetailView: View {
                                 HStack {
                                     VStack(alignment: .leading) {
                                         Text(track.displayLanguageLabel)
-                                        Text("\(track.track.cues.count) cues")
+                                        Text(L10n.format("%@ cues", track.track.cues.count))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
@@ -996,8 +1008,8 @@ struct WorkbenchSessionDetailView: View {
             allowsEditing: allowsEditing,
             showsSubtitleDisplayText: selectedTab == .subtitles,
             emptyText: selectedTab == .transcript
-                ? "No timed transcript is available for this track."
-                : "No subtitle track is available.",
+                ? L10n.string("No timed transcript is available for this track.")
+                : L10n.string("No subtitle track is available."),
             onSeek: { start, end in
                 cuePlaybackRequest = SessionCuePlaybackRequest(start: start, end: end)
             }
@@ -1324,7 +1336,11 @@ private struct SessionDubOptionsSheet: View {
             }
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                Text(speakers.isEmpty ? "SESSION VOICE" : "SESSION VOICE · \(speakers.count) SPEAKERS")
+                Text(
+                    speakers.isEmpty
+                        ? L10n.string("SESSION VOICE")
+                        : L10n.format("SESSION VOICE · %@ SPEAKERS", speakers.count)
+                )
                     .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.bold))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                 VoiceReferenceSelectionPanel(
@@ -1386,7 +1402,7 @@ private struct SessionTranslateSheet: View {
                     Text("Choose a language").tag("")
                     Divider()
                     ForEach(options) { option in
-                        Text(option.label).tag(option.languageCode ?? "")
+                        Text(L10n.string(key: option.label)).tag(option.languageCode ?? "")
                     }
                 }
                 .labelsHidden()
@@ -1433,6 +1449,9 @@ private struct SessionMediaPlayer: View {
     let onSelectTrack: (SessionPlaybackTrack) -> Void
 
     @State private var playback = SessionPlaybackController()
+    @State private var hasLoadedPlayback = false
+
+    private let audioSubtitleStageHeight: CGFloat = 58
 
     private var showsVideoCanvas: Bool {
         prefersVideoCanvas
@@ -1454,14 +1473,14 @@ private struct SessionMediaPlayer: View {
                 HStack {
                     Picker("Track", selection: Binding(get: { track }, set: { value in onSelectTrack(value) })) {
                         ForEach(availableTracks) { item in
-                            Text(item.title(hasCloudRepair: hasCloudRepair)).tag(item)
+                            Text(L10n.string(key: item.title(hasCloudRepair: hasCloudRepair))).tag(item)
                         }
                     }
                     .pickerStyle(.segmented)
                     .fixedSize()
                     Spacer()
                     if showsFilename {
-                        Text(URL?.lastPathComponent ?? "Media unavailable")
+                        Text(URL?.lastPathComponent ?? L10n.string("Media unavailable"))
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.mutedColor)
                             .lineLimit(1)
@@ -1491,14 +1510,18 @@ private struct SessionMediaPlayer: View {
                 translationTracks: translationTracks
             )
             playback.configureHighlightCues(highlightCues)
+            let wasPlaying = !hasLoadedPlayback && URL != nil ? true : playback.isPlaying
             // Preserve playhead when master → listen swap completes mid-session.
             await playback.load(
                 url: URL,
                 showsVideoCanvas: showsVideoCanvas,
                 alternateAudioURL: secondaryAudioURL,
                 resumeTime: playback.currentTime > 0 ? playback.currentTime : nil,
-                resumePlaying: playback.isPlaying ? true : nil
+                resumePlaying: wasPlaying
             )
+            if !Task.isCancelled, playback.player != nil {
+                hasLoadedPlayback = true
+            }
         }
         .onChange(of: highlightCues) { _, cues in
             playback.configureHighlightCues(cues)
@@ -1509,7 +1532,7 @@ private struct SessionMediaPlayer: View {
                 translationTracks: translationTracks
             )
         }
-        .onChange(of: subtitleTrack?.cues.count) { _, _ in
+        .onChange(of: subtitleTrack) { _, _ in
             playback.configureSubtitles(
                 subtitleTrack: subtitleTrack,
                 translationTracks: translationTracks
@@ -1611,7 +1634,29 @@ private struct SessionMediaPlayer: View {
             .periodic(from: .now, by: AppTheme.Workbench.playerRefreshInterval)
         ) { _ in
             let currentTime = playback.currentTime
+            let cueText = playback.activeSubtitleText(at: currentTime)
             VStack(spacing: AppTheme.Spacing.smMd) {
+                if playback.subtitleTrack?.cues.isEmpty == false
+                    || playback.translationTracks.contains(where: { !$0.track.cues.isEmpty }) {
+                    ZStack {
+                        if let cueText {
+                            Text(cueText)
+                                .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, AppTheme.Spacing.lg)
+                                .padding(.vertical, AppTheme.Spacing.smMd)
+                                .background(
+                                    Color.black.opacity(AppTheme.Opacity.medium),
+                                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                                )
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: audioSubtitleStageHeight)
+                    .allowsHitTesting(false)
+                }
+
                 AudioWaveformView(
                     peaks: playback.peaks,
                     progress: playback.duration > 0 ? currentTime / playback.duration : 0
@@ -1687,7 +1732,7 @@ private struct SessionMediaPlayer: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(playback.playerViewRef == nil)
-                .help("Fullscreen")
+                .help(L10n.string("Fullscreen"))
             }
         }
     }
@@ -1741,7 +1786,7 @@ private struct SessionMediaPlayer: View {
         }
         .menuStyle(.borderlessButton)
         .disabled(playback.subtitleTrack == nil && playback.translationTracks.isEmpty)
-        .help("Subtitles")
+        .help(L10n.string("Subtitles"))
     }
 
     private var speedMenu: some View {
@@ -1754,17 +1799,17 @@ private struct SessionMediaPlayer: View {
                 }
             }
         } label: {
-            Text("Speed \(speedLabel(playback.playbackRate))")
+            Text(L10n.format("Speed %@", speedLabel(playback.playbackRate)))
                 .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
         }
         .menuStyle(.borderlessButton)
-        .help("Playback speed")
+        .help(L10n.string("Playback speed"))
     }
 
     @ViewBuilder
     private func labelWithCheck(_ title: String, selected: Bool) -> some View {
         HStack {
-            Text(title)
+            Text(L10n.display(title))
             if selected {
                 Image(systemName: "checkmark")
             }
@@ -1799,7 +1844,7 @@ struct AudioWaveformView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .accessibilityLabel("Audio waveform")
+        .accessibilityLabel(L10n.string("Audio waveform"))
     }
 }
 
@@ -1811,7 +1856,7 @@ private struct SessionSummaryPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             HStack(spacing: AppTheme.Spacing.md) {
-                Text("Summary")
+                Text(L10n.string("Summary"))
                     .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
                 Spacer()
                 if (session.transcriptionID != nil || session.dubID != nil),
@@ -1825,18 +1870,16 @@ private struct SessionSummaryPanel: View {
                             .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel("Refine summary with AI")
-                    .help("Tell AI what to change and regenerate the summary")
+                    .accessibilityLabel(L10n.string("Refine summary with AI"))
+                    .help(L10n.string("Tell AI what to change and regenerate the summary"))
                 }
-                Button("My Template", systemImage: "doc.text", action: onOpenTemplate)
+                Button(L10n.string("My Template"), systemImage: "doc.text", action: onOpenTemplate)
                     .buttonStyle(.bordered)
                     .disabled(session.summaryState == .running)
-                    .help(
-                        session.summaryState == .running
-                            ? "Wait for the current summary to finish"
-                            : session.summaryTemplateName.map { "Template: \($0)" }
-                                ?? "Choose a summary template"
-                    )
+                    .help(session.summaryState == .running
+                        ? L10n.string("Wait for the current summary to finish")
+                        : session.summaryTemplateName.map { L10n.format("Template: %@", $0) }
+                            ?? L10n.string("Choose a summary template"))
             }
 
             if let templateName = session.summaryTemplateName,
@@ -1871,11 +1914,11 @@ private struct SessionSummaryPanel: View {
                       !error.isEmpty,
                       error != LLMConfigurationError.noConfiguredModel(.subtitleProcessing)
                         .localizedDescription {
-                Text(error)
+                Text(L10n.display(error))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             } else {
-                Text("Summary will generate automatically when an LLM is configured.")
+                Text(L10n.string("Summary will generate automatically when an LLM is configured."))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
@@ -1894,9 +1937,9 @@ private struct SessionSummaryPanel: View {
         guard let templateName = session.summaryTemplateName?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !templateName.isEmpty else {
-            return "Generating summary…"
+            return L10n.string("Generating summary…")
         }
-        return "Generating summary with \(templateName)…"
+        return L10n.format("Generating summary with %@…", templateName)
     }
 }
 
@@ -1915,14 +1958,14 @@ private struct SessionSummaryRefinementSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text("Refine summary")
+                Text(L10n.string("Refine summary"))
                     .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.semibold))
-                Text("Tell AI what to change. The selected template requirements remain active.")
+                Text(L10n.string("Tell AI what to change. The selected template requirements remain active."))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                 if let templateName = session.summaryTemplateName,
                    !templateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text("Template: \(templateName)")
+                    Text(L10n.format("Template: %@", templateName))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
@@ -1937,7 +1980,7 @@ private struct SessionSummaryRefinementSheet: View {
                     .focused($isPromptFocused)
 
                 if trimmedPrompt.isEmpty {
-                    Text("For example: emphasize the findings, shorten the overview, and add a risks section.")
+                    Text(L10n.string("For example: emphasize the findings, shorten the overview, and add a risks section."))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                         .padding(.horizontal, AppTheme.Spacing.md)
@@ -1954,9 +1997,9 @@ private struct SessionSummaryRefinementSheet: View {
 
             HStack {
                 Spacer()
-                Button("Cancel", action: onCancel)
+                Button(L10n.string("Cancel"), action: onCancel)
                     .keyboardShortcut(.cancelAction)
-                Button("Regenerate") {
+                Button(L10n.string("Regenerate")) {
                     onSubmit(trimmedPrompt)
                 }
                 .buttonStyle(.borderedProminent)

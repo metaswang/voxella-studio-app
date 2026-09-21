@@ -27,8 +27,14 @@ struct ListenTrackPaths: Equatable, Sendable {
 }
 
 enum ListenTrackLocator {
-    /// Sidecar beside the master recording: `Recording-….listen.m4a`.
+    /// Versioned sidecar beside the master recording.
     static func sidecarURL(forMaster masterURL: URL) -> URL {
+        let directory = masterURL.deletingLastPathComponent()
+        let stem = masterURL.deletingPathExtension().lastPathComponent
+        return directory.appendingPathComponent("\(stem).listen-moss2.m4a")
+    }
+
+    static func legacySidecarURL(forMaster masterURL: URL) -> URL {
         let directory = masterURL.deletingLastPathComponent()
         let stem = masterURL.deletingPathExtension().lastPathComponent
         return directory.appendingPathComponent("\(stem).listen.m4a")
@@ -36,7 +42,7 @@ enum ListenTrackLocator {
 
     static func cacheURL(forMaster masterURL: URL, cache: DiskCache = ListenTrackEnhancer.cache) -> URL {
         let tag = DiskCache.sizeMtimeTag(for: masterURL)
-        return cache.directory.appendingPathComponent("\(tag)_listen.m4a")
+        return cache.directory.appendingPathComponent("\(tag)_moss2_listen.m4a")
     }
 
     /// Prefer an existing sidecar, then a size/mtime cache entry.

@@ -1,7 +1,7 @@
 import Foundation
 
 func unsupportedValue(model displayName: String, field: String, value: String, allowed: [String]) -> String {
-    "\(displayName) does not support \(field) '\(value)'. Valid: \(allowed.joined(separator: ", "))."
+    "This option does not support \(field) '\(value)'. Valid: \(allowed.joined(separator: ", "))."
 }
 
 struct VideoModelConfig: Identifiable, Sendable {
@@ -78,7 +78,7 @@ struct VideoModelConfig: Identifiable, Sendable {
         guard let maximum = maxSourceVideoSeconds,
               duration > maximum,
               let limit = sourceDurationLimitLabel else { return nil }
-        return "\(displayName) supports source videos up to \(limit). Trim the clip to continue."
+        return "This video option supports source videos up to \(limit). Trim the clip to continue."
     }
 
     func billingDurationSeconds(

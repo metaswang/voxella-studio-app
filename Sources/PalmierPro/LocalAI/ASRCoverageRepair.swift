@@ -7,12 +7,16 @@ import Foundation
 enum ASRCoverageRepair {
     struct Policy: Equatable, Sendable {
         var coveragePad: Double
+        /// Interior holes between two word clusters.
         var minimumUncoveredDuration: Double
+        /// Leading/trailing holes with words on only one side.
+        var minimumEdgeUncoveredDuration: Double
         var retryOverlapDuration: Double
 
         static let standard = Policy(
             coveragePad: 0.25,
             minimumUncoveredDuration: 0.75,
+            minimumEdgeUncoveredDuration: 0.40,
             retryOverlapDuration: 1.0
         )
     }
@@ -25,8 +29,9 @@ enum ASRCoverageRepair {
         let speech = AlignmentSpeechGate.alignableIntervals(mask: mask)
         guard !speech.isEmpty else { return [] }
 
+        let wordRanges = merged(covered)
         let paddedCovered = merged(
-            covered.compactMap { padded($0, by: policy.coveragePad, audioDuration: mask.audioDuration) }
+            wordRanges.compactMap { padded($0, by: policy.coveragePad, audioDuration: mask.audioDuration) }
         )
         var uncovered: [ASRSpeechRange] = []
         for interval in speech {
@@ -37,20 +42,27 @@ enum ASRCoverageRepair {
             uncovered.append(contentsOf: remaining)
         }
         return merged(
-            uncovered.filter {
-                $0.end - $0.start >= policy.minimumUncoveredDuration
+            uncovered.filter { hole in
+                hole.end - hole.start >= minimumDuration(for: hole, covered: wordRanges, policy: policy)
             }
         )
     }
 
     static func retryRanges(
         from uncovered: [ASRSpeechRange],
+        firstPassCovered: [ASRSpeechRange] = [],
         audioDuration: Double,
         policy: Policy = .standard
     ) -> [ASRSpeechRange] {
-        merged(
-            uncovered.compactMap {
-                padded($0, by: policy.retryOverlapDuration, audioDuration: audioDuration)
+        let words = merged(firstPassCovered)
+        return merged(
+            uncovered.compactMap { hole in
+                retryWindow(
+                    for: hole,
+                    firstPassCovered: words,
+                    audioDuration: audioDuration,
+                    policy: policy
+                )
             }
         )
     }
@@ -104,6 +116,53 @@ enum ASRCoverageRepair {
 
     private static func totalDuration(_ ranges: [ASRSpeechRange]) -> Double {
         ranges.reduce(0) { $0 + max(0, $1.end - $1.start) }
+    }
+
+    private static func minimumDuration(
+        for hole: ASRSpeechRange,
+        covered: [ASRSpeechRange],
+        policy: Policy
+    ) -> Double {
+        isEdgeHole(hole, covered: covered)
+            ? policy.minimumEdgeUncoveredDuration
+            : policy.minimumUncoveredDuration
+    }
+
+    /// A hole is leading/trailing when words exist on at most one side.
+    /// Interior breath gaps sit between two word clusters.
+    private static func isEdgeHole(_ hole: ASRSpeechRange, covered: [ASRSpeechRange]) -> Bool {
+        let hasBefore = covered.contains { $0.end <= hole.start + 1e-9 }
+        let hasAfter = covered.contains { $0.start >= hole.end - 1e-9 }
+        return !hasBefore || !hasAfter
+    }
+
+    /// Interior holes keep ±overlap into adjacent words. Edge holes stop at the
+    /// nearest first-pass word so the decoder is not replayed across the same pause.
+    private static func retryWindow(
+        for hole: ASRSpeechRange,
+        firstPassCovered: [ASRSpeechRange],
+        audioDuration: Double,
+        policy: Policy
+    ) -> ASRSpeechRange? {
+        guard var window = padded(
+            hole,
+            by: policy.retryOverlapDuration,
+            audioDuration: audioDuration
+        ) else { return nil }
+        guard isEdgeHole(hole, covered: firstPassCovered) else { return window }
+        if let lastBefore = firstPassCovered
+            .filter({ $0.end <= hole.start + 1e-9 })
+            .max(by: { $0.end < $1.end })
+        {
+            window = ASRSpeechRange(start: max(window.start, lastBefore.end), end: window.end)
+        }
+        if let firstAfter = firstPassCovered
+            .filter({ $0.start >= hole.end - 1e-9 })
+            .min(by: { $0.start < $1.start })
+        {
+            window = ASRSpeechRange(start: window.start, end: min(window.end, firstAfter.start))
+        }
+        return window.end > window.start ? window : nil
     }
 
     private static func padded(

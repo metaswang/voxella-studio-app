@@ -36,79 +36,82 @@ final class RecordingStatusItemController: NSObject {
 
         switch session.phase {
         case .idle:
-            addHeader("VoxStudio Recording", to: menu)
+            addHeader(L10n.string("VoxStudio Recording"), to: menu)
             menu.addItem(.separator())
-            addItem("Record Screen", action: #selector(recordDisplay), to: menu)
-            addItem("Record Window", action: #selector(recordWindow), to: menu)
-            addItem("Record Selected Area", action: #selector(recordRegion), to: menu)
-            addItem("Record Audio Only", action: #selector(recordAudio), to: menu)
+            addItem(L10n.string("Record Screen"), action: #selector(recordDisplay), to: menu)
+            addItem(L10n.string("Record Window"), action: #selector(recordWindow), to: menu)
+            addItem(L10n.string("Record Selected Area"), action: #selector(recordRegion), to: menu)
+            addItem(L10n.string("Record Audio Only"), action: #selector(recordAudio), to: menu)
             addItem(
-                "Voice Input…",
+                L10n.string("Voice Input…"),
                 action: #selector(showVoiceInput),
                 to: menu,
                 keyEquivalent: VoiceInputShortcutPreferences.shared.option
             )
             menu.addItem(.separator())
-            addItem("Recording Setup…", action: #selector(showRecordingSetup), to: menu)
+            addItem(L10n.string("Recording Setup…"), action: #selector(showRecordingSetup), to: menu)
             menu.addItem(.separator())
-            addHeader("VoxStudio Workflows", to: menu)
+            addHeader(L10n.string("VoxStudio Workflows"), to: menu)
             menu.addItem(.separator())
             addSubmenu(
-                "Transcribe",
+                L10n.string("Transcribe"),
                 imageName: "text.bubble",
                 items: [
-                    ("Import", #selector(importMedia), "square.and.arrow.down"),
-                    ("Net Video", #selector(importNetVideo), "play.rectangle"),
+                    (L10n.string("Import"), #selector(importMedia), "square.and.arrow.down"),
+                    (L10n.string("Net Video"), #selector(importNetVideo), "play.rectangle"),
                 ],
                 to: menu
             )
             addItem(
-                "Voiceover",
+                L10n.string("Voiceover"),
                 action: #selector(showVoiceover),
                 to: menu,
                 imageName: "waveform.and.mic"
             )
             addItem(
-                "Remote Meeting Notetaker",
+                L10n.string("Remote Meeting Notetaker"),
                 action: #selector(showMeetingNotetaker),
                 to: menu,
                 imageName: "person.2"
             )
 
         case .preparing, .picking, .finishing:
-            addHeader(session.phase == .finishing ? "Finishing Recording…" : "Preparing Recording…", to: menu)
+            addHeader(
+                L10n.string(session.phase == .finishing ? "Finishing Recording…" : "Preparing Recording…"),
+                to: menu
+            )
             menu.addItem(.separator())
-            addItem("Cancel Recording", action: #selector(discardRecording), to: menu)
-            addItem("Show Recording Controls", action: #selector(showRecordingSetup), to: menu)
+            addItem(L10n.string("Cancel Recording"), action: #selector(discardRecording), to: menu)
+            addItem(L10n.string("Show Recording Controls"), action: #selector(showRecordingSetup), to: menu)
 
         case .recording, .paused:
             addHeader(
                 session.isPaused
-                    ? "Paused  \(RecordingTimeFormat.clock(session.elapsed))"
-                    : "Recording  \(RecordingTimeFormat.clock(session.elapsed))",
+                    ? L10n.format("Paused %@", RecordingTimeFormat.clock(session.elapsed))
+                    : L10n.format("Recording %@", RecordingTimeFormat.clock(session.elapsed)),
                 to: menu
             )
             menu.addItem(.separator())
-            addItem("Stop Recording", action: #selector(stopRecording), to: menu)
+            addItem(L10n.string("Stop Recording"), action: #selector(stopRecording), to: menu)
             addItem(
-                session.isPaused ? "Resume Recording" : "Pause Recording",
+                L10n.string(session.isPaused ? "Resume Recording" : "Pause Recording"),
                 action: #selector(togglePause),
                 to: menu
             )
             if session.configuration.microphone.isEnabled {
                 addItem(
-                    session.isMicrophoneMuted ? "Unmute Microphone" : "Mute Microphone",
+                    L10n.string(session.isMicrophoneMuted ? "Unmute Microphone" : "Mute Microphone"),
                     action: #selector(toggleMute),
                     to: menu
                 )
             }
             menu.addItem(.separator())
-            addItem("Show Recording Controls", action: #selector(showRecordingSetup), to: menu)
-            addItem("Discard Recording", action: #selector(discardRecording), to: menu)
+            addItem(L10n.string("Show Recording Controls"), action: #selector(showRecordingSetup), to: menu)
+            addItem(L10n.string("Discard Recording"), action: #selector(discardRecording), to: menu)
         }
 
         menu.addItem(.separator())
-        addItem("Quit \(AppIdentity.productName)", action: #selector(quitApplication), to: menu)
+        addItem(L10n.format("Quit %@", AppIdentity.productName), action: #selector(quitApplication), to: menu)
 
         statusItem?.menu = menu
     }
@@ -119,7 +122,7 @@ final class RecordingStatusItemController: NSObject {
         statusItem.button?.image = WorkbenchBrandIcon.statusBarImage()
         statusItem.button?.imagePosition = .imageLeading
         statusItem.button?.contentTintColor = nil
-        statusItem.button?.toolTip = isCapturing ? "Recording controls" : "Start a recording"
+        statusItem.button?.toolTip = L10n.string(isCapturing ? "Recording controls" : "Start a recording")
         statusItem.button?.title = isCapturing ? " \(RecordingTimeFormat.clock(session.elapsed))" : ""
         statusItem.length = isCapturing ? NSStatusItem.variableLength : NSStatusItem.squareLength
     }

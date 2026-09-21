@@ -110,8 +110,59 @@ struct LLMResilienceTests {
 
         #expect(settings.route(for: .translation).primaryModel == "openai/gpt-5.4-nano")
         #expect(settings.route(for: .subtitleProcessing).primaryModel == "openai/gpt-5.6-luna")
-        #expect(settings.route(for: .chat).primaryModel == "minimax/MiniMax-M3")
-        #expect(Set(settings.providers.map(\.normalizedPrefix)) == ["openai", "minimax"])
+        #expect(settings.route(for: .translation).fallbackModels.isEmpty)
+        #expect(settings.route(for: .subtitleProcessing).fallbackModels.isEmpty)
+        #expect(settings.route(for: .chat).primaryModel.isEmpty)
+        #expect(settings.route(for: .chat).fallbackModels == ["openai/gpt-5.4-nano"])
+        #expect(settings.route(for: .graphExtraction).primaryModel.isEmpty)
+        #expect(settings.route(for: .graphQueryUnderstanding).primaryModel.isEmpty)
+        #expect(settings.routes.values.flatMap(\.modelChain).allSatisfy {
+            !$0.lowercased().contains("minimax")
+        })
+        #expect(Set(settings.providers.map(\.normalizedPrefix)) == ["openai"])
+    }
+
+    @Test @MainActor
+    func previousMiniMaxMigrationLeavesDefaultRouteFieldsEmpty() throws {
+        let suiteName = "LLMPreviousMiniMaxMigrationTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let configuration = LLMSettingsStore.PersistedConfiguration(
+            providers: [.defaultOpenAI],
+            routes: [
+                .subtitleProcessing: LLMModelRoute(
+                    primaryModel: "openai/gpt-5.6-luna",
+                    fallbackModels: ["openai/gpt-5.4-nano"],
+                    policy: .default(for: .subtitleProcessing)
+                ),
+                .chat: LLMModelRoute(
+                    primaryModel: "openai/gpt-5.4-nano",
+                    fallbackModels: [],
+                    policy: .default(for: .chat)
+                ),
+                .graphExtraction: LLMModelRoute(
+                    primaryModel: "openai/gpt-5.4-nano",
+                    fallbackModels: [],
+                    policy: .default(for: .graphExtraction)
+                ),
+                .graphQueryUnderstanding: LLMModelRoute(
+                    primaryModel: "openai/gpt-5.4-nano",
+                    fallbackModels: [],
+                    policy: .default(for: .graphQueryUnderstanding)
+                )
+            ]
+        )
+        let data = try JSONEncoder().encode(configuration)
+        defaults.set(data, forKey: "voxella.llm.configuration.v2")
+        defaults.set(true, forKey: "voxella.llm.migration.remove-default-minimax-provider.v1")
+
+        let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
+
+        #expect(settings.route(for: .subtitleProcessing).fallbackModels.isEmpty)
+        #expect(settings.route(for: .chat).primaryModel.isEmpty)
+        #expect(settings.route(for: .graphExtraction).primaryModel.isEmpty)
+        #expect(settings.route(for: .graphQueryUnderstanding).primaryModel.isEmpty)
     }
 
     @Test @MainActor
@@ -159,7 +210,7 @@ struct LLMResilienceTests {
         ])
         #expect(options.allSatisfy { OpenAIChatModelID($0.modelName) != nil })
         #expect(!options.contains { $0.reference.hasPrefix("openrouter/") })
-        #expect(options.first?.supportedReasoningEfforts == [.low, .medium, .high, .xHigh, .max])
+        #expect(options.first?.supportedReasoningEfforts == [.minimal, .low, .medium, .high])
         #expect(options.first(where: { $0.modelName == "gpt-5.6-luna" })?.supportedReasoningEfforts
             == [.none, .low, .medium, .high, .xHigh, .max])
 
@@ -302,6 +353,7 @@ struct LLMResilienceTests {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
+        settings.addProvider(kind: .miniMax)
         let legacyRoute = LLMModelRoute(
             primaryModel: "openai/gpt-5.4-nano",
             fallbackModels: ["minimax/MiniMax-M3"],
@@ -483,13 +535,13 @@ struct LLMResilienceTests {
         )
 
         #expect(configuration.openAICompatibleRequestOptions == .init(
-            thinkingType: "disabled",
             reasoningEffort: "none",
-            temperature: 0,
             maxOutputTokens: 4_096
         ))
         #expect(configuration.resolvedExtraBody["reasoning_effort"] == .string("none"))
         #expect(configuration.resolvedExtraBody["reasoning"] == nil)
+        #expect(configuration.resolvedExtraBody["thinking"] == nil)
+        #expect(configuration.resolvedExtraBody["temperature"] == nil)
         #expect(configuration.resolvedExtraBody["max_completion_tokens"] == .number(4_096))
         #expect(configuration.resolvedExtraBody["max_tokens"] == nil)
     }
@@ -512,6 +564,54 @@ struct LLMResilienceTests {
 
         #expect(configuration.openAICompatibleRequestOptions.reasoningEffort == "medium")
         #expect(configuration.resolvedExtraBody["reasoning"] == .object(["effort": .string("medium")]))
+    }
+
+    @Test
+    func subtitleProcessingUsesMinimalEffortForOpenRouterNano() {
+        let configuration = LLMRuntimeConfiguration(
+            profile: LLMProviderProfile(
+                provider: .openRouter,
+                baseURL: "https://openrouter.ai/api/v1",
+                model: "openai/gpt-5-nano"
+            ),
+            modelIdentifier: "openrouter/openai/gpt-5-nano",
+            modelName: "openai/gpt-5-nano",
+            endpoint: URL(string: "https://openrouter.ai/api/v1/chat/completions")!,
+            apiKey: "test-openrouter",
+            useCase: .subtitleProcessing
+        )
+
+        #expect(configuration.openAICompatibleRequestOptions == .init(
+            reasoningEffort: "minimal",
+            maxOutputTokens: 4_096
+        ))
+        #expect(configuration.resolvedExtraBody["reasoning"] == .object(["effort": .string("minimal")]))
+        #expect(configuration.resolvedExtraBody["thinking"] == nil)
+        #expect(configuration.resolvedExtraBody["temperature"] == nil)
+        #expect(configuration.resolvedExtraBody["max_tokens"] == .number(4_096))
+    }
+
+    @Test
+    func subtitleProcessingUsesMinimalEffortForOfficialOpenAINano() {
+        let configuration = LLMRuntimeConfiguration(
+            profile: .defaultOpenAI,
+            modelIdentifier: "openai/gpt-5-nano",
+            modelName: "gpt-5-nano",
+            endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
+            apiKey: "test-openai",
+            useCase: .subtitleProcessing
+        )
+
+        #expect(configuration.openAICompatibleRequestOptions == .init(
+            reasoningEffort: "minimal",
+            maxOutputTokens: 4_096
+        ))
+        #expect(configuration.resolvedExtraBody["reasoning_effort"] == .string("minimal"))
+        #expect(configuration.resolvedExtraBody["reasoning"] == nil)
+        #expect(configuration.resolvedExtraBody["thinking"] == nil)
+        #expect(configuration.resolvedExtraBody["temperature"] == nil)
+        #expect(configuration.resolvedExtraBody["max_completion_tokens"] == .number(4_096))
+        #expect(configuration.resolvedExtraBody["max_tokens"] == nil)
     }
 
     @Test
@@ -595,13 +695,13 @@ struct LLMResilienceTests {
         )
 
         #expect(configuration.openAICompatibleRequestOptions == .init(
-            thinkingType: "disabled",
             reasoningEffort: "none",
-            temperature: 0,
             maxOutputTokens: 8_192
         ))
         #expect(configuration.resolvedExtraBody["reasoning_effort"] == .string("none"))
         #expect(configuration.resolvedExtraBody["reasoning"] == nil)
+        #expect(configuration.resolvedExtraBody["thinking"] == nil)
+        #expect(configuration.resolvedExtraBody["temperature"] == nil)
         #expect(configuration.resolvedExtraBody["max_completion_tokens"] == .number(8_192))
         #expect(configuration.resolvedExtraBody["max_tokens"] == nil)
     }

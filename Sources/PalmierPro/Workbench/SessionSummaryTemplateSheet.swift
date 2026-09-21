@@ -81,7 +81,7 @@ struct SessionSummaryTemplateSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(AppTheme.Spacing.lg)
             } else if let loadError {
-                Text(loadError)
+                Text(L10n.display(loadError))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Status.errorColor)
                     .padding(AppTheme.Spacing.lg)
@@ -187,14 +187,14 @@ struct SessionSummaryTemplateSheet: View {
             } else if activeTemplateID != nil {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                        Text("Name")
+                        Text(L10n.string("Name"))
                             .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                             .foregroundStyle(AppTheme.Text.tertiaryColor)
-                        TextField("Template name", text: $draftName)
+                        TextField(L10n.string("Template name"), text: $draftName)
                             .textFieldStyle(.roundedBorder)
                     }
 
-                    Text("Summary requirement")
+                    Text(L10n.string("Summary requirement"))
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
 
@@ -217,7 +217,7 @@ struct SessionSummaryTemplateSheet: View {
                         Button {
                             aiAssistOpen.toggle()
                         } label: {
-                            Label("AI Edit", systemImage: "sparkles")
+                            Label(L10n.string("AI Edit"), systemImage: "sparkles")
                         }
                         .disabled(isAIAssistLoading || isApplying)
                         Spacer()
@@ -228,14 +228,14 @@ struct SessionSummaryTemplateSheet: View {
                     }
 
                     if let applyError {
-                        Text(applyError)
+                        Text(L10n.display(applyError))
                             .font(.system(size: AppTheme.FontSize.sm))
                             .foregroundStyle(AppTheme.Status.errorColor)
                     }
                 }
                 .padding(AppTheme.Spacing.lgXl)
             } else {
-                Text("Select a template first")
+                Text(L10n.string("Select a template first"))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -245,10 +245,10 @@ struct SessionSummaryTemplateSheet: View {
 
     private var aiAssistPanel: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
-            Text("Let AI help refine your requirement")
+            Text(L10n.string("Let AI help refine your requirement"))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
-            TextField("Describe what you want AI to edit", text: $aiInstruction, axis: .vertical)
+            TextField(L10n.string("Describe what you want AI to edit"), text: $aiInstruction, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(3...6)
             HStack {
@@ -260,14 +260,14 @@ struct SessionSummaryTemplateSheet: View {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Text("Apply AI Edit")
+                        Text(L10n.string("Apply AI Edit"))
                     }
                 }
                 .disabled(aiInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAIAssistLoading)
             }
             if !aiCandidate.isEmpty {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                    Text("Preview")
+                    Text(L10n.string("Preview"))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                     ScrollView {

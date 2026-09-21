@@ -232,7 +232,7 @@ struct MediaTab: View {
             Image(systemName: "arrow.left.arrow.right")
                 .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
                 .foregroundStyle(tint)
-            Text(L10n.string("Pick a replacement for \"\(editor.pendingSwapClipName ?? "clip")\""))
+            Text(L10n.format("Pick a replacement for \"%@\"", editor.pendingSwapClipName ?? L10n.string("clip")))
                 .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
                 .foregroundStyle(AppTheme.Text.primaryColor)
                 .lineLimit(1)
@@ -268,7 +268,7 @@ struct MediaTab: View {
                     .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
                     .foregroundStyle(AppTheme.Accent.timecodeColor)
             }
-            Text(toast.message)
+            Text(L10n.display(toast.message))
                 .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
                 .foregroundStyle(AppTheme.Text.primaryColor)
                 .lineLimit(2)
@@ -597,7 +597,7 @@ struct MediaTab: View {
     private var itemCountText: some View {
         Text(currentFolderItemCount == 1
             ? L10n.string("1 item")
-            : L10n.string("\(currentFolderItemCount) items"))
+            : L10n.format("%@ items", currentFolderItemCount))
             .font(.system(size: AppTheme.FontSize.xs))
             .foregroundStyle(AppTheme.Text.mutedColor)
             .monospacedDigit()

@@ -42,7 +42,7 @@ struct EditorChrome: View {
     }
 
     private var agentToggleHelp: String {
-        editor.agentPanelVisible ? "Hide AI Chat (⌥⌘A)" : "Show AI Chat (⌥⌘A)"
+        L10n.string(editor.agentPanelVisible ? "Hide AI Chat (⌥⌘A)" : "Show AI Chat (⌥⌘A)")
     }
 
     private var exportButton: some View {
@@ -61,20 +61,20 @@ struct EditorChrome: View {
                     }
                 }
                 .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
-                Text("Export")
+                Text(L10n.string("Export"))
             }
             .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
             .foregroundStyle(AppTheme.Text.secondaryColor)
             .padding(.horizontal, AppTheme.Spacing.sm)
             .frame(height: AppTheme.IconSize.lg)
             .hoverHighlight()
-            .help("Export (⌘E)")
+            .help(L10n.string("Export (⌘E)"))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
             activeCount == 0 && waitingCount == 0
-                ? "Export"
-                : "Export, \(activeCount) active, \(waitingCount) waiting"
+                ? L10n.string("Export")
+                : L10n.format("Export, %@ active, %@ waiting", activeCount, waitingCount)
         )
     }
 
@@ -93,6 +93,6 @@ struct EditorChrome: View {
 
 extension EditorViewModel {
     var projectDisplayName: String {
-        projectURL?.deletingPathExtension().lastPathComponent ?? "Untitled"
+        projectURL?.deletingPathExtension().lastPathComponent ?? L10n.string("Untitled")
     }
 }

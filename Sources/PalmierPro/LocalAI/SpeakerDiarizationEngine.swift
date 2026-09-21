@@ -17,8 +17,7 @@ enum DiarizationBackend: String, Codable, Sendable {
         case .disabled: "Speaker identification disabled"
         case .singleSpeaker: "Single-speaker bypass"
         case .unavailable: "Speaker labels unavailable"
-        case .mlxStreamingSortformer: "MLX Streaming Sortformer"
-        case .pyannoteWeSpeaker: "Pyannote + WeSpeaker"
+        case .mlxStreamingSortformer, .pyannoteWeSpeaker: "Speaker identification"
         }
     }
 }
@@ -306,7 +305,7 @@ enum SpeakerActivityPostprocessor {
         let detected = Set(merged.map(\.speakerID)).count
         var warnings: [String] = []
         if let requested = policy.requestedSpeakerCount, requested > 0, requested != detected {
-            warnings.append("Expected \(requested) speakers; the model detected \(detected).")
+            warnings.append("Expected \(requested) speakers; \(detected) were detected.")
         }
         return SpeakerActivityTimeline(
             intervals: merged.sorted {

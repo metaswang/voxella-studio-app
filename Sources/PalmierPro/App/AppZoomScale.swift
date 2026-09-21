@@ -168,7 +168,14 @@ private final class AppZoomSheetFitView: NSView {
     }
 
     func applyIfNeeded() {
-        guard let window, targetSize.width > 1, targetSize.height > 1 else { return }
+        // On macOS 15, SwiftUI can temporarily host sheet content in the
+        // presenting window while the sheet is being attached. Resizing that
+        // window here can make the entire app disappear and repeat the next
+        // time it is activated. Wait until AppKit identifies the real sheet.
+        guard let window,
+              window.sheetParent != nil,
+              targetSize.width > 1,
+              targetSize.height > 1 else { return }
         let current = window.contentRect(forFrameRect: window.frame).size
         guard abs(current.width - targetSize.width) > 0.5
             || abs(current.height - targetSize.height) > 0.5 else { return }

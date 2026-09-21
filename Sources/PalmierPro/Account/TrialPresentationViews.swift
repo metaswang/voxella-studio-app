@@ -31,11 +31,11 @@ struct TrialSidebarStatus: View {
             }
             .buttonStyle(.plain)
 
-            Button(trialPurchaseLabel) { AppAccessWindow.shared.present() }
+            Button(L10n.string(key: trialPurchaseLabel)) { purchaseLifetimeOrPresentAccess() }
                 .buttonStyle(.plain)
                 .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
                 .foregroundStyle(AppTheme.Accent.link)
-                .help(trialPurchaseLabel)
+                .help(L10n.string(key: trialPurchaseLabel))
         }
         .padding(AppTheme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -72,7 +72,7 @@ struct TrialSidebarStatus: View {
 
     private func sidebarText(for presentation: TrialPresentation) -> String {
         guard case let .active(active) = presentation else { return "" }
-        return "Trial: \(active.sidebarLabel)"
+        return L10n.format("Trial: %@", localizedTrialSidebarLabel(active))
     }
 
     private func collapsedText(for presentation: TrialPresentation) -> String {
@@ -82,7 +82,10 @@ struct TrialSidebarStatus: View {
 
     private func helpText(for presentation: TrialPresentation) -> String {
         guard case let .active(active) = presentation else { return "" }
-        return "Trial ends \(active.endsAt.formatted(date: .abbreviated, time: .shortened))"
+        return L10n.format(
+            "Trial ends %@",
+            active.endsAt.formatted(date: .abbreviated, time: .shortened)
+        )
     }
 
     private func foreground(for presentation: TrialPresentation) -> Color {
@@ -93,6 +96,9 @@ struct TrialSidebarStatus: View {
 
 struct TrialDetailsView: View {
     let presentation: TrialPresentation
+    var showsPurchaseAction = true
+    @Bindable private var account = AccountService.shared
+    @State private var showsSignInAlert = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
@@ -102,12 +108,19 @@ struct TrialDetailsView: View {
 
             detail
 
-            Button(trialPurchaseLabel) { AppAccessWindow.shared.present() }
-                .buttonStyle(.capsule(.prominent, size: .regular))
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if showsPurchaseAction {
+                Button(L10n.string(key: detailPurchaseLabel)) { purchaseLifetimeOrShowSignIn() }
+                    .buttonStyle(.capsule(.prominent, size: .regular))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(AppTheme.Spacing.lg)
         .frame(width: AppTheme.Auth.contentWidth, alignment: .leading)
+        .alert(L10n.string("Sign in required"), isPresented: $showsSignInAlert) {
+            Button(L10n.string("OK"), role: .cancel) { }
+        } message: {
+            Text(L10n.string("Sign in to VoxStudio below, then choose Buy Lifetime to open the Apple purchase sheet."))
+        }
     }
 
     @ViewBuilder
@@ -115,23 +128,23 @@ struct TrialDetailsView: View {
         switch presentation {
         case let .active(active):
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text(active.sidebarLabel)
+                Text(localizedTrialSidebarLabel(active))
                     .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
                     .foregroundStyle(active.usesWarningColor ? AppTheme.Status.warningColor : AppTheme.Text.primaryColor)
-                Text("Ends \(active.endsAt.formatted(date: .abbreviated, time: .shortened))")
+                Text(L10n.format("Ends %@", active.endsAt.formatted(date: .abbreviated, time: .shortened)))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
-                Text(trialEndDetail)
+                Text(L10n.string(key: trialEndDetail))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .expired:
-            Text("Your trial has ended. Existing projects remain available.")
+            Text(L10n.string("Your trial has ended. Existing projects remain available."))
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
         case .verificationRequired:
-            Text("Connect to the internet to verify your trial access.")
+            Text(L10n.string("Connect to the internet to verify your trial access."))
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
         }
@@ -141,15 +154,58 @@ struct TrialDetailsView: View {
 #if MAC_APP_STORE
         "After your trial ends, buy Lifetime through the App Store to create new content. Existing projects remain available."
 #else
-        "After your trial ends, creating new content requires a plan. Existing projects remain available."
+        "After your trial ends, choose Lifetime or a monthly plan below to keep creating. Existing projects remain available."
 #endif
     }
+
+    private var detailPurchaseLabel: String {
+#if MAC_APP_STORE
+        account.isSignedIn ? "Buy Lifetime" : "Sign in to buy Lifetime"
+#else
+        "Choose access"
+#endif
+    }
+
+    private func purchaseLifetimeOrShowSignIn() {
+#if MAC_APP_STORE
+        if account.isSignedIn {
+            Task { await account.purchaseLifetime() }
+        } else {
+            showsSignInAlert = true
+        }
+#else
+        AppAccessWindow.shared.present()
+#endif
+    }
+
+}
+
+@MainActor
+func localizedTrialSidebarLabel(_ active: TrialPresentation.Active) -> String {
+    if active.remaining < 60 * 60 { return L10n.string("Less than 1 hour left") }
+    if active.remaining < 24 * 60 * 60 {
+        return L10n.format("%@ hours left", Int(ceil(active.remaining / 3_600)))
+    }
+    return L10n.format("%@ days left", Int(ceil(active.remaining / 86_400)))
+}
+
+@MainActor
+private func purchaseLifetimeOrPresentAccess() {
+#if MAC_APP_STORE
+    if AccountService.shared.isSignedIn {
+        Task { await AccountService.shared.purchaseLifetime() }
+    } else {
+        AppAccessWindow.shared.present()
+    }
+#else
+    AppAccessWindow.shared.present()
+#endif
 }
 
 private var trialPurchaseLabel: String {
 #if MAC_APP_STORE
     "Buy Lifetime"
 #else
-    "View plans"
+    "Choose access"
 #endif
 }

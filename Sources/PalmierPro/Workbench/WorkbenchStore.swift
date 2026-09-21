@@ -2052,6 +2052,17 @@ final class WorkbenchStore {
 
     func discardPendingMediaImport() {
         if pendingMediaImportOrigin == .recording {
+            // A cancelled recovery is a user decision to leave this recording
+            // untouched, not an unresolved interruption to offer again on the
+            // next launch. Keep the media, but make the journal non-recoverable.
+            if let sessionID = pendingRecordingSessionID {
+                RecordingSessionManifest.markRegistered(
+                    sessionID: sessionID.uuidString,
+                    in: Self.recordingMediaDirectory
+                )
+            } else {
+                RecordingSessionManifest.markRegistered(urls: pendingMediaImportURLs)
+            }
             pendingMediaImportURLs = []
             pendingNetVideoSource = nil
             pendingMediaImportOrigin = .files
@@ -2276,7 +2287,7 @@ final class WorkbenchStore {
         pendingTranscriptionQueue.append(id)
         updateTranscription(id) {
             if $0.state == .queued {
-                $0.progressMessage = "Queued — waiting for the local ASR slot"
+                $0.progressMessage = "Queued — waiting for local speech processing"
             }
         }
         drainTranscriptionQueue()
@@ -3480,7 +3491,20 @@ final class WorkbenchStore {
                         languageCode: preparationJob.languageCode,
                         speakerCount: preparationJob.speakerCount.count
                     ) { [weak self] message in
-                        self?.updateTranscription(id) {
+                        guard let self else { return }
+                        let requiredIDs = LocalModelInstallPlan.requiredModelIDs(
+                            languageCode: preparationJob.languageCode,
+                            speakerCount: preparationJob.speakerCount.count,
+                            whisperFallbackModelID: LocalModelManager.shared.activeASRModelID
+                        )
+                        let preparationStatus = LocalModelManager.shared.preparationStatus(for: requiredIDs)
+                        self.updateTranscription(id) {
+                            // Reserve the first fifth of the overall progress for the
+                            // one-time model setup instead of leaving the bar at 2%.
+                            $0.progress = max(
+                                $0.progress,
+                                0.02 + min(max(preparationStatus.progress, 0), 1) * 0.20
+                            )
                             $0.progressMessage = message
                             $0.progressStep = "preparing_models"
                         }
@@ -3786,7 +3810,7 @@ final class WorkbenchStore {
 
         let sourceURL = transcriptions[index].sourceURL
         updateTranscription(id) {
-            $0.progress = 0.04
+            $0.progress = max($0.progress, 0.04)
             $0.progressMessage = "Extracting clip…"
             $0.flowProgressStage = .transcription
             $0.progressStep = "extract_clip"
@@ -4799,6 +4823,9 @@ final class WorkbenchStore {
                 ? "Regenerating summary…"
                 : "Generating title and summary…"
         }
+        Log.llm.notice(
+            "session enrichment start owner=transcription id=\(id.uuidString) transport=\(AITransportPolicy.current.logLabel) refinement=\(isRefinement) regenerate_metadata=\(shouldRegenerateMetadata) transcript_chars=\(transcriptText.count)"
+        )
 
         do {
             let client = try await AITransportPolicy.makeTextClient(for: .subtitleProcessing)
@@ -4878,7 +4905,7 @@ final class WorkbenchStore {
             guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
             updateTranscription(id) {
                 $0.summaryState = .failed
-                $0.summaryErrorMessage = error.localizedDescription
+                $0.summaryErrorMessage = LLMDiagnostics.userFacing(error)
                 $0.progressMessage = isRefinement
                     ? "Summary regeneration failed"
                     : "Transcript ready — summary unavailable"
@@ -4886,12 +4913,15 @@ final class WorkbenchStore {
             if reportFailure {
                 reportEnrichmentFailure(
                     id: id,
-                    technicalMessage: error.localizedDescription,
+                    technicalMessage: LLMDiagnostics.description(error),
+                    userFacingMessage: LLMDiagnostics.userFacing(error),
                     isRefinement: isRefinement,
                     readyNoun: "Transcript"
                 )
             } else {
-                Log.project.warning("session enrichment failed: \(error.localizedDescription)")
+                Log.llm.warning(
+                    "session enrichment failed owner=transcription id=\(id.uuidString) error=\(LLMDiagnostics.description(error))"
+                )
             }
             return false
         }
@@ -5620,18 +5650,32 @@ final class WorkbenchStore {
     private func reportEnrichmentFailure(
         id: UUID,
         technicalMessage: String,
+        userFacingMessage: String,
         isRefinement: Bool,
         readyNoun: String
     ) {
         let banner = isRefinement
             ? "Summary regeneration failed"
             : "\(readyNoun) is ready. Title and summary could not be generated."
+        let message = Self.joinedDiagnostic(banner: banner, detail: userFacingMessage)
         WorkbenchTipCenter.shared.show(
-            banner,
+            message,
             kind: .error,
             id: "summary.failed.\(id.uuidString)"
         )
-        Log.project.warning("session enrichment failed ready=\(readyNoun) error=\(technicalMessage)")
+        Log.llm.warning(
+            "session enrichment failed ready=\(readyNoun) refinement=\(isRefinement) id=\(id.uuidString) error=\(technicalMessage)"
+        )
+    }
+
+    private static func joinedDiagnostic(banner: String, detail: String) -> String {
+        let trimmed = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return banner }
+        if trimmed.caseInsensitiveCompare(banner) == .orderedSame
+            || trimmed.hasPrefix(banner) {
+            return trimmed
+        }
+        return banner + "\n" + trimmed
     }
 
     private func nonEmpty(_ value: String) -> String? {
@@ -5698,6 +5742,9 @@ final class WorkbenchStore {
                 ? "Regenerating summary…"
                 : "Generating title and summary…"
         }
+        Log.llm.notice(
+            "session enrichment start owner=dub id=\(id.uuidString) transport=\(AITransportPolicy.current.logLabel) refinement=\(isRefinement) regenerate_metadata=\(shouldRegenerateMetadata) transcript_chars=\(transcriptText.count)"
+        )
 
         do {
             let client = try await AITransportPolicy.makeTextClient(for: .subtitleProcessing)
@@ -5776,7 +5823,7 @@ final class WorkbenchStore {
             guard summaryTaskRegistry.owns(id, generation: generation) else { return false }
             updateDub(id) {
                 $0.summaryState = .failed
-                $0.summaryErrorMessage = error.localizedDescription
+                $0.summaryErrorMessage = LLMDiagnostics.userFacing(error)
                 $0.progressMessage = isRefinement
                     ? "Summary regeneration failed"
                     : "Dub ready — summary unavailable"
@@ -5784,12 +5831,15 @@ final class WorkbenchStore {
             if reportFailure {
                 reportEnrichmentFailure(
                     id: id,
-                    technicalMessage: error.localizedDescription,
+                    technicalMessage: LLMDiagnostics.description(error),
+                    userFacingMessage: LLMDiagnostics.userFacing(error),
                     isRefinement: isRefinement,
                     readyNoun: "Dub"
                 )
             } else {
-                Log.project.warning("dub session enrichment failed: \(error.localizedDescription)")
+                Log.llm.warning(
+                    "session enrichment failed owner=dub id=\(id.uuidString) error=\(LLMDiagnostics.description(error))"
+                )
             }
             return false
         }
@@ -6017,7 +6067,9 @@ final class WorkbenchStore {
         let candidate = url.resolvingSymlinksInPath().path
         guard roots.contains(where: { candidate.hasPrefix($0 + "/") }) else { return }
         let listenSidecar = ListenTrackLocator.sidecarURL(forMaster: url)
+        let legacyListenSidecar = ListenTrackLocator.legacySidecarURL(forMaster: url)
         try? FileManager.default.removeItem(at: listenSidecar)
+        try? FileManager.default.removeItem(at: legacyListenSidecar)
         try? FileManager.default.removeItem(at: url)
     }
 

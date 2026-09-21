@@ -58,7 +58,7 @@ enum LicenseKeyLocalCredential {
         fingerprint: String? = nil,
         publicKeyRaw: Data = LicenseKeyDeviceLicense.publicKeyRaw,
         read: () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: LicenseKeyLocalCredential.keychainAccount)
+            try KeychainStore.loadThisDeviceOnly(account: LicenseKeyLocalCredential.keychainAccount).get()
         }
     ) throws -> Record? {
         guard let value = try read(),
@@ -105,7 +105,7 @@ enum LicenseKeyLocalCredential {
         fingerprint: String? = nil,
         at date: Date = .now,
         read: () throws -> String? = {
-            try KeychainStore.loadThisDeviceOnly(account: LicenseKeyLocalCredential.keychainAccount)
+            try KeychainStore.loadThisDeviceOnly(account: LicenseKeyLocalCredential.keychainAccount).get()
         },
         publicKeyRaw: Data = LicenseKeyDeviceLicense.publicKeyRaw
     ) -> Bool {

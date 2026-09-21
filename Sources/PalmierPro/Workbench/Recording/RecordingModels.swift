@@ -13,12 +13,12 @@ enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
         self != .audioOnly
     }
 
-    var title: String {
+    @MainActor var title: String {
         switch self {
-        case .audioOnly: "Audio"
-        case .display: "Display"
-        case .window: "Window"
-        case .region: "Region"
+        case .audioOnly: L10n.string("Audio")
+        case .display: L10n.string("Display")
+        case .window: L10n.string("Window")
+        case .region: L10n.string("Region")
         }
     }
 
@@ -31,12 +31,12 @@ enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var detail: String {
+    @MainActor var detail: String {
         switch self {
-        case .audioOnly: "Microphone, with optional system audio"
-        case .display: "Entire display plus audio"
-        case .window: "One window plus audio"
-        case .region: "Selected area plus audio"
+        case .audioOnly: L10n.string("Microphone, with optional system audio")
+        case .display: L10n.string("Entire display plus audio")
+        case .window: L10n.string("One window plus audio")
+        case .region: L10n.string("Selected area plus audio")
         }
     }
 

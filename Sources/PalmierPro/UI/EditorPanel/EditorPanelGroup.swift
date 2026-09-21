@@ -58,7 +58,11 @@ struct EditorPanelGroup<Content: View, HeaderAccessory: View>: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
-            .accessibilityLabel(Text(verbatim: "\(expanded ? L10n.string("Collapse") : L10n.string("Expand")) \(title)"))
+            .accessibilityLabel(Text(L10n.format(
+                "%@ %@",
+                expanded ? L10n.string("Collapse") : L10n.string("Expand"),
+                L10n.string(key: title)
+            )))
 
             HStack(spacing: AppTheme.Spacing.sm) {
                 HStack(spacing: AppTheme.Spacing.sm) {

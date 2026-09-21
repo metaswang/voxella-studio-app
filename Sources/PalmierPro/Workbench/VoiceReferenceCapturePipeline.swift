@@ -2,7 +2,6 @@ import Foundation
 
 #if BUNDLED_SPEECH
 import FluidAudio
-import SpeechEnhancement
 #endif
 
 struct VoiceReferenceCaptureResult: Sendable {
@@ -36,13 +35,13 @@ enum VoiceReferenceCapturePipeline {
     private static func denoiseIfAvailable(_ samples: [Float], sampleRate: Double) async -> [Float] {
         #if BUNDLED_SPEECH
         do {
-            let wet48k = try await CaptureSpeechEnhancer.shared.enhance(
-                samples,
+            let wet48k = try await MossFormerSpeechEnhancer.shared.enhance(
+                audio: samples,
                 sampleRate: Int(sampleRate.rounded())
             )
             let wet = try VoiceReferenceSpeechGate.resample(
                 wet48k,
-                from: Double(SpeechEnhancer.sampleRate),
+                from: Double(MossFormerSpeechEnhancer.sampleRate),
                 to: sampleRate
             )
             return VoiceReferenceSpeechGate.mix(
@@ -96,17 +95,3 @@ enum VoiceReferenceCapturePipeline {
     }
     #endif
 }
-
-#if BUNDLED_SPEECH
-private actor CaptureSpeechEnhancer {
-    static let shared = CaptureSpeechEnhancer()
-    private var enhancer: SpeechEnhancer?
-
-    func enhance(_ samples: [Float], sampleRate: Int) async throws -> [Float] {
-        if enhancer == nil {
-            enhancer = try await SpeechEnhancer.fromPretrained()
-        }
-        return try enhancer!.enhanceChunked(audio: samples, sampleRate: sampleRate)
-    }
-}
-#endif

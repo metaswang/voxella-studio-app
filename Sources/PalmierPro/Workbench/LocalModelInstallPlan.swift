@@ -3,7 +3,7 @@ import Foundation
 struct LocalModelInstallPlan: Equatable, Sendable {
     struct Item: Equatable, Identifiable, Sendable {
         var id: LocalModelID
-        var title: String
+        var userFacingTitle: String
         var purpose: String
         var revision: String
         var byteSize: Int64
@@ -27,7 +27,7 @@ struct LocalModelInstallPlan: Equatable, Sendable {
     }
 
     var additionalDiskSpaceLabel: String {
-        "Additional disk space for models: \(Self.formatBytes(additionalBytes))"
+        "Additional disk space for local features: \(Self.formatBytes(additionalBytes))"
     }
 
     var requiresLicenseAcceptance: Bool {
@@ -92,7 +92,7 @@ struct LocalModelInstallPlan: Equatable, Sendable {
             guard let model = descriptors[id] else { return nil }
             return Item(
                 id: model.id,
-                title: model.title,
+                userFacingTitle: model.userFacingTitle,
                 purpose: model.purpose,
                 revision: model.revision,
                 byteSize: model.byteSize,
@@ -171,7 +171,7 @@ struct LocalModelInstallPlan: Equatable, Sendable {
             guard let model = descriptors[id] else { return nil }
             return Item(
                 id: model.id,
-                title: model.title,
+                userFacingTitle: model.userFacingTitle,
                 purpose: model.purpose,
                 revision: model.revision,
                 byteSize: model.byteSize,

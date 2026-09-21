@@ -11,10 +11,11 @@ else
   test_filter=$requested_filter
 fi
 
-# Build the opt-in tests without invoking MLX, then place the SwiftPM-generated
-# Metal library beside the XCTest executable where the MLX runtime searches first.
+# Build the opt-in tests without invoking MLX, then build a policy-checked Metal
+# library beside the XCTest executable where the MLX runtime searches first.
 swift test --traits BundledSpeech --filter '__voxella_build_only__'
 build_dir=$(swift build --traits BundledSpeech --show-bin-path)
+python3 scripts/build_metal.py mlx --output "$build_dir/mlx.metallib"
 test_bundle=$(find "$build_dir" -maxdepth 1 -name '*.xctest' -type d -print -quit)
 test_executable=$(find "$test_bundle/Contents/MacOS" -maxdepth 1 -type f -perm +111 -print -quit)
 

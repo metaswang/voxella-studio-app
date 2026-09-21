@@ -35,7 +35,7 @@ final class RecordingFloatingControlsController {
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false
         )
-        panel.title = "Recording Controls"
+        panel.title = L10n.string("Recording Controls")
         panel.level = .statusBar
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
@@ -46,7 +46,9 @@ final class RecordingFloatingControlsController {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.contentView = RecordingControlsHostingView(
-            rootView: RecordingFloatingControlsView(session: session).appZoomEnvironment()
+            rootView: RecordingFloatingControlsView(session: session)
+                .appZoomEnvironment()
+                .appLocalization()
         )
         let screen = NSScreen.screens.first { $0.displayID == displayID }
             ?? NSScreen.main ?? NSScreen.screens.first

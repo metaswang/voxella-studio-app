@@ -13,7 +13,9 @@ extension GenerationView {
             ForEach(upscaleModel.selectSettings) { upscaleSelectPicker($0) }
             ForEach(upscaleModel.numericSettings) { upscaleNumericControl($0) }
             ForEach(upscaleModel.toggleSettings) { setting in
-                Toggle(setting.label, isOn: upscaleToggleBinding(setting))
+                Toggle(isOn: upscaleToggleBinding(setting)) {
+                    Text(L10n.display(setting.label))
+                }
                     .controlSize(.small)
                     .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -34,13 +36,13 @@ extension GenerationView {
                 let selection = upscaleSelectionBinding(setting, options: options)
                 let selected = selection.wrappedValue
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text(setting.label)
+                    Text(L10n.display(setting.label))
                         .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                     Menu {
                         ForEach(upscaleOptionGroups(options)) { group in
                             if let title = group.title {
-                                Section(group.description.map { "\(title): \($0)" } ?? title) {
+                                Section(upscaleGroupTitle(title: title, description: group.description)) {
                                     upscaleOptionButtons(group.options, selection: selection, selected: selected)
                                 }
                             } else {
@@ -48,13 +50,13 @@ extension GenerationView {
                             }
                         }
                     } label: {
-                        EditorMenuValue(text: selected.label, expanded: true)
+                        EditorMenuValue(text: L10n.display(selected.label), expanded: true)
                     }
                     .menuStyle(.button)
                     .buttonStyle(.plain)
                     .menuIndicator(.hidden)
                     if let description = selected.description {
-                        Text(description)
+                        Text(L10n.display(description))
                             .font(.system(size: AppTheme.FontSize.xxs))
                             .foregroundStyle(AppTheme.Text.mutedColor)
                             .fixedSize(horizontal: false, vertical: true)
@@ -97,8 +99,16 @@ extension GenerationView {
         }
     }
 
+    private func upscaleGroupTitle(title: String, description: String?) -> String {
+        let localizedTitle = L10n.display(title)
+        guard let description else { return localizedTitle }
+        return L10n.format("%@: %@", localizedTitle, L10n.display(description))
+    }
+
     private func upscaleOptionMenuTitle(_ option: UpscaleSelectOption) -> String {
-        option.description.map { "\(option.label): \($0)" } ?? option.label
+        let localizedLabel = L10n.display(option.label)
+        guard let description = option.description else { return localizedLabel }
+        return L10n.format("%@: %@", localizedLabel, L10n.display(description))
     }
 
     func availableUpscaleOptions(_ setting: UpscaleSelectSetting) -> [UpscaleSelectOption] {
@@ -132,7 +142,7 @@ extension GenerationView {
             upscaleSettings.numbers[setting.id] = snappedUpscaleValue($0, setting: setting)
         }
         return HStack(spacing: AppTheme.Spacing.sm) {
-            Text(setting.label)
+            Text(L10n.display(setting.label))
                 .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
             Spacer(minLength: AppTheme.Spacing.sm)
@@ -145,7 +155,7 @@ extension GenerationView {
                 dragValueAdjustment: { snappedUpscaleValue($0, setting: setting) },
                 onChanged: setValue
             ) { setValue($0) }
-            EditorResetButton(title: setting.label) {
+            EditorResetButton(title: L10n.display(setting.label)) {
                 upscaleSettings.numbers.removeValue(forKey: setting.id)
             }
         }

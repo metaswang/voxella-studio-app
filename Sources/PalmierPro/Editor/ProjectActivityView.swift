@@ -8,12 +8,6 @@ struct ProjectActivityView: View {
         entries.reduce(0) { $0 + ($1.costCredits ?? 0) }
     }
 
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .abbreviated
-        return f
-    }()
-
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             HStack {
@@ -22,7 +16,7 @@ struct ProjectActivityView: View {
                     .foregroundStyle(AppTheme.Text.primaryColor)
                 Spacer()
                 if !entries.isEmpty {
-                    Text("\(CostEstimator.format(total)) used")
+                    Text(L10n.format("%@ used", CostEstimator.format(total)))
                         .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                         .monospacedDigit()
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -78,7 +72,10 @@ struct ProjectActivityView: View {
 
     private func relativeTime(_ date: Date?) -> String {
         guard let date else { return "—" }
-        return Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.locale = AppLocalization.shared.activeLocale
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 
@@ -95,7 +92,7 @@ struct ProjectActivityButton: View {
                 .hoverHighlight()
         }
         .buttonStyle(.plain)
-        .help("Project Activity · \(CostEstimator.format(editor.totalGenerationCost)) used")
+        .help(L10n.format("Project Activity · %@ used", CostEstimator.format(editor.totalGenerationCost)))
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             ProjectActivityView(entries: editor.generationLogEntries)
         }

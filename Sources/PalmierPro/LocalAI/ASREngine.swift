@@ -7,9 +7,9 @@ enum ASREngine: String, Codable, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .qwen: "Qwen3-ASR"
-        case .parakeet: "Parakeet v3"
-        case .whisper: "Whisper"
+        case .qwen: "Asian-language recognition"
+        case .parakeet: "English and European recognition"
+        case .whisper: "Multilingual recognition"
         }
     }
 

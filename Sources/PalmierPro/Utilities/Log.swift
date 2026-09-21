@@ -6,6 +6,9 @@ import os
 ///
 /// Uncaught exceptions and fatal signals are written to
 /// `~/Library/Logs/VoxStudio/crash.log` with a backtrace.
+/// Notice/warning/error logs are also appended to
+/// `~/Library/Logs/VoxStudio/app.log` so a signed `.app` launch still
+/// has a copy-pasteable diagnostic file.
 enum Log {
     static let subsystem  = "com.voxella.studio"
     static let app        = CategoryLog("app")
@@ -24,6 +27,7 @@ enum Log {
     static let knowledge  = CategoryLog("knowledge")
 
     static let crashLogURL = AppSupportPaths.logs().appendingPathComponent("crash.log")
+    static let appLogURL = AppSupportPaths.logs().appendingPathComponent("app.log")
 
     /// Full NSError chain
     static func detail(_ error: Error) -> String {
@@ -44,7 +48,8 @@ enum Log {
     /// Call once at launch, before `NSApplication.run()`.
     static func bootstrap() {
         CrashHandler.install()
-        app.notice("launch pid=\(ProcessInfo.processInfo.processIdentifier)")
+        FileLog.prepare()
+        app.notice("launch pid=\(ProcessInfo.processInfo.processIdentifier) log=\(appLogURL.path)")
     }
 }
 
@@ -60,38 +65,81 @@ struct CategoryLog {
     func debug(_ message: @autoclosure () -> String) {
         #if DEBUG
         let value = message()
-        mirror("DEBUG", value)
+        persist("DEBUG", value)
         logger.debug("\(value, privacy: .public)")
         #endif
     }
     func info(_ m: String) { logger.info("\(m, privacy: .public)") }
     func notice(_ m: String, telemetry: String? = nil, data: Telemetry.Payload? = nil) {
-        mirror("NOTICE", m)
+        persist("NOTICE", m)
         logger.notice("\(m, privacy: .public)")
         if let telemetry {
             Telemetry.breadcrumb(telemetry, category: category, data: data)
         }
     }
     func warning(_ m: String, telemetry: String? = nil, data: Telemetry.Payload? = nil) {
-        mirror("WARN", m)
+        persist("WARN", m)
         logger.warning("\(m, privacy: .public)")
         Telemetry.logWarning(telemetry ?? m, category: category, data: data)
     }
     func error(_ m: String, telemetry: String? = nil, data: Telemetry.Payload? = nil) {
-        mirror("ERROR", m)
+        persist("ERROR", m)
         logger.error("\(m, privacy: .public)")
         Telemetry.logError(telemetry ?? m, category: category, data: data)
     }
     func fault(_ m: String, telemetry: String? = nil, data: Telemetry.Payload? = nil) {
-        mirror("FAULT", m)
+        persist("FAULT", m)
         logger.fault("\(m, privacy: .public)")
         Telemetry.logFault(telemetry ?? m, category: category, data: data)
     }
 
-    private func mirror(_ level: String, _ msg: String) {
+    private func persist(_ level: String, _ msg: String) {
+        let line = "[\(category)] \(level): \(msg)"
         #if DEBUG
-        FileHandle.standardError.write(Data("[\(category)] \(level): \(msg)\n".utf8))
+        FileHandle.standardError.write(Data("\(line)\n".utf8))
         #endif
+        FileLog.append(line)
+    }
+}
+
+/// Durable copy of notice/warning/error logs for machines launched as `.app`.
+private enum FileLog {
+    private static let lock = NSLock()
+    private static let maxBytes: UInt64 = 2_000_000
+
+    static func prepare() {
+        let directory = Log.appLogURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+    }
+
+    static func append(_ line: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        let url = Log.appLogURL
+        let fileManager = FileManager.default
+        try? fileManager.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        if !fileManager.fileExists(atPath: url.path) {
+            fileManager.createFile(atPath: url.path, contents: nil)
+        } else if let size = try? fileManager.attributesOfItem(atPath: url.path)[.size] as? NSNumber,
+                  size.uint64Value > maxBytes {
+            let backup = url.deletingLastPathComponent().appendingPathComponent("app.log.1")
+            try? fileManager.removeItem(at: backup)
+            try? fileManager.moveItem(at: url, to: backup)
+            fileManager.createFile(atPath: url.path, contents: nil)
+        }
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        let stamped = "\(ISO8601DateFormatter().string(from: Date())) \(line)\n"
+        if let data = stamped.data(using: .utf8) {
+            try? handle.write(contentsOf: data)
+        }
     }
 }
 

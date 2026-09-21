@@ -108,7 +108,7 @@ struct SessionSearchPalette: View {
                     }
 
                     if let error = controller.errorMessage {
-                        Text(error)
+                        Text(L10n.display(error))
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Status.errorColor)
                             .padding(.horizontal, AppTheme.Spacing.smMd)
@@ -147,18 +147,28 @@ struct SessionSearchPalette: View {
         case .installed:
             EmptyView()
         case .queued:
-            semanticSearchNotice(detail: "Waiting to prepare search…") {
+            semanticSearchNotice(detail: L10n.string("Waiting to prepare search…")) {
                 Button("Cancel") { models.cancel(id) }
                     .buttonStyle(.borderless)
             }
         case .downloading(let progress, _):
-            semanticSearchNotice(detail: "Downloading semantic search… \(Int((progress * 100).rounded()))%") {
+            semanticSearchNotice(
+                detail: L10n.format(
+                    "Downloading semantic search… %@%%",
+                    Int((progress * 100).rounded())
+                )
+            ) {
+                Button("Cancel") { models.cancel(id) }
+                    .buttonStyle(.borderless)
+            }
+        case .verifying:
+            semanticSearchNotice(detail: L10n.string("Verifying semantic search…")) {
                 Button("Cancel") { models.cancel(id) }
                     .buttonStyle(.borderless)
             }
         case .notInstalled, .failed:
-            semanticSearchNotice(detail: "Download local search resources to match sessions by meaning.") {
-                Button("Download and enable") { models.download(id) }
+            semanticSearchNotice(detail: L10n.string("Download local search resources to match sessions by meaning.")) {
+                Button(L10n.string("Download and enable")) { models.download(id) }
                     .buttonStyle(.bordered)
             }
         }
@@ -172,7 +182,7 @@ struct SessionSearchPalette: View {
             Image(systemName: "sparkle.magnifyingglass")
                 .foregroundStyle(AppTheme.Accent.primary)
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                Text("Semantic session search")
+                Text(L10n.string("Semantic session search"))
                     .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
                 Text(detail)
                     .font(.system(size: AppTheme.FontSize.xxs))
@@ -194,7 +204,7 @@ struct SessionSearchPalette: View {
             SessionSearchField(
                 text: $controller.query,
                 isFocused: queryFocusBinding,
-                placeholder: "Search sessions or run an action"
+                placeholder: L10n.string("Search sessions or run an action")
             )
             .frame(maxWidth: .infinity)
             .focused($focusedField, equals: .query)
@@ -209,7 +219,7 @@ struct SessionSearchPalette: View {
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
                 .buttonStyle(.plain)
-                .help("Clear search")
+                .help(L10n.string("Clear search"))
             }
 
             keycap("⌘K")
@@ -228,7 +238,7 @@ struct SessionSearchPalette: View {
             sectionHeader("Recent sessions")
 
             if recentSessions.isEmpty {
-                Text("No recent sessions yet")
+                Text(L10n.string("No recent sessions yet"))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.mutedColor)
                     .padding(.horizontal, AppTheme.Spacing.smMd)
@@ -263,7 +273,7 @@ struct SessionSearchPalette: View {
         HStack(spacing: AppTheme.Spacing.smMd) {
             ProgressView()
                 .controlSize(.small)
-            Text(controller.isLoadingSemantic ? "Improving results…" : "Searching sessions…")
+            Text(L10n.string(controller.isLoadingSemantic ? "Improving results…" : "Searching sessions…"))
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.mutedColor)
         }
@@ -277,10 +287,10 @@ struct SessionSearchPalette: View {
             ForEach(matchingQuickActions) { action in
                 paletteRow(id: "action-\(action.id)", systemImage: action.systemImage) {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                        Text(action.title)
+                        Text(L10n.string(key: action.title))
                             .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.medium))
                             .foregroundStyle(AppTheme.Text.primaryColor)
-                        Text(action.detail)
+                        Text(L10n.string(key: action.detail))
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.mutedColor)
                             .lineLimit(1)
@@ -298,7 +308,7 @@ struct SessionSearchPalette: View {
             sectionHeader("Settings")
 
             paletteRow(id: "settings-general", systemImage: "gearshape") {
-                Text("General")
+                Text(L10n.string("General"))
                     .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.medium))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                 Spacer(minLength: AppTheme.Spacing.zero)
@@ -311,7 +321,7 @@ struct SessionSearchPalette: View {
     }
 
     private var emptySearchState: some View {
-        Text("No matching sessions or actions")
+        Text(L10n.string("No matching sessions or actions"))
             .font(.system(size: AppTheme.FontSize.sm))
             .foregroundStyle(AppTheme.Text.mutedColor)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -319,7 +329,7 @@ struct SessionSearchPalette: View {
     }
 
     private func sectionHeader(_ title: String) -> some View {
-        Text(title)
+        Text(L10n.string(key: title))
             .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.medium))
             .foregroundStyle(AppTheme.Text.secondaryColor)
             .padding(.horizontal, AppTheme.Spacing.smMd)
@@ -430,7 +440,7 @@ struct SessionSearchPalette: View {
     private func sessionMetadata(for session: WorkbenchSession) -> String {
         let date = session.modifiedAt.formatted(date: .abbreviated, time: .shortened)
         if session.sessionType.showsRecentListLabel {
-            return "\(session.sessionType.label) · \(date)"
+            return L10n.format("%@ · %@", L10n.string(key: session.sessionType.label), date)
         }
         return date
     }

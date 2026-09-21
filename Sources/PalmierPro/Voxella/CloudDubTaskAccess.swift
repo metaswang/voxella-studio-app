@@ -712,7 +712,7 @@ struct CloudDubTaskAccess: DubTaskAccessing {
             if let current, let total, total > 0 {
                 message = "Synthesizing \(min(current, total))/\(total)"
             } else if name == "dub_preparing" {
-                message = "Preparing voice model"
+                message = "Preparing voice generation"
             } else {
                 message = event.message ?? "Synthesizing"
             }

@@ -42,11 +42,11 @@ struct DubWorkbenchView: View {
                         progressCard(job)
                     }
                     if let error = job.errorMessage {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                        Label(L10n.display(error), systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(AppTheme.Status.errorColor)
                     }
                     if job.resolvedCloudSyncState == .pending {
-                        Button("Retry cloud sync") {
+                        Button(L10n.string("Retry cloud sync")) {
                             store.retryDubCloudSync(job.id)
                         }
                         .buttonStyle(.borderless)
@@ -101,7 +101,7 @@ struct DubWorkbenchView: View {
                 fieldColumn(title: L10n.string("Voiceover language")) {
                     Picker(L10n.string("Language"), selection: languageBinding(job.id)) {
                         ForEach(WorkbenchDubLanguage.allCases.filter { $0 != .automatic }) { language in
-                            Text(language.label).tag(language.rawValue)
+                            Text(L10n.string(key: language.label)).tag(language.rawValue)
                         }
                     }
                     .labelsHidden()
@@ -111,7 +111,7 @@ struct DubWorkbenchView: View {
                 fieldColumn(title: L10n.string("Task name")) {
                     HStack(spacing: AppTheme.Spacing.xs) {
                         TextField(
-                            SessionTitlePolicy.autoGeneratePlaceholder,
+                            L10n.string(key: SessionTitlePolicy.autoGeneratePlaceholder),
                             text: titleBinding(job.id)
                         )
                         .textFieldStyle(.roundedBorder)
@@ -132,21 +132,21 @@ struct DubWorkbenchView: View {
                             Image(systemName: "ellipsis")
                         }
                         .buttonStyle(.borderless)
-                        .help("Manage reference voices")
+                        .help(L10n.string("Manage reference voices"))
                     }
                 }
             }
 
             HStack {
-                Menu("Import from transcript") {
+                Menu(L10n.string("Import from transcript")) {
                     ForEach(store.transcriptions.filter { $0.result != nil }) { transcript in
                         Menu(transcript.sessionTitle) {
-                            Button("Source track") {
+                            Button(L10n.string("Source track")) {
                                 store.useTranscript(transcript.id, forDub: job.id, track: .source)
                             }
                             if !transcript.translationTracks.isEmpty {
                                 ForEach(transcript.translationTracks) { track in
-                                    Button("Translation · \(track.displayLanguageLabel)") {
+                                Button(L10n.format("Translation · %@", track.displayLanguageLabel)) {
                                         store.selectTranslationLanguage(
                                             track.languageCode,
                                             forTranscription: transcript.id
@@ -205,7 +205,7 @@ struct DubWorkbenchView: View {
                     Image(systemName: "sparkles")
                 }
                 .buttonStyle(.borderless)
-                .help("Edit script with AI")
+                .help(L10n.string("Edit script with AI"))
                 .disabled(segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                 Button(role: .destructive) {
@@ -215,7 +215,7 @@ struct DubWorkbenchView: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled((job.segments?.count ?? 0) <= 1)
-                .help("Delete segment")
+                .help(L10n.string("Delete segment"))
             }
             .padding(.horizontal, AppTheme.Spacing.md)
             .padding(.vertical, AppTheme.Spacing.smMd)
@@ -227,10 +227,10 @@ struct DubWorkbenchView: View {
                 )
 
                 HStack {
-                    Text("\(usage.count) \(usage.unit)")
+                    Text(L10n.format("%@ %@", usage.count, L10n.string(key: usage.unit)))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                     Spacer()
-                    Text("Estimated ~\(seconds)s")
+                    Text(L10n.format("Estimated ~%@s", seconds))
                         .foregroundStyle(
                             seconds > 108
                                 ? AppTheme.Status.warningColor
@@ -263,10 +263,10 @@ struct DubWorkbenchView: View {
     private func generateBar(job: WorkbenchDubJob, segmentCount: Int, totalSeconds: Int) -> some View {
         HStack(spacing: AppTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(segmentCount) Segments · ~\(totalSeconds) s")
+                Text(L10n.format("%@ Segments · ~%@ s", segmentCount, totalSeconds))
                     .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
-                Text(readyLabel(job))
+                Text(L10n.string(key: readyLabel(job)))
                     .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
             }
             Spacer(minLength: 0)
@@ -274,7 +274,7 @@ struct DubWorkbenchView: View {
                 Button(role: .cancel) {
                     store.cancelDub(job.id)
                 } label: {
-                    Label("Cancel", systemImage: "stop.circle")
+                    Label(L10n.string("Cancel"), systemImage: "stop.circle")
                 }
                 .buttonStyle(.bordered)
                 .disabled(job.state == .cancelling)
@@ -283,7 +283,7 @@ struct DubWorkbenchView: View {
                     start(job)
                 } label: {
                     Label(
-                        job.state == .completed ? "Regenerate" : "Generate",
+                        L10n.string(job.state == .completed ? "Regenerate" : "Generate"),
                         systemImage: job.state == .completed ? "arrow.clockwise" : "sparkles"
                     )
                     .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
@@ -309,10 +309,10 @@ struct DubWorkbenchView: View {
     private func progressCard(_ job: WorkbenchDubJob) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(progressPhase(job).uppercased())
+                Text(L10n.string(key: progressPhase(job)).uppercased())
                     .font(.system(size: AppTheme.FontSize.xxs, weight: .bold))
                     .foregroundStyle(AppTheme.Text.mutedColor)
-                Text(progressDisplayMessage(job))
+                Text(L10n.display(progressDisplayMessage(job)))
                 Spacer()
                 if let current = job.progressCompleted, let total = job.progressTotal {
                     Text("\(current)/\(total)").monospacedDigit()
@@ -392,10 +392,10 @@ struct DubWorkbenchView: View {
     }
 
     private func readyLabel(_ job: WorkbenchDubJob) -> String {
-        if job.state == .running { return "Generating…" }
-        if job.state == .cancelling { return "Cancelling…" }
-        if job.state == .completed { return "Ready to regenerate" }
-        return "Ready to generate"
+        if job.state == .running { return L10n.key("Generating…") }
+        if job.state == .cancelling { return L10n.key("Cancelling…") }
+        if job.state == .completed { return L10n.key("Ready to regenerate") }
+        return L10n.key("Ready to generate")
     }
 
     private func progressDisplayMessage(_ job: WorkbenchDubJob) -> String {
@@ -403,24 +403,24 @@ struct DubWorkbenchView: View {
            let total = job.progressTotal,
            total > 0,
            job.progressStep?.localizedCaseInsensitiveContains("script") == true {
-            return "Synthesizing \(current)/\(total)"
+            return L10n.format("Synthesizing %@/%@", current, total)
         }
         return job.progressMessage
     }
 
     private func progressPhase(_ job: WorkbenchDubJob) -> String {
         let step = job.progressStep?.lowercased() ?? ""
-        if step.contains("script") || step.contains("synth") { return "Synthesizing" }
-        if step.contains("align") { return "Aligning audio" }
+        if step.contains("script") || step.contains("synth") { return L10n.key("Synthesizing") }
+        if step.contains("align") { return L10n.key("Aligning audio") }
         if step.contains("upload") || step.contains("download") || step.contains("sync") {
-            return "Saving result"
+            return L10n.key("Saving result")
         }
-        if step.contains("final") || step.contains("cleanup") { return "Finalizing" }
-        if step.contains("cancel") { return "Cancelled" }
-        if step.contains("fail") { return "Failed" }
-        if step.contains("queue") { return "Queued" }
-        if step.contains("prepar") || step.contains("create") { return "Preparing" }
-        return job.flowProgressStage?.title ?? "Preparing"
+        if step.contains("final") || step.contains("cleanup") { return L10n.key("Finalizing") }
+        if step.contains("cancel") { return L10n.key("Cancelled") }
+        if step.contains("fail") { return L10n.key("Failed") }
+        if step.contains("queue") { return L10n.key("Queued") }
+        if step.contains("prepar") || step.contains("create") { return L10n.key("Preparing") }
+        return job.flowProgressStage?.title ?? L10n.key("Preparing")
     }
 
     private func titleBinding(_ id: UUID) -> Binding<String> {
@@ -525,9 +525,9 @@ private struct DubRewriteSheet: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             HStack {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text("AI edit")
+                Text(L10n.string("AI edit"))
                         .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
-                    Text("Describe how AI should revise this segment.")
+                Text(L10n.string("Describe how AI should revise this segment."))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
@@ -542,13 +542,13 @@ private struct DubRewriteSheet: View {
                 .buttonStyle(.borderless)
             }
 
-            Text("Editing instructions")
+            Text(L10n.string("Editing instructions"))
                 .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
-            DubScriptEditor(text: $draft, placeholder: "Make it shorter, more conversational, or change the tone…")
+            DubScriptEditor(text: $draft, placeholder: L10n.string("Make it shorter, more conversational, or change the tone…"))
                 .disabled(rewrite.isRunning)
             if let error = rewrite.errorMessage {
-                Text(error).foregroundStyle(AppTheme.Status.errorColor)
+                Text(L10n.display(error)).foregroundStyle(AppTheme.Status.errorColor)
             }
 
             HStack {
@@ -559,7 +559,7 @@ private struct DubRewriteSheet: View {
                     onDismiss()
                 }
                 .keyboardShortcut(.cancelAction)
-                Button(rewrite.isRunning ? "Rewriting…" : "Apply AI edit") {
+                Button(L10n.string(rewrite.isRunning ? "Rewriting…" : "Apply AI edit")) {
                     rewrite.start(store: store, jobID: jobID, segmentIndex: segmentIndex, instruction: draft) {
                         dismiss()
                         onDismiss()

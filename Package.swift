@@ -10,7 +10,7 @@ let package = Package(
     ],
     traits: [
         .trait(name: "BundledSpeech", description: "Include on-device speech models and MLX."),
-        .trait(name: "SparkleUpdates", description: "Include Sparkle updates for direct distribution."),
+        .trait(name: "SparkleUpdates", description: "Reserved for direct-distribution update checks. The Sparkle installer is not linked."),
         .trait(name: "MacAppStore", description: "Build the Mac App Store purchase surface."),
     ],
     dependencies: [
@@ -39,11 +39,6 @@ let package = Package(
                 .product(name: "Textual", package: "textual"),
                 .product(name: "YouTubeKit", package: "YouTubeKit"),
                 .product(
-                    name: "Sparkle",
-                    package: "Sparkle",
-                    condition: .when(traits: ["SparkleUpdates"])
-                ),
-                .product(
                     name: "MLX",
                     package: "mlx-swift",
                     condition: .when(traits: ["BundledSpeech"])
@@ -61,11 +56,6 @@ let package = Package(
                 .product(
                     name: "MLXVLM",
                     package: "mlx-swift-lm",
-                    condition: .when(traits: ["BundledSpeech"])
-                ),
-                .product(
-                    name: "SpeechEnhancement",
-                    package: "speech-swift",
                     condition: .when(traits: ["BundledSpeech"])
                 ),
                 .product(
@@ -119,6 +109,11 @@ let package = Package(
                     condition: .when(traits: ["BundledSpeech"])
                 ),
                 .product(
+                    name: "MLXAudioSTS",
+                    package: "mlx-audio-swift",
+                    condition: .when(traits: ["BundledSpeech"])
+                ),
+                .product(
                     name: "HuggingFace",
                     package: "swift-huggingface",
                     condition: .when(traits: ["BundledSpeech"])
@@ -154,6 +149,7 @@ let package = Package(
                 .linkedFramework("Carbon"),
                 .linkedFramework("SoundAnalysis"),
                 .linkedFramework("AuthenticationServices"),
+                .linkedFramework("LocalAuthentication"),
                 .linkedFramework("IOKit"),
                 .linkedLibrary("sqlite3"),
             ],

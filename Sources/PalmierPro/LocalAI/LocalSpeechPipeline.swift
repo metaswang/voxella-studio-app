@@ -560,19 +560,12 @@ actor LocalSpeechPipeline {
                 speechRanges: allowedSpeechRanges,
                 languageIdentifier: try languageIdentifierModel()
             )
-            recognitionLanguageCode = switch route.engine {
-            case .qwen:
-                Self.promptLanguage(for: .qwen, code: route.topLanguage)
-            case .whisper:
-                route.whisperHint
-            case .parakeet:
-                nil
-            }
+            recognitionLanguageCode = ASREngineLanguagePolicy.decoderLanguagePrompt(for: route)
             outputLanguageCode = nil
             progressUpdate(.init(
                 stage: .detectingLanguage,
                 fraction: 0.135,
-                message: "Using \(route.engine.title)…"
+                message: "Preparing speech recognition…"
             ))
         }
         replayCollector?.setRoute(route, languagePrompt: recognitionLanguageCode)
@@ -753,12 +746,13 @@ actor LocalSpeechPipeline {
             progressUpdate: progressUpdate
         )
         var aligned = alignment.words
+        let firstPassCovered = aligned.map {
+            ASRSpeechRange(start: Double($0.startTime), end: Double($0.endTime))
+        }
 
         let uncovered = ASRCoverageRepair.uncoveredSpeech(
             mask: speechMask,
-            covered: aligned.map {
-                ASRSpeechRange(start: Double($0.startTime), end: Double($0.endTime))
-            }
+            covered: firstPassCovered
         )
         var retriedUncoveredRangeCount = uncovered.count
         var retriedUncoveredSpeechSeconds = uncovered.reduce(0) { $0 + ($1.end - $1.start) }
@@ -770,16 +764,27 @@ actor LocalSpeechPipeline {
             let cores = uncovered
             let retryInputs = ASRCoverageRepair.retryRanges(
                 from: cores,
+                firstPassCovered: firstPassCovered,
                 audioDuration: audioDuration
             )
-            Log.transcription.notice(
-                "coverage retry cores=\(retriedUncoveredRangeCount) seconds=\(String(format: "%.1f", retriedUncoveredSpeechSeconds))"
+            // Retry windows already carry the desired overlap. Do not let the
+            // first-pass VAD region plus boundary context pull already-recognized
+            // words back into an edge-hole decode.
+            let retryChunkConfiguration = ASRChunkPlannerConfiguration(
+                maximumWindowDuration: chunkConfiguration.maximumWindowDuration,
+                boundaryContextDuration: 0,
+                maximumMergeGap: 0
             )
             let retryChunks = ASRChunkPlanner.chunks(
                 speechRanges: retryInputs,
                 audioDuration: audioDuration,
-                configuration: chunkConfiguration,
-                allowedRanges: allowedSpeechRanges
+                configuration: retryChunkConfiguration,
+                allowedRanges: retryInputs
+            )
+            Log.transcription.notice(
+                "coverage retry cores=\(retriedUncoveredRangeCount) seconds=\(String(format: "%.1f", retriedUncoveredSpeechSeconds)) "
+                    + "inputs=\(retryInputs.map { String(format: "%.2f-%.2f", $0.start, $0.end) }.joined(separator: ",")) "
+                    + "chunks=\(retryChunks.map { String(format: "%.2f-%.2f", $0.inputStart, $0.inputEnd) }.joined(separator: ","))"
             )
             if retryChunks.isEmpty {
                 retriedUncoveredKeptFirstPassCount = cores.count
@@ -870,7 +875,10 @@ actor LocalSpeechPipeline {
                                 retriedUncoveredAcceptedCount = cores.count
                             } else {
                                 retriedUncoveredKeptFirstPassCount = cores.count
-                                Log.transcription.notice("coverage retry did not improve core coverage; keeping first pass")
+                                Log.transcription.notice(
+                                    "coverage retry did not improve core coverage; keeping first pass "
+                                        + "retryText=\(retryOwnership.spans.map(\.text).joined(separator: " "))"
+                                )
                             }
                         }
                     }
@@ -1258,7 +1266,7 @@ actor LocalSpeechPipeline {
     private nonisolated static func requireModels(_ ids: [LocalModelID]) throws {
         let missing = ids.compactMap { id -> String? in
             guard let model = LocalModelManager.catalog.first(where: { $0.id == id }) else { return id.rawValue }
-            return LocalModelManager.isInstalled(model) ? nil : model.title
+            return LocalModelManager.isInstalled(model) ? nil : model.userFacingTitle
         }
         if !missing.isEmpty { throw LocalAIError.missingModels(missing.joined(separator: ", ")) }
     }
@@ -1616,6 +1624,7 @@ actor LocalSpeechPipeline {
             + "wVote=\(String(format: "%.2f", route.engineVoteScores.whisper)) "
             + "top=\(route.topLanguage ?? "nil") "
             + "hint=\(route.whisperHint ?? "nil") "
+            + "prompt=\(ASREngineLanguagePolicy.decoderLanguagePrompt(for: route) ?? "nil") "
             + "window=\(String(format: "%.1f", route.speechDuration))s"
         if let windowTops {
             message += " windows=\(windowTops)"
@@ -1872,7 +1881,7 @@ actor LocalDubPipeline {
         )
         guard let model = try await TTS.loadModel(modelRepo: modelDirectory.path)
             as? MLXAudioTTS.Qwen3TTSModel else {
-            throw LocalAIError.incompleteModel(descriptor.title)
+            throw LocalAIError.incompleteModel(descriptor.userFacingTitle)
         }
         loadedModels[id] = model
         progress(0.26, "Local voice ready")

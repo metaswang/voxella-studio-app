@@ -12,7 +12,9 @@ for arg in "$@"; do
 done
 
 # Local debug uses an ad-hoc app because a certificate without a provisioning
-# profile is rejected by LaunchServices. KeychainStore falls back to login Keychain.
+# profile is rejected by LaunchServices. Ad-hoc builds keep credentials in an
+# isolated in-memory store. Use ./scripts/bundle.sh debug --sign for Keychain
+# acceptance testing.
 "$ROOT/scripts/bundle.sh" debug --fast
 
 if ! $stream; then

@@ -21,10 +21,10 @@ struct StoragePane: View {
     private var cacheRow: some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text("Temporary files")
+                Text(L10n.string("Temporary files"))
                     .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                     .foregroundStyle(AppTheme.Text.primaryColor)
-                Text("Playback previews, waveforms, filmstrip thumbnails, and transcripts. Safe to clear; files rebuild as needed.")
+                Text(L10n.string("Playback previews, waveforms, filmstrip thumbnails, and transcripts. Safe to clear; files rebuild as needed."))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .fixedSize(horizontal: false, vertical: true)
@@ -44,7 +44,7 @@ struct StoragePane: View {
 
             Spacer(minLength: AppTheme.Spacing.lg)
 
-            Button("Clear cache") {
+            Button(L10n.string("Clear cache")) {
                 clear()
             }
             .buttonStyle(actionButtonStyle)
@@ -56,10 +56,10 @@ struct StoragePane: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text("Media indexing")
+                    Text(L10n.string("Media indexing"))
                         .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                         .foregroundStyle(AppTheme.Text.primaryColor)
-                    Text("Indexes imported media for on-device search.")
+                    Text(L10n.string("Indexes imported media for on-device search."))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                         .fixedSize(horizontal: false, vertical: true)
@@ -69,27 +69,27 @@ struct StoragePane: View {
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .labelsHidden()
-                    .accessibilityLabel("Media search")
+                    .accessibilityLabel(L10n.string("Media search"))
                     .onChange(of: searchEnabled) { _, newValue in
                         VisualModelLoader.shared.setEnabled(newValue)
                     }
             }
 
             HStack(spacing: AppTheme.Spacing.sm) {
-                Text("Index")
+                Text(L10n.string("Index"))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                 Text(ByteCountFormatter.string(fromByteCount: indexBytes, countStyle: .file))
                     .font(.system(size: AppTheme.FontSize.xs).monospacedDigit())
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                 Spacer(minLength: AppTheme.Spacing.md)
-                Button("Clear index") { clearIndex() }
+                Button(L10n.string("Clear index")) { clearIndex() }
                     .buttonStyle(actionButtonStyle)
                     .disabled(indexBytes == 0)
             }
             .padding(.top, AppTheme.Spacing.xs)
 
-            Button("Manage search resources") { LocalModelManager.shared.presentManager() }
+            Button(L10n.string("Manage search resources")) { LocalModelManager.shared.presentManager() }
                 .buttonStyle(actionButtonStyle)
         }
     }
@@ -109,7 +109,7 @@ struct StoragePane: View {
     }
 
     private var formattedSize: String {
-        if isClearing { return "Clearing…" }
+        if isClearing { return L10n.string("Clearing…") }
         return ByteCountFormatter.string(fromByteCount: cacheBytes, countStyle: .file)
     }
 

@@ -347,7 +347,7 @@ final class SearchIndexCoordinator {
             return []
         } catch {
             if generation == cacheGeneration, !Task.isCancelled {
-                searchFailure = error.localizedDescription
+                searchFailure = "Smart search is temporarily unavailable. Try again later."
                 Log.search.error("visual search failed error=\(error.localizedDescription)")
             }
             return []

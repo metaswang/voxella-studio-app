@@ -26,7 +26,7 @@ struct ProjectSettingsMismatchView: View {
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
                 GridRow {
-                    Text(verbatim: "FPS")
+                    Text(L10n.string("Frame Rate"))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.secondaryColor)
                     Text(verbatim: "\(editor.timeline.fps)")

@@ -1,11 +1,7 @@
 import AVFoundation
 import Foundation
 
-#if BUNDLED_SPEECH
-import SpeechEnhancement
-#endif
-
-/// Post-record listen-track bake: HPF → DeepFilterNet3 → OA blend → linear loudness → true-peak.
+/// Post-record listen-track bake: HPF → MossFormer2-SE → OA blend → linear loudness → true-peak.
 /// Never used as the ASR input; master remains source of truth for transcription.
 enum ListenTrackEnhancer {
     static let cache = DiskCache(named: "ListenTrackAudio")
@@ -55,7 +51,10 @@ enum ListenTrackEnhancer {
                 sampleRate: sampleRate,
                 cutoffHz: ListenEnhanceSettings.highPassCutoffHz
             )
-            let denoised = try await modelBox.enhance(audio: filtered, sampleRate: Int(sampleRate))
+            let denoised = try await MossFormerSpeechEnhancer.shared.enhance(
+                audio: filtered,
+                sampleRate: Int(sampleRate)
+            )
             let blended = VoiceReferenceSpeechGate.mix(
                 dry: filtered,
                 wet: denoised,
@@ -91,21 +90,7 @@ enum ListenTrackEnhancer {
     }
 
     #if BUNDLED_SPEECH
-    private static let modelBox = ModelBox()
-    private static var sampleRate: Double { Double(SpeechEnhancer.sampleRate) }
-
-    private actor ModelBox {
-        private var enhancer: SpeechEnhancer?
-
-        func enhance(audio: [Float], sampleRate: Int) async throws -> [Float] {
-            try await MLXRuntime.beginInference()
-            defer { MLXRuntime.endInference() }
-            if enhancer == nil { enhancer = try await SpeechEnhancer.fromPretrained() }
-            // speech-swift DeepFilterNet3 has no public post-filter toggle; keep default enhance
-            // and rely on a conservative OA wet mix for hall recordings.
-            return try enhancer!.enhanceChunked(audio: audio, sampleRate: sampleRate)
-        }
-    }
+    private static var sampleRate: Double { Double(MossFormerSpeechEnhancer.sampleRate) }
 
     private static func readChannels(from url: URL) async throws -> [[Float]] {
         let track = try await AVURLAsset(url: url).loadTracks(withMediaType: .audio).first

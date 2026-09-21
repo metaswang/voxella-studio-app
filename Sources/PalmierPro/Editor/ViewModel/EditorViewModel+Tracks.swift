@@ -114,7 +114,10 @@ extension EditorViewModel {
            timeline.tracks[trackIndex].syncLocked,
            let clip = timeline.tracks[trackIndex].clips.first(where: { $0.multicamGroupId != nil }),
            let group = multicamGroup(of: clip) {
-            mediaPanelToast = MediaPanelToast(message: L10n.string("Can't unlock sync on a multicam track — \"\(group.name)\" stays aligned through it."))
+            mediaPanelToast = MediaPanelToast(message: L10n.format(
+                "Can't unlock sync on a multicam track — \"%@\" stays aligned through it.",
+                group.name
+            ))
             NSSound.beep()
             return
         }

@@ -27,7 +27,7 @@ struct SessionListRow: View {
                             .lineLimit(1)
                         HStack(spacing: AppTheme.Spacing.smMd) {
                             if session.sessionType.showsRecentListLabel {
-                                Text(session.sessionType.label)
+                                Text(L10n.string(key: session.sessionType.label))
                             }
                             if let duration = session.duration {
                                 Text(formatTime(duration))
@@ -96,7 +96,7 @@ struct SessionListRow: View {
                         }
                 }
                 .buttonStyle(.plain)
-                .help("Delete session")
+                .help(L10n.string("Delete session"))
                 .disabled(!allowsDelete)
                 .opacity(isHovered ? AppTheme.Opacity.opaque : AppTheme.Opacity.zero)
                 .scaleEffect(isHovered ? 1 : 0.75)
@@ -134,19 +134,23 @@ struct SessionPlacementIndicators: View {
     }
 
     private var placementHelp: String {
-        "\(TaskPlacementCopy.storageTooltip(for: storage)) · \(TaskPlacementCopy.computeTooltip(for: compute))"
+        L10n.format(
+            "%@ · %@",
+            L10n.string(key: TaskPlacementCopy.storageTooltip(for: storage)),
+            L10n.string(key: TaskPlacementCopy.computeTooltip(for: compute))
+        )
     }
 
     var body: some View {
         HStack(spacing: showsLabel ? AppTheme.Spacing.xs : AppTheme.Spacing.md) {
             Image(systemName: storage == .local ? "internaldrive" : "icloud")
-                .accessibilityLabel(TaskPlacementCopy.storageTooltip(for: storage))
-                .help(TaskPlacementCopy.storageTooltip(for: storage))
+                .accessibilityLabel(L10n.string(key: TaskPlacementCopy.storageTooltip(for: storage)))
+                .help(L10n.string(key: TaskPlacementCopy.storageTooltip(for: storage)))
             Image(systemName: compute == .local ? "laptopcomputer" : "cloud")
-                .accessibilityLabel(TaskPlacementCopy.computeTooltip(for: compute))
-                .help(TaskPlacementCopy.computeTooltip(for: compute))
+                .accessibilityLabel(L10n.string(key: TaskPlacementCopy.computeTooltip(for: compute)))
+                .help(L10n.string(key: TaskPlacementCopy.computeTooltip(for: compute)))
             if showsLabel {
-                Text(placementLabel)
+                Text(L10n.string(key: placementLabel))
                     .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                     .lineLimit(1)
             }

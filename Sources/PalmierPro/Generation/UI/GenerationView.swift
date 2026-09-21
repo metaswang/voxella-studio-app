@@ -202,7 +202,7 @@ struct GenerationView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let dropError {
-                    Text(dropError)
+                    Text(L10n.display(dropError))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(Color.orange)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -419,7 +419,7 @@ struct GenerationView: View {
                 .padding(.vertical, AppTheme.Spacing.xs)
 
             if text.wrappedValue.isEmpty {
-                Text(placeholder)
+                Text(L10n.display(placeholder))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.mutedColor)
                     .padding(.horizontal, AppTheme.Spacing.md)
@@ -434,7 +434,6 @@ struct GenerationView: View {
 
     private var inputToolbar: some View {
         HStack(spacing: AppTheme.Spacing.sm) {
-            modelPicker
             if showsFramesRefsPicker { framesRefsModePicker }
             if selectedType == .audio, audioModel.voices != nil {
                 voicePicker

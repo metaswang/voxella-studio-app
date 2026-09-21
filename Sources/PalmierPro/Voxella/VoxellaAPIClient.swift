@@ -1115,7 +1115,7 @@ actor VoxellaAPIClient {
             body["device_label"] = deviceLabel
         }
         // Prefer authenticated when signed in so API can auto-link user as owner/linked.
-        if auth.hasSession {
+        if (try? await auth.validAccessToken()) != nil {
             return try await request(
                 url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/activate"),
                 method: "POST",
@@ -1148,7 +1148,7 @@ actor VoxellaAPIClient {
         if let licenseKeyID { body["license_key_id"] = licenseKeyID.uuidString }
         if let fingerprint { body["fingerprint"] = fingerprint }
         // Prefer authenticated when signed in so owner/linked listing works without token.
-        if auth.hasSession {
+        if (try? await auth.validAccessToken()) != nil {
             return try await request(
                 url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/devices"),
                 method: "POST",
@@ -1168,7 +1168,7 @@ actor VoxellaAPIClient {
         var body: [String: Any] = ["fingerprint": fingerprint]
         if let token { body["token"] = token }
         if let licenseKeyID { body["license_key_id"] = licenseKeyID.uuidString }
-        if auth.hasSession {
+        if (try? await auth.validAccessToken()) != nil {
             return try await request(
                 url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/license-keys/devices/unbind"),
                 method: "POST",
@@ -1325,12 +1325,12 @@ actor VoxellaAPIClient {
                 return access
             }
             if status.status == "failed" {
-                throw VoxellaAPIError.http(409, String(localized: "Your purchase needs review. Please contact support."))
+                throw VoxellaAPIError.http(409, "Your purchase needs review. Please contact support.")
             }
             try await Task.sleep(nanoseconds: delay)
             delay = min(delay * 2, 5_000_000_000)
         }
-        throw VoxellaAPIError.http(202, String(localized: "Your purchase is still processing. It will be restored automatically."))
+        throw VoxellaAPIError.http(202, "Your purchase is still processing. It will be restored automatically.")
     }
 
     func beginGoogleCalendarConnection(redirectURI: String) async throws -> VoxellaCalendarOAuthStart {

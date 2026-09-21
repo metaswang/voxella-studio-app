@@ -179,15 +179,15 @@ struct SessionExportCenter: View {
                 .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.semibold))
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text(draft.summaryLabel)
+                Text(localizedSummaryLabel)
                     .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.medium))
                 if let target = selectedTargetLabel {
-                    Text("Target: \(target)")
+                    Text(L10n.format("Target: %@", target))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
                 if draft.content != .audio, draft.format == .txt {
-                    Text(draft.includeSpeakers ? "With speaker labels" : "Without speaker labels")
+                    Text(L10n.string(draft.includeSpeakers ? "With speaker labels" : "Without speaker labels"))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
@@ -209,7 +209,7 @@ struct SessionExportCenter: View {
                         .fill(AppTheme.Accent.primary)
                         .frame(width: AppTheme.Spacing.xs, height: AppTheme.Spacing.xs)
                         .padding(.top, AppTheme.Spacing.sm)
-                    Text(note)
+                    Text(L10n.display(note))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                         .fixedSize(horizontal: false, vertical: true)
@@ -252,7 +252,7 @@ struct SessionExportCenter: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            Text(title.uppercased())
+            Text(L10n.string(key: title).uppercased())
                 .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                 .foregroundStyle(AppTheme.Text.mutedColor)
                 .tracking(1.4)
@@ -302,12 +302,12 @@ struct SessionExportCenter: View {
                     .foregroundStyle(AppTheme.Accent.primary)
                     .opacity(selected ? AppTheme.Opacity.opaque : AppTheme.Opacity.zero)
             }
-            Text(item.title)
+            Text(L10n.display(item.title))
                 .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.semibold))
                 .foregroundStyle(AppTheme.Text.primaryColor)
                 .multilineTextAlignment(.leading)
             if let hint = item.hint {
-                Text(hint)
+                Text(L10n.display(hint))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .multilineTextAlignment(.leading)
@@ -506,7 +506,7 @@ struct SessionExportCenter: View {
             .init(
                 id: $0.languageCode,
                 title: $0.displayLanguageLabel,
-                hint: "\($0.track.cues.count) cues",
+                hint: L10n.format("%@ cues", $0.track.cues.count),
                 systemImage: "globe"
             )
         }
@@ -530,16 +530,25 @@ struct SessionExportCenter: View {
 
     private var primaryActionTitle: String {
         if draft.action == .copy {
-            return "Copy \(draft.format.title)"
+            return L10n.format("Copy %@", L10n.string(key: draft.format.title))
         }
         if draft.content == .audio {
-            return "Download Audio"
+            return L10n.string("Download Audio")
         }
-        return "Download \(draft.format.title)"
+        return L10n.format("Download %@", L10n.string(key: draft.format.title))
     }
 
     private var progressTitle: String {
-        draft.action == .copy ? "Copying…" : "Saving…"
+        L10n.string(draft.action == .copy ? "Copying…" : "Saving…")
+    }
+
+    private var localizedSummaryLabel: String {
+        L10n.format(
+            "%@ · %@ · %@",
+            L10n.string(key: draft.content.title),
+            L10n.string(key: draft.variant.title),
+            L10n.string(key: draft.content == .audio ? "Audio" : draft.format.title)
+        )
     }
 
     private var canExport: Bool {

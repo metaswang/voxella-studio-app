@@ -36,7 +36,7 @@ extension MediaTab {
                     resultsGrid { ForEach(nameMatches) { fileCard($0) } }
                 }
                 if visualHits.isEmpty, spokenHits.isEmpty, nameMatches.isEmpty {
-                    Text(L10n.string("No matches for “\(trimmedSearchQuery)”"))
+                    Text(L10n.format("No matches for “%@”", trimmedSearchQuery))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                         .frame(maxWidth: .infinity)

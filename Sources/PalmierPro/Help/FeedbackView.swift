@@ -80,7 +80,7 @@ struct FeedbackView: View {
             contextNote
 
             if let errorText {
-                Text(errorText)
+                Text(L10n.display(errorText))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(.red)
             }
@@ -113,7 +113,7 @@ struct FeedbackView: View {
     private var emailField: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             fieldLabel("Email (optional)")
-            TextField("", text: $email, prompt: Text("you@example.com — so we can reply"))
+            TextField("", text: $email, prompt: Text(L10n.string("you@example.com — so we can reply")))
                 .textFieldStyle(.plain)
                 .font(.system(size: AppTheme.FontSize.md))
                 .foregroundStyle(AppTheme.Text.primaryColor)
@@ -138,7 +138,7 @@ struct FeedbackView: View {
         }
         .toggleStyle(.checkbox)
         .disabled(!hasReplyEmail)
-        .help(hasReplyEmail ? "" : "Add an email above to enable a reply")
+        .help(hasReplyEmail ? "" : L10n.string("Add an email above to enable a reply"))
     }
 
     private var screenshotRow: some View {
@@ -181,8 +181,11 @@ struct FeedbackView: View {
     }
 
     private var contextNoteText: String {
-        "App version \(AppEnvironmentInfo.version) and macOS "
-            + "\(AppEnvironmentInfo.operatingSystemVersion) are included."
+        L10n.format(
+            "App version %@ and macOS %@ are included.",
+            AppEnvironmentInfo.version,
+            AppEnvironmentInfo.operatingSystemVersion
+        )
     }
 
     private var footer: some View {
@@ -200,7 +203,7 @@ struct FeedbackView: View {
                             .controlSize(.small)
                             .tint(AppTheme.Text.primaryColor)
                     }
-                    Text(isSending ? "Sending…" : "Send")
+                    Text(L10n.string(isSending ? "Sending…" : "Send"))
                 }
             }
             .buttonStyle(.capsule(.prominent, size: .regular))
@@ -239,18 +242,18 @@ struct FeedbackView: View {
         let replyAddr = account.account?.user.email
             ?? (trimmedEmail.isEmpty ? nil : trimmedEmail)
         if let replyAddr, mayContact {
-            return "We read every message and may reach out at \(replyAddr)."
+            return L10n.format("We read every message and may reach out at %@.", replyAddr)
         }
         if replyAddr != nil {
-            return "We read every message. We won't email you, as requested."
+            return L10n.string("We read every message. We won't email you, as requested.")
         }
-        return "We read every message. Add an email next time if you'd like a reply."
+        return L10n.string("We read every message. Add an email next time if you'd like a reply.")
     }
 
     // MARK: - Helpers
 
     private func fieldLabel(_ text: String) -> some View {
-        Text(text)
+        Text(L10n.string(key: text))
             .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
             .foregroundStyle(AppTheme.Text.secondaryColor)
     }
@@ -291,12 +294,13 @@ final class FeedbackWindowController: NSWindowController {
     private init() {
         let initialView = FeedbackView(screenshot: nil)
             .appZoomEnvironment()
+            .appLocalization()
             .tint(AppTheme.Accent.primary)
         let hosting = NSHostingController(rootView: AnyView(initialView))
         let window = NSWindow(contentViewController: hosting)
         window.setContentSize(AppTheme.zoomed(NSSize(width: 480, height: 480)))
         window.minSize = AppTheme.zoomed(NSSize(width: 480, height: 420))
-        window.title = "Send feedback"
+        window.title = L10n.string("Send feedback")
         window.backgroundColor = AppTheme.Background.base.withAlphaComponent(0.4)
         window.isOpaque = false
         window.titleVisibility = .hidden
@@ -334,6 +338,7 @@ final class FeedbackWindowController: NSWindowController {
             FeedbackView(screenshot: screenshot, prefill: prefill)
                 .id(UUID())
                 .appZoomEnvironment()
+                .appLocalization()
                 .tint(AppTheme.Accent.primary)
         )
         showWindow(nil)

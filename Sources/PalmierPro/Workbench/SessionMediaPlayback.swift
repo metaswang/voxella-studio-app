@@ -279,13 +279,11 @@ final class SessionPlaybackController {
                 }
             }
             guard !Task.isCancelled, generation == loadGeneration else { return }
-            if shouldResumePlaying {
-                nextPlayer.play()
-                nextPlayer.rate = Float(playbackRate)
-                alternateAudioPlayer?.play()
-                alternateAudioPlayer?.rate = Float(playbackRate)
-                isPlaying = true
-            }
+        }
+        if shouldResumePlaying {
+            nextPlayer.playImmediately(atRate: Float(playbackRate))
+            alternateAudioPlayer?.playImmediately(atRate: Float(playbackRate))
+            isPlaying = true
         }
         if !showsVideoCanvas {
             peaks = (try? await WaveformExtractor.peakEnvelope(from: playbackURL)) ?? []
@@ -463,7 +461,7 @@ struct SessionFullscreenChrome: View {
                                     }
                             }
                             .buttonStyle(.plain)
-                            .help("Exit Full Screen")
+                            .help(L10n.string("Exit Full Screen"))
                         }
                         .padding(AppTheme.Spacing.xl)
 
@@ -520,7 +518,7 @@ struct SessionFullscreenChrome: View {
                         .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
                 }
                 .buttonStyle(.bordered)
-                .help("Exit Full Screen")
+                .help(L10n.string("Exit Full Screen"))
             }
         }
         .padding(.horizontal, AppTheme.Spacing.lg)
@@ -589,7 +587,7 @@ struct SessionFullscreenChrome: View {
         }
         .menuStyle(.borderlessButton)
         .disabled(playback.subtitleTrack == nil && playback.translationTracks.isEmpty)
-        .help("Subtitles")
+        .help(L10n.string("Subtitles"))
     }
 
     private var fullscreenSpeedMenu: some View {
@@ -603,18 +601,18 @@ struct SessionFullscreenChrome: View {
                 }
             }
         } label: {
-            Text("Speed \(speedLabel(playback.playbackRate))")
+            Text(L10n.format("Speed %@", speedLabel(playback.playbackRate)))
                 .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                 .foregroundStyle(AppTheme.Text.primaryColor)
         }
         .menuStyle(.borderlessButton)
-        .help("Playback speed")
+        .help(L10n.string("Playback speed"))
     }
 
     @ViewBuilder
     private func labelWithCheck(_ title: String, selected: Bool) -> some View {
         HStack {
-            Text(title)
+            Text(L10n.display(title))
             if selected {
                 Image(systemName: "checkmark")
             }
@@ -687,8 +685,8 @@ struct SessionPlaybackSeekBar: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .opacity(isEnabled ? AppTheme.Opacity.opaque : AppTheme.Opacity.muted)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Playback position")
-            .accessibilityValue("\(Int((displayedProgress * 100).rounded())) percent")
+            .accessibilityLabel(L10n.string("Playback position"))
+            .accessibilityValue(L10n.format("%@ percent", Int((displayedProgress * 100).rounded())))
             .accessibilityAdjustableAction { direction in
                 guard isEnabled else { return }
                 let step = 0.05
@@ -814,6 +812,7 @@ final class SessionFullscreenWindowController: NSWindowController, NSWindowDeleg
         let chrome = AnyView(
             SessionFullscreenChrome(playback: playback, chrome: chromeState)
                 .appZoomEnvironment()
+                .appLocalization()
         )
         let hosting = NSHostingView(rootView: chrome)
         hosting.frame = screen.frame

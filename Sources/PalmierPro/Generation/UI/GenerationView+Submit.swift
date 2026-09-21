@@ -97,15 +97,19 @@ extension GenerationView {
 
     private var costHelpText: String {
         guard let cost = estimatedCost else {
-            return "Estimated cost. Actual billing may differ slightly."
+            return L10n.string("Estimated cost. Actual billing may differ slightly.")
         }
         guard let left = remainingCredits else {
-            return "\(cost) credits estimated. Actual billing may differ."
+            return L10n.format("%@ credits estimated. Actual billing may differ.", String(cost))
         }
         if cost > left {
-            return "\(cost) credits needed. Only \(left.formatted()) remaining."
+            return L10n.format("%@ credits needed. Only %@ remaining.", String(cost), left.formatted())
         }
-        return "\(cost) credits. \((left - cost).formatted()) credits remaining after this generation."
+        return L10n.format(
+            "%@ credits. %@ credits remaining after this generation.",
+            String(cost),
+            (left - cost).formatted()
+        )
     }
 
     var costEstimateLabel: some View {
@@ -134,12 +138,18 @@ extension GenerationView {
         .buttonBorderShape(.circle)
         .controlSize(.regular)
         .tint(AppTheme.Accent.primary)
-        .accessibilityLabel(aiAllowed ? (selectedType == .upscale ? "Upscale" : "Generate") : "Sign in")
+        .accessibilityLabel(aiAllowed
+            ? L10n.string(selectedType == .upscale ? "Upscale" : "Generate")
+            : L10n.string("Sign in"))
         .disabled(aiAllowed ? !canSubmit : account.isMisconfigured || account.isSigningIn)
         .opacity((aiAllowed ? canSubmit : !account.isMisconfigured && !account.isSigningIn) ? AppTheme.Opacity.opaque : AppTheme.Opacity.strong)
         .help(aiAllowed
-            ? (selectedType == .upscale ? "Upscale source media" : "")
-            : (account.isMisconfigured ? "AI is unavailable" : account.isSigningIn ? "Signing in…" : "Sign in to generate"))
+            ? (selectedType == .upscale ? L10n.string("Upscale source media") : "")
+            : (account.isMisconfigured
+                ? L10n.string("AI is unavailable")
+                : account.isSigningIn
+                    ? L10n.string("Signing in…")
+                    : L10n.string("Sign in to generate")))
     }
 
     // MARK: - Actions
@@ -202,24 +212,24 @@ extension GenerationView {
         case .audio:
             let inputAssets = audioInputAssets(for: audioModel)
             if audioUsesSource {
-                guard audioSource != nil else { return "Add source media." }
+                guard audioSource != nil else { return L10n.string("Add source media.") }
                 return audioModel.validate(spanSeconds: effectiveAudioSourceSpanSeconds)
                     ?? audioModel.validate(params: audioParams(audioDuration: audioDuration))
             }
             return audioModel.validate(params: audioParams(audioDuration: audioDuration))
                 ?? inputAssets.validate(for: audioModel)
         case .upscale:
-            guard let source = upscaleSource else { return "Add source media." }
+            guard let source = upscaleSource else { return L10n.string("Add source media.") }
             guard upscaleModel.supportedTypes.contains(source.type) else {
-                return "\(upscaleModel.displayName) does not support this media type."
+                return L10n.string("This enhancement option does not support this media type.")
             }
             guard source.sourceWidth != nil, source.sourceHeight != nil else {
-                return "Loading source dimensions…"
+                return L10n.string("Loading source dimensions…")
             }
             if source.type == .video {
-                guard source.sourceFPS != nil else { return "Loading source frame rate…" }
+                guard source.sourceFPS != nil else { return L10n.string("Loading source frame rate…") }
                 guard upscaleModel.supports(source: source) else {
-                    return "This model cannot cap the output at 60 FPS."
+                    return L10n.string("This video option cannot cap the output at 60 FPS.")
                 }
             }
             return nil

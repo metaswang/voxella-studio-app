@@ -7,7 +7,7 @@ struct EditorActionFooter<Actions: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             if let message {
-                Text(message)
+                Text(L10n.display(message))
                     .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                     .foregroundStyle(AppTheme.Status.errorColor)
                     .fixedSize(horizontal: false, vertical: true)

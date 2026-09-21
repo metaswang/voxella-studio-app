@@ -10,7 +10,7 @@ struct SpeechInputCaptureView: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             captureRow
             if let message = recorder.errorMessage {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
+                Label(L10n.display(message), systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Status.errorColor)
                 if recorder.needsMicrophoneSettings {
@@ -41,8 +41,8 @@ struct SpeechInputCaptureView: View {
             }
             .buttonStyle(.plain)
             .disabled(isDisabled || recorder.isTransitioning)
-            .accessibilityLabel(recorder.isRecording ? "Stop recording" : "Start recording")
-            .help(recorder.isRecording ? "Stop recording" : "Start recording")
+            .accessibilityLabel(L10n.string(recorder.isRecording ? "Stop recording" : "Start recording"))
+            .help(L10n.string(recorder.isRecording ? "Stop recording" : "Start recording"))
 
             if recorder.isRecording {
                 RecordingLiveWaveformView(store: recorder.waveform, isPaused: recorder.isTransitioning)
@@ -52,9 +52,9 @@ struct SpeechInputCaptureView: View {
                     .monospacedDigit()
             } else {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text(recorder.isTransitioning ? "Preparing microphone…" : title)
+                    Text(L10n.string(recorder.isTransitioning ? "Preparing microphone…" : title))
                         .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.medium))
-                    Text(detail)
+                    Text(L10n.string(key: detail))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }

@@ -21,7 +21,7 @@ final class VisualModelLoader {
         switch LocalModelManager.shared.state(for: SearchIndexConfig.modelID) {
         case .notInstalled: .notInstalled
         case .queued: .preparing
-        case .downloading(let fraction, _): .downloading(fraction)
+        case .downloading(let fraction, _), .verifying(let fraction, _): .downloading(fraction)
         case .installed:
             MLXRuntime.isAvailable ? .ready : .failed(MLXRuntime.Unavailable().localizedDescription)
         case .failed(let message): .failed(message)

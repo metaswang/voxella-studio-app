@@ -76,7 +76,7 @@ struct NetVideoFloatingPlayer: View {
                     : platformTitle)
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
                     .lineLimit(1)
-                Text("\(platformTitle) preview")
+                Text(L10n.format("%@ preview", platformTitle))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .lineLimit(1)
@@ -87,7 +87,7 @@ struct NetVideoFloatingPlayer: View {
                     .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
             }
             .buttonStyle(.plain)
-            .help("Open full-screen player")
+            .help(L10n.string("Open full-screen player"))
             Button {
                 NSWorkspace.shared.open(source.sourceURL)
             } label: {
@@ -95,7 +95,7 @@ struct NetVideoFloatingPlayer: View {
                     .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
             }
             .buttonStyle(.plain)
-            .help("Open source page")
+            .help(L10n.string("Open source page"))
             Button {
                 isCollapsed.toggle()
             } label: {
@@ -103,7 +103,7 @@ struct NetVideoFloatingPlayer: View {
                     .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
             }
             .buttonStyle(.plain)
-            .help(isCollapsed ? "Expand preview" : "Collapse preview")
+            .help(L10n.string(isCollapsed ? "Expand preview" : "Collapse preview"))
         }
         .padding(.horizontal, AppTheme.Spacing.md)
         .frame(height: AppTheme.Workbench.netVideoCardCollapsedHeight)
@@ -135,7 +135,7 @@ struct NetVideoFloatingPlayer: View {
                         NSCursor.arrow.set()
                     }
             )
-            .help("Resize player")
+            .help(L10n.string("Resize player"))
     }
 
     private func resize(corner: ResizeCorner, translation: CGSize) {
@@ -218,7 +218,9 @@ private final class NetVideoFullscreenWindowController: NSWindowController, NSWi
         super.init(window: window)
         window.contentView = NSHostingView(rootView: NetVideoFullscreenView(source: source) { [weak self] in
             self?.closeFullscreen()
-        }.appZoomEnvironment())
+        }
+        .appZoomEnvironment()
+        .appLocalization())
         window.delegate = self
     }
 
@@ -257,12 +259,17 @@ private struct NetVideoFullscreenView: View {
     let source: WorkbenchNetVideoSource
     let onClose: () -> Void
 
+    private var displayTitle: String {
+        let title = source.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return title.isEmpty ? L10n.string("Net Video") : title
+    }
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
             NetVideoPlaybackView(source: source)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack(spacing: AppTheme.Spacing.md) {
-                Text(source.title ?? "Net Video")
+                Text(displayTitle)
                     .lineLimit(1)
                     .foregroundStyle(.white)
                 Button(action: onClose) {
@@ -271,7 +278,7 @@ private struct NetVideoFullscreenView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.white)
                 .keyboardShortcut(.escape, modifiers: [])
-                .help("Exit full-screen player")
+                .help(L10n.string("Exit full-screen player"))
             }
             .padding(AppTheme.Spacing.lg)
             .background(.black.opacity(0.65), in: Capsule())

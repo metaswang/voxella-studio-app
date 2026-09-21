@@ -49,9 +49,12 @@ struct VoiceLibraryView: View {
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
             HStack(spacing: AppTheme.Spacing.smMd) {
-                summaryBadge("Custom \(store.references.count)", systemImage: "person.crop.circle.badge.checkmark")
                 summaryBadge(
-                    "Default \(store.references.filter(\.isDefault).count)",
+                    L10n.format("Custom %@", store.references.count),
+                    systemImage: "person.crop.circle.badge.checkmark"
+                )
+                summaryBadge(
+                    L10n.format("Default %@", store.references.filter(\.isDefault).count),
                     systemImage: "star"
                 )
                 Spacer(minLength: AppTheme.Spacing.sm)
@@ -60,7 +63,10 @@ struct VoiceLibraryView: View {
                         showComposer.toggle()
                     }
                 } label: {
-                    Label(showComposer ? "Hide new reference" : "New reference", systemImage: showComposer ? "xmark" : "plus")
+                    Label(
+                        L10n.string(showComposer ? "Hide new reference" : "New reference"),
+                        systemImage: showComposer ? "xmark" : "plus"
+                    )
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -107,7 +113,7 @@ struct VoiceLibraryView: View {
                     Text("All languages").tag("all")
                     Divider()
                     ForEach(WorkbenchDubLanguage.allCases.filter { $0 != .automatic }) { language in
-                        Text(language.label).tag(language.rawValue)
+                        Text(L10n.string(key: language.label)).tag(language.rawValue)
                     }
                 }
                 .labelsHidden()
@@ -124,9 +130,9 @@ struct VoiceLibraryView: View {
                         .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.voiceRowMinHeight)
                 } else if filteredReferences.isEmpty {
                     ContentUnavailableView(
-                        "No matching references",
+                        L10n.string("No matching references"),
                         systemImage: "waveform.badge.plus",
-                        description: Text("Create a reference from a clean recording or audio file.")
+                        description: Text(L10n.string("Create a reference from a clean recording or audio file."))
                     )
                     .frame(minHeight: AppTheme.Workbench.voiceRowMinHeight * 2)
                 } else {
@@ -181,7 +187,7 @@ struct VoiceLibraryView: View {
                     Text("Custom")
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                         .foregroundStyle(AppTheme.Accent.link)
-                    Text(reference.gender.label)
+                    Text(L10n.string(key: reference.gender.label))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                     if reference.isDefault {
@@ -198,7 +204,12 @@ struct VoiceLibraryView: View {
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                         .lineLimit(1)
                 }
-                Text("\(languageLabel(reference.languageCode)) · \(reference.duration.formatted(.number.precision(.fractionLength(1))))s · \(reference.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                Text(L10n.format(
+                    "%@ · %@s · %@",
+                    L10n.string(key: languageLabel(reference.languageCode)),
+                    reference.duration.formatted(.number.precision(.fractionLength(1))),
+                    reference.createdAt.formatted(date: .abbreviated, time: .omitted)
+                ))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
             }
@@ -206,21 +217,24 @@ struct VoiceLibraryView: View {
             Button {
                 store.togglePlayback(reference)
             } label: {
-                Label(store.playingID == reference.id ? "Stop" : "Play", systemImage: store.playingID == reference.id ? "stop.fill" : "play.fill")
+            Label(
+                L10n.string(store.playingID == reference.id ? "Stop" : "Play"),
+                systemImage: store.playingID == reference.id ? "stop.fill" : "play.fill"
+            )
             }
             .buttonStyle(.bordered)
-            Button(reference.isDefault ? "Current default" : "Set as default") {
+            Button(L10n.string(reference.isDefault ? "Current default" : "Set as default")) {
                 Task { try? await store.setDefault(reference.id) }
             }
             .buttonStyle(.bordered)
             .disabled(reference.isDefault)
             Menu {
-                Button("Edit") { editingReference = reference }
-                Button("Reveal in Finder") {
+                Button(L10n.string("Edit")) { editingReference = reference }
+                Button(L10n.string("Reveal in Finder")) {
                     NSWorkspace.shared.activateFileViewerSelecting([store.audioURL(for: reference)])
                 }
                 Divider()
-                Button("Delete", role: .destructive) {
+                Button(L10n.string("Delete"), role: .destructive) {
                     Task {
                         do {
                             try await store.delete(reference.id)
@@ -246,7 +260,7 @@ struct VoiceLibraryView: View {
     }
 
     private func languageLabel(_ code: String) -> String {
-        WorkbenchDubLanguage(rawValue: code)?.label
+        WorkbenchDubLanguage(rawValue: code).map { L10n.string(key: $0.label) }
             ?? Locale.current.localizedString(forLanguageCode: code)
             ?? code
     }
@@ -285,7 +299,7 @@ private struct NewVoiceReferenceComposer: View {
                 field("Language") {
                     Picker("Language", selection: $language) {
                         ForEach(WorkbenchDubLanguage.allCases) { item in
-                            Text(item.label).tag(item)
+                            Text(L10n.string(key: item.label)).tag(item)
                         }
                     }
                     .labelsHidden()
@@ -293,13 +307,13 @@ private struct NewVoiceReferenceComposer: View {
                 field("Gender") {
                     Picker("Gender", selection: $gender) {
                         ForEach(VoiceReferenceGender.allCases) { item in
-                            Text(item.label).tag(item)
+                            Text(L10n.string(key: item.label)).tag(item)
                         }
                     }
                     .labelsHidden()
                 }
                 field("Name") {
-                    TextField("Name this reference voice", text: $name)
+                    TextField(L10n.string("Name this reference voice"), text: $name)
                 }
             }
 
@@ -335,11 +349,11 @@ private struct NewVoiceReferenceComposer: View {
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                 }
                 Spacer()
-                Button(avatarURL == nil ? "Choose avatar…" : "Replace avatar…") {
+                Button(L10n.string(avatarURL == nil ? "Choose avatar…" : "Replace avatar…")) {
                     chooseAvatar()
                 }
                 if avatarURL != nil {
-                    Button("Clear") { avatarURL = nil }
+                    Button(L10n.string("Clear")) { avatarURL = nil }
                         .buttonStyle(.borderless)
                 }
             }
@@ -360,7 +374,7 @@ private struct NewVoiceReferenceComposer: View {
                 Button {
                     chooseAudio()
                 } label: {
-                    Label(audioURL == nil ? "Choose file…" : "Replace file…", systemImage: "square.and.arrow.up")
+                    Label(L10n.string(audioURL == nil ? "Choose file…" : "Replace file…"), systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isSaving || recorder.isTransitioning)
@@ -371,14 +385,14 @@ private struct NewVoiceReferenceComposer: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                Button("Save reference") { save() }
+                Button(L10n.string("Save reference")) { save() }
                     .buttonStyle(.borderedProminent)
                     .disabled(audioURL == nil || recorder.isRecording || recorder.isTransitioning || recognition.isRecognizing || isSaving)
             }
 
             if let error = store.errorMessage {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                    Label(L10n.display(error), systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Status.errorColor)
                 }
@@ -407,7 +421,7 @@ private struct NewVoiceReferenceComposer: View {
 
     private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            Text(label)
+            Text(L10n.string(key: label))
                 .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
             content()
@@ -440,7 +454,7 @@ private struct NewVoiceReferenceComposer: View {
         fileSelectionTask?.cancel()
         fileSelectionTask = Task {
             let panel = NSOpenPanel()
-            panel.title = "Choose an avatar"
+            panel.title = L10n.string("Choose an avatar")
             panel.allowsMultipleSelection = false
             panel.allowedContentTypes = [.png, .jpeg, .webP]
             let response = await withCheckedContinuation { continuation in
@@ -536,18 +550,18 @@ private struct ReferenceScriptEditor: View {
             Button {
                 recognition.cancel()
             } label: {
-                Label("Cancel recognition", systemImage: "xmark.circle")
+                Label(L10n.string("Cancel recognition"), systemImage: "xmark.circle")
             }
             .buttonStyle(.borderless)
         } else {
             Button {
                 recognize()
             } label: {
-                Label(transcript.isEmpty ? "Recognize" : "Recognize again", systemImage: "text.magnifyingglass")
+                Label(L10n.string(transcript.isEmpty ? "Recognize" : "Recognize again"), systemImage: "text.magnifyingglass")
             }
             .buttonStyle(.borderless)
             .disabled(audioURL == nil || isDisabled)
-            .help(audioURL == nil ? "Choose or record reference audio first" : "Recognize the spoken script with local ASR")
+            .help(L10n.string(audioURL == nil ? "Choose or record reference audio first" : "Recognize the spoken script on this Mac"))
         }
     }
 
@@ -557,12 +571,12 @@ private struct ReferenceScriptEditor: View {
         case .idle:
             if transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Label(
-                    "Enter the spoken words or choose Recognize.",
+                    L10n.string("Enter the spoken words or choose Recognize."),
                     systemImage: "exclamationmark.circle.fill"
                 )
                 .foregroundStyle(AppTheme.Status.warningColor)
             } else {
-                Text("The script is paired with this audio for higher-fidelity voice cloning.")
+                Text(L10n.string("The script is paired with this audio for higher-fidelity voice cloning."))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
         case .recognizing(let fraction, let message):
@@ -574,17 +588,17 @@ private struct ReferenceScriptEditor: View {
             HStack(spacing: AppTheme.Spacing.smMd) {
                 ProgressView(value: fraction)
                     .frame(width: AppTheme.SpeechInput.progressWidth)
-                Text(message)
+                Text(L10n.display(message))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
         case .recognized:
-            Label("Recognized locally. Review the script before saving.", systemImage: "checkmark.circle.fill")
+            Label(L10n.string("Recognized locally. Review the script before saving."), systemImage: "checkmark.circle.fill")
                 .foregroundStyle(AppTheme.Status.successColor)
         case .failed(let message):
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
+                Label(L10n.display(message), systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(AppTheme.Status.errorColor)
-                Button("Manage local features…") { SettingsWindowController.shared.show(tab: .models) }
+                Button(L10n.string("Manage local features…")) { SettingsWindowController.shared.show(tab: .models) }
                     .buttonStyle(.link)
             }
         }
@@ -628,12 +642,12 @@ private struct VoiceReferenceEditSheet: View {
             TextField("Name", text: $name)
             Picker("Language", selection: $language) {
                 ForEach(WorkbenchDubLanguage.allCases) { item in
-                    Text(item.label).tag(item)
+                            Text(L10n.string(key: item.label)).tag(item)
                 }
             }
             Picker("Gender", selection: $gender) {
                 ForEach(VoiceReferenceGender.allCases) { item in
-                    Text(item.label).tag(item)
+                            Text(L10n.string(key: item.label)).tag(item)
                 }
             }
             ReferenceScriptEditor(
@@ -701,7 +715,7 @@ struct VoiceReferencePicker: View {
     var body: some View {
         HStack(spacing: AppTheme.Spacing.sm) {
             Picker("Reference voice", selection: $selection) {
-                Text(defaultLabel).tag(nil as UUID?)
+                Text(L10n.string(key: defaultLabel)).tag(nil as UUID?)
                 if !options.isEmpty { Divider() }
                 ForEach(options) { reference in
                     Text(reference.isDefault ? "★ \(reference.name)" : reference.name)
@@ -717,7 +731,7 @@ struct VoiceReferencePicker: View {
                         .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
                 }
                 .buttonStyle(.borderless)
-                .help(store.playingID == selected.id ? "Stop preview" : "Preview voice")
+                .help(L10n.string(store.playingID == selected.id ? "Stop preview" : "Preview voice"))
             }
             if let onManage {
                 Button(action: onManage) {
@@ -725,7 +739,7 @@ struct VoiceReferencePicker: View {
                         .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
                 }
                 .buttonStyle(.borderless)
-                .help("Manage reference voices")
+                .help(L10n.string("Manage reference voices"))
             }
         }
     }
@@ -777,12 +791,12 @@ struct VoiceReferenceSelectionPanel: View {
             Button {
                 onManage()
             } label: {
-                Label("Add or manage reference voices…", systemImage: "waveform.badge.plus")
+                Label(L10n.string("Add or manage reference voices…"), systemImage: "waveform.badge.plus")
             }
             .buttonStyle(.borderless)
 
             if let errorMessage = store.errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                Label(L10n.display(errorMessage), systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Status.errorColor)
             }
@@ -802,7 +816,9 @@ struct VoiceReferenceSelectionPanel: View {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                         Text("Automatic voice")
                             .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
-                        Text(automaticReference.map { "Language default · \($0.name)" } ?? "Default voice")
+                        Text(automaticReference.map {
+                            L10n.format("Language default · %@", $0.name)
+                        } ?? L10n.string("Default voice"))
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.mutedColor)
                     }
@@ -835,12 +851,17 @@ struct VoiceReferenceSelectionPanel: View {
                             Text(reference.name)
                                 .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.medium))
                             if reference.isDefault {
-                                Text("DEFAULT")
+                                Text(L10n.string("DEFAULT"))
                                     .font(.system(size: AppTheme.FontSize.xxs, weight: .bold))
                                     .foregroundStyle(AppTheme.Status.successColor)
                             }
                         }
-                        Text("\(reference.languageCode.uppercased()) · \(reference.gender.label) · \(reference.duration.formatted(.number.precision(.fractionLength(1))))s")
+                        Text(L10n.format(
+                            "%@ · %@ · %@s",
+                            reference.languageCode.uppercased(),
+                            L10n.string(key: reference.gender.label),
+                            reference.duration.formatted(.number.precision(.fractionLength(1)))
+                        ))
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.mutedColor)
                     }
@@ -887,11 +908,11 @@ struct VoiceReferenceSelectionPanel: View {
         return Button {
             store.togglePlayback(reference)
         } label: {
-            Label(isPlaying ? "Stop" : "Preview", systemImage: isPlaying ? "stop.fill" : "play.fill")
+            Label(L10n.string(isPlaying ? "Stop" : "Preview"), systemImage: isPlaying ? "stop.fill" : "play.fill")
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .help(isPlaying ? "Stop reference voice preview" : "Preview reference voice")
+        .help(L10n.string(isPlaying ? "Stop reference voice preview" : "Preview reference voice"))
     }
 
     private func select(_ id: UUID?) {

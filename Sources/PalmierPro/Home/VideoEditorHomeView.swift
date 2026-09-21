@@ -46,22 +46,25 @@ struct VideoEditorHomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(AppTheme.Background.baseColor)
-        .alert("Delete Project?", isPresented: Binding(
+        .alert(L10n.string("Delete Project?"), isPresented: Binding(
             get: { projectPendingDeletion != nil },
             set: { if !$0 { projectPendingDeletion = nil } }
         )) {
             Button("Cancel", role: .cancel) { projectPendingDeletion = nil }
             Button("Delete", role: .destructive) { deletePendingProject() }
         } message: {
-            Text("“\(projectPendingDeletion?.name ?? "This project")” will be moved to the Trash. You can restore it from Finder.")
+            Text(L10n.format(
+                "“%@” will be moved to the Trash. You can restore it from Finder.",
+                projectPendingDeletion?.name ?? L10n.string("This project")
+            ))
         }
-        .alert("Project Couldn’t Be Deleted", isPresented: Binding(
+        .alert(L10n.string("Project Couldn’t Be Deleted"), isPresented: Binding(
             get: { deletionMessage != nil },
             set: { if !$0 { deletionMessage = nil } }
         )) {
             Button("OK") { deletionMessage = nil }
         } message: {
-            Text(deletionMessage ?? "")
+            Text(deletionMessage.map(L10n.display) ?? "")
         }
     }
 
@@ -82,7 +85,7 @@ struct VideoEditorHomeView: View {
                     AppState.shared.openProjectFromPanel()
                 }
                 .buttonStyle(.capsule(.secondary, size: .regular))
-                .help("Open a .voxella or legacy .palmier project")
+                .help(L10n.string("Open a .voxella or legacy .palmier project"))
 
                 Button {
                     AppState.shared.createProjectInteractively()
@@ -90,7 +93,7 @@ struct VideoEditorHomeView: View {
                     Label("New Project", systemImage: "plus")
                 }
                 .buttonStyle(.capsule(.prominent, size: .regular))
-                .help("Create a new timeline project")
+                .help(L10n.string("Create a new timeline project"))
             }
 
             HStack(spacing: AppTheme.Spacing.md) {
@@ -110,7 +113,7 @@ struct VideoEditorHomeView: View {
         HStack(spacing: AppTheme.Spacing.smMd) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(AppTheme.Text.mutedColor)
-            TextField("Search projects", text: $searchQuery)
+            TextField(L10n.string("Search projects"), text: $searchQuery)
                 .textFieldStyle(.plain)
                 .focused($isSearchFocused)
                 .onExitCommand {
@@ -150,16 +153,16 @@ struct VideoEditorHomeView: View {
         )) {
             Image(systemName: "square.grid.2x2")
                 .tag(LibraryLayout.grid)
-                .help("Grid")
+                .help(L10n.string("Grid"))
             Image(systemName: "list.bullet")
                 .tag(LibraryLayout.list)
-                .help("List")
+                .help(L10n.string("List"))
         }
         .pickerStyle(.segmented)
         .labelsHidden()
         .frame(width: AppTheme.VideoEditorHome.layoutPickerWidth)
-        .help("Project layout")
-        .accessibilityLabel("Project layout")
+                .help(L10n.string("Project layout"))
+                .accessibilityLabel(L10n.string("Project layout"))
     }
 
     @ViewBuilder
@@ -344,13 +347,17 @@ struct VideoEditorHomeView: View {
     private var subtitle: String {
         let count = registry.entries.count
         if count == 0 {
-            return "Create a timeline or open an existing project."
+            return L10n.string("Create a timeline or open an existing project.")
         }
         if isSearching {
             let matches = filteredEntries.count
-            return matches == 1 ? "1 match" : "\(matches) matches"
+            return matches == 1
+                ? L10n.string("1 match")
+                : L10n.format("%@ matches", matches)
         }
-        return count == 1 ? "1 recent project" : "\(count) recent projects"
+        return count == 1
+            ? L10n.string("1 recent project")
+            : L10n.format("%@ recent projects", count)
     }
 
     private var isSearching: Bool {
@@ -394,9 +401,9 @@ struct VideoEditorHomeView: View {
             do {
                 let result = try await appState.deleteProjects(withIDs: [entry.id])
                 if let failed = result.failedNames.first {
-                    deletionMessage = "Couldn’t move \(failed) to the Trash."
+                    deletionMessage = L10n.format("Couldn’t move %@ to the Trash.", failed)
                 } else if result.deletedIDs.isEmpty {
-                    deletionMessage = "“\(entry.name)” is no longer in Recent Projects."
+                    deletionMessage = L10n.format("“%@” is no longer in Recent Projects.", entry.name)
                 }
             } catch {
                 deletionMessage = error.localizedDescription
@@ -468,7 +475,7 @@ private struct NewTimelinePoster: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: AppTheme.Anim.hover), value: isHovered)
-        .help("Create a new timeline project")
+                .help(L10n.string("Create a new timeline project"))
         .accessibilityLabel("New Project")
     }
 }
@@ -547,7 +554,7 @@ private struct VideoProjectPoster: View {
                             entry.isAccessible ? AppTheme.Text.primaryColor : AppTheme.Text.mutedColor
                         )
                         .lineLimit(1)
-                    Text("Opened \(ProjectRecency.string(for: entry.lastOpenedDate))")
+                    Text(L10n.format("Opened %@", ProjectRecency.string(for: entry.lastOpenedDate)))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                         .lineLimit(1)
@@ -577,7 +584,9 @@ private struct VideoProjectPoster: View {
                 onDelete: onDelete
             )
         }
-        .help(entry.isAccessible ? "Open \(entry.name)" : "\(entry.name) is missing")
+        .help(entry.isAccessible
+            ? L10n.format("Open %@", entry.name)
+            : L10n.format("%@ is missing", entry.name))
         .accessibilityLabel(entry.name)
     }
 }
@@ -634,7 +643,7 @@ private struct NewTimelineListRow: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: AppTheme.Anim.hover), value: isHovered)
-        .help("Create a new timeline project")
+                .help(L10n.string("Create a new timeline project"))
         .accessibilityLabel("New Project")
     }
 }
@@ -736,7 +745,9 @@ private struct VideoProjectListRow: View {
                 onDelete: onDelete
             )
         }
-        .help(entry.isAccessible ? "Open \(entry.name)" : "\(entry.name) is missing")
+        .help(entry.isAccessible
+            ? L10n.format("Open %@", entry.name)
+            : L10n.format("%@ is missing", entry.name))
         .accessibilityLabel(entry.name)
     }
 
@@ -770,11 +781,11 @@ private struct VideoProjectDeleteButton: View {
         }
         .shadow(AppTheme.Shadow.md)
         .disabled(isDeleting)
-        .help("Move \(projectName) to the Trash")
+        .help(L10n.format("Move %@ to the Trash", projectName))
         .accessibilityLabel(
             isDeleting
-                ? "Moving \(projectName) to the Trash"
-                : "Move \(projectName) to the Trash"
+                ? L10n.format("Moving %@ to the Trash", projectName)
+                : L10n.format("Move %@ to the Trash", projectName)
         )
     }
 }

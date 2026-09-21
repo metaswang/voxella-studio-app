@@ -31,6 +31,8 @@ actor AppStorePurchaseProvider {
         _ productID: AppStoreProductID,
         appAccountToken: UUID
     ) async throws -> AppAccessSnapshot? {
+        // Keep the server preflight before StoreKit. It prevents a real Apple
+        // charge when the Mac App Store channel or account is not configured.
         try await api.verifyAppStorePurchase(productID: productID.rawValue, userID: appAccountToken)
         try Task.checkCancellation()
         let products = try await products()

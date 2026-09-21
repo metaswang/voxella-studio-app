@@ -324,6 +324,51 @@ struct MediaFlowTests {
         }
     }
 
+    @Test func curatedProviderPresetsProvideCompatibleBaseURLsAndEditableDefaults() throws {
+        let google = try #require(LLMProviderPreset.all.first { $0.id == "google-gemini" })
+        #expect(google.baseURL == "https://generativelanguage.googleapis.com/v1beta/openai")
+        #expect(google.defaultPrefix == "google-gemini")
+
+        let custom = LLMProviderPreset.custom
+        #expect(custom.isCustom)
+        #expect(custom.defaultPrefix == "custom-provider")
+
+        let profile = LLMProviderProfile(
+            provider: .openAICompatible,
+            baseURL: google.baseURL,
+            model: google.defaultModel
+        )
+        #expect(try profile.modelsEndpoint().absoluteString == "https://generativelanguage.googleapis.com/v1beta/openai/models")
+    }
+
+    @Test func localOpenAICompatibleProviderPresetsCoverCommonRuntimes() throws {
+        let llamaCPP = try #require(LLMProviderPreset.all.first { $0.id == "llama-cpp" })
+        #expect(llamaCPP.baseURL == "http://localhost:8080/v1")
+        #expect(llamaCPP.defaultPrefix == "llama-cpp")
+        #expect(llamaCPP.isLocal)
+
+        let localAI = try #require(LLMProviderPreset.all.first { $0.id == "localai" })
+        #expect(localAI.baseURL == llamaCPP.baseURL)
+        #expect(localAI.defaultPrefix == "localai")
+
+        let vLLM = try #require(LLMProviderPreset.all.first { $0.id == "vllm" })
+        #expect(try LLMProviderProfile(
+            provider: .openAICompatible,
+            prefix: vLLM.defaultPrefix,
+            displayName: vLLM.name,
+            baseURL: vLLM.baseURL,
+            model: "").modelsEndpoint().absoluteString == "http://localhost:8000/v1/models")
+
+        let jan = try #require(LLMProviderPreset.all.first { $0.id == "jan" })
+        let janProfile = LLMProviderProfile(
+            provider: .openAICompatible,
+            prefix: jan.defaultPrefix,
+            displayName: jan.name,
+            baseURL: jan.baseURL,
+            model: "")
+        #expect(LLMProviderPreset.matching(janProfile)?.id == "jan")
+    }
+
     @Test func subtitleProcessorUsesStableTimingAnchorsAndRetriesInvalidStructure() async throws {
         let client = StubLLMClient(responses: [
             #"{"subtitles":[]}"#,
@@ -866,7 +911,7 @@ struct MediaFlowTests {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let apiKey = try #require(
             (envKey?.isEmpty == false ? envKey : nil)
-                ?? (try KeychainStore.loadProtected(account: profile.credentialAccount))
+                ?? (try KeychainStore.loadProtected(account: profile.credentialAccount).get())
         )
         let configuration = LLMRuntimeConfiguration(
             profile: profile,

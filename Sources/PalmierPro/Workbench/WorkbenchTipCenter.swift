@@ -11,6 +11,7 @@ enum WorkbenchTipKind: Equatable, Sendable {
 enum WorkbenchTipAction: Equatable, Sendable {
     case openAISettings
     case openAppAccess
+    case openLocalFeatures
 }
 
 struct WorkbenchTip: Equatable, Identifiable, Sendable {
@@ -89,6 +90,21 @@ final class WorkbenchTipCenter {
         }
     }
 
+    /// Updates an existing persistent tip without applying the normal
+    /// duplicate suppression window. Useful for progress/failure transitions.
+    func update(_ tip: WorkbenchTip) {
+        hideTask?.cancel()
+        hideTask = nil
+        self.tip = tip
+        if tip.autoDismiss {
+            hideTask = Task { [weak self] in
+                try? await Task.sleep(for: AppTheme.Workbench.tipAutoDismiss)
+                guard !Task.isCancelled else { return }
+                self?.hide()
+            }
+        }
+    }
+
     func hide() {
         hideTask?.cancel()
         hideTask = nil
@@ -102,9 +118,16 @@ final class WorkbenchTipCenter {
             SettingsWindowController.shared.show(tab: .ai)
         case .openAppAccess:
             AppAccessWindow.shared.present()
+        case .openLocalFeatures:
+            LocalModelManagerWindowController.shared.show()
         case .none:
             break
         }
+        hide()
+    }
+
+    func hide(id: String) {
+        guard tip?.id == id else { return }
         hide()
     }
 

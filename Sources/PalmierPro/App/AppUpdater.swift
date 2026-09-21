@@ -1,144 +1,205 @@
 import AppKit
+import Foundation
 import Observation
 
-#if SPARKLE_UPDATES
-import Sparkle
-#endif
+enum AppUpdateStatus: Equatable, Sendable {
+    case idle
+    case checking
+    case upToDate
+    case available(AppUpdateRelease)
+    case unsupportedSystem(AppUpdateRelease)
+    case failed(String)
+}
 
 @MainActor
 protocol AppUpdateControlling: AnyObject {
     var isAvailable: Bool { get }
     var canCheckForUpdates: Bool { get }
-    var automaticallyInstallsUpdates: Bool { get }
+    var automaticallyChecksForUpdates: Bool { get }
+    var status: AppUpdateStatus { get }
 
     func start()
     func checkForUpdates()
-    func setAutomaticallyInstallsUpdates(_ enabled: Bool)
+    func setAutomaticallyChecksForUpdates(_ enabled: Bool)
+    func openDownload()
 }
 
-@MainActor
-protocol AppUpdateDriving: AnyObject {
-    var canCheckForUpdates: Bool { get }
-    var automaticallyChecksForUpdates: Bool { get }
-    var automaticallyInstallsUpdates: Bool { get }
-    var stateDidChange: (() -> Void)? { get set }
+protocol AppUpdateFetching: Sendable {
+    func data(from url: URL) async throws -> Data
+}
 
-    func start()
-    func checkForUpdates()
-    func setAutomaticallyInstallsUpdates(_ enabled: Bool)
+struct URLSessionAppUpdateFetcher: AppUpdateFetching {
+    func data(from url: URL) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+        return data
+    }
+}
+
+protocol AppUpdateOpening: Sendable {
+    func open(_ url: URL)
+}
+
+struct WorkspaceAppUpdateOpener: AppUpdateOpening {
+    func open(_ url: URL) {
+        NSWorkspace.shared.open(url)
+    }
 }
 
 @MainActor @Observable
 final class AppUpdater: NSObject, AppUpdateControlling, NSMenuItemValidation {
     static let shared = AppUpdater()
 
+    static let automaticCheckDefaultsKey = "voxstudio.updates.automatically-checks"
+    static let lastCheckDefaultsKey = "voxstudio.updates.last-check"
+    static let automaticCheckInterval: TimeInterval = 86_400
+
     private(set) var isAvailable = false
     private(set) var canCheckForUpdates = false
-    private(set) var automaticallyInstallsUpdates = false
+    private(set) var automaticallyChecksForUpdates = true
+    private(set) var status: AppUpdateStatus = .idle
 
-    @ObservationIgnored private let driverFactory: @MainActor () -> (any AppUpdateDriving)?
-    @ObservationIgnored private var driver: (any AppUpdateDriving)?
+    @ObservationIgnored private let feedURL: URL?
+    @ObservationIgnored private let currentBuild: String
+    @ObservationIgnored private let currentShortVersion: String
+    @ObservationIgnored private let operatingSystemVersion: OperatingSystemVersion
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let fetcher: any AppUpdateFetching
+    @ObservationIgnored private let opener: any AppUpdateOpening
+    @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private var checkTask: Task<Void, Never>?
+    @ObservationIgnored private var latestRelease: AppUpdateRelease?
 
     override convenience init() {
-        self.init(driverFactory: AppUpdater.makeDefaultDriver)
+        self.init(
+            feedURL: Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
+            currentBuild: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
+            currentShortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+            operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersion,
+            defaults: .standard,
+            fetcher: URLSessionAppUpdateFetcher(),
+            opener: WorkspaceAppUpdateOpener()
+        )
     }
 
-    init(driverFactory: @escaping @MainActor () -> (any AppUpdateDriving)?) {
-        self.driverFactory = driverFactory
+    init(
+        feedURL: String?,
+        currentBuild: String,
+        currentShortVersion: String,
+        operatingSystemVersion: OperatingSystemVersion,
+        defaults: UserDefaults,
+        fetcher: any AppUpdateFetching,
+        opener: any AppUpdateOpening,
+        now: @escaping () -> Date = Date.init
+    ) {
+        self.feedURL = feedURL.flatMap(URL.init(string:))
+        self.currentBuild = currentBuild
+        self.currentShortVersion = currentShortVersion
+        self.operatingSystemVersion = operatingSystemVersion
+        self.defaults = defaults
+        self.fetcher = fetcher
+        self.opener = opener
+        self.now = now
         super.init()
+        automaticallyChecksForUpdates = defaults.object(forKey: Self.automaticCheckDefaultsKey) as? Bool ?? true
     }
 
     func start() {
-        guard driver == nil, let driver = driverFactory() else { return }
-        self.driver = driver
-        driver.stateDidChange = { [weak self, weak driver] in
-            guard let self, let driver else { return }
-            self.refreshState(from: driver)
-        }
-        driver.start()
+#if MAC_APP_STORE
+        isAvailable = false
+        canCheckForUpdates = false
+#else
+        guard Bundle.main.bundleURL.pathExtension == "app" || feedURL != nil else { return }
+        guard feedURL != nil, !currentBuild.isEmpty else { return }
         isAvailable = true
-        refreshState(from: driver)
+        canCheckForUpdates = true
+        if automaticallyChecksForUpdates {
+            checkForUpdatesIfNeeded()
+        }
+#endif
     }
 
     func checkForUpdates() {
         guard canCheckForUpdates else { return }
-        driver?.checkForUpdates()
+        performCheck()
     }
 
     @objc func checkForUpdates(_ sender: Any?) {
         checkForUpdates()
     }
 
-    func setAutomaticallyInstallsUpdates(_ enabled: Bool) {
-        guard let driver else { return }
-        driver.setAutomaticallyInstallsUpdates(enabled)
-        refreshState(from: driver)
+    func setAutomaticallyChecksForUpdates(_ enabled: Bool) {
+        automaticallyChecksForUpdates = enabled
+        defaults.set(enabled, forKey: Self.automaticCheckDefaultsKey)
+        if enabled {
+            checkForUpdatesIfNeeded()
+        }
+    }
+
+    func openDownload() {
+        guard let latestRelease else { return }
+        opener.open(latestRelease.downloadURL)
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         menuItem.action == #selector(checkForUpdates(_:)) ? canCheckForUpdates : true
     }
 
-    private func refreshState(from driver: any AppUpdateDriving) {
-        canCheckForUpdates = driver.canCheckForUpdates
-        automaticallyInstallsUpdates = driver.automaticallyInstallsUpdates
+    private func checkForUpdatesIfNeeded() {
+        let lastCheck = defaults.object(forKey: Self.lastCheckDefaultsKey) as? Date
+        if let lastCheck, now().timeIntervalSince(lastCheck) < Self.automaticCheckInterval {
+            return
+        }
+        performCheck()
     }
 
-    private static func makeDefaultDriver() -> (any AppUpdateDriving)? {
-#if SPARKLE_UPDATES
-        guard Bundle.main.bundleURL.pathExtension == "app",
-              Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil,
-              Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") != nil
-        else { return nil }
-        return SparkleUpdateDriver()
-#else
-        return nil
-#endif
-    }
-}
-
-#if SPARKLE_UPDATES
-@MainActor
-private final class SparkleUpdateDriver: AppUpdateDriving {
-    var stateDidChange: (() -> Void)?
-
-    private let controller = SPUStandardUpdaterController(
-        startingUpdater: true,
-        updaterDelegate: nil,
-        userDriverDelegate: nil
-    )
-    private var canCheckObservation: NSKeyValueObservation?
-
-    var canCheckForUpdates: Bool {
-        controller.updater.canCheckForUpdates
-    }
-
-    var automaticallyChecksForUpdates: Bool {
-        controller.updater.automaticallyChecksForUpdates
-    }
-
-    var automaticallyInstallsUpdates: Bool {
-        controller.updater.automaticallyDownloadsUpdates
-    }
-
-    func start() {
-        canCheckObservation = controller.updater.observe(
-            \.canCheckForUpdates,
-            options: [.new]
-        ) { [weak self] _, change in
-            guard change.newValue != nil else { return }
-            Task { @MainActor [weak self] in
-                self?.stateDidChange?()
+    private func performCheck() {
+        guard let feedURL, canCheckForUpdates else { return }
+        checkTask?.cancel()
+        status = .checking
+        let fetcher = fetcher
+        let currentBuild = currentBuild
+        let currentShortVersion = currentShortVersion
+        let operatingSystemVersion = operatingSystemVersion
+        checkTask = Task { [weak self] in
+            do {
+                let data = try await fetcher.data(from: feedURL)
+                let feed = try AppcastFeed.parse(xml: data)
+                let evaluation = feed.evaluation(
+                    currentBuild: currentBuild,
+                    currentShortVersion: currentShortVersion,
+                    operatingSystemVersion: operatingSystemVersion
+                )
+                guard !Task.isCancelled else { return }
+                self?.apply(evaluation)
+            } catch is CancellationError {
+                return
+            } catch let error as AppcastFeedError {
+                guard !Task.isCancelled else { return }
+                self?.status = .failed(error.localizedDescription)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.status = .failed("Couldn't check for updates. Check your connection and try again.")
             }
         }
     }
 
-    func checkForUpdates() {
-        controller.checkForUpdates(nil)
-    }
-
-    func setAutomaticallyInstallsUpdates(_ enabled: Bool) {
-        controller.updater.automaticallyDownloadsUpdates = enabled
+    private func apply(_ evaluation: AppUpdateEvaluation) {
+        defaults.set(now(), forKey: Self.lastCheckDefaultsKey)
+        switch evaluation {
+        case .upToDate:
+            latestRelease = nil
+            status = .upToDate
+        case .available(let release):
+            latestRelease = release
+            status = .available(release)
+        case .unsupportedSystem(let release):
+            latestRelease = nil
+            status = .unsupportedSystem(release)
+        }
     }
 }
-#endif

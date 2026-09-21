@@ -27,9 +27,9 @@ struct SessionSegmentEditor: View {
     var body: some View {
         if cues.isEmpty {
             ContentUnavailableView(
-                "No segments",
+                L10n.string("No segments"),
                 systemImage: "text.alignleft",
-                description: Text(emptyText)
+                description: Text(L10n.display(emptyText))
             )
             .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.emptyStateMinHeight)
         } else {
@@ -85,16 +85,16 @@ struct SessionSegmentEditor: View {
                 }
             }
             .alert(
-                "Rename speaker",
+                L10n.string("Rename speaker"),
                 isPresented: Binding(
                     get: { renameTarget != nil },
                     set: { if !$0 { renameTarget = nil } }
                 )
             ) {
                 if let renameTarget {
-                    TextField("Speaker name", text: renameNameBinding(renameTarget.label))
-                    Button("Cancel", role: .cancel) { self.renameTarget = nil }
-                    Button("Rename") {
+                    TextField(L10n.string("Speaker name"), text: renameNameBinding(renameTarget.label))
+                    Button(L10n.string("Cancel"), role: .cancel) { self.renameTarget = nil }
+                    Button(L10n.string("Rename")) {
                         store.renameSessionSpeaker(
                             sessionID: sessionID,
                             scope: scope,
@@ -105,18 +105,18 @@ struct SessionSegmentEditor: View {
                     }
                 }
             } message: {
-                Text("Updates this label across the selected track.")
+                Text(L10n.string("Updates this label across the selected track."))
             }
             .alert(
-                "Add speaker",
+                L10n.string("Add speaker"),
                 isPresented: Binding(
                     get: { addSpeakerCueID != nil },
                     set: { if !$0 { addSpeakerCueID = nil } }
                 )
             ) {
-                TextField("Speaker name", text: $addSpeakerName)
-                Button("Cancel", role: .cancel) { addSpeakerCueID = nil }
-                Button("Add") {
+                TextField(L10n.string("Speaker name"), text: $addSpeakerName)
+                Button(L10n.string("Cancel"), role: .cancel) { addSpeakerCueID = nil }
+                Button(L10n.string("Add")) {
                     if let cueID = addSpeakerCueID {
                         store.addSessionCueSpeaker(
                             sessionID: sessionID,
@@ -128,7 +128,7 @@ struct SessionSegmentEditor: View {
                     addSpeakerCueID = nil
                 }
             } message: {
-                Text("Assign a new speaker label to this segment.")
+                Text(L10n.string("Assign a new speaker label to this segment."))
             }
             .onChange(of: contentKey) { _, _ in
                 resetEditingState()
@@ -289,7 +289,7 @@ private struct SessionMergeDivider: View {
                     .scaleEffect(isHovered ? 1 : 0.85)
             }
             .buttonStyle(.plain)
-            .help("Merge with segment below")
+            .help(L10n.string("Merge with segment below"))
         }
         .frame(height: AppTheme.Spacing.lg)
         .contentShape(Rectangle())
@@ -329,7 +329,7 @@ private struct SessionCueRow: View {
                     .background(AppTheme.Accent.link.opacity(AppTheme.Opacity.soft), in: Circle())
             }
             .buttonStyle(.plain)
-            .help(isActive ? "Pause" : "Play from this segment")
+            .help(L10n.string(isActive ? "Pause" : "Play from this segment"))
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
                 HStack(spacing: AppTheme.Spacing.sm) {
@@ -355,7 +355,7 @@ private struct SessionCueRow: View {
                                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                         }
                         .buttonStyle(.plain)
-                        .help("Edit text")
+                        .help(L10n.string("Edit text"))
                     }
                 }
 
@@ -384,7 +384,7 @@ private struct SessionCueRow: View {
                                     }
                             }
                             .buttonStyle(.plain)
-                            .help("Split at cursor")
+                            .help(L10n.string("Split at cursor"))
                             .padding(.top, AppTheme.Spacing.xxs)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                         }
@@ -444,9 +444,9 @@ private struct SessionCueRow: View {
             if !speakerLabels.isEmpty {
                 Divider()
             }
-            Button("Add speaker…", action: onAddSpeaker)
+            Button(L10n.string("Add speaker…"), action: onAddSpeaker)
             if let speaker = cue.speaker, !speaker.isEmpty {
-                Button("Rename \(speaker)…") {
+                Button(L10n.format("Rename %@…", speaker)) {
                     onRenameSpeaker(speaker)
                 }
             }
@@ -454,7 +454,7 @@ private struct SessionCueRow: View {
             HStack(spacing: AppTheme.Spacing.xxs) {
                 Text({
                     let trimmed = cue.speaker?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    return trimmed.isEmpty ? "Speaker" : trimmed
+                    return trimmed.isEmpty ? L10n.string("Speaker") : trimmed
                 }())
                     .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                 Image(systemName: "chevron.down")
@@ -463,7 +463,7 @@ private struct SessionCueRow: View {
             .foregroundStyle(AppTheme.Text.tertiaryColor)
         }
         .menuStyle(.borderlessButton)
-        .help("Assign speaker")
+        .help(L10n.string("Assign speaker"))
     }
 
     private static func formatTime(_ seconds: Double) -> String {

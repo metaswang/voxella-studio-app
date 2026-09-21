@@ -23,9 +23,9 @@ struct ActivateLicenseView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Activate License")
+            Text(L10n.string("Activate License"))
                 .font(.title2.weight(.semibold))
-            Text("Paste your license key to unlock this Mac. Sign-in is optional and only links the key to your account for device management.")
+            Text(L10n.string("Paste your license key to unlock this Mac. Sign-in is optional and only links the key to your account for device management."))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -34,22 +34,22 @@ struct ActivateLicenseView: View {
                     Image(systemName: "checkmark.seal.fill")
                         .foregroundStyle(.green)
                         .accessibilityHidden(true)
-                    Text(LicenseKeyLocalCredential.isPresent()
+                    Text(L10n.string(LicenseKeyLocalCredential.isPresent()
                          ? "License key activated"
-                         : "Lifetime unlocked")
+                         : "Lifetime unlocked"))
                         .foregroundStyle(.green)
                         .fontWeight(.semibold)
                 }
-                Text(LicenseKeyLocalCredential.isPresent()
+                Text(L10n.string(LicenseKeyLocalCredential.isPresent()
                      ? "This Mac is unlocked with your license key. Manage devices below if you need a free slot on another Mac."
-                     : "This Mac already has Lifetime access.")
+                     : "This Mac already has Lifetime access."))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     if LicenseKeyLocalCredential.isPresent() {
-                        Button("Manage devices…") { showDevices = true }
+                        Button(L10n.string("Manage devices…")) { showDevices = true }
                     }
-                    Button("Done") { onClose() }
+                    Button(L10n.string("Done")) { onClose() }
                         .keyboardShortcut(.defaultAction)
                 }
                 .sheet(isPresented: $showDevices) {
@@ -62,7 +62,7 @@ struct ActivateLicenseView: View {
                     .disabled(isSubmitting)
 
                 if !account.isSignedIn {
-                    Text("Optional: sign in later to manage devices across Macs from your account.")
+                    Text(L10n.string("Optional: sign in later to manage devices across Macs from your account."))
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -70,7 +70,7 @@ struct ActivateLicenseView: View {
 
                 if let statusMessage {
                     ScrollView {
-                        Text(statusMessage)
+                        Text(L10n.display(statusMessage))
                             .foregroundStyle(didSucceed ? .green : .red)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
@@ -80,9 +80,9 @@ struct ActivateLicenseView: View {
 
                 HStack {
                     Spacer()
-                    Button("Cancel") { onClose() }
+                    Button(L10n.string("Cancel")) { onClose() }
                         .keyboardShortcut(.cancelAction)
-                    Button(isSubmitting ? "Activating…" : "Activate") {
+                    Button(L10n.string(isSubmitting ? "Activating…" : "Activate")) {
                         Task { await activate() }
                     }
                     .keyboardShortcut(.defaultAction)
@@ -104,7 +104,7 @@ struct ActivateLicenseView: View {
         do {
             try await account.redeemLicenseKey(trimmedKey)
             didSucceed = true
-            statusMessage = "License activated on this Mac."
+            statusMessage = L10n.string("License activated on this Mac.")
             try? await Task.sleep(nanoseconds: 900_000_000)
             onClose()
         } catch {
@@ -127,7 +127,7 @@ final class ActivateLicenseWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Activate License"
+        window.title = L10n.string("Activate License")
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false

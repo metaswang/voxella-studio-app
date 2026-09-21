@@ -54,7 +54,7 @@ struct VideoGenerationSubmission {
         generateAudio: Bool
     ) -> VideoGenerationSubmission {
         var genInput = baseInput
-        let outputName = name ?? (model.supportsPrompt ? nil : model.displayName)
+        let outputName = name ?? (model.supportsPrompt ? nil : "Generated video")
         if model.requiresSourceVideo {
             let sourceCount = inputAssets.sourceVideo == nil ? 0 : 1
             let imageRefCount = inputAssets.imageRefs.count
@@ -218,19 +218,19 @@ struct VideoGenerationSubmission {
         @MainActor
         private func validateEditReferences(for model: VideoModelConfig) -> String? {
             guard let sourceVideo else {
-                return "Model '\(model.id)' requires a source video."
+                return "This video option requires a source video."
             }
             guard sourceVideo.type == .video else {
                 return "sourceVideoMediaRef must reference a video asset"
             }
             if !frames.isEmpty {
-                return "\(model.displayName) does not accept frame references"
+                return "This video option does not accept frame references"
             }
             if model.requiresReferenceImage && imageRefs.isEmpty {
-                return "\(model.displayName) requires an image reference"
+                return "This video option requires an image reference"
             }
             if model.requiresReferenceAudio && audioRefs.isEmpty {
-                return "\(model.displayName) requires an audio reference"
+                return "This video option requires an audio reference"
             }
             return validateReferences(for: model, includingFrames: false)
         }
@@ -238,19 +238,19 @@ struct VideoGenerationSubmission {
         @MainActor
         private func validateTextToVideoReferences(for model: VideoModelConfig) -> String? {
             if sourceVideo != nil {
-                return "\(model.displayName) does not accept a source video"
+                return "This video option does not accept a source video"
             }
             if frames.count > 2 {
-                return "\(model.displayName) accepts at most 2 frame references"
+                return "This video option accepts at most 2 frame references"
             }
             if !frames.isEmpty, !model.supportsFirstFrame {
-                return "\(model.displayName) does not accept frame references"
+                return "This video option does not accept frame references"
             }
             if frames.count > 1, !model.supportsLastFrame {
-                return "\(model.displayName) does not accept a last frame"
+                return "This video option does not accept a last frame"
             }
             if model.framesAndReferencesExclusive, !frames.isEmpty, !allRefs.isEmpty {
-                return "\(model.displayName) uses frames OR references, not both. Clear one side."
+                return "This video option uses frames OR references, not both. Clear one side."
             }
             return validateReferences(for: model, includingFrames: true)
         }
@@ -262,16 +262,16 @@ struct VideoGenerationSubmission {
         ) -> String? {
             let referenceLabel = model.requiresSourceVideo ? "reference(s)" : "references"
             if imageRefs.count > model.maxReferenceImages {
-                return "\(model.displayName) accepts at most \(model.maxReferenceImages) image \(referenceLabel)"
+                return "This video option accepts at most \(model.maxReferenceImages) image \(referenceLabel)"
             }
             if videoRefs.count > model.maxReferenceVideos {
-                return "\(model.displayName) accepts at most \(model.maxReferenceVideos) video \(referenceLabel)"
+                return "This video option accepts at most \(model.maxReferenceVideos) video \(referenceLabel)"
             }
             if audioRefs.count > model.maxReferenceAudios {
-                return "\(model.displayName) accepts at most \(model.maxReferenceAudios) audio \(referenceLabel)"
+                return "This video option accepts at most \(model.maxReferenceAudios) audio \(referenceLabel)"
             }
             if let totalCap = model.maxTotalReferences, totalRefCount > totalCap {
-                return "\(model.displayName) accepts at most \(totalCap) references total"
+                return "This video option accepts at most \(totalCap) references total"
             }
             if let cap = model.maxCombinedVideoRefSeconds,
                videoRefs.reduce(0, { $0 + $1.duration }) > cap {

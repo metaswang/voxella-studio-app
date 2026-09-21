@@ -26,20 +26,20 @@ struct RecordWorkbenchPanel: View {
     private var header: some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Label("RECORD", systemImage: "waveform")
+                Label(L10n.string("RECORD"), systemImage: "waveform")
                     .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
                     .tracking(AppTheme.Tracking.wide)
                     .foregroundStyle(AppTheme.Accent.link)
 
-                Text(session.phase.isCapturing ? (session.isPaused ? "Paused" : "Recording") : "Capture audio or screen")
+                Text(session.phase.isCapturing ? (session.isPaused ? L10n.string("Paused") : L10n.string("Recording")) : L10n.string("Capture audio or screen"))
                     .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.semibold))
             }
 
             Spacer(minLength: AppTheme.Spacing.md)
 
             RecordingInfoButton(
-                title: "About recording",
-                message: "Record audio, a display, a window, or a selected region. Video capture hides this window while recording; use the menu bar item to stop, pause, or discard."
+                title: L10n.string("About recording"),
+                message: L10n.string("Record audio, a display, a window, or a selected region. Video capture hides this window while recording; use the menu bar item to stop, pause, or discard.")
             )
         }
     }
@@ -88,12 +88,12 @@ struct RecordWorkbenchPanel: View {
     private var audioSources: some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.lg) {
             sourceCard(
-                title: "Microphone",
+                title: L10n.string("Microphone"),
                 systemImage: "mic",
-                info: "Choose a microphone or turn microphone capture off."
+                info: L10n.string("Choose a microphone or turn microphone capture off.")
             ) {
-                Picker("Microphone", selection: $session.configuration.microphone) {
-                    Text("Off").tag(RecordingMicrophoneSource.off)
+                Picker(L10n.string("Microphone"), selection: $session.configuration.microphone) {
+                    Text(L10n.string("Off")).tag(RecordingMicrophoneSource.off)
                     ForEach(session.devices) { device in
                         Text(device.name).tag(RecordingMicrophoneSource.device(id: device.id))
                     }
@@ -104,11 +104,11 @@ struct RecordWorkbenchPanel: View {
             }
 
             sourceCard(
-                title: "System audio",
+                title: L10n.string("System audio"),
                 systemImage: "speaker.wave.2",
-                info: "Captures audio playing through this Mac. Requires Screen Recording permission. Keep this enabled when recording a display, window, or region without a microphone."
+                info: L10n.string("Captures audio playing through this Mac. Requires Screen Recording permission. Keep this enabled when recording a display, window, or region without a microphone.")
             ) {
-                Toggle("Capture", isOn: $session.configuration.capturesSystemAudio)
+                Toggle(L10n.string("Capture"), isOn: $session.configuration.capturesSystemAudio)
                     .toggleStyle(.checkbox)
                     .disabled(session.phase.isActive)
             }
@@ -159,8 +159,8 @@ struct RecordWorkbenchPanel: View {
                         .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
                 }
                 .buttonStyle(.borderless)
-                .help(session.isMicrophoneMuted ? "Unmute microphone" : "Mute microphone")
-                .accessibilityLabel(session.isMicrophoneMuted ? "Unmute microphone" : "Mute microphone")
+                .help(session.isMicrophoneMuted ? L10n.string("Unmute microphone") : L10n.string("Mute microphone"))
+                .accessibilityLabel(session.isMicrophoneMuted ? L10n.string("Unmute microphone") : L10n.string("Mute microphone"))
             }
         }
         .padding(.horizontal, AppTheme.Spacing.lgXl)
@@ -180,7 +180,7 @@ struct RecordWorkbenchPanel: View {
                 )
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(session.isPaused ? "Paused" : "Recording")
+        .accessibilityLabel(session.isPaused ? L10n.string("Paused") : L10n.string("Recording"))
     }
 
     private var actionRow: some View {
@@ -193,13 +193,13 @@ struct RecordWorkbenchPanel: View {
                         .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
                 }
                 .buttonStyle(.bordered)
-                .help(session.isPaused ? "Resume recording" : "Pause recording")
-                .accessibilityLabel(session.isPaused ? "Resume recording" : "Pause recording")
+                .help(session.isPaused ? L10n.string("Resume recording") : L10n.string("Pause recording"))
+                .accessibilityLabel(session.isPaused ? L10n.string("Resume recording") : L10n.string("Pause recording"))
 
                 Button {
                     session.stop()
                 } label: {
-                    Label("Stop", systemImage: "stop.fill")
+                    Label(L10n.string("Stop"), systemImage: "stop.fill")
                 }
                 .buttonStyle(.borderedProminent)
 
@@ -210,8 +210,8 @@ struct RecordWorkbenchPanel: View {
                         .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
                 }
                 .buttonStyle(.bordered)
-                .help("Discard recording")
-                .accessibilityLabel("Discard recording")
+                .help(L10n.string("Discard recording"))
+                .accessibilityLabel(L10n.string("Discard recording"))
             } else {
                 Button {
                     session.requestStart()
@@ -237,12 +237,12 @@ struct RecordWorkbenchPanel: View {
     private var messages: some View {
         if let message = session.errorMessage ?? session.permissionMessage {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text(message)
+                Text(L10n.display(message))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(session.errorMessage == nil ? AppTheme.Text.secondaryColor : AppTheme.Status.errorColor)
                     .fixedSize(horizontal: false, vertical: true)
                 if session.permissionSettingsURL != nil {
-                    Button("Open System Settings") {
+                    Button(L10n.string("Open System Settings")) {
                         session.openPermissionSettings()
                     }
                     .buttonStyle(.link)
@@ -251,14 +251,14 @@ struct RecordWorkbenchPanel: View {
         }
 
         if let warning = session.liveAudioWarning ?? session.lastDiagnostics?.warningMessage {
-            Label(warning, systemImage: "exclamationmark.triangle.fill")
+            Label(L10n.display(warning), systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Status.warningColor)
                 .fixedSize(horizontal: false, vertical: true)
         }
 
         if !session.configuration.hasAudioSource && !session.phase.isActive {
-            Label("Select an audio source", systemImage: "waveform.badge.exclamationmark")
+            Label(L10n.string("Select an audio source"), systemImage: "waveform.badge.exclamationmark")
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Status.warningColor)
         }
@@ -266,10 +266,10 @@ struct RecordWorkbenchPanel: View {
 
     private var startLabel: String {
         switch session.phase {
-        case .preparing: "Preparing…"
-        case .picking: "Choose source…"
-        case .finishing: "Finishing…"
-        default: "Start recording"
+        case .preparing: L10n.string("Preparing…")
+        case .picking: L10n.string("Choose source…")
+        case .finishing: L10n.string("Finishing…")
+        default: L10n.string("Start recording")
         }
     }
 }
@@ -290,13 +290,13 @@ private struct RecordingInfoButton: View {
         .buttonStyle(.plain)
         .foregroundStyle(AppTheme.Text.mutedColor)
         .contentShape(Circle())
-        .help(title)
-        .accessibilityLabel(title)
+        .help(L10n.string(key: title))
+        .accessibilityLabel(L10n.string(key: title))
         .popover(isPresented: $isPresented, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text(title)
+                Text(L10n.string(key: title))
                     .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
-                Text(message)
+                Text(L10n.string(key: message))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .fixedSize(horizontal: false, vertical: true)

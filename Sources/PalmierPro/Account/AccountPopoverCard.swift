@@ -24,7 +24,7 @@ struct AccountPopoverCard: View {
             footerRow
 
             if let error = account.lastError {
-                Text(error)
+                Text(L10n.display(error))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Status.errorColor)
             }
@@ -43,7 +43,7 @@ struct AccountPopoverCard: View {
                 fontSize: AppTheme.FontSize.mdLg
             )
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                Text(account.displayPrimaryText)
+                Text(L10n.display(account.displayPrimaryText))
                     .font(.system(size: AppTheme.FontSize.md, weight: .medium))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                     .lineLimit(1)
@@ -63,14 +63,7 @@ struct AccountPopoverCard: View {
     // MARK: - Plan + credit info
 
     private var planTitle: String {
-        if account.appAccess.license == .lifetime || LifetimeLocalCredential.isPresent() {
-            return account.appAccessLabel
-        }
-#if MAC_APP_STORE
-        return account.appAccessLabel
-#else
-        return account.isSignedIn ? account.tier.planLabel : account.appAccessLabel
-#endif
+        account.localizedAppAccessLabel
     }
 
     private var planBlock: some View {
@@ -82,7 +75,7 @@ struct AccountPopoverCard: View {
                 Spacer(minLength: 0)
                 if account.account?.user.cancelAtPeriodEnd == true,
                    let date = formattedPeriodEnd {
-                    Text("Cancels \(date)")
+                    Text(L10n.format("Cancels %@", date))
                         .font(.system(size: AppTheme.FontSize.xxs))
                         .foregroundStyle(.orange)
                 }
@@ -111,17 +104,17 @@ struct AccountPopoverCard: View {
         Button { AppAccessWindow.shared.present() } label: {
             HStack(spacing: AppTheme.Spacing.xs) {
                 Image(systemName: "clock")
-                Text("Trial: \(active.sidebarLabel)")
+                Text(L10n.format("Trial: %@", localizedTrialSidebarLabel(active)))
                 Spacer(minLength: 0)
-                Text(trialActionLabel)
+                Text(L10n.string(key: trialActionLabel))
             }
             .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
             .foregroundStyle(active.usesWarningColor ? AppTheme.Status.warningColor : AppTheme.Text.secondaryColor)
         }
         .buttonStyle(.plain)
-        .help(trialActionLabel)
+        .help(L10n.string(key: trialActionLabel))
 
-        Text("Ends \(active.endsAt.formatted(date: .abbreviated, time: .shortened))")
+        Text(L10n.format("Ends %@", active.endsAt.formatted(date: .abbreviated, time: .shortened)))
             .font(.system(size: AppTheme.FontSize.xxs))
             .foregroundStyle(AppTheme.Text.tertiaryColor)
     }
@@ -152,11 +145,11 @@ struct AccountPopoverCard: View {
     @ViewBuilder
     private func planRow(plan: AvailablePlan, isPrimary: Bool) -> some View {
         HStack(spacing: AppTheme.Spacing.sm) {
-            Text(plan.tier.upgradeLabel)
+            Text(plan.tier.localizedUpgradeLabel)
                 .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
                 .foregroundStyle(AppTheme.Text.primaryColor)
 
-            Text("$\(plan.effectiveMonthlyPriceUsd)/mo")
+            Text(L10n.format("$%@/mo", plan.effectiveMonthlyPriceUsd))
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
                 .monospacedDigit()
@@ -187,14 +180,14 @@ struct AccountPopoverCard: View {
     @ViewBuilder
     private func upgradeActionButton(tier: AccountTier, isPrimary: Bool) -> some View {
         if isPrimary {
-            Button("Upgrade") {
+            Button(L10n.string("Upgrade")) {
                 Task { await account.subscribe(tier: tier) }
                 dismiss()
             }
             .buttonStyle(.capsule(.prominent))
             .controlSize(.small)
         } else {
-            Button("Upgrade") {
+            Button(L10n.string("Upgrade")) {
                 Task { await account.subscribe(tier: tier) }
                 dismiss()
             }
@@ -205,9 +198,9 @@ struct AccountPopoverCard: View {
 
     private func creditsShortLabel(_ credits: Int) -> String {
         if credits >= 1000, credits % 1000 == 0 {
-            return "\(credits / 1000)k credits"
+            return L10n.format("%@k credits", credits / 1000)
         }
-        return "\(credits.formatted()) credits"
+        return L10n.format("%@ credits", credits)
     }
 
     @ViewBuilder
@@ -220,13 +213,13 @@ struct AccountPopoverCard: View {
                     .progressViewStyle(.linear)
                     .tint(barColor(remaining))
                 HStack(spacing: AppTheme.Spacing.xs) {
-                    Text("\(left.formatted()) / \(budget.formatted()) credits")
+                    Text(L10n.format("%@ / %@ credits", left, budget))
                         .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
                         .monospacedDigit()
                         .foregroundStyle(AppTheme.Text.secondaryColor)
                     Spacer(minLength: 0)
                     if let date = formattedPeriodEnd {
-                        Text("Resets \(date)")
+                        Text(L10n.format("Resets %@", date))
                             .font(.system(size: AppTheme.FontSize.xs))
                             .foregroundStyle(AppTheme.Text.tertiaryColor)
                     }
@@ -280,7 +273,7 @@ struct AccountPopoverCard: View {
             HStack(spacing: AppTheme.Spacing.xs) {
                 Image(systemName: systemImage)
                     .font(.system(size: AppTheme.FontSize.smMd))
-                Text(label)
+                Text(L10n.string(key: label))
                     .font(.system(size: AppTheme.FontSize.sm))
                 Spacer(minLength: 0)
             }

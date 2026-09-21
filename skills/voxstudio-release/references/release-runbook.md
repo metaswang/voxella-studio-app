@@ -1,16 +1,24 @@
 # VoxStudio Release Runbook
 
-This runbook describes the complete Developer ID DMG and Hugging Face publication flow for this repository.
+This runbook describes the complete Developer ID DMG and Cloudflare R2 publication flow for this repository.
 
 ## 1. Preflight
 
 Run from the repository root:
 
       cd /Users/adamwang/Project/subdub/voxella-studio-app
+      git pull
       git status --short
       test -x scripts/bundle.sh
       test -f Package.swift
       test -f scripts/VoxStudio.developer-id.entitlements
+
+The `git pull` above is mandatory before a formal release's version selection, build, signing,
+notarization, or DMG creation. Local packaging development and validation use the
+current worktree and do not require a pull or version bump. If local changes prevent a release pull or it produces
+conflicts, stop and report the blocker. Do not automatically stash, commit,
+discard, or overwrite local worktree changes. After a successful pull, repeat
+the remaining preflight checks against the pulled checkout.
 
 Confirm the supported deployment target remains macOS 15.0 across build and release metadata:
 
@@ -20,9 +28,14 @@ Confirm the supported deployment target remains macOS 15.0 across build and rele
 
 The complete release includes Textual and bundled speech, both of which require macOS 15. Keep macOS 26-only APIs behind availability checks and preserve the macOS 15 fallback instead of raising the target. The Convex binary target may emit warnings for vendor objects stamped with the build host's newer macOS version; preserve those warnings in the release record and complete the macOS 15 runtime smoke test below.
 
+Read [Metal compatibility](metal-compatibility.md) for the macOS 15 / Metal 3.2
+packaging policy, cache invalidation, and M1–M4 physical-device qualification.
+Run `python3 scripts/build_metal.py preflight` before a costly distribution build.
+Do not compile shaders with implicit host defaults or patch SwiftPM dependency checkouts.
+
 Inspect release variables without printing values:
 
-      for name in SIGNING_IDENTITY TEAM_IDENTIFIER NOTARY_PROFILE PROVISIONING_PROFILE; do
+      for name in SIGNING_IDENTITY TEAM_IDENTIFIER NOTARY_PROFILE DEVELOPER_ID_PROVISIONING_PROFILE MAS_PROVISIONING_PROFILE; do
         if grep -q "^$name=" .env.prod 2>/dev/null || grep -q "^$name=" .env 2>/dev/null; then
           echo "$name is configured"
         else
@@ -31,6 +44,24 @@ Inspect release variables without printing values:
       done
 
 The script gives .env.prod precedence for release builds. Do not source either file into a command transcript, and do not paste its contents into a report.
+
+Confirm the signing mode in the actual checkout before interpreting a missing profile:
+
+      git diff -- scripts/bundle.sh
+      rg -n 'DEVELOPER_ID_PROVISIONING_PROFILE|embedded\.provisionprofile|profile_certificate' scripts/bundle.sh
+
+The current working-tree packaging path is profile-bound for Developer ID and MAS signing. A Developer ID profile must be bound to the selected `Developer ID Application` certificate and must authorize the app identifier and keychain access group. An Apple Development profile or an MAS profile is not a substitute. Older releases used a historical Developer ID path that did not embed a provisioning profile, so older successful artifacts do not prove that the current checkout has a usable Developer ID profile. If the current script requires one and none is available, stop and report the mismatch before building or publishing.
+
+This repository has a confirmed Developer ID Distribution profile at:
+
+      .secrets/VoxStudio_Developer_ID.provisionprofile
+
+If `DEVELOPER_ID_PROVISIONING_PROFILE` is absent from the selected release environment, check this file before reporting a missing profile and pass its absolute path for the release invocation:
+
+      test -f .secrets/VoxStudio_Developer_ID.provisionprofile
+      DEVELOPER_ID_PROVISIONING_PROFILE="$PWD/.secrets/VoxStudio_Developer_ID.provisionprofile" ./scripts/release.sh
+
+Inspect the decoded profile metadata and certificate match without printing the binary profile or unrelated secret values. The expected profile is Developer ID Distribution for `com.voxella.studio`, Team ID `4DMAQ32SNU`, and the `Developer ID Application: GREATWAY GLOBAL PTE. LTD. (4DMAQ32SNU)` certificate.
 
 Check that the signing identity is a Developer ID certificate:
 
@@ -98,11 +129,11 @@ The command must no longer report `No Keychain password item found`. Use the sam
 
 ## 1A. Recover or rotate the Sparkle Ed25519 key
 
-Sparkle update signing is independent of Developer ID signing and Apple notarization. The public key in `Sources/PalmierPro/Resources/Info.plist` must match the private key used for every published appcast enclosure.
+Sparkle appcast signing is independent of Developer ID signing and Apple notarization. The public key in `Sources/PalmierPro/Resources/Info.plist` must match the private key used for every published appcast enclosure. The running app no longer embeds Sparkle or starts an installer.
 
 Check the existing key without printing private material:
 
-      SPARKLE_ROOT='.build/artifacts/sparkle/Sparkle'
+      SPARKLE_ROOT='.build/sparkle-tools'
       "$SPARKLE_ROOT/bin/generate_keys" -p
       /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Sources/PalmierPro/Resources/Info.plist
       "$SPARKLE_ROOT/bin/sign_update" -p .build/VoxStudio.dmg
@@ -119,12 +150,12 @@ Only when key rotation is explicitly intended:
 
 Copy the newly generated public key into `SUPublicEDKey`, retain the private backup only under `.secrets/`, and verify `generate_keys -p` matches the plist before building. On another machine, import the protected backup with `generate_keys -f .secrets/sparkle-ed25519-private.key`. Never print, commit, upload, or place the private key in a DMG or command-line argument.
 
-For the Hugging Face distribution path, set the appcast feed and latest enclosure to public URLs:
+For the Cloudflare distribution path, set the appcast feed and latest installer to:
 
-      https://huggingface.co/hfadam/VoxStudio.app/resolve/main/appcast.xml
-      https://huggingface.co/hfadam/VoxStudio.app/resolve/main/VoxStudio.dmg?download=true
+      https://assets.voxstudio.me/downloads/voxstudio/appcast.xml
+      https://assets.voxstudio.me/downloads/voxstudio/VoxStudio.dmg
 
-Upload both `appcast.xml` and `VoxStudio.dmg`, and verify the remote appcast contains the exact artifact version, byte count, and valid `sparkle:edSignature` before reporting the release.
+The appcast enclosure must be the immutable version URL under `/downloads/voxstudio/releases/<version>-<build>/<sha256>/VoxStudio.dmg`. Do not point enclosure metadata at the latest redirect. Do not copy Hugging Face history into this feed. Old apps that still embed the Hugging Face `SUFeedURL` cannot be migrated by this server change; those users must install once from the website.
 
 ## 2. Select and record the release version
 
@@ -132,12 +163,26 @@ Formal releases must use the release wrapper with no manually supplied version:
 
       ./scripts/release.sh
 
+If physical-device checks are still pending, stage the release locally instead:
+
+      RELEASE_TARGET=dmg ./scripts/release.sh
+
+This still selects the next version and notarizes the DMG, but does not upload it.
+Test this exact DMG as described in [Metal compatibility](metal-compatibility.md),
+then use section 9's separate publisher with its recorded version/build/signature.
+Do not rerun the wrapper after testing: that would select a different version and
+rebuild. `RELEASE_PROMOTE=0` uploads before stopping and is not build-only.
+
 Before it changes `Info.plist`, the wrapper reads the current
-`CFBundleShortVersionString` and the highest version in the published appcast,
-then selects the next semantic-version patch (`X.Y.Z` becomes `X.Y.(Z+1)`).
-It also plans a new `CFBundleVersion`. A release must never reuse the prior
-marketing version, and the release record must contain the previous version,
-new version, build number, DMG hash, and the exact version uploaded.
+`CFBundleShortVersionString` and the highest version in the published
+Cloudflare appcast, then selects the next semantic-version patch
+(`X.Y.Z` becomes `X.Y.(Z+1)`). It also plans a new `CFBundleVersion`.
+The first Cloudflare publication must set `RELEASE_BOOTSTRAP=1` and use
+the local version plus recorded release metadata; it must not invent
+versions from the retired Hugging Face feed. A release must never reuse
+the prior marketing version, and the release record must contain the
+previous version, new version, build number, DMG hash, and the exact
+version uploaded.
 
 The wrapper performs the version bump before invoking the distribution build;
 do not invoke `bundle.sh release --dist` directly for a formal release unless
@@ -198,21 +243,25 @@ Run these checks after release --dist:
         | plutil -extract com.apple.security.device.audio-input raw -o - - \
         | rg -q '^true$'
       /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$APP/Contents/Info.plist" >/dev/null
-      test ! -e "$APP/Contents/embedded.provisionprofile"
+      test -e "$APP/Contents/embedded.provisionprofile"
       /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist" | rg -q '^15\.0$'
       otool -l "$APP/Contents/MacOS/VoxStudio" \
         | awk '/LC_BUILD_VERSION/{seen=1} seen && /minos/{print $2; exit}' \
         | rg -q '^15\.0$'
+      test ! -e "$APP/Contents/Frameworks/Sparkle.framework"
+      ! otool -L "$APP/Contents/MacOS/VoxStudio" | rg -q Sparkle
 
-      if codesign -d --entitlements :- "$APP" 2>/dev/null | rg -q 'com\.apple\.developer\.applesignin|com\.apple\.developer\.team-identifier|keychain-access-groups'; then
-        echo 'Restricted Developer ID entitlements found'
+      codesign -d --entitlements :- "$APP" 2>/dev/null | rg -q 'keychain-access-groups'
+      codesign -d --entitlements :- "$APP" 2>/dev/null | rg -q 'com.apple.application-identifier'
+      if codesign -d --entitlements :- "$APP" 2>/dev/null | rg -q 'com\.apple\.developer\.applesignin'; then
+        echo 'Developer ID Apple sign-in entitlement found'
         exit 1
       fi
 
       xcrun stapler validate "$APP"
       spctl --assess --type execute --verbose=4 "$APP"
 
-The expected spctl result is accepted with a notarized Developer ID source. A profile or one of the restricted entitlements is a release blocker.
+The expected spctl result is accepted with a notarized Developer ID source. Under the current profile-bound path, a missing or certificate-mismatched profile, missing Keychain access group, or Apple sign-in entitlement is a release blocker.
 
 On an Apple Silicon Mac running macOS 15, launch the notarized app from the mounted DMG, sign in, and perform one authenticated backend read. This smoke test is required because compile-time availability checks cannot prove that the prebuilt Convex Rust archive avoids newer runtime symbols.
 
@@ -236,12 +285,14 @@ Mount the DMG read-only and repeat the executable checks against the copy users 
         | plutil -extract com.apple.security.device.audio-input raw -o - - \
         | rg -q '^true$'
       /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$MOUNTED_APP/Contents/Info.plist" >/dev/null
-      test ! -e "$MOUNTED_APP/Contents/embedded.provisionprofile"
-      if codesign -d --entitlements :- "$MOUNTED_APP" 2>/dev/null | rg -q 'com\.apple\.developer\.applesignin|com\.apple\.developer\.team-identifier|keychain-access-groups'; then
-        echo 'Restricted entitlements found in mounted DMG app'
+      test -e "$MOUNTED_APP/Contents/embedded.provisionprofile"
+      test ! -e "$MOUNTED_APP/Contents/Frameworks/Sparkle.framework"
+      if codesign -d --entitlements :- "$MOUNTED_APP" 2>/dev/null | rg -q 'com\.apple\.developer\.applesignin'; then
+        echo 'Apple sign-in entitlement found in mounted DMG app'
         hdiutil detach "$MOUNT_POINT"
         exit 1
       fi
+      codesign -d --entitlements :- "$MOUNTED_APP" 2>/dev/null | rg -q 'keychain-access-groups'
       xcrun stapler validate "$MOUNTED_APP"
       spctl --assess --type execute --verbose=4 "$MOUNTED_APP"
       hdiutil detach "$MOUNT_POINT"
@@ -271,6 +322,12 @@ permission result.
 
 ## 8. Record the exact artifact
 
+Include the packaged `metal-build.json`, the current-machine result from
+`scripts/verify_metal.py`, shader byte count, and physical-device results from
+[Metal compatibility](metal-compatibility.md). Re-run the verifier against the
+mounted DMG app as well as the source app. An available GPU on the build host
+does not establish compatibility with older OS versions or lower-memory Macs.
+
 Record these values immediately before upload:
 
       stat -f 'DMG bytes=%z' .build/VoxStudio.dmg
@@ -278,44 +335,77 @@ Record these values immediately before upload:
 
 The local SHA-256 is the comparison value for the uploaded file. The DMG byte count must also match the remote response.
 
-## 9. Publish to Hugging Face with the helper
+## 9. Publish to Cloudflare R2
 
-The helper defaults to the verified local artifact and the project repository:
+Production publication uses the EU Cloudflare R2 bucket `vox`:
 
-      ./skills/voxstudio-release/scripts/upload_dmg_to_huggingface.sh
+      R2__ACCOUNT_ID=830eacc6f0bf33e7119b6c71ed13e03d
+      R2__BUCKET=vox
+      R2__API_BASE_URL=https://830eacc6f0bf33e7119b6c71ed13e03d.eu.r2.cloudflarestorage.com
+      R2__REGION=auto
 
-Equivalent explicit invocation:
+Load the access key and secret from the local
+`../voxella-docker-deploy/.env.prod.myvps2` file; never print or commit them.
+The Worker binding must remain `RELEASE_BUCKET=vox` with the EU jurisdiction.
+The publisher writes under `app-releases/voxstudio`:
 
-      ./skills/voxstudio-release/scripts/upload_dmg_to_huggingface.sh \
+      app-releases/voxstudio/releases/<version>-<build>/<sha256>/VoxStudio.dmg
+      app-releases/voxstudio/releases/<version>-<build>/<sha256>/manifest.json
+      app-releases/voxstudio/releases/<version>-<build>/<sha256>/appcast.xml
+      app-releases/voxstudio/releases/<version>-<build>/<sha256>/chunks/000000.bin
+      app-releases/voxstudio/channels/stable.json
+
+These objects are served publicly through `https://assets.voxstudio.me/downloads/voxstudio/`.
+Do not switch to another bucket or to the non-EU endpoint without coordinating
+the Worker binding and confirming the bucket jurisdiction.
+
+The default wrapper already runs this path after a verified local artifact exists. To run the publisher separately:
+
+      uv run --no-project --with boto3 python scripts/r2_release.py run \
         --dmg .build/VoxStudio.dmg \
-        --repo-id hfadam/VoxStudio.app \
-        --repo-type model \
-        --revision main \
-        --remote-path VoxStudio.dmg \
-        --commit-message 'Upload verified VoxStudio DMG'
+        --version "$VERSION" \
+        --build "$BUILD" \
+        --signature "$SPARKLE_SIGNATURE"
 
-The helper selects hf or huggingface-cli, supports the project Python 3.12.12 fallback when configured through pyenv, checks CLI authentication, uploads without a token argument, and verifies the remote file by HTTP HEAD. It compares the local size and SHA-256 with Hugging Face Xet metadata when available and prints the remote commit and download URL.
+Equivalent staged invocation:
 
-The helper's --repo-type option is accepted for clarity even though this project defaults to model. Keep the repository ID and revision explicit when publishing a different destination.
+      uv run --no-project --with boto3 python scripts/r2_release.py prepare --dmg .build/VoxStudio.dmg --version "$VERSION" --build "$BUILD" --signature "$SPARKLE_SIGNATURE"
+      uv run --no-project --with boto3 python scripts/r2_release.py upload --staging-dir .build/r2-release/$VERSION-$BUILD/$SHA256
+      uv run --no-project --with boto3 python scripts/r2_release.py verify --staging-dir .build/r2-release/$VERSION-$BUILD/$SHA256
+      uv run --no-project --with boto3 python scripts/r2_release.py cache-check --staging-dir .build/r2-release/$VERSION-$BUILD/$SHA256
+      uv run --no-project --with boto3 python scripts/r2_release.py promote --staging-dir .build/r2-release/$VERSION-$BUILD/$SHA256
 
-## 10. Browser fallback
+`prepare` hashes the stapled DMG and writes immutable metadata and legacy chunk artifacts. Downloads use the original R2 DMG stream, not JS chunk assembly. `upload` refuses to overwrite an existing identity with different content.
 
-Use this only when the user explicitly requested the upload and the CLI is unavailable, but an authenticated browser session is available:
+The release sequence is `prepare → upload → verify → cache-check → promote → postcheck`. `verify` captures the current stable identity/ETag, fully downloads the immutable public URL, checks size/SHA-256/ETag, and records the serving cache deployment. This also warms the cache. `cache-check` checks actual range bytes, range headers, and an internal cache `HIT` on the same deployment, with at most three attempts. Persistent `DYNAMIC`, `BYPASS`, `UNKNOWN`, `FALLBACK`, or a changed cache deployment fails the normal cache release gate. Repeat verify after a cache deployment change.
 
-1. Open https://huggingface.co/hfadam/VoxStudio.app/upload/main.
-2. Choose the verified .build/VoxStudio.dmg.
-3. Keep the destination path as VoxStudio.dmg.
-4. Keep Commit directly to main selected unless the user requested another branch.
-5. Commit the change and wait until the file and latest commit are visible.
-6. Verify the download URL:
+`promote` requires this artifact's verification and cache-check, repeats the cache check, and conditionally updates stable using the ETag observed before verification. A concurrent stable change or HTTP 412 stops publication. Already-current releases are idempotent. The subsequent `postcheck` verifies latest's no-store 302 and the appcast's immutable enclosure/length.
 
-       https://huggingface.co/hfadam/VoxStudio.app/resolve/main/VoxStudio.dmg?download=true
+Publication state is stored beside the staged artifact in `publish-state.json`, bound to the artifact, public origin, and R2 target. The staging root's `state.json` only locates the artifact for resume; historical root-level verification flags do not authorize a new promote. A failed postcheck preserves the successful promote and reports that stable has already switched. Retry with `postcheck --staging-dir ...` or `RELEASE_RESUME=1 ./scripts/release.sh`; resume uses the staged signed DMG without bumping the version or rebuilding it.
 
-7. Verify the response and hash from a terminal:
+Credentials come from `R2__ACCOUNT_ID`, `R2__ACCESS_KEY_ID`, `R2__SECRET_ACCESS_KEY`, and `R2__BUCKET`. Never print those values. `RELEASE_DRY_RUN=1` performs no remote writes and does not record simulated verify/promote success. `RELEASE_PROMOTE=0` stops after cache-check. `RELEASE_BOOTSTRAP=1` is required only for initial publication.
 
-       curl -fsSIL 'https://huggingface.co/hfadam/VoxStudio.app/resolve/main/VoxStudio.dmg?download=true'
+Normal publication uses `RELEASE_DELIVERY_MODE=cache`. For an explicit degraded release, first set the public Worker's delivery mode to origin, then use `RELEASE_DELIVERY_MODE=origin RELEASE_ORIGIN_REASON="reason" ./scripts/release.sh` (or `--delivery-mode origin --origin-reason ...` in the Python CLI). Integrity checks remain mandatory; the probe must confirm `ORIGIN`, not incidental cache fallback. DMGs above the conservative 512,000,000-byte cache limit require this explicit mode. HTTP/3 settings are unchanged by this workflow.
 
-The response should expose x-repo-commit, a byte count matching the local DMG, and, for the current Xet-backed repository, x-linked-etag matching the local SHA-256. If the hash header is absent, verify the file size and the repository tree/API before reporting completion.
+Do not upload this artifact to Hugging Face. Existing Hugging Face files stay in place and are no longer updated.
+
+## 10. Public download checks
+
+After promote, verify:
+
+      curl -fsSIL 'https://assets.voxstudio.me/downloads/voxstudio/VoxStudio.dmg'
+      curl -fsS 'https://assets.voxstudio.me/downloads/voxstudio/appcast.xml'
+      curl -C - -o /tmp/VoxStudio-resume.dmg "$VERSIONED_URL"
+
+Ordinary latest GET/HEAD must 302 to the immutable URL with `private, no-store`; HEAD ignores Range. A latest GET with Range only returns a partial body when `If-Range` exactly matches the current strong SHA-256 ETag. Missing/mismatched/weak/date validators get a full 200 without Content-Range so a different version cannot be appended. Versioned URLs can resume without If-Range; a supplied invalid validator forces a full 200. Do not use “delete the partial file and start over” as evidence that resume works.
+
+The public gateway's Workers Cache is disabled. Only the private `voxstudio-release-cache` Worker caches complete immutable DMGs; it is called by Service Binding. The `X-VoxStudio-Release-Cache` response header reports its status, and `X-VoxStudio-Cache-Version` identifies its deployment. Public HEAD is metadata-only and reports ORIGIN; use a GET range for cache checks. A latest response may expose an internal HIT while its external response remains no-store. No Zone Cache Rule is needed for this architecture.
+
+Run the worker repository's `scripts/verify-release-download.py --mode cache --output /tmp/VoxStudio-resume.dmg`. It checks HTTP contracts, interrupts a real download at 20 MiB, resumes it, verifies the combined SHA-256/size, and checks warm range bytes/HIT. Also test Safari pause/restart/old failures and the actual app update flow, plus legacy Sparkle clients where available. Record device/browser versions and network/POP; curl alone is not browser acceptance. The current app opens the appcast enclosure in a browser; do not claim it embeds Sparkle.
+
+Rollback download delivery by setting the public Worker's `RELEASE_DELIVERY_MODE=origin` and redeploying. Keep `RELEASE_DOWNLOAD_MODE=origin`. This bypasses the private cache while retaining safe validators; do not roll back to the date-If-Range bug. Default cache entries are isolated per cache-Worker deployment, so warm and verify current stable after redeploying that Worker. Public gateway deployments do not redeploy the cache Worker.
+
+Do not routinely purge immutable files or remove old R2 releases. Keep targeted emergency invalidation for incorrect cached content/headers, using the Workers Cache purge mechanism rather than assuming a zone purge controls this cache. HTTP/3 experiments require actual h2/h3 evidence and a separate zone-scoped change/rollback; no path-level HTTP/3 rule is configured.
 
 ## 11. Final report
 
@@ -325,8 +415,9 @@ Include:
 - signing identity and Team ID;
 - notarization and stapling results for app and DMG;
 - mounted-DMG verification result;
-- confirmation that no embedded provisioning profile or restricted Developer ID entitlement remains;
+- confirmation that the expected Developer ID provisioning profile is embedded and no disallowed restricted entitlement remains;
 - confirmation that `com.apple.security.device.audio-input=true` and `NSMicrophoneUsageDescription` are present in both the source app and mounted-DMG app;
 - local DMG bytes and SHA-256;
-- Hugging Face repository, revision, remote commit, remote size/hash, and download URL;
+- R2 identity, versioned URL, latest URL, appcast URL, and promote result;
+- confirmation that in-app updates use the Cloudflare feed and that old Hugging Face installs are not claimed to migrate automatically;
 - any manual UI test that remains for the user.

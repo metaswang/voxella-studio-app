@@ -109,7 +109,7 @@ actor WeMMEmbeddingProvider: TextEmbeddingProvider {
     private func loaded() async throws -> WeMMEmbeddingRuntime {
         if let runtime { return runtime }
         guard LocalModelManager.isInstalled(SearchIndexConfig.model) else {
-            throw LocalAIError.incompleteModel(SearchIndexConfig.model.title)
+            throw LocalAIError.incompleteModel("smart search resources")
         }
         let directory = try LocalModelManager.directory(for: SearchIndexConfig.modelID)
         let loaded = try await WeMMEmbeddingRuntime.load(from: directory, maxFrames: Self.framesPerClip)

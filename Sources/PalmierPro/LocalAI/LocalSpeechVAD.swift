@@ -48,9 +48,9 @@ private enum LocalSpeechVADError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingModel:
-            return "Silero VAD is not installed"
-        case .missingCoreMLBundle(let url):
-            return "Silero VAD Core ML bundle is missing at \(url.path)"
+            return "Speech detection resources are not prepared."
+        case .missingCoreMLBundle:
+            return "Speech detection resources are incomplete. Prepare them again."
         }
     }
 }

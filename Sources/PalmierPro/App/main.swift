@@ -22,15 +22,21 @@ Log.bootstrap()
 Telemetry.start()
 Analytics.start()
 Analytics.capture(.appOpened)
-BundledFonts.register()
+
+// Initialize AppKit before starting background CoreText work. Registering
+// bundled fonts before NSApplication.shared can race HIServices application
+// registration during launch and terminate the process in
+// _RegisterApplication.
+let app = NSApplication.shared
+
 AccountService.shared.configure()
 ModelCatalog.shared.configure()
 
 // Shorten the default tooltip delay from 2s to 0.01s.
 UserDefaults.standard.set(10, forKey: "NSInitialToolTipDelay")
 
-let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
 app.mainMenu = MainMenuBuilder.buildMenu()
+BundledFonts.register()
 app.run()

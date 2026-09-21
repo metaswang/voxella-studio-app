@@ -108,6 +108,14 @@ struct RecordingJournalRecoveryTests {
         let first = recovered.first { $0.sessionID == sessionA }
         #expect(first?.urls.count == 2)
         #expect(recovered.contains { $0.sessionID == sessionB })
+
+        RecordingSessionManifest.markRegistered(sessionID: sessionB, in: directory)
+        let afterCancel = RecordingSessionManifest.recoverInterruptedSessions(in: directory)
+        #expect(afterCancel.count == 1)
+        #expect(!afterCancel.contains { $0.sessionID == sessionB })
+
+        RecordingSessionManifest.markRegistered(sessionID: sessionA, in: directory)
+        #expect(RecordingSessionManifest.recoverInterruptedSessions(in: directory).isEmpty)
     }
 }
 

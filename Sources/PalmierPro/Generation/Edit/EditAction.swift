@@ -64,7 +64,7 @@ enum EditAction {
                 return .disabled(reason: "Generation in progress")
             }
             guard let model = VideoModelConfig.reframe else {
-                return .disabled(reason: "Reframe model not available")
+                return .disabled(reason: "Reframing is not available")
             }
             let duration = effectiveDurationOverride ?? asset.resolvedDuration
             if let error = model.validateSourceDuration(duration) {
@@ -80,7 +80,7 @@ enum EditAction {
                 return .disabled(reason: "Generation in progress")
             }
             guard let model = VideoModelConfig.lipSync else {
-                return .disabled(reason: "Lip Sync model not available")
+                return .disabled(reason: "Lip sync is not available")
             }
             let duration = effectiveDurationOverride ?? asset.resolvedDuration
             if let error = model.validateSourceDuration(duration) {
@@ -92,7 +92,7 @@ enum EditAction {
             switch asset.type {
             case .video:
                 guard VideoModelConfig.edit != nil else {
-                    return .disabled(reason: "Edit model not available")
+                return .disabled(reason: "This edit is not available")
                 }
                 let duration = effectiveDurationOverride ?? asset.resolvedDuration
                 guard duration > 0 else {
@@ -148,7 +148,7 @@ enum EditAction {
                 return .disabled(reason: "Generation in progress")
             }
             guard let modelId = asset.generationInput?.model, ModelRegistry.exists(id: modelId) else {
-                return .disabled(reason: "Model no longer available")
+                return .disabled(reason: "This option is no longer available")
             }
             return .available
         }
@@ -171,7 +171,7 @@ enum EditAction {
             return .disabled(reason: "Loading video metadata…")
         }
         guard let model = kind.model else {
-            return .disabled(reason: "\(kind.providerName) model not available")
+            return .disabled(reason: "This edit is not available")
         }
         if let err = model.validate(spanSeconds: duration) {
             return .disabled(reason: err)

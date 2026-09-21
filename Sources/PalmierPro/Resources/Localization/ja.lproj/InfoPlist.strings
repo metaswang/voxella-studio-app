@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "VoxStudio は文字起こしセッションまたはローカル参照音声を録音するときにマイクを使用します。";
+"NSScreenCaptureUsageDescription" = "VoxStudio は文字起こしセッションを録音するときに、ディスプレイ、ウインドウ、またはシステムオーディオを収録します。";

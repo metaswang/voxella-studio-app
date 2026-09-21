@@ -8,50 +8,50 @@ struct AppStoreOffersView: View {
     @State private var error: String?
     @State private var reload = UUID()
     @State private var loading = true
-    private let account = AccountService.shared
+    @State private var queuedPurchase = false
+    @Bindable private var account = AccountService.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            if loading { ProgressView() }
-            ForEach(products, id: \.id) { product in
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                    Text(product.displayName)
-                    Text(product.description)
-                        .font(.system(size: AppTheme.FontSize.sm))
-                        .foregroundStyle(AppTheme.Text.secondaryColor)
-                    Button("\(product.displayPrice)\(product.type == .autoRenewable ? " / month" : "")") {
-                        Task { await account.purchaseAppStoreProduct(product.id) }
-                    }
-                    .buttonStyle(.capsule(.secondary, size: .regular))
-                    .disabled(account.isPurchasingAppStoreProduct || !account.isSignedIn)
-                    .disabled(product.id == AppStoreProductID.lifetime.rawValue && account.appAccess.license == .lifetime)
-                    .disabled(product.type == .autoRenewable && account.isPaid && account.appAccess.subscriptionSource != .appStore)
-                }
-            }
-            if let error {
-                Text(error).foregroundStyle(AppTheme.Status.errorColor)
-                Button("Retry") { reload = UUID() }
-            }
-            if !credits {
-                Text("Subscriptions renew monthly until cancelled. Lifetime unlocks the app; AI credits are separate.")
-                    .font(.system(size: AppTheme.FontSize.xs))
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
+            if credits {
+                Text(L10n.string("Credit purchases are not available in the Mac App Store version."))
+                    .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
-                Button("Restore purchases") { Task { await account.restorePurchases() } }
-                    .disabled(account.isPurchasingAppStoreProduct)
-                Link("Terms of use", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
-                Link("Privacy policy", destination: URL(string: "https://voxstudio.me/privacy.html")!)
+            } else if loading {
+                offerLoadingCard
+            } else if let product = products.first {
+                lifetimeCard(product)
+            } else {
+                unavailableCard
+            }
+
+            if !credits {
+                HStack(spacing: AppTheme.Spacing.md) {
+                    Button(L10n.string("Restore purchases")) { Task { await account.restorePurchases() } }
+                        .buttonStyle(.borderless)
+                        .disabled(account.isPurchasingAppStoreProduct)
+                    Spacer(minLength: 0)
+                    Link(L10n.string("Terms"), destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
+                    Link(L10n.string("Privacy"), destination: URL(string: "https://voxstudio.me/privacy.html")!)
+                }
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
         }
         .task(id: reload) {
+            guard !credits else {
+                loading = false
+                return
+            }
             loading = true
             error = nil
             do {
                 let result = try await AppStorePurchaseProvider.shared.products()
                 try Task.checkCancellation()
-                products = result.filter {
-                    !credits && $0.id == AppStoreProductID.lifetime.rawValue
-                }.sorted { $0.price < $1.price }
-                if products.isEmpty { error = "Purchases are unavailable right now." }
+                products = result
+                    .filter { $0.id == AppStoreProductID.lifetime.rawValue }
+                    .sorted { $0.price < $1.price }
+                if products.isEmpty { error = "The App Store price is not available right now." }
             } catch is CancellationError {
                 return
             } catch {
@@ -59,6 +59,112 @@ struct AppStoreOffersView: View {
             }
             loading = false
         }
+        .onChange(of: account.isSignedIn) { _, signedIn in
+            guard signedIn, queuedPurchase, let product = products.first else { return }
+            queuedPurchase = false
+            Task { await account.purchaseAppStoreProduct(product.id) }
+        }
+    }
+
+    private var offerLoadingCard: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            ProgressView()
+            Text(L10n.string("Loading App Store pricing…"))
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(AppTheme.Spacing.lgXl)
+        .themedSurface(AppTheme.Background.prominentColor, cornerRadius: AppTheme.Radius.lg)
+    }
+
+    private func lifetimeCard(_ product: Product) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                    Text(L10n.string("Lifetime access"))
+                        .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+                    Text(L10n.string("A one-time purchase for VoxStudio on this platform."))
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: AppTheme.Spacing.md)
+                VStack(alignment: .trailing, spacing: AppTheme.Spacing.xxs) {
+                    Text(product.displayPrice)
+                        .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.semibold))
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+                    Text(L10n.string("one time"))
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                }
+            }
+
+            Divider().overlay(AppTheme.Border.subtleColor)
+
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                featureRow("Unlimited new projects")
+                featureRow("Existing projects stay available")
+                featureRow("AI credits purchased separately")
+            }
+
+            Button {
+                if account.isSignedIn {
+                    Task { await account.purchaseAppStoreProduct(product.id) }
+                } else {
+                    queuedPurchase = true
+                }
+            } label: {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    if account.isPurchasingAppStoreProduct {
+                        ProgressView().controlSize(.small).tint(.white)
+                    }
+                    Text(L10n.string(account.isSignedIn ? "Buy Lifetime" : "Sign in to purchase"))
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.capsule(.prominent, size: .regular))
+            .disabled(account.isPurchasingAppStoreProduct || account.appAccess.license == .lifetime)
+
+            if let purchaseError = account.lastError {
+                Label(L10n.display(purchaseError), systemImage: "exclamationmark.triangle")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Status.errorColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !account.isSignedIn {
+                Label(L10n.string("Sign in below to link the purchase to your VoxStudio account."), systemImage: "person.crop.circle")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(AppTheme.Spacing.lgXl)
+        .themedSurface(AppTheme.Background.prominentColor, cornerRadius: AppTheme.Radius.lg)
+    }
+
+    private var unavailableCard: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            Label(L10n.string("Lifetime purchase unavailable"), systemImage: "exclamationmark.triangle")
+                .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
+                .foregroundStyle(AppTheme.Text.primaryColor)
+            Text(L10n.display(error ?? "The App Store price is not available right now."))
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+            Button(L10n.string("Try again")) { reload = UUID() }
+                .buttonStyle(.capsule(.secondary, size: .regular))
+        }
+        .padding(AppTheme.Spacing.lgXl)
+        .themedSurface(AppTheme.Background.prominentColor, cornerRadius: AppTheme.Radius.lg)
+    }
+
+    private func featureRow(_ text: String) -> some View {
+        Label(L10n.display(text), systemImage: "checkmark.circle.fill")
+            .font(.system(size: AppTheme.FontSize.sm))
+            .foregroundStyle(AppTheme.Text.secondaryColor)
+            .symbolRenderingMode(.hierarchical)
     }
 }
 #endif

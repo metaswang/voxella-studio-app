@@ -11,7 +11,7 @@ actor AppAccessCache {
     private let deleteValue: @Sendable () throws -> Void
 
     init(
-        read: @escaping @Sendable () throws -> String? = { try KeychainStore.loadThisDeviceOnly(account: "voxstudio.app-access.lifetime") },
+        read: @escaping @Sendable () throws -> String? = { try KeychainStore.loadThisDeviceOnly(account: "voxstudio.app-access.lifetime").get() },
         write: @escaping @Sendable (String) throws -> Void = { try KeychainStore.saveThisDeviceOnly($0, account: "voxstudio.app-access.lifetime") },
         delete: @escaping @Sendable () throws -> Void = { try KeychainStore.deleteThisDeviceOnly(account: "voxstudio.app-access.lifetime") }
     ) {

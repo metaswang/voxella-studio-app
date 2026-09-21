@@ -59,7 +59,7 @@ struct CustomAspectRatioSheet: View {
                     .font(.system(size: AppTheme.FontSize.sm).monospacedDigit())
                     .foregroundStyle(AppTheme.Text.secondaryColor)
             } else if let message = validation.message {
-                Text(message)
+                Text(L10n.display(message))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Status.errorColor)
             }
@@ -86,14 +86,14 @@ struct CustomAspectRatioSheet: View {
 
     private func ratioField(_ label: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            Text(label)
+            Text(L10n.string(key: label))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
             TextField(String(), text: text)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: AppTheme.FontSize.md).monospacedDigit())
                 .frame(width: AppTheme.EditorPanel.numericFieldWidth)
-                .accessibilityLabel(L10n.string("Aspect ratio: \(label)"))
+                .accessibilityLabel(L10n.format("Aspect ratio: %@", L10n.string(key: label)))
         }
     }
 

@@ -244,7 +244,7 @@ struct KnowledgeGraphIngestionService: Sendable {
 private enum GraphServiceError: LocalizedError {
     case invalidModelOutput
 
-    var errorDescription: String? { "The graph model returned an invalid structured result." }
+    var errorDescription: String? { "The AI service returned an invalid structured result. Try again." }
 }
 
 @MainActor

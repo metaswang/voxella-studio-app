@@ -40,11 +40,15 @@ struct MulticamTab: View {
             Spacer(minLength: AppTheme.Spacing.sm)
 
             if member.usable {
-                Text(verbatim: String(format: "%+.2fs · %.0f%%", member.sync.offsetSeconds, member.sync.confidence * 100))
+                Text(verbatim: L10n.format("%+.2fs · %.0f%%", member.sync.offsetSeconds, member.sync.confidence * 100))
                     .font(.system(size: AppTheme.FontSize.xxs))
                     .monospacedDigit()
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
-                    .help(L10n.string("Starts \(String(format: "%.2f", member.sync.offsetSeconds))s into the group's clock; matched the master with \(String(format: "%.0f", member.sync.confidence * 100))% confidence."))
+                    .help(L10n.format(
+                        "Starts %@s into the group's clock; matched the master with %@%% confidence.",
+                        String(format: "%.2f", member.sync.offsetSeconds),
+                        String(format: "%.0f", member.sync.confidence * 100)
+                    ))
             } else {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: AppTheme.FontSize.xxs))

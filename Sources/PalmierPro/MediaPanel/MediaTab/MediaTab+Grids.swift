@@ -292,7 +292,7 @@ extension MediaTab {
                     }
                     .buttonStyle(.plain)
                     .focusable(false)
-                    .help(L10n.string("Open \(title)"))
+                    .help(L10n.format("Open %@", title))
                     .contextMenu {
                         Button(L10n.string("Open")) {
                             openFolder(id: folderId)

@@ -43,7 +43,12 @@ enum SpeakerIdentity {
             try await MLXRuntime.beginInference()
             defer { MLXRuntime.endInference() }
             if model == nil {
-                model = try await WeSpeakerModel.fromPretrained()
+                let descriptor = LocalModelManager.catalog.first { $0.id == .weSpeaker }!
+                model = try await WeSpeakerModel.fromPretrained(
+                    modelId: descriptor.repository,
+                    cacheDir: LocalModelManager.directory(for: .weSpeaker),
+                    offlineMode: true
+                )
             }
             return model!.embed(audio: samples, sampleRate: 16000)
         }

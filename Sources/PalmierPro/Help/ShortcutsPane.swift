@@ -91,7 +91,7 @@ struct ShortcutsPane: View {
                         .gridCellColumns(2)
                 }
 
-                Text(group.title)
+                Text(L10n.string(key: group.title))
                     .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.regular))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                     .gridCellColumns(2)
@@ -103,7 +103,7 @@ struct ShortcutsPane: View {
                             .foregroundStyle(AppTheme.Text.primaryColor)
                             .fixedSize()
 
-                        Text(description)
+                        Text(L10n.string(key: description))
                             .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.regular))
                             .foregroundStyle(AppTheme.Text.secondaryColor)
                             .fixedSize(horizontal: false, vertical: true)

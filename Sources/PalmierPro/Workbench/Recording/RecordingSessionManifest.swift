@@ -96,8 +96,19 @@ struct RecordingSessionManifest: Codable, Equatable, Sendable {
     }
 
     static func markRegistered(sessionID: String, in directory: URL) {
-        for recovered in recoverInterruptedSessions(in: directory, includePendingImport: true) where recovered.sessionID == sessionID {
-            var manifest = recovered.manifest
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        for manifestURL in contents where manifestURL.pathExtension == "json"
+            && manifestURL.lastPathComponent.hasSuffix(".recording.json") {
+            guard let data = try? Data(contentsOf: manifestURL),
+                  var manifest = try? JSONDecoder().decode(RecordingSessionManifest.self, from: data),
+                  manifest.sessionID == sessionID,
+                  recoverableStatuses.contains(manifest.status) else {
+                continue
+            }
             manifest.status = registered
             write(manifest)
         }

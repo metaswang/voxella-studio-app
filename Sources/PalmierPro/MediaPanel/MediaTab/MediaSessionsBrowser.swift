@@ -165,7 +165,7 @@ struct MediaSessionsBrowser: View {
                 }
             }
             ForEach(session.translationTracks) { translation in
-                Button(L10n.string("Add \(translation.compactLanguageLabel) Subtitles")) {
+                Button(L10n.format("Add %@ Subtitles", translation.compactLanguageLabel)) {
                     editor.insertSessionSubtitleTrack(
                         session,
                         track: translation.track,

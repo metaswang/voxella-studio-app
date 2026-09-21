@@ -91,7 +91,7 @@ struct GoogleCalendarSettingsPane: View {
             }
 
             if let error = store.wrappedValue.errorMessage {
-                Text(error)
+                Text(L10n.display(error))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Status.errorColor)
                     .fixedSize(horizontal: false, vertical: true)

@@ -5,6 +5,7 @@ import Observation
 @MainActor
 @Observable
 final class KnowledgeBaseController {
+    private static let localResourcesTipID = "knowledge-local-resources"
     var selectedScope: KnowledgeQAScope = .all
     /// Ordered multi-select (empty when scope is `.all`).
     var selectedSessionIDs: [UUID] = []
@@ -91,7 +92,7 @@ final class KnowledgeBaseController {
         )
         return KnowledgeListRow(
             id: session.id,
-            title: session.title.isEmpty ? "Untitled session" : session.title,
+            title: session.title.isEmpty ? L10n.string("Untitled session") : session.title,
             sessionType: session.sessionType,
             sourceType: KnowledgeSourceType.from(sessionType: session.sessionType),
             sourceOrigin: origin,
@@ -110,18 +111,18 @@ final class KnowledgeBaseController {
     var scopeTitle: String {
         switch selectedScope {
         case .all:
-            return "All knowledge"
+            return L10n.string("All knowledge")
         case let .session(id):
             return titleForSession(id)
         case let .sessions(ids):
-            return "\(ids.count) sessions selected"
+            return L10n.format("%@ sessions selected", ids.count)
         }
     }
 
     func titleForSession(_ id: UUID) -> String {
         rows.first(where: { $0.id == id })?.title
             ?? WorkbenchStore.shared.sessions.first(where: { $0.id == id })?.title
-            ?? "Session"
+            ?? L10n.string("Session")
     }
 
     func isSessionSelected(_ id: UUID) -> Bool {
@@ -209,16 +210,16 @@ final class KnowledgeBaseController {
             return nil
         case .session:
             if !isSessionVisibleForCurrentAuth {
-                return "Sign in to ask about this cloud session."
+                return L10n.string("Sign in to ask about this cloud session.")
             }
-            return "This session has no transcript yet. Transcribe it first to ask questions."
+            return L10n.string("This session has no transcript yet. Transcribe it first to ask questions.")
         case .sessions:
             if selectedSessionIDs.contains(where: { !isSessionVisibleForCurrentAuth($0) })
                 && selectedQAAbleCount == 0
             {
-                return "Sign in to ask about the selected cloud sessions."
+                return L10n.string("Sign in to ask about the selected cloud sessions.")
             }
-            return "None of the selected sessions have a transcript yet. Transcribe at least one to ask."
+            return L10n.string("None of the selected sessions have a transcript yet. Transcribe at least one to ask.")
         }
     }
 
@@ -230,16 +231,8 @@ final class KnowledgeBaseController {
         isPreparingModels || models.isPreparing(modelPlan)
     }
 
-    var modelStatusText: String? {
-        guard needsModelDownload else { return nil }
-        if isPreparingKnowledgeModels {
-            return "Preparing local search models…"
-        }
-        return "Local search model not ready (WeMM). Download before asking."
-    }
-
     var downloadAskLabel: String {
-        isPreparingKnowledgeModels ? "Preparing…" : "Download and ask"
+        L10n.string(isPreparingKnowledgeModels ? "Preparing…" : "Download and ask")
     }
 
     var needsModelLicenseAcceptance: Bool {
@@ -252,25 +245,37 @@ final class KnowledgeBaseController {
         switch selectedScope {
         case .all:
             if WorkbenchStore.shared.isHydrating {
-                return "Loading saved sessions…"
+                return L10n.string("Loading saved sessions…")
             }
             let count = searchableSessionCount
-            return "Ask across \(count) session\(count == 1 ? "" : "s")"
+            return L10n.format(
+                count == 1 ? "Ask across %@ session" : "Ask across %@ sessions",
+                count
+            )
         case .session:
             if let row = selectedRow, !row.isQAAble {
-                return "Transcription required first"
+                return L10n.string("Transcription required first")
             }
-            return "Fast QA for this session only"
+            return L10n.string("Fast QA for this session only")
         case let .sessions(ids):
             let qaAble = selectedQAAbleCount
             let skipped = ids.count - qaAble
             if qaAble == 0 {
-                return "No QA-able sessions in selection"
+                return L10n.string("No QA-able sessions in selection")
             }
             if skipped > 0 {
-                return "Ask across \(qaAble) selected session\(qaAble == 1 ? "" : "s") (\(skipped) skipped)"
+                return L10n.format(
+                    qaAble == 1
+                        ? "Ask across %@ selected session (%@ skipped)"
+                        : "Ask across %@ selected sessions (%@ skipped)",
+                    qaAble,
+                    skipped
+                )
             }
-            return "Ask across \(qaAble) selected session\(qaAble == 1 ? "" : "s")"
+            return L10n.format(
+                qaAble == 1 ? "Ask across %@ selected session" : "Ask across %@ selected sessions",
+                qaAble
+            )
         }
     }
 
@@ -290,12 +295,31 @@ final class KnowledgeBaseController {
 
     func refreshModelPlan() {
         modelPlan = KnowledgeQAModelPolicy.currentPlan(models: models)
+        if !needsModelDownload, !isPreparingKnowledgeModels {
+            WorkbenchTipCenter.shared.hide(id: Self.localResourcesTipID)
+        }
         flushPendingQueryIfNeeded()
     }
 
     func syncModelPlan(_ plan: LocalModelInstallPlan) {
         modelPlan = plan
+        if !needsModelDownload, !isPreparingKnowledgeModels {
+            WorkbenchTipCenter.shared.hide(id: Self.localResourcesTipID)
+        }
         flushPendingQueryIfNeeded()
+    }
+
+    private func showLocalResourcesTip(_ message: String) {
+        WorkbenchTipCenter.shared.update(
+            WorkbenchTip(
+                id: Self.localResourcesTipID,
+                message: message,
+                kind: .warning,
+                actionLabel: L10n.string("Open Local Features"),
+                action: .openLocalFeatures,
+                autoDismiss: false
+            )
+        )
     }
 
     func refreshAccessGate() {
@@ -439,7 +463,7 @@ final class KnowledgeBaseController {
                 self.isClearingHistory = false
                 self.clearHistoryTask = nil
                 if self.selectedScope == scope, self.conversation?.id == conversationID {
-                    self.errorMessage = error.localizedDescription
+                    self.errorMessage = KnowledgeUserFacingCopy.message(for: error)
                 }
             }
         }
@@ -520,7 +544,7 @@ final class KnowledgeBaseController {
             self.flushPendingQueryIfNeeded()
         } catch {
             guard loadGeneration == currentGeneration else { return }
-            self.errorMessage = error.localizedDescription
+            self.errorMessage = KnowledgeUserFacingCopy.message(for: error)
         }
     }
 
@@ -567,6 +591,7 @@ final class KnowledgeBaseController {
         refreshModelPlan()
         if needsModelDownload {
             showModelGate = true
+            showLocalResourcesTip(L10n.string("Prepare local search resources before asking."))
             if needsModelLicenseAcceptance {
                 models.presentManager()
             }
@@ -594,6 +619,7 @@ final class KnowledgeBaseController {
         }
         showModelGate = true
         isPreparingModels = true
+        showLocalResourcesTip(L10n.string("Preparing local search resources…"))
         errorMessage = nil
         prepareTask?.cancel()
         prepareTask = Task { await ensureModelsThenAsk() }
@@ -604,6 +630,7 @@ final class KnowledgeBaseController {
         prepareTask = nil
         isPreparingModels = false
         activeRequestID = nil
+        showLocalResourcesTip(L10n.string("Local search preparation is paused. Resume from Local Features when you’re ready."))
         // Keep pendingQuery; do not auto-ask after cancel.
     }
 
@@ -624,11 +651,14 @@ final class KnowledgeBaseController {
             )
             isPreparingModels = false
             refreshModelPlan()
+            WorkbenchTipCenter.shared.hide(id: Self.localResourcesTipID)
         } catch is CancellationError {
             isPreparingModels = false
         } catch {
             isPreparingModels = false
-            errorMessage = error.localizedDescription
+            Log.search.error("knowledge local resource preparation failed: \(error.localizedDescription)")
+            errorMessage = L10n.string("Local search resources couldn’t be prepared. Try again.")
+            showLocalResourcesTip(L10n.string("Local search resources couldn’t be prepared. Try again."))
             showModelGate = true
         }
     }
@@ -655,7 +685,7 @@ final class KnowledgeBaseController {
         let requestID = activeRequestID ?? UUID()
         activeRequestID = requestID
         isAnswering = true
-        statusText = "Starting…"
+        statusText = L10n.string("Starting…")
         answerTask?.cancel()
         answerTask = Task {
             await ask(
@@ -678,7 +708,7 @@ final class KnowledgeBaseController {
         let requestID = UUID()
         activeRequestID = requestID
         isAnswering = true
-        statusText = "Starting…"
+        statusText = L10n.string("Starting…")
         await ask(text, scope: pinnedScope, conversationID: conversation.id, requestID: requestID)
     }
 
@@ -694,7 +724,7 @@ final class KnowledgeBaseController {
               activeRequestID == requestID
         else { return }
         isAnswering = true
-        statusText = "Starting…"
+        statusText = L10n.string("Starting…")
         defer {
             if activeRequestID == requestID {
                 activeRequestID = nil
@@ -719,7 +749,7 @@ final class KnowledgeBaseController {
                 Task { try? await chatStore.removeMessage(id: userMessage.id, conversationID: conversationID) }
                 return
             }
-            errorMessage = error.localizedDescription
+            errorMessage = KnowledgeUserFacingCopy.message(for: error)
         }
         guard !Task.isCancelled,
               conversation?.id == conversationID,
@@ -836,7 +866,7 @@ final class KnowledgeBaseController {
                 // producer closes directly. Never leave a permanent spinner
                 // or streaming placeholder in that case.
                 messages.removeAll { $0.id == assistantID }
-                errorMessage = "Answer stream ended before completion."
+                errorMessage = L10n.string("Answer stream ended before completion.")
             }
         } catch is CancellationError {
             let isCurrentRequest = activeRequestID == requestID
@@ -881,10 +911,10 @@ final class KnowledgeBaseController {
                   selectedScope == scope,
                   activeRequestID == requestID
             else { return }
-            assistant.content = error.localizedDescription
+            assistant.content = KnowledgeUserFacingCopy.message(for: error)
             assistant.isStreaming = false
             upsertAssistant(assistant, conversationID: conversationID)
-            errorMessage = error.localizedDescription
+            errorMessage = KnowledgeUserFacingCopy.message(for: error)
         }
     }
 
@@ -932,7 +962,7 @@ final class KnowledgeBaseController {
             return
         } catch {
             guard isCurrentRequest(requestID, scope: scope) else { return }
-            errorMessage = error.localizedDescription
+            errorMessage = KnowledgeUserFacingCopy.message(for: error)
         }
     }
 
