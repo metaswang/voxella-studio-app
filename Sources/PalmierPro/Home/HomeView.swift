@@ -532,7 +532,29 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
-        AppState.shared.activeProject?.undoManager
+        // Prefer the manager EditorUndo actually attached (same stack as toolbar /
+        // withTimelineSwap), falling back to the document property.
+        let project = AppState.shared.activeProject
+        return project?.editorViewModel.undo.attachedUndoManager ?? project?.undoManager
+    }
+
+    /// Menu Cmd+Z when the window itself is first responder (EditorSessionController
+    /// is only reachable from the content-view responder chain).
+    @objc func undoEditor(_ sender: Any?) {
+        AppState.shared.editorSession?.undoEditor(sender)
+    }
+
+    @objc func redoEditor(_ sender: Any?) {
+        AppState.shared.editorSession?.redoEditor(sender)
+    }
+
+    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(undoEditor(_:)), #selector(redoEditor(_:)):
+            return AppState.shared.editorSession?.validateMenuItem(menuItem) ?? false
+        default:
+            return true
+        }
     }
 }
 

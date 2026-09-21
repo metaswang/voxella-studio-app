@@ -109,6 +109,15 @@ final class EditorSessionController: NSResponder {
         let cmd = mods.contains(.command)
         let rangeMarkShortcut = mods.intersection([.command, .option, .control]).isEmpty
 
+        // Cmd+Z / ⇧⌘Z — same EditorUndo stack as toolbar (do not rely on AppKit undo:).
+        if cmd, event.keyCode == 6 /* Z */,
+           mods.intersection([.option, .control]).isEmpty {
+            if shift {
+                return performEditorRedo()
+            }
+            return performEditorUndo()
+        }
+
         if handlesMediaPanelCommands, cmd, event.keyCode == 126,
            mods.intersection([.option, .control, .shift]).isEmpty {
             editorViewModel.mediaPanelNavigateUpRequestTick &+= 1
@@ -291,6 +300,25 @@ final class EditorSessionController: NSResponder {
         hostWindow?.makeFirstResponder(nil)
     }
 
+    /// Returns true when an undo/redo was performed (event should be consumed).
+    @discardableResult
+    private func performEditorUndo() -> Bool {
+        guard editorViewModel.undo.canUndo else { return false }
+        _ = editorViewModel.undo.undoLatest()
+        return true
+    }
+
+    @discardableResult
+    private func performEditorRedo() -> Bool {
+        guard editorViewModel.undo.canRedo else { return false }
+        _ = editorViewModel.undo.redoLatest()
+        return true
+    }
+
+    private func textFieldUndoManager() -> UndoManager? {
+        hostWindow?.firstResponder?.undoManager
+    }
+
     // MARK: - Document save (responder chain)
 
     @objc func save(_ sender: Any?) {
@@ -305,6 +333,22 @@ final class EditorSessionController: NSResponder {
 // MARK: - EditorActions (responder chain)
 
 extension EditorSessionController: EditorActions {
+    @objc func undoEditor(_ sender: Any?) {
+        if isTextInputFocused {
+            textFieldUndoManager()?.undo()
+            return
+        }
+        _ = performEditorUndo()
+    }
+
+    @objc func redoEditor(_ sender: Any?) {
+        if isTextInputFocused {
+            textFieldUndoManager()?.redo()
+            return
+        }
+        _ = performEditorRedo()
+    }
+
     @objc func splitAtPlayhead(_ sender: Any?) { editorViewModel.splitAtPlayhead() }
     @objc func trimStartToPlayhead(_ sender: Any?) { editorViewModel.trimStartToPlayhead() }
     @objc func trimEndToPlayhead(_ sender: Any?) { editorViewModel.trimEndToPlayhead() }
@@ -377,6 +421,26 @@ extension EditorSessionController: EditorActions {
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard inputEnabled else { return false }
         switch menuItem.action {
+        case #selector(undoEditor(_:)):
+            if isTextInputFocused {
+                let manager = textFieldUndoManager()
+                let name = manager?.undoActionName ?? ""
+                menuItem.title = name.isEmpty ? L10n.string("Undo") : L10n.format("Undo %@", name)
+                return manager?.canUndo ?? false
+            }
+            let name = editorViewModel.undo.undoActionName
+            menuItem.title = name.isEmpty ? L10n.string("Undo") : L10n.format("Undo %@", name)
+            return editorViewModel.undo.canUndo
+        case #selector(redoEditor(_:)):
+            if isTextInputFocused {
+                let manager = textFieldUndoManager()
+                let name = manager?.redoActionName ?? ""
+                menuItem.title = name.isEmpty ? L10n.string("Redo") : L10n.format("Redo %@", name)
+                return manager?.canRedo ?? false
+            }
+            let name = editorViewModel.undo.redoActionName
+            menuItem.title = name.isEmpty ? L10n.string("Redo") : L10n.format("Redo %@", name)
+            return editorViewModel.undo.canRedo
         case #selector(toggleMediaPanel(_:)):
             menuItem.state = editorViewModel.mediaPanelVisible ? .on : .off
             return true

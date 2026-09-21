@@ -12,7 +12,6 @@ enum PreviewSeekMode: String {
 @MainActor
 final class VideoEngine {
     enum VisualRefreshAction: Equatable {
-        case meterPlayback
         case seekToActiveFrame
         case none
     }
@@ -56,7 +55,7 @@ final class VideoEngine {
 
     init(editor: EditorViewModel) {
         self.editor = editor
-        scrubAudioEngine = ScrubAudioEngine(meter: editor.audioMeter)
+        scrubAudioEngine = ScrubAudioEngine()
         player.defaultRate = editor.playbackRate.rawValue
         installTimeObserver(for: editor.playbackRate)
         installPlaybackEndObserver()
@@ -79,9 +78,6 @@ final class VideoEngine {
     func setPlaybackRate(_ rate: PreviewPlaybackRate) {
         player.defaultRate = rate.rawValue
         installTimeObserver(for: rate)
-        if !rate.allowsAudioMetering {
-            scrubAudioEngine.stopPlaybackMetering()
-        }
         if editor?.isPlaying == true, player.timeControlStatus != .paused {
             player.rate = rate.rawValue
         }
@@ -396,10 +392,8 @@ final class VideoEngine {
         )
         currentItem.audioMix = audioMix
         currentItem.videoComposition = videoComposition
-        scrubAudioEngine.configure(asset: currentItem.asset, audioMix: audioMix, resetMeter: false)
-        switch Self.visualRefreshAction(isPlaying: editor.isPlaying, playbackRate: editor.playbackRate) {
-        case .meterPlayback:
-            scrubAudioEngine.meterPlayback(at: player.currentTime())
+        scrubAudioEngine.configure(asset: currentItem.asset, audioMix: audioMix)
+        switch Self.visualRefreshAction(isPlaying: editor.isPlaying) {
         case .seekToActiveFrame:
             guard let time = playerTime(forPreviewFrame: editor.activeFrame) else { return }
             cancelInteractiveSeek()
@@ -622,12 +616,8 @@ final class VideoEngine {
 
     // MARK: - Time Observer
 
-    nonisolated static func visualRefreshAction(
-        isPlaying: Bool,
-        playbackRate: PreviewPlaybackRate
-    ) -> VisualRefreshAction {
-        guard isPlaying else { return .seekToActiveFrame }
-        return playbackRate.allowsAudioMetering ? .meterPlayback : .none
+    nonisolated static func visualRefreshAction(isPlaying: Bool) -> VisualRefreshAction {
+        isPlaying ? .none : .seekToActiveFrame
     }
 
     private func installPlaybackEndObserver() {
@@ -672,9 +662,6 @@ final class VideoEngine {
 
     private func updatePlaybackTime(_ time: CMTime) {
         guard let editor, editor.isPlaying, !editor.isScrubbing else { return }
-        if editor.playbackRate.allowsAudioMetering {
-            scrubAudioEngine.meterPlayback(at: time)
-        }
 
         let frame = SourceMediaTimebase.relativeFrame(
             absoluteTime: time,

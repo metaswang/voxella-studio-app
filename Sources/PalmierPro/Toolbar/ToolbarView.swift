@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct ToolbarView: View {
@@ -8,8 +7,19 @@ struct ToolbarView: View {
         HStack(spacing: AppTheme.Spacing.md) {
             // Undo / Redo
             HStack(spacing: AppTheme.Spacing.md) {
-                toolbarButton("arrow.uturn.backward", help: L10n.string("Undo (⌘Z)"), action: undo)
-                toolbarButton("arrow.uturn.forward", help: L10n.string("Redo (⇧⌘Z)"), action: redo)
+                let _ = editor.undoEpoch
+                toolbarButton(
+                    "arrow.uturn.backward",
+                    help: L10n.string("Undo (⌘Z)"),
+                    isDisabled: !editor.undo.canUndo,
+                    action: undo
+                )
+                toolbarButton(
+                    "arrow.uturn.forward",
+                    help: L10n.string("Redo (⇧⌘Z)"),
+                    isDisabled: !editor.undo.canRedo,
+                    action: redo
+                )
             }
 
             Divider()
@@ -76,15 +86,21 @@ struct ToolbarView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func toolbarButton(_ systemName: String, help: String, action: @escaping () -> Void) -> some View {
+    private func toolbarButton(
+        _ systemName: String,
+        help: String,
+        isDisabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: AppTheme.FontSize.md))
-                .foregroundStyle(AppTheme.Text.secondaryColor)
+                .foregroundStyle(isDisabled ? AppTheme.Text.mutedColor : AppTheme.Text.secondaryColor)
                 .frame(width: 24, height: 24)
                 .hoverHighlight()
         }
         .buttonStyle(.plain)
+        .disabled(isDisabled)
         .help(L10n.string(key: help))
     }
 
@@ -119,11 +135,11 @@ struct ToolbarView: View {
     }
 
     private func undo() {
-        NSApp.sendAction(Selector(("undo:")), to: nil, from: nil)
+        _ = editor.undo.undoLatest()
     }
 
     private func redo() {
-        NSApp.sendAction(Selector(("redo:")), to: nil, from: nil)
+        _ = editor.undo.redoLatest()
     }
 
     private func toolModeButton(_ systemName: String, mode: ToolMode, help: String) -> some View {

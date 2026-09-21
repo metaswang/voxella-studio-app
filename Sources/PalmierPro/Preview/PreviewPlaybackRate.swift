@@ -19,10 +19,4 @@ enum PreviewPlaybackRate: Float, CaseIterable, Sendable {
         }
     }
 
-    var allowsAudioMetering: Bool {
-        switch self {
-        case .half, .threeQuarters, .normal, .oneAndHalf, .double: true
-        case .quadruple, .tenfold: false
-        }
-    }
 }

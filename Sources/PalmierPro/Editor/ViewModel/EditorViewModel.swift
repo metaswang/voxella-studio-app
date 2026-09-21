@@ -317,6 +317,10 @@ final class EditorViewModel {
         }
         undo.onActionCommitted = { [weak self] in
             self?.captureCommittedEdit()
+            self?.undoEpoch &+= 1
+        }
+        undo.onStackChanged = { [weak self] in
+            self?.undoEpoch &+= 1
         }
 
         // Re-check media presence when the app regains focus: a user may have
@@ -389,7 +393,8 @@ final class EditorViewModel {
     /// Preview playback bridge.
     var videoEngine: VideoEngine?
 
-    let audioMeter = AudioMeterHub()
+    /// Bumped when the document undo stack changes so toolbar canUndo/canRedo refresh.
+    var undoEpoch: Int = 0
 
     @ObservationIgnored
     let playheadState = PreviewPlayheadState()
