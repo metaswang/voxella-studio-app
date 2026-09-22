@@ -5,6 +5,7 @@ struct TimelineContainerView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
+        container.setAccessibilityIdentifier(EditorViewModel.FocusedPanel.timeline.accessibilityID)
 
         let headerView = TimelineHeaderView(editor: editor)
         headerView.frame = NSRect(x: 0, y: 0, width: Layout.trackHeaderWidth, height: 0)
