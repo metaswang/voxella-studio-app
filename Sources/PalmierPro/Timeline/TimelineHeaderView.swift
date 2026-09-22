@@ -15,7 +15,6 @@ final class TimelineHeaderView: NSView {
     var hideButtonRects: [Int: NSRect] = [:]
     var syncLockButtonRects: [Int: NSRect] = [:]
     var captionButtonRects: [Int: NSRect] = [:]
-    var translationButtonRects: [Int: NSRect] = [:]
     var dragHandleRects: [Int: NSRect] = [:]
     /// Full track-row rects used for subtitle parts select-all hit testing.
     var trackRowRects: [Int: NSRect] = [:]
@@ -57,7 +56,6 @@ final class TimelineHeaderView: NSView {
         hideButtonRects.removeAll()
         syncLockButtonRects.removeAll()
         captionButtonRects.removeAll()
-        translationButtonRects.removeAll()
         dragHandleRects.removeAll()
         trackRowRects.removeAll()
         let stripWidth: CGFloat = 3
@@ -106,7 +104,6 @@ final class TimelineHeaderView: NSView {
             let syncX = rightmostX - iconSize - 4
             let actionSpacing = iconSize + 4
             let captionX = syncX - actionSpacing
-            let translationX = captionX - actionSpacing
 
             if editor.showsEditorCaptionActions(on: i) {
                 let sourceClip = track.clips.first(where: {
@@ -119,15 +116,6 @@ final class TimelineHeaderView: NSView {
                     size: iconSize,
                     symbol: processing == .processing ? "ellipsis" : "captions.bubble",
                     tint: processing == .processing ? AppTheme.Text.primary : track.type.themeColor,
-                    config: iconConfig,
-                    context: ctx
-                )
-                translationButtonRects[i] = drawActionIcon(
-                    x: translationX,
-                    y: iconY,
-                    size: iconSize,
-                    symbol: "character.book.closed",
-                    tint: track.type.themeColor,
                     config: iconConfig,
                     context: ctx
                 )
@@ -249,12 +237,6 @@ final class TimelineHeaderView: NSView {
                 return
             }
         }
-        for (ti, rect) in translationButtonRects {
-            if rect.contains(point) {
-                editor.requestEditorTranslation(for: ti)
-                return
-            }
-        }
         for (ti, rect) in muteButtonRects {
             if rect.contains(point) {
                 editor.toggleTrackMute(trackIndex: ti)
@@ -362,7 +344,6 @@ final class TimelineHeaderView: NSView {
             || hideButtonRects.values.contains(where: { $0.contains(point) })
             || syncLockButtonRects.values.contains(where: { $0.contains(point) })
             || captionButtonRects.values.contains(where: { $0.contains(point) })
-            || translationButtonRects.values.contains(where: { $0.contains(point) })
             || dragHandleRects.values.contains(where: { $0.contains(point) })
     }
 

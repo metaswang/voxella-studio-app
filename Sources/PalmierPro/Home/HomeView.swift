@@ -179,11 +179,6 @@ struct HomeView: View {
                     .environment(editor)
                     .appZoomEnvironment(presentationBoundary: true)
             }
-            .sheet(item: Bindable(editor).pendingEditorTranslationRequest) { request in
-                EditorTranslationSheet(request: request)
-                    .environment(editor)
-                    .appZoomEnvironment(presentationBoundary: true)
-            }
             .sheet(item: Bindable(editor).pendingEditorDubRequest) { request in
                 EditorDubSheet(request: request)
                     .environment(editor)

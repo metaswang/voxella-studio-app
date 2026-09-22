@@ -25,10 +25,6 @@ struct PendingTransitionPlacement {
     let gapLengthFrames: Int
 }
 
-struct EditorTranslationRequest: Identifiable, Sendable {
-    let id = UUID()
-    let clipId: String
-}
 
 struct EditorDubRequest: Identifiable, Sendable {
     let id = UUID()
@@ -48,7 +44,6 @@ final class EditorViewModel {
     var openTimelineIds: [String]
     @ObservationIgnored var liveViewStates: [String: TimelineViewState] = [:]
     var timelineTabRenameRequest: String?
-    var pendingEditorTranslationRequest: EditorTranslationRequest?
     var pendingEditorDubRequest: EditorDubRequest?
 
     /// Active-timeline proxy; assignment routes by id and activates so undo lands on its timeline.
