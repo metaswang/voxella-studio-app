@@ -1360,14 +1360,13 @@ final class TimelineInputController {
     }
 
     private func playheadHit(at point: NSPoint, geometry: TimelineGeometry) -> Bool {
-        let scrollOffsetY = view.enclosingScrollView?.contentView.bounds.origin.y ?? 0
-        guard point.y >= scrollOffsetY + geometry.rulerHeight else { return false }
         guard !editor.timeline.tracks.isEmpty else { return false }
-        
+
+        let tracksTop = geometry.trackY(at: 0)
         let lastTrack = editor.timeline.tracks.count - 1
         let tracksBottom = geometry.trackY(at: lastTrack) + geometry.trackHeight(at: lastTrack)
-        guard point.y < tracksBottom else { return false }
-        
+        guard point.y >= tracksTop && point.y < tracksBottom else { return false }
+
         let playheadX = geometry.xForFrame(editor.playheadState.timelineFrame)
         return abs(point.x - playheadX) <= Self.playheadLineHitWidth / 2
     }
