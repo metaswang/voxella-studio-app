@@ -41,14 +41,6 @@ extension EditorViewModel {
         return linked.contains { $0.mediaType == .text && $0.sourceSessionId != nil }
     }
 
-    func requestEditorTranslation(for trackIndex: Int) {
-        guard showsEditorCaptionActions(on: trackIndex) else { return }
-        guard let clip = firstProcessableClip(on: trackIndex) else {
-            mediaPanelToast = MediaPanelToast(message: L10n.string("Add a video or audio clip before translating."))
-            return
-        }
-        pendingEditorTranslationRequest = EditorTranslationRequest(clipId: clip.id)
-    }
 
     func requestEditorDub(for trackIndex: Int) {
         guard let clip = firstProcessableClip(on: trackIndex) else {
