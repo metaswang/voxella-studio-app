@@ -22,7 +22,6 @@ final class TimelineInputController {
     private var scrubWasPlaying = false
     private var playheadAutoScrollTimer: Timer?
     private var playheadAutoScrollWindowPoint: NSPoint?
-    private var lastPlayheadHit = false
 
     private enum TimelineRangeEdge {
         case start
@@ -160,13 +159,6 @@ final class TimelineInputController {
         let trackIndex = geometry.trackAt(y: point.y)
         editor.selectedGap = nil // re-selected below if this lands in a gap
 
-        // Check if clicking on the playhead line (not just the triangle in the ruler)
-        if playheadHit(at: point, geometry: geometry) {
-            let frame = geometry.frameAt(x: point.x)
-            beginPlayheadScrub(at: frame)
-            return
-        }
-
         if editor.toolMode == .razor {
             if let hit = hitTestClip(at: point, trackIndex: trackIndex, geometry: geometry) {
                 let clickFrame = razorPreviewFrame ?? geometry.frameAt(x: point.x)
@@ -209,6 +201,12 @@ final class TimelineInputController {
                 }
                 view.needsDisplay = true
             }
+            return
+        }
+
+        if playheadHit(at: point, geometry: geometry) {
+            let frame = geometry.frameAt(x: point.x)
+            beginPlayheadScrub(at: frame)
             return
         }
 
@@ -778,7 +776,6 @@ final class TimelineInputController {
         razorPreviewFrame = nil
         razorPreviewPoint = nil
         razorSubtitleHint = nil
-        lastPlayheadHit = false
         view.setHoveredClipId(nil)
         view.needsDisplay = true
     }
@@ -788,10 +785,7 @@ final class TimelineInputController {
         let point = view.convert(event.locationInWindow, from: nil)
         let scrollOffsetY = view.enclosingScrollView?.contentView.bounds.origin.y ?? 0
 
-        // Check playhead first (both in ruler and track areas) to avoid cursor flicker
-        let playheadIsHit = playheadHit(at: point, geometry: geometry)
-        if playheadIsHit {
-            lastPlayheadHit = true
+        if playheadHit(at: point, geometry: geometry) {
             view.setHoveredClipId(nil)
             NSCursor.pointingHand.set()
             razorPreviewFrame = nil
@@ -799,7 +793,6 @@ final class TimelineInputController {
             razorSubtitleHint = nil
             return
         }
-        lastPlayheadHit = false
 
         if point.y >= scrollOffsetY && point.y < scrollOffsetY + geometry.rulerHeight {
             view.setHoveredClipId(nil)
@@ -1366,11 +1359,14 @@ final class TimelineInputController {
         return startDistance <= endDistance ? .start : .end
     }
 
-    /// Check if point is over the playhead line (triangle or vertical line).
     private func playheadHit(at point: NSPoint, geometry: TimelineGeometry) -> Bool {
         let scrollOffsetY = view.enclosingScrollView?.contentView.bounds.origin.y ?? 0
-        // Only hit-test below the ruler
         guard point.y >= scrollOffsetY + geometry.rulerHeight else { return false }
+        guard !editor.timeline.tracks.isEmpty else { return false }
+        
+        let lastTrack = editor.timeline.tracks.count - 1
+        let tracksBottom = geometry.trackY(at: lastTrack) + geometry.trackHeight(at: lastTrack)
+        guard point.y < tracksBottom else { return false }
         
         let playheadX = geometry.xForFrame(editor.playheadState.timelineFrame)
         return abs(point.x - playheadX) <= Self.playheadLineHitWidth / 2
