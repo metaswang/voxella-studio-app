@@ -34,6 +34,7 @@ final class TimelineInputController {
     }
 
     private static let timelineRangeEdgeHitSlop: CGFloat = 8
+    private static let playheadLineHitWidth: CGFloat = 8
     private static let trimLeftCursor = makeTrimCursor(edge: .left)
     private static let trimRightCursor = makeTrimCursor(edge: .right)
     private static let slipCursor = makeSlipCursor()
@@ -200,6 +201,12 @@ final class TimelineInputController {
                 }
                 view.needsDisplay = true
             }
+            return
+        }
+
+        if playheadHit(at: point, geometry: geometry) {
+            let frame = geometry.frameAt(x: point.x)
+            beginPlayheadScrub(at: frame)
             return
         }
 
@@ -778,6 +785,15 @@ final class TimelineInputController {
         let point = view.convert(event.locationInWindow, from: nil)
         let scrollOffsetY = view.enclosingScrollView?.contentView.bounds.origin.y ?? 0
 
+        if playheadHit(at: point, geometry: geometry) {
+            view.setHoveredClipId(nil)
+            NSCursor.pointingHand.set()
+            razorPreviewFrame = nil
+            razorPreviewPoint = nil
+            razorSubtitleHint = nil
+            return
+        }
+
         if point.y >= scrollOffsetY && point.y < scrollOffsetY + geometry.rulerHeight {
             view.setHoveredClipId(nil)
             if timelineRangeEdgeHit(at: point, geometry: geometry) != nil {
@@ -1341,6 +1357,18 @@ final class TimelineInputController {
 
         guard nearestDistance <= Self.timelineRangeEdgeHitSlop else { return nil }
         return startDistance <= endDistance ? .start : .end
+    }
+
+    private func playheadHit(at point: NSPoint, geometry: TimelineGeometry) -> Bool {
+        guard !editor.timeline.tracks.isEmpty else { return false }
+
+        let tracksTop = geometry.trackY(at: 0)
+        let lastTrack = editor.timeline.tracks.count - 1
+        let tracksBottom = geometry.trackY(at: lastTrack) + geometry.trackHeight(at: lastTrack)
+        guard point.y >= tracksTop && point.y < tracksBottom else { return false }
+
+        let playheadX = geometry.xForFrame(editor.playheadState.timelineFrame)
+        return abs(point.x - playheadX) <= Self.playheadLineHitWidth / 2
     }
 
     // MARK: - Helpers
