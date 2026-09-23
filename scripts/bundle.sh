@@ -55,6 +55,8 @@ echo "==> Building ($CONFIG)"
 TRAITS="BundledSpeech"
 if [ "$MODE" = "mas" ]; then
   TRAITS="$TRAITS,MacAppStore"
+else
+  TRAITS="$TRAITS,SparkleUpdates"
 fi
 BUILD_ARGS=(-c "$CONFIG" --traits "$TRAITS")
 
@@ -197,6 +199,21 @@ echo "==> Clearing extended attributes before signing"
 xattr -cr "$APP"
 
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/VoxStudio"
+
+if [ "$MODE" != "mas" ]; then
+  echo "==> Embedding Sparkle.framework for in-app updates"
+  SPARKLE_FRAMEWORK="$BIN_DIR/Sparkle.framework"
+  if [ ! -d "$SPARKLE_FRAMEWORK" ]; then
+    echo "!! Sparkle.framework not found in $BIN_DIR" >&2
+    exit 1
+  fi
+  cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/"
+  if [ ! -d "$APP/Contents/Frameworks/Sparkle.framework" ]; then
+    echo "!! Failed to copy Sparkle.framework into app bundle" >&2
+    exit 1
+  fi
+fi
+
 touch "$APP"
 
 ensure_sparkle_tools() {
@@ -423,14 +440,25 @@ if [ "$MODE" = "mas" ] && ! printf '%s' "$SIGNED_ENTITLEMENTS" | grep -q 'com.ap
   echo "!! signed MAS app is missing com.apple.developer.applesignin" >&2
   exit 1
 fi
-if [ ! -e "$APP/Contents/embedded.provisionprofile" ]; then
+if [ -e "$APP/Contents/embedded.provisionprofile" ]; then
   echo "!! signed app is missing embedded.provisionprofile" >&2
   exit 1
 fi
-if [ -e "$APP/Contents/Frameworks/Sparkle.framework" ] \
-    || otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q Sparkle; then
-  echo "!! runtime Sparkle installer must not be embedded or linked" >&2
-  exit 1
+if [ "$MODE" = "mas" ]; then
+  if [ -e "$APP/Contents/Frameworks/Sparkle.framework" ] \
+      || otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q Sparkle; then
+    echo "!! Mac App Store builds must not embed or link Sparkle" >&2
+    exit 1
+  fi
+else
+  if [ ! -d "$APP/Contents/Frameworks/Sparkle.framework" ]; then
+    echo "!! Direct distribution builds require Sparkle.framework in Frameworks/" >&2
+    exit 1
+  fi
+  if ! otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q Sparkle; then
+    echo "!! Direct distribution builds must link Sparkle" >&2
+    exit 1
+  fi
 fi
 if [ "$MODE" = "mas" ]; then
   for key in SUAutomaticallyUpdate SUEnableAutomaticChecks SUFeedURL SUPublicEDKey SUScheduledCheckInterval; do

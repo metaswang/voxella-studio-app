@@ -1,68 +1,92 @@
 import AppKit
 import Foundation
-import Observation
 
-enum AppUpdateStatus: Equatable, Sendable {
-    case idle
-    case checking
-    case upToDate
-    case available(AppUpdateRelease)
-    case unsupportedSystem(AppUpdateRelease)
-    case failed(String)
-}
+#if SPARKLE_UPDATES
+import Sparkle
+#endif
 
 @MainActor
 protocol AppUpdateControlling: AnyObject {
     var isAvailable: Bool { get }
     var canCheckForUpdates: Bool { get }
     var automaticallyChecksForUpdates: Bool { get }
-    var status: AppUpdateStatus { get }
-
+    
     func start()
     func checkForUpdates()
     func setAutomaticallyChecksForUpdates(_ enabled: Bool)
-    func openDownload()
 }
 
-protocol AppUpdateFetching: Sendable {
-    func data(from url: URL) async throws -> Data
-}
+#if SPARKLE_UPDATES && !MAC_APP_STORE
 
-struct URLSessionAppUpdateFetcher: AppUpdateFetching {
-    func data(from url: URL) async throws -> Data {
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 20
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            throw URLError(.badServerResponse)
+@MainActor
+final class SparkleAppUpdater: NSObject, AppUpdateControlling, SPUUpdaterDelegate {
+    static let shared = SparkleAppUpdater()
+    
+    private var updaterController: SPUStandardUpdaterController?
+    private(set) var isAvailable = false
+    private(set) var canCheckForUpdates = false
+    
+    var automaticallyChecksForUpdates: Bool {
+        get { updaterController?.updater.automaticallyChecksForUpdates ?? true }
+    }
+    
+    override private init() {
+        super.init()
+    }
+    
+    func start() {
+        guard Bundle.main.bundleURL.pathExtension == "app" else { return }
+        guard Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil else { return }
+        
+        do {
+            let controller = SPUStandardUpdaterController(
+                startingUpdater: true,
+                updaterDelegate: self,
+                userDriverDelegate: nil
+            )
+            updaterController = controller
+            isAvailable = true
+            canCheckForUpdates = true
+        } catch {
+            print("Failed to initialize Sparkle updater: \(error)")
+            isAvailable = false
+            canCheckForUpdates = false
         }
-        return data
+    }
+    
+    func checkForUpdates() {
+        guard canCheckForUpdates else { return }
+        updaterController?.checkForUpdates(nil)
+    }
+    
+    func setAutomaticallyChecksForUpdates(_ enabled: Bool) {
+        updaterController?.updater.automaticallyChecksForUpdates = enabled
+    }
+    
+    // MARK: - SPUUpdaterDelegate
+    
+    nonisolated func feedURLString(for updater: SPUUpdater) -> String? {
+        MainActor.assumeIsolated {
+            Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+        }
     }
 }
 
-protocol AppUpdateOpening: Sendable {
-    func open(_ url: URL)
-}
+#else
 
-struct WorkspaceAppUpdateOpener: AppUpdateOpening {
-    func open(_ url: URL) {
-        NSWorkspace.shared.open(url)
-    }
-}
-
-@MainActor @Observable
-final class AppUpdater: NSObject, AppUpdateControlling, NSMenuItemValidation {
-    static let shared = AppUpdater()
-
+@MainActor
+final class LegacyAppUpdater: NSObject, AppUpdateControlling, NSMenuItemValidation {
+    static let shared = LegacyAppUpdater()
+    
     static let automaticCheckDefaultsKey = "voxstudio.updates.automatically-checks"
     static let lastCheckDefaultsKey = "voxstudio.updates.last-check"
     static let automaticCheckInterval: TimeInterval = 86_400
-
+    
     private(set) var isAvailable = false
     private(set) var canCheckForUpdates = false
     private(set) var automaticallyChecksForUpdates = true
     private(set) var status: AppUpdateStatus = .idle
-
+    
     @ObservationIgnored private let feedURL: URL?
     @ObservationIgnored private let currentBuild: String
     @ObservationIgnored private let currentShortVersion: String
@@ -73,7 +97,7 @@ final class AppUpdater: NSObject, AppUpdateControlling, NSMenuItemValidation {
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private var checkTask: Task<Void, Never>?
     @ObservationIgnored private var latestRelease: AppUpdateRelease?
-
+    
     override convenience init() {
         self.init(
             feedURL: Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
@@ -85,7 +109,7 @@ final class AppUpdater: NSObject, AppUpdateControlling, NSMenuItemValidation {
             opener: WorkspaceAppUpdateOpener()
         )
     }
-
+    
     init(
         feedURL: String?,
         currentBuild: String,
@@ -107,7 +131,7 @@ final class AppUpdater: NSObject, AppUpdateControlling, NSMenuItemValidation {
         super.init()
         automaticallyChecksForUpdates = defaults.object(forKey: Self.automaticCheckDefaultsKey) as? Bool ?? true
     }
-
+    
     func start() {
 #if MAC_APP_STORE
         isAvailable = false
@@ -122,16 +146,16 @@ final class AppUpdater: NSObject, AppUpdateControlling, NSMenuItemValidation {
         }
 #endif
     }
-
+    
     func checkForUpdates() {
         guard canCheckForUpdates else { return }
         performCheck()
     }
-
+    
     @objc func checkForUpdates(_ sender: Any?) {
         checkForUpdates()
     }
-
+    
     func setAutomaticallyChecksForUpdates(_ enabled: Bool) {
         automaticallyChecksForUpdates = enabled
         defaults.set(enabled, forKey: Self.automaticCheckDefaultsKey)
@@ -139,16 +163,16 @@ final class AppUpdater: NSObject, AppUpdateControlling, NSMenuItemValidation {
             checkForUpdatesIfNeeded()
         }
     }
-
+    
     func openDownload() {
         guard let latestRelease else { return }
         opener.open(latestRelease.downloadURL)
     }
-
+    
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         menuItem.action == #selector(checkForUpdates(_:)) ? canCheckForUpdates : true
     }
-
+    
     private func checkForUpdatesIfNeeded() {
         let lastCheck = defaults.object(forKey: Self.lastCheckDefaultsKey) as? Date
         if let lastCheck, now().timeIntervalSince(lastCheck) < Self.automaticCheckInterval {
@@ -156,7 +180,7 @@ final class AppUpdater: NSObject, AppUpdateControlling, NSMenuItemValidation {
         }
         performCheck()
     }
-
+    
     private func performCheck() {
         guard let feedURL, canCheckForUpdates else { return }
         checkTask?.cancel()
@@ -187,7 +211,7 @@ final class AppUpdater: NSObject, AppUpdateControlling, NSMenuItemValidation {
             }
         }
     }
-
+    
     private func apply(_ evaluation: AppUpdateEvaluation) {
         defaults.set(now(), forKey: Self.lastCheckDefaultsKey)
         switch evaluation {
@@ -202,4 +226,50 @@ final class AppUpdater: NSObject, AppUpdateControlling, NSMenuItemValidation {
             status = .unsupportedSystem(release)
         }
     }
+}
+
+enum AppUpdateStatus: Equatable, Sendable {
+    case idle
+    case checking
+    case upToDate
+    case available(AppUpdateRelease)
+    case unsupportedSystem(AppUpdateRelease)
+    case failed(String)
+}
+
+protocol AppUpdateFetching: Sendable {
+    func data(from url: URL) async throws -> Data
+}
+
+struct URLSessionAppUpdateFetcher: AppUpdateFetching {
+    func data(from url: URL) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+        return data
+    }
+}
+
+protocol AppUpdateOpening: Sendable {
+    func open(_ url: URL)
+}
+
+struct WorkspaceAppUpdateOpener: AppUpdateOpening {
+    func open(_ url: URL) {
+        NSWorkspace.shared.open(url)
+    }
+}
+
+#endif
+
+@MainActor
+enum AppUpdater {
+#if SPARKLE_UPDATES && !MAC_APP_STORE
+    static let shared: any AppUpdateControlling = SparkleAppUpdater.shared
+#else
+    static let shared: any AppUpdateControlling = LegacyAppUpdater.shared
+#endif
 }

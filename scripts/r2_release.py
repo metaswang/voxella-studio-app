@@ -26,6 +26,7 @@ DMG_NAME = "VoxStudio.dmg"
 DEFAULT_BUCKET = "vox"
 DEFAULT_ARCH = "arm64"
 DEFAULT_MINIMUM_SYSTEM_VERSION = "15.0"
+ARCHIVE_RETENTION_COUNT = 5
 
 STAGES = ("prepare", "upload", "verify", "cache-check", "promote", "postcheck")
 # Conservative byte limit; do not silently publish an uncacheable artifact.
@@ -262,6 +263,7 @@ def prepare_release(
     arch: str = DEFAULT_ARCH,
     minimum_system_version: str = DEFAULT_MINIMUM_SYSTEM_VERSION,
     origin: str = PUBLIC_ORIGIN,
+    archive_dir: Path | None = None,
 ) -> PreparedRelease:
     if not dmg_path.is_file():
         raise PublishError(f"DMG not found: {dmg_path}")
@@ -282,6 +284,24 @@ def prepare_release(
 
     staged_dmg = staging_dir / DMG_NAME
     link_or_copy(dmg_path, staged_dmg)
+    
+    # Archive full DMG for delta generation
+    if archive_dir:
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        archive_name = f"{manifest.version}-{manifest.build}-{manifest.sha256[:8]}.dmg"
+        archive_path = archive_dir / archive_name
+        if not archive_path.exists():
+            link_or_copy(staged_dmg, archive_path)
+        
+        # Retain only the last N archives
+        archives = sorted(
+            archive_dir.glob("*.dmg"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+        for old_archive in archives[ARCHIVE_RETENTION_COUNT:]:
+            old_archive.unlink()
+    
     chunk_paths = write_chunk_files(staged_dmg, staging_dir / "chunks", manifest.chunks)
     manifest_path = staging_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest_to_dict(manifest), indent=2) + "\n")
@@ -849,6 +869,7 @@ def execute_publish_stages(prepared: PreparedRelease, args: argparse.Namespace, 
 def command_prepare(args: argparse.Namespace) -> int:
     if args.delivery_mode == "cache" and args.dmg.stat().st_size > MAX_CACHEABLE_BYTES:
         raise PublishError("DMG exceeds the cache size limit; use an explicit origin downgrade")
+    archive_dir = args.repo_root / ".build" / "release-archives" if args.enable_archives else None
     prepared = prepare_release(
         dmg_path=args.dmg,
         staging_root=args.staging_root,
@@ -858,6 +879,7 @@ def command_prepare(args: argparse.Namespace) -> int:
         arch=args.arch,
         minimum_system_version=args.minimum_system_version,
         origin=args.origin,
+        archive_dir=archive_dir,
     )
     print(json.dumps({
         "identity": prepared.identity,
@@ -916,10 +938,12 @@ def command_run(args: argparse.Namespace) -> int:
     else:
         if args.delivery_mode == "cache" and args.dmg.stat().st_size > MAX_CACHEABLE_BYTES:
             raise PublishError("DMG exceeds the cache size limit; use an explicit origin downgrade")
+        archive_dir = args.repo_root / ".build" / "release-archives" if args.enable_archives else None
         prepared = prepare_release(
             dmg_path=args.dmg, staging_root=args.staging_root, version=args.version,
             build=str(args.build), signature=args.signature, arch=args.arch,
             minimum_system_version=args.minimum_system_version, origin=args.origin,
+            archive_dir=archive_dir,
         )
         print(f"prepared {prepared.identity} size={prepared.size} sha256={prepared.sha256}")
     return execute_publish_stages(prepared, args, [stage for stage in STAGES if stage in requested and stage != "prepare"])
@@ -953,6 +977,7 @@ def add_shared_arguments(parser: argparse.ArgumentParser, repo_root: Path) -> No
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--delivery-mode", choices=["cache", "origin"], default="cache")
     parser.add_argument("--origin-reason", default="")
+    parser.add_argument("--enable-archives", action="store_true", help="Archive DMGs for delta generation")
 
 
 def main() -> int:

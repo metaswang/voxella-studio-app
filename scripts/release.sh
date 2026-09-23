@@ -77,7 +77,7 @@ if [ "$RELEASE_TARGET" = "huggingface" ]; then
 fi
 
 if [ "$RELEASE_TARGET" = "r2" ] || [ "$RELEASE_TARGET" = "dmg" ]; then
-  DELIVERY_ARGS=(--delivery-mode "${RELEASE_DELIVERY_MODE:-cache}")
+  DELIVERY_ARGS=(--delivery-mode "${RELEASE_DELIVERY_MODE:-cache}" --enable-archives)
   if [ "${RELEASE_DELIVERY_MODE:-cache}" = "origin" ]; then
     DELIVERY_ARGS+=(--origin-reason "${RELEASE_ORIGIN_REASON:-}")
   fi
