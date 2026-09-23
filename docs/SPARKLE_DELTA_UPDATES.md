@@ -2,7 +2,7 @@
 
 ## Overview
 
-VoxStudio now uses Sparkle 2.9.2 for in-app updates with binary delta support. This document describes the implementation status and integration points.
+VoxStudio now uses Sparkle 2.9.2 for in-app updates with **automated binary delta support**. Binary deltas reduce update download sizes by ~90% for incremental updates.
 
 ## Architecture Changes
 
@@ -16,7 +16,7 @@ VoxStudio now uses Sparkle 2.9.2 for in-app updates with binary delta support. T
 - **Direct distribution (Developer ID)**: Sparkle.framework embedded and linked
 - **Mac App Store**: No Sparkle (MAS updates via App Store)
 - Uses SPUStandardUpdaterController for true in-app updates
-- Binary delta patches for efficient incremental updates (manual workflow)
+- **Automated binary delta patches** for efficient incremental updates
 - Full DMG always available as fallback
 
 ## Build Configuration
@@ -47,7 +47,7 @@ final class AppUpdater {
 }
 ```
 
-## Release Process with Deltas
+## Release Process with Automated Deltas
 
 ### Archive Retention (Implemented)
 - Last 5 full DMGs retained in `.build/release-archives/`
@@ -55,42 +55,44 @@ final class AppUpdater {
 - Automatic cleanup of older archives
 - Enabled via `--enable-archives` in `r2_release.py` (default on for R2 releases)
 
-### Delta Generation (Manual Workflow)
+### Delta Generation (Automated on macOS)
 
-**Status**: Script available, requires manual macOS integration
+**Status**: Fully automated on macOS release machines
 
-```bash
-./scripts/generate_delta_appcast.sh \
-  --archives-dir .build/release-archives \
-  --output /tmp/appcast-with-deltas.xml \
-  --private-key ~/.config/sparkle/sparkle_eddsa_priv.pem \
-  --download-url-prefix https://assets.voxstudio.me/app-releases/voxstudio/VERSION-BUILD-SHA
-```
+The release pipeline automatically:
+1. Detects archive count (must be ≥ 2 for deltas)
+2. Invokes Sparkle's `generate_appcast` tool to compute binary deltas
+3. Rewrites delta URLs to immutable versioned scheme: `{origin}/{OBJECT_PREFIX}/{identity}/deltas/{from-build}-to-{to-build}.delta`
+4. Merges `<sparkle:deltas>` into base appcast while preserving full DMG enclosure
+5. Uploads `.delta` files to R2 alongside full DMG
+6. Verifies delta URLs are accessible
 
-Sparkle's `generate_appcast` tool automatically:
-- Computes binary deltas between versions
-- Signs deltas with EdDSA key
-- Injects `<sparkle:deltas>` into items
-- Outputs `.delta` files to temp directory
-
-**Requirements:**
-- At least 2 archived DMGs (first release skips deltas)
-- macOS machine (BinaryDelta requires macOS)
-- EdDSA private key in `~/.config/sparkle/sparkle_eddsa_priv.pem`
+**Delta Generation Gate**: `RELEASE_ENABLE_DELTAS` environment variable
+- `auto` (default): Enable when archive count ≥ 2 AND host is macOS
+- `0`: Force disable (ships full-DMG-only appcast)
+- `1`: Force enable (errors if < 2 archives or not macOS)
 
 ### R2 Release Flow
 
 ```bash
-# Enables archive retention for future delta generation
+# Standard release (deltas enabled automatically on macOS when possible)
 RELEASE_TARGET=r2 ./scripts/release.sh
+
+# Force disable deltas (first Sparkle release)
+RELEASE_ENABLE_DELTAS=0 RELEASE_TARGET=r2 ./scripts/release.sh
+
+# Force enable deltas (will error if prerequisites not met)
+RELEASE_ENABLE_DELTAS=1 RELEASE_TARGET=r2 ./scripts/release.sh
 ```
 
 **Current behavior:**
 1. ✅ Builds and notarizes DMG
 2. ✅ Archives DMG for future delta generation
-3. ✅ Uploads full DMG to R2 with immutable versioned URL
-4. ✅ Publishes appcast with full DMG enclosure
-5. ❌ **Delta generation and upload: Manual workflow required**
+3. ✅ **Generates binary deltas** (auto, when ≥2 archives on macOS)
+4. ✅ **Uploads `.delta` files to R2** with immutable URLs
+5. ✅ **Merges deltas into appcast** while preserving full DMG enclosure
+6. ✅ **Verifies delta URLs** during verify/postcheck stages
+7. ✅ Publishes appcast with both full DMG and deltas
 
 ## Appcast Structure
 
@@ -98,24 +100,30 @@ RELEASE_TARGET=r2 ./scripts/release.sh
 
 ```xml
 <enclosure
-    url="https://assets.voxstudio.me/app-releases/voxstudio/0.4.8-46-a1b2c3d4/VoxStudio.dmg"
+    url="https://assets.voxstudio.me/app-releases/voxstudio/releases/0.4.8-46/a1b2c3d4/VoxStudio.dmg"
     length="167890123"
     type="application/octet-stream"
     sparkle:edSignature="..." />
 ```
 
-### Delta Updates (Manual Addition)
+### Delta Updates (Automated from N+1)
 
 ```xml
 <sparkle:deltas>
     <enclosure
-        url="https://assets.voxstudio.me/app-releases/voxstudio/0.4.8-46-a1b2c3d4/delta-from-0.4.7-45.delta"
+        url="https://assets.voxstudio.me/app-releases/voxstudio/releases/0.4.8-46/a1b2c3d4/deltas/45-to-46.delta"
         length="8901234"
         type="application/octet-stream"
         sparkle:edSignature="..."
-        sparkle:deltaFrom="0.4.7-45" />
+        sparkle:deltaFrom="45" />
 </sparkle:deltas>
 ```
+
+**Delta URL Scheme**: `{origin}/{OBJECT_PREFIX}/{identity}/deltas/{from-build}-to-{to-build}.delta`
+
+Where:
+- `identity` = `releases/{version}-{build}/{sha256_8}`
+- Immutable, versioned, no "latest" redirects
 
 ## Migration Sequencing
 
@@ -123,17 +131,18 @@ RELEASE_TARGET=r2 ./scripts/release.sh
 
 1. ✅ Ship full DMG with embedded Sparkle.framework
 2. ✅ Appcast contains only full DMG enclosure (no deltas)
+   - Enforced by gate: `RELEASE_ENABLE_DELTAS=auto` with archive count = 1
 3. Old clients (pre-Sparkle) see informational update; manual browser download
 4. New clients (with Sparkle) install in-app via full DMG
 5. Archive retained for future delta generation
 
-### Second Release (N+1) - Delta Workflow
+### Second Release (N+1) - Deltas Automated
 
 1. Archive from N available in `.build/release-archives/`
-2. **Manual step**: Run `generate_delta_appcast.sh` on macOS
-3. **Manual step**: Upload generated `.delta` files to R2
-4. **Manual step**: Merge delta appcast into promoted appcast
-5. Clients that installed N can apply delta; others download full DMG
+2. ✅ **Automatic**: `r2_release.py` generates deltas via Sparkle `generate_appcast`
+3. ✅ **Automatic**: Uploads `.delta` files to R2 with immutable URLs
+4. ✅ **Automatic**: Merges `<sparkle:deltas>` into promoted appcast
+5. Clients on N can apply delta; others download full DMG
 
 ## Performance
 
@@ -143,15 +152,36 @@ RELEASE_TARGET=r2 ./scripts/release.sh
 
 ## Known Limitations
 
-1. **macOS-Only Tooling**: `generate_appcast` and BinaryDelta require macOS; Linux cloud VM cannot generate deltas
-2. **Manual Delta Upload**: `.delta` files must be manually uploaded to R2; automated upload not yet implemented
-3. **First-Release Full-Only**: Old clients cannot apply deltas until they upgrade to a Sparkle-enabled build
-4. **R2 Delta Integration**: Requires defining delta URL scheme and updating upload/verify stages
+1. **macOS-Only Delta Generation**: `generate_appcast` and BinaryDelta require macOS
+   - Gate detects platform: Linux releases ship full-DMG-only automatically
+2. **First-Release Full-Only**: Old clients cannot apply deltas until they upgrade to a Sparkle-enabled build
+   - Enforced by archive count gate (< 2 archives → no deltas)
+3. **EdDSA Private Key Required**: Must be in `~/.config/sparkle/sparkle_eddsa_priv.pem` or specified location
+
+## Troubleshooting
+
+### Delta Generation Skipped
+
+Check the release log for skip reason:
+- `"first Sparkle release (archive count: 1, need ≥2)"` → Expected for first release
+- `"not on macOS (BinaryDelta requires Darwin)"` → Run on macOS release machine
+- `"disabled via RELEASE_ENABLE_DELTAS=0"` → Remove env override
+
+### Delta Upload Failed
+
+- Verify R2 credentials are set
+- Check `.delta` files exist in staging: `.build/r2-release/{version}-{build}/{sha256}/deltas/`
+- Confirm Sparkle tools available: `.build/sparkle-tools/bin/generate_appcast`
+
+### Clients Not Applying Deltas
+
+- Verify appcast contains `<sparkle:deltas>` element
+- Confirm delta URLs are accessible (check verify stage output)
+- Ensure full DMG enclosure is primary (Sparkle falls back on delta failure)
 
 ## References
 
 - [Sparkle 2.x Documentation](https://sparkle-project.org/documentation/)
 - [BinaryDelta](https://github.com/sparkle-project/Sparkle/tree/2.x/BinaryDelta)
-- `scripts/generate_delta_appcast.sh` — Delta appcast generation script
-- `scripts/r2_release.py` — Archive retention (`--enable-archives`)
+- `scripts/r2_release.py` — Delta generation + upload automation
 - `docs/MIGRATION_SPARKLE.md` — Deployment checklist

@@ -115,21 +115,24 @@ if archive_dir:
         old_archive.unlink()
 ```
 
-### Delta Generation (Manual macOS Workflow)
+### Delta Generation (Automated on macOS)
 
-**Status**: Not yet integrated into `release.sh`; requires manual execution on macOS
+**Status**: Fully automated in R2 release flow
 
-```bash
-# Generate delta appcast from archived DMGs
-./scripts/generate_delta_appcast.sh \
-  --archives-dir .build/release-archives \
-  --output /tmp/appcast-with-deltas.xml \
-  --private-key ~/.config/sparkle/sparkle_eddsa_priv.pem \
-  --download-url-prefix https://assets.voxstudio.me/app-releases/voxstudio/VERSION-BUILD-SHA
+The `r2_release.py` prepare stage automatically:
+1. Detects if delta generation is feasible (≥2 archives + macOS)
+2. Invokes Sparkle's `generate_appcast` with EdDSA private key
+3. Rewrites delta URLs to immutable scheme: `{origin}/{OBJECT_PREFIX}/{identity}/deltas/{from-build}-to-{to-build}.delta`
+4. Merges `<sparkle:deltas>` into base appcast while preserving full DMG enclosure
+5. Uploads `.delta` files during upload stage with immutable URLs
+6. Verifies delta URLs during verify stage
 
-# Manually upload .delta files to R2 (not automated)
-# Manually merge delta appcast into promoted appcast (not automated)
-```
+**Gate**: `RELEASE_ENABLE_DELTAS` environment variable (default: `auto`)
+- `auto`: Enable when archive count ≥ 2 AND host is Darwin
+- `0`: Force disable (first release or troubleshooting)
+- `1`: Force enable (errors if prerequisites not met)
+
+**No manual steps required** on macOS release machines.
 
 ## Testing Plan
 
@@ -185,10 +188,11 @@ if archive_dir:
 
 ## Known Limitations
 
-1. **macOS-Only Delta Generation**: Cannot generate deltas on Linux cloud VM
-2. **Manual Delta Upload**: `.delta` files must be manually uploaded to R2
-3. **First-Release Full-Only**: Binary deltas unavailable until N+1
-4. **R2 URL Scheme**: Delta URL structure not yet defined in `r2_release.py`
+1. **macOS-Only Delta Generation**: `generate_appcast` and BinaryDelta require macOS
+   - Automated gate detects platform: Linux releases skip deltas automatically (`RELEASE_ENABLE_DELTAS=auto`)
+2. **First-Release Full-Only**: Binary deltas unavailable until N+1
+   - Enforced by archive count gate (< 2 archives → no deltas)
+3. **EdDSA Private Key Required**: Must be in `~/.config/sparkle/sparkle_eddsa_priv.pem` (default Sparkle location)
 
 ## Post-Migration Monitoring
 
