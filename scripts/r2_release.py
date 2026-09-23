@@ -6,6 +6,9 @@ import argparse
 import hashlib
 import json
 import os
+import platform
+import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -26,6 +29,7 @@ DMG_NAME = "VoxStudio.dmg"
 DEFAULT_BUCKET = "vox"
 DEFAULT_ARCH = "arm64"
 DEFAULT_MINIMUM_SYSTEM_VERSION = "15.0"
+ARCHIVE_RETENTION_COUNT = 5
 
 STAGES = ("prepare", "upload", "verify", "cache-check", "promote", "postcheck")
 # Conservative byte limit; do not silently publish an uncacheable artifact.
@@ -81,6 +85,28 @@ class PreparedRelease:
     appcast_url: str
 
 
+@dataclass(frozen=True)
+class DeltaArtifact:
+    """Represents a binary delta patch file."""
+    from_version: str
+    from_build: str
+    to_version: str
+    to_build: str
+    local_path: Path
+    size: int
+    sha256: str
+    signature: str
+    
+    @property
+    def filename(self) -> str:
+        """Delta filename format: {from_build}-to-{to_build}.delta"""
+        return f"{self.from_build}-to-{self.to_build}.delta"
+    
+    def versioned_url(self, to_version: str, to_build: str, to_sha256: str, origin: str = PUBLIC_ORIGIN) -> str:
+        """Public CDN URL under /downloads/voxstudio/releases/.../deltas/"""
+        return versioned_delta_url(to_version, to_build, to_sha256, self.filename, origin)
+
+
 class PublishError(RuntimeError):
     pass
 
@@ -91,6 +117,16 @@ def versioned_dmg_path(version: str, build: str, sha256: str) -> str:
 
 def versioned_dmg_url(version: str, build: str, sha256: str, origin: str = PUBLIC_ORIGIN) -> str:
     return f"{origin.rstrip('/')}{versioned_dmg_path(version, build, sha256)}"
+
+
+def versioned_delta_path(version: str, build: str, sha256: str, delta_filename: str) -> str:
+    """Public CDN path for delta files under /downloads/voxstudio/releases/..."""
+    return f"/downloads/voxstudio/releases/{version}-{build}/{sha256}/deltas/{delta_filename}"
+
+
+def versioned_delta_url(version: str, build: str, sha256: str, delta_filename: str, origin: str = PUBLIC_ORIGIN) -> str:
+    """Public CDN URL for delta files."""
+    return f"{origin.rstrip('/')}{versioned_delta_path(version, build, sha256, delta_filename)}"
 
 
 def release_identity(version: str, build: str, sha256: str) -> str:
@@ -202,6 +238,199 @@ def build_appcast(
 """
 
 
+def merge_deltas_into_appcast(
+    base_appcast_xml: str,
+    deltas: list[DeltaArtifact],
+    version: str,
+    build: str,
+    sha256: str,
+    origin: str = PUBLIC_ORIGIN,
+) -> str:
+    """
+    Merge <sparkle:deltas> into the base appcast while preserving the full DMG enclosure.
+    """
+    if not deltas:
+        return base_appcast_xml
+    
+    # Parse base appcast
+    tree = ET.ElementTree(ET.fromstring(base_appcast_xml))
+    root = tree.getroot()
+    ns = {"sparkle": "http://www.andymatuschak.org/xml-namespaces/sparkle"}
+    ET.register_namespace("sparkle", ns["sparkle"])
+    
+    channel = root.find("channel")
+    if channel is None:
+        raise PublishError("Invalid appcast: missing <channel>")
+    
+    item = channel.find("item")
+    if item is None:
+        raise PublishError("Invalid appcast: missing <item>")
+    
+    # Find the primary enclosure (full DMG)
+    enclosure = item.find("enclosure")
+    if enclosure is None:
+        raise PublishError("Invalid appcast: missing <enclosure>")
+    
+    # Create <sparkle:deltas> element
+    deltas_elem = ET.Element(f"{{{ns['sparkle']}}}deltas")
+    for delta in deltas:
+        delta_enclosure = ET.Element("enclosure")
+        delta_enclosure.set("url", delta.versioned_url(version, build, sha256, origin))
+        delta_enclosure.set("length", str(delta.size))
+        delta_enclosure.set("type", "application/octet-stream")
+        delta_enclosure.set(f"{{{ns['sparkle']}}}edSignature", delta.signature)
+        delta_enclosure.set(f"{{{ns['sparkle']}}}deltaFrom", delta.from_build)
+        deltas_elem.append(delta_enclosure)
+    
+    # Insert <sparkle:deltas> after primary enclosure
+    enclosure_index = list(item).index(enclosure)
+    item.insert(enclosure_index + 1, deltas_elem)
+    
+    # Serialize back to XML
+    return ET.tostring(root, encoding="unicode", xml_declaration=False)
+
+
+def generate_deltas_with_sparkle(
+    *,
+    archive_dir: Path,
+    current_dmg: Path,
+    current_version: str,
+    current_build: str,
+    sparkle_tools_root: Path,
+    output_dir: Path,
+    private_key_path: Path | None = None,
+) -> list[DeltaArtifact]:
+    """
+    Generate binary deltas using Sparkle's generate_appcast tool.
+    Writes .delta files to output_dir and returns DeltaArtifact list with staged paths.
+    """
+    if platform.system() != "Darwin":
+        raise PublishError("Delta generation requires macOS (Sparkle BinaryDelta)")
+    
+    generate_appcast = sparkle_tools_root / "bin" / "generate_appcast"
+    if not generate_appcast.is_file():
+        raise PublishError(f"generate_appcast tool not found: {generate_appcast}")
+    
+    # Find private key - honor env var or fallback to default Sparkle location
+    if private_key_path is None:
+        private_key_env = os.environ.get("SPARKLE_ED_KEY_FILE")
+        if private_key_env:
+            private_key_path = Path(private_key_env)
+        else:
+            private_key_path = Path.home() / ".config" / "sparkle" / "sparkle_eddsa_priv.pem"
+    if not private_key_path.is_file():
+        raise PublishError(f"Sparkle EdDSA private key not found: {private_key_path}")
+    
+    # Prepare temp directory with archives for Sparkle
+    import tempfile
+    import shutil
+    temp_dir = Path(tempfile.mkdtemp(prefix="voxstudio-deltas-"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        # Copy current DMG with naming Sparkle expects: {version} {build}.dmg
+        current_copy = temp_dir / f"{current_version} {current_build}.dmg"
+        shutil.copy2(current_dmg, current_copy)
+        
+        # Copy previous archives (up to ARCHIVE_RETENTION_COUNT - 1)
+        archives = sorted(
+            archive_dir.glob("*.dmg"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+        for archive in archives[:ARCHIVE_RETENTION_COUNT - 1]:
+            # Parse version-build from archive name: {version}-{build}-{sha8}.dmg
+            parts = archive.stem.rsplit("-", 2)
+            if len(parts) >= 2:
+                arch_version, arch_build = parts[0], parts[1]
+                # Copy with Sparkle-expected naming
+                shutil.copy2(archive, temp_dir / f"{arch_version} {arch_build}.dmg")
+        
+        # Run generate_appcast
+        cmd = [
+            str(generate_appcast),
+            str(temp_dir),
+            "--ed-key-file", str(private_key_path),
+            "-o", str(temp_dir / "appcast.xml"),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            raise PublishError(f"generate_appcast failed: {result.stderr}")
+        
+        # Parse generated appcast to extract delta metadata
+        appcast_xml = (temp_dir / "appcast.xml").read_text()
+        tree = ET.ElementTree(ET.fromstring(appcast_xml))
+        root = tree.getroot()
+        ns = {"sparkle": "http://www.andymatuschak.org/xml-namespaces/sparkle"}
+        
+        deltas_artifacts = []
+        channel = root.find("channel")
+        if channel is None:
+            return []
+        
+        # Find the item matching current version
+        for item in channel.findall("item"):
+            version_elem = item.find(f"sparkle:version", ns)
+            if version_elem is None or version_elem.text != current_build:
+                continue
+            
+            deltas_elem = item.find(f"sparkle:deltas", ns)
+            if deltas_elem is None:
+                continue
+            
+            for delta_enc in deltas_elem.findall("enclosure"):
+                from_build = delta_enc.get(f"{{{ns['sparkle']}}}deltaFrom", "")
+                signature = delta_enc.get(f"{{{ns['sparkle']}}}edSignature", "")
+                
+                # Find matching .delta file in temp_dir
+                # Sparkle names: {to_version} {to_build} {from_build}.delta
+                expected_delta_name = f"{current_version} {current_build} {from_build}.delta"
+                matching_delta = temp_dir / expected_delta_name
+                
+                if not matching_delta.is_file():
+                    # Fallback: search by from_build in filename
+                    delta_files = list(temp_dir.glob("*.delta"))
+                    for df in delta_files:
+                        if f" {from_build}.delta" in df.name:
+                            matching_delta = df
+                            break
+                
+                if not matching_delta.is_file():
+                    continue
+                
+                delta_size = matching_delta.stat().st_size
+                delta_sha256 = file_sha256(matching_delta)
+                
+                # Parse from_version from archives
+                from_version = ""
+                for arch in archives:
+                    # Match by build number
+                    parts = arch.stem.rsplit("-", 2)
+                    if len(parts) >= 2 and parts[1] == from_build:
+                        from_version = parts[0]
+                        break
+                
+                # Copy delta to output_dir BEFORE temp cleanup
+                output_filename = f"{from_build}-to-{current_build}.delta"
+                staged_delta_path = output_dir / output_filename
+                shutil.copy2(matching_delta, staged_delta_path)
+                
+                deltas_artifacts.append(DeltaArtifact(
+                    from_version=from_version,
+                    from_build=from_build,
+                    to_version=current_version,
+                    to_build=current_build,
+                    local_path=staged_delta_path,
+                    size=delta_size,
+                    sha256=delta_sha256,
+                    signature=signature,
+                ))
+        
+        return deltas_artifacts
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def build_stable_pointer(manifest: ReleaseManifest) -> StablePointer:
     identity = release_identity(manifest.version, manifest.build, manifest.sha256)
     return StablePointer(
@@ -262,6 +491,9 @@ def prepare_release(
     arch: str = DEFAULT_ARCH,
     minimum_system_version: str = DEFAULT_MINIMUM_SYSTEM_VERSION,
     origin: str = PUBLIC_ORIGIN,
+    archive_dir: Path | None = None,
+    enable_deltas: str = "auto",
+    sparkle_tools_root: Path | None = None,
 ) -> PreparedRelease:
     if not dmg_path.is_file():
         raise PublishError(f"DMG not found: {dmg_path}")
@@ -282,11 +514,94 @@ def prepare_release(
 
     staged_dmg = staging_dir / DMG_NAME
     link_or_copy(dmg_path, staged_dmg)
+    
+    # Archive full DMG for delta generation
+    archive_count_after_retention = 1
+    if archive_dir:
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        archive_name = f"{manifest.version}-{manifest.build}-{manifest.sha256[:8]}.dmg"
+        archive_path = archive_dir / archive_name
+        if not archive_path.exists():
+            link_or_copy(staged_dmg, archive_path)
+        
+        # Retain only the last N archives
+        archives = sorted(
+            archive_dir.glob("*.dmg"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+        for old_archive in archives[ARCHIVE_RETENTION_COUNT:]:
+            old_archive.unlink()
+        
+        archive_count_after_retention = len(list(archive_dir.glob("*.dmg")))
+    
+    # Determine if deltas should be generated
+    generate_deltas = False
+    delta_skip_reason = ""
+    if enable_deltas == "0":
+        delta_skip_reason = "disabled via RELEASE_ENABLE_DELTAS=0"
+    elif enable_deltas == "1":
+        if archive_count_after_retention < 2:
+            raise PublishError(f"RELEASE_ENABLE_DELTAS=1 but only {archive_count_after_retention} archive(s) available (need ≥2)")
+        if platform.system() != "Darwin":
+            raise PublishError("RELEASE_ENABLE_DELTAS=1 but not on macOS (required for BinaryDelta)")
+        generate_deltas = True
+    elif enable_deltas == "auto":
+        if archive_count_after_retention < 2:
+            delta_skip_reason = f"first Sparkle release (archive count: {archive_count_after_retention}, need ≥2)"
+        elif platform.system() != "Darwin":
+            delta_skip_reason = "not on macOS (BinaryDelta requires Darwin)"
+        else:
+            generate_deltas = True
+    else:
+        raise PublishError(f"Invalid enable_deltas value: {enable_deltas} (must be 'auto', '0', or '1')")
+    
+    # Generate deltas if policy allows
+    deltas: list[DeltaArtifact] = []
+    if generate_deltas and archive_dir and sparkle_tools_root:
+        print(f"==> Generating binary deltas ({archive_count_after_retention} archives available)")
+        deltas_dir = staging_dir / "deltas"
+        deltas_dir.mkdir(exist_ok=True)
+        
+        deltas = generate_deltas_with_sparkle(
+            archive_dir=archive_dir,
+            current_dmg=staged_dmg,
+            current_version=manifest.version,
+            current_build=manifest.build,
+            sparkle_tools_root=sparkle_tools_root,
+            output_dir=deltas_dir,
+        )
+        print(f"    Generated {len(deltas)} delta(s)")
+    elif delta_skip_reason:
+        print(f"==> Skipping delta generation: {delta_skip_reason}")
+    
     chunk_paths = write_chunk_files(staged_dmg, staging_dir / "chunks", manifest.chunks)
     manifest_path = staging_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest_to_dict(manifest), indent=2) + "\n")
+    
+    # Build appcast and merge deltas if present
+    appcast_xml = build_appcast(manifest, origin=origin)
+    if deltas:
+        appcast_xml = merge_deltas_into_appcast(appcast_xml, deltas, manifest.version, manifest.build, manifest.sha256, origin)
     appcast_path = staging_dir / "appcast.xml"
-    appcast_path.write_text(build_appcast(manifest, origin=origin))
+    appcast_path.write_text(appcast_xml)
+    
+    # Save delta metadata to state
+    deltas_json = [
+        {
+            "from_version": d.from_version,
+            "from_build": d.from_build,
+            "to_version": d.to_version,
+            "to_build": d.to_build,
+            "local_path": str(d.local_path),
+            "size": d.size,
+            "sha256": d.sha256,
+            "signature": d.signature,
+            "filename": d.filename,
+        }
+        for d in deltas
+    ]
+    
     pointer = build_stable_pointer(manifest)
     (staging_dir / "stable.json").write_text(json.dumps(asdict(pointer), indent=2) + "\n")
     state_path = staging_root / "state.json"
@@ -301,6 +616,7 @@ def prepare_release(
             "size": manifest.size,
             "staging_dir": str(staging_dir),
             "completed": ["prepare"],
+            "deltas": deltas_json,
         },
     )
     return PreparedRelease(
@@ -489,6 +805,7 @@ def upload_prepared(
     prefix: str = OBJECT_PREFIX,
     dry_run: bool = False,
     log: Callable[[str], None] = print,
+    state: dict[str, Any] | None = None,
 ) -> list[str]:
     uploads = [
         (object_key(prepared.identity, DMG_NAME, prefix), prepared.dmg_path, "application/x-apple-diskimage", prepared.sha256),
@@ -504,6 +821,16 @@ def upload_prepared(
                 file_sha256(chunk_path),
             )
         )
+    
+    # Add delta files if present
+    if state and "deltas" in state:
+        for delta_info in state["deltas"]:
+            delta_path = Path(delta_info["local_path"])
+            if delta_path.is_file():
+                delta_key = object_key(prepared.identity, f"deltas/{delta_info['filename']}", prefix)
+                uploads.append(
+                    (delta_key, delta_path, "application/octet-stream", delta_info["sha256"])
+                )
 
     written: list[str] = []
     for key, path, content_type, digest in uploads:
@@ -563,7 +890,7 @@ def download_and_hash(url: str, expected_size: int | None = None,
 
 
 def verify_prepared(prepared: PreparedRelease, *, origin: str = PUBLIC_ORIGIN,
-                    log: Callable[[str], None] = print) -> dict[str, Any]:
+                    log: Callable[[str], None] = print, staging_root: Path | None = None) -> dict[str, Any]:
     url = versioned_dmg_url(prepared.version, prepared.build, prepared.sha256, origin)
     log(f"verify {url}")
     evidence: dict[str, Any] = {}
@@ -583,8 +910,42 @@ def verify_prepared(prepared: PreparedRelease, *, origin: str = PUBLIC_ORIGIN,
         if error.code != 404:
             raise PublishError(f"failed to read live appcast: HTTP {error.code}") from error
         current_appcast = ""
-    if url not in Path(prepared.appcast_path).read_text():
+    
+    prepared_appcast_xml = Path(prepared.appcast_path).read_text()
+    if url not in prepared_appcast_xml:
         raise PublishError("prepared appcast enclosure is not the immutable version URL")
+    
+    # Verify delta URLs if present in prepared appcast
+    state = load_state(staging_root / "state.json") if staging_root else {}
+    deltas_info = state.get("deltas", [])
+    if deltas_info:
+        log(f"verifying {len(deltas_info)} delta URL(s)")
+        # Parse appcast to extract delta URLs
+        tree = ET.ElementTree(ET.fromstring(prepared_appcast_xml))
+        root = tree.getroot()
+        ns = {"sparkle": "http://www.andymatuschak.org/xml-namespaces/sparkle"}
+        channel = root.find("channel")
+        if channel:
+            for item in channel.findall("item"):
+                deltas_elem = item.find(f"sparkle:deltas", ns)
+                if deltas_elem is not None:
+                    for delta_enc in deltas_elem.findall("enclosure"):
+                        delta_url = delta_enc.get("url", "")
+                        expected_length = delta_enc.get("length", "")
+                        if delta_url:
+                            # HEAD request to verify delta is accessible
+                            delta_request = urllib.request.Request(delta_url, method="HEAD", headers={"User-Agent": PUBLIC_USER_AGENT})
+                            try:
+                                with urllib.request.urlopen(delta_request, timeout=30) as resp:
+                                    if resp.status != 200:
+                                        raise PublishError(f"delta URL {delta_url} returned status {resp.status}")
+                                    actual_length = resp.headers.get("Content-Length", "")
+                                    if expected_length and actual_length and actual_length != expected_length:
+                                        raise PublishError(f"delta URL {delta_url} Content-Length {actual_length} != expected {expected_length}")
+                                log(f"verified delta URL: {delta_url} (length={actual_length})")
+                            except urllib.error.URLError as e:
+                                raise PublishError(f"delta URL {delta_url} is not accessible: {e}") from e
+    
     log(f"verified size={size} sha256={digest} live_appcast_has_this_release={url in current_appcast}")
     if evidence.get("etag") != f'"{prepared.sha256}"':
         raise PublishError("download ETag does not match prepared SHA-256")
@@ -806,7 +1167,7 @@ def execute_publish_stages(prepared: PreparedRelease, args: argparse.Namespace, 
                 completed.discard(stage)
             if stage == "upload":
                 if stage not in completed:
-                    upload_prepared(prepared, client=client, bucket=settings["bucket"])
+                    upload_prepared(prepared, client=client, bucket=settings["bucket"], state=load_state(args.staging_root / "state.json"))
                 done(stage)
             elif stage == "verify":
                 # A fresh verification establishes a fresh compare-and-swap baseline.
@@ -814,7 +1175,7 @@ def execute_publish_stages(prepared: PreparedRelease, args: argparse.Namespace, 
                 completed.difference_update({"verify", "cache-check", "postcheck"})
                 state.update(expected_stable=snapshot, completed=sorted(completed))
                 save_artifact_state(prepared, args, state)
-                evidence = verify_prepared(prepared, origin=args.origin)
+                evidence = verify_prepared(prepared, origin=args.origin, staging_root=args.staging_root)
                 done(stage, evidence)
             elif stage == "cache-check":
                 if "verify" not in completed:
@@ -849,6 +1210,9 @@ def execute_publish_stages(prepared: PreparedRelease, args: argparse.Namespace, 
 def command_prepare(args: argparse.Namespace) -> int:
     if args.delivery_mode == "cache" and args.dmg.stat().st_size > MAX_CACHEABLE_BYTES:
         raise PublishError("DMG exceeds the cache size limit; use an explicit origin downgrade")
+    archive_dir = args.repo_root / ".build" / "release-archives" if args.enable_archives else None
+    sparkle_tools_root = args.repo_root / ".build" / "sparkle-tools" if platform.system() == "Darwin" else None
+    enable_deltas = os.environ.get("RELEASE_ENABLE_DELTAS", "auto")
     prepared = prepare_release(
         dmg_path=args.dmg,
         staging_root=args.staging_root,
@@ -858,6 +1222,9 @@ def command_prepare(args: argparse.Namespace) -> int:
         arch=args.arch,
         minimum_system_version=args.minimum_system_version,
         origin=args.origin,
+        archive_dir=archive_dir,
+        enable_deltas=enable_deltas,
+        sparkle_tools_root=sparkle_tools_root,
     )
     print(json.dumps({
         "identity": prepared.identity,
@@ -916,10 +1283,14 @@ def command_run(args: argparse.Namespace) -> int:
     else:
         if args.delivery_mode == "cache" and args.dmg.stat().st_size > MAX_CACHEABLE_BYTES:
             raise PublishError("DMG exceeds the cache size limit; use an explicit origin downgrade")
+        archive_dir = args.repo_root / ".build" / "release-archives" if args.enable_archives else None
+        sparkle_tools_root = args.repo_root / ".build" / "sparkle-tools" if platform.system() == "Darwin" else None
+        enable_deltas = os.environ.get("RELEASE_ENABLE_DELTAS", "auto")
         prepared = prepare_release(
             dmg_path=args.dmg, staging_root=args.staging_root, version=args.version,
             build=str(args.build), signature=args.signature, arch=args.arch,
             minimum_system_version=args.minimum_system_version, origin=args.origin,
+            archive_dir=archive_dir, enable_deltas=enable_deltas, sparkle_tools_root=sparkle_tools_root,
         )
         print(f"prepared {prepared.identity} size={prepared.size} sha256={prepared.sha256}")
     return execute_publish_stages(prepared, args, [stage for stage in STAGES if stage in requested and stage != "prepare"])
@@ -953,6 +1324,7 @@ def add_shared_arguments(parser: argparse.ArgumentParser, repo_root: Path) -> No
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--delivery-mode", choices=["cache", "origin"], default="cache")
     parser.add_argument("--origin-reason", default="")
+    parser.add_argument("--enable-archives", action="store_true", help="Archive DMGs for delta generation")
 
 
 def main() -> int:

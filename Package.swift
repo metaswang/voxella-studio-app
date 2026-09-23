@@ -10,7 +10,7 @@ let package = Package(
     ],
     traits: [
         .trait(name: "BundledSpeech", description: "Include on-device speech models and MLX."),
-        .trait(name: "SparkleUpdates", description: "Reserved for direct-distribution update checks. The Sparkle installer is not linked."),
+        .trait(name: "SparkleUpdates", description: "Link Sparkle.framework for in-app updates in direct distribution builds."),
         .trait(name: "MacAppStore", description: "Build the Mac App Store purchase surface."),
     ],
     dependencies: [
@@ -117,6 +117,11 @@ let package = Package(
                     name: "HuggingFace",
                     package: "swift-huggingface",
                     condition: .when(traits: ["BundledSpeech"])
+                ),
+                .product(
+                    name: "Sparkle",
+                    package: "Sparkle",
+                    condition: .when(traits: ["SparkleUpdates"])
                 ),
                 "CSQLiteVec",
             ],

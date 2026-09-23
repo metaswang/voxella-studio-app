@@ -55,6 +55,8 @@ echo "==> Building ($CONFIG)"
 TRAITS="BundledSpeech"
 if [ "$MODE" = "mas" ]; then
   TRAITS="$TRAITS,MacAppStore"
+else
+  TRAITS="$TRAITS,SparkleUpdates"
 fi
 BUILD_ARGS=(-c "$CONFIG" --traits "$TRAITS")
 
@@ -197,6 +199,23 @@ echo "==> Clearing extended attributes before signing"
 xattr -cr "$APP"
 
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/VoxStudio"
+
+if [ "$MODE" != "mas" ]; then
+  echo "==> Embedding Sparkle.framework for in-app updates"
+  SPARKLE_FRAMEWORK="$BIN_DIR/Sparkle.framework"
+  if [ ! -d "$SPARKLE_FRAMEWORK" ]; then
+    echo "!! Sparkle.framework not found in $BIN_DIR" >&2
+    exit 1
+  fi
+  cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/"
+  if [ ! -d "$APP/Contents/Frameworks/Sparkle.framework" ]; then
+    echo "!! Failed to copy Sparkle.framework into app bundle" >&2
+    exit 1
+  fi
+  echo "==> Clearing extended attributes on Sparkle.framework"
+  xattr -cr "$APP/Contents/Frameworks/Sparkle.framework"
+fi
+
 touch "$APP"
 
 ensure_sparkle_tools() {
@@ -382,6 +401,24 @@ echo "==> Codesigning main app ($SIGNING_IDENTITY / $TEAM_IDENTIFIER)"
 if [ "$MODE" = "mas" ]; then
   bash scripts/check-mas-billing.sh "$APP"
 fi
+
+# Sign Sparkle.framework inside-out before signing the app
+if [ "$MODE" != "mas" ] && [ -d "$APP/Contents/Frameworks/Sparkle.framework" ]; then
+  echo "==> Codesigning Sparkle.framework"
+  # Sign XPCServices if present
+  if [ -d "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" ]; then
+    for xpc in "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices"/*.xpc; do
+      if [ -e "$xpc" ]; then
+        echo "    Signing $(basename "$xpc")"
+        codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$xpc"
+      fi
+    done
+  fi
+  # Sign the framework itself
+  codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+  codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$APP/Contents/Frameworks/Sparkle.framework"
+fi
+
 CODESIGN_ARGS=(--force --sign "$SIGNING_IDENTITY" --entitlements "$SIGNING_ENTITLEMENTS")
 if [ "$MODE" != "mas" ]; then
   CODESIGN_ARGS+=(--options runtime)
@@ -427,10 +464,21 @@ if [ ! -e "$APP/Contents/embedded.provisionprofile" ]; then
   echo "!! signed app is missing embedded.provisionprofile" >&2
   exit 1
 fi
-if [ -e "$APP/Contents/Frameworks/Sparkle.framework" ] \
-    || otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q Sparkle; then
-  echo "!! runtime Sparkle installer must not be embedded or linked" >&2
-  exit 1
+if [ "$MODE" = "mas" ]; then
+  if [ -e "$APP/Contents/Frameworks/Sparkle.framework" ] \
+      || otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q Sparkle; then
+    echo "!! Mac App Store builds must not embed or link Sparkle" >&2
+    exit 1
+  fi
+else
+  if [ ! -d "$APP/Contents/Frameworks/Sparkle.framework" ]; then
+    echo "!! Direct distribution builds require Sparkle.framework in Frameworks/" >&2
+    exit 1
+  fi
+  if ! otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q Sparkle; then
+    echo "!! Direct distribution builds must link Sparkle" >&2
+    exit 1
+  fi
 fi
 if [ "$MODE" = "mas" ]; then
   for key in SUAutomaticallyUpdate SUEnableAutomaticChecks SUFeedURL SUPublicEDKey SUScheduledCheckInterval; do
