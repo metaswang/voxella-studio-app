@@ -122,9 +122,9 @@ if archive_dir:
 The `r2_release.py` prepare stage automatically:
 1. Detects if delta generation is feasible (≥2 archives + macOS)
 2. Invokes Sparkle's `generate_appcast` with EdDSA private key
-3. Rewrites delta URLs to immutable scheme: `{origin}/{OBJECT_PREFIX}/{identity}/deltas/{from-build}-to-{to-build}.delta`
+3. Rewrites delta URLs to public CDN path: `{origin}/downloads/voxstudio/releases/{version}-{build}/{sha256}/deltas/{filename}`
 4. Merges `<sparkle:deltas>` into base appcast while preserving full DMG enclosure
-5. Uploads `.delta` files during upload stage with immutable URLs
+5. Uploads `.delta` files to R2 object keys: `app-releases/voxstudio/releases/{version}-{build}/{sha256}/deltas/{filename}`
 6. Verifies delta URLs during verify stage
 
 **Gate**: `RELEASE_ENABLE_DELTAS` environment variable (default: `auto`)

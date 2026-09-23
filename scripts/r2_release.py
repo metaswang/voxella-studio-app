@@ -102,9 +102,9 @@ class DeltaArtifact:
         """Delta filename format: {from_build}-to-{to_build}.delta"""
         return f"{self.from_build}-to-{self.to_build}.delta"
     
-    def versioned_url(self, identity: str, origin: str = PUBLIC_ORIGIN) -> str:
-        """Immutable delta URL under release identity/deltas/."""
-        return f"{origin.rstrip('/')}/{OBJECT_PREFIX}/{identity}/deltas/{self.filename}"
+    def versioned_url(self, to_version: str, to_build: str, to_sha256: str, origin: str = PUBLIC_ORIGIN) -> str:
+        """Public CDN URL under /downloads/voxstudio/releases/.../deltas/"""
+        return versioned_delta_url(to_version, to_build, to_sha256, self.filename, origin)
 
 
 class PublishError(RuntimeError):
@@ -117,6 +117,16 @@ def versioned_dmg_path(version: str, build: str, sha256: str) -> str:
 
 def versioned_dmg_url(version: str, build: str, sha256: str, origin: str = PUBLIC_ORIGIN) -> str:
     return f"{origin.rstrip('/')}{versioned_dmg_path(version, build, sha256)}"
+
+
+def versioned_delta_path(version: str, build: str, sha256: str, delta_filename: str) -> str:
+    """Public CDN path for delta files under /downloads/voxstudio/releases/..."""
+    return f"/downloads/voxstudio/releases/{version}-{build}/{sha256}/deltas/{delta_filename}"
+
+
+def versioned_delta_url(version: str, build: str, sha256: str, delta_filename: str, origin: str = PUBLIC_ORIGIN) -> str:
+    """Public CDN URL for delta files."""
+    return f"{origin.rstrip('/')}{versioned_delta_path(version, build, sha256, delta_filename)}"
 
 
 def release_identity(version: str, build: str, sha256: str) -> str:
@@ -231,7 +241,9 @@ def build_appcast(
 def merge_deltas_into_appcast(
     base_appcast_xml: str,
     deltas: list[DeltaArtifact],
-    identity: str,
+    version: str,
+    build: str,
+    sha256: str,
     origin: str = PUBLIC_ORIGIN,
 ) -> str:
     """
@@ -263,7 +275,7 @@ def merge_deltas_into_appcast(
     deltas_elem = ET.Element(f"{{{ns['sparkle']}}}deltas")
     for delta in deltas:
         delta_enclosure = ET.Element("enclosure")
-        delta_enclosure.set("url", delta.versioned_url(identity, origin))
+        delta_enclosure.set("url", delta.versioned_url(version, build, sha256, origin))
         delta_enclosure.set("length", str(delta.size))
         delta_enclosure.set("type", "application/octet-stream")
         delta_enclosure.set(f"{{{ns['sparkle']}}}edSignature", delta.signature)
@@ -570,7 +582,7 @@ def prepare_release(
     # Build appcast and merge deltas if present
     appcast_xml = build_appcast(manifest, origin=origin)
     if deltas:
-        appcast_xml = merge_deltas_into_appcast(appcast_xml, deltas, identity, origin)
+        appcast_xml = merge_deltas_into_appcast(appcast_xml, deltas, manifest.version, manifest.build, manifest.sha256, origin)
     appcast_path = staging_dir / "appcast.xml"
     appcast_path.write_text(appcast_xml)
     

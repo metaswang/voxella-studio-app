@@ -62,9 +62,9 @@ final class AppUpdater {
 The release pipeline automatically:
 1. Detects archive count (must be ≥ 2 for deltas)
 2. Invokes Sparkle's `generate_appcast` tool to compute binary deltas
-3. Rewrites delta URLs to immutable versioned scheme: `{origin}/{OBJECT_PREFIX}/{identity}/deltas/{from-build}-to-{to-build}.delta`
+3. Rewrites delta URLs to public CDN path: `{origin}/downloads/voxstudio/releases/{version}-{build}/{sha256}/deltas/{filename}`
 4. Merges `<sparkle:deltas>` into base appcast while preserving full DMG enclosure
-5. Uploads `.delta` files to R2 alongside full DMG
+5. Uploads `.delta` files to R2 object keys: `app-releases/voxstudio/releases/{version}-{build}/{sha256}/deltas/{filename}`
 6. Verifies delta URLs are accessible
 
 **Delta Generation Gate**: `RELEASE_ENABLE_DELTAS` environment variable
@@ -100,7 +100,7 @@ RELEASE_ENABLE_DELTAS=1 RELEASE_TARGET=r2 ./scripts/release.sh
 
 ```xml
 <enclosure
-    url="https://assets.voxstudio.me/app-releases/voxstudio/releases/0.4.8-46/a1b2c3d4/VoxStudio.dmg"
+    url="https://assets.voxstudio.me/downloads/voxstudio/releases/0.4.8-46/a1b2c3d4/VoxStudio.dmg"
     length="167890123"
     type="application/octet-stream"
     sparkle:edSignature="..." />
@@ -111,7 +111,7 @@ RELEASE_ENABLE_DELTAS=1 RELEASE_TARGET=r2 ./scripts/release.sh
 ```xml
 <sparkle:deltas>
     <enclosure
-        url="https://assets.voxstudio.me/app-releases/voxstudio/releases/0.4.8-46/a1b2c3d4/deltas/45-to-46.delta"
+        url="https://assets.voxstudio.me/downloads/voxstudio/releases/0.4.8-46/a1b2c3d4/deltas/45-to-46.delta"
         length="8901234"
         type="application/octet-stream"
         sparkle:edSignature="..."
@@ -119,10 +119,13 @@ RELEASE_ENABLE_DELTAS=1 RELEASE_TARGET=r2 ./scripts/release.sh
 </sparkle:deltas>
 ```
 
-**Delta URL Scheme**: `{origin}/{OBJECT_PREFIX}/{identity}/deltas/{from-build}-to-{to-build}.delta`
+**Public Delta URL Scheme**: `{origin}/downloads/voxstudio/releases/{version}-{build}/{sha256}/deltas/{from-build}-to-{to-build}.delta`
+
+**R2 Object Key**: `app-releases/voxstudio/releases/{version}-{build}/{sha256}/deltas/{filename}`
 
 Where:
-- `identity` = `releases/{version}-{build}/{sha256_8}`
+- Public URLs use `/downloads/voxstudio/...` path (served by Cloudflare worker)
+- R2 object keys use `app-releases/voxstudio/...` prefix (internal storage)
 - Immutable, versioned, no "latest" redirects
 
 ## Migration Sequencing
