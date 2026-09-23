@@ -170,6 +170,18 @@ if [ "$RELEASE_TARGET" = "r2" ] || [ "$RELEASE_TARGET" = "dmg" ]; then
   echo "    latest: https://assets.voxstudio.me/downloads/voxstudio/VoxStudio.dmg"
   echo "    appcast: $PUBLIC_APPCAST_URL"
   echo "    Sparkle length: $LENGTH"
+  
+  # Generate delta appcast if we have multiple archives (post-promote for next time)
+  ARCHIVE_DIR="$ROOT/.build/release-archives"
+  if [ -d "$ARCHIVE_DIR" ]; then
+    ARCHIVE_COUNT=$(find "$ARCHIVE_DIR" -name "*.dmg" -type f | wc -l | tr -d ' ')
+    if [ "$ARCHIVE_COUNT" -ge 1 ]; then
+      echo ""
+      echo "==> Archive retention: $ARCHIVE_COUNT DMG(s) available for next delta release"
+      echo "    Note: Delta updates will be generated starting from the second Sparkle-enabled release"
+      echo "    Archive directory: $ARCHIVE_DIR"
+    fi
+  fi
   exit 0
 fi
 

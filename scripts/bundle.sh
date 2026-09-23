@@ -212,6 +212,8 @@ if [ "$MODE" != "mas" ]; then
     echo "!! Failed to copy Sparkle.framework into app bundle" >&2
     exit 1
   fi
+  echo "==> Clearing extended attributes on Sparkle.framework"
+  xattr -cr "$APP/Contents/Frameworks/Sparkle.framework"
 fi
 
 touch "$APP"
@@ -399,6 +401,24 @@ echo "==> Codesigning main app ($SIGNING_IDENTITY / $TEAM_IDENTIFIER)"
 if [ "$MODE" = "mas" ]; then
   bash scripts/check-mas-billing.sh "$APP"
 fi
+
+# Sign Sparkle.framework inside-out before signing the app
+if [ "$MODE" != "mas" ] && [ -d "$APP/Contents/Frameworks/Sparkle.framework" ]; then
+  echo "==> Codesigning Sparkle.framework"
+  # Sign XPCServices if present
+  if [ -d "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" ]; then
+    for xpc in "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices"/*.xpc; do
+      if [ -e "$xpc" ]; then
+        echo "    Signing $(basename "$xpc")"
+        codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$xpc"
+      fi
+    done
+  fi
+  # Sign the framework itself
+  codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+  codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$APP/Contents/Frameworks/Sparkle.framework"
+fi
+
 CODESIGN_ARGS=(--force --sign "$SIGNING_IDENTITY" --entitlements "$SIGNING_ENTITLEMENTS")
 if [ "$MODE" != "mas" ]; then
   CODESIGN_ARGS+=(--options runtime)
@@ -440,7 +460,7 @@ if [ "$MODE" = "mas" ] && ! printf '%s' "$SIGNED_ENTITLEMENTS" | grep -q 'com.ap
   echo "!! signed MAS app is missing com.apple.developer.applesignin" >&2
   exit 1
 fi
-if [ -e "$APP/Contents/embedded.provisionprofile" ]; then
+if [ ! -e "$APP/Contents/embedded.provisionprofile" ]; then
   echo "!! signed app is missing embedded.provisionprofile" >&2
   exit 1
 fi

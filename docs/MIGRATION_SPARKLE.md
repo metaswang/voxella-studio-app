@@ -1,126 +1,217 @@
-# Migration Guide: Sparkle 2.x In-App Updates
+# Sparkle In-App Updates Migration Runbook
 
-## Summary of Changes
+## Overview
 
-This update transitions VoxStudio from custom "parse appcast + open DMG in browser" to real Sparkle 2.x in-app updates with BinaryDelta incremental upgrades.
+This document covers the migration from legacy browser-based DMG downloads to Sparkle 2.x in-app updates with binary delta support for VoxStudio Mac (Developer ID distribution).
 
 ## Breaking Changes
 
-### Policy Reversal
-**Before**: "The Sparkle installer is not linked"
-**After**: Sparkle.framework is embedded and linked for Developer ID builds
+### For End Users
+- **First Sparkle-enabled update**: Requires full DMG download (existing behavior)
+- **Subsequent updates**: In-app installation via Sparkle UI (no browser navigation)
+- **Old clients (pre-Sparkle)**: Continue seeing informational updates with manual browser download
 
-### Bundle Verification
-Old check (removed):
+### For Release Process
+- **Archive retention**: Last 5 DMGs automatically retained in `.build/release-archives/`
+- **First release constraint**: Ships full-DMG-only appcast (no deltas)
+- **Delta workflow**: Manual integration required for delta generation and upload
+
+## Migration Sequencing (Critical)
+
+### Step 1: First Sparkle-Enabled Release (N)
+
+**Critical constraint**: Old clients (pre-Sparkle) **cannot** apply binary deltas. This release must ship with **full DMG only**.
+
+1. ✅ Embed Sparkle.framework in Developer ID builds
+2. ✅ Use `SPUStandardUpdaterController` for in-app updates
+3. ✅ Publish appcast with full DMG enclosure (no `<sparkle:deltas>`)
+4. ✅ Archive the notarized DMG in `.build/release-archives/`
+
+**Result**: Clients upgrade to Sparkle-enabled builds via full DMG.
+
+### Step 2: Second Release (N+1) - Delta Eligibility
+
+Now that clients have Sparkle embedded, deltas can be offered:
+
+1. Archive from N is available in `.build/release-archives/`
+2. **Manual workflow** (requires macOS):
+   - Run `scripts/generate_delta_appcast.sh` to generate deltas
+   - Upload `.delta` files to R2
+   - Merge delta appcast into promoted appcast
+3. Clients that installed N can apply delta patch
+4. Clients still on pre-N download full DMG
+
+## Runbook Updates
+
+### Bundle Verification (bundle.sh)
+
+**Updated checks:**
+
 ```bash
-if [ -e "$APP/Contents/Frameworks/Sparkle.framework" ]; then
-  echo "!! Sparkle must not be embedded" >&2
+# MAS builds must not contain Sparkle
+if [ "$MODE" = "mas" ]; then
+  if [ -e "$APP/Contents/Frameworks/Sparkle.framework" ] \
+      || otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q Sparkle; then
+    echo "!! Mac App Store builds must not embed or link Sparkle" >&2
+    exit 1
+  fi
+fi
+
+# Direct distribution builds must contain Sparkle
+if [ "$MODE" != "mas" ]; then
+  if [ ! -d "$APP/Contents/Frameworks/Sparkle.framework" ]; then
+    echo "!! Direct distribution builds require Sparkle.framework in Frameworks/" >&2
+    exit 1
+  fi
+  if ! otool -L "$APP/Contents/MacOS/VoxStudio" | grep -q Sparkle; then
+    echo "!! Direct distribution builds must link Sparkle" >&2
+    exit 1
+  fi
+fi
+
+# Provisioning profile must be present
+if [ ! -e "$APP/Contents/embedded.provisionprofile" ]; then
+  echo "!! signed app is missing embedded.provisionprofile" >&2
   exit 1
 fi
 ```
 
-New check (bundle.sh):
+**New step: Sign Sparkle.framework inside-out**
+
 ```bash
-if [ "$MODE" = "mas" ]; then
-  # MAS must NOT have Sparkle
-  if [ -e "$APP/Contents/Frameworks/Sparkle.framework" ]; then
-    echo "!! Mac App Store builds must not embed or link Sparkle" >&2
-    exit 1
-  fi
-else
-  # Direct distribution MUST have Sparkle
-  if [ ! -d "$APP/Contents/Frameworks/Sparkle.framework" ]; then
-    echo "!! Direct distribution builds require Sparkle.framework" >&2
-    exit 1
-  fi
+if [ "$MODE" != "mas" ] && [ -d "$APP/Contents/Frameworks/Sparkle.framework" ]; then
+  echo "==> Codesigning Sparkle.framework"
+  # Sign XPCServices if present
+  for xpc in "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices"/*.xpc; do
+    [ -e "$xpc" ] && codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$xpc"
+  done
+  # Sign the framework itself
+  codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp \
+    "$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+  codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp \
+    "$APP/Contents/Frameworks/Sparkle.framework"
 fi
 ```
 
-## Release Runbook Updates
+### Archive Management (r2_release.py)
 
-### 1. First Sparkle Build (Critical Path)
+**Updated behavior with `--enable-archives` (default on for R2 releases):**
 
-⚠️ **The first release with embedded Sparkle cannot offer deltas.**
-
-Sequence:
-1. **Release v7.1.0** (first with Sparkle.framework)
-   - Full DMG only, no deltas in appcast
-   - All users download complete 80MB DMG
-2. **Wait for adoption** (monitor download metrics)
-3. **Release v7.1.1** (first with deltas)
-   - Appcast includes `<sparkle:deltas>` from v7.1.0
-   - Users on v7.1.0+ download 3-8MB delta
-
-### 2. Archive Management
-
-New directory: `.build/release-archives/`
-- Retains last 5 full DMGs by mtime
-- Format: `{version}-{build}-{sha256_8}.dmg`
-- Used by `generate_appcast` for delta computation
-
-### 3. Appcast Generation
-
-Previous workflow (manual XML append) is replaced with:
-
-```bash
-./scripts/generate_delta_appcast.sh \
-  --archives-dir .build/release-archives \
-  --output appcast-with-deltas.xml
+```python
+if archive_dir:
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archive_name = f"{manifest.version}-{manifest.build}-{manifest.sha256[:8]}.dmg"
+    archive_path = archive_dir / archive_name
+    if not archive_path.exists():
+        link_or_copy(staged_dmg, archive_path)
+    
+    # Retain only the last N archives
+    archives = sorted(
+        archive_dir.glob("*.dmg"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True
+    )
+    for old_archive in archives[ARCHIVE_RETENTION_COUNT:]:
+        old_archive.unlink()
 ```
 
-Sparkle's `generate_appcast` computes deltas automatically.
+### Delta Generation (Manual macOS Workflow)
 
-**Note**: Requires macOS (uses native APIs). Linux CI cannot run it.
+**Status**: Not yet integrated into `release.sh`; requires manual execution on macOS
 
-## Testing Checklist
+```bash
+# Generate delta appcast from archived DMGs
+./scripts/generate_delta_appcast.sh \
+  --archives-dir .build/release-archives \
+  --output /tmp/appcast-with-deltas.xml \
+  --private-key ~/.config/sparkle/sparkle_eddsa_priv.pem \
+  --download-url-prefix https://assets.voxstudio.me/app-releases/voxstudio/VERSION-BUILD-SHA
 
-### Pre-Release
-- [ ] Build with `--traits BundledSpeech,SparkleUpdates` succeeds
-- [ ] `otool -L VoxStudio` shows `@rpath/Sparkle.framework/Versions/B/Sparkle`
-- [ ] `codesign --verify --deep VoxStudio.app` passes
-- [ ] Bundle check confirms Sparkle.framework present
-- [ ] MAS build (`--mas`) rejects Sparkle successfully
+# Manually upload .delta files to R2 (not automated)
+# Manually merge delta appcast into promoted appcast (not automated)
+```
 
-### Post-Release (First Sparkle Build)
-- [ ] Old users (v7.0.x) can download + install full DMG
-- [ ] In-app update check triggers Sparkle UI (not browser)
-- [ ] Update downloads, installs, and relaunches correctly
+## Testing Plan
 
-### Post-Release (First Delta Build)
-- [ ] Appcast contains `<sparkle:deltas>` section
-- [ ] Users on previous Sparkle version offered delta
-- [ ] Delta applies successfully
-- [ ] Fallback to full DMG works if delta fails
+### Pre-Release (Development)
+
+1. **Build verification**:
+   ```bash
+   ./scripts/bundle.sh debug --sign
+   # Verify: Sparkle.framework present in Contents/Frameworks/
+   # Verify: otool -L shows Sparkle linkage
+   # Verify: codesign --verify --deep --strict passes
+   ```
+
+2. **Settings pane**:
+   - Toggle "Automatically check for updates"
+   - Click "Check Now"
+   - Verify: No compile errors, Settings pane renders
+
+3. **MAS build exclusion**:
+   ```bash
+   # MAS build must reject Sparkle
+   MODE=mas ./scripts/bundle.sh debug --sign
+   # Expected: Build fails with Sparkle embedding error
+   ```
+
+### First Sparkle Release (N)
+
+1. **Full DMG only**: Confirm appcast contains no `<sparkle:deltas>`
+2. **Client upgrade**: Install on a test Mac, verify in-app Sparkle UI appears
+3. **Archive retention**: Verify `.build/release-archives/` contains the DMG
+
+### Second Release (N+1) - Delta Test
+
+1. **Delta generation**: Run `generate_delta_appcast.sh`, verify `.delta` files created
+2. **Upload test**: Manually upload deltas to R2, verify URLs resolve
+3. **Client delta update**: From N→N+1, verify Sparkle applies delta (watch Installer log)
+4. **Fallback test**: Delete delta files from R2, verify Sparkle falls back to full DMG
 
 ## Rollback Plan
 
-If Sparkle causes critical issues:
+### If Sparkle integration breaks production
 
-1. **Immediate**: Revert Package.swift and bundle.sh changes
-2. **Rebuild** without SparkleUpdates trait
-3. **Publish** emergency release with custom AppUpdater restored
+1. Revert to commit before Sparkle changes
+2. Publish emergency release without Sparkle.framework
+3. Appcast reverts to informational updates (browser DMG download)
+4. Investigate root cause offline
 
-Files to revert:
-- `Package.swift`
-- `Sources/PalmierPro/App/AppUpdater.swift`
-- `scripts/bundle.sh`
+### If delta generation fails
+
+1. Deltas are optional; full DMG always available
+2. Ship full-DMG-only appcast (same as first release)
+3. Archive retention continues for future attempts
 
 ## Known Limitations
 
-### 1. macOS Required for Delta Generation
-Sparkle's `generate_appcast` uses macOS-only APIs. Linux CI cannot run it.
+1. **macOS-Only Delta Generation**: Cannot generate deltas on Linux cloud VM
+2. **Manual Delta Upload**: `.delta` files must be manually uploaded to R2
+3. **First-Release Full-Only**: Binary deltas unavailable until N+1
+4. **R2 URL Scheme**: Delta URL structure not yet defined in `r2_release.py`
 
-**Mitigation**: Mac release machine runs `generate_appcast` locally.
+## Post-Migration Monitoring
 
-### 2. Old Clients Cannot Apply Deltas
-Versions before first Sparkle-enabled release always download full DMG.
+### Metrics to Track
 
-**Mitigation**: Expected behavior. Document in release notes.
+- **Update adoption rate**: Sparkle analytics (if enabled)
+- **Delta success rate**: Proportion of delta vs. full DMG downloads
+- **Fallback rate**: How often deltas fail and trigger full DMG fallback
+- **Bandwidth savings**: Compare delta vs. full DMG traffic
 
-## Sign-Off
+### Common Issues
 
-Before merging:
-- [ ] Code review
-- [ ] Local build test (Debug, Release, MAS)
-- [ ] Sparkle key verification
-- [ ] Release team acknowledgment
+| Symptom | Likely Cause | Fix |
+|---------|-------------|-----|
+| "Download button" in Settings with Sparkle linked | `openDownload()` still uses browser | Fixed: Now calls `updaterController?.checkForUpdates()` |
+| MAS build contains Sparkle | `bundle.sh` trait check failed | Verify `MODE=mas` excludes `SparkleUpdates` trait |
+| Sparkle check fails after install | Framework not signed | Fixed: Inside-out signing in `bundle.sh` |
+| Delta update fails | Signature mismatch or corrupt delta | Fall back to full DMG (automatic) |
+
+## References
+
+- `Sources/PalmierPro/App/AppUpdater.swift` — Sparkle integration
+- `scripts/bundle.sh` — Framework embedding + signing
+- `scripts/r2_release.py` — Archive retention
+- `scripts/generate_delta_appcast.sh` — Delta generation script
+- `docs/SPARKLE_DELTA_UPDATES.md` — Technical overview
