@@ -109,6 +109,12 @@ actor RerankerService: KnowledgeReranking {
         throw MLXRuntime.Unavailable()
         #endif
     }
+
+    func releaseResidentModel() async {
+        #if BUNDLED_SPEECH
+        await MLXRerankerRuntime.shared.releaseResidentModel()
+        #endif
+    }
 }
 
 #if BUNDLED_SPEECH
@@ -128,8 +134,32 @@ private actor MLXRerankerRuntime {
 
     func scores(query: String, chunks: [String]) async throws -> [Double] {
         try Task.checkCancellation()
+        let prefix = prefix
+        let suffix = suffix
+        let instruction = instruction
+        try await LocalSpeechScheduler.shared.beginForeignInference()
+        let result: Result<[Double], Error>
+        do {
+            result = .success(try await scoresHoldingInference(
+                query: query, chunks: chunks, prefix: prefix, suffix: suffix, instruction: instruction
+            ))
+        } catch {
+            result = .failure(error)
+        }
+        await LocalSpeechScheduler.shared.endForeignInference()
+        return try result.get()
+    }
+
+    private func scoresHoldingInference(
+        query: String,
+        chunks: [String],
+        prefix: String,
+        suffix: String,
+        instruction: String
+    ) async throws -> [Double] {
         try await MLXRuntime.beginInference()
         defer { MLXRuntime.endInference() }
+        defer { MLXRuntime.releaseActivations() }
         let model = try await loaded()
         return try await model.perform(values: (query, chunks, prefix, suffix, instruction)) {
             context, input in
@@ -153,6 +183,18 @@ private actor MLXRerankerRuntime {
                 return 1 / (1 + exp(noLogit - yesLogit))
             }
         }
+    }
+
+    func releaseResidentModel() async {
+        guard container != nil else { return }
+        do {
+            try await MLXRuntime.beginInference()
+        } catch {
+            return
+        }
+        container = nil
+        MLXRuntime.releaseActivations()
+        MLXRuntime.endInference()
     }
 
     private func loaded() async throws -> ModelContainer {

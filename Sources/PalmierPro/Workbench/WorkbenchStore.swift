@@ -360,6 +360,38 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
             asrEngine: result?.asrEngine
         ) ?? result
     }
+
+    func transcriptForDub(
+        _ track: WorkbenchTranscriptTrack,
+        translationLanguageCode: String? = nil
+    ) -> TranscriptionResult? {
+        switch track {
+        case .source:
+            guard let result else {
+                return subtitleTrack?.asTranscriptionResult().aggregatingSegments()
+            }
+            if !result.segments.isEmpty { return result }
+            return SubtitleTrack.fromTranscript(result)
+                .asTranscriptionResult(preservingWords: result.words, asrEngine: result.asrEngine)
+        case .translation:
+            let selected: WorkbenchTranslationTrack?
+            if let translationLanguageCode {
+                selected = translationTracks.first {
+                    $0.languageCode.caseInsensitiveCompare(translationLanguageCode) == .orderedSame
+                }
+            } else {
+                selected = translationTracks.first {
+                    $0.languageCode.caseInsensitiveCompare(selectedTranslationLanguageCode ?? "") == .orderedSame
+                } ?? translationTracks.first
+            }
+            guard let selected else { return nil }
+            return SubtitleTrack(
+                sourceLanguage: selected.languageCode,
+                language: selected.languageCode,
+                cues: selected.track.cues
+            ).asTranscriptionResult().aggregatingSegments()
+        }
+    }
     var displayedResult: TranscriptionResult? {
         let timed = currentTrack == .translation
             ? translationTrack?.asTranscriptionResult()
@@ -1938,26 +1970,65 @@ final class WorkbenchStore {
     }
 
     @discardableResult
-    func createDub(for sessionID: UUID, track: WorkbenchTranscriptTrack = .source) -> UUID? {
+    func createDub(
+        for sessionID: UUID,
+        track: WorkbenchTranscriptTrack = .source,
+        translationLanguageCode: String? = nil,
+        refreshExistingTranscript: Bool = false,
+        referenceVoiceID: UUID? = nil,
+        applyReferenceVoice: Bool = false
+    ) -> UUID? {
         guard transcriptions.contains(where: { $0.id == sessionID }) else { return nil }
         if let existing = dubs.first(where: { $0.sourceTranscriptionID == sessionID }) {
+            if refreshExistingTranscript {
+                useTranscript(
+                    sessionID,
+                    forDub: existing.id,
+                    track: track,
+                    translationLanguageCode: translationLanguageCode
+                )
+            }
+            if applyReferenceVoice {
+                updateDub(existing.id) { $0.referenceVoiceID = referenceVoiceID }
+            }
             selectedDubID = existing.id
             route = .dub
             return existing.id
         }
-        guard let id = addDub() else { return nil }
+        guard let id = addDub(openRoute: false) else { return nil }
         updateDub(id) { $0.sourceTranscriptionID = sessionID }
-        useTranscript(sessionID, forDub: id, track: track)
+        useTranscript(
+            sessionID,
+            forDub: id,
+            track: track,
+            translationLanguageCode: translationLanguageCode
+        )
+        if applyReferenceVoice {
+            updateDub(id) { $0.referenceVoiceID = referenceVoiceID }
+        }
+        selectedDubID = id
+        route = .dub
         return id
     }
 
     func createDubAfterAccess(
         for sessionID: UUID,
-        track: WorkbenchTranscriptTrack = .source
+        track: WorkbenchTranscriptTrack = .source,
+        translationLanguageCode: String? = nil,
+        refreshExistingTranscript: Bool = false,
+        referenceVoiceID: UUID? = nil,
+        applyReferenceVoice: Bool = false
     ) async -> UUID? {
         do {
             try await AccountService.shared.prepareNewContentAccess()
-            return createDub(for: sessionID, track: track)
+            return createDub(
+                for: sessionID,
+                track: track,
+                translationLanguageCode: translationLanguageCode,
+                refreshExistingTranscript: refreshExistingTranscript,
+                referenceVoiceID: referenceVoiceID,
+                applyReferenceVoice: applyReferenceVoice
+            )
         } catch is AppAccessError {
             transcriptionAdmissionError = nil
             return nil
@@ -3655,6 +3726,11 @@ final class WorkbenchStore {
                 sourcePreview: Self.sourcePreview(for: flowJob),
                 uploadURL: uploadURL == input.sourceURL ? nil : uploadURL
             )
+            if !isCloud {
+                updateTranscription(id) {
+                    $0.progressMessage = "Queued — waiting for local speech processing"
+                }
+            }
             for await event in taskAccess.events(for: request) {
                 if Task.isCancelled {
                     break
@@ -4272,6 +4348,13 @@ final class WorkbenchStore {
                     cacheURL: cacheURL,
                     hasSubtitleModel: hasSubtitleModel
                 )
+                if snapshot.placement.compute == .local {
+                    updateDub(id) {
+                        guard $0.remoteGenerationID == generationID else { return }
+                        $0.state = .queued
+                        $0.progressMessage = "Queued — waiting for local speech processing"
+                    }
+                }
                 for await event in dubTaskAccess.events(for: request) {
                     if Task.isCancelled { break }
                     consumeDubTaskEvent(
@@ -4389,32 +4472,32 @@ final class WorkbenchStore {
         scheduleCloudSync(forDub: id)
     }
 
-    func useTranscript(_ transcriptID: UUID, forDub dubID: UUID, track: WorkbenchTranscriptTrack) {
+    func useTranscript(
+        _ transcriptID: UUID,
+        forDub dubID: UUID,
+        track: WorkbenchTranscriptTrack,
+        translationLanguageCode: String? = nil
+    ) {
         guard let source = transcriptions.first(where: { $0.id == transcriptID }) else { return }
-        let subtitleTrack: SubtitleTrack?
-        switch track {
-        case .source:
-            subtitleTrack = source.subtitleTrack ?? source.result.map(SubtitleTrack.fromTranscript)
-        case .translation:
-            subtitleTrack = source.translationTrack
-        }
-        guard let subtitleTrack else { return }
+        guard let transcript = source.transcriptForDub(
+            track,
+            translationLanguageCode: translationLanguageCode
+        ) else { return }
         updateDub(dubID) {
             $0.sourceTranscriptionID = transcriptID
-            $0.script = subtitleTrack.text
-            $0.segments = subtitleTrack.cues.map { cue in
+            $0.script = transcript.segments.map(\.text).joined(separator: "\n")
+            $0.segments = transcript.segments.enumerated().map { index, segment in
                 DubSegmentPayload(
-                    index: cue.id,
-                    text: cue.text,
-                    start: cue.start,
-                    end: cue.end,
-                    speaker: cue.speaker,
-                    sourceSubtitleID: cue.sourceIDs.first
+                    index: index,
+                    text: segment.text,
+                    start: segment.start,
+                    end: segment.end,
+                    speaker: segment.speaker
                 )
             }
             $0.language = track == .translation
-                ? (subtitleTrack.language ?? "auto")
-                : (source.languageCode ?? subtitleTrack.language ?? "auto")
+                ? (transcript.language ?? translationLanguageCode ?? "auto")
+                : (source.languageCode ?? transcript.language ?? "auto")
             // Keep a user-authored title; otherwise leave blank for post-dub auto-generation.
             if !SessionTitlePolicy.isUserProvided($0.title) {
                 $0.title = ""

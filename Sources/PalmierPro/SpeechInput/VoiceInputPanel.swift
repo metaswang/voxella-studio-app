@@ -320,11 +320,13 @@ private struct VoiceInputPanelView: View {
             .foregroundStyle(AppTheme.Status.errorColor)
         } else {
             switch coordinator.recognition.state {
-            case .recognizing:
+            case .recognizing(_, let message):
                 HStack(spacing: AppTheme.Spacing.smMd) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Transcribing…")
+                    Text(L10n.display(message))
+                    Button("Cancel") { coordinator.dismiss() }
+                        .buttonStyle(.link)
                 }
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
             case .recognized:

@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
+        MLXRuntime.configureMemoryBudget()
         AppUpdater.shared.start()
         _ = RecordingSessionController.shared
         VoiceInputShortcutService.shared.start()

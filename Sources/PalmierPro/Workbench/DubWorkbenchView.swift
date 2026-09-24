@@ -124,7 +124,8 @@ struct DubWorkbenchView: View {
                         VoiceReferencePicker(
                             selection: referenceVoiceBinding(job.id),
                             languageCode: job.language,
-                            defaultLabel: L10n.string("Select a reference voice…")
+                            defaultLabel: L10n.string("Default voice"),
+                            showsResolvedDefaultName: true
                         )
                         Button {
                             SettingsWindowController.shared.show(tab: .voiceLibrary)

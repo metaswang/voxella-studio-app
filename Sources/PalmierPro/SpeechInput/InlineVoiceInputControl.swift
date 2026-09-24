@@ -50,7 +50,11 @@ struct InlineVoiceInputControl: View {
                             .monospacedDigit()
                     } else if coordinator.isBusy {
                         ProgressView().controlSize(.small)
-                        Text(L10n.string(coordinator.recognition.isRecognizing ? "Transcribing…" : "Preparing microphone…"))
+                        if case .recognizing(_, let message) = coordinator.recognition.state {
+                            Text(L10n.display(message))
+                        } else {
+                            Text(L10n.string("Preparing microphone…"))
+                        }
                     }
                     if coordinator.isBusy || coordinator.recorder.isRecording {
                         Button("Cancel") { coordinator.dismiss() }
@@ -102,7 +106,20 @@ struct InlineVoiceInputControl: View {
                 } else if coordinator.isBusy {
                     ProgressView()
                         .controlSize(.mini)
-                        .accessibilityLabel(L10n.string("Preparing voice input"))
+                        .accessibilityLabel(embeddedStatus)
+                        .help(embeddedStatus)
+                    if case .recognizing(_, let message) = coordinator.recognition.state {
+                        Text(L10n.display(message))
+                            .lineLimit(1)
+                            .frame(maxWidth: 160, alignment: .leading)
+                            .help(L10n.display(message))
+                    }
+                    Button { coordinator.dismiss() } label: {
+                        Image(systemName: "xmark.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(L10n.string("Cancel voice input"))
+                    .accessibilityLabel(L10n.string("Cancel voice input"))
                 }
             }
 
@@ -127,6 +144,14 @@ struct InlineVoiceInputControl: View {
         .disabled(coordinator?.isBusy == true)
         .help(L10n.string(coordinator?.recorder.isRecording == true ? "Stop and transcribe" : "Voice input"))
         .accessibilityLabel(L10n.string(coordinator?.recorder.isRecording == true ? "Stop and transcribe" : "Voice input"))
+    }
+
+    private var embeddedStatus: String {
+        if let coordinator,
+           case .recognizing(_, let message) = coordinator.recognition.state {
+            return L10n.display(message)
+        }
+        return L10n.string("Preparing voice input")
     }
 
     private func error(_ message: String) -> some View {

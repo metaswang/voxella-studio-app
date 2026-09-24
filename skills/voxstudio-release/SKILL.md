@@ -33,7 +33,8 @@ For shader packaging or hardware/OS qualification, read [Metal compatibility](re
 
 - Formal releases must start with `./scripts/release.sh` without a version argument. It reads the current `CFBundleShortVersionString` and the published Cloudflare appcast, then automatically increments the semantic-version patch component (`X.Y.Z` → `X.Y.(Z+1)`) before building. Do not manually reuse the previous release version. The first Cloudflare publication requires `RELEASE_BOOTSTRAP=1`.
 - Every release record must include the previous version, new version, new `CFBundleVersion`, and the exact artifact version used for notarization and R2 publication.
-- `SUFeedURL` must be `https://assets.voxstudio.me/downloads/voxstudio/appcast.xml`. The running app reads that feed and opens the enclosure URL in a browser; it does not merge DMG chunks. Old builds still point at Hugging Face and cannot be rewritten server-side. Users on those builds must install once from the website.
+- `SUFeedURL` must be `https://assets.voxstudio.me/downloads/voxstudio/appcast.xml`. Developer ID builds use the `SparkleUpdates` trait and the embedded Sparkle updater to read that feed and install updates in-app. Keep the full DMG enclosure in every appcast as the fallback when no matching delta is available. `chunks/` objects are separate legacy artifacts; Sparkle does not assemble them. Old builds still pointing at Hugging Face cannot be rewritten server-side and must install once from the website.
+- R2 releases support Sparkle binary `.delta` artifacts. The normal `release.sh` path enables archive retention; delta generation defaults to `auto` and requires macOS plus at least two retained DMGs. Read the “Sparkle binary deltas” section in [the release runbook](references/release-runbook.md) for R2 keys, signing-key prerequisites, and verification. Sparkle can apply a delta only when the installed build matches a published delta base and signature checks pass.
 
 - The release build must use the BundledSpeech trait because the app includes speech and MLX resources.
 - `scripts/build_metal.py` owns the macOS 15.0 / Metal 3.2 shader baseline for both MLX and Core Image. Package one arm64 app and one MLX library for M1–M4, without host-specific GPU specialization or duplicate shader variants. Do not call the dependency's unqualified Metal builder or accept a cached library merely because it exists.
@@ -43,7 +44,7 @@ For shader packaging or hardware/OS qualification, read [Metal compatibility](re
 - TEAM_IDENTIFIER must match the Team ID in that certificate. The bundle script can derive it from the certificate when omitted.
 - NOTARY_PROFILE must name an existing xcrun notarytool Keychain profile.
 - If NOTARY_PROFILE is missing, recover it before building by following the API-key or app-specific-password procedure in the runbook.
-- Sparkle Ed25519 signing is still used to produce appcast metadata for already-installed Sparkle clients. The running app no longer embeds Sparkle or starts an installer. `SUPublicEDKey` must match the private key used by `sign_update`; do not publish an unsigned appcast or an artifact signed by an unrelated key.
+- Developer ID builds embed Sparkle for in-app update checks and installation. Sparkle Ed25519 signing also signs the appcast and DMG. `SUPublicEDKey` must match the private key used by `sign_update`; do not publish an unsigned appcast or an artifact signed by an unrelated key. Mac App Store builds omit Sparkle.
 - If the existing Sparkle private key is unavailable, recover it before publishing. If key rotation is intentional, generate a new Ed25519 key, export a backup to the ignored `.secrets/` directory with mode 600, update `SUPublicEDKey`, and ship a transition release deliberately. Existing Sparkle installations that trust the old public key will not accept updates signed only by the new key.
 - App Store Connect API keys are managed at https://appstoreconnect.apple.com/access/integrations/api.
 - A Team API key uses an `AuthKey_<KEY_ID>.p8` private key; a `.provisionprofile` is never a notarization credential.
@@ -117,6 +118,7 @@ app-releases/voxstudio/releases/<version>-<build>/<sha256>/VoxStudio.dmg
 app-releases/voxstudio/releases/<version>-<build>/<sha256>/manifest.json
 app-releases/voxstudio/releases/<version>-<build>/<sha256>/appcast.xml
 app-releases/voxstudio/releases/<version>-<build>/<sha256>/chunks/000000.bin
+app-releases/voxstudio/releases/<version>-<build>/<sha256>/deltas/<from-build>-to-<to-build>.delta  # when generated
 ```
 
 The public Worker maps that prefix to `/downloads/voxstudio/`. The immutable
@@ -148,7 +150,8 @@ Report:
 - `com.apple.security.device.audio-input=true` and `NSMicrophoneUsageDescription` checks;
 - DMG size and SHA-256;
 - R2 identity, versioned URL, latest URL, appcast URL, and whether promote completed;
-- confirmation that in-app updates open the immutable Cloudflare enclosure, and that old Hugging Face builds are not claimed to migrate automatically;
+- whether Sparkle deltas were generated, uploaded, and verified, or the specific reason they were skipped; report full-DMG fallback availability;
+- confirmation that the Developer ID app's Sparkle updater uses the immutable Cloudflare appcast, and that old Hugging Face builds are not claimed to migrate automatically;
 - anything not verified or requiring manual UI confirmation.
 
 Do not claim that account login works from packaging checks alone; login remains a manual end-to-end verification.

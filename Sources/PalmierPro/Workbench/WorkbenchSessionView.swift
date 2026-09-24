@@ -213,23 +213,28 @@ struct WorkbenchSessionDetailView: View {
             if let session = store.selectedSession {
                 SessionDubOptionsSheet(
                     session: session,
+                    preferredLanguageCode: transcriptLanguageCode,
                     onCancel: { showDubOptionsSheet = false },
                     onManageVoices: {
                         showDubOptionsSheet = false
                         SettingsWindowController.shared.show(tab: .voiceLibrary)
                     },
-                    onStart: { referenceVoiceID in
+                    onStart: { referenceVoiceID, languageCode in
                         guard let transcriptionID = session.transcriptionID else {
                             showDubOptionsSheet = false
                             return
                         }
                         Task { @MainActor in
-                            guard let dubID = await store.createDubAfterAccess(for: transcriptionID) else {
+                            guard await store.createDubAfterAccess(
+                                for: transcriptionID,
+                                track: languageCode == nil ? .source : .translation,
+                                translationLanguageCode: languageCode,
+                                refreshExistingTranscript: true,
+                                referenceVoiceID: referenceVoiceID,
+                                applyReferenceVoice: true
+                            ) != nil else {
                                 showDubOptionsSheet = false
                                 return
-                            }
-                            store.updateDub(dubID) { dub in
-                                dub.referenceVoiceID = referenceVoiceID
                             }
                             showDubOptionsSheet = false
                         }
@@ -1352,18 +1357,42 @@ private struct SessionDubOptionsSheet: View {
     let session: WorkbenchSession
     let onCancel: () -> Void
     let onManageVoices: () -> Void
-    let onStart: (UUID?) -> Void
+    let onStart: (UUID?, String?) -> Void
     @State private var referenceVoiceID: UUID?
+    @State private var selectedLanguageCode: String
+
+    init(
+        session: WorkbenchSession,
+        preferredLanguageCode: String?,
+        onCancel: @escaping () -> Void,
+        onManageVoices: @escaping () -> Void,
+        onStart: @escaping (UUID?, String?) -> Void
+    ) {
+        self.session = session
+        self.onCancel = onCancel
+        self.onManageVoices = onManageVoices
+        self.onStart = onStart
+        let selected = session.translationTracks.first {
+            $0.languageCode.caseInsensitiveCompare(preferredLanguageCode ?? "") == .orderedSame
+        }?.languageCode ?? ""
+        _selectedLanguageCode = State(initialValue: selected)
+    }
 
     private var languageCode: String {
-        session.transcript?.language
+        session.translationTracks.first {
+            $0.languageCode.caseInsensitiveCompare(selectedLanguageCode) == .orderedSame
+        }?.languageCode
+            ?? session.transcript?.language
             ?? session.subtitleTrack?.language
             ?? "auto"
     }
 
     private var speakers: [String] {
-        let values = (session.transcript?.segments.compactMap(\.speaker) ?? [])
-            + (session.subtitleTrack?.cues.compactMap(\.speaker) ?? [])
+        let selectedTranslation = session.translationTracks.first {
+            $0.languageCode.caseInsensitiveCompare(selectedLanguageCode) == .orderedSame
+        }
+        let values = selectedTranslation.map { $0.track.cues.compactMap(\.speaker) }
+            ?? (session.transcript?.segments.compactMap(\.speaker) ?? [])
         var seen = Set<String>()
         return values.compactMap { value in
             let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1383,13 +1412,15 @@ private struct SessionDubOptionsSheet: View {
             }
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                Text(
-                    speakers.isEmpty
-                        ? L10n.string("SESSION VOICE")
-                        : L10n.format("SESSION VOICE · %@ SPEAKERS", speakers.count)
-                )
-                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.bold))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                if !session.translationTracks.isEmpty {
+                    Picker("Target language", selection: $selectedLanguageCode) {
+                        Text("Original").tag("")
+                        ForEach(session.translationTracks) { track in
+                            Text(track.displayLanguageLabel).tag(track.languageCode)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 VoiceReferenceSelectionPanel(
                     selection: $referenceVoiceID,
                     languageCode: languageCode,
@@ -1413,7 +1444,7 @@ private struct SessionDubOptionsSheet: View {
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)
                 Button("Start dubbing") {
-                    onStart(referenceVoiceID)
+                    onStart(referenceVoiceID, selectedLanguageCode.isEmpty ? nil : selectedLanguageCode)
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)

@@ -77,11 +77,24 @@ actor WeMMEmbeddingProvider: TextEmbeddingProvider {
 
     func suspend(generation: Int) async throws {
         guard availability.update(isAvailable: false, generation: generation) else { return }
+        await releaseResidentModel()
+    }
+
+    func releaseResidentModel() async {
         #if BUNDLED_SPEECH
-        guard MLXRuntime.isAvailable else { return }
-        try await MLXRuntime.beginInference()
-        defer { MLXRuntime.endInference() }
+        guard runtime != nil else { return }
+        guard MLXRuntime.isAvailable else {
+            runtime = nil
+            return
+        }
+        do {
+            try await MLXRuntime.beginInference()
+        } catch {
+            return
+        }
         runtime = nil
+        MLXRuntime.releaseActivations()
+        MLXRuntime.endInference()
         #endif
     }
 
@@ -91,8 +104,24 @@ actor WeMMEmbeddingProvider: TextEmbeddingProvider {
     ) async throws -> [Float] {
         let expectedGeneration = availability.generation
         try validate(expectedGeneration)
+        try await LocalSpeechScheduler.shared.beginForeignInference()
+        let result: Result<[Float], Error>
+        do {
+            result = .success(try await encodeHoldingInference(operation, expectedGeneration: expectedGeneration))
+        } catch {
+            result = .failure(error)
+        }
+        await LocalSpeechScheduler.shared.endForeignInference()
+        return try result.get()
+    }
+
+    private func encodeHoldingInference(
+        _ operation: @Sendable (WeMMEmbeddingRuntime) async throws -> [Float],
+        expectedGeneration: Int
+    ) async throws -> [Float] {
         try await MLXRuntime.beginInference()
         defer { MLXRuntime.endInference() }
+        defer { MLXRuntime.releaseActivations() }
         try validate(expectedGeneration)
         let runtime = try await loaded()
         try validate(expectedGeneration)

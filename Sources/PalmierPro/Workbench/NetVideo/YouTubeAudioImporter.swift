@@ -1,10 +1,16 @@
 import Foundation
 import YouTubeKit
 
+struct YouTubeAudioDownloadProgress: Sendable, Equatable {
+    /// Set when the response includes a total length. Nil for chunked responses.
+    var fraction: Double?
+    var bytesWritten: Int64
+}
+
 enum YouTubeAudioImportProgress: Sendable {
     case extractingLocal
     case extractingRemote
-    case downloading(Double)
+    case downloading(YouTubeAudioDownloadProgress)
 }
 
 struct YouTubeAudioImportResult: Sendable {
@@ -41,7 +47,18 @@ enum YouTubeAudioImporter {
     private typealias YouTubeStream = YouTubeKit.Stream
 
     private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-    private static let preferredExtensions: [YouTubeKit.FileExtension] = [.m4a, .mp4, .aac, .mp3]
+    /// itag 140 is the native AAC m4a track at about 128 kbps.
+    private static let preferredAudioItag = 140
+    private static let targetAudioBitrate = 128_000
+    /// Prefer a compact native stream while retaining playable fallbacks.
+    private static let maxPreferredAudioBitrate = 160_000
+    private static let requestIdleTimeout: TimeInterval = 60
+    private static let minimumResourceTimeout: TimeInterval = 900
+    private static let maximumResourceTimeout: TimeInterval = 2 * 60 * 60
+    /// Assumed length when the container size is not known yet. Used only to size the resource timeout.
+    private static let assumedDuration: TimeInterval = 12 * 60 * 60
+    /// A slow but still progressing transfer can take much longer than 15 minutes.
+    private static let throttleFloorBytesPerSecond = 32.0 * 1024.0
 
     static func importAudio(
         from rawURL: String,
@@ -57,15 +74,32 @@ enum YouTubeAudioImporter {
         try Task.checkCancellation()
 
         let ext = filenameExtension(for: extraction.stream)
+        let bitrate = audioBitrate(extraction.stream)
         let destination = directory
             .appendingPathComponent("\(videoID)-\(UUID().uuidString)")
             .appendingPathExtension(ext)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        progress(.downloading(0))
-        try await download(extraction.stream.url, to: destination, progress: progress)
         Log.transcription.notice(
-            "YouTube audio imported videoID=\(videoID) remoteFallback=\(extraction.usedRemote) ext=\(ext)"
+            "YouTube audio selected videoID=\(videoID) ext=\(ext) bitrate=\(bitrate) selection=\(extraction.selection) remoteFallback=\(extraction.usedRemote)"
+        )
+        progress(.downloading(YouTubeAudioDownloadProgress(fraction: nil, bytesWritten: 0)))
+        do {
+            try await download(
+                extraction.stream.url,
+                bitrate: bitrate,
+                to: destination,
+                progress: progress
+            )
+            try Task.checkCancellation()
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
+        let bytesWritten = fileSize(at: destination)
+        progress(.downloading(YouTubeAudioDownloadProgress(fraction: 1, bytesWritten: bytesWritten)))
+        Log.transcription.notice(
+            "YouTube audio imported videoID=\(videoID) remoteFallback=\(extraction.usedRemote) ext=\(ext) bitrate=\(bitrate) bytes=\(bytesWritten)"
         )
         return YouTubeAudioImportResult(
             fileURL: destination,
@@ -79,6 +113,13 @@ enum YouTubeAudioImporter {
         let stream: YouTubeStream
         let title: String?
         let usedRemote: Bool
+        /// "itag-140", "m4a-near-128kbps", or "m4a-low".
+        let selection: String
+    }
+
+    private struct SelectedAudio: Sendable {
+        let stream: YouTubeStream
+        let selection: String
     }
 
     private static func extractAudioStream(
@@ -86,17 +127,32 @@ enum YouTubeAudioImporter {
         progress: @escaping @Sendable (YouTubeAudioImportProgress) -> Void
     ) async throws -> ExtractedAudio {
         progress(.extractingLocal)
+        var localFallback: ExtractedAudio?
         do {
             let local = YouTube(videoID: videoID, methods: [.local])
             let localStreams = try await local.streams
-            if let stream = preferredAudioStream(from: localStreams) {
+            if let selected = preferredAudioStream(from: localStreams, allowFallback: false) {
                 let title = (try? await local.metadata)?.title
-                return ExtractedAudio(stream: stream, title: sanitizedTitle(title), usedRemote: false)
+                return ExtractedAudio(
+                    stream: selected.stream,
+                    title: sanitizedTitle(title),
+                    usedRemote: false,
+                    selection: selected.selection
+                )
             }
             if await isLivestream(local) {
                 throw YouTubeAudioImportError.liveStreamUnsupported
             }
-            Log.transcription.warning("YouTube local extraction returned no audio-only stream, trying remote fallback")
+            if let selected = preferredAudioStream(from: localStreams, allowFallback: true) {
+                let title = (try? await local.metadata)?.title
+                localFallback = ExtractedAudio(
+                    stream: selected.stream,
+                    title: sanitizedTitle(title),
+                    usedRemote: false,
+                    selection: selected.selection
+                )
+            }
+            Log.transcription.warning("YouTube local extraction returned no compact m4a, trying remote fallback")
         } catch let error as YouTubeAudioImportError {
             throw error
         } catch YouTubeKitError.liveStreamError {
@@ -112,13 +168,26 @@ enum YouTubeAudioImporter {
         do {
             let remote = YouTube(videoID: videoID, methods: [.remote])
             let remoteStreams = try await remote.streams
-            if let stream = preferredAudioStream(from: remoteStreams) {
+            if let selected = preferredAudioStream(from: remoteStreams) {
+                if let localFallback,
+                   selected.selection.hasSuffix("fallback"),
+                   (localFallback.stream.isNativelyPlayable || !selected.stream.isNativelyPlayable),
+                   audioBitrate(localFallback.stream) > 0,
+                   audioBitrate(localFallback.stream) <= audioBitrate(selected.stream) {
+                    return localFallback
+                }
                 let title = (try? await remote.metadata)?.title
-                return ExtractedAudio(stream: stream, title: sanitizedTitle(title), usedRemote: true)
+                return ExtractedAudio(
+                    stream: selected.stream,
+                    title: sanitizedTitle(title),
+                    usedRemote: true,
+                    selection: selected.selection
+                )
             }
             if await isLivestream(remote) {
                 throw YouTubeAudioImportError.liveStreamUnsupported
             }
+            if let localFallback { return localFallback }
             throw YouTubeAudioImportError.noAudioStream
         } catch let error as YouTubeAudioImportError {
             throw error
@@ -127,27 +196,56 @@ enum YouTubeAudioImporter {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
+            try Task.checkCancellation()
+            if let localFallback { return localFallback }
             throw YouTubeAudioImportError.extractionFailed(error.localizedDescription)
         }
     }
 
-    private static func preferredAudioStream(from streams: [YouTubeStream]) -> YouTubeStream? {
+    /// Prefer itag 140, then a similarly compact m4a. Keep a playable fallback
+    /// when a video exposes only higher-bitrate or differently packaged audio.
+    private static func preferredAudioStream(
+        from streams: [YouTubeStream],
+        allowFallback: Bool = true
+    ) -> SelectedAudio? {
+        let m4a = streams.filter { $0.includesAudioTrack && !$0.includesVideoTrack && $0.fileExtension == .m4a }
+        if let match = m4a.stream(withITag: preferredAudioItag) {
+            return SelectedAudio(stream: match, selection: "itag-140")
+        }
+
+        let listedBitrates = m4a.map { audioBitrate($0) }.sorted().map(String.init).joined(separator: ",")
+        Log.transcription.notice("YouTube itag 140 missing; m4a bitrates=\(listedBitrates)")
+
+        let nearTarget = m4a.filter { stream in
+            let rate = audioBitrate(stream)
+            return rate > 0 && rate <= maxPreferredAudioBitrate
+        }
+        if let match = nearTarget.min(by: closerToTargetBitrate) {
+            let selection = audioBitrate(match) + 32_000 >= targetAudioBitrate ? "m4a-near-128kbps" : "m4a-low"
+            return SelectedAudio(stream: match, selection: selection)
+        }
+        guard allowFallback else { return nil }
         let audioOnly = streams.filter { $0.includesAudioTrack && !$0.includesVideoTrack }
-        for fileExtension in preferredExtensions {
-            if let match = audioOnly
-                .filter({ $0.fileExtension == fileExtension })
-                .max(by: lowerAudioBitrate) {
-                return match
-            }
+        let playable = audioOnly.filter(\.isNativelyPlayable)
+        if let match = playable.min(by: lowerBitrate) {
+            return SelectedAudio(stream: match, selection: "playable-fallback")
         }
-        if let native = audioOnly.filter(\.isNativelyPlayable).max(by: lowerAudioBitrate) {
-            return native
+        if let match = audioOnly.min(by: lowerBitrate) {
+            return SelectedAudio(stream: match, selection: "audio-fallback")
         }
-        return audioOnly.max(by: lowerAudioBitrate)
+        return nil
     }
 
-    private static func lowerAudioBitrate(_ lhs: YouTubeStream, _ rhs: YouTubeStream) -> Bool {
-        audioBitrate(lhs) < audioBitrate(rhs)
+    private static func lowerBitrate(_ lhs: YouTubeStream, _ rhs: YouTubeStream) -> Bool {
+        let left = audioBitrate(lhs)
+        let right = audioBitrate(rhs)
+        if left <= 0 { return false }
+        if right <= 0 { return true }
+        return left < right
+    }
+
+    private static func closerToTargetBitrate(_ lhs: YouTubeStream, _ rhs: YouTubeStream) -> Bool {
+        abs(audioBitrate(lhs) - targetAudioBitrate) < abs(audioBitrate(rhs) - targetAudioBitrate)
     }
 
     private static func audioBitrate(_ stream: YouTubeStream) -> Int {
@@ -172,8 +270,23 @@ enum YouTubeAudioImporter {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// Bytes are unknown before the response, so the timeout is sized for a long native-m4a
+    /// download at about 32 KB/s instead of a flat 15 minutes.
+    private static func resourceTimeout(forBitrate bitrate: Int) -> TimeInterval {
+        let bitsPerSecond = bitrate > 0 ? bitrate : targetAudioBitrate
+        let estimatedBytes = Double(bitsPerSecond) / 8.0 * assumedDuration
+        let timeout = estimatedBytes / throttleFloorBytesPerSecond * 1.5
+        return min(maximumResourceTimeout, max(minimumResourceTimeout, timeout))
+    }
+
+    private static func fileSize(at url: URL) -> Int64 {
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey])
+        return Int64(values?.fileSize ?? 0)
+    }
+
     private static func download(
         _ url: URL,
+        bitrate: Int,
         to destination: URL,
         progress: @escaping @Sendable (YouTubeAudioImportProgress) -> Void
     ) async throws {
@@ -182,16 +295,16 @@ enum YouTubeAudioImporter {
         request.setValue("https://www.youtube.com/", forHTTPHeaderField: "Referer")
         request.setValue("https://www.youtube.com", forHTTPHeaderField: "Origin")
         request.setValue("*/*", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 60
+        request.timeoutInterval = requestIdleTimeout
 
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 60
-        configuration.timeoutIntervalForResource = 900
+        configuration.timeoutIntervalForRequest = requestIdleTimeout
+        configuration.timeoutIntervalForResource = resourceTimeout(forBitrate: bitrate)
         configuration.httpMaximumConnectionsPerHost = 1
         configuration.waitsForConnectivity = true
 
-        let delegate = DownloadProgressDelegate { fraction in
-            progress(.downloading(fraction))
+        let delegate = DownloadProgressDelegate { snapshot in
+            progress(.downloading(snapshot))
         }
         let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
@@ -202,14 +315,13 @@ enum YouTubeAudioImporter {
             throw YouTubeAudioImportError.downloadFailed(status: http.statusCode)
         }
         try FileIO.moveReplacingDestination(from: tempURL, to: destination)
-        progress(.downloading(1))
     }
 }
 
 private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    private let onProgress: @Sendable (Double) -> Void
+    private let onProgress: @Sendable (YouTubeAudioDownloadProgress) -> Void
 
-    init(onProgress: @escaping @Sendable (Double) -> Void) {
+    init(onProgress: @escaping @Sendable (YouTubeAudioDownloadProgress) -> Void) {
         self.onProgress = onProgress
     }
 
@@ -220,8 +332,10 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        guard totalBytesExpectedToWrite > 0 else { return }
-        onProgress(min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)))
+        let fraction = totalBytesExpectedToWrite > 0
+            ? min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+            : nil
+        onProgress(YouTubeAudioDownloadProgress(fraction: fraction, bytesWritten: totalBytesWritten))
     }
 
     func urlSession(

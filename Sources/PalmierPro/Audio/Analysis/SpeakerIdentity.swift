@@ -42,6 +42,7 @@ enum SpeakerIdentity {
         func embed(_ samples: [Float]) async throws -> [Float] {
             try await MLXRuntime.beginInference()
             defer { MLXRuntime.endInference() }
+            defer { MLXRuntime.releaseActivations() }
             if model == nil {
                 let descriptor = LocalModelManager.catalog.first { $0.id == .weSpeaker }!
                 model = try await WeSpeakerModel.fromPretrained(

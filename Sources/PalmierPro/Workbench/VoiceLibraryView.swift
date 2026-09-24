@@ -706,16 +706,25 @@ struct VoiceReferencePicker: View {
     @Binding var selection: UUID?
     var languageCode: String
     var defaultLabel = "Default voice"
+    var showsResolvedDefaultName = false
     var onManage: (() -> Void)?
 
     private var options: [LocalVoiceReference] {
         store.compatibleReferences(languageCode: languageCode, including: selection)
     }
 
+    private var defaultOptionLabel: String {
+        guard showsResolvedDefaultName,
+              let reference = store.defaultReference(languageCode: languageCode) else {
+            return L10n.string(key: defaultLabel)
+        }
+        return reference.name
+    }
+
     var body: some View {
         HStack(spacing: AppTheme.Spacing.sm) {
             Picker("Reference voice", selection: $selection) {
-                Text(L10n.string(key: defaultLabel)).tag(nil as UUID?)
+                Text(defaultOptionLabel).tag(nil as UUID?)
                 if !options.isEmpty { Divider() }
                 ForEach(options) { reference in
                     Text(reference.isDefault ? "★ \(reference.name)" : reference.name)

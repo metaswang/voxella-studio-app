@@ -183,6 +183,65 @@ class R2ReleaseTests(unittest.TestCase):
             self.assertEqual(manifest["chunkSize"], r2_release.CHUNK_SIZE_BYTES)
             self.assertEqual(sum(chunk["length"] for chunk in manifest["chunks"]), len(payload))
 
+    def test_delta_url_uses_public_downloads_path(self):
+        url = r2_release.versioned_delta_url(
+            "7.0.25", "106", "abc123", "105-to-106.delta", "https://updates.example"
+        )
+        self.assertEqual(
+            url,
+            "https://updates.example/downloads/voxstudio/releases/7.0.25-106/abc123/deltas/105-to-106.delta",
+        )
+
+    def test_merge_deltas_keeps_full_dmg_fallback_and_delta_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dmg = Path(directory) / "VoxStudio.dmg"
+            dmg.write_bytes(b"full-update")
+            manifest = r2_release.build_manifest(
+                version="7.0.25", build="106", dmg_path=dmg, signature="full-signature"
+            )
+            base_appcast = r2_release.build_appcast(
+                manifest, origin="https://updates.example"
+            )
+            delta = r2_release.DeltaArtifact(
+                from_version="7.0.24",
+                from_build="105",
+                to_version="7.0.25",
+                to_build="106",
+                local_path=Path(directory) / "105-to-106.delta",
+                size=1234,
+                sha256="delta-sha256",
+                signature="delta-signature",
+            )
+
+            merged = r2_release.merge_deltas_into_appcast(
+                base_appcast,
+                [delta],
+                "7.0.25",
+                "106",
+                manifest.sha256,
+                "https://updates.example",
+            )
+            root = r2_release.ET.fromstring(merged)
+            ns = {"sparkle": "http://www.andymatuschak.org/xml-namespaces/sparkle"}
+            item = root.find("channel/item")
+            self.assertIsNotNone(item)
+            full = item.find("enclosure")
+            self.assertEqual(
+                full.get("url"),
+                r2_release.versioned_dmg_url(
+                    "7.0.25", "106", manifest.sha256, "https://updates.example"
+                ),
+            )
+            self.assertEqual(full.get("{http://www.andymatuschak.org/xml-namespaces/sparkle}edSignature"), "full-signature")
+
+            deltas = item.find("sparkle:deltas", ns)
+            self.assertIsNotNone(deltas)
+            patch = deltas.find("enclosure")
+            self.assertEqual(patch.get("url"), delta.versioned_url("7.0.25", "106", manifest.sha256, "https://updates.example"))
+            self.assertEqual(patch.get("length"), "1234")
+            self.assertEqual(patch.get("{http://www.andymatuschak.org/xml-namespaces/sparkle}edSignature"), "delta-signature")
+            self.assertEqual(patch.get("{http://www.andymatuschak.org/xml-namespaces/sparkle}deltaFrom"), "105")
+
     def test_refuses_to_overwrite_a_different_object(self):
         class FakeClient:
             def __init__(self) -> None:

@@ -190,12 +190,26 @@ actor LocalSpeechPipeline {
         languageCode: String?,
         clipRangeSeconds: ClosedRange<Double>? = nil,
         profile: WhisperASRTuningProfile,
-        appVADPreprocessing: Bool = false
+        appVADPreprocessing: Bool = false,
+        managedLease: Bool = true
     ) async throws -> WhisperTuningDecodeStats {
+        if managedLease {
+            return try await LocalSpeechScheduler.shared.withLease(jobID: UUID(), lane: .asr) {
+                try await self.transcribeWhisperForTuning(
+                    sourceURL: sourceURL,
+                    languageCode: languageCode,
+                    clipRangeSeconds: clipRangeSeconds,
+                    profile: profile,
+                    appVADPreprocessing: appVADPreprocessing,
+                    managedLease: false
+                )
+            }
+        }
         let modelID = LocalModelID.whisperLargeV3Turbo8Bit
         try Self.requireModels([modelID])
         try await MLXRuntime.beginInference()
         defer { MLXRuntime.endInference() }
+        defer { MLXRuntime.releaseActivations() }
 
         let preparedURL = try await DecodedAudioCache.file(for: sourceURL, range: clipRangeSeconds)
         let decodedSamples = try AudioFileLoader.load(
@@ -336,8 +350,27 @@ actor LocalSpeechPipeline {
 
     private func recognizeQuickInput(
         sourceURL: URL,
-        progressUpdate: @escaping @Sendable (LocalSpeechProgress) -> Void
+        progressUpdate: @escaping @Sendable (LocalSpeechProgress) -> Void,
+        managedLease: Bool = true
     ) async throws -> SpeechInputResult {
+        if managedLease {
+            return try await LocalSpeechScheduler.shared.withLease(
+                jobID: UUID(), lane: .asr,
+                onQueued: {
+                    progressUpdate(.init(
+                        stage: .recognizing, fraction: 0,
+                        message: "Waiting for on-device processing to finish…"
+                    ))
+                }
+            ) {
+                try await self.recognizeQuickInput(
+                    sourceURL: sourceURL,
+                    progressUpdate: progressUpdate,
+                    managedLease: false
+                )
+            }
+        }
+        progressUpdate(.init(stage: .decoding, fraction: 0, message: "Preparing local recognition…"))
         let asset = AVURLAsset(url: sourceURL)
         let duration = try await asset.load(.duration).seconds
         guard duration.isFinite, duration > 0 else { throw LocalAIError.noAudioSamples }
@@ -397,13 +430,37 @@ actor LocalSpeechPipeline {
         clipRangeSeconds: ClosedRange<Double>?,
         textOnly: Bool,
         replayCollector: WhisperProductionReplayCollector? = nil,
-        progressUpdate: @escaping @Sendable (LocalSpeechProgress) -> Void
+        progressUpdate: @escaping @Sendable (LocalSpeechProgress) -> Void,
+        managedLease: Bool = true
     ) async throws -> SpeechOutput {
+        if managedLease {
+            return try await LocalSpeechScheduler.shared.withLease(
+                jobID: UUID(), lane: .asr,
+                onQueued: {
+                    progressUpdate(.init(
+                        stage: .recognizing, fraction: 0,
+                        message: "Waiting for on-device processing to finish…"
+                    ))
+                }
+            ) {
+                try await self.processSpeech(
+                    sourceURL: sourceURL,
+                    languageCode: languageCode,
+                    speakerCount: speakerCount,
+                    clipRangeSeconds: clipRangeSeconds,
+                    textOnly: textOnly,
+                    replayCollector: replayCollector,
+                    progressUpdate: progressUpdate,
+                    managedLease: false
+                )
+            }
+        }
         #if BUNDLED_SPEECH
         let whisperFallbackModelID = LocalModelManager.preferredWhisperFallbackModelID()
         try Self.requireModels([.sileroVAD])
         try await MLXRuntime.beginInference()
         defer { MLXRuntime.endInference() }
+        defer { MLXRuntime.releaseActivations() }
 
         progressUpdate(.init(stage: .decoding, fraction: 0.03, message: "Decoding audio locally…"))
         let preparationStartedAt = DispatchTime.now().uptimeNanoseconds
@@ -1000,8 +1057,19 @@ actor LocalSpeechPipeline {
     func alignKnownText(
         sourceURL: URL,
         request: KnownTextAlignmentRequest,
-        progressUpdate: @escaping @Sendable (LocalSpeechProgress) -> Void
+        progressUpdate: @escaping @Sendable (LocalSpeechProgress) -> Void,
+        managedLease: Bool = true
     ) async throws -> KnownTextAlignmentOutput {
+        if managedLease {
+            return try await LocalSpeechScheduler.shared.withLease(jobID: UUID(), lane: .asr) {
+                try await self.alignKnownText(
+                    sourceURL: sourceURL,
+                    request: request,
+                    progressUpdate: progressUpdate,
+                    managedLease: false
+                )
+            }
+        }
         #if BUNDLED_SPEECH
         let script = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !script.isEmpty else { throw LocalAIError.emptyTranscript }
@@ -1009,6 +1077,7 @@ actor LocalSpeechPipeline {
         try Self.requireModels(requiredModels)
         try await MLXRuntime.beginInference()
         defer { MLXRuntime.endInference() }
+        defer { MLXRuntime.releaseActivations() }
 
         progressUpdate(.init(stage: .decoding, fraction: 0.04, message: "Decoding audio for script alignment…"))
         let preparedURL = try await DecodedAudioCache.file(for: sourceURL)
@@ -1167,6 +1236,49 @@ actor LocalSpeechPipeline {
         #endif
     }
 
+    func releaseSessionModels() async {
+        #if BUNDLED_SPEECH
+        let hadSessionModel = aligner != nil || streamingDiarizer != nil
+        guard hadSessionModel else { return }
+        do {
+            try await MLXRuntime.beginInference()
+        } catch {
+            aligner = nil
+            streamingDiarizer = nil
+            return
+        }
+        defer { MLXRuntime.endInference() }
+        aligner = nil
+        streamingDiarizer = nil
+        MLXRuntime.releaseActivations()
+        #endif
+    }
+
+    func releaseLane() async {
+        #if BUNDLED_SPEECH
+        let hadLargeModel = whisper != nil || qwen != nil || parakeet != nil
+            || aligner != nil || streamingDiarizer != nil
+        guard hadLargeModel else { return }
+        do {
+            try await MLXRuntime.beginInference()
+        } catch {
+            whisper = nil
+            qwen = nil
+            parakeet = nil
+            aligner = nil
+            streamingDiarizer = nil
+            return
+        }
+        defer { MLXRuntime.endInference() }
+        whisper = nil
+        qwen = nil
+        parakeet = nil
+        aligner = nil
+        streamingDiarizer = nil
+        MLXRuntime.releaseActivations()
+        #endif
+    }
+
     #if BUNDLED_SPEECH
     private struct LoadedASR {
         var engine: ASREngine
@@ -1222,7 +1334,7 @@ actor LocalSpeechPipeline {
         // Metal allocator in a headless CLI process and crash when no device
         // list has been created yet. There is nothing to reclaim in that case.
         if hadLoadedModel {
-            Memory.clearCache()
+            MLXRuntime.releaseActivations()
         }
     }
 
@@ -1818,6 +1930,7 @@ actor LocalDubPipeline {
         }
         try await MLXRuntime.beginInference()
         defer { MLXRuntime.endInference() }
+        defer { MLXRuntime.releaseActivations() }
 
         progress(0.08, "Loading \(choice.label)…")
         let referenceTranscript = referenceText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1829,39 +1942,59 @@ actor LocalDubPipeline {
 
         progress(0.30, referenceAudioURL == nil ? "Synthesizing speech…" : "Cloning reference voice…")
         let normalizedLanguage = Self.ttsLanguage(language, script: text)
-        let audio: MLXArray
-        if let referenceAudioURL {
-            let referenceSamples = try AudioFileLoader.load(
-                url: referenceAudioURL,
-                targetSampleRate: model.sampleRate
-            )
-            let reference = MLXArray(referenceSamples)
-            MLXRandom.seed(seed)
-            audio = try await model.generate(
-                text: text,
-                voice: nil,
-                refAudio: reference,
-                refText: referenceTranscript.isEmpty ? nil : referenceTranscript,
-                language: normalizedLanguage
-            )
-        } else {
-            MLXRandom.seed(seed)
-            audio = try await model.generate(
-                text: text,
-                voice: nil,
-                refAudio: nil,
-                refText: nil,
-                language: normalizedLanguage
-            )
-        }
-        let samples = audio.asArray(Float.self)
+        let samples = try await renderedSamples()
         guard !samples.isEmpty else { throw LocalAIError.noAudioOutput }
         progress(0.92, "Writing local WAV…")
         let output = try Self.writeWAV(samples)
         progress(1, "Dub ready")
         return output
+
+        func renderedSamples() async throws -> [Float] {
+            let audio: MLXArray
+            if let referenceAudioURL {
+                let referenceSamples = try AudioFileLoader.load(
+                    url: referenceAudioURL,
+                    targetSampleRate: model.sampleRate
+                )
+                let reference = MLXArray(referenceSamples)
+                MLXRandom.seed(seed)
+                audio = try await model.generate(
+                    text: text,
+                    voice: nil,
+                    refAudio: reference,
+                    refText: referenceTranscript.isEmpty ? nil : referenceTranscript,
+                    language: normalizedLanguage
+                )
+            } else {
+                MLXRandom.seed(seed)
+                audio = try await model.generate(
+                    text: text,
+                    voice: nil,
+                    refAudio: nil,
+                    refText: nil,
+                    language: normalizedLanguage
+                )
+            }
+            return audio.asArray(Float.self)
+        }
         #else
         throw LocalAIError.modelsUnavailable
+        #endif
+    }
+
+    func releaseLane() async {
+        #if BUNDLED_SPEECH
+        let hadModel = !loadedModels.isEmpty
+        guard hadModel else { return }
+        do {
+            try await MLXRuntime.beginInference()
+        } catch {
+            loadedModels.removeAll()
+            return
+        }
+        defer { MLXRuntime.endInference() }
+        loadedModels.removeAll()
+        MLXRuntime.releaseActivations()
         #endif
     }
 

@@ -248,8 +248,8 @@ Run these checks after release --dist:
       otool -l "$APP/Contents/MacOS/VoxStudio" \
         | awk '/LC_BUILD_VERSION/{seen=1} seen && /minos/{print $2; exit}' \
         | rg -q '^15\.0$'
-      test ! -e "$APP/Contents/Frameworks/Sparkle.framework"
-      ! otool -L "$APP/Contents/MacOS/VoxStudio" | rg -q Sparkle
+      test -d "$APP/Contents/Frameworks/Sparkle.framework"
+      otool -L "$APP/Contents/MacOS/VoxStudio" | rg -q Sparkle
 
       codesign -d --entitlements :- "$APP" 2>/dev/null | rg -q 'keychain-access-groups'
       codesign -d --entitlements :- "$APP" 2>/dev/null | rg -q 'com.apple.application-identifier'
@@ -286,7 +286,8 @@ Mount the DMG read-only and repeat the executable checks against the copy users 
         | rg -q '^true$'
       /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$MOUNTED_APP/Contents/Info.plist" >/dev/null
       test -e "$MOUNTED_APP/Contents/embedded.provisionprofile"
-      test ! -e "$MOUNTED_APP/Contents/Frameworks/Sparkle.framework"
+      test -d "$MOUNTED_APP/Contents/Frameworks/Sparkle.framework"
+      otool -L "$MOUNTED_APP/Contents/MacOS/VoxStudio" | rg -q Sparkle
       if codesign -d --entitlements :- "$MOUNTED_APP" 2>/dev/null | rg -q 'com\.apple\.developer\.applesignin'; then
         echo 'Apple sign-in entitlement found in mounted DMG app'
         hdiutil detach "$MOUNT_POINT"
@@ -353,6 +354,7 @@ The publisher writes under `app-releases/voxstudio`:
       app-releases/voxstudio/releases/<version>-<build>/<sha256>/manifest.json
       app-releases/voxstudio/releases/<version>-<build>/<sha256>/appcast.xml
       app-releases/voxstudio/releases/<version>-<build>/<sha256>/chunks/000000.bin
+      app-releases/voxstudio/releases/<version>-<build>/<sha256>/deltas/<filename>  # only when generated
       app-releases/voxstudio/channels/stable.json
 
 These objects are served publicly through `https://assets.voxstudio.me/downloads/voxstudio/`.
@@ -365,17 +367,30 @@ The default wrapper already runs this path after a verified local artifact exist
         --dmg .build/VoxStudio.dmg \
         --version "$VERSION" \
         --build "$BUILD" \
-        --signature "$SPARKLE_SIGNATURE"
+        --signature "$SPARKLE_SIGNATURE" \
+        --enable-archives
 
 Equivalent staged invocation:
 
-      uv run --no-project --with boto3 python scripts/r2_release.py prepare --dmg .build/VoxStudio.dmg --version "$VERSION" --build "$BUILD" --signature "$SPARKLE_SIGNATURE"
+      uv run --no-project --with boto3 python scripts/r2_release.py prepare --dmg .build/VoxStudio.dmg --version "$VERSION" --build "$BUILD" --signature "$SPARKLE_SIGNATURE" --enable-archives
       uv run --no-project --with boto3 python scripts/r2_release.py upload --staging-dir .build/r2-release/$VERSION-$BUILD/$SHA256
       uv run --no-project --with boto3 python scripts/r2_release.py verify --staging-dir .build/r2-release/$VERSION-$BUILD/$SHA256
       uv run --no-project --with boto3 python scripts/r2_release.py cache-check --staging-dir .build/r2-release/$VERSION-$BUILD/$SHA256
       uv run --no-project --with boto3 python scripts/r2_release.py promote --staging-dir .build/r2-release/$VERSION-$BUILD/$SHA256
 
 `prepare` hashes the stapled DMG and writes immutable metadata and legacy chunk artifacts. Downloads use the original R2 DMG stream, not JS chunk assembly. `upload` refuses to overwrite an existing identity with different content.
+
+### Sparkle binary deltas
+
+The Developer ID app embeds Sparkle and can install a binary `.delta` when its installed build matches a delta base listed in `<sparkle:deltas>`. This is separate from the legacy `chunks/` objects above; Sparkle does not assemble those chunks. Keep the full-DMG enclosure in the appcast as the fallback for builds without a matching delta.
+
+- `scripts/release.sh` passes `--enable-archives` on its normal R2 path. For a direct `r2_release.py run` or `prepare` invocation, pass `--enable-archives` explicitly or no DMG history is retained for delta generation.
+- `RELEASE_ENABLE_DELTAS=auto` is the default. After archiving the current DMG, `prepare` generates deltas only on macOS and when at least two DMGs are retained in `.build/release-archives/`. It keeps at most five DMGs; Sparkle's `generate_appcast` determines eligible base builds from the staged release and retained archives.
+- `RELEASE_ENABLE_DELTAS=0` forces a full-DMG-only appcast. `RELEASE_ENABLE_DELTAS=1` requires macOS and at least two retained DMGs; unmet prerequisites fail `prepare`.
+- Delta generation requires `.build/sparkle-tools/bin/generate_appcast` and the Sparkle EdDSA private key. `SPARKLE_ED_KEY_FILE` selects the key file; otherwise the script looks for `~/.config/sparkle/sparkle_eddsa_priv.pem`. Do not print, copy into the artifact, or upload the private key. If automatic delta generation is eligible but the tool or key is unavailable, `prepare` fails before the upload stages; fix the prerequisite or explicitly choose `RELEASE_ENABLE_DELTAS=0`.
+- Generated `.delta` files are staged under `.build/r2-release/<version>-<build>/<sha256>/deltas/`, uploaded to `app-releases/voxstudio/releases/<version>-<build>/<sha256>/deltas/<filename>`, and referenced by immutable public URLs under `/downloads/voxstudio/releases/<version>-<build>/<sha256>/deltas/<filename>`.
+- `verify` checks every delta URL in the prepared appcast with HTTP HEAD and checks its `Content-Length`. Do not promote unless the normal artifact verify and cache-check gates also pass.
+- Developer ID builds include `SparkleUpdates`, embed `Sparkle.framework`, and use Sparkle for in-app checks and installation. A delta is usable only for an installed build that matches its `sparkle:deltaFrom` build and passes Sparkle signature validation. Mac App Store builds omit Sparkle. Always retain the full-DMG enclosure for full-update fallback.
 
 The release sequence is `prepare → upload → verify → cache-check → promote → postcheck`. `verify` captures the current stable identity/ETag, fully downloads the immutable public URL, checks size/SHA-256/ETag, and records the serving cache deployment. This also warms the cache. `cache-check` checks actual range bytes, range headers, and an internal cache `HIT` on the same deployment, with at most three attempts. Persistent `DYNAMIC`, `BYPASS`, `UNKNOWN`, `FALLBACK`, or a changed cache deployment fails the normal cache release gate. Repeat verify after a cache deployment change.
 
@@ -401,7 +416,7 @@ Ordinary latest GET/HEAD must 302 to the immutable URL with `private, no-store`;
 
 The public gateway's Workers Cache is disabled. Only the private `voxstudio-release-cache` Worker caches complete immutable DMGs; it is called by Service Binding. The `X-VoxStudio-Release-Cache` response header reports its status, and `X-VoxStudio-Cache-Version` identifies its deployment. Public HEAD is metadata-only and reports ORIGIN; use a GET range for cache checks. A latest response may expose an internal HIT while its external response remains no-store. No Zone Cache Rule is needed for this architecture.
 
-Run the worker repository's `scripts/verify-release-download.py --mode cache --output /tmp/VoxStudio-resume.dmg`. It checks HTTP contracts, interrupts a real download at 20 MiB, resumes it, verifies the combined SHA-256/size, and checks warm range bytes/HIT. Also test Safari pause/restart/old failures and the actual app update flow, plus legacy Sparkle clients where available. Record device/browser versions and network/POP; curl alone is not browser acceptance. The current app opens the appcast enclosure in a browser; do not claim it embeds Sparkle.
+Run the worker repository's `scripts/verify-release-download.py --mode cache --output /tmp/VoxStudio-resume.dmg`. It checks HTTP contracts, interrupts a real download at 20 MiB, resumes it, verifies the combined SHA-256/size, and checks warm range bytes/HIT. Also test Safari pause/restart/old failures and the actual Developer ID Sparkle update flow. When the appcast has a delta for the installed build, verify that update path; also verify the full-DMG fallback. Record device/browser versions and network/POP; curl alone is not browser acceptance.
 
 Rollback download delivery by setting the public Worker's `RELEASE_DELIVERY_MODE=origin` and redeploying. Keep `RELEASE_DOWNLOAD_MODE=origin`. This bypasses the private cache while retaining safe validators; do not roll back to the date-If-Range bug. Default cache entries are isolated per cache-Worker deployment, so warm and verify current stable after redeploying that Worker. Public gateway deployments do not redeploy the cache Worker.
 

@@ -26,6 +26,15 @@ actor LocalDubFlowRenderer {
         payload: DubFlowPayload,
         progress: @escaping @Sendable (DubFlowProgress) -> Void
     ) async throws -> DubFlowResult {
+        try await LocalSpeechScheduler.shared.withLease(jobID: UUID(), lane: .dub) {
+            try await self.renderHoldingLease(payload: payload, progress: progress)
+        }
+    }
+
+    private func renderHoldingLease(
+        payload: DubFlowPayload,
+        progress: @escaping @Sendable (DubFlowProgress) -> Void
+    ) async throws -> DubFlowResult {
         let prepared = try Self.prepare(payload)
         let chunkCount = prepared.reduce(0) { $0 + $1.chunks.count }
         progress(.init(
@@ -122,6 +131,13 @@ actor LocalDubFlowRenderer {
                start.isFinite,
                end.isFinite,
                end > start {
+                progress(.init(
+                    stage: .dubSynthesis,
+                    fraction: 0.10 + 0.78 * Double(completedChunks) / Double(max(1, chunkCount)),
+                    current: completedChunks,
+                    total: chunkCount,
+                    message: "Fitting synthesized audio to source timing…"
+                ))
                 let targetDuration = end - start
                 let fitted = try await Self.fitToTimeline(
                     segmentSamples,
@@ -274,7 +290,10 @@ actor LocalDubFlowRenderer {
             maximumFrameCount: maximumFrameCount
         )
         try engine.start()
-        await player.scheduleBuffer(input)
+        defer { engine.stop() }
+        // The async scheduleBuffer overload waits for playback completion.
+        // Playback starts only below, so awaiting it here deadlocks the job.
+        player.scheduleBuffer(input, at: nil, options: [], completionHandler: nil)
         player.play()
 
         let expectedFrames = max(
@@ -303,7 +322,6 @@ actor LocalDubFlowRenderer {
                 count: Int(buffer.frameLength)
             ))
         }
-        engine.stop()
         return output.isEmpty ? samples : output
     }
 

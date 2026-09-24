@@ -11,6 +11,7 @@ struct TranscribeWorkbenchView: View {
     @State private var netVideoPhase: NetVideoImportPhase = .idle
     @State private var pendingNetVideoTitle: String?
     @State private var netVideoTask: Task<Void, Never>?
+    @State private var netVideoImportID: UUID?
     @State private var pendingBasicStart: PendingBasicTranscriptionStart?
     @Bindable private var recording = RecordingSessionController.shared
 
@@ -34,6 +35,8 @@ struct TranscribeWorkbenchView: View {
         }
         .onDisappear {
             netVideoTask?.cancel()
+            netVideoTask = nil
+            netVideoImportID = nil
         }
         .onChange(of: store.preferNetVideoEntry) { _, prefersNetVideo in
             if prefersNetVideo {
@@ -901,6 +904,7 @@ struct TranscribeWorkbenchView: View {
                     Button(L10n.string("Cancel"), role: .cancel) {
                         netVideoTask?.cancel()
                         netVideoTask = nil
+                        netVideoImportID = nil
                         netVideoPhase = .idle
                     }
                     .buttonStyle(.bordered)
@@ -1031,44 +1035,65 @@ struct TranscribeWorkbenchView: View {
             return
         }
         netVideoTask?.cancel()
+        let importID = UUID()
+        netVideoImportID = importID
         netVideoTask = Task {
+            var importedURL: URL?
             do {
                 try await AccountService.shared.prepareNewContentAccess()
+                guard netVideoImportID == importID else { throw CancellationError() }
                 netVideoPhase = .extractingLocal
                 let result = try await YouTubeAudioImporter.importAudio(
                     from: raw,
                     into: WorkbenchStore.netVideoMediaDirectory
                 ) { progress in
                     Task { @MainActor in
+                        guard netVideoImportID == importID else { return }
                         switch progress {
                         case .extractingLocal:
                             netVideoPhase = .extractingLocal
                         case .extractingRemote:
                             netVideoPhase = .extractingRemote
-                        case .downloading(let fraction):
-                            netVideoPhase = .downloading(fraction)
+                        case .downloading(let snapshot):
+                            netVideoPhase = .downloading(snapshot)
                         }
                     }
                 }
+                importedURL = result.fileURL
                 try Task.checkCancellation()
+                guard netVideoImportID == importID else { throw CancellationError() }
                 pendingNetVideoTitle = result.title
                 netVideoPhase = .idle
-                guard let sourceURL = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-                    netVideoPhase = .failed("The YouTube URL is invalid.")
-                    return
-                }
+                let sourceURL = URL(string: "https://www.youtube.com/watch?v=\(result.videoID)")!
                 store.stageNetVideoImport(
                     mediaURL: result.fileURL,
                     sourceURL: sourceURL,
                     videoID: result.videoID,
                     title: result.title
                 )
+                netVideoImportID = nil
+                netVideoTask = nil
             } catch is CancellationError {
-                netVideoPhase = .idle
+                if let importedURL { try? FileManager.default.removeItem(at: importedURL) }
+                if netVideoImportID == importID {
+                    netVideoPhase = .idle
+                    netVideoImportID = nil
+                    netVideoTask = nil
+                }
             } catch is AppAccessError {
-                return
+                if let importedURL { try? FileManager.default.removeItem(at: importedURL) }
+                if netVideoImportID == importID {
+                    netVideoPhase = .idle
+                    netVideoImportID = nil
+                    netVideoTask = nil
+                }
             } catch {
-                netVideoPhase = .failed(error.localizedDescription)
+                if let importedURL { try? FileManager.default.removeItem(at: importedURL) }
+                if netVideoImportID == importID {
+                    netVideoPhase = .failed(error.localizedDescription)
+                    netVideoImportID = nil
+                    netVideoTask = nil
+                }
             }
         }
     }
@@ -1218,7 +1243,7 @@ private enum NetVideoImportPhase: Equatable {
     case idle
     case extractingLocal
     case extractingRemote
-    case downloading(Double)
+    case downloading(YouTubeAudioDownloadProgress)
     case failed(String)
 
     var isInProgress: Bool {
@@ -1229,7 +1254,7 @@ private enum NetVideoImportPhase: Equatable {
     }
 
     var downloadFraction: Double? {
-        if case .downloading(let fraction) = self { return fraction }
+        if case .downloading(let snapshot) = self { return snapshot.fraction }
         return nil
     }
 
@@ -1241,8 +1266,14 @@ private enum NetVideoImportPhase: Equatable {
             "Resolving YouTube audio locally…"
         case .extractingRemote:
             "Local extraction failed — using the author’s remote fallback…"
-        case .downloading(let fraction):
-            "Downloading audio… \(Int((fraction * 100).rounded()))%"
+        case .downloading(let snapshot):
+            if let fraction = snapshot.fraction {
+                "Downloading audio… \(Int((fraction * 100).rounded()))%"
+            } else if snapshot.bytesWritten > 0 {
+                "Downloading audio… \(ByteCountFormatter.string(fromByteCount: snapshot.bytesWritten, countStyle: .file))"
+            } else {
+                "Downloading audio…"
+            }
         }
     }
 }

@@ -83,7 +83,7 @@ cp "$RESOURCES/Info.plist" "$APP/Contents/Info.plist"
 
 PLIST_MINIMUM_SYSTEM_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist")"
 BINARY_MINIMUM_SYSTEM_VERSION="$(otool -l "$APP/Contents/MacOS/VoxStudio" \
-  | awk '/LC_BUILD_VERSION/{seen=1} seen && /minos/{print $2; exit}')"
+  | awk '/LC_BUILD_VERSION/{seen=1} seen && /minos/ && !printed{print $2; printed=1}')"
 if [ "$PLIST_MINIMUM_SYSTEM_VERSION" != "$BINARY_MINIMUM_SYSTEM_VERSION" ]; then
   echo "!! deployment target mismatch: Info.plist=$PLIST_MINIMUM_SYSTEM_VERSION Mach-O=$BINARY_MINIMUM_SYSTEM_VERSION" >&2
   exit 1
@@ -413,6 +413,20 @@ if [ "$MODE" != "mas" ] && [ -d "$APP/Contents/Frameworks/Sparkle.framework" ]; 
         codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$xpc"
       fi
     done
+  fi
+  # Sparkle's updater helpers have their own signatures and must be signed
+  # directly with Developer ID and a secure timestamp for notarization.
+  UPDATER_APP="$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app"
+  UPDATER_BINARY="$UPDATER_APP/Contents/MacOS/Updater"
+  if [ -f "$UPDATER_BINARY" ]; then
+    echo "    Signing Updater.app/Contents/MacOS/Updater"
+    codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$UPDATER_BINARY"
+    codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$UPDATER_APP"
+  fi
+  AUTOUPDATE_BINARY="$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
+  if [ -f "$AUTOUPDATE_BINARY" ]; then
+    echo "    Signing Autoupdate"
+    codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$AUTOUPDATE_BINARY"
   fi
   # Sign the framework itself
   codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
