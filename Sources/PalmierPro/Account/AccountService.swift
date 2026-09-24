@@ -641,7 +641,9 @@ final class AccountService {
         guard Self.paidAccessEnabled else { return }
         reapplyLocalEntitlementOverlays()
         await renewLifetimeLeaseIfNeeded()
+#if !MAC_APP_STORE
         await renewLicenseKeyLeaseIfNeeded()
+#endif
         reapplyLocalEntitlementOverlays()
         if hasLocalPaidDeviceCredential { return }
         if appAccess.policy() == .allowed { return }
@@ -724,6 +726,7 @@ final class AccountService {
     }
 
 
+#if !MAC_APP_STORE
     private func renewLicenseKeyLeaseIfNeeded(force: Bool = false) async {
         guard Self.paidAccessEnabled else { return }
         guard let record = try? LicenseKeyLocalCredential.load() else { return }
@@ -765,6 +768,7 @@ final class AccountService {
         licenseKeyDeviceVerifyAttempt = .now
         applyLicenseKeyCredentialOverlayIfNeeded()
     }
+#endif
 
 
     /// Overlay device-local trial onto `appAccess` when no stronger entitlement is present.

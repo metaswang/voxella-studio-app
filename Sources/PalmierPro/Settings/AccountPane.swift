@@ -74,9 +74,11 @@ struct AccountPane: View {
             .buttonStyle(.capsule(.secondary, size: .regular))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+#if !MAC_APP_STORE
         .sheet(isPresented: $showDeviceManagement) {
             LicenseKeyDevicesView(onClose: { showDeviceManagement = false })
         }
+#endif
     }
 
     private func trialSection(_ presentation: TrialPresentation) -> some View {
