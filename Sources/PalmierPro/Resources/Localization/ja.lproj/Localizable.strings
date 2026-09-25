@@ -560,6 +560,8 @@
 "License key activated" = "ライセンスキーを有効化しました";
 "Lifetime unlocked" = "永久アクセスを解除しました";
 "This Mac is unlocked with your license key. Manage devices below if you need a free slot on another Mac." = "このMacはライセンスキーでロック解除されています。別のMacの空きスロットが必要な場合は、下でデバイスを管理してください。";
+"Lifetime purchased" = "永久アクセスを購入済み";
+"Purchased" = "購入済み";
 "This Mac already has Lifetime access." = "このMacはすでに永久アクセスを利用できます。";
 "Manage devices…" = "デバイスを管理…";
 "Optional: sign in later to manage devices across Macs from your account." = "任意：後でサインインすると、アカウントから複数のMacのデバイスを管理できます。";

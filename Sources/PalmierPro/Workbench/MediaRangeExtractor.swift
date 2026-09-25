@@ -27,31 +27,16 @@ enum MediaRangeExtractor {
             throw ExtractionError(reason: "no audio or video tracks")
         }
 
-        let composition = AVMutableComposition()
+        let assetDuration = try await asset.load(.duration).seconds
+        let clippedEnd = assetDuration.isFinite && assetDuration > 0 ? min(end, assetDuration) : end
+        guard clippedEnd > start else {
+            throw ExtractionError(reason: "range starts after the media ends")
+        }
         let timescale: CMTimeScale = 600
         let timeRange = CMTimeRange(
             start: CMTime(seconds: start, preferredTimescale: timescale),
-            duration: CMTime(seconds: end - start, preferredTimescale: timescale)
+            duration: CMTime(seconds: clippedEnd - start, preferredTimescale: timescale)
         )
-
-        if hasVideo,
-           let videoTrack = try await asset.loadTracks(withMediaType: .video).first,
-           let compVideo = composition.addMutableTrack(
-               withMediaType: .video,
-               preferredTrackID: kCMPersistentTrackID_Invalid
-           ) {
-            try compVideo.insertTimeRange(timeRange, of: videoTrack, at: .zero)
-            compVideo.preferredTransform = try await videoTrack.load(.preferredTransform)
-        }
-
-        if hasAudio,
-           let audioTrack = try await asset.loadTracks(withMediaType: .audio).first,
-           let compAudio = composition.addMutableTrack(
-               withMediaType: .audio,
-               preferredTrackID: kCMPersistentTrackID_Invalid
-           ) {
-            try compAudio.insertTimeRange(timeRange, of: audioTrack, at: .zero)
-        }
 
         try? FileManager.default.removeItem(at: destinationURL)
         try FileManager.default.createDirectory(
@@ -59,13 +44,39 @@ enum MediaRangeExtractor {
             withIntermediateDirectories: true
         )
 
-        let presetName = hasVideo
-            ? AVAssetExportPresetHighestQuality
-            : AVAssetExportPresetAppleM4A
-        guard let session = AVAssetExportSession(asset: composition, presetName: presetName) else {
+        let fileType: AVFileType = hasVideo ? .mp4 : .m4a
+        do {
+            // Copy compressed tracks first. Video boundaries may land on nearby keyframes.
+            try await export(asset, range: timeRange, preset: AVAssetExportPresetPassthrough,
+                             fileType: fileType, to: destinationURL)
+        } catch is CancellationError {
+            try? FileManager.default.removeItem(at: destinationURL)
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+            try? FileManager.default.removeItem(at: destinationURL)
+            let fallback = hasVideo ? AVAssetExportPresetHighestQuality : AVAssetExportPresetAppleM4A
+            do {
+                try await export(asset, range: timeRange, preset: fallback,
+                                 fileType: fileType, to: destinationURL)
+            } catch {
+                try? FileManager.default.removeItem(at: destinationURL)
+                throw error
+            }
+        }
+    }
+
+    private static func export(
+        _ asset: AVURLAsset,
+        range: CMTimeRange,
+        preset: String,
+        fileType: AVFileType,
+        to destinationURL: URL
+    ) async throws {
+        guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
             throw ExtractionError(reason: "export preset unsupported")
         }
-        let fileType: AVFileType = hasVideo ? .mp4 : .m4a
+        session.timeRange = range
         try await session.export(to: destinationURL, as: fileType)
     }
 }

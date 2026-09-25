@@ -68,6 +68,8 @@
 "License key activated" = "Lizenzschlüssel aktiviert";
 "Lifetime unlocked" = "Dauerzugriff freigeschaltet";
 "This Mac is unlocked with your license key. Manage devices below if you need a free slot on another Mac." = "Dieser Mac ist mit Ihrem Lizenzschlüssel freigeschaltet. Verwalten Sie unten die Geräte, wenn Sie einen Platz auf einem anderen Mac freigeben müssen.";
+"Lifetime purchased" = "Dauerzugriff erworben";
+"Purchased" = "Erworben";
 "This Mac already has Lifetime access." = "Dieser Mac hat bereits Dauerzugriff.";
 "Manage devices…" = "Geräte verwalten…";
 "Optional: sign in later to manage devices across Macs from your account." = "Optional: Melden Sie sich später an, um die Geräte Ihres Kontos auf mehreren Macs zu verwalten.";

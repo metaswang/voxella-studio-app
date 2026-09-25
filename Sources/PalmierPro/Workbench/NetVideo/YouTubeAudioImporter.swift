@@ -1,16 +1,30 @@
+import AVFoundation
 import Foundation
 import YouTubeKit
 
 struct YouTubeAudioDownloadProgress: Sendable, Equatable {
+    enum Component: Sendable, Equatable {
+        case videoTrack
+        case audioTrack
+    }
+
     /// Set when the response includes a total length. Nil for chunked responses.
     var fraction: Double?
     var bytesWritten: Int64
+    var component: Component? = nil
 }
 
 enum YouTubeAudioImportProgress: Sendable {
     case extractingLocal
     case extractingRemote
     case downloading(YouTubeAudioDownloadProgress)
+    case preparing
+}
+
+struct YouTubeVideoQualityList: Sendable, Equatable {
+    /// Distinct playable resolutions, highest first.
+    var resolutions: [Int]
+    var defaultResolution: Int
 }
 
 struct YouTubeAudioImportResult: Sendable {
@@ -24,7 +38,8 @@ enum YouTubeAudioImportError: LocalizedError {
     case invalidURL
     case liveStreamUnsupported
     case noAudioStream
-    case downloadFailed(status: Int)
+    case noVideoStream
+    case downloadFailed(status: Int, media: String)
     case extractionFailed(String)
 
     var errorDescription: String? {
@@ -35,8 +50,10 @@ enum YouTubeAudioImportError: LocalizedError {
             "Live streams are not supported. Use a finished public video."
         case .noAudioStream:
             "No downloadable audio-only stream was found for this video."
-        case .downloadFailed(let status):
-            "YouTube refused the audio download (HTTP \(status)). The video may be private, region-locked, or age-restricted."
+        case .noVideoStream:
+            "No downloadable video was found for this link."
+        case .downloadFailed(let status, let media):
+            "YouTube refused the \(media) download (HTTP \(status)). The video may be private, region-locked, or age-restricted."
         case .extractionFailed(let message):
             message
         }
@@ -47,6 +64,8 @@ enum YouTubeAudioImporter {
     private typealias YouTubeStream = YouTubeKit.Stream
 
     private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+    /// Prefer 1080p when the video publishes that tier.
+    static let preferredVideoResolution = 1_080
     /// itag 140 is the native AAC m4a track at about 128 kbps.
     private static let preferredAudioItag = 140
     private static let targetAudioBitrate = 128_000
@@ -107,6 +126,126 @@ enum YouTubeAudioImporter {
             title: extraction.title,
             usedRemoteFallback: extraction.usedRemote
         )
+    }
+
+    /// Playable H.264 resolutions for this video. Local extraction first.
+    static func listVideoQualities(from rawURL: String) async throws -> YouTubeVideoQualityList {
+        guard YouTubeURL.videoID(from: rawURL) != nil else {
+            throw YouTubeAudioImportError.invalidURL
+        }
+        let resolved = try await resolveVideoStreams(from: rawURL, progress: { _ in })
+        let resolutions = videoResolutions(from: resolved.streams)
+        guard let defaultResolution = defaultVideoResolution(from: resolutions) else {
+            throw YouTubeAudioImportError.noVideoStream
+        }
+        return YouTubeVideoQualityList(resolutions: resolutions, defaultResolution: defaultResolution)
+    }
+
+    /// Downloads an mp4 that already contains an audio track.
+    /// `resolution` nil uses 1080p, else the highest tier below it, else the lowest available.
+    static func importVideo(
+        from rawURL: String,
+        into directory: URL,
+        resolution: Int?,
+        progress: @escaping @Sendable (YouTubeAudioImportProgress) -> Void
+    ) async throws -> YouTubeAudioImportResult {
+        guard let videoID = YouTubeURL.videoID(from: rawURL) else {
+            throw YouTubeAudioImportError.invalidURL
+        }
+        let resolved = try await resolveVideoStreams(from: rawURL, progress: progress)
+        let resolutions = videoResolutions(from: resolved.streams)
+        let target = selectedVideoResolution(requested: resolution, available: resolutions)
+        guard let target else { throw YouTubeAudioImportError.noVideoStream }
+        guard let video = preferredVideoStream(from: resolved.streams, resolution: target) else {
+            throw YouTubeAudioImportError.noVideoStream
+        }
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory
+            .appendingPathComponent("\(videoID)-\(UUID().uuidString)")
+            .appendingPathExtension("mp4")
+
+        if video.includesVideoAndAudioTrack {
+            progress(.downloading(YouTubeAudioDownloadProgress(fraction: nil, bytesWritten: 0)))
+            do {
+                try await download(video.url, bitrate: videoBitrate(video), to: destination, media: "video", progress: progress)
+                try Task.checkCancellation()
+            } catch {
+                try? FileManager.default.removeItem(at: destination)
+                throw error
+            }
+            let bytesWritten = fileSize(at: destination)
+            progress(.downloading(YouTubeAudioDownloadProgress(fraction: 1, bytesWritten: bytesWritten)))
+            Log.transcription.notice(
+                "YouTube video imported videoID=\(videoID) resolution=\(target) muxed=false remoteFallback=\(resolved.usedRemote) bytes=\(bytesWritten)"
+            )
+            return YouTubeAudioImportResult(
+                fileURL: destination,
+                videoID: videoID,
+                title: resolved.title,
+                usedRemoteFallback: resolved.usedRemote
+            )
+        }
+
+        guard let audio = preferredMuxAudioStream(from: resolved.streams) else {
+            throw YouTubeAudioImportError.noAudioStream
+        }
+        let videoPart = directory
+            .appendingPathComponent("\(videoID)-\(UUID().uuidString)-v")
+            .appendingPathExtension("mp4")
+        let audioPart = directory
+            .appendingPathComponent("\(videoID)-\(UUID().uuidString)-a")
+            .appendingPathExtension(filenameExtension(for: audio))
+        defer {
+            try? FileManager.default.removeItem(at: videoPart)
+            try? FileManager.default.removeItem(at: audioPart)
+        }
+        do {
+            progress(.downloading(YouTubeAudioDownloadProgress(fraction: nil, bytesWritten: 0, component: .videoTrack)))
+            try await download(video.url, bitrate: videoBitrate(video), to: videoPart, media: "video") { update in
+                guard case .downloading(let snapshot) = update else { return }
+                progress(.downloading(YouTubeAudioDownloadProgress(
+                    fraction: snapshot.fraction,
+                    bytesWritten: snapshot.bytesWritten,
+                    component: .videoTrack
+                )))
+            }
+            try Task.checkCancellation()
+            progress(.downloading(YouTubeAudioDownloadProgress(fraction: nil, bytesWritten: 0, component: .audioTrack)))
+            try await download(audio.url, bitrate: audioBitrate(audio), to: audioPart, media: "audio") { update in
+                guard case .downloading(let snapshot) = update else { return }
+                progress(.downloading(YouTubeAudioDownloadProgress(
+                    fraction: snapshot.fraction,
+                    bytesWritten: snapshot.bytesWritten,
+                    component: .audioTrack
+                )))
+            }
+            try Task.checkCancellation()
+            progress(.preparing)
+            try await mux(videoURL: videoPart, audioURL: audioPart, to: destination)
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
+        let bytesWritten = fileSize(at: videoPart) + fileSize(at: audioPart)
+        progress(.downloading(YouTubeAudioDownloadProgress(fraction: 1, bytesWritten: bytesWritten)))
+        Log.transcription.notice(
+            "YouTube video imported videoID=\(videoID) resolution=\(target) muxed=true remoteFallback=\(resolved.usedRemote) downloadBytes=\(bytesWritten) outputBytes=\(fileSize(at: destination))"
+        )
+        return YouTubeAudioImportResult(
+            fileURL: destination,
+            videoID: videoID,
+            title: resolved.title,
+            usedRemoteFallback: resolved.usedRemote
+        )
+    }
+
+    static func defaultVideoResolution(from resolutions: [Int]) -> Int? {
+        let unique = Set(resolutions.filter { $0 > 0 })
+        guard !unique.isEmpty else { return nil }
+        if unique.contains(preferredVideoResolution) { return preferredVideoResolution }
+        if let below = unique.filter({ $0 < preferredVideoResolution }).max() { return below }
+        return unique.min()
     }
 
     private struct ExtractedAudio: Sendable {
@@ -236,6 +375,191 @@ enum YouTubeAudioImporter {
         return nil
     }
 
+    private struct ResolvedVideo: Sendable {
+        let streams: [YouTubeStream]
+        let title: String?
+        let usedRemote: Bool
+    }
+
+    private static func resolveVideoStreams(
+        from rawURL: String,
+        progress: @escaping @Sendable (YouTubeAudioImportProgress) -> Void
+    ) async throws -> ResolvedVideo {
+        guard let videoID = YouTubeURL.videoID(from: rawURL) else {
+            throw YouTubeAudioImportError.invalidURL
+        }
+        progress(.extractingLocal)
+        var localFallback: ResolvedVideo?
+        do {
+            let local = YouTube(videoID: videoID, methods: [.local])
+            let streams = try await local.streams
+            if !videoResolutions(from: streams).isEmpty {
+                let title = (try? await local.metadata)?.title
+                return ResolvedVideo(streams: streams, title: sanitizedTitle(title), usedRemote: false)
+            }
+            if await isLivestream(local) {
+                throw YouTubeAudioImportError.liveStreamUnsupported
+            }
+            if !streams.isEmpty {
+                let title = (try? await local.metadata)?.title
+                localFallback = ResolvedVideo(streams: streams, title: sanitizedTitle(title), usedRemote: false)
+            }
+            Log.transcription.warning("YouTube local extraction returned no playable H.264 video, trying remote fallback")
+        } catch let error as YouTubeAudioImportError {
+            throw error
+        } catch YouTubeKitError.liveStreamError {
+            throw YouTubeAudioImportError.liveStreamUnsupported
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            Log.transcription.warning("YouTube local video extraction failed: \(error.localizedDescription)")
+        }
+
+        try Task.checkCancellation()
+        progress(.extractingRemote)
+        do {
+            let remote = YouTube(videoID: videoID, methods: [.remote])
+            let streams = try await remote.streams
+            if !videoResolutions(from: streams).isEmpty {
+                let title = (try? await remote.metadata)?.title
+                return ResolvedVideo(streams: streams, title: sanitizedTitle(title), usedRemote: true)
+            }
+            if await isLivestream(remote) {
+                throw YouTubeAudioImportError.liveStreamUnsupported
+            }
+            if let localFallback { return localFallback }
+            throw YouTubeAudioImportError.noVideoStream
+        } catch let error as YouTubeAudioImportError {
+            throw error
+        } catch YouTubeKitError.liveStreamError {
+            throw YouTubeAudioImportError.liveStreamUnsupported
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+            if let localFallback { return localFallback }
+            throw YouTubeAudioImportError.extractionFailed(error.localizedDescription)
+        }
+    }
+
+    private static func selectedVideoResolution(requested: Int?, available: [Int]) -> Int? {
+        if let requested { return available.contains(requested) ? requested : nil }
+        return defaultVideoResolution(from: available)
+    }
+
+    /// Descending playable H.264 resolutions. Progressive and video-only both count.
+    private static func videoResolutions(from streams: [YouTubeStream]) -> [Int] {
+        let hasMuxAudio = preferredMuxAudioStream(from: streams) != nil
+        let values = streams.compactMap { stream -> Int? in
+            guard isImportableVideo(stream), let resolution = stream.videoResolution, resolution > 0 else { return nil }
+            if stream.includesAudioTrack {
+                guard isAAC(stream.audioCodec) else { return nil }
+            } else if !hasMuxAudio {
+                return nil
+            }
+            return resolution
+        }
+        return Array(Set(values)).sorted(by: >)
+    }
+
+    private static func preferredVideoStream(from streams: [YouTubeStream], resolution: Int) -> YouTubeStream? {
+        let matches = streams.filter { isImportableVideo($0) && $0.videoResolution == resolution }
+        let progressive = matches.filter { $0.includesVideoAndAudioTrack && isAAC($0.audioCodec) }
+        if let match = progressive.max(by: { videoBitrate($0) < videoBitrate($1) }) {
+            return match
+        }
+        return matches.filter { !$0.includesAudioTrack }.max(by: { videoBitrate($0) < videoBitrate($1) })
+    }
+
+    private static func isImportableVideo(_ stream: YouTubeStream) -> Bool {
+        stream.includesVideoTrack
+            && stream.isNativelyPlayable
+            && stream.fileExtension == .mp4
+            && isH264(stream.videoCodec)
+    }
+
+    private static func isH264(_ codec: YouTubeKit.VideoCodec?) -> Bool {
+        switch codec {
+        case .avc1: true
+        default: false
+        }
+    }
+
+    private static func isAAC(_ codec: YouTubeKit.AudioCodec?) -> Bool {
+        switch codec {
+        case .mp4a: true
+        default: false
+        }
+    }
+
+    private static func videoBitrate(_ stream: YouTubeStream) -> Int {
+        stream.averageBitrate ?? stream.bitrate ?? 0
+    }
+
+    private static func preferredMuxAudioStream(from streams: [YouTubeStream]) -> YouTubeStream? {
+        let aac = streams.filter {
+            $0.includesAudioTrack && !$0.includesVideoTrack
+                && $0.fileExtension == .m4a
+                && $0.isNativelyPlayable
+                && isAAC($0.audioCodec)
+        }
+        return preferredAudioStream(from: aac)?.stream
+    }
+
+    private static func mux(videoURL: URL, audioURL: URL, to destination: URL) async throws {
+        let videoAsset = AVURLAsset(url: videoURL)
+        let audioAsset = AVURLAsset(url: audioURL)
+        guard let videoTrack = try await videoAsset.loadTracks(withMediaType: .video).first,
+              let audioTrack = try await audioAsset.loadTracks(withMediaType: .audio).first else {
+            throw YouTubeAudioImportError.noVideoStream
+        }
+        let composition = AVMutableComposition()
+        guard let compositionVideo = composition.addMutableTrack(
+            withMediaType: .video,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ), let compositionAudio = composition.addMutableTrack(
+            withMediaType: .audio,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else {
+            throw YouTubeAudioImportError.extractionFailed("Could not combine the video and audio tracks.")
+        }
+        let videoRange = try await videoTrack.load(.timeRange)
+        let audioRange = try await audioTrack.load(.timeRange)
+        guard videoRange.duration.isNumeric, videoRange.duration.seconds > 0,
+              audioRange.duration.isNumeric, audioRange.duration.seconds > 0 else {
+            throw YouTubeAudioImportError.extractionFailed("Could not combine the video and audio tracks.")
+        }
+        try compositionVideo.insertTimeRange(videoRange, of: videoTrack, at: .zero)
+        compositionVideo.preferredTransform = try await videoTrack.load(.preferredTransform)
+        let duration = CMTimeMinimum(videoRange.duration, audioRange.duration)
+        try compositionAudio.insertTimeRange(
+            CMTimeRange(start: audioRange.start, duration: duration),
+            of: audioTrack,
+            at: .zero
+        )
+        try? FileManager.default.removeItem(at: destination)
+        do {
+            try await exportComposition(composition, preset: AVAssetExportPresetPassthrough, to: destination)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+            try? FileManager.default.removeItem(at: destination)
+            try await exportComposition(composition, preset: AVAssetExportPresetHighestQuality, to: destination)
+        }
+    }
+
+    private static func exportComposition(
+        _ composition: AVMutableComposition,
+        preset: String,
+        to destination: URL
+    ) async throws {
+        guard let session = AVAssetExportSession(asset: composition, presetName: preset) else {
+            throw YouTubeAudioImportError.extractionFailed("Could not combine the video and audio tracks.")
+        }
+        try await session.export(to: destination, as: .mp4)
+    }
+
     private static func lowerBitrate(_ lhs: YouTubeStream, _ rhs: YouTubeStream) -> Bool {
         let left = audioBitrate(lhs)
         let right = audioBitrate(rhs)
@@ -284,10 +608,11 @@ enum YouTubeAudioImporter {
         return Int64(values?.fileSize ?? 0)
     }
 
-    private static func download(
+    static func download(
         _ url: URL,
         bitrate: Int,
         to destination: URL,
+        media: String = "audio",
         progress: @escaping @Sendable (YouTubeAudioImportProgress) -> Void
     ) async throws {
         var request = URLRequest(url: url)
@@ -303,26 +628,47 @@ enum YouTubeAudioImporter {
         configuration.httpMaximumConnectionsPerHost = 1
         configuration.waitsForConnectivity = true
 
-        let delegate = DownloadProgressDelegate { snapshot in
+        let delegate = DownloadProgressDelegate(destination: destination, media: media) { snapshot in
             progress(.downloading(snapshot))
         }
-        let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        let delegateQueue = OperationQueue()
+        delegateQueue.maxConcurrentOperationCount = 1
+        let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: delegateQueue)
         defer { session.finishTasksAndInvalidate() }
 
-        let (tempURL, response) = try await session.download(for: request)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            try? FileManager.default.removeItem(at: tempURL)
-            throw YouTubeAudioImportError.downloadFailed(status: http.statusCode)
+        let task = session.downloadTask(with: request)
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                delegate.start(continuation)
+                task.resume()
+                if Task.isCancelled { task.cancel() }
+            }
+        } onCancel: {
+            task.cancel()
         }
-        try FileIO.moveReplacingDestination(from: tempURL, to: destination)
     }
 }
 
 private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let destination: URL
+    private let media: String
     private let onProgress: @Sendable (YouTubeAudioDownloadProgress) -> Void
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var downloadResult: Result<Void, Error>?
 
-    init(onProgress: @escaping @Sendable (YouTubeAudioDownloadProgress) -> Void) {
+    init(
+        destination: URL,
+        media: String,
+        onProgress: @escaping @Sendable (YouTubeAudioDownloadProgress) -> Void
+    ) {
+        self.destination = destination
+        self.media = media
         self.onProgress = onProgress
+    }
+
+    /// Installed before the task starts; subsequent callbacks use a serial delegate queue.
+    func start(_ continuation: CheckedContinuation<Void, Error>) {
+        self.continuation = continuation
     }
 
     func urlSession(
@@ -342,5 +688,33 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
-    ) {}
+    ) {
+        do {
+            if let response = downloadTask.response as? HTTPURLResponse,
+               !(200..<300).contains(response.statusCode) {
+                throw YouTubeAudioImportError.downloadFailed(status: response.statusCode, media: media)
+            }
+            // URLSession deletes this temporary file after the callback returns.
+            try FileIO.moveReplacingDestination(from: location, to: destination)
+            downloadResult = .success(())
+        } catch {
+            downloadResult = .failure(error)
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let continuation else { return }
+        self.continuation = nil
+        if let error {
+            if (error as? URLError)?.code == .cancelled {
+                continuation.resume(throwing: CancellationError())
+            } else {
+                continuation.resume(throwing: error)
+            }
+        } else {
+            continuation.resume(with: downloadResult ?? .failure(
+                YouTubeAudioImportError.extractionFailed("Download completed without a file.")
+            ))
+        }
+    }
 }

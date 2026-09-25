@@ -10,8 +10,17 @@ struct TranscribeWorkbenchView: View {
     @State private var netVideoURL = ""
     @State private var netVideoPhase: NetVideoImportPhase = .idle
     @State private var pendingNetVideoTitle: String?
+    @State private var netVideoKind: NetVideoExtractKind = .audio
+    @State private var showVideoQualityAdvanced = true
+    @State private var videoQualities: [Int] = []
+    @State private var selectedVideoResolution: Int?
+    @State private var defaultVideoResolution: Int?
+    @State private var videoQualityLoading = false
+    @State private var videoQualityError: String?
+    @State private var videoQualityTask: Task<Void, Never>?
     @State private var netVideoTask: Task<Void, Never>?
     @State private var netVideoImportID: UUID?
+    @State private var netVideoActionHovered = false
     @State private var pendingBasicStart: PendingBasicTranscriptionStart?
     @Bindable private var recording = RecordingSessionController.shared
 
@@ -63,7 +72,8 @@ struct TranscribeWorkbenchView: View {
         }) {
             ProcessingOptionsSheet(
                 mediaURLs: store.pendingMediaImportURLs,
-                initialOptions: pendingNetVideoTitle.map { LocalProcessingOptions(customTitle: $0) },
+                initialOptions: netVideoInitialOptions,
+                allowsClipSelection: store.pendingMediaImportOrigin != .netVideo,
                 allowsCloudStorage: store.pendingMediaImportOrigin != .recording,
                 onPrepareCloud: { placement in
                     await store.prepareCloudAccess(for: placement)
@@ -681,8 +691,10 @@ struct TranscribeWorkbenchView: View {
                         in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
                     )
                     .overlay {
-                        RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
-                            .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+                        if entryMode != .netVideo {
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
+                                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+                        }
                     }
 
                     HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
@@ -690,13 +702,17 @@ struct TranscribeWorkbenchView: View {
                             guidanceCard(
                                 eyebrow: "BEST FIT",
                                 title: "When net video is the best choice",
-                                detail: "The talk is already public on YouTube and you want audio extracted on this Mac, without a separate download.",
+                                detail: netVideoKind == .video
+                                    ? "The talk is already public on YouTube and you want a local video with its audio, without a separate download."
+                                    : "The talk is already public on YouTube and you want audio extracted on this Mac, without a separate download.",
                                 systemImage: "link"
                             )
                             guidanceCard(
                                 eyebrow: "AFTER EXTRACT",
                                 title: "Same workspace from here",
-                                detail: "After the audio file is local, processing options, transcription, translation, and export follow the existing session flow.",
+                                detail: netVideoKind == .video
+                                    ? "After the video file is local, processing options, transcription, translation, and export follow the existing session flow."
+                                    : "After the audio file is local, processing options, transcription, translation, and export follow the existing session flow.",
                                 systemImage: "arrow.up.circle"
                             )
                         } else {
@@ -753,8 +769,10 @@ struct TranscribeWorkbenchView: View {
         .padding(.vertical, AppTheme.Spacing.md)
         .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
         .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+            if entryMode != .netVideo {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
+                    .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+            }
         }
     }
 
@@ -791,7 +809,9 @@ struct TranscribeWorkbenchView: View {
     private var entryBarCaption: String {
         switch entryMode {
         case .netVideo:
-            L10n.string("Paste a YouTube link, extract audio on this Mac, then transcribe")
+            netVideoKind == .video
+                ? L10n.string("Paste a YouTube link, download video to this Mac, then transcribe")
+                : L10n.string("Paste a YouTube link, download audio to this Mac, then transcribe")
         case .record:
             L10n.string("Record this Mac, then transcribe the local file")
         case .importFiles:
@@ -855,7 +875,9 @@ struct TranscribeWorkbenchView: View {
             Text(L10n.string("Paste a public YouTube link and turn published content into editable text."))
                 .font(.system(size: AppTheme.FontSize.title2, weight: AppTheme.FontWeight.semibold))
                 .fixedSize(horizontal: false, vertical: true)
-            Text(L10n.string("Audio is extracted on this Mac. Local YouTubeKit runs first; the author's remote server is only used if local extraction fails. Video is not downloaded."))
+            Text(netVideoKind == .video
+                ? L10n.string("The full video is downloaded on this Mac with its audio track. 1080p is the default when that tier exists. Local YouTubeKit runs first; the author's remote server is only used if local extraction fails.")
+                : L10n.string("The full audio track is downloaded on this Mac. Local YouTubeKit runs first; the author's remote server is only used if local extraction fails. Video is not downloaded."))
                 .font(.system(size: AppTheme.FontSize.md))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .fixedSize(horizontal: false, vertical: true)
@@ -878,15 +900,18 @@ struct TranscribeWorkbenchView: View {
                     }
                     .disabled(netVideoPhase.isInProgress)
                     .onSubmit { extractNetVideo() }
+                    .onChange(of: netVideoURL) { _, _ in
+                        resetVideoQualities()
+                        if showVideoQualityAdvanced, netVideoKind == .video {
+                            loadVideoQualities()
+                        }
+                    }
                 HStack(spacing: AppTheme.Spacing.sm) {
                     Text("YouTube")
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                         .padding(.horizontal, AppTheme.Spacing.md)
                         .padding(.vertical, AppTheme.Spacing.xs)
                         .background(AppTheme.Background.raisedColor, in: Capsule())
-                        .overlay {
-                            Capsule().strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-                        }
                     Spacer()
                 }
                 if netVideoURLIsInvalid {
@@ -896,10 +921,30 @@ struct TranscribeWorkbenchView: View {
                 }
             }
 
+            netVideoKindPicker
+
+            if netVideoKind == .video, YouTubeURL.isSupported(netVideoURL) {
+                videoQualityAdvanced
+            }
+
+            netVideoDownloadAction
+        }
+    }
+
+    private var netVideoDownloadAction: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             HStack(alignment: .center, spacing: AppTheme.Spacing.mdLg) {
-                Button(L10n.string("Extract audio")) { extractNetVideo() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!canExtractNetVideo)
+                if netVideoPhase.isInProgress {
+                    netVideoActionLabel
+                } else {
+                    Button { extractNetVideo() } label: { netVideoActionLabel }
+                        .buttonStyle(.plain)
+                        .disabled(!canExtractNetVideo)
+                        .onHover { netVideoActionHovered = $0 }
+                        .animation(.easeOut(duration: 0.18), value: netVideoActionHovered)
+                        .accessibilityHint(L10n.string("Downloads the selected media, then opens transcription options."))
+                }
+
                 if netVideoPhase.isInProgress {
                     Button(L10n.string("Cancel"), role: .cancel) {
                         netVideoTask?.cancel()
@@ -909,27 +954,95 @@ struct TranscribeWorkbenchView: View {
                     }
                     .buttonStyle(.bordered)
                 }
+                Spacer(minLength: 0)
             }
 
-            if case .failed(let message) = netVideoPhase {
-                Text(L10n.display(message))
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Status.errorColor)
-            }
             if netVideoPhase.isInProgress {
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text(L10n.display(netVideoPhase.statusText))
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Text.mutedColor)
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        Text(netVideoPhase.statusText(kind: netVideoKind))
+                            .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
+                            .foregroundStyle(AppTheme.Text.primaryColor)
+                    }
                     if let fraction = netVideoPhase.downloadFraction {
                         ProgressView(value: fraction)
+                            .progressViewStyle(.linear)
+                            .tint(AppTheme.Accent.link)
                     } else {
                         ProgressView()
-                            .controlSize(.small)
+                            .progressViewStyle(.linear)
+                            .tint(AppTheme.Accent.link)
                     }
                 }
+                .frame(maxWidth: AppTheme.zoomed(460), alignment: .leading)
+            } else if case .failed(let message) = netVideoPhase {
+                Label(L10n.display(message), systemImage: "exclamationmark.circle.fill")
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Status.errorColor)
+            } else {
+                Label(
+                    YouTubeURL.isSupported(netVideoURL)
+                        ? L10n.string("Next: confirm processing options, then start transcription.")
+                        : L10n.string("Paste a YouTube link to enable download."),
+                    systemImage: YouTubeURL.isSupported(netVideoURL) ? "checkmark.circle.fill" : "link"
+                )
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var netVideoActionLabel: some View {
+        HStack(spacing: AppTheme.Spacing.md) {
+            Image(systemName: "arrow.down.to.line.compact")
+                .font(.system(size: AppTheme.FontSize.lg, weight: .semibold))
+                .frame(width: AppTheme.zoomed(42), height: AppTheme.zoomed(42))
+                .background(.white.opacity(0.18), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                Text(netVideoPhase.isInProgress
+                    ? L10n.string("Download in progress…")
+                    : netVideoKind == .video
+                        ? L10n.string("Download video to this Mac")
+                        : L10n.string("Download audio to this Mac"))
+                    .font(.system(size: AppTheme.FontSize.md, weight: .bold))
+                Text(netVideoPhase.isInProgress
+                    ? L10n.string("Preparing your file for transcription")
+                    : L10n.string("Then choose transcription options"))
+                    .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
+                    .opacity(0.85)
+            }
+            Spacer(minLength: AppTheme.Spacing.sm)
+            if netVideoPhase.isInProgress {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.white)
+            } else {
+                Image(systemName: "arrow.right")
+                    .font(.system(size: AppTheme.FontSize.sm, weight: .bold))
+                    .frame(width: AppTheme.zoomed(30), height: AppTheme.zoomed(30))
+                    .background(.white.opacity(0.18), in: Circle())
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(AppTheme.Spacing.md)
+        .frame(minWidth: AppTheme.zoomed(360), maxWidth: AppTheme.zoomed(460), alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: YouTubeURL.isSupported(netVideoURL)
+                    ? [Color(red: 0.13, green: 0.44, blue: 0.88), Color(red: 0.22, green: 0.32, blue: 0.73)]
+                    : [Color(red: 0.40, green: 0.52, blue: 0.69), Color(red: 0.35, green: 0.44, blue: 0.59)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+        )
+        .shadow(
+            color: AppTheme.Accent.link.opacity(canExtractNetVideo ? (netVideoActionHovered ? 0.30 : 0.18) : 0.07),
+            radius: AppTheme.zoomed(netVideoActionHovered ? 16 : 10),
+            y: AppTheme.zoomed(5)
+        )
+        .scaleEffect(netVideoActionHovered && canExtractNetVideo ? 1.012 : 1)
     }
 
     private var quickStartCard: some View {
@@ -938,7 +1051,9 @@ struct TranscribeWorkbenchView: View {
         let icon: String
         switch entryMode {
         case .netVideo:
-            steps = ["Paste a public YouTube link", "Extract audio on this Mac", "Confirm processing options"]
+            steps = netVideoKind == .video
+                ? ["Paste a public YouTube link", "Download video to this Mac", "Confirm processing options"]
+                : ["Paste a public YouTube link", "Download audio to this Mac", "Confirm processing options"]
             title = "Net video"
             icon = "link"
         case .record:
@@ -971,8 +1086,10 @@ struct TranscribeWorkbenchView: View {
         .padding(AppTheme.Spacing.lgXl)
         .background(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.subtle), in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
         .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+            if entryMode != .netVideo {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
+                    .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+            }
         }
     }
 
@@ -997,9 +1114,168 @@ struct TranscribeWorkbenchView: View {
         .frame(maxWidth: .infinity, minHeight: AppTheme.zoomed(150), alignment: .topLeading)
         .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
         .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+            if entryMode != .netVideo {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
+                    .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+            }
         }
+    }
+
+    private var netVideoKindPicker: some View {
+        HStack(spacing: AppTheme.Spacing.md) {
+            netVideoKindCard(
+                kind: .audio,
+                title: "Audio",
+                detail: "Smaller and faster. Transcript only.",
+                systemImage: "waveform"
+            )
+            netVideoKindCard(
+                kind: .video,
+                title: "Video",
+                detail: "Local mp4 with picture and sound. Default 1080p.",
+                systemImage: "film"
+            )
+        }
+    }
+
+    private func netVideoKindCard(
+        kind: NetVideoExtractKind,
+        title: String,
+        detail: String,
+        systemImage: String
+    ) -> some View {
+        let selected = netVideoKind == kind
+        return Button {
+            netVideoKind = kind
+            if kind == .video, showVideoQualityAdvanced,
+               videoQualities.isEmpty, !videoQualityLoading {
+                loadVideoQualities()
+            }
+        } label: {
+            HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
+                Image(systemName: systemImage)
+                    .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(selected ? AppTheme.Accent.link : AppTheme.Text.tertiaryColor)
+                    .frame(width: AppTheme.IconSize.lg, height: AppTheme.IconSize.lg)
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        Text(L10n.string(title))
+                            .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
+                            .foregroundStyle(AppTheme.Text.primaryColor)
+                        Spacer(minLength: 0)
+                        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(selected ? AppTheme.Accent.link : AppTheme.Text.mutedColor)
+                    }
+                    Text(L10n.string(detail))
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(AppTheme.Spacing.mdLg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                selected ? AppTheme.Accent.link.opacity(AppTheme.Opacity.soft) : AppTheme.Background.surfaceColor,
+                in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(netVideoPhase.isInProgress)
+    }
+
+    private var videoQualityAdvanced: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            Button {
+                showVideoQualityAdvanced.toggle()
+                if showVideoQualityAdvanced {
+                    loadVideoQualities()
+                }
+            } label: {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    Text(L10n.string("Advanced"))
+                        .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                    Text(videoQualitySummary)
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                    Spacer()
+                    Image(systemName: showVideoQualityAdvanced ? "chevron.up" : "chevron.down")
+                        .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(netVideoPhase.isInProgress)
+
+            if showVideoQualityAdvanced {
+                if videoQualityLoading {
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        ProgressView().controlSize(.small)
+                        Text(L10n.string("Checking available quality…"))
+                            .font(.system(size: AppTheme.FontSize.xs))
+                            .foregroundStyle(AppTheme.Text.mutedColor)
+                    }
+                } else if let videoQualityError {
+                    Text(L10n.display(videoQualityError))
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Status.errorColor)
+                } else if videoQualities.isEmpty {
+                    Text(L10n.string("Open Advanced to load the quality options for this video."))
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: AppTheme.Spacing.sm) {
+                            ForEach(videoQualities, id: \.self) { resolution in
+                                videoQualityButton(resolution)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(AppTheme.Spacing.mdLg)
+        .background(AppTheme.Background.surfaceColor.opacity(AppTheme.Opacity.soft), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+    }
+
+    private var videoQualitySummary: String {
+        guard let resolution = selectedVideoResolution ?? defaultVideoResolution else {
+            return L10n.string("Auto · up to 1080p")
+        }
+        if resolution == defaultVideoResolution || selectedVideoResolution == nil {
+            return L10n.string("\(resolution)p · Default")
+        }
+        return "\(resolution)p"
+    }
+
+    private func videoQualityButton(_ resolution: Int) -> some View {
+        let selected = (selectedVideoResolution ?? defaultVideoResolution) == resolution
+        let isDefault = resolution == defaultVideoResolution
+        return Button {
+            selectedVideoResolution = resolution
+        } label: {
+            VStack(spacing: AppTheme.Spacing.xxs) {
+                Text("\(resolution)p")
+                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                if isDefault {
+                    Text(L10n.string("Default"))
+                        .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.medium))
+                }
+            }
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.vertical, AppTheme.Spacing.sm)
+            .foregroundStyle(selected ? Color.white : AppTheme.Text.primaryColor)
+            .background(selected ? AppTheme.Accent.link : AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        }
+        .buttonStyle(.plain)
+        .disabled(netVideoPhase.isInProgress)
+    }
+
+    private var netVideoInitialOptions: LocalProcessingOptions? {
+        guard pendingNetVideoTitle != nil else { return nil }
+        return LocalProcessingOptions(
+            customTitle: pendingNetVideoTitle
+        )
     }
 
     private var netVideoURLIsInvalid: Bool {
@@ -1009,6 +1285,44 @@ struct TranscribeWorkbenchView: View {
 
     private var canExtractNetVideo: Bool {
         YouTubeURL.isSupported(netVideoURL) && !netVideoPhase.isInProgress
+    }
+
+    private func resetVideoQualities() {
+        videoQualityTask?.cancel()
+        videoQualityTask = nil
+        videoQualities = []
+        selectedVideoResolution = nil
+        defaultVideoResolution = nil
+        videoQualityLoading = false
+        videoQualityError = nil
+    }
+
+    private func loadVideoQualities() {
+        let raw = netVideoURL
+        guard YouTubeURL.isSupported(raw) else { return }
+        videoQualityTask?.cancel()
+        videoQualityLoading = true
+        videoQualityError = nil
+        videoQualityTask = Task {
+            do {
+                let list = try await YouTubeAudioImporter.listVideoQualities(from: raw)
+                guard !Task.isCancelled else { return }
+                videoQualities = list.resolutions
+                defaultVideoResolution = list.defaultResolution
+                if let selected = selectedVideoResolution, list.resolutions.contains(selected) {
+                    selectedVideoResolution = selected
+                } else {
+                    selectedVideoResolution = list.defaultResolution
+                }
+                videoQualityLoading = false
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                videoQualityLoading = false
+                videoQualityError = error.localizedDescription
+            }
+        }
     }
 
     private func importMedia() {
@@ -1034,28 +1348,38 @@ struct TranscribeWorkbenchView: View {
             netVideoPhase = .failed("Paste a public YouTube watch, Shorts, or youtu.be URL.")
             return
         }
+        guard !netVideoPhase.isInProgress else { return }
         netVideoTask?.cancel()
+        let kind = netVideoKind
+        let resolution = selectedVideoResolution
         let importID = UUID()
         netVideoImportID = importID
+        netVideoPhase = .extractingLocal
         netVideoTask = Task {
             var importedURL: URL?
             do {
                 try await AccountService.shared.prepareNewContentAccess()
                 guard netVideoImportID == importID else { throw CancellationError() }
-                netVideoPhase = .extractingLocal
-                let result = try await YouTubeAudioImporter.importAudio(
-                    from: raw,
-                    into: WorkbenchStore.netVideoMediaDirectory
-                ) { progress in
-                    Task { @MainActor in
-                        guard netVideoImportID == importID else { return }
-                        switch progress {
-                        case .extractingLocal:
-                            netVideoPhase = .extractingLocal
-                        case .extractingRemote:
-                            netVideoPhase = .extractingRemote
-                        case .downloading(let snapshot):
-                            netVideoPhase = .downloading(snapshot)
+                let result: YouTubeAudioImportResult
+                if kind == .video {
+                    result = try await YouTubeAudioImporter.importVideo(
+                        from: raw,
+                        into: WorkbenchStore.netVideoMediaDirectory,
+                        resolution: resolution
+                    ) { progress in
+                        Task { @MainActor in
+                            guard netVideoImportID == importID else { return }
+                            netVideoPhase = Self.phase(for: progress)
+                        }
+                    }
+                } else {
+                    result = try await YouTubeAudioImporter.importAudio(
+                        from: raw,
+                        into: WorkbenchStore.netVideoMediaDirectory
+                    ) { progress in
+                        Task { @MainActor in
+                            guard netVideoImportID == importID else { return }
+                            netVideoPhase = Self.phase(for: progress)
                         }
                     }
                 }
@@ -1227,6 +1551,11 @@ struct TranscribeWorkbenchView: View {
     }
 }
 
+private enum NetVideoExtractKind {
+    case audio
+    case video
+}
+
 private enum TranscriptionEntryMode {
     case importFiles
     case netVideo
@@ -1244,11 +1573,12 @@ private enum NetVideoImportPhase: Equatable {
     case extractingLocal
     case extractingRemote
     case downloading(YouTubeAudioDownloadProgress)
+    case preparing
     case failed(String)
 
     var isInProgress: Bool {
         switch self {
-        case .extractingLocal, .extractingRemote, .downloading: true
+        case .extractingLocal, .extractingRemote, .downloading, .preparing: true
         case .idle, .failed: false
         }
     }
@@ -1258,22 +1588,48 @@ private enum NetVideoImportPhase: Equatable {
         return nil
     }
 
-    var statusText: String {
+    @MainActor func statusText(kind: NetVideoExtractKind) -> String {
         switch self {
         case .idle, .failed:
-            ""
+            return ""
         case .extractingLocal:
-            "Resolving YouTube audio locally…"
+            return L10n.string("Finding available media…")
         case .extractingRemote:
-            "Local extraction failed — using the author’s remote fallback…"
+            return L10n.string("Trying another download source…")
+        case .preparing:
+            return L10n.string("Combining video and audio…")
         case .downloading(let snapshot):
-            if let fraction = snapshot.fraction {
-                "Downloading audio… \(Int((fraction * 100).rounded()))%"
-            } else if snapshot.bytesWritten > 0 {
-                "Downloading audio… \(ByteCountFormatter.string(fromByteCount: snapshot.bytesWritten, countStyle: .file))"
-            } else {
-                "Downloading audio…"
+            let subject: String
+            switch snapshot.component {
+            case .videoTrack: subject = L10n.string("Downloading video track · 1 of 2")
+            case .audioTrack: subject = L10n.string("Downloading audio track · 2 of 2")
+            case nil: subject = kind == .video
+                ? L10n.string("Downloading video")
+                : L10n.string("Downloading audio")
             }
+            if let fraction = snapshot.fraction {
+                return L10n.format("%@ · %@%%", subject, Int((fraction * 100).rounded()))
+            }
+            if snapshot.bytesWritten > 0 {
+                let size = ByteCountFormatter.string(fromByteCount: snapshot.bytesWritten, countStyle: .file)
+                return L10n.format("%@ · %@ downloaded", subject, size)
+            }
+            return subject
+        }
+    }
+}
+
+extension TranscribeWorkbenchView {
+    fileprivate static func phase(for progress: YouTubeAudioImportProgress) -> NetVideoImportPhase {
+        switch progress {
+        case .extractingLocal:
+            .extractingLocal
+        case .extractingRemote:
+            .extractingRemote
+        case .downloading(let snapshot):
+            .downloading(snapshot)
+        case .preparing:
+            .preparing
         }
     }
 }

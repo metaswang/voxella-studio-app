@@ -92,12 +92,18 @@ struct AppStoreOffersView: View {
                 }
                 Spacer(minLength: AppTheme.Spacing.md)
                 VStack(alignment: .trailing, spacing: AppTheme.Spacing.xxs) {
-                    Text(product.displayPrice)
-                        .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.semibold))
-                        .foregroundStyle(AppTheme.Text.primaryColor)
-                    Text(L10n.string("one time"))
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    if isLifetimePurchased {
+                        Label(L10n.string("Purchased"), systemImage: "checkmark.seal.fill")
+                            .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
+                            .foregroundStyle(AppTheme.Status.successColor)
+                    } else {
+                        Text(product.displayPrice)
+                            .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.semibold))
+                            .foregroundStyle(AppTheme.Text.primaryColor)
+                        Text(L10n.string("one time"))
+                            .font(.system(size: AppTheme.FontSize.xs))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    }
                 }
             }
 
@@ -109,23 +115,54 @@ struct AppStoreOffersView: View {
                 featureRow("AI credits purchased separately")
             }
 
-            Button {
-                if account.isSignedIn {
-                    Task { await account.purchaseAppStoreProduct(product.id) }
-                } else {
-                    queuedPurchase = true
-                }
-            } label: {
-                HStack(spacing: AppTheme.Spacing.sm) {
-                    if account.isPurchasingAppStoreProduct {
-                        ProgressView().controlSize(.small).tint(.white)
+            if isLifetimePurchased {
+                HStack(spacing: AppTheme.Spacing.md) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: AppTheme.FontSize.lg))
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                        Text(L10n.string("Lifetime purchased"))
+                            .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
+                        Text(L10n.string("This Mac already has Lifetime access."))
+                            .font(.system(size: AppTheme.FontSize.xs))
+                            .foregroundStyle(AppTheme.Text.secondaryColor)
                     }
-                    Text(L10n.string(account.isSignedIn ? "Buy Lifetime" : "Sign in to purchase"))
+                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity)
+                .foregroundStyle(AppTheme.Status.successColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(AppTheme.Spacing.md)
+                .background(
+                    AppTheme.Status.successColor.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.md)
+                        .strokeBorder(
+                            AppTheme.Status.successColor.opacity(0.3),
+                            lineWidth: AppTheme.BorderWidth.hairline
+                        )
+                }
+                .accessibilityElement(children: .combine)
+            } else {
+                Button {
+                    if account.isSignedIn {
+                        Task { await account.purchaseAppStoreProduct(product.id) }
+                    } else {
+                        queuedPurchase = true
+                    }
+                } label: {
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        if account.isPurchasingAppStoreProduct {
+                            ProgressView().controlSize(.small).tint(.white)
+                        }
+                        Text(L10n.string(account.isSignedIn ? "Buy Lifetime" : "Sign in to purchase"))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.capsule(.prominent, size: .regular))
+                .disabled(account.isPurchasingAppStoreProduct)
             }
-            .buttonStyle(.capsule(.prominent, size: .regular))
-            .disabled(account.isPurchasingAppStoreProduct || account.appAccess.license == .lifetime)
 
             if let purchaseError = account.lastError {
                 Label(L10n.display(purchaseError), systemImage: "exclamationmark.triangle")
@@ -143,6 +180,10 @@ struct AppStoreOffersView: View {
         }
         .padding(AppTheme.Spacing.lgXl)
         .themedSurface(AppTheme.Background.prominentColor, cornerRadius: AppTheme.Radius.lg)
+    }
+
+    private var isLifetimePurchased: Bool {
+        account.appAccess.license == .lifetime
     }
 
     private var unavailableCard: some View {

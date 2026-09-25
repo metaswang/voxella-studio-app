@@ -15,6 +15,7 @@ For shader packaging or hardware/OS qualification, read [Metal compatibility](re
 
 - Build and local verification are allowed when the user asks for a DMG or release check.
 - Upload to Cloudflare R2 only when the user explicitly asks to publish or update it.
+- Upload a Mac App Store build to App Store Connect / TestFlight only when the user explicitly asks for a TestFlight update. For an update, reuse the existing internal tester group(s) that contain the preceding valid build when the match is unambiguous. Do not add external groups/testers or submit for App Review unless separately requested.
 - Do not upload to Hugging Face, and do not delete existing Hugging Face files.
 - Never commit, push, create a release, or modify unrelated repositories unless the user explicitly requests it.
 - Preserve unrelated worktree changes, including changes outside this release skill.
@@ -34,7 +35,7 @@ For shader packaging or hardware/OS qualification, read [Metal compatibility](re
 - Formal releases must start with `./scripts/release.sh` without a version argument. It reads the current `CFBundleShortVersionString` and the published Cloudflare appcast, then automatically increments the semantic-version patch component (`X.Y.Z` → `X.Y.(Z+1)`) before building. Do not manually reuse the previous release version. The first Cloudflare publication requires `RELEASE_BOOTSTRAP=1`.
 - Every release record must include the previous version, new version, new `CFBundleVersion`, and the exact artifact version used for notarization and R2 publication.
 - `SUFeedURL` must be `https://assets.voxstudio.me/downloads/voxstudio/appcast.xml`. Developer ID builds use the `SparkleUpdates` trait and the embedded Sparkle updater to read that feed and install updates in-app. Keep the full DMG enclosure in every appcast as the fallback when no matching delta is available. `chunks/` objects are separate legacy artifacts; Sparkle does not assemble them. Old builds still pointing at Hugging Face cannot be rewritten server-side and must install once from the website.
-- R2 releases support Sparkle binary `.delta` artifacts. The normal `release.sh` path enables archive retention; delta generation defaults to `auto` and requires macOS plus at least two retained DMGs. Read the “Sparkle binary deltas” section in [the release runbook](references/release-runbook.md) for R2 keys, signing-key prerequisites, and verification. Sparkle can apply a delta only when the installed build matches a published delta base and signature checks pass.
+- R2 releases support Sparkle binary `.delta` artifacts. The normal `release.sh` path enables archive retention; delta generation defaults to `auto` and requires macOS plus at least two retained DMGs. Read the “Sparkle binary deltas” section in [the release runbook](references/release-runbook.md) for R2 keys, signing-key prerequisites, and verification. A successful generator run can still yield zero deltas; inspect the generated appcast and staged files, report that result without inventing a cause, and confirm the full-DMG fallback remains. Sparkle can apply a delta only when the installed build matches a published delta base and signature checks pass.
 
 - The release build must use the BundledSpeech trait because the app includes speech and MLX resources.
 - `scripts/build_metal.py` owns the macOS 15.0 / Metal 3.2 shader baseline for both MLX and Core Image. Package one arm64 app and one MLX library for M1–M4, without host-specific GPU specialization or duplicate shader variants. Do not call the dependency's unqualified Metal builder or accept a cached library merely because it exists.
@@ -68,7 +69,7 @@ Do not claim that `VOXSTUDIO_DISABLE_14_DAY_TRIAL_LIMIT` changes the build: that
 
 ## Sparkle key and public appcast
 
-- Keep the Sparkle private-key backup at `.secrets/sparkle-ed25519-private.key`; `.secrets/` is Git-ignored. Never print, commit, upload, or include this file in a DMG.
+- Keep the Sparkle private-key backup under the Git-ignored `.secrets/` directory with mode 600. The backup filename can vary by machine; check `SPARKLE_ED_KEY_FILE`, the configured default, and existing `.secrets/` backups before declaring the key unavailable. Never print, commit, upload, or include the private key in a DMG.
 - Check the current key before changing `SUPublicEDKey`:
 
       SPARKLE_ROOT='.build/sparkle-tools'
@@ -97,6 +98,7 @@ Do not claim that `VOXSTUDIO_DISABLE_14_DAY_TRIAL_LIMIT` changes the build: that
 5. Verify the app, mounted DMG app, macOS 15 deployment metadata, staple tickets, Developer ID signatures, microphone entitlement, restricted entitlements, Gatekeeper assessments, and packaged Metal manifest. Follow the physical-device matrix in [Metal compatibility](references/metal-compatibility.md); record actual results and untested combinations separately. The user may perform device tests; do not claim them completed on their behalf.
 6. Record the previous version, new version, build number, DMG byte count, and SHA-256 before reporting publication.
 7. Verify the public version URL, latest redirect, Cloudflare appcast enclosure, and that Check for Updates opens the immutable version URL.
+8. If the user also requests TestFlight, build the Mac App Store package for the same selected marketing version/build, verify the MAS profile and signing identities, ensure the build number is unused in App Store Connect, validate the package, then upload it. Read “TestFlight upload” in [the release runbook](references/release-runbook.md). Report upload and processing status separately; do not claim tester distribution until the intended existing internal tester group shows the build.
 
 ## Cloudflare R2 defaults
 
@@ -150,6 +152,7 @@ Report:
 - `com.apple.security.device.audio-input=true` and `NSMicrophoneUsageDescription` checks;
 - DMG size and SHA-256;
 - R2 identity, versioned URL, latest URL, appcast URL, and whether promote completed;
+- when requested, the Mac App Store package version/build, signing and package-validation results, App Store Connect upload ID/status, processing state, and existing tester group(s) assigned; distinguish uploaded/processing from available to testers;
 - whether Sparkle deltas were generated, uploaded, and verified, or the specific reason they were skipped; report full-DMG fallback availability;
 - confirmation that the Developer ID app's Sparkle updater uses the immutable Cloudflare appcast, and that old Hugging Face builds are not claimed to migrate automatically;
 - anything not verified or requiring manual UI confirmation.

@@ -10,6 +10,7 @@ struct ProcessingOptionsSheet: View {
     let mediaURLs: [URL]
     var mode: Mode = .upload
     var initialOptions: LocalProcessingOptions?
+    var allowsClipSelection = true
     var initialPlacement: TranscriptionPlacement = .localDefault
     var allowsCloudStorage = true
     var onPrepareCloud: ((TranscriptionPlacement) async -> CloudAccessPreparation)?
@@ -64,7 +65,9 @@ struct ProcessingOptionsSheet: View {
         let key: String
         switch mode {
         case .upload:
-            key = "Optionally clip the media and enable translation before processing."
+            key = allowsClipSelection
+                ? "Optionally clip the media and enable translation before processing."
+                : "Choose processing options before transcription."
         case .retranscribe:
             key = "Reprocess the media and replace the transcript after it completes."
         }
@@ -316,7 +319,7 @@ struct ProcessingOptionsSheet: View {
                 .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
                 .toggleStyle(.checkbox)
 
-            if isSingleFile {
+            if isSingleFile, allowsClipSelection {
                 clipSection
             }
 
@@ -344,6 +347,10 @@ struct ProcessingOptionsSheet: View {
                 Text(L10n.string("Select a time range. The session keeps only this portion."))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
+                Text(L10n.string("Clipping copies the original audio and video when possible to finish faster. Video cuts may shift to nearby keyframes. Unsupported formats may take longer."))
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
+                    .fixedSize(horizontal: false, vertical: true)
                 ClipRangeControl(
                     mediaURL: mediaURLs[0],
                     range: $clipRange,

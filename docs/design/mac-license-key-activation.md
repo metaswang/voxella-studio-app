@@ -21,7 +21,8 @@
 | 路径 | 识别 | 登录 | 凭证 |
 |------|------|------|------|
 | 14d 试用 | fingerprint → `device_trial` JWT | 不需要 | `DeviceTrialClock` |
-| Stripe/App Store Lifetime | 账号 purchase → `lifetime_device` JWT | 购买要登录 | `LifetimeLocalCredential` |
+| Stripe Lifetime（DMG） | 账号 purchase → `lifetime_device` JWT | 购买要登录 | `LifetimeLocalCredential` |
+| App Store Lifetime（MAS） | StoreKit 交易 → 账号权益 | 购买要登录 | StoreKit + 账号离线缓存；不使用 `LifetimeLocalCredential` |
 | **License key（本设计）** | key + fingerprint → `license_key_device` JWT | **激活不需要**；登录只关联 | 独立 Keychain（可与 Lifetime 门闸同等放行） |
 
 `access` 优先级：有效 Lifetime **或** 有效 license-key 设备凭证 > 试用 > none。

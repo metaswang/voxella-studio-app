@@ -174,11 +174,20 @@ final class AccountService {
     var tier: AccountTier { account?.user.tier ?? .none }
     var isPaid: Bool { tier.isPaid }
     var userID: UUID? { account?.user.id }
+
+#if MAC_APP_STORE
+    // StoreKit and the account's server entitlement are the MAS purchase authorities.
+    var hasLocalLifetimeCredential: Bool { false }
+
+    private var hasLocalPaidDeviceCredential: Bool { false }
+#else
+    var hasLocalLifetimeCredential: Bool { LifetimeLocalCredential.isPresent() }
     
     /// Lifetime purchase credential OR license-key device credential.
     private var hasLocalPaidDeviceCredential: Bool {
-        LifetimeLocalCredential.isPresent() || LicenseKeyLocalCredential.isPresent()
+        hasLocalLifetimeCredential || LicenseKeyLocalCredential.isPresent()
     }
+#endif
 
     var isAppAccessEnforced: Bool { Self.paidAccessEnabled }
     var canCreateNewContent: Bool {
@@ -276,8 +285,10 @@ final class AccountService {
     @ObservationIgnored private var cacheRevision: UInt64 = 0
     @ObservationIgnored private var didBecomeActiveObserver: NSObjectProtocol?
     @ObservationIgnored private var deviceTrialVerifyAttempt: Date?
+#if !MAC_APP_STORE
     @ObservationIgnored private var lifetimeDeviceVerifyAttempt: Date?
     @ObservationIgnored private var licenseKeyDeviceVerifyAttempt: Date?
+#endif
     @ObservationIgnored private let trialReminderStore = TrialReminderStore()
 
     private init() {}
@@ -373,7 +384,9 @@ final class AccountService {
             lifetimePromotion = response.appAccess?.lifetimePromotion
             entitlementSchedule.succeeded(at: .now)
             try await persistAppAccess()
+#if !MAC_APP_STORE
             await syncLifetimeDeviceCredentialIfNeeded()
+#endif
         } catch {
             guard isCurrentSession(generation), accessRequestID == requestID else { return }
             if AppAccessRefreshSchedule.invalidatesSession(error) { await rejectSession(); return }
@@ -522,8 +535,10 @@ final class AccountService {
             guard isCurrentSession(generation) else { return }
             await mergeDeviceTrialOnLoginIfNeeded()
             guard isCurrentSession(generation) else { return }
+#if !MAC_APP_STORE
             await syncLifetimeDeviceCredentialIfNeeded()
             guard isCurrentSession(generation) else { return }
+#endif
         }
         Telemetry.setUser(id: profileResponse.id.uuidString)
         Analytics.identifyUser(
@@ -568,7 +583,7 @@ final class AccountService {
 #if !MAC_APP_STORE
         isOpeningStripeCheckout = false
 #endif
-        // Device trial + Lifetime device credential survive logout / account clear (PR1 / PR2).
+        // Device trial survives logout; DMG Lifetime credentials do as well.
         reapplyLocalEntitlementOverlays()
     }
 
@@ -640,8 +655,8 @@ final class AccountService {
     private func performAppAccessPreparation() async throws {
         guard Self.paidAccessEnabled else { return }
         reapplyLocalEntitlementOverlays()
-        await renewLifetimeLeaseIfNeeded()
 #if !MAC_APP_STORE
+        await renewLifetimeLeaseIfNeeded()
         await renewLicenseKeyLeaseIfNeeded()
 #endif
         reapplyLocalEntitlementOverlays()
@@ -694,17 +709,17 @@ final class AccountService {
         try requireNewContentAccess()
     }
 
-    /// Apply local entitlement overlays in priority order:
-    /// 1. Lifetime device credential (purchase-based, independent Keychain)
-    /// 2. License-key device credential (key-based activation, independent Keychain)
-    /// 3. Device trial (14d local or signed token)
-    /// Cold start, sign-out, and account-clear paths must show highest available entitlement.
+    /// Apply device trial on both distributions; DMG also accepts its local purchase
+    /// and license-key credentials. MAS Lifetime comes from StoreKit/account access.
     private func reapplyLocalEntitlementOverlays() {
+#if !MAC_APP_STORE
         applyLifetimeCredentialOverlayIfNeeded()
         applyLicenseKeyCredentialOverlayIfNeeded()
+#endif
         applyDeviceTrialOverlayIfNeeded()
     }
 
+#if !MAC_APP_STORE
     private func applyLifetimeCredentialOverlayIfNeeded() {
         guard Self.paidAccessEnabled else { return }
         do {
@@ -719,14 +734,13 @@ final class AccountService {
 
     private func applyLicenseKeyCredentialOverlayIfNeeded() {
         guard Self.paidAccessEnabled else { return }
-        if LifetimeLocalCredential.isPresent() { return }
+        if hasLocalLifetimeCredential { return }
         guard let snapshot = try? LicenseKeyLocalCredential.activeSnapshot() else { return }
         accessRequestID = UUID()
         appAccess = snapshot
     }
 
 
-#if !MAC_APP_STORE
     private func renewLicenseKeyLeaseIfNeeded(force: Bool = false) async {
         guard Self.paidAccessEnabled else { return }
         guard let record = try? LicenseKeyLocalCredential.load() else { return }
@@ -743,7 +757,7 @@ final class AccountService {
         } catch let error as VoxellaAPIError {
             if case .http(let code, _) = error, code == 401 || code == 403 {
                 try? LicenseKeyLocalCredential.clear()
-                if appAccess.license == .lifetime, !LifetimeLocalCredential.isPresent() {
+                if appAccess.license == .lifetime, !hasLocalLifetimeCredential {
                     appAccess = .init()
                 }
                 reapplyLocalEntitlementOverlays()
@@ -790,7 +804,8 @@ final class AccountService {
         }
     }
 
-    /// After Lifetime purchase (or account refresh), issue/store signed device credential.
+#if !MAC_APP_STORE
+    /// After a DMG Lifetime purchase (or account refresh), issue/store a signed device credential.
     private func syncLifetimeDeviceCredentialIfNeeded() async {
         guard Self.paidAccessEnabled, isSignedIn, let owner = userID else { return }
         guard appAccess.license == .lifetime else { return }
@@ -865,6 +880,7 @@ final class AccountService {
         lifetimeDeviceVerifyAttempt = .now
         applyLifetimeCredentialOverlayIfNeeded()
     }
+#endif
 
     /// PR4: on login/account refresh, merge device trial start into the account (earliest wins).
     /// Provisional-only devices must upgrade to a signed token before `/trial`.
@@ -1101,7 +1117,7 @@ final class AccountService {
         let hasSignedToken = (try? DeviceTrialClock.load()) != nil
         switch DeviceTrialBootstrap.launchPath(
             paidAccessEnabled: true,
-            hasLifetimeCredential: LifetimeLocalCredential.isPresent(),
+            hasLifetimeCredential: hasLocalLifetimeCredential,
             hasSignedToken: hasSignedToken
         ) {
         case .skip:
@@ -1747,7 +1763,7 @@ final class AccountService {
             lastError = message
             throw VoxellaAPIError.http(400, message)
         }
-        if LifetimeLocalCredential.isPresent() || appAccess.license == .lifetime {
+        if hasLocalLifetimeCredential || appAccess.license == .lifetime {
             let message = L10n.string("This Mac already has Lifetime access.")
             lastError = message
             throw VoxellaAPIError.http(400, message)
@@ -1823,7 +1839,7 @@ final class AccountService {
         // If we unbound this Mac, clear local credential.
         if let current = try? DeviceFingerprint.current(), current == fingerprint {
             try? LicenseKeyLocalCredential.clear()
-            if appAccess.license == .lifetime, !LifetimeLocalCredential.isPresent() {
+            if appAccess.license == .lifetime, !hasLocalLifetimeCredential {
                 appAccess = .init()
             }
             reapplyLocalEntitlementOverlays()
@@ -1834,7 +1850,6 @@ final class AccountService {
 
     func purchaseLifetime() async {
         lastError = nil
-        // Lifetime checkout binds the account and issues a device credential (PR2) — login required.
         guard userID != nil else {
             lastError = AppAccessError.signInRequired.localizedDescription
             return
@@ -1842,6 +1857,7 @@ final class AccountService {
 #if MAC_APP_STORE
         await purchaseAppStoreProduct(AppStoreProductID.lifetime.rawValue)
 #else
+        // DMG checkout binds the account and issues a device credential.
         guard !isOpeningStripeCheckout else { return }
         isOpeningStripeCheckout = true
         defer { isOpeningStripeCheckout = false }
@@ -1999,7 +2015,7 @@ extension AccountService {
 
     var localizedAppAccessLabel: String {
         guard isAppAccessEnforced else { return tier.localizedPlanLabel }
-        if appAccess.license == .lifetime || LifetimeLocalCredential.isPresent() {
+        if appAccess.license == .lifetime || hasLocalLifetimeCredential {
             return L10n.string("Lifetime")
         }
         if appAccess.subscriptionTier.isPaid,

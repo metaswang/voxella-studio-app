@@ -72,6 +72,11 @@ python3 "$ROOT/scripts/build_metal.py" preflight
 
 swift build "${BUILD_ARGS[@]}"
 BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
+# SwiftPM hard-codes Bundle.main.bundleURL/<resource>.bundle. For a signed
+# macOS app those bundles must live under Contents/Resources, so patch the
+# generated accessors and rebuild them before assembling the app.
+python3 "$ROOT/scripts/patch_swiftpm_bundle_accessors.py" "$BIN_DIR"
+swift build "${BUILD_ARGS[@]}"
 BIN="$BIN_DIR/VoxStudio"
 SPARKLE_TOOLS="$ROOT/.build/sparkle-tools"
 SPARKLE_SIGN_UPDATE="$SPARKLE_TOOLS/bin/sign_update"
@@ -182,6 +187,31 @@ else
   exit 1
 fi
 
+# Embed every SwiftPM resource bundle in the signed macOS resource directory.
+# The main target's resources are also flattened into Contents/Resources above
+# for existing Bundle.main lookups.
+for runtime_bundle in "$BIN_DIR"/*.bundle; do
+  [ -d "$runtime_bundle" ] || continue
+  bundle_name="$(basename "$runtime_bundle")"
+  echo "==> Embedding SwiftPM runtime resource bundle: $bundle_name"
+  cp -R "$runtime_bundle" "$APP/Contents/Resources/$bundle_name"
+done
+
+# YouTubeKit resolves meriyah/astring/yt_ejs through Bundle.module. Keep an
+# explicit check for these critical resources so a packaging regression fails
+# during assembly instead of crashing when a user imports a video.
+YTKIT_BUNDLE="$(dirname "$BIN")/YouTubeKit_YouTubeKit.bundle"
+if [ ! -d "$YTKIT_BUNDLE" ]; then
+  echo "!! missing YouTubeKit_YouTubeKit.bundle at $YTKIT_BUNDLE" >&2
+  exit 1
+fi
+for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
+  if [ ! -f "$APP/Contents/Resources/YouTubeKit_YouTubeKit.bundle/$resource" ]; then
+    echo "!! YouTubeKit resource bundle is missing $resource" >&2
+    exit 1
+  fi
+done
+
 # Always evaluate the compiler/source/target cache, including CI kernels that
 # SwiftPM may have cached under an older toolchain. One library serves M1–M4.
 METAL_DIR="$ROOT/.build/metal/$CONFIG"
@@ -196,6 +226,10 @@ cp "$METAL_DIR/metal-build.json" "$APP/Contents/Resources/metal-build.json"
 python3 "$ROOT/scripts/verify_metal.py" "$APP"
 
 echo "==> Clearing extended attributes before signing"
+# SwiftPM checks out package resources read-only. Normalize owner write access
+# on the assembled app so xattr can remove quarantine/resource attributes before
+# codesign seals the bundle.
+chmod -R u+rwX "$APP"
 xattr -cr "$APP"
 
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/VoxStudio"

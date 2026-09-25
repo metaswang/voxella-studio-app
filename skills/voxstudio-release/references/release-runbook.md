@@ -129,7 +129,7 @@ The command must no longer report `No Keychain password item found`. Use the sam
 
 ## 1A. Recover or rotate the Sparkle Ed25519 key
 
-Sparkle appcast signing is independent of Developer ID signing and Apple notarization. The public key in `Sources/PalmierPro/Resources/Info.plist` must match the private key used for every published appcast enclosure. The running app no longer embeds Sparkle or starts an installer.
+Sparkle appcast signing is independent of Developer ID signing and Apple notarization. The public key in `Sources/PalmierPro/Resources/Info.plist` must match the private key used for every published appcast enclosure. Developer ID builds embed Sparkle and use it to check the Cloudflare feed and install updates in-app; Mac App Store builds omit Sparkle.
 
 Check the existing key without printing private material:
 
@@ -387,7 +387,8 @@ The Developer ID app embeds Sparkle and can install a binary `.delta` when its i
 - `scripts/release.sh` passes `--enable-archives` on its normal R2 path. For a direct `r2_release.py run` or `prepare` invocation, pass `--enable-archives` explicitly or no DMG history is retained for delta generation.
 - `RELEASE_ENABLE_DELTAS=auto` is the default. After archiving the current DMG, `prepare` generates deltas only on macOS and when at least two DMGs are retained in `.build/release-archives/`. It keeps at most five DMGs; Sparkle's `generate_appcast` determines eligible base builds from the staged release and retained archives.
 - `RELEASE_ENABLE_DELTAS=0` forces a full-DMG-only appcast. `RELEASE_ENABLE_DELTAS=1` requires macOS and at least two retained DMGs; unmet prerequisites fail `prepare`.
-- Delta generation requires `.build/sparkle-tools/bin/generate_appcast` and the Sparkle EdDSA private key. `SPARKLE_ED_KEY_FILE` selects the key file; otherwise the script looks for `~/.config/sparkle/sparkle_eddsa_priv.pem`. Do not print, copy into the artifact, or upload the private key. If automatic delta generation is eligible but the tool or key is unavailable, `prepare` fails before the upload stages; fix the prerequisite or explicitly choose `RELEASE_ENABLE_DELTAS=0`.
+- Delta generation requires `.build/sparkle-tools/bin/generate_appcast` and the Sparkle EdDSA private key. `SPARKLE_ED_KEY_FILE` selects the key file; otherwise the script looks for `~/.config/sparkle/sparkle_eddsa_priv.pem`. Before reporting the key unavailable, also check for a configured path and protected backups under the ignored `.secrets/` directory, then verify the candidate against `SUPublicEDKey` without printing key material. Do not print, copy into the artifact, or upload the private key. If automatic delta generation is eligible but the tool or key is unavailable, `prepare` fails before the upload stages; fix the prerequisite or explicitly choose `RELEASE_ENABLE_DELTAS=0`.
+- Eligibility does not guarantee that Sparkle emits a delta. If `prepare` reports `Generated 0 delta(s)`, inspect the generated appcast, retained archive list, matching build metadata, and staged `deltas/` directory to determine whether no base was eligible or whether packaging/parsing needs investigation. Do not label this as an intentional skip or claim a cause without evidence. Continue with the full-DMG enclosure only when it is present and verified; report zero deltas generated/uploaded and that the DMG fallback remains available.
 - Generated `.delta` files are staged under `.build/r2-release/<version>-<build>/<sha256>/deltas/`, uploaded to `app-releases/voxstudio/releases/<version>-<build>/<sha256>/deltas/<filename>`, and referenced by immutable public URLs under `/downloads/voxstudio/releases/<version>-<build>/<sha256>/deltas/<filename>`.
 - `verify` checks every delta URL in the prepared appcast with HTTP HEAD and checks its `Content-Length`. Do not promote unless the normal artifact verify and cache-check gates also pass.
 - Developer ID builds include `SparkleUpdates`, embed `Sparkle.framework`, and use Sparkle for in-app checks and installation. A delta is usable only for an installed build that matches its `sparkle:deltaFrom` build and passes Sparkle signature validation. Mac App Store builds omit Sparkle. Always retain the full-DMG enclosure for full-update fallback.
@@ -422,7 +423,29 @@ Rollback download delivery by setting the public Worker's `RELEASE_DELIVERY_MODE
 
 Do not routinely purge immutable files or remove old R2 releases. Keep targeted emergency invalidation for incorrect cached content/headers, using the Workers Cache purge mechanism rather than assuming a zone purge controls this cache. HTTP/3 experiments require actual h2/h3 evidence and a separate zone-scoped change/rollback; no path-level HTTP/3 rule is configured.
 
-## 11. Final report
+## 11. TestFlight upload
+
+Use this path only when the user requests a TestFlight update. The Mac App Store artifact uses the `MacAppStore` SwiftPM trait, a MAS provisioning profile, a `3rd Party Mac Developer Application` identity, and a `3rd Party Mac Developer Installer` identity. It omits Sparkle and is packaged as `.build/VoxStudio.pkg`; it does not use Developer ID notarization.
+
+Use the exact marketing version and build selected for the release. Before building, check App Store Connect for that build number under the app and macOS platform; the `CFBundleVersion` must be unused. If it is already present, stop and select a new build number before producing either channel artifact rather than attempting to re-upload a duplicate.
+
+Build and validate locally:
+
+      ./scripts/bundle-mas.sh
+      ./scripts/check-mas-billing.sh .build/VoxStudio.app
+      codesign --verify --deep --strict .build/VoxStudio.app
+      pkgutil --check-signature .build/VoxStudio.pkg
+      xcrun altool --validate-app .build/VoxStudio.pkg --type osx --api-key "$APP_STORE_CONNECT_API_KEY_ID" --api-issuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+
+`bundle-mas.sh` loads `.env.prod` when present, otherwise `.env`. Confirm its MAS app and installer identities, provisioning profile, App Store Connect API key file, and StoreKit product configuration without printing secret values. Verify the profile Team ID, app identifier, expiration, and embedded signing certificate match the configured MAS application identity. The package is signed with the installer identity. The App Store Connect API key must have upload permission.
+
+Upload only after validation succeeds:
+
+      xcrun altool --upload-package .build/VoxStudio.pkg --api-key "$APP_STORE_CONNECT_API_KEY_ID" --api-issuer "$APP_STORE_CONNECT_API_ISSUER_ID" --wait
+
+Wait for App Store Connect processing, then check the build under TestFlight or query its processing state. Report the marketing version, build number, upload/delivery ID if provided, and processing status. “Uploaded” or “Processing” does not mean the build is available to testers. For an explicit TestFlight update, inspect which existing internal tester group(s) contain the preceding valid build and associate the new build with those same group(s) when the match is unambiguous. Verify that the new build appears in each group's Builds view. If the App Store Connect API rejects an internal-group association with `Cannot add internal group to a build`, use the visible App Store Connect UI as the supported fallback; do not retry alternate API endpoints or add individuals as a workaround. If the browser session has expired, leave the TestFlight build page open for the user to sign in and finish the group association. Do not create groups, add external groups/testers, change beta review information, or submit the app version for App Review unless separately requested.
+
+## 12. Final report
 
 Include:
 

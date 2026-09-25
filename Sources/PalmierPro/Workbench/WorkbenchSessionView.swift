@@ -160,7 +160,9 @@ struct WorkbenchSessionDetailView: View {
                 } else {
                     ZStack(alignment: .bottomTrailing) {
                         sessionView(session)
-                        if session.showsFloatingNetVideoPreview, let source = session.netVideoSource {
+                        if session.showsFloatingNetVideoPreview,
+                           session.sourceURL?.isMovie != true,
+                           let source = session.netVideoSource {
                             NetVideoFloatingPlayer(source: source)
                                 .padding(AppTheme.Spacing.xl)
                         }
@@ -483,7 +485,7 @@ struct WorkbenchSessionDetailView: View {
     }
 
     private func sessionHasInlineVideo(_ session: WorkbenchSession, mediaURL: URL?) -> Bool {
-        if session.showsFloatingNetVideoPreview, selectedTrack == .original {
+        if session.showsFloatingNetVideoPreview, selectedTrack == .original, session.sourceURL?.isMovie != true {
             return false
         }
         if selectedTrack != .dub, session.remoteSourceHasVideo == true {

@@ -21,7 +21,9 @@ let package = Package(
         .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", exact: "3.31.4"),
         .package(url: "https://github.com/airbnb/lottie-ios", from: "4.6.1"),
         .package(url: "https://github.com/gonzalezreal/textual", from: "0.1.0"),
-        .package(url: "https://github.com/alexeichhorn/YouTubeKit.git", from: "0.4.9"),
+        // Keep this small local patch so unexpected YouTube player JS is surfaced
+        // as an extraction error instead of terminating the app via fatalError.
+        .package(path: "Vendor/YouTubeKit"),
         .package(url: "https://github.com/soniqo/speech-swift", exact: "0.0.21"),
         .package(path: "Vendor/FluidAudioVAD"),
         .package(url: "https://github.com/huggingface/swift-huggingface.git", exact: "0.9.0"),

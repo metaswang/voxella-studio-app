@@ -80,13 +80,13 @@ PR1 功能可合入开发分支做联调，但**不可标为可发行/验收通�
 ### B2 — Lifetime stub 曾可伪造（Critical，已收紧）
 原 stub 对任意非空 Keychain blob 返回 true。PR1 已改为 **`isPresent()` 恒为 false**：拒绝未签名/未校验凭证，直至 PR2 落地真实签名校验后再按 verified credential 返回 true。
 
-### B2 关闭（PR2）— Lifetime 设备凭证
+### B2 关闭（PR2）— DMG Lifetime 设备凭证
 
-购买结账需登录；服务端确认 Lifetime 后签发 **Ed25519 JWT**，claims：`{ typ: lifetime_device, uid, fp, iat, jti }`（与 device-trial 共用 `MAC_ACCESS_DEVICE_TRIAL_PRIVATE_KEY`，`kid=lifetime-device-v1`）。
+DMG 购买结账需登录；服务端确认 Lifetime 后签发 **Ed25519 JWT**，claims：`{ typ: lifetime_device, uid, fp, iat, jti }`（与 device-trial 共用 `MAC_ACCESS_DEVICE_TRIAL_PRIVATE_KEY`，`kid=lifetime-device-v1`）。MAS 构建只通过 StoreKit 购买 Lifetime，不使用此设备凭证。
 
 | 步骤 | 行为 |
 | --- | --- |
-| 购买 | DMG/MAS Lifetime checkout 均要求已登录（绑定账户） |
+| 购买 | DMG Lifetime checkout 要求已登录（绑定账户） |
 | 签发 | `POST /api/v1/app-access/lifetime-device`（需 user JWT）；body `{ fingerprint }`；校验 `mac_app_purchases` Lifetime 未撤销后 UPSERT `mac_lifetime_devices(user_id, fingerprint)` 并签发 token |
 | 本地 | Keychain `voxstudio.app-access.lifetime-credential`（`ThisDeviceOnly`，**独立于** `AppAccessCache`）；登出不得删除 |
 | 门禁 | `LifetimeLocalCredential.isPresent()` = 验签 + fingerprint 匹配后为 true；未登录可用本地功能 |

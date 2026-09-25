@@ -14,7 +14,7 @@ struct AccountPopoverCard: View {
             // Signed-in plan, Lifetime device credential, or active trial countdown (signed-out OK).
             if account.isSignedIn
                 || account.appAccess.license == .lifetime
-                || LifetimeLocalCredential.isPresent()
+                || account.hasLocalLifetimeCredential
                 || activeTrialPresentation != nil {
                 Divider().overlay(AppTheme.Border.subtleColor)
                 planBlock

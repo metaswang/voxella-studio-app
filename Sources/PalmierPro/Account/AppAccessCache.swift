@@ -2,8 +2,7 @@ import Foundation
 
 actor AppAccessCache {
     // Account-bound offline lease cache. Cleared on logout.
-    // Device-local trial (DeviceTrialClock) and Lifetime credential (LifetimeLocalCredential) use separate
-    // ThisDeviceOnly keys and must not be cleared here on logout.
+    // Device-trial keys are separate; DMG Lifetime credentials are separate too.
     static let shared = AppAccessCache()
     private var writeRevision: UInt64 = 0
     private let readValue: @Sendable () throws -> String?
@@ -26,7 +25,12 @@ actor AppAccessCache {
         let verifiedAt: Date
 
         func isValid(at date: Date) -> Bool {
-            access.policy(at: date) == .allowed && date >= verifiedAt &&
+#if MAC_APP_STORE
+            // Older MAS builds could cache a DMG-style local Lifetime overlay with no
+            // purchase source. Ignore those entries; MAS must use account/StoreKit access.
+            if access.license == .lifetime, access.purchaseSources.isEmpty { return false }
+#endif
+            return access.policy(at: date) == .allowed && date >= verifiedAt &&
                 access.offlineValidUntil.map { date < $0 && $0.timeIntervalSince(verifiedAt) <= TimeInterval(LifetimeDeviceLicense.leaseDays) * 86400 + 60 } == true
         }
     }

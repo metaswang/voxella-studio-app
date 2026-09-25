@@ -19,13 +19,23 @@ def verify_resources(resources, minimum):
     expected = {p.stem + ".metallib" for p in (ROOT / "Metal").glob("*.metal")}
     expected.add("mlx-swift_Cmlx.bundle/default.metallib")
     entries = manifest["libraries"]
-    actual = {str(p.relative_to(resources)) for p in resources.rglob("*.metallib")}
+    # PalmierPro's SwiftPM bundle contains copies of the CI libraries as module
+    # resources, while the app also keeps the canonical copies at its resource
+    # root for BundledResource. Count the app load paths here; the nested module
+    # copies are checked below for byte-for-byte consistency.
+    actual = {p.name for p in resources.glob("*.metallib")}
+    mlx_library = resources / "mlx-swift_Cmlx.bundle/default.metallib"
+    if mlx_library.is_file():
+        actual.add(str(mlx_library.relative_to(resources)))
     if len(entries) != len(expected) or {e["path"] for e in entries} != expected or actual != expected:
         raise ValueError("Missing, duplicate, or unexpected packaged Metal libraries")
     for entry in entries:
         path = resources / entry["path"]
         if path.stat().st_size != entry["bytes"] or sha(path) != entry["sha256"]:
             raise ValueError(f"Packaged shader differs from build manifest: {entry['path']}")
+        module_copy = resources / "PalmierPro_PalmierPro.bundle" / path.name
+        if module_copy.exists() and sha(module_copy) != sha(path):
+            raise ValueError(f"SwiftPM module shader copy differs from app resource: {path.name}")
     return manifest
 
 
