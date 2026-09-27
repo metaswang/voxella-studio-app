@@ -1,4 +1,5 @@
 #if MAC_APP_STORE
+import AppKit
 import Foundation
 import StoreKit
 
@@ -29,32 +30,40 @@ actor AppStorePurchaseProvider {
 
     func purchase(
         _ productID: AppStoreProductID,
-        appAccountToken: UUID
-    ) async throws -> AppAccessSnapshot? {
-        // Keep the server preflight before StoreKit. It prevents a real Apple
-        // charge when the Mac App Store channel or account is not configured.
-        try await api.verifyAppStorePurchase(productID: productID.rawValue, userID: appAccountToken)
+        appAccountToken: UUID?
+    ) async throws -> String {
+        if let appAccountToken {
+            // Keep the server preflight before StoreKit. It prevents a real Apple
+            // charge when the Mac App Store channel or account is not configured.
+            try await api.verifyAppStorePurchase(productID: productID.rawValue, userID: appAccountToken)
+        }
         try Task.checkCancellation()
         let products = try await products()
         try Task.checkCancellation()
         guard let product = products.first(where: { $0.id == productID.rawValue }) else {
             throw AppStorePurchaseError.productUnavailable
         }
-        let result = try await product.purchase(options: [.appAccountToken(appAccountToken)])
+        let options: Set<Product.PurchaseOption> = if let appAccountToken {
+            [.appAccountToken(appAccountToken)]
+        } else {
+            []
+        }
+        let result = try await purchaseInCurrentWindow(product, options: options)
         switch result {
         case .success(let verification):
             let transaction = try verified(verification)
-            guard transaction.productID == productID.rawValue,
-                  transaction.appAccountToken == appAccountToken else {
+            guard transaction.productID == productID.rawValue else {
                 throw AppStorePurchaseError.accountMismatch
             }
-            let access = try await api.syncAppStoreTransaction(
-                signedTransaction: verification.jwsRepresentation,
-                appAccountToken: appAccountToken
-            )
-            try Task.checkCancellation()
+            if let appAccountToken {
+                guard transaction.appAccountToken == appAccountToken else {
+                    throw AppStorePurchaseError.accountMismatch
+                }
+            }
+            // The verified transaction grants local MAS access. Account delivery can
+            // retry independently if the API is unavailable after Apple's charge.
             await transaction.finish()
-            return access.snapshot
+            return verification.jwsRepresentation
         case .pending:
             throw AppStorePurchaseError.pending
         case .userCancelled:
@@ -64,25 +73,29 @@ actor AppStorePurchaseProvider {
         }
     }
 
-    func restore(appAccountToken: UUID) async throws -> AppAccessSnapshot? {
-        try await AppStore.sync()
+    @discardableResult
+    func recover(appAccountToken: UUID) async throws -> AppAccessSnapshot? {
         var firstFailure: Error?
-        do { try await recover(appAccountToken: appAccountToken) }
-        catch is CancellationError { throw CancellationError() }
-        catch { firstFailure = error }
         var latestAccess: AppAccessSnapshot?
+        var seenTransactions = Set<UInt64>()
+        for await result in Transaction.unfinished {
+            try Task.checkCancellation()
+            guard case .verified(let transaction) = result else { continue }
+            guard transaction.appAccountToken == appAccountToken,
+                  AppStoreProductID(rawValue: transaction.productID) != nil else { continue }
+            seenTransactions.insert(transaction.id)
+            do { latestAccess = try await synchronize(result, appAccountToken: appAccountToken) }
+            catch is CancellationError { throw CancellationError() }
+            catch { if firstFailure == nil { firstFailure = error } }
+        }
         for await result in Transaction.currentEntitlements {
             try Task.checkCancellation()
-            let transaction = try verified(result)
+            guard case .verified(let transaction) = result else { continue }
             guard AppStoreProductID(rawValue: transaction.productID) != nil else { continue }
             guard transaction.appAccountToken == appAccountToken else { continue }
+            guard !seenTransactions.contains(transaction.id) else { continue }
             do {
-                latestAccess = try await api.syncAppStoreTransaction(
-                    signedTransaction: result.jwsRepresentation,
-                    appAccountToken: appAccountToken
-                ).snapshot
-                try Task.checkCancellation()
-                await transaction.finish()
+                latestAccess = try await synchronize(result, appAccountToken: appAccountToken)
             } catch is CancellationError { throw CancellationError() }
             catch { if firstFailure == nil { firstFailure = error } }
         }
@@ -104,26 +117,25 @@ actor AppStorePurchaseProvider {
         return access.snapshot
     }
 
-    func recover(appAccountToken: UUID) async throws {
-        var firstFailure: Error?
-        for await result in Transaction.unfinished {
-            try Task.checkCancellation()
-            let transaction = try verified(result)
-            guard transaction.appAccountToken == appAccountToken,
-                  AppStoreProductID(rawValue: transaction.productID) != nil else { continue }
-            do { _ = try await synchronize(result, appAccountToken: appAccountToken) }
-            catch is CancellationError { throw CancellationError() }
-            catch { if firstFailure == nil { firstFailure = error } }
-        }
-        if let firstFailure { throw firstFailure }
-    }
-
     private func verified(_ result: VerificationResult<Transaction>) throws -> Transaction {
         switch result {
         case .verified(let transaction): transaction
         case .unverified: throw AppStorePurchaseError.verificationFailed
         }
     }
+}
+
+@MainActor
+private func purchaseInCurrentWindow(
+    _ product: Product,
+    options: Set<Product.PurchaseOption>
+) async throws -> Product.PurchaseResult {
+    let window = NSApp.keyWindow ?? NSApp.mainWindow
+        ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey })
+    if #available(macOS 15.2, *), let window {
+        return try await product.purchase(confirmIn: window, options: options)
+    }
+    return try await product.purchase(options: options)
 }
 
 enum AppStorePurchaseError: LocalizedError, Equatable, Sendable {

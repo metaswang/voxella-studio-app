@@ -5,6 +5,7 @@ set -euo pipefail
 #   scripts/bundle.sh [release|debug]           # ad-hoc signed dev build
 #   scripts/bundle.sh debug --fast              # fastest: skip dSYM
 #   scripts/bundle.sh debug --sign              # signed Developer ID-compatible app (requires DEVELOPER_ID_PROVISIONING_PROFILE)
+#   scripts/bundle.sh debug --mas               # development-signed MAS app for local StoreKit sandbox testing
 #   scripts/bundle.sh release --sign            # signed Developer ID-compatible app
 #   scripts/bundle.sh release --mas             # Mac App Store app + installer package
 #   scripts/bundle.sh release --dist            # Developer ID + notarize + staple + DMG
@@ -48,7 +49,11 @@ DMG="$ROOT/.build/VoxStudio.dmg"
 if [ "$MODE" = "mas" ]; then
   SIGNING_IDENTITY="${MAS_SIGNING_IDENTITY:-$SIGNING_IDENTITY}"
   ENTITLEMENTS_TEMPLATE="${MAS_ENTITLEMENTS_TEMPLATE:-$ROOT/scripts/VoxStudio.mas.entitlements}"
-  PROVISIONING_PROFILE="${MAS_PROVISIONING_PROFILE:-${PROVISIONING_PROFILE:-}}"
+  if [ "$CONFIG" = "debug" ] && [ -n "${PROVISIONING_PROFILE:-}" ]; then
+    PROVISIONING_PROFILE="$PROVISIONING_PROFILE"
+  else
+    PROVISIONING_PROFILE="${MAS_PROVISIONING_PROFILE:-${PROVISIONING_PROFILE:-}}"
+  fi
 fi
 
 echo "==> Building ($CONFIG)"
@@ -402,11 +407,11 @@ if [ -z "$profile_certificate" ]; then
 fi
 
 # The local debug profile is an Apple Development profile, while .env keeps
-# the Developer ID identity for distribution. Do not combine those identities:
+# distribution identities for release builds. Do not combine those identities:
 # AMFI rejects an otherwise valid app when its embedded profile is signed by a
 # different certificate. Use the profile-bound identity for the local launch
-# path only; MAS and Developer ID distribution keep their explicit identities.
-if [ "$CONFIG" = "debug" ] && [ "$MODE" = "sign" ] \
+# path only; release MAS and Developer ID distribution keep their explicit identities.
+if [ "$CONFIG" = "debug" ] && { [ "$MODE" = "sign" ] || [ "$MODE" = "mas" ]; } \
     && [[ "$profile_certificate" == Apple\ Development:* ]]; then
   if ! security find-certificate -p -c "$profile_certificate" >/dev/null 2>&1; then
     echo "!! profile certificate is not installed in the login keychain: $profile_certificate" >&2

@@ -1132,6 +1132,8 @@
 "Lifetime" = "Lifetime";
 "Lifetime access" = "Lifetime access";
 "Lifetime purchased" = "Lifetime purchased";
+"Link this purchase to the current account" = "Link this purchase to the current account";
+"Lifetime is active. Account benefits will sync when the connection returns." = "Lifetime is active. Account benefits will sync when the connection returns.";
 "Purchased" = "Purchased";
 "Loading App Store pricing…" = "Loading App Store pricing…";
 "Loading saved reference voices…" = "Loading saved reference voices…";

@@ -141,26 +141,108 @@ final class AccountService {
 #endif
 #if MAC_APP_STORE
     private(set) var isPurchasingAppStoreProduct = false
+    private(set) var isLinkingAppStoreLifetime = false
     @ObservationIgnored private var transactionUpdatesTask: Task<Void, Never>?
     @ObservationIgnored private var transactionRecoveryTask: Task<Void, Never>?
+    @ObservationIgnored private var storeKitInitialRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var storeKitRefreshGeneration: UInt64 = 0
+    @ObservationIgnored private var lastAppStoreRecoveryAttempt: Date?
 
     func purchaseAppStoreProduct(_ id: String) async {
         guard !isPurchasingAppStoreProduct else { return }
-        guard let product = AppStoreProductID(rawValue: id), let userID else {
-            lastError = AppAccessError.signInRequired.localizedDescription
+        guard let product = AppStoreProductID(rawValue: id) else {
+            lastError = AppStorePurchaseError.productUnavailable.localizedDescription
             return
         }
         let generation = sessionGeneration
+        let owner = isOfflineAccount ? nil : userID
         isPurchasingAppStoreProduct = true
         lastError = nil
         defer { isPurchasingAppStoreProduct = false }
         do {
-            _ = try await AppStorePurchaseProvider.shared.purchase(product, appAccountToken: userID)
-            guard isCurrentSession(generation), self.userID == userID else { return }
-            await refreshAccountForFeatureAccess()
+            let signedTransaction = try await AppStorePurchaseProvider.shared.purchase(
+                product, appAccountToken: owner
+            )
+            await refreshStoreKitLifetime()
+            guard isCurrentSession(generation) else { return }
+            if let userID = owner, self.userID == userID {
+                do {
+                    _ = try await api.syncAppStoreTransaction(
+                        signedTransaction: signedTransaction,
+                        appAccountToken: userID
+                    )
+                } catch {
+                    guard isCurrentSession(generation) else { return }
+                    lastError = L10n.string("Lifetime is active. Account benefits will sync when the connection returns.")
+                    return
+                }
+                await refreshAccountForFeatureAccess()
+            }
         } catch {
+            await refreshStoreKitLifetime()
             guard isCurrentSession(generation) else { return }
             if (error as? AppStorePurchaseError) != .cancelled { lastError = error.localizedDescription }
+        }
+    }
+
+    func refreshStoreKitLifetime() async {
+        storeKitRefreshGeneration &+= 1
+        let generation = storeKitRefreshGeneration
+        var facts: [MASLifetimeFact] = []
+        for await result in Transaction.currentEntitlements {
+            guard case .verified(let transaction) = result,
+                  transaction.productID == AppStoreProductID.lifetime.rawValue else { continue }
+            facts.append(MASLifetimeFact(
+                productID: transaction.productID,
+                originalID: String(transaction.originalID),
+                purchaseDate: transaction.purchaseDate,
+                appAccountToken: transaction.appAccountToken,
+                revoked: transaction.revocationDate != nil,
+                signedTransaction: result.jwsRepresentation
+            ))
+        }
+        guard generation == storeKitRefreshGeneration else { return }
+        storeKitLifetimeFacts = facts
+        hasLoadedStoreKitLifetime = true
+    }
+
+    func linkAnonymousLifetimePurchase() async {
+        guard !isLinkingAppStoreLifetime,
+              let owner = userID,
+              let signedTransaction = anonymousLifetimeLinkJWS else { return }
+        let generation = sessionGeneration
+        isLinkingAppStoreLifetime = true
+        lastError = nil
+        defer { isLinkingAppStoreLifetime = false }
+        do {
+            let access = try await api.linkAppStoreLifetime(signedTransaction: signedTransaction)
+            guard isCurrentSession(generation), userID == owner else { return }
+            appAccess = access.snapshot
+            await refreshAccountForFeatureAccess()
+        } catch {
+            guard isCurrentSession(generation), userID == owner else { return }
+            lastError = error.localizedDescription
+        }
+    }
+
+    private func recoverAccountBoundAppStorePurchaseIfNeeded(force: Bool = false) {
+        guard let owner = userID, isSignedIn,
+              !appAccess.purchaseSources.contains(.appStore),
+              transactionRecoveryTask == nil else { return }
+        if !force, let lastAppStoreRecoveryAttempt,
+           Date.now.timeIntervalSince(lastAppStoreRecoveryAttempt) < 60 { return }
+        lastAppStoreRecoveryAttempt = .now
+        let generation = sessionGeneration
+        transactionRecoveryTask = Task { [weak self] in
+            defer { self?.transactionRecoveryTask = nil }
+            do {
+                let access = try await AppStorePurchaseProvider.shared.recover(appAccountToken: owner)
+                guard let self, self.isCurrentSession(generation), self.userID == owner else { return }
+                if access != nil { await self.refreshAccountForFeatureAccess() }
+            } catch {
+                guard let self, self.isCurrentSession(generation), self.userID == owner else { return }
+                self.lastError = error.localizedDescription
+            }
         }
     }
 #endif
@@ -176,10 +258,28 @@ final class AccountService {
     var userID: UUID? { account?.user.id }
 
 #if MAC_APP_STORE
-    // StoreKit and the account's server entitlement are the MAS purchase authorities.
-    var hasLocalLifetimeCredential: Bool { false }
+    /// Current verified StoreKit Lifetime transactions. Empty until the first entitlement read.
+    private(set) var storeKitLifetimeFacts: [MASLifetimeFact] = []
+    private(set) var hasLoadedStoreKitLifetime = false
 
-    private var hasLocalPaidDeviceCredential: Bool { false }
+    var hasLocalLifetimeCredential: Bool {
+        MASLifetimePolicy.isUnlocked(
+            storeKitLifetimeFacts,
+            lifetimeProductID: AppStoreProductID.lifetime.rawValue
+        )
+    }
+
+    /// Anonymous purchase the signed-in user can explicitly attach. Nil when already stamped or signed out.
+    var anonymousLifetimeLinkJWS: String? {
+        guard !appAccess.purchaseSources.contains(.appStore) else { return nil }
+        return MASLifetimePolicy.linkOffer(
+            signedInUserID: isSignedIn && !isOfflineAccount ? userID : nil,
+            facts: storeKitLifetimeFacts,
+            lifetimeProductID: AppStoreProductID.lifetime.rawValue
+        )?.signedTransaction
+    }
+
+    private var hasLocalPaidDeviceCredential: Bool { hasLocalLifetimeCredential }
 #else
     var hasLocalLifetimeCredential: Bool { LifetimeLocalCredential.isPresent() }
     
@@ -189,12 +289,25 @@ final class AccountService {
     }
 #endif
 
+    /// Apple Lifetime grants MAS local access only while StoreKit has a verified
+    /// entitlement. A separate web purchase keeps its existing account path.
+    var featureAccessSnapshot: AppAccessSnapshot {
+#if MAC_APP_STORE
+        return MASLifetimePolicy.localAccess(
+            appAccess,
+            hasStoreKitLifetime: hasLocalLifetimeCredential
+        )
+#else
+        return appAccess
+#endif
+    }
+
     var isAppAccessEnforced: Bool { Self.paidAccessEnabled }
     var canCreateNewContent: Bool {
         AppAccessGate.canCreateNewContent(
             enforced: isAppAccessEnforced,
             signedIn: isSignedIn,
-            access: appAccess,
+            access: featureAccessSnapshot,
             hasLocalLifetimeCredential: hasLocalPaidDeviceCredential
         )
     }
@@ -202,7 +315,7 @@ final class AccountService {
     var hasFeatureAccess: Bool {
         AppAccessGate.hasFeatureAccess(
             hasPaidPlan: isPaid,
-            access: appAccess,
+            access: featureAccessSnapshot,
             hasLocalLifetimeCredential: hasLocalPaidDeviceCredential
         )
     }
@@ -211,7 +324,7 @@ final class AccountService {
     var appAccessLabel: String {
         AppAccessGate.label(
             enforced: isAppAccessEnforced,
-            access: appAccess,
+            access: featureAccessSnapshot,
             tier: tier,
             hasLocalLifetimeCredential: hasLocalPaidDeviceCredential
         )
@@ -220,7 +333,10 @@ final class AccountService {
     /// Trial remaining-time UI. Does NOT require login (device trial survives sign-out).
     var trialPresentation: TrialPresentation? {
         guard isAppAccessEnforced else { return nil }
-        return appAccess.trialPresentation()
+#if MAC_APP_STORE
+        guard !hasLocalLifetimeCredential else { return nil }
+#endif
+        return featureAccessSnapshot.trialPresentation()
     }
 
     var credentialStoreMessage: String? {
@@ -300,7 +416,9 @@ final class AccountService {
         transactionUpdatesTask = Task { [weak self] in
             for await result in Transaction.updates {
                 guard !Task.isCancelled else { break }
-                guard let self, let owner = self.userID else { continue }
+                guard let self else { continue }
+                await self.refreshStoreKitLifetime()
+                guard let owner = self.userID else { continue }
                 if case .verified(let transaction) = result, transaction.appAccountToken != owner { continue }
                 let generation = self.sessionGeneration
                 do {
@@ -339,6 +457,12 @@ final class AccountService {
             ]
         )
         reapplyLocalEntitlementOverlays()
+#if MAC_APP_STORE
+        storeKitInitialRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            await self.refreshStoreKitLifetime()
+        }
+#endif
         restoreSession()
         didBecomeActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
@@ -346,6 +470,10 @@ final class AccountService {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
+#if MAC_APP_STORE
+                Task { await self?.refreshStoreKitLifetime() }
+                self?.recoverAccountBoundAppStorePurchaseIfNeeded()
+#endif
                 self?.refreshEntitlementAfterActivation()
             }
         }
@@ -408,6 +536,9 @@ final class AccountService {
                 }
             }
 
+#if MAC_APP_STORE
+            await self.storeKitInitialRefreshTask?.value
+#endif
             _ = await self.restoreOfflineAccess(generation: generation)
             do {
                 guard let token = try await VoxellaAuthService.shared.validAccessToken() else {
@@ -661,16 +792,16 @@ final class AccountService {
 #endif
         reapplyLocalEntitlementOverlays()
         if hasLocalPaidDeviceCredential { return }
-        if appAccess.policy() == .allowed { return }
+        if featureAccessSnapshot.policy() == .allowed { return }
 
         if isLoading, userID == nil {
             _ = await restoreOfflineAccess(generation: sessionGeneration)
             reapplyLocalEntitlementOverlays()
-            if appAccess.policy() == .allowed { return }
+            if featureAccessSnapshot.policy() == .allowed { return }
         }
         await waitForSessionRestore()
         reapplyLocalEntitlementOverlays()
-        if appAccess.policy() == .allowed { return }
+        if featureAccessSnapshot.policy() == .allowed { return }
 
 #if MAC_APP_STORE
         // The Mac App Store build exposes one StoreKit product: Lifetime.
@@ -1351,7 +1482,7 @@ final class AccountService {
             try AppAccessGate.requireNewContent(
                 enforced: Self.paidAccessEnabled,
                 signedIn: isSignedIn,
-                access: appAccess,
+                access: featureAccessSnapshot,
                 hasLocalLifetimeCredential: hasLocalPaidDeviceCredential
             )
         } catch let error as AppAccessError {
@@ -1628,18 +1759,7 @@ final class AccountService {
             if let userID { try await VoxellaAuthService.shared.bindAccount(userID, token: token) }
             guard isCurrentSession(generation) else { return false }
 #if MAC_APP_STORE
-            if let owner = userID {
-                transactionRecoveryTask?.cancel()
-                transactionRecoveryTask = Task { [weak self] in
-                    do {
-                        try await AppStorePurchaseProvider.shared.recover(appAccountToken: owner)
-                        guard !Task.isCancelled, self?.userID == owner else { return }
-                        await self?.refreshAccountForFeatureAccess()
-                    } catch {
-                        if !Task.isCancelled, self?.userID == owner { self?.lastError = error.localizedDescription }
-                    }
-                }
-            }
+            recoverAccountBoundAppStorePurchaseIfNeeded(force: true)
 #endif
             return isCurrentSession(generation)
         } catch {
@@ -1850,13 +1970,13 @@ final class AccountService {
 
     func purchaseLifetime() async {
         lastError = nil
+#if MAC_APP_STORE
+        await purchaseAppStoreProduct(AppStoreProductID.lifetime.rawValue)
+#else
         guard userID != nil else {
             lastError = AppAccessError.signInRequired.localizedDescription
             return
         }
-#if MAC_APP_STORE
-        await purchaseAppStoreProduct(AppStoreProductID.lifetime.rawValue)
-#else
         // DMG checkout binds the account and issues a device credential.
         guard !isOpeningStripeCheckout else { return }
         isOpeningStripeCheckout = true
@@ -1874,19 +1994,21 @@ final class AccountService {
 #if MAC_APP_STORE
         guard !isPurchasingAppStoreProduct else { return }
         lastError = nil
-        guard let userID else {
-            lastError = AppAccessError.signInRequired.localizedDescription
-            return
-        }
         let generation = sessionGeneration
         isPurchasingAppStoreProduct = true
         defer { isPurchasingAppStoreProduct = false }
         do {
-            _ = try await AppStorePurchaseProvider.shared.restore(appAccountToken: userID)
-            guard isCurrentSession(generation), self.userID == userID else { return }
-            await refreshAccountForFeatureAccess()
+            try await AppStore.sync()
+            await refreshStoreKitLifetime()
+            guard isCurrentSession(generation) else { return }
+            if let userID, self.userID == userID {
+                _ = try await AppStorePurchaseProvider.shared.recover(appAccountToken: userID)
+                guard isCurrentSession(generation), self.userID == userID else { return }
+                await refreshAccountForFeatureAccess()
+            }
         } catch {
-            guard isCurrentSession(generation), self.userID == userID else { return }
+            await refreshStoreKitLifetime()
+            guard isCurrentSession(generation) else { return }
             lastError = error.localizedDescription
         }
 #endif
@@ -2015,14 +2137,14 @@ extension AccountService {
 
     var localizedAppAccessLabel: String {
         guard isAppAccessEnforced else { return tier.localizedPlanLabel }
-        if appAccess.license == .lifetime || hasLocalLifetimeCredential {
+        if featureAccessSnapshot.license == .lifetime || hasLocalLifetimeCredential {
             return L10n.string("Lifetime")
         }
-        if appAccess.subscriptionTier.isPaid,
-           appAccess.subscriptionEndsAt.map({ $0 > .now }) == true {
-            return appAccess.subscriptionTier.localizedPlanLabel
+        if featureAccessSnapshot.subscriptionTier.isPaid,
+           featureAccessSnapshot.subscriptionEndsAt.map({ $0 > .now }) == true {
+            return featureAccessSnapshot.subscriptionTier.localizedPlanLabel
         }
-        if appAccess.license == .trial { return L10n.string("Trial") }
+        if featureAccessSnapshot.license == .trial { return L10n.string("Trial") }
         return L10n.string("Free")
     }
 }

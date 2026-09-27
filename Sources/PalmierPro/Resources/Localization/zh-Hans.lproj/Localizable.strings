@@ -823,6 +823,8 @@
 "Lifetime" = "寿命";
 "Lifetime access" = "终身访问权限";
 "Lifetime purchased" = "已购买终身访问权限";
+"Link this purchase to the current account" = "将此购买关联到当前账户";
+"Lifetime is active. Account benefits will sync when the connection returns." = "终身版已启用。网络恢复后将同步账户权益。";
 "Purchased" = "已购买";
 "Loading App Store pricing…" = "正在加载App Store定价…";
 "Loading saved reference voices…" = "正在加载保存的参考语音…";

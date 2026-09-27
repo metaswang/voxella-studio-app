@@ -1283,6 +1283,14 @@ actor VoxellaAPIClient {
         )
     }
 
+    func linkAppStoreLifetime(signedTransaction: String) async throws -> AppAccessResponse {
+        try await waitForAppStoreOperation(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/app-store/lifetime-link"),
+            signedTransaction: signedTransaction,
+            idempotencyKey: UUID().uuidString
+        )
+    }
+
     func verifyAppStorePurchase(productID: String, userID: UUID) async throws {
         struct Eligibility: Decodable, Sendable { let eligible: Bool }
         let result = try await request(
@@ -1298,16 +1306,30 @@ actor VoxellaAPIClient {
         signedTransaction: String,
         appAccountToken: UUID
     ) async throws -> AppAccessResponse {
+        try await waitForAppStoreOperation(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/app-store/transactions"),
+            signedTransaction: signedTransaction,
+            idempotencyKey: UUID().uuidString
+        )
+    }
+
+    private func waitForAppStoreOperation(
+        url: URL,
+        signedTransaction: String,
+        idempotencyKey: String?
+    ) async throws -> AppAccessResponse {
         struct Operation: Decodable, Sendable {
             let operation_id: UUID
             let status: String
             let error_code: String?
         }
         let generation = await auth.currentSessionGeneration()
+        var headers: [String: String] = [:]
+        if let idempotencyKey { headers["Idempotency-Key"] = idempotencyKey }
         let operation = try await request(
-            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/app-store/transactions"),
+            url: url,
             method: "POST", json: ["signed_transaction": signedTransaction],
-            headers: ["Idempotency-Key": UUID().uuidString], as: Operation.self
+            headers: headers, as: Operation.self
         )
         var delay: UInt64 = 1_000_000_000
         for _ in 0..<60 {
@@ -1325,7 +1347,7 @@ actor VoxellaAPIClient {
                 return access
             }
             if status.status == "failed" {
-                throw VoxellaAPIError.http(409, "Your purchase needs review. Please contact support.")
+                throw VoxellaAPIError.http(409, status.error_code ?? "Your purchase needs review. Please contact support.")
             }
             try await Task.sleep(nanoseconds: delay)
             delay = min(delay * 2, 5_000_000_000)

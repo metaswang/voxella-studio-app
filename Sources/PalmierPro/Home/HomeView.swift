@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HomeView: View {
-    @AppStorage("voxella.workbench.sidebarExpanded") private var sidebarExpanded = true
+    @AppStorage("voxella.workbench.sidebarExpanded") private var sidebarExpanded = false
     @State private var sessionSearch = SessionSearchController()
     @State private var isSessionSearchPresented = false
     @Bindable private var store = WorkbenchStore.shared

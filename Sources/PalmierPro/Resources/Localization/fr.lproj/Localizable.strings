@@ -561,6 +561,8 @@
 "Lifetime unlocked" = "Accès à vie déverrouillé";
 "This Mac is unlocked with your license key. Manage devices below if you need a free slot on another Mac." = "Ce Mac est déverrouillé avec votre clé de licence. Gérez les appareils ci-dessous si vous devez libérer un emplacement sur un autre Mac.";
 "Lifetime purchased" = "Accès à vie acheté";
+"Link this purchase to the current account" = "Associer cet achat au compte actuel";
+"Lifetime is active. Account benefits will sync when the connection returns." = "L’accès à vie est actif. Les avantages du compte seront synchronisés au retour de la connexion.";
 "Purchased" = "Acheté";
 "This Mac already has Lifetime access." = "Ce Mac dispose déjà de l’accès à vie.";
 "Manage devices…" = "Gérer les appareils…";

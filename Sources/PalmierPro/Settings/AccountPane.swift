@@ -50,7 +50,7 @@ struct AccountPane: View {
             licenseKeySection
 #endif
 
-            if account.isPaid || account.appAccess.license == .lifetime {
+            if showsPaidAccess {
                 subscriptionSection
 #if MAC_APP_STORE
                 AppStoreOffersView(credits: false)
@@ -78,6 +78,15 @@ struct AccountPane: View {
         .sheet(isPresented: $showDeviceManagement) {
             LicenseKeyDevicesView(onClose: { showDeviceManagement = false })
         }
+#endif
+    }
+
+    private var showsPaidAccess: Bool {
+        if account.isPaid || account.featureAccessSnapshot.license == .lifetime { return true }
+#if MAC_APP_STORE
+        return account.hasLocalLifetimeCredential
+#else
+        return false
 #endif
     }
 

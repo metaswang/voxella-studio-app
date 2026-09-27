@@ -8,7 +8,6 @@ struct AppStoreOffersView: View {
     @State private var error: String?
     @State private var reload = UUID()
     @State private var loading = true
-    @State private var queuedPurchase = false
     @Bindable private var account = AccountService.shared
 
     var body: some View {
@@ -17,7 +16,7 @@ struct AppStoreOffersView: View {
                 Text(L10n.string("Credit purchases are not available in the Mac App Store version."))
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
-            } else if loading {
+            } else if loading || !account.hasLoadedStoreKitLifetime {
                 offerLoadingCard
             } else if let product = products.first {
                 lifetimeCard(product)
@@ -58,11 +57,6 @@ struct AppStoreOffersView: View {
                 self.error = error.localizedDescription
             }
             loading = false
-        }
-        .onChange(of: account.isSignedIn) { _, signedIn in
-            guard signedIn, queuedPurchase, let product = products.first else { return }
-            queuedPurchase = false
-            Task { await account.purchaseAppStoreProduct(product.id) }
         }
     }
 
@@ -144,19 +138,22 @@ struct AppStoreOffersView: View {
                         )
                 }
                 .accessibilityElement(children: .combine)
+                if account.anonymousLifetimeLinkJWS != nil {
+                    Button(L10n.string("Link this purchase to the current account")) {
+                        Task { await account.linkAnonymousLifetimePurchase() }
+                    }
+                    .buttonStyle(.capsule(.prominent, size: .regular))
+                    .disabled(account.isLinkingAppStoreLifetime)
+                }
             } else {
                 Button {
-                    if account.isSignedIn {
-                        Task { await account.purchaseAppStoreProduct(product.id) }
-                    } else {
-                        queuedPurchase = true
-                    }
+                    Task { await account.purchaseAppStoreProduct(product.id) }
                 } label: {
                     HStack(spacing: AppTheme.Spacing.sm) {
                         if account.isPurchasingAppStoreProduct {
                             ProgressView().controlSize(.small).tint(.white)
                         }
-                        Text(L10n.string(account.isSignedIn ? "Buy Lifetime" : "Sign in to purchase"))
+                        Text(L10n.string("Buy Lifetime"))
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -171,7 +168,7 @@ struct AppStoreOffersView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if !account.isSignedIn {
+            if !account.isSignedIn && account.hasLocalLifetimeCredential {
                 Label(L10n.string("Sign in below to link the purchase to your VoxStudio account."), systemImage: "person.crop.circle")
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -183,7 +180,7 @@ struct AppStoreOffersView: View {
     }
 
     private var isLifetimePurchased: Bool {
-        account.appAccess.license == .lifetime
+        account.hasLocalLifetimeCredential || account.featureAccessSnapshot.license == .lifetime
     }
 
     private var unavailableCard: some View {

@@ -160,7 +160,7 @@ struct TrialDetailsView: View {
 
     private var detailPurchaseLabel: String {
 #if MAC_APP_STORE
-        account.isSignedIn ? "Buy Lifetime" : "Sign in to buy Lifetime"
+        "Buy Lifetime"
 #else
         "Choose access"
 #endif
@@ -168,11 +168,7 @@ struct TrialDetailsView: View {
 
     private func purchaseLifetimeOrShowSignIn() {
 #if MAC_APP_STORE
-        if account.isSignedIn {
-            Task { await account.purchaseLifetime() }
-        } else {
-            showsSignInAlert = true
-        }
+        Task { await account.purchaseLifetime() }
 #else
         AppAccessWindow.shared.present()
 #endif
@@ -192,11 +188,7 @@ func localizedTrialSidebarLabel(_ active: TrialPresentation.Active) -> String {
 @MainActor
 private func purchaseLifetimeOrPresentAccess() {
 #if MAC_APP_STORE
-    if AccountService.shared.isSignedIn {
-        Task { await AccountService.shared.purchaseLifetime() }
-    } else {
-        AppAccessWindow.shared.present()
-    }
+    Task { await AccountService.shared.purchaseLifetime() }
 #else
     AppAccessWindow.shared.present()
 #endif

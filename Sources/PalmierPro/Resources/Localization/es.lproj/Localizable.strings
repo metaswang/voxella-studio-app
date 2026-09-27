@@ -561,6 +561,8 @@
 "Lifetime unlocked" = "Acceso de por vida desbloqueado";
 "This Mac is unlocked with your license key. Manage devices below if you need a free slot on another Mac." = "Este Mac está desbloqueado con tu clave de licencia. Gestiona los dispositivos abajo si necesitas liberar un espacio en otro Mac.";
 "Lifetime purchased" = "Acceso de por vida comprado";
+"Link this purchase to the current account" = "Vincular esta compra a la cuenta actual";
+"Lifetime is active. Account benefits will sync when the connection returns." = "El acceso de por vida está activo. Los beneficios de la cuenta se sincronizarán cuando vuelva la conexión.";
 "Purchased" = "Comprado";
 "This Mac already has Lifetime access." = "Este Mac ya tiene acceso de por vida.";
 "Manage devices…" = "Gestionar dispositivos…";
