@@ -404,6 +404,7 @@ final class AccountService {
 #if !MAC_APP_STORE
     @ObservationIgnored private var lifetimeDeviceVerifyAttempt: Date?
     @ObservationIgnored private var licenseKeyDeviceVerifyAttempt: Date?
+    @ObservationIgnored private var isVerifyingLicenseKeyDevice = false
 #endif
     @ObservationIgnored private let trialReminderStore = TrialReminderStore()
 
@@ -464,6 +465,9 @@ final class AccountService {
         }
 #endif
         restoreSession()
+#if !MAC_APP_STORE
+        Task { await self.renewLicenseKeyLeaseIfNeeded(force: true) }
+#endif
         didBecomeActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
@@ -473,6 +477,8 @@ final class AccountService {
 #if MAC_APP_STORE
                 Task { await self?.refreshStoreKitLifetime() }
                 self?.recoverAccountBoundAppStorePurchaseIfNeeded()
+#else
+                Task { await self?.renewLicenseKeyLeaseIfNeeded(force: true) }
 #endif
                 self?.refreshEntitlementAfterActivation()
             }
@@ -874,10 +880,13 @@ final class AccountService {
 
     private func renewLicenseKeyLeaseIfNeeded(force: Bool = false) async {
         guard Self.paidAccessEnabled else { return }
+        guard !isVerifyingLicenseKeyDevice else { return }
         guard let record = try? LicenseKeyLocalCredential.load() else { return }
         if !force, !record.refreshIsDue(at: .now, lastAttempt: licenseKeyDeviceVerifyAttempt) {
             return
         }
+        isVerifyingLicenseKeyDevice = true
+        defer { isVerifyingLicenseKeyDevice = false }
         licenseKeyDeviceVerifyAttempt = .now
         do {
             let response = try await api.verifyLicenseKeyDevice(
