@@ -298,7 +298,7 @@ private struct SessionMergeDivider: View {
     }
 }
 
-private struct SessionCueRow: View {
+struct SessionCueRow: View {
     let cue: SubtitleCue
     let isActive: Bool
     let speakerLabels: [String]
@@ -318,11 +318,6 @@ private struct SessionCueRow: View {
     let onAddSpeaker: () -> Void
 
     @State private var isHovered = false
-    @State private var textColumnWidth: CGFloat = 0
-
-    private var editorFrameHeight: CGFloat {
-        SessionCueEditorMetrics.height(for: editingText, width: textColumnWidth)
-    }
 
     var body: some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.mdLg) {
@@ -373,9 +368,10 @@ private struct SessionCueRow: View {
                             onCancel: onCancelEdit
                         )
                         .frame(maxWidth: .infinity, alignment: .topLeading)
-                        // NSScrollView does not report content height, so a minHeight
-                        // collapsed long cues to about two lines. Track the laid-out text.
-                        .frame(height: editorFrameHeight, alignment: .topLeading)
+                        // Let sizeThatFits measure the proposed column width in the
+                        // same layout pass. A separate frame based on a geometry
+                        // preference can stay at its initial one-line height.
+                        .fixedSize(horizontal: false, vertical: true)
 
                         if canSplit {
                             Button(action: onSplit) {
@@ -404,6 +400,7 @@ private struct SessionCueRow: View {
                         )
                             .font(.system(size: AppTheme.FontSize.mdLg))
                             .foregroundStyle(AppTheme.Text.primaryColor)
+                            .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -411,15 +408,6 @@ private struct SessionCueRow: View {
                                 onBeginEdit()
                             }
                     }
-                }
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear.preference(key: SessionCueColumnWidthKey.self, value: proxy.size.width)
-                    }
-                }
-                .onPreferenceChange(SessionCueColumnWidthKey.self) { width in
-                    guard abs(width - textColumnWidth) > 0.5 else { return }
-                    textColumnWidth = width
                 }
             }
         }
@@ -494,14 +482,6 @@ private struct SessionCueRow: View {
     }
 }
 
-private struct SessionCueColumnWidthKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 private enum SessionCueEditorMetrics {
     static var font: NSFont { .systemFont(ofSize: AppTheme.FontSize.mdLg) }
     static var verticalInset: CGFloat { AppTheme.Spacing.xxs }
@@ -525,7 +505,12 @@ private enum SessionCueEditorMetrics {
         manager.addTextContainer(container)
         manager.ensureLayout(for: container)
         let used = manager.usedRect(for: container)
-        return max(minHeight, ceil(used.height + inset * 2))
+        // A trailing newline leaves the caret on an extra empty line, which
+        // usedRect alone omits.
+        let contentHeight = manager.extraLineFragmentTextContainer === container
+            ? max(used.maxY, manager.extraLineFragmentRect.maxY)
+            : used.maxY
+        return max(minHeight, ceil(contentHeight + inset * 2))
     }
 }
 
