@@ -1191,6 +1191,7 @@ final class LLMSettingsStore {
     }
 
     private let defaults: UserDefaults
+    private let usesPersistentProviderState: Bool
     private let credentialSaver: @Sendable (String, LLMProviderProfile) async throws -> Void
     private var credentialGeneration = 0
     private var pendingCredentialValues: [UUID: String] = [:]
@@ -1203,6 +1204,7 @@ final class LLMSettingsStore {
         credentialSaver: (@Sendable (String, LLMProviderProfile) async throws -> Void)? = nil
     ) {
         let usesApplicationDefaults = defaults == nil
+        self.usesPersistentProviderState = usesApplicationDefaults
         let defaults = defaults ?? Self.applicationDefaults
         let historicalDefaults = legacyDefaults
             ?? (usesApplicationDefaults ? Self.legacyDefaults : [])
@@ -1471,8 +1473,7 @@ final class LLMSettingsStore {
             throw LLMConfigurationError.missingProvider(validated.normalizedPrefix)
         }
         if providers[index].normalizedBaseURL != validated.normalizedBaseURL {
-            ProviderConnectivityStore.shared.invalidate(validated.id)
-            ProviderModelCatalog.shared.invalidate(validated.id)
+            invalidateProviderState(validated.id)
         }
         providers[index] = validated
         _ = normalizeRoutesForProviderRouting()
@@ -1697,15 +1698,14 @@ final class LLMSettingsStore {
             throw LLMConfigurationError.missingProvider("")
         }
         credentialGeneration += 1
-        let previousKey = try? await loadCredential(for: profile)
+        let previousKey = usesPersistentProviderState ? (try? await loadCredential(for: profile)) : nil
         try await credentialSaver(value, profile)
         guard provider(id: providerID)?.credentialAccount == profile.credentialAccount else { return }
         credentialAvailability[providerID] = true
         persistCredentialAvailability()
         credentialError = nil
         if previousKey?.trimmingCharacters(in: .whitespacesAndNewlines) != value.trimmingCharacters(in: .whitespacesAndNewlines) {
-            ProviderConnectivityStore.shared.invalidate(providerID)
-            ProviderModelCatalog.shared.invalidate(providerID)
+            invalidateProviderState(providerID)
         }
         notifyConfigurationChanged()
     }
@@ -1724,8 +1724,7 @@ final class LLMSettingsStore {
         persistCredentialAvailability()
         credentialSaveStates[providerID] = .idle
         credentialError = nil
-        ProviderConnectivityStore.shared.invalidate(providerID)
-        ProviderModelCatalog.shared.invalidate(providerID)
+        invalidateProviderState(providerID)
         if availabilityChanged {
             notifyConfigurationChanged()
         }
@@ -1763,6 +1762,14 @@ final class LLMSettingsStore {
 
     private func notifyConfigurationChanged() {
         NotificationCenter.default.post(name: .aiConfigurationDidChange, object: nil)
+    }
+
+    private func invalidateProviderState(_ providerID: UUID) {
+        // Isolated settings stores (including mock Keychain test stores) must
+        // never clear diagnostics belonging to the running app's providers.
+        guard usesPersistentProviderState else { return }
+        ProviderConnectivityStore.shared.invalidate(providerID)
+        ProviderModelCatalog.shared.invalidate(providerID)
     }
 
     func runtimeRoute(for useCase: LLMUseCase) async throws -> LLMRuntimeRoute {

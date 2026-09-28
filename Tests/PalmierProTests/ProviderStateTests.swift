@@ -40,7 +40,7 @@ struct ProviderStateTests {
     }
 
     @Test func catalogKeepsThreeFormalSeriesAndDeduplicatesSnapshots() {
-        let ids = ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6-sol-20260901", "gpt-5.6-sol", "gpt-5.5", "gpt-5.4-mini", "gpt-7-preview", "gpt-6-realtime"]
+        let ids = ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6-sol-20260901", "gpt-5.6-sol", "gpt-5.5", "gpt-5.5-2026-04-23", "gpt-5.4-mini", "gpt-7-preview", "gpt-6-realtime"]
         let models = ProviderModelCatalog.select(rows: ids.map { ["id": $0] }, router: false)
         #expect(Set(models.map(\.id)) == Set(["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.5"]))
         #expect(models.first(where: { $0.id == "gpt-6-astra" })?.capability.efforts.contains(.none) == false)
@@ -65,6 +65,16 @@ struct ProviderStateTests {
         #expect(model?.capability.resolve(.max) == .medium)
     }
 
+    @Test func realRouterDottedVersionsAndBatchVariantsAreNormalized() {
+        let ids = ["anthropic/claude-opus-5.5", "anthropic/claude-opus-5", "anthropic/claude-opus-4.8", "anthropic/claude-opus-4.7", "anthropic/claude-opus-4.6", "anthropic/claude-opus-5.5:batch", "anthropic/claude-sonnet-5", "anthropic/claude-sonnet-4.6", "anthropic/claude-sonnet-4.5", "anthropic/claude-sonnet-4", "openai/gpt-6-sol:batch", "openai/gpt-6-sol"]
+        let models = ProviderModelCatalog.select(rows: ids.map { ["id": $0, "supported_parameters": ["reasoning"]] }, router: true)
+        #expect(models.filter { $0.id.contains("opus") }.map(\.id).sorted() == ["anthropic/claude-opus-4.8", "anthropic/claude-opus-5", "anthropic/claude-opus-5.5"])
+        #expect(models.filter { $0.id.contains("sonnet") }.count == 3)
+        #expect(!models.contains { $0.id.contains(":") })
+        #expect(ChatModelCapability.known("anthropic/claude-opus-4.6").efforts.contains(.xHigh) == false)
+        #expect(ChatModelCapability.known("anthropic/claude-sonnet-4.5").thinking == .budget)
+    }
+
     @Test func haikuUsesBudgetInsteadOfAdaptiveAndBudgetFitsOutputLimit() {
         let body = AnthropicRequestBody.build(modelName: "claude-haiku-4-5", reasoningEffort: .high, system: "Help", tools: [], messages: [])
         let thinking = body["thinking"] as? [String: Any]
@@ -74,6 +84,14 @@ struct ProviderStateTests {
         #expect(body["output_config"] == nil)
         let disabled = AnthropicRequestBody.build(modelName: "claude-haiku-4-5", reasoningEffort: .none, system: "Help", tools: [], messages: [])
         #expect(disabled["thinking"] as? [String: String] == ["type": "disabled"])
+    }
+
+    @Test func routerAdvertisedEffortsOverrideNativeModelDefaults() {
+        let row: [String: Any] = ["id": "openai/gpt-6-sol", "supported_parameters": ["reasoning"],
+            "reasoning": ["supported_efforts": ["none", "low", "high"], "mandatory": true]]
+        let model = ProviderModelCatalog.select(rows: [row], router: true).first
+        #expect(model?.capability.efforts == [.low, .high])
+        #expect(model?.capability.resolve(.max) == .low)
     }
 
     @Test func signedOutWithoutBYOKCannotSelectCloudTransport() {

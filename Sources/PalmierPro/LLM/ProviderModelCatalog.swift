@@ -10,6 +10,7 @@ struct ChatModelCapability: Codable, Equatable, Sendable {
     static func known(_ model: String) -> Self {
         let name = LLMReasoningEffort.leafModelName(model)
         if name.hasPrefix("claude-") {
+            let name = name.replacingOccurrences(of: ".", with: "-")
             if name.contains("claude-3-") && !name.contains("claude-3-7-sonnet") {
                 return .init(thinking: .automatic, efforts: [], maxOutputTokens: name.contains("3-5") ? 8_192 : 4_096)
             }
@@ -65,6 +66,7 @@ struct ProviderCatalogRecord: Codable, Sendable {
     let identity: String
     let fetchedAt: Date
     let models: [ProviderCatalogModel]
+    var schemaVersion: Int? = 3
 }
 
 /// Only models returned by the configured provider are offered; refresh never
@@ -110,7 +112,7 @@ final class ProviderModelCatalog {
                 loading.insert(profile.id)
                 if records[profile.id]?.identity != identity { records[profile.id] = nil }
                 if records[profile.id] == nil,
-                   let cached = try await ProviderStateStore.shared.load(ProviderCatalogRecord.self, providerID: profile.id, category: "models"), cached.identity == identity {
+                   let cached = try await ProviderStateStore.shared.load(ProviderCatalogRecord.self, providerID: profile.id, category: "models"), cached.identity == identity, cached.schemaVersion == 3 {
                     records[profile.id] = cached
                 }
                 if !force, let cached = records[profile.id], Date().timeIntervalSince(cached.fetchedAt) < 86_400 { continue }
@@ -167,6 +169,7 @@ final class ProviderModelCatalog {
             guard let id = row["id"] as? String else { continue }
             if router && !id.hasPrefix("openai/") && !id.hasPrefix("anthropic/") { continue }
             let name = LLMReasoningEffort.leafModelName(id)
+            guard !name.contains(":") else { continue }
             guard !["preview", "beta", "experimental", "latest", "chat", "audio", "realtime", "image", "search", "codex", "embedding", "instruct", "pro"].contains(where: { name.contains($0) }) else { continue }
             let pattern: String
             let family: String
@@ -175,7 +178,7 @@ final class ProviderModelCatalog {
                 pattern = "^gpt-([0-9]+(?:\\.[0-9]+)?)(?:-|$)"
             } else if let match = ["haiku", "sonnet", "opus"].first(where: { name.contains($0) }), name.hasPrefix("claude-") {
                 family = match
-                pattern = "^claude-(?:" + match + "-)?([0-9]+)(?:-([0-9]{1,2})(?:-|$))?"
+                pattern = "^claude-(?:" + match + "-)?([0-9]+(?:\\.[0-9]+)?)(?:-([0-9]{1,2})(?:-|$))?"
             } else { continue }
             guard let regex = try? NSRegularExpression(pattern: pattern),
                   let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
@@ -198,6 +201,17 @@ final class ProviderModelCatalog {
             if router, let parameters = row["supported_parameters"] as? [String], !parameters.contains("reasoning") {
                 capability = .init(thinking: .automatic, efforts: [])
             }
+            if router, let reasoning = row["reasoning"] as? [String: Any] {
+                let mandatory = reasoning["mandatory"] as? Bool == true
+                if let advertised = reasoning["supported_efforts"] as? [String] {
+                    let efforts = LLMReasoningEffort.allCases.filter { advertised.contains($0.rawValue) && (!mandatory || $0 != .none) }
+                    capability = .init(thinking: efforts.isEmpty ? .automatic : .effort, efforts: efforts)
+                } else if reasoning["supported_efforts"] is NSNull {
+                    capability = .init(thinking: .effort, efforts: LLMReasoningEffort.allCases.filter { !mandatory || $0 != .none })
+                } else if reasoning["supports_max_tokens"] as? Bool == true {
+                    capability = .init(thinking: .budget, efforts: (mandatory ? [] : [.none]) + [.low, .medium, .high])
+                } else { capability = .init(thinking: .automatic, efforts: []) }
+            }
             groups[family, default: []].append((id, series, capability))
         }
         return groups.keys.sorted().flatMap { family -> [ProviderCatalogModel] in
@@ -206,7 +220,7 @@ final class ProviderModelCatalog {
             var seen: Set<String> = []
             return values.sorted { $0.0.count == $1.0.count ? $0.0 > $1.0 : $0.0.count < $1.0.count }.compactMap { id, version, capability in
                 guard versions.contains(version) else { return nil }
-                let base = id.replacingOccurrences(of: "-[0-9]{8}$", with: "", options: .regularExpression)
+                let base = id.replacingOccurrences(of: "-(?:[0-9]{8}|[0-9]{4}-[0-9]{2}-[0-9]{2})$", with: "", options: .regularExpression)
                 guard seen.insert(base).inserted else { return nil }
                 return ProviderCatalogModel(id: id, capability: capability)
             }
