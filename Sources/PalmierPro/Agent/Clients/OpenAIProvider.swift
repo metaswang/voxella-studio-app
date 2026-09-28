@@ -10,15 +10,54 @@ enum OpenAIRequestBody {
     ) -> [String: Any] {
         precondition(model.provider == .openAI)
         precondition(model.supportedReasoningEfforts.contains(reasoningEffort))
+        return build(
+            modelName: model.rawValue,
+            reasoningEffort: LLMReasoningEffort(rawValue: reasoningEffort.rawValue) ?? .medium,
+            system: system,
+            tools: tools,
+            messages: messages
+        )
+    }
+
+    static func build(
+        modelName: String,
+        reasoningEffort: LLMReasoningEffort,
+        system: String,
+        tools: [AgentToolSchema],
+        messages: [AgentRequestMessage],
+        extraBody: [String: LLMJSONValue] = [:]
+    ) -> [String: Any] {
+        // Provider overrides may have been authored for Chat Completions.
+        // Translate its parameter names while preserving native Responses options.
+        var overrides = extraBody
+        let legacyEffort = overrides.removeValue(forKey: "reasoning_effort")
+        let maxTokens = overrides.removeValue(forKey: "max_tokens")
+        let maxCompletionTokens = overrides.removeValue(forKey: "max_completion_tokens")
+        let maxOutputTokens = overrides.removeValue(forKey: "max_output_tokens")
+        overrides.removeValue(forKey: "thinking")
+        overrides.removeValue(forKey: "reasoning_split")
+        var reasoning: [String: LLMJSONValue] = [
+            "summary": .string("auto"),
+            "effort": legacyEffort ?? .string(reasoningEffort.rawValue),
+        ]
+        if case .object(let nativeReasoning)? = overrides.removeValue(forKey: "reasoning") {
+            LLMJSONValue.deepMerge(nativeReasoning, into: &reasoning)
+        }
+        reasoning.removeValue(forKey: "enabled")
+
         var body: [String: Any] = [
-            "model": model.rawValue,
+            "model": modelName,
             "store": false,
             "stream": true,
-            "max_output_tokens": model.maxOutputTokens,
+            "include": ["reasoning.encrypted_content"],
+            "max_output_tokens": 64_000,
             "instructions": system,
-            "input": inputItems(messages: messages, model: model),
-            "reasoning": ["summary": "auto", "effort": reasoningEffort.rawValue],
+            "input": inputItems(messages: messages, model: AgentModel(rawValue: modelName)),
+            "reasoning": reasoning.mapValues(jsonValue),
         ]
+        if let limit = maxOutputTokens ?? maxCompletionTokens ?? maxTokens {
+            body["max_output_tokens"] = jsonValue(limit)
+        }
         if !tools.isEmpty {
             body["tools"] = tools.map {
                 [
@@ -30,7 +69,21 @@ enum OpenAIRequestBody {
                 ]
             }
         }
+        for (key, value) in overrides {
+            body[key] = jsonValue(value)
+        }
         return body
+    }
+
+    private static func jsonValue(_ value: LLMJSONValue) -> Any {
+        switch value {
+        case .string(let value): value
+        case .number(let value): value
+        case .bool(let value): value
+        case .object(let value): value.mapValues(jsonValue)
+        case .array(let value): value.map(jsonValue)
+        case .null: NSNull()
+        }
     }
 
     private static func inputItems(messages: [AgentRequestMessage], model: AgentModel) -> [[String: Any]] {
@@ -132,9 +185,10 @@ enum OpenAIRequestBody {
 enum OpenAISSE {
     static func parse(
         bytes: URLSession.AsyncBytes,
-        continuation: AsyncThrowingStream<AgentStreamEvent, Error>.Continuation
+        continuation: AsyncThrowingStream<AgentStreamEvent, Error>.Continuation,
+        model: AgentModel? = nil
     ) async throws {
-        var parser = OpenAIStreamParser()
+        var parser = OpenAIStreamParser(model: model)
         for try await line in bytes.lines {
             try Task.checkCancellation()
             for event in try parser.consume(line: line) {
@@ -147,6 +201,11 @@ enum OpenAISSE {
 
 struct OpenAIStreamParser {
     private(set) var didTerminate = false
+    private let model: AgentModel?
+
+    init(model: AgentModel? = nil) {
+        self.model = model
+    }
 
     mutating func consume(line: String) throws -> [AgentStreamEvent] {
         guard line.hasPrefix("data:") else { return [] }
@@ -168,7 +227,7 @@ struct OpenAIStreamParser {
 
         case "response.reasoning_summary_text.delta":
             guard let delta = event["delta"] as? String, !delta.isEmpty else { return [] }
-            return [.reasoningSummaryDelta(delta)]
+            return [.reasoningSummaryDelta(delta, model: model)]
 
         case "response.refusal.delta":
             guard let delta = event["delta"] as? String, !delta.isEmpty else { return [] }
@@ -249,7 +308,8 @@ struct OpenAIStreamParser {
             return [.reasoningComplete(
                 itemID: item["id"] as? String,
                 summary: summary,
-                encryptedContent: encryptedContent
+                encryptedContent: encryptedContent,
+                model: model
             )]
         default:
             return []

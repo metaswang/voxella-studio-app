@@ -4,6 +4,7 @@ import Observation
 
 enum LLMProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case openAI
+    case anthropic
     case miniMax
     case deepInfra
     case zAI
@@ -15,6 +16,7 @@ enum LLMProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
     var label: String {
         switch self {
         case .openAI: "OpenAI"
+        case .anthropic: "Anthropic"
         case .miniMax: "MiniMax"
         case .deepInfra: "DeepInfra"
         case .zAI: "Z.AI"
@@ -26,6 +28,7 @@ enum LLMProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
     var defaultPrefix: String {
         switch self {
         case .openAI: "openai"
+        case .anthropic: "anthropic"
         case .miniMax: "minimax"
         case .deepInfra: "deepinfra"
         case .zAI: "zai"
@@ -37,6 +40,7 @@ enum LLMProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
     var defaultBaseURL: String {
         switch self {
         case .openAI: "https://api.openai.com/v1"
+        case .anthropic: "https://api.anthropic.com/v1"
         case .miniMax: "https://api.minimax.io/v1"
         case .deepInfra: "https://api.deepinfra.com/v1/openai"
         case .zAI: "https://api.z.ai/api/paas/v4"
@@ -48,6 +52,7 @@ enum LLMProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
     var defaultModel: String {
         switch self {
         case .openAI: "gpt-5.4-nano"
+        case .anthropic: "claude-sonnet-5"
         case .miniMax: "MiniMax-M3"
         case .deepInfra, .zAI, .openRouter, .openAICompatible: ""
         }
@@ -113,6 +118,15 @@ struct LLMProviderPreset: Identifiable, Equatable, Sendable {
             defaultModel: "",
             providerKind: .openRouter,
             detail: "One API for many model providers",
+            isCustom: false
+        ),
+        .init(
+            id: "anthropic",
+            name: "Anthropic",
+            baseURL: "https://api.anthropic.com/v1",
+            defaultModel: "claude-sonnet-5",
+            providerKind: .anthropic,
+            detail: "Claude Messages API",
             isCustom: false
         ),
         .init(
@@ -424,6 +438,37 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
     }
 
     func completionEndpoint() throws -> URL {
+        try requestEndpoint(path: provider == .anthropic ? "messages" : "chat/completions")
+    }
+
+    func agentEndpoint() throws -> URL {
+        try requestEndpoint(path: agentProtocol == .openAIResponses
+            ? "responses"
+            : (provider == .anthropic ? "messages" : "chat/completions"))
+    }
+
+    /// Older OpenRouter profiles were stored as generic compatible providers.
+    /// Resolve known hosts without rewriting saved settings or credentials.
+    var agentProtocol: AgentAPIProtocol? {
+        switch provider {
+        case .openAI:
+            return .openAIResponses
+        case .openRouter:
+            return .openAICompatible
+        case .anthropic:
+            return .anthropic
+        case .openAICompatible:
+            switch URL(string: normalizedBaseURL)?.host?.lowercased() {
+            case "api.openai.com": return .openAIResponses
+            case "openrouter.ai": return .openAICompatible
+            default: return nil
+            }
+        case .miniMax, .deepInfra, .zAI:
+            return nil
+        }
+    }
+
+    private func requestEndpoint(path apiPath: String) throws -> URL {
         let value = normalizedBaseURL
         guard !value.isEmpty, var components = URLComponents(string: value),
               let scheme = components.scheme?.lowercased(),
@@ -439,12 +484,15 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
         guard scheme == "https" || (scheme == "http" && isLoopback) else {
             throw LLMConfigurationError.insecureEndpoint
         }
-        let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        if path.hasSuffix("chat/completions") {
-            components.path = "/" + path
-        } else {
-            components.path = "/" + ([path, "chat/completions"].filter { !$0.isEmpty }.joined(separator: "/"))
+        var path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        for suffix in ["chat/completions", "responses", "messages"] {
+            if path == suffix || path.hasSuffix("/" + suffix) {
+                path = String(path.dropLast(suffix.count))
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                break
+            }
         }
+        components.path = "/" + ([path, apiPath].filter { !$0.isEmpty }.joined(separator: "/"))
         guard let endpoint = components.url else {
             throw LLMConfigurationError.invalidEndpoint
         }
@@ -804,6 +852,7 @@ struct LLMRuntimeConfiguration: Sendable {
     let apiKey: String
     let useCase: LLMUseCase?
     let reasoningEffort: LLMReasoningEffort?
+    let chatCapability: ChatModelCapability
 
     init(
         profile: LLMProviderProfile,
@@ -812,7 +861,8 @@ struct LLMRuntimeConfiguration: Sendable {
         endpoint: URL,
         apiKey: String,
         useCase: LLMUseCase? = nil,
-        reasoningEffort: LLMReasoningEffort? = nil
+        reasoningEffort: LLMReasoningEffort? = nil,
+        chatCapability: ChatModelCapability? = nil
     ) {
         self.profile = profile
         self.modelIdentifier = modelIdentifier
@@ -821,6 +871,7 @@ struct LLMRuntimeConfiguration: Sendable {
         self.apiKey = apiKey
         self.useCase = useCase
         self.reasoningEffort = reasoningEffort
+        self.chatCapability = chatCapability ?? .known(modelName)
     }
 
     var diagnosticDescription: String {
@@ -935,6 +986,10 @@ struct LLMRuntimeConfiguration: Sendable {
         }
         let prefix = profile.normalizedPrefix
         return prefix == "google" || prefix == "gemini"
+    }
+
+    var agentProtocol: AgentAPIProtocol? {
+        profile.agentProtocol
     }
 }
 
@@ -1233,26 +1288,28 @@ final class LLMSettingsStore {
     /// - when neither provider is configured, only the primary model from the
     ///   AI Service's “AI editing chat” route is exposed.
     var chatModelOptions: [LLMChatModelOption] {
-        let providerProfiles = providers.compactMap { profile -> (LLMProviderProfile, AgentProvider)? in
-            guard let provider = chatProvider(for: profile) else { return nil }
-            return (profile, provider)
+        var options = providers.filter { $0.agentProtocol != nil }.flatMap { profile in
+            ProviderModelCatalog.shared.models(for: profile).map { model in
+                LLMChatModelOption(reference: profile.normalizedPrefix + "/" + model.id,
+                    provider: profile.provider, providerName: profile.normalizedDisplayName,
+                    modelName: model.id, isAvailable: hasAPIKey(for: profile.id),
+                    supportedReasoningEfforts: model.capability.efforts)
+            }
         }
-        if !providerProfiles.isEmpty {
-            return uniqueChatModelOptions(providerProfiles.flatMap { profile, provider in
-                chatModelOptions(for: profile, provider: provider)
-            })
-        }
-
-        guard let fallback = chatModelOption(for: route(for: .chat).primaryModel) else {
-            return []
-        }
-        return [fallback]
+        if let current = chatModelOption(for: route(for: .chat).modelChain.first ?? ""),
+           !options.contains(where: { $0.id == current.id }) { options.insert(current, at: 0) }
+        return uniqueChatModelOptions(options)
     }
 
     var effectiveChatModelOption: LLMChatModelOption? {
         let options = chatModelOptions
-        let selectedReference = route(for: .chat).primaryModel.normalizedModelReference
-        return options.first(where: { $0.id == selectedReference }) ?? options.first
+        let chain = route(for: .chat).modelChain
+        let selectedReference = (chain.first(where: { reference in
+            guard let parsed = try? Self.parseModelReference(reference),
+                  let profile = providers.first(where: { $0.normalizedPrefix == parsed.prefix }) else { return false }
+            return hasAPIKey(for: profile.id)
+        }) ?? chain.first ?? "").normalizedModelReference
+        return options.first(where: { $0.id == selectedReference }) ?? chatModelOption(for: selectedReference)
     }
 
     var effectiveChatModelReference: String {
@@ -1261,7 +1318,7 @@ final class LLMSettingsStore {
 
     var chatReasoningEffortsForCurrentModel: [LLMReasoningEffort] {
         return effectiveChatModelOption?.supportedReasoningEfforts
-            ?? LLMReasoningEffort.allCases
+            ?? []
     }
 
     var effectiveChatReasoningEffort: LLMReasoningEffort {
@@ -1287,7 +1344,7 @@ final class LLMSettingsStore {
         let currentRoute = route(for: .chat)
         let selectedReference = selected.reference
         let selectedID = selectedReference.normalizedModelReference
-        let references = [selectedReference] + currentRoute.modelChain.filter {
+        let references = [selectedReference] + currentRoute.fallbackModels.filter {
             $0.normalizedModelReference != selectedID
         }
         let nextRoute = LLMModelRoute(
@@ -1313,11 +1370,6 @@ final class LLMSettingsStore {
     /// Repairs a persisted selection when a provider key is added/removed or
     /// when an older model no longer belongs to the filtered chat catalog.
     func synchronizeChatModelSelection() {
-        guard let selected = effectiveChatModelOption else { return }
-        if route(for: .chat).primaryModel.normalizedModelReference != selected.id {
-            selectChatModel(selected)
-            return
-        }
         synchronizeChatReasoningEffort()
     }
 
@@ -1347,6 +1399,21 @@ final class LLMSettingsStore {
             hasConfiguredModel(for: useCase)
         case .unavailable:
             false
+        }
+    }
+
+    /// The editor agent intentionally supports only the provider protocols it
+    /// can faithfully stream with tools. Other OpenAI-compatible endpoints
+    /// remain available to non-agent AI tasks.
+    var hasUsableAgentModel: Bool {
+        route(for: .chat).modelChain.contains { reference in
+            guard let parsed = try? Self.parseModelReference(reference),
+                  let profile = providers.first(where: {
+                      $0.normalizedPrefix.caseInsensitiveCompare(parsed.prefix) == .orderedSame
+                  }),
+                  profile.agentProtocol != nil
+            else { return false }
+            return hasAPIKey(for: profile.id)
         }
     }
 
@@ -1402,6 +1469,10 @@ final class LLMSettingsStore {
         }
         guard let index = providers.firstIndex(where: { $0.id == validated.id }) else {
             throw LLMConfigurationError.missingProvider(validated.normalizedPrefix)
+        }
+        if providers[index].normalizedBaseURL != validated.normalizedBaseURL {
+            ProviderConnectivityStore.shared.invalidate(validated.id)
+            ProviderModelCatalog.shared.invalidate(validated.id)
         }
         providers[index] = validated
         _ = normalizeRoutesForProviderRouting()
@@ -1474,16 +1545,9 @@ final class LLMSettingsStore {
                 notifyConfigurationChanged()
             }
             if self.defaults.object(forKey: Self.useBYOKMigrationKey) == nil {
-                // Existing installs with a stored provider key keep their old
-                // behavior. New installs remain hosted by default.
-                var hasLegacyAgentKey = false
-                for provider in AgentProvider.allCases {
-                    if !(await provider.loadAPIKey()).isEmpty {
-                        hasLegacyAgentKey = true
-                        break
-                    }
-                }
-                if statuses.values.contains(true) || hasLegacyAgentKey {
+                // Existing installs with a stored Provider key keep their old
+                // behavior. Legacy Agent keys are intentionally not consulted.
+                if statuses.values.contains(true) {
                     useBYOK = true
                 }
                 self.defaults.set(true, forKey: Self.useBYOKMigrationKey)
@@ -1633,15 +1697,17 @@ final class LLMSettingsStore {
             throw LLMConfigurationError.missingProvider("")
         }
         credentialGeneration += 1
+        let previousKey = try? await loadCredential(for: profile)
         try await credentialSaver(value, profile)
         guard provider(id: providerID)?.credentialAccount == profile.credentialAccount else { return }
-        let availabilityChanged = credentialAvailability[providerID] != true
         credentialAvailability[providerID] = true
         persistCredentialAvailability()
         credentialError = nil
-        if availabilityChanged {
-            notifyConfigurationChanged()
+        if previousKey?.trimmingCharacters(in: .whitespacesAndNewlines) != value.trimmingCharacters(in: .whitespacesAndNewlines) {
+            ProviderConnectivityStore.shared.invalidate(providerID)
+            ProviderModelCatalog.shared.invalidate(providerID)
         }
+        notifyConfigurationChanged()
     }
 
     func deleteAPIKey(providerID: UUID) async throws {
@@ -1658,6 +1724,8 @@ final class LLMSettingsStore {
         persistCredentialAvailability()
         credentialSaveStates[providerID] = .idle
         credentialError = nil
+        ProviderConnectivityStore.shared.invalidate(providerID)
+        ProviderModelCatalog.shared.invalidate(providerID)
         if availabilityChanged {
             notifyConfigurationChanged()
         }
@@ -1729,7 +1797,8 @@ final class LLMSettingsStore {
                     endpoint: try validated.completionEndpoint(),
                     apiKey: key,
                     useCase: useCase,
-                    reasoningEffort: reasoningEffort
+                    reasoningEffort: reasoningEffort.flatMap { ProviderModelCatalog.shared.capability(profile: validated, model: parsed.model).resolve($0) },
+                    chatCapability: ProviderModelCatalog.shared.capability(profile: validated, model: parsed.model)
                 ))
             } catch {
                 Log.llm.warning(
@@ -1751,6 +1820,51 @@ final class LLMSettingsStore {
             configurations: configurations,
             policy: policy
         )
+    }
+
+    /// Resolves the AI editing chat route into the provider-specific
+    /// configurations understood by the in-app agent. Credentials are read at
+    /// send time, so changing a Provider key immediately affects the next run.
+    func agentRuntimeRoute() async throws -> LLMRuntimeRoute {
+        let route = route(for: .chat)
+        let effort = effectiveChatReasoningEffort
+        let policy = try route.policy.validated(for: .chat)
+        var configurations: [LLMRuntimeConfiguration] = []
+        var firstCredentialError: Error?
+
+        for reference in route.modelChain {
+            let parsed = try Self.parseModelReference(reference)
+            guard let profile = providers.first(where: {
+                $0.normalizedPrefix.caseInsensitiveCompare(parsed.prefix) == .orderedSame
+            }) else { continue }
+            guard profile.agentProtocol != nil else {
+                Log.llm.notice("agent route skip model=\(reference) reason=unsupported_provider")
+                continue
+            }
+
+            do {
+                let validated = try profile.validated()
+                guard let key = try await loadCredential(for: validated) else { continue }
+                configurations.append(LLMRuntimeConfiguration(
+                    profile: validated,
+                    modelIdentifier: "\(validated.normalizedPrefix)/\(parsed.model)",
+                    modelName: parsed.model,
+                    endpoint: try validated.agentEndpoint(),
+                    apiKey: key,
+                    useCase: .chat,
+                    reasoningEffort: ProviderModelCatalog.shared.capability(profile: validated, model: parsed.model).resolve(effort),
+                    chatCapability: ProviderModelCatalog.shared.capability(profile: validated, model: parsed.model)
+                ))
+            } catch {
+                firstCredentialError = firstCredentialError ?? error
+            }
+        }
+
+        guard !configurations.isEmpty else {
+            if let firstCredentialError { throw firstCredentialError }
+            throw LLMConfigurationError.noConfiguredModel(.chat)
+        }
+        return LLMRuntimeRoute(useCase: .chat, configurations: configurations, policy: policy)
     }
 
     func runtimeConfiguration() async throws -> LLMRuntimeConfiguration {
@@ -1802,10 +1916,7 @@ final class LLMSettingsStore {
             providerName: profile.normalizedDisplayName,
             modelName: canonical.model,
             isAvailable: hasAPIKey(for: profile.id),
-            supportedReasoningEfforts: LLMReasoningEffort.supportedChatEfforts(
-                providerPrefix: profile.normalizedPrefix,
-                modelName: canonical.model
-            )
+            supportedReasoningEfforts: ProviderModelCatalog.shared.capability(profile: profile, model: canonical.model).efforts
         )
     }
 

@@ -16,7 +16,7 @@ enum LLMProviderConnectionError: LocalizedError, Equatable, Sendable {
         case .missingAPIKey:
             "Enter an API key before testing the connection."
         case .invalidEndpoint:
-            "Enter a valid OpenAI-compatible base URL."
+            "Enter a valid provider base URL."
         case .unauthorized:
             "The API key was rejected. Check the key and provider."
         case .forbidden:
@@ -24,7 +24,7 @@ enum LLMProviderConnectionError: LocalizedError, Equatable, Sendable {
         case .rateLimited:
             "The provider is reachable, but this key is currently rate-limited."
         case .notFound:
-            "The endpoint does not expose the expected OpenAI-compatible models API."
+            "The endpoint does not expose the expected models API."
         case .server(let status):
             "The provider returned a server error (HTTP \(status)). Try again later."
         case .transport(let message):
@@ -58,10 +58,17 @@ struct LLMProviderConnectivityTester: Sendable {
             throw LLMProviderConnectionError.invalidEndpoint
         }
 
-        var request = URLRequest(url: url, timeoutInterval: 15)
+        let isRouter = profile.provider == .openRouter || url.host?.lowercased() == "openrouter.ai"
+        let testURL = isRouter ? url.deletingLastPathComponent().appendingPathComponent("key") : url
+        var request = URLRequest(url: testURL, timeoutInterval: 15)
         request.httpMethod = "GET"
         if !key.isEmpty {
-            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+            if profile.provider == .anthropic {
+                request.setValue(key, forHTTPHeaderField: "x-api-key")
+                request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+            } else {
+                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+            }
         }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("VoxStudio/1.0", forHTTPHeaderField: "User-Agent")
@@ -118,8 +125,8 @@ extension LLMProviderProfile {
         }
 
         var path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        if path.hasSuffix("chat/completions") {
-            path = String(path.dropLast("chat/completions".count))
+        if let suffix = ["chat/completions", "messages", "responses", "models"].first(where: { path.hasSuffix($0) }) {
+            path = String(path.dropLast(suffix.count))
                 .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         }
         components.path = "/" + ([path, "models"].filter { !$0.isEmpty }.joined(separator: "/"))

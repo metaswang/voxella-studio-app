@@ -5,15 +5,14 @@ import Observation
 @MainActor
 final class AgentService {
 
-    private var credentials = AgentCredentialSnapshot()
-    private var apiKeyObserver: NSObjectProtocol?
     private let userDefaults: UserDefaults
     private var reasoningEfforts: [AgentModel: AgentReasoningEffort]
-    private var openAIModels: [AgentModel] = []
-    private var modelDiscoveryTask: Task<Void, Never>?
-    private var modelDiscoveryGeneration = 0
+    private var lastBYOKRunModelReference: String?
+    private let transportOverride: AITransport?
+    private var transport: AITransport { transportOverride ?? AITransportPolicy.current }
 
-    init(userDefaults: UserDefaults = .standard) {
+    init(userDefaults: UserDefaults = .standard, transportOverride: AITransport? = nil) {
+        self.transportOverride = transportOverride
         self.userDefaults = userDefaults
         self.model = userDefaults.string(forKey: "agentModel")
             .flatMap(AgentModel.persisted)
@@ -21,62 +20,6 @@ final class AgentService {
         self.reasoningEfforts = Dictionary(uniqueKeysWithValues: AgentModel.allCases.map {
             ($0, AgentReasoningPreferences.effort(for: $0, defaults: userDefaults))
         })
-        apiKeyObserver = NotificationCenter.default.addObserver(
-            forName: .agentAPIKeyChanged,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.reloadAPIKeys()
-            }
-        }
-    }
-
-    private func reloadAPIKeys() {
-        modelDiscoveryTask?.cancel()
-        modelDiscoveryGeneration += 1
-        let generation = modelDiscoveryGeneration
-        modelDiscoveryTask = Task { [weak self] in
-            let credentials = await AgentCredentialSnapshot.loadFromKeychain()
-            guard !Task.isCancelled,
-                  let self,
-                  generation == modelDiscoveryGeneration
-            else { return }
-            self.credentials = credentials
-
-            let apiKey = credentials[.openAI]
-            guard !apiKey.isEmpty else {
-                openAIModels = []
-                return
-            }
-
-            do {
-                let models = try await OpenAIModelDiscovery.fetch(apiKey: apiKey)
-                guard !Task.isCancelled, generation == modelDiscoveryGeneration else { return }
-                openAIModels = models
-                selectAvailableOpenAIModelIfNeeded()
-            } catch is CancellationError {
-                return
-            } catch {
-                guard generation == modelDiscoveryGeneration else { return }
-                openAIModels = []
-            }
-        }
-    }
-
-    private func selectAvailableOpenAIModelIfNeeded() {
-        guard model.provider == .openAI,
-              !openAIModels.contains(model),
-              let replacement = openAIModels.first(where: { $0 == .terra }) ?? openAIModels.first
-        else { return }
-        model = replacement
-    }
-
-    isolated deinit {
-        modelDiscoveryTask?.cancel()
-        if let token = apiKeyObserver {
-            NotificationCenter.default.removeObserver(token)
-        }
     }
 
     var route: AgentRoute {
@@ -84,25 +27,20 @@ final class AgentService {
         case .hosted:
             .hosted
         case .byok:
-            AgentRouting.route(
-                model: model,
-                credentials: credentials,
-                hasHostedCredits: false,
-                hasPaidPlan: false
-            )
+            LLMSettingsStore.shared.hasUsableAgentModel ? .direct : .unavailable
         case .unavailable:
             .unavailable
         }
     }
 
     var canStream: Bool {
-        AITransportPolicy.current == .byok || route != .unavailable
+        route != .unavailable
     }
 
     var availableModels: [AgentModel] {
         switch AITransportPolicy.current {
         case .byok:
-            AgentModel.chatModels(for: .anthropic) + (openAIModels.isEmpty ? AgentModel.chatModels(for: .openAI) : openAIModels)
+            AgentModel.allCases
         case .hosted, .unavailable:
             AgentModel.allCases
         }
@@ -116,27 +54,67 @@ final class AgentService {
         case .hosted:
             true
         case .byok:
-            candidate.provider != .openAI || openAIModels.isEmpty || openAIModels.contains(candidate)
+            true
         case .unavailable:
             false
         }
     }
 
-    var activeBYOKProvider: AgentProvider? {
-        route == .direct ? model.provider : nil
+    var activeBYOKProvider: LLMProviderProfile? {
+        guard route == .direct else { return nil }
+        if let reference = activeBYOKModelReference,
+           let parsed = try? LLMSettingsStore.parseModelReference(reference) {
+            return LLMSettingsStore.shared.providers.first { $0.normalizedPrefix == parsed.prefix }
+        }
+        return LLMSettingsStore.shared.route(for: .chat).modelChain.lazy.compactMap { reference in
+            guard let parsed = try? LLMSettingsStore.parseModelReference(reference),
+                  let profile = LLMSettingsStore.shared.providers.first(where: {
+                      $0.normalizedPrefix.caseInsensitiveCompare(parsed.prefix) == .orderedSame
+                  }),
+                  profile.agentProtocol != nil,
+                  LLMSettingsStore.shared.hasAPIKey(for: profile.id)
+            else { return nil }
+            return profile
+        }.first
+    }
+
+    var activeBYOKModelReference: String? {
+        guard route == .direct else { return nil }
+        if isStreaming, let lastBYOKRunModelReference { return lastBYOKRunModelReference }
+        return LLMSettingsStore.shared.route(for: .chat).modelChain.first { reference in
+            guard let parsed = try? LLMSettingsStore.parseModelReference(reference),
+                  let profile = LLMSettingsStore.shared.providers.first(where: {
+                      $0.normalizedPrefix.caseInsensitiveCompare(parsed.prefix) == .orderedSame
+                  }),
+                  profile.agentProtocol != nil
+            else { return false }
+            return LLMSettingsStore.shared.hasAPIKey(for: profile.id)
+        }
     }
 
     var reasoningEffort: AgentReasoningEffort {
-        get { reasoningEfforts[model, default: .medium] }
+        get {
+            if transport == .byok {
+                return AgentReasoningEffort(rawValue: LLMSettingsStore.shared.effectiveChatReasoningEffort.rawValue) ?? .medium
+            }
+            return reasoningEfforts[model, default: .medium]
+        }
         set {
             guard reasoningEffortsForCurrentTransport.contains(newValue) else { return }
+            if transport == .byok {
+                LLMSettingsStore.shared.chatReasoningEffort = LLMReasoningEffort(rawValue: newValue.rawValue) ?? .medium
+                return
+            }
             reasoningEfforts[model] = newValue
             AgentReasoningPreferences.set(newValue, for: model, defaults: userDefaults)
         }
     }
 
     var reasoningEffortsForCurrentTransport: [AgentReasoningEffort] {
-        route == .hosted ? AgentReasoningEffort.allCases : model.supportedReasoningEfforts
+        if transport == .byok {
+            return LLMSettingsStore.shared.chatReasoningEffortsForCurrentModel.compactMap { AgentReasoningEffort(rawValue: $0.rawValue) }
+        }
+        return route == .hosted ? AgentReasoningEffort.allCases : model.supportedReasoningEfforts
     }
 
     func snapshotRunSettings() -> AgentRunSettings {
@@ -146,27 +124,18 @@ final class AgentService {
     private func selectClient(for settings: AgentRunSettings) async -> (any AgentClient)? {
         if AITransportPolicy.current == .hosted { return HostedAgentClient(settings: settings) }
         guard AITransportPolicy.current == .byok else { return nil }
-        // Re-read keys so changes made mid-session affect the next send.
-        let credentials = await AgentCredentialSnapshot.loadFromKeychain()
-        guard !Task.isCancelled else { return nil }
-        self.credentials = credentials
-
         switch AITransportPolicy.current {
         case .hosted:
             return HostedAgentClient(settings: settings)
         case .byok:
-            switch AgentRouting.route(
-                model: settings.model,
-                credentials: credentials,
-                hasHostedCredits: false,
-                hasPaidPlan: false
-            ) {
-            case .direct:
-                return BYOKClient(
-                    apiKey: credentials[settings.model.provider],
-                    settings: settings
-                )
-            case .hosted, .unavailable:
+            do {
+                lastBYOKRunModelReference = nil
+                var client = ProviderAgentClient(route: try await LLMSettingsStore.shared.agentRuntimeRoute())
+                client.onModelSelected = { [weak self] model in
+                    await MainActor.run { self?.lastBYOKRunModelReference = model }
+                }
+                return client
+            } catch {
                 return nil
             }
         case .unavailable:
@@ -428,7 +397,7 @@ final class AgentService {
         )
         let analyticsPayload: [String: Any] = [
             "project_id": editor?.projectId ?? "unknown",
-            "model": runSettings.model.rawValue,
+            "model": (AITransportPolicy.current == .byok ? lastBYOKRunModelReference : nil) ?? runSettings.model.rawValue,
         ]
         if sessionActivation.activate() {
             Analytics.capture(.agentSessionStarted, properties: analyticsPayload)
@@ -533,14 +502,14 @@ final class AgentService {
                         updateThinking(signatureDelta: signature, toAssistant: assistantID)
                     case .redactedThinking(let data):
                         appendRedactedThinking(data, toAssistant: assistantID)
-                    case .reasoningSummaryDelta(let chunk):
-                        appendReasoningDelta(chunk, model: chosenModel, toAssistant: assistantID)
-                    case .reasoningComplete(let itemID, let summary, let encryptedContent):
+                    case .reasoningSummaryDelta(let chunk, let sourceModel):
+                        appendReasoningDelta(chunk, model: sourceModel ?? chosenModel, toAssistant: assistantID)
+                    case .reasoningComplete(let itemID, let summary, let encryptedContent, let sourceModel):
                         completeReasoning(
                             itemID: itemID,
                             summary: summary,
                             encryptedContent: encryptedContent,
-                            model: chosenModel,
+                            model: sourceModel ?? chosenModel,
                             toAssistant: assistantID
                         )
                     case .textDelta(let chunk):

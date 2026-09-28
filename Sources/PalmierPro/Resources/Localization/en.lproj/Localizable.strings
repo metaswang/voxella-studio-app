@@ -2648,3 +2648,11 @@
 /* Lifetime software upgrades */
 "Free lifetime software upgrades" = "Free lifetime software upgrades";
 "One-time Mac access with free software upgrades for life." = "One-time Mac access with free software upgrades for life.";
+
+/* Provider chat controls */
+"Refresh models" = "Refresh models";
+"AI Service settings…" = "AI Service settings…";
+"About AI assistant" = "About AI assistant";
+"Could not save connection status:" = "Could not save connection status:";
+"Model list unavailable. Retry refresh or keep using the configured model." = "Model list unavailable. Retry refresh or keep using the configured model.";
+"Cloud automatically chooses an available AI model. Sign in to ask questions; usage follows your plan and consumes cloud credits. Relevant knowledge excerpts and your question are sent to the cloud service to generate an answer. Enable BYOK to choose a model and use your own provider key; requests then go to that provider and are billed by it." = "Cloud automatically chooses an available AI model. Sign in to ask questions; usage follows your plan and consumes cloud credits. Relevant knowledge excerpts and your question are sent to the cloud service to generate an answer. Enable BYOK to choose a model and use your own provider key; requests then go to that provider and are billed by it.";

@@ -200,23 +200,14 @@ struct LLMResilienceTests {
         let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
         let options = settings.chatModelOptions
 
-        #expect(options.map(\.reference) == [
-            "openai/gpt-5-nano",
-            "openai/gpt-5.4-nano",
-            "openai/gpt-5.6-luna",
-            "openai/gpt-5.6-terra",
-            "openai/gpt-5.6-sol",
-            "openai/gpt-6-astra",
-        ])
-        #expect(options.allSatisfy { OpenAIChatModelID($0.modelName) != nil })
-        #expect(!options.contains { $0.reference.hasPrefix("openrouter/") })
-        #expect(options.first?.supportedReasoningEfforts == [.minimal, .low, .medium, .high])
-        #expect(options.first(where: { $0.modelName == "gpt-5.6-luna" })?.supportedReasoningEfforts
-            == [.none, .low, .medium, .high, .xHigh, .max])
+        // Without a fetched catalog retain the configured model, never invent
+        // selectable models or replace an existing OpenRouter route.
+        #expect(options.map(\.reference) == ["openrouter/google/gemini-2.5-flash-lite"])
+        #expect(options.first?.supportedReasoningEfforts.isEmpty == true)
 
         settings.chatReasoningEffort = .minimal
         settings.selectChatModel(reference: "openai/gpt-5.6-luna")
-        #expect(settings.route(for: .chat).primaryModel == "openai/gpt-5.6-luna")
+        #expect(settings.route(for: .chat).primaryModel == "openrouter/google/gemini-2.5-flash-lite")
         #expect(settings.effectiveChatReasoningEffort == .medium)
     }
 
@@ -249,12 +240,7 @@ struct LLMResilienceTests {
         let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
         let options = settings.chatModelOptions
 
-        #expect(options.map(\.reference) == [
-            "claude/claude-sonnet-5",
-            "claude/claude-opus-5",
-            "claude/claude-fable-5",
-            "claude/claude-opus-4-8",
-        ])
+        #expect(options.map(\.reference) == ["claude/claude-opus-4-8"])
         #expect(options.allSatisfy { ClaudeChatModelID($0.modelName) != nil })
         #expect(options.first?.supportedReasoningEfforts == [.low, .medium, .high, .xHigh, .max])
         #expect(!options.contains { $0.reference.hasPrefix("minimax/") })
