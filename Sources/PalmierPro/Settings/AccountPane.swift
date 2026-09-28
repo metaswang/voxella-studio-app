@@ -52,6 +52,17 @@ struct AccountPane: View {
 
             if showsPaidAccess {
                 subscriptionSection
+#if !MAC_APP_STORE
+                if account.featureAccessSnapshot.license != .lifetime {
+                    SettingsGroup(title: "Lifetime purchase") {
+                        AppAccessOffersView(lifetimeOnly: true)
+                    }
+                } else if account.anonymousLifetimePhase != .idle || account.canLinkAnonymousLifetime {
+                    SettingsGroup(title: "Lifetime purchase") {
+                        AppAccessOffersView(statusOnly: true)
+                    }
+                }
+#endif
 #if MAC_APP_STORE
                 AppStoreOffersView(credits: false)
 #endif

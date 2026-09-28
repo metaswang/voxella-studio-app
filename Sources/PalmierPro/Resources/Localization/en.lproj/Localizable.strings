@@ -1306,8 +1306,7 @@
 "License key" = "License key";
 "Activated" = "Activated";
 "License key redeemed on this Mac" = "License key redeemed on this Mac";
-"This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime." = "This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime.";
-"Offline access valid until %@" = "Offline access valid until %@";
+"This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime." = "This Mac has lifetime access to VoxStudio, including free software upgrades for life. Use Manage devices to free a slot for another Mac, or re-open activation anytime.";
 "Redeem a license key" = "Redeem a license key";
 "Paste a key from your purchase or reseller to unlock Lifetime on this Mac. Sign-in is optional." = "Paste a key from your purchase or reseller to unlock Lifetime on this Mac. Sign-in is optional.";
 "Redeem license key" = "Redeem license key";
@@ -2617,3 +2616,35 @@
 "The microphone recording could not be started." = "The microphone recording could not be started.";
 "The input changed. Copy the recognized text before recording again." = "The input changed. Copy the recognized text before recording again.";
 "Couldn’t copy voice input to the clipboard." = "Couldn’t copy voice input to the clipboard.";
+
+/* Anonymous Lifetime checkout */
+"Pay once. This Mac unlocks after payment, and a recovery code restores access without signing in." = "Pay once. This Mac unlocks after payment, and a recovery code restores access without signing in.";
+"Finish checkout in your browser, then return to VoxStudio." = "Finish checkout in your browser, then return to VoxStudio.";
+"Stripe is still confirming this payment. You can check again." = "Stripe is still confirming this payment. You can check again.";
+"Check payment status" = "Check payment status";
+"Cancel checkout" = "Cancel checkout";
+"Lifetime is unlocked on this Mac" = "Lifetime is unlocked on this Mac";
+"Save this recovery code. It restores Lifetime on this Mac or another Mac without signing in." = "Save this recovery code. It restores Lifetime on this Mac or another Mac without signing in.";
+"Copy recovery code" = "Copy recovery code";
+"Save recovery code…" = "Save recovery code…";
+"I've saved the recovery code" = "I've saved the recovery code";
+"Link to current account" = "Link to current account";
+"Linking this purchase to your account…" = "Linking this purchase to your account…";
+"This purchase is linked to your account." = "This purchase is linked to your account.";
+"Could not store the license on this Mac. Save the recovery code, then activate it." = "Could not store the license on this Mac. Save the recovery code, then activate it.";
+"This Mac already has Lifetime access." = "This Mac already has Lifetime access.";
+"This purchase was started on another Mac." = "This purchase was started on another Mac.";
+"Could not save the purchase on this Mac. Checkout was not opened." = "Could not save the purchase on this Mac. Checkout was not opened.";
+"The checkout expired before payment was confirmed." = "The checkout expired before payment was confirmed.";
+"Could not link this purchase to the current account." = "Could not link this purchase to the current account.";
+"Manage devices" = "Manage devices";
+"Recovery code copied." = "Recovery code copied.";
+"Lifetime purchase" = "Lifetime purchase";
+"Pay once. This purchase is linked to your VoxStudio account." = "Pay once. This purchase is linked to your VoxStudio account.";
+"Lifetime payment confirmed. Activate the recovery code to unlock this Mac." = "Lifetime payment confirmed. Activate the recovery code to unlock this Mac.";
+"Retry activation" = "Retry activation";
+"This Lifetime payment was refunded or disputed." = "This Lifetime payment was refunded or disputed.";
+
+/* Lifetime software upgrades */
+"Free lifetime software upgrades" = "Free lifetime software upgrades";
+"One-time Mac access with free software upgrades for life." = "One-time Mac access with free software upgrades for life.";

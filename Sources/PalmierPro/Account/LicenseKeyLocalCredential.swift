@@ -15,6 +15,8 @@ enum LicenseKeyLocalCredential {
         let licenseKeyID: String
         let userID: String?
         let lastVerifiedAt: Date
+        var purchaseSource: String?
+        var accountLinkStatus: String?
     }
 
     struct Record: Equatable, Sendable {
@@ -78,6 +80,8 @@ enum LicenseKeyLocalCredential {
         token: String,
         fingerprint: String,
         verifiedAt: Date = .now,
+        purchaseSource: String? = nil,
+        accountLinkStatus: String? = nil,
         publicKeyRaw: Data = LicenseKeyDeviceLicense.publicKeyRaw,
         write: (String) throws -> Void = {
             try KeychainStore.saveThisDeviceOnly($0, account: LicenseKeyLocalCredential.keychainAccount)
@@ -93,7 +97,9 @@ enum LicenseKeyLocalCredential {
             fingerprint: fingerprint,
             licenseKeyID: claims.licenseKeyID.uuidString,
             userID: claims.userID?.uuidString,
-            lastVerifiedAt: verifiedAt
+            lastVerifiedAt: verifiedAt,
+            purchaseSource: purchaseSource,
+            accountLinkStatus: accountLinkStatus
         )
         let data = try JSONEncoder().encode(envelope)
         try write(data.base64EncodedString())

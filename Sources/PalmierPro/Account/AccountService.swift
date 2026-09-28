@@ -138,6 +138,10 @@ final class AccountService {
     private(set) var credentialStoreStatus: CredentialStoreStatus = .ready
 #if !MAC_APP_STORE
     private(set) var isOpeningStripeCheckout = false
+    private(set) var anonymousLifetimePhase: AnonymousLifetimePhase = .idle
+    @ObservationIgnored private var anonymousPollTask: Task<Void, Never>?
+    @ObservationIgnored private var signedInLifetimeCheckoutOwner: UUID?
+    @ObservationIgnored private var signedInLifetimePollTask: Task<Void, Never>?
 #endif
 #if MAC_APP_STORE
     private(set) var isPurchasingAppStoreProduct = false
@@ -334,7 +338,10 @@ final class AccountService {
     var trialPresentation: TrialPresentation? {
         guard isAppAccessEnforced else { return nil }
 #if MAC_APP_STORE
-        guard !hasLocalLifetimeCredential else { return nil }
+        // Do not render a cached device-trial countdown until StoreKit has checked
+        // current entitlements. Otherwise Lifetime purchasers briefly see trial UI
+        // between app launch and the first entitlement refresh.
+        guard hasLoadedStoreKitLifetime, !hasLocalLifetimeCredential else { return nil }
 #endif
         return featureAccessSnapshot.trialPresentation()
     }
@@ -467,6 +474,7 @@ final class AccountService {
         restoreSession()
 #if !MAC_APP_STORE
         Task { await self.renewLicenseKeyLeaseIfNeeded(force: true) }
+        Task { await self.resumeAnonymousLifetimeCheckout() }
 #endif
         didBecomeActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
@@ -478,6 +486,7 @@ final class AccountService {
                 Task { await self?.refreshStoreKitLifetime() }
                 self?.recoverAccountBoundAppStorePurchaseIfNeeded()
 #else
+                Task { await self?.resumeAnonymousLifetimeCheckout() }
                 Task { await self?.renewLicenseKeyLeaseIfNeeded(force: true) }
 #endif
                 self?.refreshEntitlementAfterActivation()
@@ -494,6 +503,29 @@ final class AccountService {
     }
 
     private func refreshEntitlementAfterActivation() {
+#if !MAC_APP_STORE
+        if let owner = signedInLifetimeCheckoutOwner, signedInLifetimePollTask == nil,
+           isSignedIn, !isOfflineAccount, userID == owner, !isLoading, !isSigningIn {
+            signedInLifetimePollTask = Task { [weak self] in
+                guard let self else { return }
+                defer { self.signedInLifetimePollTask = nil }
+                if let existing = self.entitlementRefreshTask { await existing.value }
+                for _ in 0..<20 {
+                    guard !Task.isCancelled, self.isSignedIn, !self.isOfflineAccount,
+                          self.userID == owner else { return }
+                    await self.refreshEntitlementInBackground()
+                    if self.featureAccessSnapshot.license == .lifetime {
+                        self.signedInLifetimeCheckoutOwner = nil
+                        return
+                    }
+                    do { try await Task.sleep(for: .seconds(3)) }
+                    catch { return }
+                }
+            }
+            return
+        }
+        guard signedInLifetimePollTask == nil else { return }
+#endif
         guard entitlementRefreshTask == nil,
               Self.paidAccessEnabled, isSignedIn, !isLoading, !isSigningIn,
               entitlementSchedule.isDue(at: .now)
@@ -914,10 +946,13 @@ final class AccountService {
         fingerprint: String
     ) throws {
         guard !response.token.isEmpty else { throw AppAccessError.verificationRequired }
+        let existing = try? LicenseKeyLocalCredential.load()
         _ = try LicenseKeyLocalCredential.store(
             token: response.token,
             fingerprint: fingerprint,
-            verifiedAt: .now
+            verifiedAt: .now,
+            purchaseSource: response.purchaseSource ?? existing?.envelope.purchaseSource,
+            accountLinkStatus: response.accountLinkStatus ?? existing?.envelope.accountLinkStatus
         )
         licenseKeyDeviceVerifyAttempt = .now
         applyLicenseKeyCredentialOverlayIfNeeded()
@@ -1915,7 +1950,7 @@ final class AccountService {
             try applyLicenseKeyDeviceResponse(response, fingerprint: fingerprint)
             entitlementSchedule.succeeded(at: .now)
             try await persistAppAccess()
-            if isSignedIn {
+            if isSignedIn, response.purchaseSource != "stripe_anonymous" {
                 // Best-effort: associate key/device with the signed-in account.
                 if let token = try? LicenseKeyLocalCredential.load()?.token {
                     do {
@@ -1982,22 +2017,300 @@ final class AccountService {
 #if MAC_APP_STORE
         await purchaseAppStoreProduct(AppStoreProductID.lifetime.rawValue)
 #else
-        guard userID != nil else {
-            lastError = AppAccessError.signInRequired.localizedDescription
+        await waitForSessionRestore()
+        if let pending = AnonymousLifetimeCheckoutStore.load(),
+           !pending.fulfilled || !LicenseKeyLocalCredential.isPresent() {
+            await resumeAnonymousLifetimeCheckout(openBrowser: true)
             return
         }
-        // DMG checkout binds the account and issues a device credential.
+        guard !isOfflineAccount, let owner = userID else {
+            await startAnonymousLifetimeCheckout()
+            return
+        }
+        // Signed-in DMG checkout keeps the existing account purchase.
         guard !isOpeningStripeCheckout else { return }
         isOpeningStripeCheckout = true
         defer { isOpeningStripeCheckout = false }
         do {
             let result = try await api.createLifetimeCheckout()
+            guard isSignedIn, userID == owner else { return }
+            signedInLifetimeCheckoutOwner = owner
             openInBrowser(result.checkoutURL)
         } catch {
             lastError = error.localizedDescription
         }
 #endif
     }
+
+#if !MAC_APP_STORE
+    var canLinkAnonymousLifetime: Bool {
+        guard isSignedIn, !isOfflineAccount,
+              let record = try? LicenseKeyLocalCredential.load() else { return false }
+        return record.envelope.purchaseSource == "stripe_anonymous" && record.envelope.accountLinkStatus != "linked"
+    }
+
+    func resumeAnonymousLifetimeCheckout(openBrowser: Bool = false) async {
+        guard let pending = AnonymousLifetimeCheckoutStore.load() else {
+            if case .unlocked = anonymousLifetimePhase { return }
+            anonymousLifetimePhase = .idle
+            return
+        }
+        if let code = pending.recoveryCode {
+            if pending.fulfilled && LicenseKeyLocalCredential.isPresent() {
+                anonymousLifetimePhase = .unlocked(recoveryCode: code)
+                return
+            }
+            anonymousLifetimePhase = .needsActivation(recoveryCode: code)
+        }
+        if pending.checkoutID == nil {
+            await startAnonymousLifetimeCheckout(reusing: pending)
+            return
+        }
+        if pending.recoveryCode == nil { anonymousLifetimePhase = .awaitingPayment }
+        if openBrowser, let url = pending.checkoutURL {
+            openInBrowser(url)
+        }
+        startAnonymousPoll(attempts: 40)
+    }
+
+    func checkAnonymousLifetimePayment() async {
+        guard AnonymousLifetimeCheckoutStore.load()?.checkoutID != nil else { return }
+        anonymousLifetimePhase = .awaitingPayment
+        startAnonymousPoll(attempts: 8)
+    }
+
+    func cancelAnonymousLifetimeCheckout() async {
+        guard let pending = AnonymousLifetimeCheckoutStore.load(), let checkoutID = pending.checkoutID else {
+            AnonymousLifetimeCheckoutStore.clear()
+            anonymousLifetimePhase = .idle
+            return
+        }
+        anonymousPollTask?.cancel()
+        do {
+            let response = try await api.cancelAnonymousLifetimeCheckout(
+                checkoutID: checkoutID,
+                fingerprint: pending.fingerprint,
+                claimCredential: pending.claimCredential
+            )
+            if response.status == "complete" {
+                await applyAnonymousLifetimeResponse(response, pending: pending)
+                return
+            }
+            if response.status == "revoked" {
+                AnonymousLifetimeCheckoutStore.clear()
+                anonymousLifetimePhase = .failed(L10n.string("This Lifetime payment was refunded or disputed."))
+                return
+            }
+            if response.status == "canceled" || response.status == "expired" {
+                AnonymousLifetimeCheckoutStore.clear()
+                anonymousLifetimePhase = .idle
+            } else {
+                anonymousLifetimePhase = .waitingForConfirmation
+                startAnonymousPoll(attempts: 40)
+            }
+        } catch {
+            lastError = error.localizedDescription
+            startAnonymousPoll(attempts: 40)
+        }
+    }
+
+    func noteAnonymousLifetime(_ message: String) {
+        lastError = message
+    }
+
+    func acknowledgeAnonymousRecoveryCode() {
+        AnonymousLifetimeCheckoutStore.clear()
+        if case .unlocked = anonymousLifetimePhase {
+            anonymousLifetimePhase = .idle
+        }
+    }
+
+    func linkAnonymousLifetimeToCurrentAccount() async {
+        guard isSignedIn, !isOfflineAccount,
+              let token = try? LicenseKeyLocalCredential.load()?.token else { return }
+        lastError = L10n.string("Linking this purchase to your account…")
+        do {
+            var operation = try await api.linkAnonymousLifetime(token: token)
+            for _ in 0..<15 {
+                if operation.status == "succeeded" {
+                    if let record = try? LicenseKeyLocalCredential.load() {
+                        _ = try LicenseKeyLocalCredential.store(
+                            token: record.token,
+                            fingerprint: record.fingerprint,
+                            verifiedAt: record.lastVerifiedAt,
+                            purchaseSource: "stripe_anonymous",
+                            accountLinkStatus: "linked"
+                        )
+                    }
+                    lastError = L10n.string("This purchase is linked to your account.")
+                    await refreshAccountForFeatureAccess()
+                    return
+                }
+                if operation.status == "failed" {
+                    lastError = operation.errorCode ?? L10n.string("Could not link this purchase to the current account.")
+                    return
+                }
+                try await Task.sleep(for: .seconds(2))
+                operation = try await api.billingOperation(operation.operationID)
+            }
+            lastError = L10n.string("Linking this purchase to your account…")
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    private func startAnonymousLifetimeCheckout(reusing existing: AnonymousLifetimeCheckoutStore.Pending? = nil) async {
+        guard !isOpeningStripeCheckout else { return }
+        if hasLocalLifetimeCredential || LicenseKeyLocalCredential.isPresent() {
+            lastError = L10n.string("This Mac already has Lifetime access.")
+            return
+        }
+        let fingerprint: String
+        do {
+            fingerprint = try DeviceFingerprint.current()
+        } catch {
+            lastError = AppAccessError.deviceCredentialBindFailed.localizedDescription
+            return
+        }
+        let claimCredential: String
+        if let existing {
+            claimCredential = existing.claimCredential
+        } else {
+            do {
+                claimCredential = try AnonymousLifetimeCheckoutStore.makeClaimCredential()
+            } catch {
+                lastError = error.localizedDescription
+                return
+            }
+        }
+        var pending = existing ?? AnonymousLifetimeCheckoutStore.Pending(
+            idempotencyKey: UUID().uuidString,
+            claimCredential: claimCredential,
+            fingerprint: fingerprint,
+            checkoutID: nil,
+            checkoutURL: nil,
+            expiresAt: nil,
+            recoveryCode: nil,
+            fulfilled: false
+        )
+        guard pending.fingerprint == fingerprint else {
+            lastError = L10n.string("This purchase was started on another Mac.")
+            return
+        }
+        do {
+            try AnonymousLifetimeCheckoutStore.save(pending)
+        } catch {
+            lastError = L10n.string("Could not save the purchase on this Mac. Checkout was not opened.")
+            return
+        }
+        isOpeningStripeCheckout = true
+        defer { isOpeningStripeCheckout = false }
+        do {
+            let response = try await api.createAnonymousLifetimeCheckout(
+                idempotencyKey: pending.idempotencyKey,
+                fingerprint: fingerprint,
+                claimCredential: pending.claimCredential,
+                deviceLabel: Host.current().localizedName
+            )
+            pending.checkoutID = response.checkoutID
+            pending.checkoutURL = response.checkoutURL
+            pending.expiresAt = response.expiresAt
+            do {
+                try AnonymousLifetimeCheckoutStore.save(pending)
+            } catch {
+                lastError = L10n.string("Could not save the purchase on this Mac. Checkout was not opened.")
+                if let checkoutID = pending.checkoutID {
+                    _ = try? await api.cancelAnonymousLifetimeCheckout(
+                        checkoutID: checkoutID,
+                        fingerprint: fingerprint,
+                        claimCredential: pending.claimCredential
+                    )
+                }
+                return
+            }
+            anonymousLifetimePhase = .awaitingPayment
+            if let url = response.checkoutURL {
+                openInBrowser(url)
+            }
+            startAnonymousPoll(attempts: 40)
+        } catch {
+            lastError = error.localizedDescription
+            anonymousLifetimePhase = .failed(error.localizedDescription)
+        }
+    }
+
+    private func startAnonymousPoll(attempts: Int) {
+        anonymousPollTask?.cancel()
+        anonymousPollTask = Task { [weak self] in
+            await self?.pollAnonymousLifetime(attempts: attempts)
+        }
+    }
+
+    private func pollAnonymousLifetime(attempts: Int) async {
+        for _ in 0..<attempts {
+            if Task.isCancelled { return }
+            guard let pending = AnonymousLifetimeCheckoutStore.load(), let checkoutID = pending.checkoutID else { return }
+            do {
+                let response = try await api.anonymousLifetimeStatus(
+                    checkoutID: checkoutID,
+                    fingerprint: pending.fingerprint,
+                    claimCredential: pending.claimCredential
+                )
+                if Task.isCancelled { return }
+                if response.status == "complete" {
+                    await applyAnonymousLifetimeResponse(response, pending: pending)
+                    return
+                }
+                if response.status == "canceled" || response.status == "expired" {
+                    AnonymousLifetimeCheckoutStore.clear()
+                    let message = L10n.string("The checkout expired before payment was confirmed.")
+                    lastError = message
+                    anonymousLifetimePhase = .failed(message)
+                    return
+                }
+                if response.status == "revoked" {
+                    AnonymousLifetimeCheckoutStore.clear()
+                    let message = L10n.string("This Lifetime payment was refunded or disputed.")
+                    lastError = message
+                    anonymousLifetimePhase = .failed(message)
+                    return
+                }
+            } catch {
+                Log.account.notice("Anonymous lifetime status check waiting")
+            }
+            try? await Task.sleep(for: .seconds(3))
+        }
+        if !Task.isCancelled, let pending = AnonymousLifetimeCheckoutStore.load(), !pending.fulfilled {
+            anonymousLifetimePhase = pending.recoveryCode.map { .needsActivation(recoveryCode: $0) }
+                ?? .waitingForConfirmation
+        }
+    }
+
+    private func applyAnonymousLifetimeResponse(
+        _ response: AnonymousLifetimeCheckoutResponse,
+        pending: AnonymousLifetimeCheckoutStore.Pending
+    ) async {
+        guard let code = response.recoveryCode, let license = response.license else {
+            anonymousLifetimePhase = .waitingForConfirmation
+            return
+        }
+        var saved = pending
+        saved.recoveryCode = code
+        saved.checkoutID = response.checkoutID
+        try? AnonymousLifetimeCheckoutStore.save(saved)
+        do {
+            try applyLicenseKeyDeviceResponse(license, fingerprint: pending.fingerprint)
+            entitlementSchedule.succeeded(at: .now)
+            try? await persistAppAccess()
+            saved.fulfilled = true
+            try? AnonymousLifetimeCheckoutStore.save(saved)
+            anonymousLifetimePhase = .unlocked(recoveryCode: code)
+        } catch {
+            lastError = L10n.string("Could not store the license on this Mac. Save the recovery code, then activate it.")
+            anonymousLifetimePhase = .needsActivation(recoveryCode: code)
+        }
+    }
+#endif
 
     func restorePurchases() async {
 #if MAC_APP_STORE

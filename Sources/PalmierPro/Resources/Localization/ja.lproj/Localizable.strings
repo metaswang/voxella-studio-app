@@ -583,8 +583,7 @@
 "License key" = "ライセンスキー";
 "Activated" = "有効化済み";
 "License key redeemed on this Mac" = "このMacでライセンスキーを引き換えました";
-"This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime." = "このMacのロックは解除されたままです。「デバイスを管理」を使って別のMacのスロットを空けるか、いつでも有効化画面を再度開けます。";
-"Offline access valid until %@" = "オフラインアクセスの有効期限：%@";
+"This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime." = "このMacではVoxStudioを生涯利用でき、生涯無料のソフトウェアアップグレードも含まれます。「デバイスを管理」で別のMac用の枠を空けるか、いつでも有効化画面を再度開けます。";
 "Redeem a license key" = "ライセンスキーを引き換え";
 "Paste a key from your purchase or reseller to unlock Lifetime on this Mac. Sign-in is optional." = "購入時または販売元から受け取ったキーを貼り付けて、このMacの永久アクセスを解除します。サインインは任意です。";
 "Redeem license key" = "ライセンスキーを引き換え";
@@ -597,3 +596,35 @@
 "Source file unavailable. It may have been moved or deleted. Restore it to its original location to play or re-transcribe this session." = "ソースファイルを利用できません。移動または削除された可能性があります。このセッションを再生または再文字起こしするには、元の場所に戻してください。";
 "Media file not found" = "メディアファイルが見つかりません";
 "The original media file for this session is no longer available. Restore it to its original location before re-transcribing." = "このセッションの元のメディアファイルは利用できません。再文字起こしする前に、元の場所に戻してください。";
+
+/* Anonymous Lifetime checkout */
+"Pay once. This Mac unlocks after payment, and a recovery code restores access without signing in." = "一度のお支払いで、決済後にこの Mac が解除されます。復元コードでサインインせずにアクセスを戻せます。";
+"Finish checkout in your browser, then return to VoxStudio." = "ブラウザで決済を完了してから VoxStudio に戻ってください。";
+"Stripe is still confirming this payment. You can check again." = "Stripe がまだこの支払いを確認しています。あとでもう一度確認できます。";
+"Check payment status" = "支払い状況を確認";
+"Cancel checkout" = "チェックアウトをキャンセル";
+"Lifetime is unlocked on this Mac" = "この Mac で Lifetime が解除されました";
+"Save this recovery code. It restores Lifetime on this Mac or another Mac without signing in." = "この復元コードを保存してください。サインインせずに、この Mac または別の Mac で Lifetime を復元できます。";
+"Copy recovery code" = "復元コードをコピー";
+"Save recovery code…" = "復元コードを保存…";
+"I've saved the recovery code" = "復元コードを保存しました";
+"Link to current account" = "現在のアカウントに関連付ける";
+"Linking this purchase to your account…" = "この購入をアカウントに関連付けています…";
+"This purchase is linked to your account." = "この購入はアカウントに関連付けられました。";
+"Could not store the license on this Mac. Save the recovery code, then activate it." = "この Mac にライセンスを保存できませんでした。復元コードを保存してから有効化してください。";
+"This Mac already has Lifetime access." = "この Mac にはすでに Lifetime があります。";
+"This purchase was started on another Mac." = "この購入は別の Mac で開始されました。";
+"Could not save the purchase on this Mac. Checkout was not opened." = "この Mac に購入情報を保存できなかったため、チェックアウトは開いていません。";
+"The checkout expired before payment was confirmed." = "支払いが確認される前にチェックアウトの期限が切れました。";
+"Could not link this purchase to the current account." = "この購入を現在のアカウントに関連付けられませんでした。";
+"Manage devices" = "デバイスを管理";
+"Recovery code copied." = "復元コードをコピーしました。";
+"Lifetime purchase" = "永久アクセスの購入";
+"Pay once. This purchase is linked to your VoxStudio account." = "一度のお支払いで、この購入は VoxStudio アカウントに紐付けられます。";
+"Lifetime payment confirmed. Activate the recovery code to unlock this Mac." = "永久アクセスのお支払いを確認しました。この Mac を解除するには復元コードを有効化してください。";
+"Retry activation" = "有効化を再試行";
+"This Lifetime payment was refunded or disputed." = "この永久アクセスのお支払いは返金または異議申し立ての対象となりました。";
+
+/* Lifetime software upgrades */
+"Free lifetime software upgrades" = "ソフトウェアの生涯無料アップグレード";
+"One-time Mac access with free software upgrades for life." = "Macを一度購入すれば、生涯無料のソフトウェアアップグレードを利用できます。";

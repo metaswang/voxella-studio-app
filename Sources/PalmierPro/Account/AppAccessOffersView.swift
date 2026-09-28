@@ -1,21 +1,43 @@
+import AppKit
 import SwiftUI
 
 /// The dedicated purchase surface shared by the account settings and the App access window.
 ///
-/// Direct-distribution builds advertise the public catalogue before sign-in, but only create a
-/// Stripe Checkout session after the account has supplied the server-authoritative plan ID.
+/// Direct-distribution builds offer account-bound subscriptions and Lifetime
+/// checkout with or without sign-in.
 struct AppAccessOffersView: View {
     @Bindable private var account = AccountService.shared
 
 #if !MAC_APP_STORE
+    var statusOnly = false
+    var lifetimeOnly = false
+#endif
+
+#if !MAC_APP_STORE
     @State private var signInIntent: PurchaseIntent?
+    @State private var showsLicenseDevices = false
 #endif
 
     var body: some View {
 #if MAC_APP_STORE
         AppStoreOffersView(credits: false)
 #else
-        stripeOffers
+        if statusOnly {
+            anonymousLifetimeStatus
+                .sheet(isPresented: $showsLicenseDevices) {
+                    LicenseKeyDevicesView { showsLicenseDevices = false }
+                }
+        } else if lifetimeOnly {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                lifetimeOffer
+                anonymousLifetimeStatus
+            }
+            .sheet(isPresented: $showsLicenseDevices) {
+                LicenseKeyDevicesView { showsLicenseDevices = false }
+            }
+        } else {
+            stripeOffers
+        }
 #endif
     }
 
@@ -33,6 +55,7 @@ struct AppAccessOffersView: View {
             }
 
             lifetimeOffer
+            anonymousLifetimeStatus
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 HStack(alignment: .firstTextBaseline) {
@@ -66,6 +89,9 @@ struct AppAccessOffersView: View {
         .sheet(item: $signInIntent) { intent in
             CheckoutSignInSheet(intent: intent)
         }
+        .sheet(isPresented: $showsLicenseDevices) {
+            LicenseKeyDevicesView { showsLicenseDevices = false }
+        }
     }
 
     private var lifetimeOffer: some View {
@@ -80,7 +106,9 @@ struct AppAccessOffersView: View {
                     Text(L10n.string("Lifetime"))
                         .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
                         .foregroundStyle(AppTheme.Auth.primaryForeground)
-                    Text(L10n.string("Pay once. Keep VoxStudio on this Mac forever."))
+                    Text(L10n.string(key: account.isSignedIn && !account.isOfflineAccount
+                        ? "Pay once. This purchase is linked to your VoxStudio account."
+                        : "Pay once. This Mac unlocks after payment, and a recovery code restores access without signing in."))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Auth.primaryForeground.opacity(AppTheme.Opacity.strong))
                         .fixedSize(horizontal: false, vertical: true)
@@ -97,14 +125,15 @@ struct AppAccessOffersView: View {
                     .background(Capsule().fill(AppTheme.Auth.primaryForeground))
             }
 
-            HStack(spacing: AppTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 lifetimeBenefit("Unlimited new projects")
                 lifetimeBenefit("AI credits separately")
+                lifetimeBenefit("Free lifetime software upgrades")
             }
 
             Button(action: chooseLifetime) {
                 HStack(spacing: AppTheme.Spacing.sm) {
-                    Text(L10n.string(account.isSignedIn ? "Continue with Stripe" : "Sign in to buy Lifetime"))
+                    Text(L10n.string("Continue with Stripe"))
                     Spacer(minLength: 0)
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
@@ -230,10 +259,106 @@ struct AppAccessOffersView: View {
     ]
 
     private func chooseLifetime() {
-        if account.isSignedIn {
-            Task { await account.purchaseLifetime() }
-        } else {
-            signInIntent = .lifetime
+        Task { await account.purchaseLifetime() }
+    }
+
+    @ViewBuilder
+    private var anonymousLifetimeStatus: some View {
+        switch account.anonymousLifetimePhase {
+        case .idle:
+            if account.canLinkAnonymousLifetime {
+                Button(L10n.string("Link to current account")) {
+                    Task { await account.linkAnonymousLifetimeToCurrentAccount() }
+                }
+                .buttonStyle(.capsule(.secondary, size: .small))
+            }
+        case .awaitingPayment:
+            statusCopy("Finish checkout in your browser, then return to VoxStudio.")
+            statusActions(includeCancel: true)
+        case .waitingForConfirmation:
+            statusCopy("Stripe is still confirming this payment. You can check again.")
+            statusActions(includeCancel: true)
+        case .unlocked(let recoveryCode):
+            recoveryCodeView(recoveryCode, activated: true)
+        case .needsActivation(let recoveryCode):
+            recoveryCodeView(recoveryCode, activated: false)
+        case .failed:
+            EmptyView()
+        }
+    }
+
+    private func recoveryCodeView(_ recoveryCode: String, activated: Bool) -> some View {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                Text(L10n.string(key: activated
+                    ? "Lifetime is unlocked on this Mac"
+                    : "Lifetime payment confirmed. Activate the recovery code to unlock this Mac."))
+                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                Text(L10n.string("Save this recovery code. It restores Lifetime on this Mac or another Mac without signing in."))
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(recoveryCode)
+                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold, design: .monospaced))
+                    .textSelection(.enabled)
+                HStack {
+                    Button(L10n.string("Copy recovery code")) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(recoveryCode, forType: .string)
+                        account.noteAnonymousLifetime(L10n.string("Recovery code copied."))
+                    }
+                    Button(L10n.string("Save recovery code…")) { saveRecoveryCode(recoveryCode) }
+                    if activated {
+                        Button(L10n.string("Manage devices")) { showsLicenseDevices = true }
+                    }
+                }
+                if !activated {
+                    Button(L10n.string("Retry activation")) {
+                        Task { await account.checkAnonymousLifetimePayment() }
+                    }
+                }
+                if account.canLinkAnonymousLifetime {
+                    Button(L10n.string("Link to current account")) {
+                        Task { await account.linkAnonymousLifetimeToCurrentAccount() }
+                    }
+                }
+                if activated {
+                    Button(L10n.string("I've saved the recovery code")) {
+                        account.acknowledgeAnonymousRecoveryCode()
+                    }
+                }
+            }
+    }
+
+    private func statusCopy(_ key: String) -> some View {
+        Text(L10n.string(key: key))
+            .font(.system(size: AppTheme.FontSize.xs))
+            .foregroundStyle(AppTheme.Text.secondaryColor)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func statusActions(includeCancel: Bool) -> some View {
+        HStack {
+            Button(L10n.string("Check payment status")) {
+                Task { await account.checkAnonymousLifetimePayment() }
+            }
+            if includeCancel {
+                Button(L10n.string("Cancel checkout")) {
+                    Task { await account.cancelAnonymousLifetimeCheckout() }
+                }
+            }
+        }
+    }
+
+    private func saveRecoveryCode(_ code: String) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "VoxStudio-Lifetime-Recovery-Code.txt"
+        panel.begin { result in
+            guard result == .OK, let url = panel.url else { return }
+            do {
+                try code.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                Task { @MainActor in account.noteAnonymousLifetime(error.localizedDescription) }
+            }
         }
     }
 

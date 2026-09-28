@@ -583,8 +583,7 @@
 "License key" = "Clé de licence";
 "Activated" = "Activée";
 "License key redeemed on this Mac" = "Clé de licence utilisée sur ce Mac";
-"This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime." = "Ce Mac reste déverrouillé. Utilisez « Gérer les appareils » pour libérer un emplacement sur un autre Mac ou rouvrir l’activation à tout moment.";
-"Offline access valid until %@" = "L’accès hors ligne est valide jusqu’au %@";
+"This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime." = "Ce Mac bénéficie d’un accès à vie à VoxStudio, avec des mises à niveau logicielles gratuites à vie. Utilisez « Gérer les appareils » pour libérer un emplacement pour un autre Mac ou rouvrir l’activation à tout moment.";
 "Redeem a license key" = "Utiliser une clé de licence";
 "Paste a key from your purchase or reseller to unlock Lifetime on this Mac. Sign-in is optional." = "Collez la clé fournie lors de votre achat ou par votre revendeur pour déverrouiller l’accès à vie sur ce Mac. La connexion est facultative.";
 "Redeem license key" = "Utiliser la clé de licence";
@@ -597,3 +596,35 @@
 "Source file unavailable. It may have been moved or deleted. Restore it to its original location to play or re-transcribe this session." = "Fichier source indisponible. Il a peut-être été déplacé ou supprimé. Restaurez-le à son emplacement d’origine pour lire ou retranscrire cette session.";
 "Media file not found" = "Fichier multimédia introuvable";
 "The original media file for this session is no longer available. Restore it to its original location before re-transcribing." = "Le fichier multimédia d’origine de cette session n’est plus disponible. Restaurez-le à son emplacement d’origine avant de retranscrire.";
+
+/* Anonymous Lifetime checkout */
+"Pay once. This Mac unlocks after payment, and a recovery code restores access without signing in." = "Payez une fois. Ce Mac se déverrouille après le paiement, et un code de récupération rétablit l’accès sans connexion.";
+"Finish checkout in your browser, then return to VoxStudio." = "Terminez le paiement dans le navigateur, puis revenez dans VoxStudio.";
+"Stripe is still confirming this payment. You can check again." = "Stripe confirme encore ce paiement. Vous pouvez vérifier à nouveau.";
+"Check payment status" = "Vérifier l’état du paiement";
+"Cancel checkout" = "Annuler le paiement";
+"Lifetime is unlocked on this Mac" = "Lifetime est déverrouillé sur ce Mac";
+"Save this recovery code. It restores Lifetime on this Mac or another Mac without signing in." = "Conservez ce code de récupération. Il rétablit Lifetime sur ce Mac ou un autre sans connexion.";
+"Copy recovery code" = "Copier le code de récupération";
+"Save recovery code…" = "Enregistrer le code de récupération…";
+"I've saved the recovery code" = "J’ai enregistré le code de récupération";
+"Link to current account" = "Associer au compte actuel";
+"Linking this purchase to your account…" = "Association de cet achat à votre compte…";
+"This purchase is linked to your account." = "Cet achat est associé à votre compte.";
+"Could not store the license on this Mac. Save the recovery code, then activate it." = "Impossible d’enregistrer la licence sur ce Mac. Enregistrez le code de récupération, puis activez-la.";
+"This Mac already has Lifetime access." = "Ce Mac dispose déjà de l’accès Lifetime.";
+"This purchase was started on another Mac." = "Cet achat a été commencé sur un autre Mac.";
+"Could not save the purchase on this Mac. Checkout was not opened." = "Impossible d’enregistrer l’achat sur ce Mac. Le paiement n’a pas été ouvert.";
+"The checkout expired before payment was confirmed." = "Le paiement a expiré avant confirmation.";
+"Could not link this purchase to the current account." = "Impossible d’associer cet achat au compte actuel.";
+"Manage devices" = "Gérer les appareils";
+"Recovery code copied." = "Code de récupération copié.";
+"Lifetime purchase" = "Achat à vie";
+"Pay once. This purchase is linked to your VoxStudio account." = "Payez une fois. Cet achat est lié à votre compte VoxStudio.";
+"Lifetime payment confirmed. Activate the recovery code to unlock this Mac." = "Paiement à vie confirmé. Activez le code de récupération pour déverrouiller ce Mac.";
+"Retry activation" = "Réessayer l’activation";
+"This Lifetime payment was refunded or disputed." = "Ce paiement à vie a été remboursé ou contesté.";
+
+/* Lifetime software upgrades */
+"Free lifetime software upgrades" = "Mises à niveau logicielles gratuites à vie";
+"One-time Mac access with free software upgrades for life." = "Accès Mac en paiement unique, avec mises à niveau logicielles gratuites à vie.";

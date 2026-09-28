@@ -1391,8 +1391,7 @@
 "License key" = "许可证密钥";
 "Activated" = "已激活";
 "License key redeemed on this Mac" = "许可证密钥已在此 Mac 上兑换";
-"This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime." = "此 Mac 将保持解锁。使用“管理设备”可为另一台 Mac 释放名额，也可随时重新打开激活界面。";
-"Offline access valid until %@" = "离线访问有效期至 %@";
+"This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime." = "此 Mac 已获得 VoxStudio 的终身使用权，包含终身免费软件升级。可通过“管理设备”为另一台 Mac 释放名额，也可随时重新打开激活界面。";
 "Redeem a license key" = "兑换许可证密钥";
 "Paste a key from your purchase or reseller to unlock Lifetime on this Mac. Sign-in is optional." = "粘贴购买或经销商提供的密钥，以解锁此 Mac 的永久版。登录是可选的。";
 "Redeem license key" = "兑换许可证密钥";
@@ -2617,3 +2616,35 @@
 "The microphone recording could not be started." = "无法开始麦克风录制。";
 "The input changed. Copy the recognized text before recording again." = "输入内容已变化。请在再次录制前复制识别出的文本。";
 "Couldn’t copy voice input to the clipboard." = "无法将语音输入复制到剪贴板。";
+
+/* Anonymous Lifetime checkout */
+"Pay once. This Mac unlocks after payment, and a recovery code restores access without signing in." = "一次付费。付款后这台 Mac 会解锁，恢复码可在不登录的情况下恢复访问。";
+"Finish checkout in your browser, then return to VoxStudio." = "请在浏览器中完成结账，然后返回 VoxStudio。";
+"Stripe is still confirming this payment. You can check again." = "Stripe 仍在确认这笔付款。你可以稍后再检查。";
+"Check payment status" = "检查支付状态";
+"Cancel checkout" = "取消结账";
+"Lifetime is unlocked on this Mac" = "这台 Mac 已解锁 Lifetime";
+"Save this recovery code. It restores Lifetime on this Mac or another Mac without signing in." = "请保存此恢复码。它可以在不登录的情况下，在这台或其他 Mac 上恢复 Lifetime。";
+"Copy recovery code" = "复制恢复码";
+"Save recovery code…" = "保存恢复码…";
+"I've saved the recovery code" = "我已保存恢复码";
+"Link to current account" = "关联到当前账号";
+"Linking this purchase to your account…" = "正在把这次购买关联到你的账号…";
+"This purchase is linked to your account." = "这次购买已关联到你的账号。";
+"Could not store the license on this Mac. Save the recovery code, then activate it." = "无法把许可证保存到这台 Mac。请先保存恢复码，然后再激活。";
+"This Mac already has Lifetime access." = "这台 Mac 已有 Lifetime 访问权限。";
+"This purchase was started on another Mac." = "这次购买是在另一台 Mac 上开始的。";
+"Could not save the purchase on this Mac. Checkout was not opened." = "无法在这台 Mac 上保存购买信息，结账页面未打开。";
+"The checkout expired before payment was confirmed." = "结账在付款确认前已过期。";
+"Could not link this purchase to the current account." = "无法把这次购买关联到当前账号。";
+"Manage devices" = "管理设备";
+"Recovery code copied." = "已复制恢复码。";
+"Lifetime purchase" = "Lifetime 购买";
+"Pay once. This purchase is linked to your VoxStudio account." = "一次付费，这次购买会关联到你的 VoxStudio 账号。";
+"Lifetime payment confirmed. Activate the recovery code to unlock this Mac." = "Lifetime 付款已确认。请用恢复码激活这台 Mac。";
+"Retry activation" = "重试激活";
+"This Lifetime payment was refunded or disputed." = "这次 Lifetime 付款已退款或发生争议。";
+
+/* Lifetime software upgrades */
+"Free lifetime software upgrades" = "终身免费软件升级";
+"One-time Mac access with free software upgrades for life." = "一次性购买 Mac 使用权，并可终身免费升级软件。";

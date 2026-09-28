@@ -1007,6 +1007,8 @@ struct LicenseKeyDeviceAPIResponse: Decodable, Sendable {
     let maxDevices: Int?
     let devicesUsed: Int?
     let devices: [LicenseKeyDeviceAPIItem]
+    let purchaseSource: String?
+    let accountLinkStatus: String?
 
     enum CodingKeys: String, CodingKey {
         case token, fingerprint, devices
@@ -1014,6 +1016,8 @@ struct LicenseKeyDeviceAPIResponse: Decodable, Sendable {
         case leaseEndsAt = "lease_ends_at"
         case maxDevices = "max_devices"
         case devicesUsed = "devices_used"
+        case purchaseSource = "purchase_source"
+        case accountLinkStatus = "account_link_status"
     }
 
     init(from decoder: Decoder) throws {
@@ -1024,6 +1028,8 @@ struct LicenseKeyDeviceAPIResponse: Decodable, Sendable {
         maxDevices = try c.decodeIfPresent(Int.self, forKey: .maxDevices)
         devicesUsed = try c.decodeIfPresent(Int.self, forKey: .devicesUsed)
         devices = try c.decodeIfPresent([LicenseKeyDeviceAPIItem].self, forKey: .devices) ?? []
+        purchaseSource = try c.decodeIfPresent(String.self, forKey: .purchaseSource)
+        accountLinkStatus = try c.decodeIfPresent(String.self, forKey: .accountLinkStatus)
         leaseEndsAt = Self.decodeDate(c, .leaseEndsAt)
     }
 
@@ -1032,6 +1038,58 @@ struct LicenseKeyDeviceAPIResponse: Decodable, Sendable {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+    }
+}
+
+struct BillingOperationStatus: Decodable, Sendable {
+    let operationID: String
+    let status: String
+    let errorCode: String?
+
+    enum CodingKeys: String, CodingKey {
+        case operationID = "operation_id"
+        case status
+        case errorCode = "error_code"
+    }
+}
+
+struct AnonymousLifetimeCheckoutResponse: Decodable, Sendable {
+    let checkoutID: UUID
+    let checkoutURL: String?
+    let expiresAt: Date?
+    let status: String
+    let purchaseSource: String?
+    let accountLinkStatus: String?
+    let recoveryCode: String?
+    let license: LicenseKeyDeviceAPIResponse?
+
+    enum CodingKeys: String, CodingKey {
+        case status, license
+        case checkoutID = "checkout_id"
+        case checkoutURL = "checkout_url"
+        case expiresAt = "expires_at"
+        case purchaseSource = "purchase_source"
+        case accountLinkStatus = "account_link_status"
+        case recoveryCode = "recovery_code"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        checkoutID = try c.decode(UUID.self, forKey: .checkoutID)
+        checkoutURL = try c.decodeIfPresent(String.self, forKey: .checkoutURL)
+        status = try c.decodeIfPresent(String.self, forKey: .status) ?? "open"
+        purchaseSource = try c.decodeIfPresent(String.self, forKey: .purchaseSource)
+        accountLinkStatus = try c.decodeIfPresent(String.self, forKey: .accountLinkStatus)
+        recoveryCode = try c.decodeIfPresent(String.self, forKey: .recoveryCode)
+        license = try c.decodeIfPresent(LicenseKeyDeviceAPIResponse.self, forKey: .license)
+        expiresAt = Self.decodeDate(c, .expiresAt)
+    }
+
+    private static func decodeDate(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Date? {
+        guard let raw = try? c.decodeIfPresent(String.self, forKey: key) else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
     }
 }
 
@@ -1662,6 +1720,15 @@ actor VoxellaAPIClient {
     }
 
 #if !MAC_APP_STORE
+    private static func lifetimeAnalyticsContext(entryPoint: String) -> [String: Any] {
+        [
+            "client_platform": "mac",
+            "entry_point": entryPoint,
+            "app_version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+            "locale": Locale.current.identifier,
+        ]
+    }
+
     func createBillingCheckout(planID: String? = nil, topupAmountUSD: Double? = nil) async throws -> VoxellaCheckoutSession {
         var body: [String: Any] = [
             "interval": "month",
@@ -1678,6 +1745,70 @@ actor VoxellaAPIClient {
         )
     }
 
+    func createAnonymousLifetimeCheckout(
+        idempotencyKey: String,
+        fingerprint: String,
+        claimCredential: String,
+        deviceLabel: String?
+    ) async throws -> AnonymousLifetimeCheckoutResponse {
+        var body: [String: Any] = [
+            "idempotency_key": idempotencyKey,
+            "fingerprint": fingerprint,
+            "claim_credential": claimCredential,
+            "analytics_context": Self.lifetimeAnalyticsContext(entryPoint: "mac_anonymous_lifetime"),
+        ]
+        if let deviceLabel, !deviceLabel.isEmpty { body["device_label"] = deviceLabel }
+        return try await unauthenticatedDecode(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/billing/stripe/lifetime-checkouts"),
+            method: "POST",
+            json: body,
+            as: AnonymousLifetimeCheckoutResponse.self
+        )
+    }
+
+    func anonymousLifetimeStatus(
+        checkoutID: UUID,
+        fingerprint: String,
+        claimCredential: String
+    ) async throws -> AnonymousLifetimeCheckoutResponse {
+        try await unauthenticatedDecode(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/billing/stripe/lifetime-checkouts/\(checkoutID.uuidString)/status"),
+            method: "POST",
+            json: ["fingerprint": fingerprint, "claim_credential": claimCredential],
+            as: AnonymousLifetimeCheckoutResponse.self
+        )
+    }
+
+    func cancelAnonymousLifetimeCheckout(
+        checkoutID: UUID,
+        fingerprint: String,
+        claimCredential: String
+    ) async throws -> AnonymousLifetimeCheckoutResponse {
+        try await unauthenticatedDecode(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/billing/stripe/lifetime-checkouts/\(checkoutID.uuidString)/cancel"),
+            method: "POST",
+            json: ["fingerprint": fingerprint, "claim_credential": claimCredential],
+            as: AnonymousLifetimeCheckoutResponse.self
+        )
+    }
+
+    func linkAnonymousLifetime(token: String) async throws -> BillingOperationStatus {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/app-access/stripe-lifetime/link-account"),
+            method: "POST",
+            json: ["token": token],
+            as: BillingOperationStatus.self
+        )
+    }
+
+    func billingOperation(_ operationID: String) async throws -> BillingOperationStatus {
+        try await request(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/billing/operations/\(operationID)"),
+            method: "GET",
+            as: BillingOperationStatus.self
+        )
+    }
+
     func createLifetimeCheckout() async throws -> VoxellaCheckoutSession {
         try await request(
             url: VoxellaAPIConfiguration.apiURL("api/v1/billing/stripe/checkout"),
@@ -1686,6 +1817,7 @@ actor VoxellaAPIClient {
                 "purchase_kind": "lifetime",
                 "success_url": VoxellaAPIConfiguration.baseURL.absoluteString,
                 "cancel_url": VoxellaAPIConfiguration.baseURL.absoluteString,
+                "analytics_context": Self.lifetimeAnalyticsContext(entryPoint: "mac_account_lifetime"),
             ],
             as: VoxellaCheckoutSession.self
         )
