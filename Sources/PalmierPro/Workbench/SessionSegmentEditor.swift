@@ -298,7 +298,7 @@ private struct SessionMergeDivider: View {
     }
 }
 
-private struct SessionCueRow: View {
+struct SessionCueRow: View {
     let cue: SubtitleCue
     let isActive: Bool
     let speakerLabels: [String]
@@ -367,7 +367,11 @@ private struct SessionCueRow: View {
                             onCommit: onCommitEdit,
                             onCancel: onCancelEdit
                         )
-                        .frame(minHeight: AppTheme.FontSize.mdLg * 2.4)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        // Let sizeThatFits measure the proposed column width in the
+                        // same layout pass. A separate frame based on a geometry
+                        // preference can stay at its initial one-line height.
+                        .fixedSize(horizontal: false, vertical: true)
 
                         if canSplit {
                             Button(action: onSplit) {
@@ -396,6 +400,7 @@ private struct SessionCueRow: View {
                         )
                             .font(.system(size: AppTheme.FontSize.mdLg))
                             .foregroundStyle(AppTheme.Text.primaryColor)
+                            .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -477,6 +482,38 @@ private struct SessionCueRow: View {
     }
 }
 
+private enum SessionCueEditorMetrics {
+    static var font: NSFont { .systemFont(ofSize: AppTheme.FontSize.mdLg) }
+    static var verticalInset: CGFloat { AppTheme.Spacing.xxs }
+
+    static func height(for text: String, width: CGFloat) -> CGFloat {
+        let font = font
+        let inset = verticalInset
+        let lineHeight = max(1, ceil(font.ascender - font.descender + font.leading))
+        let minHeight = lineHeight + inset * 2
+        guard width > 1 else { return minHeight }
+
+        let sample = text.isEmpty ? " " : text
+        let storage = NSTextStorage(string: sample, attributes: [.font: font])
+        let manager = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(
+            width: width,
+            height: CGFloat.greatestFiniteMagnitude
+        ))
+        container.lineFragmentPadding = 0
+        storage.addLayoutManager(manager)
+        manager.addTextContainer(container)
+        manager.ensureLayout(for: container)
+        let used = manager.usedRect(for: container)
+        // A trailing newline leaves the caret on an extra empty line, which
+        // usedRect alone omits.
+        let contentHeight = manager.extraLineFragmentTextContainer === container
+            ? max(used.maxY, manager.extraLineFragmentRect.maxY)
+            : used.maxY
+        return max(minHeight, ceil(contentHeight + inset * 2))
+    }
+}
+
 private struct SessionCueTextEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var cursorOffset: Int?
@@ -487,21 +524,37 @@ private struct SessionCueTextEditor: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context) -> CGSize? {
+        let width = resolvedWidth(proposal: proposal, nsView: nsView)
+        return CGSize(
+            width: width > 1 ? width : (proposal.width ?? 0),
+            height: SessionCueEditorMetrics.height(for: text, width: width)
+        )
+    }
+
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
+        let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.setContentHuggingPriority(.defaultLow, for: .vertical)
+        scrollView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
-        let textView = scrollView.documentView as! NSTextView
+        let textView = NSTextView()
+        textView.minSize = .zero
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
         textView.delegate = context.coordinator
         textView.isEditable = true
         textView.isSelectable = true
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
-        textView.font = .systemFont(ofSize: AppTheme.FontSize.mdLg)
+        textView.font = SessionCueEditorMetrics.font
         textView.textColor = NSColor(AppTheme.Text.primaryColor)
         textView.insertionPointColor = NSColor(AppTheme.Text.primaryColor)
         textView.backgroundColor = .clear
@@ -512,9 +565,16 @@ private struct SessionCueTextEditor: NSViewRepresentable {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
-        textView.textContainerInset = NSSize(width: 0, height: AppTheme.Spacing.xxs)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.containerSize = NSSize(
+            width: 0,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.textContainerInset = NSSize(width: 0, height: SessionCueEditorMetrics.verticalInset)
         textView.string = text
+        scrollView.documentView = textView
         context.coordinator.textView = textView
         DispatchQueue.main.async {
             textView.window?.makeFirstResponder(textView)
@@ -526,8 +586,8 @@ private struct SessionCueTextEditor: NSViewRepresentable {
         context.coordinator.parent = self
         guard let textView = scrollView.documentView as? NSTextView else { return }
         // Preserve the native input composition while SwiftUI re-renders.
-        guard textView.window?.firstResponder !== textView else { return }
-        if textView.string != text {
+        let isFirstResponder = textView.window?.firstResponder === textView
+        if !isFirstResponder, textView.string != text {
             let selected = textView.selectedRange()
             textView.string = text
             let clamped = NSRange(
@@ -536,6 +596,25 @@ private struct SessionCueTextEditor: NSViewRepresentable {
             )
             textView.setSelectedRange(clamped)
         }
+        let width = scrollView.bounds.width
+        if width > 1, let textContainer = textView.textContainer,
+           abs(textContainer.containerSize.width - width) > 0.5 {
+            textContainer.containerSize = NSSize(
+                width: width,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+            textView.frame.size.width = width
+        }
+    }
+
+    private func resolvedWidth(proposal: ProposedViewSize, nsView: NSScrollView) -> CGFloat {
+        if let proposed = proposal.width, proposed.isFinite, proposed > 1 {
+            return proposed
+        }
+        if nsView.bounds.width > 1 {
+            return nsView.bounds.width
+        }
+        return 0
     }
 
     @MainActor
