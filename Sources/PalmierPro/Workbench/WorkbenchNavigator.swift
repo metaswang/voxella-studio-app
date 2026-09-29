@@ -4,20 +4,20 @@ import SwiftUI
 
 /// One workspace the user can return to with Back / Forward.
 enum WorkbenchScreen: Equatable {
-    case editor
+    case editor(ObjectIdentifier)
     case session(UUID)
     case transcribe(UUID?)
     case dub(UUID)
     case place(WorkbenchRoute)
 
     static func capture(
-        editorActive: Bool,
+        editorID: ObjectIdentifier?,
         route: WorkbenchRoute,
         sessionID: UUID?,
         transcriptionID: UUID?,
         dubID: UUID?
     ) -> WorkbenchScreen? {
-        if editorActive { return .editor }
+        if let editorID { return .editor(editorID) }
         switch route {
         case .session:
             guard let sessionID else { return nil }
@@ -48,10 +48,32 @@ final class WorkbenchNavigator {
     private var forwardStack: [WorkbenchScreen] = []
     private var current: WorkbenchScreen?
     private var pending: WorkbenchScreen?
-    private var isApplying = false
     private var commitScheduled = false
     private var mouseMonitor: Any?
     private let historyLimit = 50
+    private let captureScreen: () -> WorkbenchScreen?
+    private let applyScreen: (WorkbenchScreen) -> WorkbenchScreen?
+
+    init(
+        captureScreen: (() -> WorkbenchScreen?)? = nil,
+        applyScreen: ((WorkbenchScreen) -> WorkbenchScreen?)? = nil
+    ) {
+        self.captureScreen = captureScreen ?? { Self.captureCurrentScreen() }
+        self.applyScreen = applyScreen ?? { Self.apply($0) }
+    }
+
+    static func captureCurrentScreen() -> WorkbenchScreen? {
+        let appState = AppState.shared
+        let store = WorkbenchStore.shared
+        return WorkbenchScreen.capture(
+            editorID: appState.editorPresentation == .active
+                ? appState.activeProject.map(ObjectIdentifier.init) : nil,
+            route: store.route,
+            sessionID: store.selectedSessionID,
+            transcriptionID: store.selectedTranscriptionID,
+            dubID: store.selectedDubID
+        )
+    }
 
     func note(_ screen: WorkbenchScreen?) {
         guard let screen else { return }
@@ -86,27 +108,23 @@ final class WorkbenchNavigator {
     }
 
     private func travel(back: Bool) {
-        guard current != nil else { return }
-        let target = back ? backStack.popLast() : forwardStack.popLast()
-        guard let target else {
-            refreshFlags()
-            return
+        // SwiftUI may not have delivered the latest onChange yet, and note() commits asynchronously.
+        note(captureScreen())
+        commit()
+        guard let origin = current else { return }
+        while let target = back ? backStack.popLast() : forwardStack.popLast() {
+            guard target != origin,
+                  let landed = applyScreen(target), landed != origin else { continue }
+            if back {
+                push(origin, onto: &forwardStack)
+            } else {
+                push(origin, onto: &backStack)
+            }
+            current = landed
+            pending = nil
+            break
         }
-        isApplying = true
-        guard let landed = apply(target), let origin = current, landed != origin else {
-            isApplying = false
-            refreshFlags()
-            return
-        }
-        if back {
-            push(origin, onto: &forwardStack)
-        } else {
-            push(origin, onto: &backStack)
-        }
-        current = landed
-        pending = landed
         refreshFlags()
-        scheduleCommit()
     }
 
     private func scheduleCommit() {
@@ -121,16 +139,10 @@ final class WorkbenchNavigator {
     private func commit() {
         commitScheduled = false
         guard let screen = pending else {
-            isApplying = false
             refreshFlags()
             return
         }
-        if isApplying {
-            current = screen
-            isApplying = false
-            refreshFlags()
-            return
-        }
+        pending = nil
         guard let current else {
             self.current = screen
             refreshFlags()
@@ -157,27 +169,29 @@ final class WorkbenchNavigator {
         if canGoForward != forward { canGoForward = forward }
     }
 
-    private func apply(_ screen: WorkbenchScreen) -> WorkbenchScreen? {
+    private static func apply(_ screen: WorkbenchScreen) -> WorkbenchScreen? {
         let store = WorkbenchStore.shared
         let appState = AppState.shared
         switch screen {
-        case .editor:
-            guard appState.activeProject != nil else { return nil }
+        case .editor(let id):
+            guard let project = appState.activeProject, ObjectIdentifier(project) == id else { return nil }
             if appState.editorPresentation != .active {
                 appState.resumeEditor()
             }
-            return .editor
+            return .editor(id)
         case .session(let id):
+            guard store.selectSessionForHistory(id) else { return nil }
             if appState.editorPresentation == .active {
                 appState.suspendEditor()
             }
-            guard store.selectSessionForHistory(id) else { return nil }
             return .session(id)
         case .transcribe(let id):
+            guard id == nil || store.transcriptions.contains(where: { $0.id == id }) else { return nil }
             if appState.editorPresentation == .active {
                 appState.suspendEditor()
             }
             store.selectedTranscriptionID = id
+            store.selectedSessionID = nil
             store.route = .transcribe
             return .transcribe(id)
         case .dub(let id):
@@ -190,6 +204,7 @@ final class WorkbenchNavigator {
             store.route = .dub
             return .dub(id)
         case .place(let route):
+            guard route != .dub, route != .session else { return nil }
             if appState.editorPresentation == .active {
                 appState.suspendEditor()
             }

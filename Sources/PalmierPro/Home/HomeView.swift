@@ -80,13 +80,7 @@ struct HomeView: View {
     }
 
     private var navigationScreen: WorkbenchScreen? {
-        WorkbenchScreen.capture(
-            editorActive: appState.editorPresentation == .active,
-            route: store.route,
-            sessionID: store.selectedSessionID,
-            transcriptionID: store.selectedTranscriptionID,
-            dubID: store.selectedDubID
-        )
+        WorkbenchNavigator.captureCurrentScreen()
     }
 
     private func presentSessionSearch() {
