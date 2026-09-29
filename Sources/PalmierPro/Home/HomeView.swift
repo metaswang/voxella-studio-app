@@ -74,9 +74,6 @@ struct HomeView: View {
         .onChange(of: navigationScreen, initial: true) { _, screen in
             WorkbenchNavigator.shared.note(screen)
         }
-        .task {
-            WorkbenchNavigator.shared.installMouseNavigationIfNeeded()
-        }
     }
 
     private var navigationScreen: WorkbenchScreen? {
@@ -452,6 +449,9 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
         window.collectionBehavior = [.fullScreenNone]
         window.center()
         super.init(window: window)
+        // Install against the constructed window; HomeView may appear before
+        // this singleton finishes initializing.
+        WorkbenchNavigator.shared.installMouseNavigationIfNeeded(in: window)
         window.delegate = self
         zoomObserver = NotificationCenter.default.addObserver(
             forName: .voxellaZoomScaleDidChange,

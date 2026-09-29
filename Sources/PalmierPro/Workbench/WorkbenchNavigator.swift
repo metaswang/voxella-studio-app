@@ -67,11 +67,11 @@ final class WorkbenchNavigator {
         travel(back: false)
     }
 
-    func installMouseNavigationIfNeeded() {
+    func installMouseNavigationIfNeeded(in window: NSWindow) {
         guard mouseMonitor == nil else { return }
-        let windowNumber = HomeWindowController.shared.window?.windowNumber
+        let windowNumber = window.windowNumber
         mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { event in
-            guard let windowNumber, event.window?.windowNumber == windowNumber else { return event }
+            guard event.window?.windowNumber == windowNumber else { return event }
             switch event.buttonNumber {
             case 3:
                 Task { @MainActor in WorkbenchNavigator.shared.goBack() }
