@@ -737,12 +737,13 @@ struct WorkbenchSessionDetailView: View {
                                 .controlSize(.small)
                             Text(L10n.string("Opening…"))
                         } else {
-                            Label(L10n.string("Create clip"), systemImage: "timeline.selection")
+                            Label(L10n.string("New clip"), systemImage: "timeline.selection")
                         }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(isOpeningClip)
-                    .help(L10n.string("Open the video editor and place this session on the timeline"))
+                    .help(L10n.string("Create clip"))
+                    .accessibilityLabel(L10n.string("Create clip"))
                 }
                 Button {
                     if session.transcriptionID != nil {
@@ -751,10 +752,15 @@ struct WorkbenchSessionDetailView: View {
                         openWorkflow(session)
                     }
                 } label: {
-                    Label(L10n.string(session.hasDub ? "Re-dub" : "Create dub"), systemImage: "waveform.and.mic")
+                    Label(
+                        L10n.string(session.hasDub ? "Re-dub" : "New dub"),
+                        systemImage: "waveform.and.mic"
+                    )
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isOpeningClip)
+                .help(L10n.string(session.hasDub ? "Dub again" : "Create dub"))
+                .accessibilityLabel(L10n.string(session.hasDub ? "Re-dub" : "Create dub"))
 
                 sessionOptionsMenu(session)
             }
@@ -998,29 +1004,16 @@ struct WorkbenchSessionDetailView: View {
 
                 if hasTranslations {
                     Menu {
-                        Button("Original") {
-                            selectedTab = tab
-                            setLanguage(nil, for: tab, session: session)
-                        }
-                        Divider()
-                        ForEach(session.translationTracks) { track in
-                            Button {
-                                selectedTab = tab
-                                setLanguage(track.languageCode, for: tab, session: session)
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(track.displayLanguageLabel)
-                                        Text(L10n.format("%@ cues", track.track.cues.count))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    if languageCode?.caseInsensitiveCompare(track.languageCode) == .orderedSame {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
+                        Picker(L10n.string("Language"), selection: languageChoiceBinding(for: tab, session: session)) {
+                            Text(L10n.string("Original")).tag(SessionLanguageChoice.original)
+                            Divider()
+                            ForEach(session.translationTracks) { track in
+                                Text(languageMenuTitle(track))
+                                    .tag(SessionLanguageChoice.translation(track.languageCode))
                             }
                         }
+                        .pickerStyle(.inline)
+                        .labelsHidden()
                     } label: {
                         HStack(spacing: AppTheme.Spacing.xxs) {
                             if let languageCode {
@@ -1034,6 +1027,7 @@ struct WorkbenchSessionDetailView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
+                    .id(languageMenuIdentity(for: tab, session: session))
                 }
             }
             .frame(minWidth: 108, minHeight: 24)
@@ -1246,30 +1240,64 @@ struct WorkbenchSessionDetailView: View {
         return tabs.isEmpty ? [.transcript] : tabs
     }
 
+    private func languageChoiceBinding(
+        for tab: SessionDetailTab,
+        session: WorkbenchSession
+    ) -> Binding<SessionLanguageChoice> {
+        Binding(
+            get: {
+                let code = tab == .transcript ? transcriptLanguageCode : subtitleLanguageCode
+                guard let code,
+                      let canonical = session.translationTracks.first(where: {
+                          $0.languageCode.caseInsensitiveCompare(code) == .orderedSame
+                      })?.languageCode
+                else { return .original }
+                return .translation(canonical)
+            },
+            set: { choice in
+                selectedTab = tab
+                switch choice {
+                case .original:
+                    setLanguage(nil, for: tab, session: session)
+                case .translation(let code):
+                    setLanguage(code, for: tab, session: session)
+                }
+            }
+        )
+    }
+
+    private func languageMenuTitle(_ track: WorkbenchTranslationTrack) -> String {
+        "\(track.displayLanguageLabel) · \(L10n.format("%@ cues", track.track.cues.count))"
+    }
+
+    private func languageMenuIdentity(for tab: SessionDetailTab, session: WorkbenchSession) -> String {
+        let code = tab == .transcript ? transcriptLanguageCode : subtitleLanguageCode
+        let tracks = session.translationTracks.map(\.languageCode).joined(separator: ",")
+        return "\(tab.rawValue)|\(code ?? "")|\(tracks)"
+    }
+
     private func setLanguage(_ code: String?, for tab: SessionDetailTab, session: WorkbenchSession) {
+        let canonical = code.flatMap { raw in
+            session.translationTracks.first {
+                $0.languageCode.caseInsensitiveCompare(raw) == .orderedSame
+            }?.languageCode
+        }
         switch tab {
         case .transcript:
-            transcriptLanguageCode = code
+            transcriptLanguageCode = canonical
         case .subtitles:
-            subtitleLanguageCode = code
+            subtitleLanguageCode = canonical
         }
-        if let code, let transcriptionID = session.transcriptionID {
-            store.selectTranslationLanguage(code, forTranscription: transcriptionID)
-        }
+        store.rememberDisplayLanguage(
+            canonical,
+            for: tab == .transcript ? .transcript : .subtitles,
+            session: session
+        )
     }
 
     private func syncLanguageSelections(_ session: WorkbenchSession) {
-        let selected = session.selectedTranslationLanguageCode
-        if let selected,
-           session.translationTracks.contains(where: {
-               $0.languageCode.caseInsensitiveCompare(selected) == .orderedSame
-           }) {
-            transcriptLanguageCode = selected
-            subtitleLanguageCode = selected
-        } else {
-            transcriptLanguageCode = nil
-            subtitleLanguageCode = nil
-        }
+        transcriptLanguageCode = store.displayLanguage(for: .transcript, session: session)
+        subtitleLanguageCode = store.displayLanguage(for: .subtitles, session: session)
     }
 
     private func presentTemplatePicker() {
@@ -1345,6 +1373,17 @@ private enum SessionPlaybackTrack: String, CaseIterable, Identifiable {
         if dubbedURL != nil { tracks.append(.dub) }
         return tracks
     }
+}
+
+private enum SessionLanguageChoice: Hashable {
+    case original
+    case translation(String)
+}
+
+private enum PlaybackSubtitleChoice: Hashable {
+    case none
+    case original
+    case translation(String)
 }
 
 private enum SessionDetailTab: String, Identifiable {
@@ -1867,29 +1906,18 @@ private struct SessionMediaPlayer: View {
 
             if !playback.translationTracks.isEmpty {
                 Menu {
-                    if playback.subtitleTrack != nil {
-                        Button {
-                            playback.selectSubtitleMode(.original)
-                        } label: {
-                            labelWithCheck("Original", selected: playback.subtitleMode == .original)
+                    Picker(L10n.string("Subtitles"), selection: playbackSubtitleChoice) {
+                        if playback.subtitleTrack != nil {
+                            Text(L10n.string("Original")).tag(PlaybackSubtitleChoice.original)
+                        }
+                        if playback.subtitleTrack != nil { Divider() }
+                        ForEach(playback.translationTracks) { track in
+                            Text(track.displayLanguageLabel)
+                                .tag(PlaybackSubtitleChoice.translation(track.languageCode))
                         }
                     }
-                    if playback.subtitleTrack != nil { Divider() }
-                    ForEach(playback.translationTracks) { track in
-                        Button {
-                            playback.selectSubtitleMode(.translation(track.languageCode))
-                        } label: {
-                            labelWithCheck(
-                                track.displayLanguageLabel,
-                                selected: {
-                                    if case .translation(let code) = playback.subtitleMode {
-                                        return code.caseInsensitiveCompare(track.languageCode) == .orderedSame
-                                    }
-                                    return false
-                                }()
-                            )
-                        }
-                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
@@ -1899,6 +1927,7 @@ private struct SessionMediaPlayer: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize(horizontal: true, vertical: true)
+                .id(playbackSubtitleMenuIdentity)
             }
         }
         .fixedSize(horizontal: true, vertical: true)
@@ -1932,6 +1961,45 @@ private struct SessionMediaPlayer: View {
         }
         .menuStyle(.borderlessButton)
         .help(L10n.string("Playback speed"))
+    }
+
+    private var playbackSubtitleChoice: Binding<PlaybackSubtitleChoice> {
+        Binding(
+            get: {
+                switch playback.subtitleMode {
+                case .translation(let code):
+                    let canonical = playback.translationTracks.first {
+                        $0.languageCode.caseInsensitiveCompare(code) == .orderedSame
+                    }?.languageCode ?? code
+                    return .translation(canonical)
+                case .original:
+                    return .original
+                case .off:
+                    return .none
+                }
+            },
+            set: { choice in
+                switch choice {
+                case .none:
+                    break
+                case .original:
+                    playback.selectSubtitleMode(.original)
+                case .translation(let code):
+                    playback.selectSubtitleMode(.translation(code))
+                }
+            }
+        )
+    }
+
+    private var playbackSubtitleMenuIdentity: String {
+        switch playback.subtitleMode {
+        case .off:
+            "off"
+        case .original:
+            "original"
+        case .translation(let code):
+            "translation:\(code)"
+        }
     }
 
     @ViewBuilder

@@ -2658,3 +2658,10 @@
 "Could not save connection status:" = "Could not save connection status:";
 "Model list unavailable. Retry refresh or keep using the configured model." = "Model list unavailable. Retry refresh or keep using the configured model.";
 "Cloud automatically chooses an available AI model. Sign in to ask questions; usage follows your plan and consumes cloud credits. Relevant knowledge excerpts and your question are sent to the cloud service to generate an answer. Enable BYOK to choose a model and use your own provider key; requests then go to that provider and are billed by it." = "Cloud automatically chooses an available AI model. Sign in to ask questions; usage follows your plan and consumes cloud credits. Relevant knowledge excerpts and your question are sent to the cloud service to generate an answer. Enable BYOK to choose a model and use your own provider key; requests then go to that provider and are billed by it.";
+
+/* Session actions and history */
+"New clip" = "New clip";
+"New dub" = "New dub";
+"Dub again" = "Dub again";
+"Back (⌘[)" = "Back (⌘[)";
+"Forward (⌘])" = "Forward (⌘])";

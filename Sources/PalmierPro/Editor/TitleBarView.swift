@@ -6,6 +6,8 @@ struct EditorChrome: View {
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.smMd) {
+            WorkbenchHistoryControls()
+
             agentToggleButton
 
             Text(editor.projectDisplayName)
