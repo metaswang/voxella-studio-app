@@ -22,6 +22,8 @@ struct MeetBotView: View {
                 } else {
                     accessCard
                 }
+
+                LocalMeetingRecordingSection()
             }
             .frame(maxWidth: AppTheme.Workbench.contentMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -42,7 +44,11 @@ struct MeetBotView: View {
             Text(L10n.string("Never miss the conversation"))
                 .font(.system(size: AppTheme.FontSize.title2, weight: AppTheme.FontWeight.semibold))
                 .foregroundStyle(AppTheme.Text.primaryColor)
-            Text(L10n.string("Send a visible VoxStudio notetaker to a meeting, then receive a searchable transcript and summary."))
+            HStack(spacing: AppTheme.Spacing.sm) {
+                headerPill(L10n.string("Starter or higher"), systemImage: "star.fill")
+                headerPill(L10n.string("Original recording"), systemImage: "person.wave.2.fill")
+            }
+            Text(L10n.string("A visible VoxStudio notetaker joins the meeting and records the conversation itself. This original recording is the meeting, not a capture of your screen, and requires a Starter plan or higher."))
                 .font(.system(size: AppTheme.FontSize.md))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
                 .fixedSize(horizontal: false, vertical: true)
@@ -53,7 +59,7 @@ struct MeetBotView: View {
         MeetBotCard {
             sectionHeader(
                 title: L10n.string("Send a bot to a meeting"),
-                subtitle: L10n.string("Paste a Google Meet, Microsoft Teams, or Zoom link. The bot joins as a visible participant.")
+                subtitle: L10n.string("Paste a Google Meet, Microsoft Teams, or Zoom link. The bot joins as a visible participant and records the original meeting.")
             )
 
             HStack(spacing: AppTheme.Spacing.sm) {
@@ -242,6 +248,19 @@ struct MeetBotView: View {
                 .foregroundStyle(AppTheme.Text.secondaryColor)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func headerPill(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+            .foregroundStyle(AppTheme.Text.primaryColor)
+            .padding(.horizontal, AppTheme.Spacing.smMd)
+            .padding(.vertical, AppTheme.Spacing.xs)
+            .background(AppTheme.Background.prominentColor, in: Capsule(style: .continuous))
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+            }
     }
 
     private func providerPill(_ title: String) -> some View {

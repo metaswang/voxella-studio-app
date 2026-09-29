@@ -40,6 +40,8 @@ final class RecordingSessionController {
     private var captureBackend = "none"
     private var pendingStopReason: RecordingStopReason?
     private var activeConfiguration: RecordingCaptureConfiguration?
+    /// Meeting app to capture directly, consumed by the next window start.
+    private var pendingTargetBundleIdentifier: String?
 
     private init() {
         statusItem.attach(self)
@@ -108,8 +110,9 @@ final class RecordingSessionController {
         )
     }
 
-    func start(mode: RecordingCaptureMode) {
+    func start(mode: RecordingCaptureMode, targetBundleIdentifier: String? = nil) {
         guard phase == .idle else { return }
+        pendingTargetBundleIdentifier = targetBundleIdentifier
         setCaptureMode(mode)
         requestStart()
     }
@@ -121,9 +124,11 @@ final class RecordingSessionController {
                 try await AccountService.shared.prepareNewContentAccess()
                 self.start()
             } catch is AppAccessError {
+                self.pendingTargetBundleIdentifier = nil
                 self.errorMessage = nil
                 return
             } catch {
+                self.pendingTargetBundleIdentifier = nil
                 self.errorMessage = error.localizedDescription
             }
         }
@@ -140,6 +145,8 @@ final class RecordingSessionController {
     }
 
     func start() {
+        let preferredBundleIdentifier = pendingTargetBundleIdentifier
+        pendingTargetBundleIdentifier = nil
         do {
             try AccountService.shared.requireNewContentAccess()
         } catch is AppAccessError {
@@ -201,7 +208,9 @@ final class RecordingSessionController {
                 try Task.checkCancellation()
                 guard self.sessionID == id, self.phase == .preparing || self.phase == .picking else { return }
 
-                let picked = try await self.pickCaptureSource()
+                let picked = try await self.pickCaptureSource(
+                    preferredBundleIdentifier: preferredBundleIdentifier
+                )
                 try Task.checkCancellation()
                 guard self.sessionID == id else { return }
 
@@ -461,7 +470,7 @@ final class RecordingSessionController {
         var displayID: CGDirectDisplayID?
     }
 
-    private func pickCaptureSource() async throws -> PickedSource {
+    private func pickCaptureSource(preferredBundleIdentifier: String? = nil) async throws -> PickedSource {
         switch configuration.mode {
         case .audioOnly:
             guard configuration.capturesSystemAudio else {
@@ -487,6 +496,10 @@ final class RecordingSessionController {
             updateControls()
             return PickedSource(filter: pickedFilter, sourceRect: nil, displayID: nil)
         case .window:
+            if let preferredBundleIdentifier,
+               let picked = try await targetedWindow(bundleIdentifier: preferredBundleIdentifier) {
+                return picked
+            }
             phase = .picking
             updateControls()
             let filter = try await RecordingContentPicker.shared.pick(style: .window)
@@ -511,6 +524,31 @@ final class RecordingSessionController {
             updateControls()
             return picked
         }
+    }
+
+    /// Records the largest on-screen window of a meeting app. Falls back to the system picker when none qualifies.
+    private func targetedWindow(bundleIdentifier: String) async throws -> PickedSource? {
+        try await RecordingPermission.requestScreenCapture()
+        let content = try await RecordingPermission.shareableContent()
+        let candidates = content.windows.filter { window in
+            guard window.owningApplication?.bundleIdentifier == bundleIdentifier else { return false }
+            guard window.isOnScreen, window.windowLayer == 0 else { return false }
+            return window.frame.width >= 280 && window.frame.height >= 180
+        }
+        guard let window = candidates.max(by: { lhs, rhs in
+            lhs.frame.width * lhs.frame.height < rhs.frame.width * rhs.frame.height
+        }) else {
+            Log.recording.notice("no meeting window for bundle=\(bundleIdentifier); using system picker")
+            return nil
+        }
+        Log.recording.notice(
+            "recording meeting window bundle=\(bundleIdentifier) title=\(window.title ?? "") size=\(Int(window.frame.width))x\(Int(window.frame.height))"
+        )
+        return PickedSource(
+            filter: SCContentFilter(desktopIndependentWindow: window),
+            sourceRect: nil,
+            displayID: nil
+        )
     }
 
     private func displayFilterOrPick(displayID: CGDirectDisplayID? = nil) async throws -> PickedSource {

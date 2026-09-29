@@ -45,6 +45,14 @@ enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Opens the existing recorder from Meeting Recorder, optionally starting a capture.
+struct LocalRecordingRequest: Equatable, Sendable {
+    var id = UUID()
+    var mode: RecordingCaptureMode
+    var applicationBundleIdentifier: String?
+    var startImmediately: Bool
+}
+
 enum RecordingMicrophoneSource: Equatable, Hashable, Sendable {
     case off
     case systemDefault
