@@ -20,7 +20,8 @@ enum KnowledgeContextBuilder {
         anchors: [SessionSearchHit],
         metadata: [UUID: KnowledgeSessionContextMetadata],
         neighbors: [Int: [SessionSearchHit]],
-        maxChars: Int
+        maxChars: Int,
+        catalogSessionIDs: [UUID] = []
     ) -> String {
         let budget = max(1, maxChars)
         var used = 0
@@ -36,26 +37,7 @@ enum KnowledgeContextBuilder {
             if seenSessions.insert(anchor.sessionID).inserted,
                let source = metadata[anchor.sessionID]
             {
-                let title = clipped(source.title, limit: metadataPerSessionLimit)
-                let summary = clipped(source.summary ?? "", limit: metadataPerSessionLimit)
-                var details = ["Session title: \(title)"]
-                if source.duration > 0 {
-                    details.append("Session duration: \(formatDuration(source.duration))")
-                }
-                details.append("Session type: \(source.sessionType.rawValue)")
-                details.append("Session origin: \(source.sourceOrigin.rawValue)")
-                if let date = formatDate(source.sourceCreatedAt) {
-                    details.append("Session date: \(date)")
-                }
-                if let date = formatDate(source.sourceModifiedAt) {
-                    details.append("Session modified: \(date)")
-                }
-                let raw = (details + [summary.isEmpty ? nil : "Session summary: \(summary)"])
-                    .compactMap { $0 }
-                    .joined(separator: "\n")
-                let remaining = max(0, metadataTotalLimit - metadataUsed)
-                prefix = clipped(raw, limit: remaining)
-                metadataUsed += prefix.count
+                prefix = metadataBlock(source, metadataUsed: &metadataUsed)
             }
 
             let merged = merge(
@@ -78,7 +60,45 @@ enum KnowledgeContextBuilder {
             blocks.append(block)
             used += block.count
         }
+
+        // Sessions selected by scope or prior citations may have no transcript
+        // anchor. Their catalog block is the evidence for recording-level facts.
+        for id in catalogSessionIDs where seenSessions.insert(id).inserted {
+            guard let source = metadata[id] else { continue }
+            let block = metadataBlock(source, metadataUsed: &metadataUsed)
+            guard !block.isEmpty else { continue }
+            if used + block.count > budget, !blocks.isEmpty { break }
+            blocks.append(block)
+            used += block.count
+        }
         return blocks.joined(separator: "\n\n")
+    }
+
+    private static func metadataBlock(
+        _ source: KnowledgeSessionContextMetadata,
+        metadataUsed: inout Int
+    ) -> String {
+        let title = clipped(source.title, limit: metadataPerSessionLimit)
+        let summary = clipped(source.summary ?? "", limit: metadataPerSessionLimit)
+        var details = ["Session title: \(title)"]
+        if source.duration > 0 {
+            details.append("Session duration: \(formatDuration(source.duration))")
+        }
+        details.append("Session type: \(source.sessionType.rawValue)")
+        details.append("Session origin: \(source.sourceOrigin.rawValue)")
+        if let date = formatDate(source.sourceCreatedAt) {
+            details.append("Session date: \(date)")
+        }
+        if let date = formatDate(source.sourceModifiedAt) {
+            details.append("Session modified: \(date)")
+        }
+        let raw = (details + [summary.isEmpty ? nil : "Session summary: \(summary)"])
+            .compactMap { $0 }
+            .joined(separator: "\n")
+        let remaining = max(0, metadataTotalLimit - metadataUsed)
+        let block = clipped(raw, limit: remaining)
+        metadataUsed += block.count
+        return block
     }
 
     private static func merge(
@@ -118,7 +138,7 @@ enum KnowledgeContextBuilder {
         return String(value.prefix(limit - 1)) + "…"
     }
 
-    private static func formatDuration(_ seconds: Double) -> String {
+    static func formatDuration(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "—" }
         let total = max(0, Int(seconds.rounded()))
         return String(format: "%02d:%02d:%02d", total / 3600, (total / 60) % 60, total % 60)

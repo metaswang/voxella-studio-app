@@ -230,76 +230,13 @@ struct KnowledgeAgentRuntime: Sendable {
         }
         
         try Task.checkCancellation()
-        
-        if hits.isEmpty {
-            let message = KnowledgeQAService.insufficientEvidenceMessage(
-                scope: request.scope,
-                language: answerLanguage
-            )
-            continuation.yield(.citations([]))
-            continuation.yield(.status("No evidence found"))
-            for chunk in KnowledgeQAService.chunkForStreaming(message) {
-                try Task.checkCancellation()
-                continuation.yield(.delta(chunk))
-            }
-            continuation.yield(.finished(message))
-            continuation.finish()
-            return
-        }
-        
-        continuation.yield(.citations(hits))
-        continuation.yield(.status("Composing answer…"))
-
-        let contextHits = Self.sessionHits(from: hits)
-        let context = KnowledgeQAService.buildContext(hits: contextHits, maxChars: 10_000)
-        let system = KnowledgeQAService.systemPrompt(
-            mode: request.answerMode,
-            scope: request.scope,
-            originFilter: originFilter,
-            answerLanguage: answerLanguage
+        try await finishWithAnswer(
+            request: request,
+            transcriptCitations: hits,
+            evidenceHits: Self.sessionHits(from: hits),
+            answerLanguage: answerLanguage,
+            continuation: continuation
         )
-        let user = KnowledgeQAService.userPrompt(
-            query: request.queryText,
-            standaloneQuery: queryPlan.standaloneQuery,
-            searchQuery: queryPlan.searchQuery,
-            answerConstraints: queryPlan.answerConstraints,
-            context: context,
-            history: request.history
-        )
-        
-        let answerText: String
-        do {
-            if let answer = fallbackService.dependencies.answer {
-                answerText = try await answer(system, user, allowCloud)
-            } else {
-                let client = try await Self.makeTextClient(allowCloud: allowCloud)
-                answerText = try await Self.completeWithTimeout(client, system: system, user: user)
-            }
-        } catch {
-            let fallback = KnowledgeQAService.excerptFallback(
-                query: request.queryText,
-                hits: contextHits,
-                language: answerLanguage
-            )
-            continuation.yield(.status("Showing excerpts…"))
-            for chunk in KnowledgeQAService.chunkForStreaming(fallback) {
-                try Task.checkCancellation()
-                continuation.yield(.delta(chunk))
-            }
-            continuation.yield(.finished(fallback))
-            continuation.finish()
-            return
-        }
-        
-        try Task.checkCancellation()
-        continuation.yield(.status("Showing answer…"))
-        for chunk in KnowledgeQAService.chunkForStreaming(answerText) {
-            try Task.checkCancellation()
-            continuation.yield(.delta(chunk))
-            try await Task.sleep(for: .milliseconds(12))
-        }
-        continuation.yield(.finished(answerText))
-        continuation.finish()
     }
     
     private func executeToolLoop(
@@ -353,51 +290,16 @@ struct KnowledgeAgentRuntime: Sendable {
             let parsed = Self.parseToolCalls(response)
             
             if parsed.toolCalls.isEmpty {
-                continuation.yield(.status("Composing final answer…"))
-                
-                let answerCitations = Self.answerCitations(
-                    from: citations,
-                    acceptedReferenceIDs: acceptedReferenceIDs
+                try await finishWithAnswer(
+                    request: request,
+                    transcriptCitations: Self.answerCitations(
+                        from: citations,
+                        acceptedReferenceIDs: acceptedReferenceIDs
+                    ),
+                    evidenceHits: Self.sessionHits(from: citations),
+                    answerLanguage: answerLanguage,
+                    continuation: continuation
                 )
-                let context = Self.buildContextFromCitations(answerCitations, maxChars: 10_000)
-                let finalSystem = KnowledgeQAService.systemPrompt(
-                    mode: request.answerMode,
-                    scope: request.scope,
-                    originFilter: originFilter,
-                    answerLanguage: answerLanguage
-                )
-                let finalUser = KnowledgeQAService.userPrompt(
-                    query: request.queryText,
-                    standaloneQuery: queryPlan.standaloneQuery,
-                    searchQuery: queryPlan.searchQuery,
-                    answerConstraints: queryPlan.answerConstraints,
-                    context: context,
-                    history: request.history
-                )
-                
-                let answerText: String
-                do {
-                    answerText = try await Self.completeWithTimeout(client, system: finalSystem, user: finalUser)
-                } catch {
-                    try await Self.emitEvidenceFallback(
-                        query: request.queryText,
-                        scope: request.scope,
-                        language: answerLanguage,
-                        citations: answerCitations,
-                        continuation: continuation
-                    )
-                    return
-                }
-                
-                continuation.yield(.citations(answerCitations))
-                continuation.yield(.status("Showing answer…"))
-                for chunk in KnowledgeQAService.chunkForStreaming(answerText) {
-                    try Task.checkCancellation()
-                    continuation.yield(.delta(chunk))
-                    try await Task.sleep(for: .milliseconds(12))
-                }
-                continuation.yield(.finished(answerText))
-                continuation.finish()
                 return
             }
             
@@ -445,49 +347,99 @@ struct KnowledgeAgentRuntime: Sendable {
             }
         }
         
-        let answerCitations = Self.answerCitations(
-            from: citations,
-            acceptedReferenceIDs: acceptedReferenceIDs
+        try await finishWithAnswer(
+            request: request,
+            transcriptCitations: Self.answerCitations(
+                from: citations,
+                acceptedReferenceIDs: acceptedReferenceIDs
+            ),
+            evidenceHits: Self.sessionHits(from: citations),
+            answerLanguage: answerLanguage,
+            continuation: continuation
         )
-        continuation.yield(.citations(answerCitations))
-        continuation.yield(.status("Composing final answer…"))
-        
-        let context = Self.buildContextFromCitations(answerCitations, maxChars: 10_000)
-        let finalSystem = KnowledgeQAService.systemPrompt(
+    }
+
+    /// Compose from transcript excerpts plus session catalog facts. A catalog
+    /// question keeps going when search returns no speech, as long as a scoped
+    /// or previously cited session can supply recording metadata.
+    private func finishWithAnswer(
+        request: KnowledgeQARequest,
+        transcriptCitations: [KnowledgeSourceRef],
+        evidenceHits: [SessionSearchHit],
+        answerLanguage: KnowledgeAnswerLanguage,
+        continuation: AsyncStream<KnowledgeAnswerEvent>.Continuation
+    ) async throws {
+        let evidence = await fallbackService.prepareAnswerEvidence(
+            hits: evidenceHits,
+            scope: request.scope,
+            history: request.history,
+            evidenceNeeds: queryPlan.evidenceNeeds,
+            maxChars: 10_000
+        )
+        let hasTranscript = evidenceHits.contains(where: KnowledgeQAService.isTranscriptEvidence)
+        let hasCatalog = queryPlan.evidenceNeeds.wantsCatalog
+            && !evidence.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if !hasTranscript && !hasCatalog {
+            let message = KnowledgeQAService.insufficientEvidenceMessage(
+                scope: request.scope,
+                language: answerLanguage
+            )
+            continuation.yield(.citations([]))
+            continuation.yield(.status("No evidence found"))
+            continuation.yield(.finished(message))
+            continuation.finish()
+            return
+        }
+
+        let shownCitations = transcriptCitations.isEmpty
+            ? KnowledgeQAService.catalogCitations(from: evidence)
+            : transcriptCitations
+        continuation.yield(.citations(shownCitations))
+        continuation.yield(.status("Composing answer…"))
+
+        let system = KnowledgeQAService.systemPrompt(
             mode: request.answerMode,
             scope: request.scope,
             originFilter: originFilter,
             answerLanguage: answerLanguage
         )
-        let finalUser = KnowledgeQAService.userPrompt(
+        let user = KnowledgeQAService.userPrompt(
             query: request.queryText,
             standaloneQuery: queryPlan.standaloneQuery,
             searchQuery: queryPlan.searchQuery,
             answerConstraints: queryPlan.answerConstraints,
-            context: context,
+            context: evidence.text,
             history: request.history
         )
-        
+        let transcriptHits = evidenceHits.filter(KnowledgeQAService.isTranscriptEvidence)
+        let fallbackHits = transcriptHits.isEmpty
+            ? KnowledgeQAService.catalogHits(from: evidence)
+            : transcriptHits
+
         let answerText: String
         do {
-            answerText = try await Self.completeWithTimeout(client, system: finalSystem, user: finalUser)
+            if let answer = fallbackService.dependencies.answer {
+                answerText = try await answer(system, user, allowCloud)
+            } else {
+                let client = try await Self.makeTextClient(allowCloud: allowCloud)
+                answerText = try await Self.completeWithTimeout(client, system: system, user: user)
+            }
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
-            try await Self.emitEvidenceFallback(
+            let fallback = KnowledgeQAService.excerptFallback(
                 query: request.queryText,
-                scope: request.scope,
-                language: answerLanguage,
-                citations: answerCitations,
-                continuation: continuation
+                hits: fallbackHits,
+                language: answerLanguage
             )
+            continuation.yield(.status("Showing excerpts…"))
+            continuation.yield(.finished(fallback))
+            continuation.finish()
             return
         }
-        
+
+        try Task.checkCancellation()
         continuation.yield(.status("Showing answer…"))
-        for chunk in KnowledgeQAService.chunkForStreaming(answerText) {
-            try Task.checkCancellation()
-            continuation.yield(.delta(chunk))
-            try await Task.sleep(for: .milliseconds(12))
-        }
         continuation.yield(.finished(answerText))
         continuation.finish()
     }
@@ -550,11 +502,6 @@ struct KnowledgeAgentRuntime: Sendable {
 
         continuation.yield(.citations(citations))
         continuation.yield(.status("Showing excerpts…"))
-        for chunk in KnowledgeQAService.chunkForStreaming(text) {
-            try Task.checkCancellation()
-            continuation.yield(.delta(chunk))
-            try await Task.sleep(for: .milliseconds(12))
-        }
         continuation.yield(.finished(text))
         continuation.finish()
     }
@@ -765,20 +712,6 @@ struct KnowledgeAgentRuntime: Sendable {
         return ([], trimmed)
     }
     
-    private static func buildContextFromCitations(_ citations: [KnowledgeSourceRef], maxChars: Int) -> String {
-        var used = 0
-        var blocks: [String] = []
-        for (index, ref) in citations.enumerated() {
-            let snippet = ref.snippet ?? ""
-            guard !snippet.isEmpty else { continue }
-            let block = "[\(index + 1)] \(ref.title) — \(snippet)"
-            if used + block.count > maxChars, !blocks.isEmpty { break }
-            blocks.append(block)
-            used += block.count
-        }
-        return blocks.joined(separator: "\n\n")
-    }
-
     /// Keep the evidence shown in the answer aligned with the agent's final
     /// evidence decision. A search can run more than once during the tool
     /// loop, so the raw citation array is not a stable citation list for the
