@@ -403,9 +403,16 @@ struct KnowledgeRetrievalService: Sendable {
                 if hits[key] == nil { order[key] = order.count; hits[key] = hit }
             }
         }
+        let maximumScore = scores.values.max() ?? 1
         return scores.keys.sorted {
             scores[$0] == scores[$1] ? order[$0]! < order[$1]! : scores[$0]! > scores[$1]!
-        }.prefix(max(0, limit)).compactMap { hits[$0] }
+        }.prefix(max(0, limit)).compactMap { key in
+            guard var hit = hits[key] else { return nil }
+            // Fallback MMR must compare fused ranks on one scale, rather than
+            // incomparable graph and lexical/vector scores that undo fusion.
+            hit.score = scores[key]! / maximumScore
+            return hit
+        }
     }
 
     private static func scoped(

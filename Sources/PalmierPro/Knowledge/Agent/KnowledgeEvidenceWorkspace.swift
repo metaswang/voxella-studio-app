@@ -35,14 +35,16 @@ struct KnowledgeScopeSnapshot: Sendable {
     static func generation(_ session: WorkbenchSession) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let transcript = (try? encoder.encode(session.transcript ?? session.dubTranscript)) ?? Data()
+        let transcript = (try? encoder.encode(session.transcript)) ?? Data()
+        let dubTranscript = (try? encoder.encode(session.dubTranscript)) ?? Data()
         let cues = (try? encoder.encode(session.subtitleTrack?.cues)) ?? Data()
+        let dubCues = (try? encoder.encode(session.dubSubtitleTrack?.cues)) ?? Data()
         let attributes = session.sourceURL.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path) }
         let mediaVersion = String(describing: attributes?[.modificationDate]) + ":" + String(describing: attributes?[.size])
         let fields = [mediaVersion, session.id.uuidString, String(session.modifiedAt.timeIntervalSince1970), session.title,
                       session.summaryMarkdown ?? "", String(session.durationHint ?? -1),
                       session.sourceURL?.absoluteString ?? "", session.remoteSessionID?.uuidString ?? ""]
-        return digest(Data(fields.joined(separator: "\u{0}").utf8) + transcript + cues)
+        return digest(Data(fields.joined(separator: "\u{0}").utf8) + transcript + dubTranscript + cues + dubCues)
     }
 
     static func digest(_ data: Data) -> String {
@@ -86,6 +88,35 @@ struct KnowledgeScopeSnapshot: Sendable {
     }
 }
 
+/// Some saved/cloud sources have subtitle cues but no ASR segments. Treat those
+/// original timed cues as readable content rather than a complete empty source.
+struct KnowledgeTranscriptMaterial: Sendable {
+    let segments: [TranscriptionSegment]
+    let language: String?
+    let provenance: String
+    let citationChunkBase: Int
+
+    static func from(_ session: WorkbenchSession) -> Self? {
+        if let transcript = session.transcript, !transcript.segments.isEmpty {
+            return .init(segments: transcript.segments, language: transcript.language,
+                         provenance: "original_segments", citationChunkBase: 1_000_000)
+        }
+        if let track = session.subtitleTrack, !track.cues.isEmpty {
+            return .init(segments: track.asTranscriptionResult().segments, language: track.language ?? track.sourceLanguage,
+                         provenance: "original_subtitle_cues", citationChunkBase: 2_000_000)
+        }
+        if let transcript = session.dubTranscript, !transcript.segments.isEmpty {
+            return .init(segments: transcript.segments, language: transcript.language,
+                         provenance: "dub_segments", citationChunkBase: 3_000_000)
+        }
+        if let track = session.dubSubtitleTrack, !track.cues.isEmpty {
+            return .init(segments: track.asTranscriptionResult().segments, language: track.language ?? track.sourceLanguage,
+                         provenance: "dub_subtitle_cues", citationChunkBase: 4_000_000)
+        }
+        return nil
+    }
+}
+
 struct KnowledgeMediaFacts: Equatable, Sendable {
     var mediaDuration: Double?
     var provenance: String
@@ -94,7 +125,7 @@ struct KnowledgeMediaFacts: Equatable, Sendable {
     var transcribedEnd: Double?
 
     static func from(_ session: WorkbenchSession, probedDuration: Double? = nil) -> Self {
-        let segments = (session.transcript ?? session.dubTranscript)?.segments ?? []
+        let segments = KnowledgeTranscriptMaterial.from(session)?.segments ?? []
         let spoken = segments.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let ends = spoken.map(\.end).filter { $0.isFinite && $0 >= 0 }
         let starts = spoken.map(\.start).filter { $0.isFinite && $0 >= 0 }

@@ -158,6 +158,22 @@ struct KnowledgeChatReliabilityTests {
         #expect(controller.errorMessage != nil)
     }
 
+    @Test func providerFailurePreservesPublishedEvidenceAndReportsTheError() async throws {
+        let (controller, store, probe, root) = try await makeController()
+        defer { try? FileManager.default.removeItem(at: root) }
+        controller.send(query: "question")
+        try await waitUntil { probe.requestIDs.count == 1 }
+        let id = probe.requestIDs[0]
+        probe.yield(.delta("Already confirmed evidence."), to: id)
+        probe.yield(.failed("research budget reached"), to: id)
+        try await waitUntil { !controller.isAnswering }
+        #expect(controller.messages.last?.content == "Already confirmed evidence.")
+        #expect(controller.messages.last?.isStreaming == false)
+        #expect(controller.errorMessage == "research budget reached")
+        let persisted = try await store.messages(for: try #require(controller.conversation).id)
+        #expect(persisted.last?.content == "Already confirmed evidence.")
+    }
+
     @Test func completeServiceResultsDoNotReplaySyntheticDeltas() async {
         var service = KnowledgeQAService()
         service.useAgentRuntime = false

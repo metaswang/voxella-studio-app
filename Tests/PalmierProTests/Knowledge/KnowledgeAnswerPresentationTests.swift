@@ -1,7 +1,37 @@
+import Foundation
 import Testing
 @testable import PalmierPro
 
 struct KnowledgeAnswerPresentationTests {
+    @Test func metadataAndSpeakerEvidenceDisplayAsOneSource() {
+        let id = UUID().uuidString
+        let refs = [reference(id, kind: "sessionCard", chunk: -1), reference(id, kind: "speaker", chunk: -3)]
+        let sources = KnowledgeAnswerPresentation.sourceGroups(refs)
+        #expect(sources.count == 1)
+        #expect(sources[0].citations == refs)
+        #expect(sources[0].navigationReferences.count == 1)
+    }
+
+    @Test func groupingPreservesTimedAnchorsAndDoesNotMergeIdenticalTitles() {
+        let a = UUID().uuidString, b = UUID().uuidString
+        let first = reference(a, kind: "transcript", chunk: 1, start: 10)
+        let second = reference(a, kind: "transcript", chunk: 2, start: 40)
+        let other = reference(b, kind: "sessionCard", chunk: -1)
+        let refs = [reference(a, kind: "sessionCard", chunk: -1), first, other, second, first]
+        let sources = KnowledgeAnswerPresentation.sourceGroups(refs)
+        #expect(sources.map(\.id) == [a, b])
+        #expect(sources[0].navigationReferences == [first, second])
+        #expect(sources[0].primaryReference == first)
+        #expect(sources[0].citations.count == 4)
+        #expect(refs[2] == other) // Native [3] still resolves to the same evidence.
+    }
+
+    private func reference(_ id: String, kind: String, chunk: Int, start: Double? = nil) -> KnowledgeSourceRef {
+        .init(sourceID: id, sourceType: kind, title: "Donald Hoffman on Reality", uri: nil, page: nil,
+              startTime: start, endTime: start.map { $0 + 2 }, parentID: nil, chunkIndex: chunk,
+              language: nil, speaker: nil, snippet: nil, matchText: nil)
+    }
+
     @Test
     func removesMachineCitationTokensFromAnswerProse() {
         let answer = """

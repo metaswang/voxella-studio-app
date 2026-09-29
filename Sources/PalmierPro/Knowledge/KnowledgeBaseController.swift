@@ -834,7 +834,7 @@ final class KnowledgeBaseController {
                     upsertAssistant(assistant, conversationID: conversationID)
                 case let .failed(message):
                     receivedTerminalEvent = true
-                    assistant.content = message
+                    if assistant.content.isEmpty { assistant.content = message }
                     assistant.isStreaming = false
                     upsertAssistant(assistant, conversationID: conversationID)
                     errorMessage = message

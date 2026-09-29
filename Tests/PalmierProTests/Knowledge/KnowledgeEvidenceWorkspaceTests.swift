@@ -58,6 +58,20 @@ struct KnowledgeEvidenceWorkspaceTests {
         #expect(aggregated.citations.count >= 1)
     }
 
+    @Test func aggregatesWithDifferentFiltersHaveDistinctEvidenceIDs() async throws {
+        let executor = makeExecutor([fixture(title: "Meeting A", duration: 10), fixture(title: "Meeting B", duration: 20)])
+        let all = try await executor.executeNative(name: "session_aggregate", inputJSON: "{}")
+        let filtered = try await executor.executeNative(name: "session_aggregate", inputJSON: "{\"query\":\"Meeting A\"}")
+        func evidenceID(_ result: KnowledgeToolObservation) throws -> LLMJSONValue? {
+            guard case .array(let refs) = try LLMJSONValue.parseObject(result.json)["citations"],
+                  case .object(let ref) = refs.first else { return nil }
+            return ref["evidence_id"]
+        }
+        #expect(try evidenceID(all) != evidenceID(filtered))
+        #expect(filtered.citations.filter { $0.sourceType == "aggregate" }.count == 2)
+        #expect(filtered.citations.contains { $0.snippet?.contains("Meeting A") == true })
+    }
+
     @Test func directReadPagesContainOriginalTextAndDoNotSearch() async throws {
         let source = fixture(segments: (0..<205).map { .init(text: "句子 \($0)", start: Double($0), end: Double($0 + 1), speaker: "张三") })
         let executor = makeExecutor([source])
@@ -88,6 +102,26 @@ struct KnowledgeEvidenceWorkspaceTests {
         #expect(result.json.contains("summary_markdown"))
     }
 
+    @Test func subtitleOnlyContentIsReadWhenTranscriptSegmentsAreEmpty() async throws {
+        var source = fixture(segments: [])
+        source.subtitleTrack = .init(sourceLanguage: "zh", language: "zh", cues: [
+            .init(id: 7, sourceIDs: [7], text: "最终决定延期。", start: 10, end: 12, speaker: "Speaker 1"),
+            .init(id: 8, sourceIDs: [8], text: "仍须核查风险。", start: 13, end: 15, speaker: "Speaker 2")])
+        let executor = makeExecutor([source])
+        let observation = try await executor.executeNative(name: "session_get_segments", inputJSON: KnowledgeJSON.encode([
+            "session_id": source.id.uuidString, "speaker": "Speaker 2", "start": 12, "limit": 1]))
+        let data = try LLMJSONValue.parseObject(observation.json)
+        #expect(!observation.isError)
+        #expect(data["total_count"] == .number(1))
+        #expect(data["returned_count"] == .number(1))
+        #expect(data["complete"] == .bool(true))
+        #expect(observation.json.contains("仍须核查风险"))
+        #expect(observation.citations.contains { $0.startTime == 13 && $0.endTime == 15 })
+        #expect(KnowledgeMediaFacts.from(source).lastSpokenEnd == 15)
+        source.transcript = nil
+        #expect(KnowledgeMediaFacts.from(source).transcribedStart == 10)
+    }
+
     @Test func analysisDistinguishesNotFoundFromAbsenceAndRejectsForeignEvidence() async throws {
         let a = fixture(), b = fixture()
         let workspace = KnowledgeEvidenceWorkspace(snapshot: snapshot([a, b]))
@@ -114,6 +148,21 @@ struct KnowledgeEvidenceWorkspaceTests {
             .init(text: "A later revision", start: 4, end: 5, speaker: "B")])
         let versions = Set((0..<100).map { _ in KnowledgeScopeSnapshot.generation(source) })
         #expect(versions.count == 1)
+    }
+
+    @Test func dubFallbackContentChangesInvalidateTheEvidenceVersion() {
+        var source = fixture(segments: [])
+        source.dubTranscript = .init(text: "旧内容", language: "zh", words: [], segments: [
+            .init(text: "旧内容", start: 0, end: 3)])
+        let before = KnowledgeScopeSnapshot.generation(source)
+        source.dubTranscript = .init(text: "修正后内容", language: "zh", words: [], segments: [
+            .init(text: "修正后内容", start: 0, end: 3)])
+        #expect(KnowledgeScopeSnapshot.generation(source) != before)
+        source.dubSubtitleTrack = .init(sourceLanguage: "zh", language: "zh", cues: [
+            .init(id: 0, sourceIDs: [0], text: "字幕内容", start: 0, end: 3, speaker: nil)])
+        let beforeSubtitleChange = KnowledgeScopeSnapshot.generation(source)
+        source.dubSubtitleTrack?.cues[0].text = "修正字幕"
+        #expect(KnowledgeScopeSnapshot.generation(source) != beforeSubtitleChange)
     }
 
     @Test func sourceChangesInvalidateCacheNamespaceAndEvidenceIDs() async throws {
@@ -240,6 +289,22 @@ struct KnowledgeEvidenceWorkspaceTests {
         #expect(Set(selected.map(\.hit.sessionID)).count == 2)
     }
 
+    @Test func failedRerankerPreservesFusionRatherThanIncomparableChannelScores() async throws {
+        let id = UUID()
+        var shared = hit(session: id, unit: 101)
+        shared.score = 0.01
+        var graphOnly = hit(session: id, unit: 102)
+        graphOnly.score = 100
+        let hybridHit = shared, graphHit = graphOnly
+        let retrieval = KnowledgeRetrievalService(dependencies: .init(
+            hybridRecall: { _, _ in [hybridHit] }, graphRecall: { _, _ in [graphHit, hybridHit] },
+            reranker: { _, _ in throw KnowledgeQAError.invalidRerankerOutput }))
+        let result = try await retrieval.search(.init(query: "decision", scope: .all, originFilter: nil, resultLimit: 1,
+            requestID: UUID(), includeCatalog: false, retrievalPath: .agent))
+        #expect(result.diagnostics.rerankerStatus == .failed)
+        #expect(result.hits.first?.unitID == 101)
+    }
+
     private func hit(session: UUID, unit: Int) -> SessionSearchHit {
         .init(sessionID: session, title: "Source", unitID: unit, kind: .transcriptChunk, start: Double(unit), end: Double(unit + 1),
               speakerLabels: [], text: "Original \(unit)", score: 1, matchSource: "test", snippet: nil, cueIDs: [],
@@ -268,6 +333,31 @@ struct KnowledgeEvidenceWorkspaceTests {
 }
 
 struct KnowledgeNativeRuntimeTests {
+    @Test func fullInventoryAggregateFitsTheNativeFollowUpBudget() async throws {
+        let fixtures = KnowledgeEvidenceWorkspaceTests()
+        let sources = (0..<63).map { fixtures.fixture(title: "Meeting \($0)", duration: 10) }
+        let snapshot = fixtures.snapshot(sources)
+        let client = KnowledgeReplayClient { index, _, messages in
+            if index == 0 {
+                return [.toolUseComplete(id: "aggregate", name: "session_aggregate", inputJSON: "{\"group_by\":\"type\"}"),
+                        .messageStop(stopReason: .toolUse)]
+            }
+            #expect(messages.last?.content.count == 1)
+            return [.textDelta("共有 63 份资料，总长 630 秒。"), .messageStop(stopReason: .endTurn)]
+        }
+        var service = KnowledgeQAService()
+        service.dependencies.planner = { _, _, _, _ in .fallback(for: "") }
+        service.agentClientFactory = { client }
+        service.scopeSnapshotProvider = { snapshot }
+        service.skillsProvider = { [] }
+        var finished = false
+        for await event in service.answer(.init(queryText: "所有资料总时长？", conversationID: UUID(), scope: .all)) {
+            if case .finished = event { finished = true }
+            if case .failed(let text) = event { Issue.record("\(text)") }
+        }
+        #expect(finished)
+    }
+
     @Test func firstRoundFactsStreamWithoutPlannerOrSearch() async throws {
         let fixtures = KnowledgeEvidenceWorkspaceTests()
         let source = fixtures.fixture(duration: 1_800, segments: [.init(text: "尾部口播", start: 1_430, end: 1_440)])

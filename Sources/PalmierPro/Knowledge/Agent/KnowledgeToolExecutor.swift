@@ -116,6 +116,7 @@ struct KnowledgeToolExecutor: Sendable {
                 provenance: facts.provenance, lastSpokenEnd: facts.lastSpokenEnd,
                 transcribedStart: facts.transcribedStart, transcribedEnd: facts.transcribedEnd)
         }
+        let material = KnowledgeTranscriptMaterial.from(session)
         var data: [String: Any] = [
             "session_id": session.id.uuidString, "title": session.title,
             "type": KnowledgeSourceType.from(sessionType: session.sessionType).rawValue,
@@ -129,10 +130,10 @@ struct KnowledgeToolExecutor: Sendable {
             "last_spoken_end_sec": facts.lastSpokenEnd as Any? ?? NSNull(),
             "transcribed_range": ["start": facts.transcribedStart as Any? ?? NSNull(),
                                   "end": facts.transcribedEnd as Any? ?? NSNull(), "coordinate": "source_seconds"],
-            "has_transcript": session.transcript != nil || session.dubTranscript != nil,
+            "has_transcript": material != nil || session.transcript != nil || session.dubTranscript != nil,
             "has_summary": session.summaryMarkdown?.isEmpty == false,
             "capabilities": ["metadata": true, "summary": session.summaryMarkdown?.isEmpty == false,
-                             "direct_transcript": session.transcript != nil || session.dubTranscript != nil,
+                             "direct_transcript": material != nil,
                              "lexical": true, "semantic": LocalModelManager.isInstalled(.weMMEmbedding2B4Bit),
                              "reranker": LocalModelManager.isInstalled(.qwen3Reranker06B4Bit)],
         ]
@@ -215,11 +216,14 @@ struct KnowledgeToolExecutor: Sendable {
                 "filters": args.filter { !["limit", "cursor"].contains($0.key) },
                 "duration_policy": "source hints only; missing local media metadata counted as unknown", "semantic_count": false]
             data["aggregate"] = aggregate
-            // A single aggregate citation references the versioned, complete input set.
-            let ref = KnowledgeSourceRef(sourceID: "aggregate:" + (workspace?.snapshot.cacheNamespace ?? requestID.uuidString),
+            // Filters, grouping and the returned sort page are part of this
+            // evidence identity; another aggregate must not reuse its citation.
+            let aggregateJSON = KnowledgeJSON.encode(aggregate)
+            let aggregateID = KnowledgeScopeSnapshot.digest(Data(aggregateJSON.utf8))
+            let ref = KnowledgeSourceRef(sourceID: "aggregate:" + aggregateID,
                 sourceType: "aggregate", title: "Visible source inventory", uri: nil, page: nil, startTime: nil,
                 endTime: nil, parentID: nil, chunkIndex: -6, language: nil, speaker: nil,
-                snippet: KnowledgeJSON.encode(aggregate), matchText: nil)
+                snippet: aggregateJSON, matchText: nil)
             data["citations"] = [KnowledgeJSON.citation(ref)]
         }
         return .success(data)
@@ -245,7 +249,8 @@ struct KnowledgeToolExecutor: Sendable {
     private func read(_ args: [String: Any], tool: String) async throws -> KnowledgeToolResult {
         let source = try await session(args)
         let service = await MainActor.run { SessionIndexCoordinator.shared.searchService }
-        let segments = (source.transcript ?? source.dubTranscript)?.segments
+        let material = KnowledgeTranscriptMaterial.from(source)
+        let segments = material?.segments
         let start = args["start"] as? Double
         let end = args["end"] as? Double
         guard (start == nil || start! >= 0), (end == nil || end! >= 0), (start == nil || end == nil || start! <= end!) else {
@@ -265,15 +270,21 @@ struct KnowledgeToolExecutor: Sendable {
         let total: Int
         let pageOffset: Int
         if let segments {
-            let all = segments.enumerated().map { index, segment in
-                SessionSearchHit(sessionID: source.id, title: source.title, unitID: index, kind: .transcriptChunk,
+            let allHits: [SessionSearchHit] = segments.enumerated().map { index, segment in
+                return SessionSearchHit(sessionID: source.id, title: source.title, unitID: index, kind: .transcriptChunk,
                                  start: segment.start, end: segment.end, speakerLabels: segment.speaker.map { [$0] } ?? [],
                                  text: segment.text, score: 1, matchSource: "direct_read", snippet: segment.text,
-                                 cueIDs: [], hasVideo: false, language: source.transcript?.language, quoteSpan: nil)
-            }.filter {
+                                 cueIDs: [], hasVideo: false, language: material?.language, quoteSpan: nil)
+            }
+            let speaker = args["speaker"] as? String
+            let filtered = allHits.filter {
                 (start == nil || ($0.end ?? 0) >= start!) && (end == nil || ($0.start ?? 0) <= end!) &&
-                ((args["speaker"] as? String) == nil || $0.speakerLabels.contains(args["speaker"] as! String))
-            }.sorted { ($0.start ?? 0) < ($1.start ?? 0) }
+                (speaker == nil || $0.speakerLabels.contains(speaker!))
+            }
+            let all = filtered.sorted {
+                if $0.start == $1.start { return $0.unitID < $1.unitID }
+                return ($0.start ?? 0) < ($1.start ?? 0)
+            }
             hits = all
             total = all.count
             pageOffset = offset
@@ -289,6 +300,11 @@ struct KnowledgeToolExecutor: Sendable {
             pageOffset = 0
         }
         guard offset <= total else { throw KnowledgeToolError.invalidParameter("Invalid transcript cursor") }
+        if material == nil, total == 0 {
+            return .success(["session_id": source.id.uuidString, "status": "unavailable", "segments": [],
+                             "returned_count": 0, "complete": false,
+                             "coverage_note": "No readable timed transcript is available for this range; this does not establish semantic absence."])
+        }
         var page: [SessionSearchHit] = []
         var characters = 0
         for hit in hits.dropFirst(pageOffset).prefix(limit) {
@@ -301,12 +317,12 @@ struct KnowledgeToolExecutor: Sendable {
             "returned_count": page.count, "total_count": total,
             "complete": offset + page.count == total,
             "next_cursor": offset + page.count < total ? offset + page.count : NSNull(),
-            "read_provenance": segments != nil ? "original_segments" : "indexed_transcript_chunks",
+            "read_provenance": material?.provenance ?? "indexed_transcript_chunks",
             "completeness_semantics": "available transcript, not necessarily entire media",
-            "returned_range": ["start": page.first?.start as Any? ?? NSNull(), "end": page.last?.end as Any? ?? NSNull()], "coverage": ["start": start as Any? ?? NSNull(), "end": end as Any? ?? NSNull(), "coordinate": "source_seconds"],
+            "returned_range": ["start": page.compactMap(\.start).min() as Any? ?? NSNull(), "end": page.compactMap(\.end).max() as Any? ?? NSNull()], "coverage": ["start": start as Any? ?? NSNull(), "end": end as Any? ?? NSNull(), "coordinate": "source_seconds"],
             "citations": page.map { hit in
                 var ref = KnowledgeQAService.citation(from: hit)
-                if segments != nil { ref.chunkIndex = 1_000_000 + hit.unitID }
+                if let material { ref.chunkIndex = material.citationChunkBase + hit.unitID }
                 return KnowledgeJSON.citation(ref)
             }]
         if tool == "session.get_timeline" {

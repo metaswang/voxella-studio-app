@@ -661,7 +661,8 @@ private struct KnowledgeMessageRow: View, Equatable {
     }
 
     private func citationRow(_ citations: [KnowledgeSourceRef]) -> some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+        let sources = KnowledgeAnswerPresentation.sourceGroups(citations)
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             HStack(spacing: AppTheme.Spacing.xs) {
                 Image(systemName: "link.circle.fill")
                     .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
@@ -671,7 +672,7 @@ private struct KnowledgeMessageRow: View, Equatable {
                     .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
 
-                Text(verbatim: "\(citations.count)")
+                Text(verbatim: "\(sources.count)")
                     .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold, design: .rounded))
                     .foregroundStyle(AppTheme.Accent.link)
                     .padding(.horizontal, AppTheme.Spacing.xs)
@@ -684,15 +685,15 @@ private struct KnowledgeMessageRow: View, Equatable {
                 Spacer(minLength: 0)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text(L10n.format("%@, %@", L10n.string("Sources"), citations.count)))
+            .accessibilityLabel(Text(L10n.format("%@, %@", L10n.string("Sources"), sources.count)))
             .help(L10n.string("Select a source to open its matching transcript"))
 
-            FlowCitationChips(citations: citations) { ref in
+            FlowCitationChips(sources: sources) { ref in
                 onCitation(ref)
             }
 
-            if citations.count > 8 {
-                Text(L10n.format("+%@ %@", citations.count - 8, L10n.string("more sources")))
+            if sources.count > 8 {
+                Text(L10n.format("+%@ %@", sources.count - 8, L10n.string("more sources")))
                     .font(.system(size: AppTheme.FontSize.xxs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
                     .padding(.leading, AppTheme.Spacing.smMd)
@@ -918,7 +919,7 @@ private struct KnowledgeAnswerStatusControl: View {
 /// card has plenty of room. Each source now gets the complete answer width and
 /// can wrap naturally when the title is genuinely longer than that width.
 private struct FlowCitationChips: View {
-    let citations: [KnowledgeSourceRef]
+    let sources: [KnowledgeCitationSource]
     let onTap: (KnowledgeSourceRef) -> Void
 
     var body: some View {
@@ -927,37 +928,67 @@ private struct FlowCitationChips: View {
             alignment: .leading,
             spacing: AppTheme.Spacing.xs
         ) {
-            ForEach(citations.prefix(8)) { ref in
-                Button {
-                    onTap(ref)
-                } label: {
-                    HStack(spacing: AppTheme.Spacing.xs) {
-                        Image(systemName: "link")
-                            .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold))
-                        Text(ref.chipLabel)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .multilineTextAlignment(.leading)
-                        Spacer(minLength: 0)
+            ForEach(sources.prefix(8)) { source in
+                let ref = source.primaryReference
+                HStack(spacing: AppTheme.Spacing.xs) {
+                    Button {
+                        onTap(ref)
+                    } label: {
+                        HStack(spacing: AppTheme.Spacing.xs) {
+                            Image(systemName: "link")
+                                .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold))
+                            Text(ref.chipLabel)
+                                .lineLimit(nil)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Text.secondaryColor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, AppTheme.Spacing.sm)
-                    .padding(.vertical, AppTheme.Spacing.xs)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
-                            .fill(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.medium))
-                    )
+                    .buttonStyle(.plain)
+                    .help(L10n.string("Open transcript"))
+                    .accessibilityLabel(Text(L10n.format("Open transcript: %@", ref.chipLabel)))
+                    if source.navigationReferences.count > 1 {
+                        Menu {
+                            ForEach(source.navigationReferences) { anchor in
+                                Button(anchor.chipLabel) { onTap(anchor) }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help(L10n.string("Select a source to open its matching transcript"))
+                    }
                 }
-                .buttonStyle(.plain)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .help(L10n.string("Open transcript"))
-                .accessibilityLabel(Text(L10n.format("Open transcript: %@", ref.chipLabel)))
+                .padding(.horizontal, AppTheme.Spacing.sm)
+                .padding(.vertical, AppTheme.Spacing.xs)
+                .background(
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                        .fill(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.medium))
+                )
                 .accessibilityHint(L10n.string("Select a source to open its matching transcript"))
             }
         }
     }
+}
+
+/// Source rows group evidence without changing the native citation-number map.
+/// Timed evidence remains individually navigable within its source row.
+struct KnowledgeCitationSource: Identifiable {
+    let id: String
+    var citations: [KnowledgeSourceRef]
+
+    var navigationReferences: [KnowledgeSourceRef] {
+        var seen = Set<String>()
+        let timed = citations.filter { $0.startTime != nil && seen.insert($0.id).inserted }
+        return timed.isEmpty ? Array(citations.suffix(1)) : timed
+    }
+
+    var primaryReference: KnowledgeSourceRef { navigationReferences[0] }
 }
 
 /// Keeps machine-generated citation tokens out of the reading flow. The source
@@ -966,6 +997,20 @@ private struct FlowCitationChips: View {
 enum KnowledgeAnswerPresentation {
     private static let numericCitationPattern = #"(?:\[\s*\d{1,3}(?:\s*[,，]\s*\d{1,3})*\s*\]|【\s*\d{1,3}(?:\s*[,，]\s*\d{1,3})*\s*】)"#
     private static let bareCitationPattern = #"[ \t]+\d{1,3}(?=[ \t]*(?:[。！？.!?；;，,、]|$))"#
+
+    static func sourceGroups(_ citations: [KnowledgeSourceRef]) -> [KnowledgeCitationSource] {
+        var sources: [KnowledgeCitationSource] = []
+        var indices: [String: Int] = [:]
+        for ref in citations {
+            if let index = indices[ref.sourceID] {
+                sources[index].citations.append(ref)
+            } else {
+                indices[ref.sourceID] = sources.count
+                sources.append(.init(id: ref.sourceID, citations: [ref]))
+            }
+        }
+        return sources
+    }
 
     static func displayText(_ text: String, citationCount: Int) -> String {
         let hasCitationEvidence = citationCount > 0
