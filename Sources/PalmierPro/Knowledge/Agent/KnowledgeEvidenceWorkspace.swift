@@ -33,8 +33,10 @@ struct KnowledgeScopeSnapshot: Sendable {
     }
 
     static func generation(_ session: WorkbenchSession) -> String {
-        let transcript = (try? JSONEncoder().encode(session.transcript ?? session.dubTranscript)) ?? Data()
-        let cues = (try? JSONEncoder().encode(session.subtitleTrack?.cues)) ?? Data()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let transcript = (try? encoder.encode(session.transcript ?? session.dubTranscript)) ?? Data()
+        let cues = (try? encoder.encode(session.subtitleTrack?.cues)) ?? Data()
         let attributes = session.sourceURL.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path) }
         let mediaVersion = String(describing: attributes?[.modificationDate]) + ":" + String(describing: attributes?[.size])
         let fields = [mediaVersion, session.id.uuidString, String(session.modifiedAt.timeIntervalSince1970), session.title,
@@ -51,7 +53,10 @@ struct KnowledgeScopeSnapshot: Sendable {
         try Task.checkCancellation()
         if isLive {
             let current = await MainActor.run { (AccountService.shared.userID, AccountService.shared.knowledgeAuthorizationGeneration) }
-            guard current.0 == ownerID, authorizationGeneration == nil || current.1 == authorizationGeneration else { throw CancellationError() }
+            guard current.0 == ownerID, authorizationGeneration == nil || current.1 == authorizationGeneration else {
+                Log.knowledge.notice("native_scope_invalidated reason=authorization_changed")
+                throw CancellationError()
+            }
         }
     }
 
@@ -63,8 +68,14 @@ struct KnowledgeScopeSnapshot: Sendable {
         guard current.0 == ownerID else { throw CancellationError() }
         // Deletion, re-transcription and source mutation invalidate in-flight results.
         for session in sessions {
-            guard let live = current.1.first(where: { $0.id == session.id }),
-                  Self.generation(live) == generations[session.id] else { throw CancellationError() }
+            guard let live = current.1.first(where: { $0.id == session.id }) else {
+                Log.knowledge.notice("native_scope_invalidated reason=source_deleted source_id=\(session.id.uuidString)")
+                throw CancellationError()
+            }
+            guard Self.generation(live) == generations[session.id] else {
+                Log.knowledge.notice("native_scope_invalidated reason=source_changed source_id=\(session.id.uuidString) modified=\(live.modifiedAt != session.modifiedAt) transcript=\(live.transcript != session.transcript) summary=\(live.summaryMarkdown != session.summaryMarkdown) cues=\(live.subtitleTrack?.cues != session.subtitleTrack?.cues)")
+                throw CancellationError()
+            }
         }
     }
 

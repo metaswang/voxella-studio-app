@@ -108,6 +108,14 @@ struct KnowledgeEvidenceWorkspaceTests {
         #expect(notFound.json.contains(b.id.uuidString))
     }
 
+    @Test func unchangedSourceVersionsAreStableAcrossIndependentEncoders() {
+        let source = fixture(summary: "Stable evidence", segments: [
+            .init(text: "A conditional decision", start: 1, end: 2, speaker: "A"),
+            .init(text: "A later revision", start: 4, end: 5, speaker: "B")])
+        let versions = Set((0..<100).map { _ in KnowledgeScopeSnapshot.generation(source) })
+        #expect(versions.count == 1)
+    }
+
     @Test func sourceChangesInvalidateCacheNamespaceAndEvidenceIDs() async throws {
         var source = fixture(summary: "旧决定")
         let before = snapshot([source])
@@ -286,6 +294,26 @@ struct KnowledgeNativeRuntimeTests {
         }
         #expect(deltas.count == 2)
         #expect(terminals == 1)
+    }
+
+    @Test func providerOutputLimitRetainsPartialTextButDoesNotFinishSuccessfully() async throws {
+        let fixtures = KnowledgeEvidenceWorkspaceTests()
+        let snapshot = fixtures.snapshot([fixtures.fixture()])
+        let client = KnowledgeReplayClient { _, _, _ in
+            [.textDelta("Already confirmed partial evidence."), .messageStop(stopReason: .maxTokens)]
+        }
+        var service = KnowledgeQAService()
+        service.dependencies.planner = { _, _, _, _ in .fallback(for: "") }
+        service.agentClientFactory = { client }
+        service.scopeSnapshotProvider = { snapshot }
+        service.skillsProvider = { [] }
+        var sawPartial = false, sawBudgetStop = false
+        for await event in service.answer(.init(queryText: "Research", conversationID: UUID(), scope: .all)) {
+            if case .delta = event { sawPartial = true }
+            if case .failed(let message) = event { sawBudgetStop = message.contains("budget") }
+            if case .finished = event { Issue.record("Truncated response must not be completed") }
+        }
+        #expect(sawPartial && sawBudgetStop)
     }
 
     @Test func delegatedWorkerDeepReadsAndReturnsOnlyEvidenceBackedFindings() async throws {

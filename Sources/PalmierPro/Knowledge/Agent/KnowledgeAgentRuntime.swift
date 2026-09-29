@@ -131,6 +131,9 @@ struct KnowledgeAgentRuntime: Sendable {
                 return turn
             }
             guard turn.stopReason != nil else { throw KnowledgeToolError.invalidParameter("Provider stream ended without a terminal event") }
+            // Streamed partial evidence remains visible, but output exhaustion
+            // must not be recorded as a successfully completed answer/job.
+            if turn.stopReason == .maxTokens { throw KnowledgeNativeRunError.budgetExhausted }
             answer += turn.text
             messages.append(AgentRequestMessage(role: .assistant, content: turn.blocks.map { .content($0) }))
             if turn.calls.isEmpty {

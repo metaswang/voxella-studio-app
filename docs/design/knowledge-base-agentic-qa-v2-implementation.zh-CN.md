@@ -45,3 +45,12 @@ Debug 构建中通过 `VOXELLA_KB_QA_VARIANT` 选择完整对照路径或工具�
 ```
 
 执行 `python3 scripts/summarize-knowledge-qa-eval.py results.jsonl`。缺失/null 指标保留为未测；相邻变体的差值只配对相同 case/model/budget，不将不同来源或模型的总体平均当作收益。semantic_count 尚无通用转录事件计数器；目录聚合只用于明确的来源属性，语义事件穷举必须读取全部相关来源并保留覆盖限制。
+
+
+## 本次最终验证记录
+
+- 与 `809e50ed` main 集成后的相关回归：178 tests / 39 suites 通过，覆盖确定性来源版本和输出耗尽不误报完成。
+- `./scripts/bundle.sh debug --sign` 成功，codesign 验证 valid on disk / designated requirement；签名应用已启动并检查知识库入口、元数据范围计数和提示。
+- 启动检查复现并修复导航监听器对初始化中的窗口单例递归访问；监听器现在由已创建窗口安装。
+- BYOK OpenAI Responses 真实单来源元数据问答通过：总长 1000 秒、最后口播结束 999.912 秒分别给出并带一个来源引用；日志记录一次 native request、未执行检索工具。单次 smoke 不构成质量/延迟/费用对照，精确首个 delta 和 token/费用未测。
+- 真实摘要读取请求未执行：自动审批因缺少将本地摘要/转录发往 OpenAI 的明确授权拒绝发送。完整摘要 observation 和原生续接仅完成契约回放验证。
