@@ -210,6 +210,15 @@ extension KnowledgeToolDefinition {
             default: valid = false
             }
             guard valid else { throw KnowledgeToolError.invalidParameter(parameter.name + " has the wrong type") }
+            if parameter.name == "cells", let rows = value as? [[String: Any]] {
+                let allowed = Set(["session_id", "dimension", "status", "finding", "evidence_ids"])
+                for row in rows {
+                    guard Set(row.keys) == allowed, row["session_id"] is String, row["dimension"] is String,
+                          row["status"] is String, row["finding"] is String, row["evidence_ids"] is [String] else {
+                        throw KnowledgeToolError.invalidParameter("cells must satisfy the complete nested schema")
+                    }
+                }
+            }
         }
     }
 }

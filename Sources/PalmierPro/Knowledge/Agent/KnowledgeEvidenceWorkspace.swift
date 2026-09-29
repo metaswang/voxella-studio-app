@@ -219,14 +219,19 @@ actor KnowledgeEvidenceWorkspace {
                                  analysis: analysis, readCoverage: readCoverage)
     }
 
+    private func evidenceIndexRow(_ ref: KnowledgeSourceRef) -> [String: Any] {
+        var row = KnowledgeJSON.citation(ref)
+        row.removeValue(forKey: "match_text")
+        row["title"] = String(ref.title.prefix(240))
+        row["snippet"] = ref.snippet.map { String($0.prefix(180)) }
+        row["speaker"] = ref.speaker.map { String($0.prefix(100)) }
+        row["evidence_id"] = evidenceIDs.first(where: { $0.value == ref.id })?.key
+        row["citation_number"] = (references.firstIndex(where: { $0.id == ref.id }) ?? 0) + 1
+        return row
+    }
+
     func priorEvidenceIndex() -> String {
-        let index = references.suffix(24).map { ref -> [String: Any] in
-            var row = KnowledgeJSON.citation(ref)
-            row["snippet"] = ref.snippet.map { String($0.prefix(180)) }
-            row["evidence_id"] = evidenceIDs.first(where: { $0.value == ref.id })?.key
-            row["citation_number"] = (references.firstIndex(where: { $0.id == ref.id }) ?? 0) + 1
-            return row
-        }
+        let index = references.suffix(24).map(evidenceIndexRow)
         var data: [String: Any] = ["prior_evidence": index, "total_evidence_count": references.count,
                                   "complete_index": references.count <= 24, "saved_payload_refs": Array(payloads.keys.sorted().suffix(16))]
         if let analysis, let encoded = try? JSONEncoder().encode(analysis),
@@ -269,12 +274,11 @@ actor KnowledgeEvidenceWorkspace {
     }
 
     func sourceEvidence(_ id: UUID) -> String {
-        KnowledgeJSON.encode(["evidence": references.filter { $0.sessionUUID == id }.map { ref in
-            var row = KnowledgeJSON.citation(ref)
-            row["evidence_id"] = evidenceIDs.first(where: { $0.value == ref.id })?.key
-            row["citation_number"] = (references.firstIndex(where: { $0.id == ref.id }) ?? 0) + 1
-            return row
-        }])
+        let sourceReferences = references.filter { $0.sessionUUID == id }
+        return KnowledgeJSON.encode(["evidence": sourceReferences.suffix(24).map(evidenceIndexRow),
+                                     "total_evidence_count": sourceReferences.count,
+                                     "complete_index": sourceReferences.count <= 24,
+                                     "reading_tools_available": true])
     }
 
     func validateWorkerFindings(_ json: String, sourceID: UUID) -> KnowledgeToolObservation {
@@ -299,9 +303,22 @@ actor KnowledgeEvidenceWorkspace {
 
     func citations() -> [KnowledgeSourceRef] { references }
 
-    func readPayload(_ handle: String, offset: Int) -> KnowledgeToolObservation {
+    func readPayload(_ handle: String, offset: Int, allowedSources: Set<UUID>? = nil) -> KnowledgeToolObservation {
         guard let payload = payloads[handle], offset >= 0, offset <= payload.count else {
             return .error("Unknown payload or invalid offset")
+        }
+        if let allowedSources {
+            guard let data = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any] else {
+                return .error("Invalid saved payload")
+            }
+            let refs = (data["citations"] as? [[String: Any]] ?? []).compactMap(KnowledgeJSON.reference)
+            let source = (data["session_id"] as? String).flatMap(UUID.init(uuidString:))
+            // Source workers may recover only payloads with explicit evidence from
+            // their assigned source; global analysis/aggregate handles stay private.
+            guard source.map({ allowedSources.contains($0) }) ?? !refs.isEmpty,
+                  refs.allSatisfy({ $0.sessionUUID.map { allowedSources.contains($0) } == true }) else {
+                return .error("Payload is outside this task's authorized sources")
+            }
         }
         let page = String(payload.dropFirst(offset).prefix(8_000))
         return KnowledgeToolObservation(json: KnowledgeJSON.encode([

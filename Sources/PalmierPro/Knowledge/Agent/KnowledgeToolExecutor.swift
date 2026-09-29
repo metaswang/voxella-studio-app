@@ -24,7 +24,8 @@ struct KnowledgeToolExecutor: Sendable {
             switch definition.name {
             case "read_payload":
                 guard let workspace, let handle = args["payload_ref"] as? String else { return .error("Missing payload") }
-                return await workspace.readPayload(handle, offset: args["cursor"] as? Int ?? 0)
+                let allowed = scope == workspace.snapshot.scope ? nil : Set(await visibleSessions().map(\.id))
+                return await workspace.readPayload(handle, offset: args["cursor"] as? Int ?? 0, allowedSources: allowed)
             case "analysis.update":
                 guard let workspace else { return .error("No evidence workspace") }
                 return try await workspace.updateAnalysis(KnowledgeJSON.encode(args))

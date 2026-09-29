@@ -134,6 +134,64 @@ struct KnowledgeEvidenceWorkspaceTests {
         #expect(saved.json.contains("total_count"))
     }
 
+    @Test func largePriorEvidenceStaysBoundedAndRecoverable() async throws {
+        let source = fixture()
+        let workspace = KnowledgeEvidenceWorkspace(snapshot: snapshot([source]))
+        for index in 0..<30 {
+            let ref = KnowledgeSourceRef(sourceID: source.id.uuidString, sourceType: "transcript", title: source.title,
+                uri: nil, page: nil, startTime: Double(index), endTime: Double(index + 1), parentID: nil,
+                chunkIndex: index, language: nil, speaker: nil, snippet: String(repeating: "证据", count: 8_000),
+                matchText: String(repeating: "完整匹配", count: 4_000))
+            _ = await workspace.record(KnowledgeJSON.encode(["citations": [KnowledgeJSON.citation(ref)]]))
+        }
+        #expect(await workspace.priorEvidenceIndex().count <= 16_000)
+        #expect(await workspace.sourceEvidence(source.id).count <= 16_000)
+        let memory = await workspace.memory()
+        #expect(memory.references.count == 30 && memory.payloads.count == 30)
+    }
+
+    @Test func sourceWorkerCannotRecoverAnotherSourcesPayload() async throws {
+        let a = fixture(summary: "A decision"), b = fixture(summary: "B confidential context")
+        let workspace = KnowledgeEvidenceWorkspace(snapshot: snapshot([a, b]))
+        let main = KnowledgeToolExecutor(scope: .all, originFilter: nil, retrievalService: .init(), workspace: workspace)
+        let worker = KnowledgeToolExecutor(scope: .session(a.id), originFilter: nil, retrievalService: .init(), workspace: workspace)
+        let observation = try await main.executeNative(name: "session_get_summary", inputJSON: KnowledgeJSON.encode(["session_id": b.id.uuidString]))
+        guard case .string(let handle) = try LLMJSONValue.parseObject(observation.json)["payload_ref"] else { Issue.record("Missing handle"); return }
+        #expect(try await worker.executeNative(name: "read_payload", inputJSON: KnowledgeJSON.encode(["payload_ref": handle])).isError)
+        #expect(!(try await main.executeNative(name: "read_payload", inputJSON: KnowledgeJSON.encode(["payload_ref": handle])).isError))
+    }
+
+    @Test func followUpRestoresEvidenceAndAnalysisWithoutProviderState() async throws {
+        let source = fixture(summary: "Final decision")
+        let workspace = KnowledgeEvidenceWorkspace(snapshot: snapshot([source]))
+        let executor = KnowledgeToolExecutor(scope: .all, originFilter: nil, retrievalService: .init(), workspace: workspace)
+        _ = try await executor.executeNative(name: "session_get_summary", inputJSON: KnowledgeJSON.encode(["session_id": source.id.uuidString]))
+        _ = try await workspace.updateAnalysis(KnowledgeJSON.encode(["session_ids": [source.id.uuidString], "dimensions": ["decision", "risk"]]))
+        let restored = KnowledgeEvidenceWorkspace(snapshot: snapshot([source]))
+        await restored.restore(await workspace.memory())
+        let originalReferences = await workspace.citations()
+        #expect(await restored.citations() == originalReferences)
+        let initial = await restored.priorEvidenceIndex()
+        #expect(initial.contains("Final decision") && initial.contains("decision") && initial.contains("unchecked"))
+        #expect(initial.contains("evidence_id") && initial.contains("saved_payload_refs"))
+    }
+
+    @Test func providerSelectionPinsTheFirstCommittedNativeRoute() async throws {
+        let profile = LLMProviderProfile(provider: .openAI, baseURL: "https://example.invalid/v1", model: "model-a")
+        let configurations = ["model-a", "model-b"].map { name in
+            LLMRuntimeConfiguration(profile: profile, modelIdentifier: name, modelName: name,
+                                    endpoint: URL(string: "https://example.invalid/v1/responses")!, apiKey: "")
+        }
+        let selection = KnowledgeProviderSelection()
+        await selection.noteCandidate("model-a")
+        #expect(await selection.configurations(from: configurations).count == 2)
+        await selection.noteCandidate("model-b") // failover before any event
+        await selection.commit()
+        await selection.noteCandidate("model-a")
+        await selection.commit()
+        #expect(await selection.configurations(from: configurations).map(\.modelIdentifier) == ["model-b"])
+    }
+
     @Test func signedThinkingAndNativeCallIDsRetainOrder() {
         var turn = KnowledgeNativeTurn()
         turn.consume(.thinkingDelta("private"))
@@ -159,7 +217,7 @@ struct KnowledgeEvidenceWorkspaceTests {
         #expect(await pool.result(id: id).isError)
         let budget = KnowledgeRunBudget()
         for _ in 0..<16 { try await budget.reserve(messages: [], system: "") }
-        await #expect(throws: KnowledgeToolError.self) { try await budget.reserve(messages: [], system: "") }
+        await #expect(throws: KnowledgeNativeRunError.self) { try await budget.reserve(messages: [], system: "") }
         await pool.cancelAll()
     }
 
@@ -228,6 +286,57 @@ struct KnowledgeNativeRuntimeTests {
         }
         #expect(deltas.count == 2)
         #expect(terminals == 1)
+    }
+
+    @Test func delegatedWorkerDeepReadsAndReturnsOnlyEvidenceBackedFindings() async throws {
+        let fixtures = KnowledgeEvidenceWorkspaceTests()
+        let source = fixtures.fixture(summary: "延期是最终决定。")
+        let snapshot = fixtures.snapshot([source])
+        let client = KnowledgeReplayClient { _, tools, messages in
+            let main = tools.contains { $0.name == "knowledge_delegate" }
+            if messages.count == 1 {
+                if main {
+                    return [.toolUseComplete(id: "delegate", name: "knowledge_delegate", inputJSON: KnowledgeJSON.encode([
+                        "session_id": source.id.uuidString, "question": "核查决定", "success_criteria": "有来源的决定"])),
+                            .messageStop(stopReason: .toolUse)]
+                }
+                return [.toolUseComplete(id: "read", name: "session_get_summary", inputJSON: KnowledgeJSON.encode(["session_id": source.id.uuidString])),
+                        .messageStop(stopReason: .toolUse)]
+            }
+            guard case .content(.toolResult(_, let contents, let error)) = messages.last?.content.first,
+                  case .text(let json) = contents.first,
+                  let data = try? LLMJSONValue.parseObject(json) else {
+                Issue.record("Missing native worker result"); return [.messageStop(stopReason: .endTurn)]
+            }
+            #expect(!error)
+            if !main {
+                guard case .array(let refs) = data["citations"], case .object(let ref) = refs.first,
+                      case .string(let id) = ref["evidence_id"] else {
+                    Issue.record("Worker must read actual evidence"); return [.messageStop(stopReason: .endTurn)]
+                }
+                return [.textDelta(KnowledgeJSON.encode(["findings": [["finding": "最终延期", "evidence_ids": [id]]],
+                                                        "unresolved": [], "coverage": "claimed full"])),
+                        .messageStop(stopReason: .endTurn)]
+            }
+            if case .string(let job) = data["job_id"] {
+                return [.toolUseComplete(id: "poll", name: "knowledge_worker_result", inputJSON: KnowledgeJSON.encode(["job_id": job])),
+                        .messageStop(stopReason: .toolUse)]
+            }
+            #expect(data["findings"] != nil)
+            #expect(json.contains("not mechanically established"))
+            return [.textDelta("已核查延期决定。[2]"), .messageStop(stopReason: .endTurn)]
+        }
+        var service = KnowledgeQAService()
+        service.dependencies.planner = { _, _, _, _ in .fallback(for: "") }
+        service.agentClientFactory = { client }
+        service.scopeSnapshotProvider = { snapshot }
+        service.skillsProvider = { [] }
+        var finished = false
+        for await event in service.answer(.init(queryText: "核查决定", conversationID: UUID(), scope: .all)) {
+            if case .finished = event { finished = true }
+            if case .failed(let message) = event { Issue.record("\(message)") }
+        }
+        #expect(finished)
     }
 
     @Test func parallelBranchErrorsDoNotLoseSummaryOrToolResults() async throws {
