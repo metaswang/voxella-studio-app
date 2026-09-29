@@ -13,7 +13,7 @@
 
 所有读取以当前 scope、来源过滤和账户快照为边界。检索仍沿用索引的 cloud owner 过滤。账户会话 epoch 改变、资料删除/修改/重转录、媒体文件版本改变，使旧 run 或缓存失效。重用内容只含有来源的工具观察及派生覆盖视图；供应商私有 reasoning 不进入跨轮缓存。
 
-工具响应及 UI 使用同一 citation_number 映射，原始证据具有稳定 evidence_id。摘要标记为生成摘要；原文引用保留原子 segment 或原索引 chunk 的时间。Worker 返回发现和已有证据 ID，来源之外的 ID 和重读 payload 句柄会被拒绝；覆盖以实际工具读取记录替换 worker 自报的完整性。
+工具响应及 UI 使用同一 citation_number 映射，原始证据具有稳定 evidence_id。摘要标记为生成摘要；原文引用保留原子 segment 或原索引 chunk 的时间。Worker 返回发现、已有证据 ID、统一引用编号的有界索引及关联原文 payload 句柄。主 agent 可重读完整 observation 后综合；索引明确标注节选和列表是否完整。来源之外的 ID 和重读 payload 句柄会被拒绝；覆盖以实际工具读取记录替换 worker 自报的完整性。
 
 目录列表、摘要、原文与时间结构均显式返回 complete/next_cursor。complete 指当前过滤后的可用资料读完，不能证明全媒体已经转录，也不能证明语义上不存在某事件。旧索引连续读取直接查询原文 units，不依赖空 FTS 搜索。
 
@@ -49,8 +49,8 @@ Debug 构建中通过 `VOXELLA_KB_QA_VARIANT` 选择完整对照路径或工具�
 
 ## 本次最终验证记录
 
-- 与 `809e50ed` main 集成后的相关回归：178 tests / 39 suites 通过，覆盖确定性来源版本和输出耗尽不误报完成。
+- 与最新 `312d576f` main（PR #29 本地会议录制、PR #30 启动导航修复）集成后的相关回归：205 tests / 43 suites 通过，覆盖知识库/provider/索引、来源版本、输出耗尽、worker 证据编号与原文重读，以及导航、媒体语言/播放和本地会议录制。
 - `./scripts/bundle.sh debug --sign` 成功，codesign 验证 valid on disk / designated requirement；签名应用已启动并检查知识库入口、元数据范围计数和提示。
-- 启动检查复现并修复导航监听器对初始化中的窗口单例递归访问；监听器现在由已创建窗口安装。
+- 最终分支采用 main PR #30 的窗口初始化和导航监听修复；这些文件在最终 PR 中无额外改动。
 - BYOK OpenAI Responses 真实单来源元数据问答通过：总长 1000 秒、最后口播结束 999.912 秒分别给出并带一个来源引用；日志记录一次 native request、未执行检索工具。单次 smoke 不构成质量/延迟/费用对照，精确首个 delta 和 token/费用未测。
 - 真实摘要读取请求未执行：自动审批因缺少将本地摘要/转录发往 OpenAI 的明确授权拒绝发送。完整摘要 observation 和原生续接仅完成契约回放验证。
