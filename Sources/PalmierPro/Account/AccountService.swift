@@ -551,6 +551,8 @@ final class AccountService {
                   let access = response.appAccess?.snapshot else { return }
             appAccess = access
             lifetimePromotion = response.appAccess?.lifetimePromotion
+            // Keep a device Lifetime lease without dropping a cloud Starter/Pro subscription.
+            reapplyLocalEntitlementOverlays()
             entitlementSchedule.succeeded(at: .now)
             try await persistAppAccess()
 #if !MAC_APP_STORE
@@ -896,8 +898,7 @@ final class AccountService {
         guard Self.paidAccessEnabled else { return }
         do {
             guard let snapshot = try LifetimeLocalCredential.activeSnapshot() else { return }
-            accessRequestID = UUID()
-            appAccess = snapshot
+            applySoftwareLifetimeOverlay(snapshot)
             markCredentialStoreReadyIfNeeded()
         } catch {
             retainEntitlementOnCredentialStoreError(error)
@@ -908,8 +909,22 @@ final class AccountService {
         guard Self.paidAccessEnabled else { return }
         if hasLocalLifetimeCredential { return }
         guard let snapshot = try? LicenseKeyLocalCredential.activeSnapshot() else { return }
-        accessRequestID = UUID()
-        appAccess = snapshot
+        applySoftwareLifetimeOverlay(snapshot)
+    }
+
+    /// Lifetime is permanent software ownership on this Mac. It stays beside a
+    /// cloud Starter/Pro subscription and must not cancel an in-flight profile reload.
+    private func applySoftwareLifetimeOverlay(_ snapshot: AppAccessSnapshot) {
+        let current = appAccess
+        appAccess = AppAccessSnapshot(
+            license: .lifetime,
+            trialEndsAt: nil,
+            subscriptionTier: current.subscriptionTier,
+            subscriptionEndsAt: current.subscriptionEndsAt,
+            purchaseSources: current.purchaseSources.union(snapshot.purchaseSources),
+            subscriptionSource: current.subscriptionSource,
+            offlineValidUntil: snapshot.offlineValidUntil
+        )
     }
 
 
@@ -987,6 +1002,11 @@ final class AccountService {
     private func syncLifetimeDeviceCredentialIfNeeded() async {
         guard Self.paidAccessEnabled, isSignedIn, let owner = userID else { return }
         guard appAccess.license == .lifetime else { return }
+        // A license key already unlocks this Mac. Do not mint a separate purchase lease for it.
+        let purchasedLifetime = hasLocalLifetimeCredential
+            || appAccess.purchaseSources.contains(.web)
+            || appAccess.purchaseSources.contains(.appStore)
+        guard purchasedLifetime || !LicenseKeyLocalCredential.isPresent() else { return }
         let fingerprint: String
         do {
             fingerprint = try DeviceFingerprint.current()
@@ -1372,7 +1392,6 @@ final class AccountService {
         guard DeviceTrialLoginMerge.shouldReplaceEntitlement(current: appAccess, candidate: snapshot) else {
             return
         }
-        accessRequestID = UUID()
         appAccess = snapshot
     }
 
@@ -1422,7 +1441,6 @@ final class AccountService {
         guard DeviceTrialLoginMerge.shouldReplaceEntitlement(current: appAccess, candidate: snapshot) else {
             return
         }
-        accessRequestID = UUID()
         appAccess = snapshot
     }
 

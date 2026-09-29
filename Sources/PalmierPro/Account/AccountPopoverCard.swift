@@ -60,12 +60,24 @@ struct AccountPopoverCard: View {
         account.localizedAppAccessLabel
     }
 
+    /// Lifetime is Mac software ownership. The cloud plan stays visible beside it.
+    private var showsSoftwareLifetimeBesideCloudPlan: Bool {
+        account.featureAccessSnapshot.license == .lifetime || account.hasLocalLifetimeCredential
+    }
+
     private var planBlock: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             HStack {
-                Text(planTitle)
-                    .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
-                    .foregroundStyle(AppTheme.Text.primaryColor)
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                    Text(planTitle)
+                        .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+                    if account.isSignedIn, showsSoftwareLifetimeBesideCloudPlan {
+                        Text(account.tier.localizedPlanLabel)
+                            .font(.system(size: AppTheme.FontSize.xs))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    }
+                }
                 Spacer(minLength: 0)
                 if account.account?.user.cancelAtPeriodEnd == true,
                    let date = formattedPeriodEnd {
