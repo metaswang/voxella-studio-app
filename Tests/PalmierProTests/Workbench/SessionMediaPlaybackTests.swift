@@ -71,7 +71,7 @@ struct SessionMediaPlaybackTests {
                 ),
             ]
         )
-        playback.subtitleMode = .translation("zh-Hans")
+        playback.selectSubtitleMode(.translation("zh-Hans"))
 
         #expect(playback.activeSubtitleText(at: 1) == "你好")
     }
@@ -104,6 +104,83 @@ struct SessionMediaPlaybackTests {
         playback.toggleSubtitles()
         #expect(playback.subtitleMode == .translation("zh-Hans"))
         #expect(playback.activeSubtitleText(at: 1) == "你好")
+    }
+
+    @Test func missingTranslationFallsBackAndRestoresWhenTracksReturn() {
+        let playback = SessionPlaybackController()
+        let original = Self.track(language: "en", text: "Hello")
+        let translation = WorkbenchTranslationTrack(
+            languageCode: "zh-Hans", track: Self.track(language: "zh-Hans", text: "你好")
+        )
+        playback.configureSubtitles(subtitleTrack: original, translationTracks: [translation])
+        playback.selectSubtitleMode(.translation("zh-Hans"))
+        playback.configureSubtitles(subtitleTrack: original, translationTracks: [])
+
+        #expect(playback.subtitleMode == .original)
+        #expect(playback.activeSubtitleText(at: 1) == "Hello")
+        playback.configureSubtitles(subtitleTrack: original, translationTracks: [translation])
+        #expect(playback.subtitleMode == .translation("zh-Hans"))
+        #expect(playback.activeSubtitleText(at: 1) == "你好")
+    }
+
+    @Test func subtitlesArrivingAfterMediaLoadAreEnabled() async {
+        let playback = SessionPlaybackController()
+        playback.configureSubtitles(subtitleTrack: nil, translationTracks: [])
+        await playback.load(url: nil, showsVideoCanvas: false)
+        #expect(playback.subtitleMode == .off)
+
+        playback.configureSubtitles(
+            subtitleTrack: Self.track(language: "en", text: "Hello"), translationTracks: []
+        )
+        #expect(playback.subtitleMode == .original)
+        #expect(playback.activeSubtitleText(at: 1) == "Hello")
+    }
+
+    @Test func explicitOffSurvivesTrackChangesAndReload() async {
+        let playback = SessionPlaybackController()
+        let original = Self.track(language: "en", text: "Hello")
+        playback.configureSubtitles(subtitleTrack: original, translationTracks: [])
+        playback.selectSubtitleMode(.off)
+        playback.configureSubtitles(subtitleTrack: nil, translationTracks: [])
+        playback.configureSubtitles(subtitleTrack: original, translationTracks: [])
+        await playback.load(url: nil, showsVideoCanvas: false)
+
+        #expect(playback.subtitleMode == .off)
+        #expect(playback.activeSubtitleText(at: 1) == nil)
+        playback.toggleSubtitles()
+        #expect(playback.subtitleMode == .original)
+    }
+
+    @Test func translationOnlyTracksUseAnAvailableLanguage() {
+        let playback = SessionPlaybackController()
+        playback.configureSubtitles(
+            subtitleTrack: nil,
+            translationTracks: [WorkbenchTranslationTrack(
+                languageCode: "zh-Hans", track: Self.track(language: "zh-Hans", text: "你好")
+            )]
+        )
+        #expect(playback.subtitleMode == .translation("zh-Hans"))
+        #expect(playback.activeSubtitleText(at: 1) == "你好")
+    }
+
+    @Test func selectedTranslationSurvivesReload() async {
+        let playback = SessionPlaybackController()
+        playback.configureSubtitles(
+            subtitleTrack: Self.track(language: "en", text: "Hello"),
+            translationTracks: [WorkbenchTranslationTrack(
+                languageCode: "zh-Hans", track: Self.track(language: "zh-Hans", text: "你好")
+            )]
+        )
+        playback.selectSubtitleMode(.translation("zh-Hans"))
+        await playback.load(url: nil, showsVideoCanvas: false)
+        #expect(playback.subtitleMode == .translation("zh-Hans"))
+    }
+
+    private static func track(language: String, text: String) -> SubtitleTrack {
+        SubtitleTrack(
+            sourceLanguage: language, language: language,
+            cues: [Self.cue(id: 1, text: text, start: 0, end: 2)]
+        )
     }
 
     private static func cue(id: Int, text: String, start: Double, end: Double) -> SubtitleCue {

@@ -74,19 +74,10 @@ struct HomeView: View {
         .onChange(of: navigationScreen, initial: true) { _, screen in
             WorkbenchNavigator.shared.note(screen)
         }
-        .task {
-            WorkbenchNavigator.shared.installMouseNavigationIfNeeded()
-        }
     }
 
     private var navigationScreen: WorkbenchScreen? {
-        WorkbenchScreen.capture(
-            editorActive: appState.editorPresentation == .active,
-            route: store.route,
-            sessionID: store.selectedSessionID,
-            transcriptionID: store.selectedTranscriptionID,
-            dubID: store.selectedDubID
-        )
+        WorkbenchNavigator.captureCurrentScreen()
     }
 
     private func presentSessionSearch() {
@@ -476,6 +467,9 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
+        if let window {
+            WorkbenchNavigator.shared.installMouseNavigationIfNeeded(in: window)
+        }
         guard !hasAppliedInitialWindowState, let window else { return }
         hasAppliedInitialWindowState = true
         if OnboardingState.shared.isComplete, !window.isZoomed, !window.styleMask.contains(.fullScreen) {

@@ -472,6 +472,12 @@ struct WorkbenchSessionDetailView: View {
         .onChange(of: session.id) { _, _ in
             syncLanguageSelections(session)
         }
+        .onChange(of: session.translationTracks) { _, _ in
+            syncLanguageSelections(session)
+        }
+        .onChange(of: session.selectedTranslationLanguageCode) { _, _ in
+            syncLanguageSelections(session)
+        }
         .onChange(of: enhancedMediaURL) { _, enhancedURL in
             if selectedTrack == .enhanced, enhancedURL == nil {
                 selectedTrack = .original
@@ -1647,7 +1653,7 @@ private struct SessionMediaPlayer: View {
         .onChange(of: highlightCues) { _, cues in
             playback.configureHighlightCues(cues)
         }
-        .onChange(of: translationTracks.map(\.id)) { _, _ in
+        .onChange(of: translationTracks) { _, _ in
             playback.configureSubtitles(
                 subtitleTrack: subtitleTrack,
                 translationTracks: translationTracks
