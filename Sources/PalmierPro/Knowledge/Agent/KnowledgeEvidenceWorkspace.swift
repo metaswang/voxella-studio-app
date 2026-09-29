@@ -235,6 +235,7 @@ actor KnowledgeEvidenceWorkspace {
         row.removeValue(forKey: "match_text")
         row["title"] = String(ref.title.prefix(240))
         row["snippet"] = ref.snippet.map { String($0.prefix(180)) }
+        row["excerpt_complete"] = (ref.snippet?.count ?? 0) <= 180
         row["speaker"] = ref.speaker.map { String($0.prefix(100)) }
         row["evidence_id"] = evidenceIDs.first(where: { $0.value == ref.id })?.key
         row["citation_number"] = (references.firstIndex(where: { $0.id == ref.id }) ?? 0) + 1
@@ -302,6 +303,20 @@ actor KnowledgeEvidenceWorkspace {
                 return .error("Worker findings require existing evidence IDs from the assigned source")
             }
         }
+        let ids = Set(findings.flatMap { $0["evidence_ids"] as? [String] ?? [] })
+        let referenceIDs = Set(ids.compactMap { evidenceIDs[$0] })
+        let foundReferences = references.filter { referenceIDs.contains($0.id) }
+        data["evidence_index"] = foundReferences.prefix(24).map(evidenceIndexRow)
+        data["evidence_index_complete"] = foundReferences.count <= 24
+        let associatedPayloads = payloads.compactMap { handle, payload -> String? in
+            guard let object = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any],
+                  let citations = object["citations"] as? [[String: Any]],
+                  citations.contains(where: { ($0["evidence_id"] as? String).map(ids.contains) == true }) else { return nil }
+            return handle
+        }.sorted()
+        data["evidence_payload_refs"] = Array(associatedPayloads.prefix(8))
+        data["evidence_payload_refs_complete"] = associatedPayloads.count <= 8
+        data["evidence_reading"] = "Index excerpts are bounded. Use read_payload and its next_cursor for original observations, or read source context to verify findings."
         data["session_id"] = sourceID.uuidString
         data["coverage"] = ["reads": readCoverage[sourceID] ?? [], "semantic_completeness": "not mechanically established"]
         return record(data)

@@ -350,9 +350,20 @@ struct KnowledgeNativeRuntimeTests {
                 return [.toolUseComplete(id: "poll", name: "knowledge_worker_result", inputJSON: KnowledgeJSON.encode(["job_id": job])),
                         .messageStop(stopReason: .toolUse)]
             }
+            if case .string(let original) = data["text"] {
+                #expect(original.contains("延期是最终决定") && original.contains("citation_number"))
+                return [.textDelta("已核查延期决定。[2]"), .messageStop(stopReason: .endTurn)]
+            }
             #expect(data["findings"] != nil)
             #expect(json.contains("not mechanically established"))
-            return [.textDelta("已核查延期决定。[2]"), .messageStop(stopReason: .endTurn)]
+            guard case .array(let index) = data["evidence_index"], case .object(let evidence) = index.first,
+                  case .number(let number) = evidence["citation_number"],
+                  case .array(let payloads) = data["evidence_payload_refs"], case .string(let handle) = payloads.first else {
+                Issue.record("Main agent needs a resolvable citation and original payload"); return [.messageStop(stopReason: .endTurn)]
+            }
+            #expect(number == 2)
+            return [.toolUseComplete(id: "verify-original", name: "read_payload", inputJSON: KnowledgeJSON.encode(["payload_ref": handle])),
+                    .messageStop(stopReason: .toolUse)]
         }
         var service = KnowledgeQAService()
         service.dependencies.planner = { _, _, _, _ in .fallback(for: "") }
