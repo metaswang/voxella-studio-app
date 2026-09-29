@@ -262,15 +262,9 @@ struct KnowledgeToolExecutorTests {
                 )
             )
         )
-        let result = try await executor.execute(
-            toolName: "knowledge.search",
-            arguments: ["query": "secret", "session_ids": [blocked.uuidString]]
-        )
-        guard case let .success(data) = result else {
-            Issue.record("expected empty success")
-            return
-        }
-        #expect(data["hits"] as? Int == 0)
+        let result = try await executor.executeNative(name: "knowledge_search",
+            inputJSON: KnowledgeJSON.encode(["query": "secret", "session_ids": [blocked.uuidString]]))
+        #expect(result.isError)
         #expect(hybridCalls.count == 0)
     }
 

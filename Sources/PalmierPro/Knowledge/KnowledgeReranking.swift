@@ -28,12 +28,24 @@ enum KnowledgeMMR {
     static func select(
         _ candidates: [KnowledgeRerankedHit],
         vectors: [Int: [Float]],
-        limit: Int = maximumSelections
+        limit: Int = maximumSelections,
+        coverSources: Bool = false
     ) -> [KnowledgeRerankedHit] {
-        let maximum = min(max(0, limit), maximumSelections)
+        let maximum = min(max(0, limit), 32)
         guard maximum > 0 else { return [] }
         var remaining = candidates.sorted { $0.score > $1.score }
         var selected: [KnowledgeRerankedHit] = []
+        if coverSources {
+            var seen = Set<UUID>()
+            // Only admitted relevant candidates participate; absent sources
+            // remain gaps in the AnalysisView, never unrelated filler.
+            for candidate in remaining where seen.insert(candidate.hit.sessionID).inserted {
+                guard selected.count < maximum else { break }
+                selected.append(candidate)
+            }
+            let selectedKeys = Set(selected.map { $0.hit.sessionID.uuidString + ":" + String($0.hit.unitID) })
+            remaining.removeAll { selectedKeys.contains($0.hit.sessionID.uuidString + ":" + String($0.hit.unitID)) }
+        }
 
         while !remaining.isEmpty, selected.count < maximum {
             let nextIndex = remaining.indices.max { lhs, rhs in

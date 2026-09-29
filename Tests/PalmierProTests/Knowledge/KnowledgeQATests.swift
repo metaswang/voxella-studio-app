@@ -1107,7 +1107,7 @@ struct KnowledgeQAClarificationAndFallbackTests {
         let box = PlannerCallBox()
         let hybridCalls = PlannerCallBox()
         var service = KnowledgeQAService()
-        service.useAgentRuntime = true
+        service.useAgentRuntime = false
         service.skillsProvider = { [] }
         service.dependencies = KnowledgeQAExecutionDependencies(
             planner: { query, _, _, _ in
@@ -1137,10 +1137,10 @@ struct KnowledgeQAClarificationAndFallbackTests {
     }
 
     @Test
-    func agentFallbackReusesPlanWithoutCallingPlannerAgain() async {
+    func explicitLegacyRuntimePlansOnlyOnce() async {
         let box = PlannerCallBox()
         var service = KnowledgeQAService()
-        service.useAgentRuntime = true
+        service.useAgentRuntime = false
         service.skillsProvider = { [] }
         service.dependencies = KnowledgeQAExecutionDependencies(
             planner: { query, history, _, _ in

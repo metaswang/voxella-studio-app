@@ -399,6 +399,9 @@ final class AccountService {
     @ObservationIgnored private var cloudAccessTask: Task<CloudAccessPreparation, Never>?
     @ObservationIgnored private var cloudAccessGeneration = UUID()
     @ObservationIgnored private let api = VoxellaAPIClient.shared
+    /// Read-only auth epoch for knowledge run cancellation and evidence expiry.
+    var knowledgeAuthorizationGeneration: UUID { sessionGeneration }
+
     @ObservationIgnored private var sessionGeneration = UUID()
     @ObservationIgnored private var appAccessPreparationTask: Task<Void, Error>?
     @ObservationIgnored private var entitlementRefreshTask: Task<Void, Never>?

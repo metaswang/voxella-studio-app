@@ -491,12 +491,6 @@ enum KnowledgeAnswerAvailability: Equatable {
             guard LLMSettingsStore.shared.hasConfiguredModel(for: .chat) else {
                 return .byokAnswerRouteRequired
             }
-            if KnowledgeGraphSettings.shared.isEnabled,
-               (!LLMSettingsStore.shared.hasConfiguredModel(for: .graphExtraction)
-                    || !LLMSettingsStore.shared.hasConfiguredModel(for: .graphQueryUnderstanding))
-            {
-                return .byokGraphRouteRequired
-            }
             return .ready
         }
     }

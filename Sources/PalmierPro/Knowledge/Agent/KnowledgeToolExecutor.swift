@@ -1,520 +1,399 @@
 import Foundation
 
-/// Executes knowledge agent tools by calling existing app services.
-/// All implementations must respect origin visibility and return Sendable results.
+/// One authorization boundary for all read-only knowledge tools. The immutable
+/// workspace is shared by the main agent and bounded source workers.
 struct KnowledgeToolExecutor: Sendable {
     let scope: KnowledgeQAScope
     let originFilter: Set<KnowledgeSourceOrigin>?
     let retrievalService: KnowledgeRetrievalService
-    let requestID: UUID
+    var requestID: UUID = UUID()
+    var workspace: KnowledgeEvidenceWorkspace? = nil
+    var skills: [Skill] = []
 
-    init(
-        scope: KnowledgeQAScope,
-        originFilter: Set<KnowledgeSourceOrigin>?,
-        retrievalService: KnowledgeRetrievalService,
-        requestID: UUID = UUID()
-    ) {
-        self.scope = scope
-        self.originFilter = originFilter
-        self.retrievalService = retrievalService
-        self.requestID = requestID
+    @concurrent
+    func executeNative(name: String, inputJSON: String) async throws -> KnowledgeToolObservation {
+        guard let definition = KnowledgeToolRegistry.allTools.first(where: { $0.nativeName == name }) else {
+            return .error("Unknown or unauthorized knowledge tool: \(name)")
+        }
+        do {
+            guard let args = try JSONSerialization.jsonObject(with: Data(inputJSON.utf8)) as? [String: Any] else {
+                return .error("Arguments must be a JSON object")
+            }
+            try definition.validate(args)
+            if let workspace { try await workspace.snapshot.validate() }
+            switch definition.name {
+            case "read_payload":
+                guard let workspace, let handle = args["payload_ref"] as? String else { return .error("Missing payload") }
+                return await workspace.readPayload(handle, offset: args["cursor"] as? Int ?? 0)
+            case "analysis.update":
+                guard let workspace else { return .error("No evidence workspace") }
+                return try await workspace.updateAnalysis(KnowledgeJSON.encode(args))
+            case "read_skill":
+                guard let skill = skills.first(where: { $0.id == args["skill_id"] as? String }),
+                      KnowledgeToolRegistry.validateSkill(skill) else { return .error("Unknown or unauthorized skill") }
+                let text = try String(contentsOf: skill.path, encoding: .utf8)
+                let body = SkillFrontmatter.parse(text).body
+                guard body.count <= 16_000 else { return .error("Skill exceeds the supported method size") }
+                return await record(["skill_id": skill.id, "method": body,
+                                     "allowed_tools": skill.metadata?.allowedTools ?? [],
+                                     "native_name_mapping": Dictionary(uniqueKeysWithValues: KnowledgeToolRegistry.allTools.map { ($0.name, $0.nativeName) }),
+                                     "permissions": "Method guidance only; main-agent core permissions remain unchanged"])
+            default:
+                let result = try await execute(toolName: definition.name, arguments: args)
+                if let workspace { try await workspace.snapshot.validate() }
+                switch result {
+                case .success(let data): return await record(data)
+                case .error(let message): return .error(message)
+                case .control(.clarify(let question)):
+                    return await record(["clarification_question": question])
+                }
+            }
+        } catch is CancellationError { throw CancellationError() }
+        catch { return .error(error.localizedDescription) }
     }
-    
-    func execute(toolName: String, arguments: [String: Any]) async throws -> KnowledgeToolResult {
+
+    private func record(_ data: [String: Any]) async -> KnowledgeToolObservation {
+        if let workspace { return await workspace.record(KnowledgeJSON.encode(data)) }
+        return KnowledgeToolObservation(json: KnowledgeJSON.encode(data), isError: false,
+                                        citations: (data["citations"] as? [[String: Any]] ?? []).compactMap(KnowledgeJSON.reference))
+    }
+
+    func execute(toolName: String, arguments args: [String: Any]) async throws -> KnowledgeToolResult {
+        guard let definition = KnowledgeToolRegistry.tool(named: toolName) else { throw KnowledgeToolError.unknownTool(toolName) }
+        try definition.validate(args)
         switch toolName {
-        case "knowledge.search":
-            return try await knowledgeSearch(arguments)
-        case "session.list":
-            return try await sessionList(arguments)
+        case "knowledge.search", "session.search_segments": return try await search(args)
+        case "session.list", "session.aggregate": return try await inventory(args, aggregate: toolName == "session.aggregate")
         case "knowledge.get_session_metadata":
-            return try await knowledgeGetSessionMetadata(arguments)
-        case "session.get_summary":
-            return try await sessionGetSummary(arguments)
-        case "session.get_segments":
-            return try await sessionGetSegments(arguments)
-        case "session.search_segments":
-            return try await sessionSearchSegments(arguments)
-        case "session.get_timeline":
-            return try await sessionGetTimeline(arguments)
-        case "knowledge.compare_sessions":
-            return try await knowledgeCompareSessions(arguments)
-        case "finish_with_evidence":
-            return finishWithEvidence(arguments)
+            let session = try await session(args)
+            return .success(await metadata(session))
+        case "session.get_summary": return try await summary(args)
+        case "session.get_segments", "session.get_timeline", "session.get_speakers": return try await read(args, tool: toolName)
+        case "knowledge.compare_sessions": return try await compare(args)
+        case "knowledge.search_sources": return try await discover(args)
         case "ask_clarification":
-            return askClarification(arguments)
-        default:
-            throw KnowledgeToolError.unknownTool(toolName)
+            guard let question = args["question"] as? String, !question.isEmpty else { throw KnowledgeToolError.missingParameter("question") }
+            return .control(.clarify(question: question))
+        default: throw KnowledgeToolError.unknownTool(toolName)
         }
     }
-    
-    private func knowledgeSearch(_ args: [String: Any]) async throws -> KnowledgeToolResult {
-        guard let query = args["query"] as? String else {
-            throw KnowledgeToolError.missingParameter("query")
-        }
-        let requestedSessionIDs = (args["session_ids"] as? [String])?.compactMap { UUID(uuidString: $0) }
-        let limit = min(8, max(1, args["limit"] as? Int ?? 8))
-        
-        let searchScope: KnowledgeQAScope
-        if let requestedSessionIDs {
-            let sessionIDs = requestedSessionIDs.filter(isSessionAllowedByScope)
-            guard !sessionIDs.isEmpty else {
-                return .success(["hits": 0, "citations": []])
-            }
-            searchScope = KnowledgeQAScope.fromSelection(sessionIDs)
-        } else {
-            searchScope = scope
-        }
 
-        let result = try await retrievalService.search(
-            KnowledgeRetrievalRequest(
-                query: query,
-                scope: searchScope,
-                originFilter: originFilter,
-                resultLimit: limit,
-                requestID: requestID,
-                includeCatalog: false,
-                retrievalPath: .agent
-            )
-        )
-        let hits = result.hits
-        let citations = hits.map { KnowledgeQAService.citation(from: $0) }
-        return .success([
-            "hits": hits.count,
-            "citations": citations.map { citationToDict($0) },
-        ])
+    private func visibleSessions() async -> [WorkbenchSession] {
+        if let workspace { return workspace.snapshot.sessions.filter { scope == .all || scope.sessionIDs.contains($0.id) } }
+        return await KnowledgeScopeSnapshot.capture(scope: scope, origins: originFilter).sessions
     }
-    
-    private func sessionList(_ args: [String: Any]) async throws -> KnowledgeToolResult {
-        let query = args["query"] as? String
-        let typeFilter = args["type"] as? String
-        let originArg = args["origin"] as? String
-        let dateFrom = args["date_from"] as? String
-        let dateTo = args["date_to"] as? String
-        // Collection analysis must see the full visible inventory by default;
-        // otherwise older sessions can be omitted before classification.
-        let limit = max(0, args["limit"] as? Int ?? 50)
-        
-        let sessions = await MainActor.run { WorkbenchStore.shared.sessions }
-        let signedIn = await MainActor.run { AccountService.shared.isSignedIn }
-        let allowed = KnowledgeSourceOrigin.effectiveOrigins(isSignedIn: signedIn, uiFilter: originFilter)
-        
-        var filtered = sessions.filter { session in
-            let origin = KnowledgeSourceOrigin.resolve(
-                isCloudStorage: session.storage == .cloud,
-                hasRemoteSessionID: session.remoteSessionID != nil || session.isRemoteOnly
-            )
-            return allowed.contains(origin) && isSessionAllowedByScope(session.id)
+
+    private func session(_ args: [String: Any]) async throws -> WorkbenchSession {
+        guard let raw = args["session_id"] as? String, let id = UUID(uuidString: raw) else {
+            throw KnowledgeToolError.invalidParameter("session_id must be a valid UUID")
         }
-        
-        if let query, !query.isEmpty {
-            filtered = filtered.filter { $0.title.localizedCaseInsensitiveContains(query) }
+        guard let found = await visibleSessions().first(where: { $0.id == id }) else {
+            throw KnowledgeToolError.invalidParameter("Session is unavailable or outside the authorized scope")
         }
-        
-        if let typeFilter, !typeFilter.isEmpty {
-            let sourceType = KnowledgeSourceType(rawValue: typeFilter)
-            filtered = filtered.filter { KnowledgeSourceType.from(sessionType: $0.sessionType) == sourceType }
-        }
-        
-        if let originArg, originArg != "all" {
-            let targetOrigin = KnowledgeSourceOrigin(rawValue: originArg)
-            filtered = filtered.filter { session in
-                let origin = KnowledgeSourceOrigin.resolve(
-                    isCloudStorage: session.storage == .cloud,
-                    hasRemoteSessionID: session.remoteSessionID != nil || session.isRemoteOnly
-                )
-                return origin == targetOrigin
-            }
-        }
-        
-        if let dateFrom {
-            if let date = ISO8601DateFormatter().date(from: dateFrom) {
-                filtered = filtered.filter { $0.modifiedAt >= date }
-            }
-        }
-        
-        if let dateTo {
-            if let date = ISO8601DateFormatter().date(from: dateTo) {
-                filtered = filtered.filter { $0.modifiedAt <= date }
-            }
-        }
-        
-        let sorted = filtered.sorted { $0.modifiedAt > $1.modifiedAt }
-        let selected = Array(sorted.prefix(limit))
-        let results = selected.map { session in
-            sessionToDict(session)
-        }
-        let citations = selected.map { session in
-            sessionCitation(
-                sessionID: session.id,
-                title: session.title,
-                sourceType: "sessionCard"
-            )
-        }
-        
-        return .success([
-            "count": results.count,
-            "sessions": results,
-            "citations": citations,
-        ])
+        return found
     }
-    
-    private func knowledgeGetSessionMetadata(_ args: [String: Any]) async throws -> KnowledgeToolResult {
-        guard let sessionIDStr = args["session_id"] as? String,
-              let sessionID = UUID(uuidString: sessionIDStr) else {
-            throw KnowledgeToolError.invalidParameter("session_id must be valid UUID")
+
+    private func sourceIDs(_ args: [String: Any], minimum: Int = 1) async throws -> [UUID]? {
+        guard let strings = args["session_ids"] as? [String] else { return nil }
+        let ids = strings.compactMap(UUID.init(uuidString:))
+        guard ids.count == strings.count, Set(ids).count == ids.count, ids.count >= minimum else {
+            throw KnowledgeToolError.invalidParameter("session_ids must contain unique valid UUIDs")
         }
-        
-        guard let session = await MainActor.run(body: { WorkbenchStore.shared.sessions.first { $0.id == sessionID } }) else {
-            return .error("Session not found")
+        let visible = Set(await visibleSessions().map(\.id))
+        guard ids.allSatisfy({ (scope == .all || scope.sessionIDs.contains($0)) && (workspace == nil || visible.contains($0)) }) else {
+            throw KnowledgeToolError.invalidParameter("Session is unavailable or outside the authorized scope")
         }
-        guard isSessionAllowedByScope(sessionID) else {
-            return .error("Session is outside the current knowledge scope")
-        }
-        
-        var result = sessionToDict(session)
-        result["citations"] = [sessionCitation(
-            sessionID: session.id,
-            title: session.title,
-            sourceType: "sessionCard"
-        )]
-        return .success(result)
+        return ids
     }
-    
-    private func sessionGetSummary(_ args: [String: Any]) async throws -> KnowledgeToolResult {
-        guard let sessionIDStr = args["session_id"] as? String,
-              let sessionID = UUID(uuidString: sessionIDStr) else {
-            throw KnowledgeToolError.invalidParameter("session_id must be valid UUID")
+
+    @concurrent
+    func metadata(_ session: WorkbenchSession, probe: Bool = true) async -> [String: Any] {
+        let facts = probe ? await KnowledgeMediaDurationCache.shared.facts(for: session) : .from(session)
+        if probe {
+            let store = await MainActor.run { SessionIndexCoordinator.shared.searchService.store }
+            try? await store.patchMediaFacts(sessionID: session.id, mediaDuration: facts.mediaDuration,
+                provenance: facts.provenance, lastSpokenEnd: facts.lastSpokenEnd,
+                transcribedStart: facts.transcribedStart, transcribedEnd: facts.transcribedEnd)
         }
-        guard isSessionAllowedByScope(sessionID) else {
-            return .error("Session is outside the current knowledge scope")
+        var data: [String: Any] = [
+            "session_id": session.id.uuidString, "title": session.title,
+            "type": KnowledgeSourceType.from(sessionType: session.sessionType).rawValue,
+            "origin": KnowledgeScopeSnapshot.origin(session).rawValue,
+            "created_at": ISO8601DateFormatter().string(from: session.createdAt),
+            "modified_at": ISO8601DateFormatter().string(from: session.modifiedAt),
+            "date_semantics": "source created/imported and modified; recording date is unknown",
+            "source_generation": KnowledgeScopeSnapshot.generation(session),
+            "media_duration_sec": facts.mediaDuration as Any? ?? NSNull(),
+            "media_duration_provenance": facts.provenance,
+            "last_spoken_end_sec": facts.lastSpokenEnd as Any? ?? NSNull(),
+            "transcribed_range": ["start": facts.transcribedStart as Any? ?? NSNull(),
+                                  "end": facts.transcribedEnd as Any? ?? NSNull(), "coordinate": "source_seconds"],
+            "has_transcript": session.transcript != nil || session.dubTranscript != nil,
+            "has_summary": session.summaryMarkdown?.isEmpty == false,
+            "capabilities": ["metadata": true, "summary": session.summaryMarkdown?.isEmpty == false,
+                             "direct_transcript": session.transcript != nil || session.dubTranscript != nil,
+                             "lexical": true, "semantic": LocalModelManager.isInstalled(.weMMEmbedding2B4Bit),
+                             "reranker": LocalModelManager.isInstalled(.qwen3Reranker06B4Bit)],
+        ]
+        let ref = reference(session, kind: "sessionCard", chunk: -1, text: KnowledgeJSON.encode(data))
+        data["citations"] = [KnowledgeJSON.citation(ref)]
+        return data
+    }
+
+    private func filteredInventory(_ args: [String: Any]) async throws -> [WorkbenchSession] {
+        var sessions = await visibleSessions()
+        if let query = args["query"] as? String, !query.isEmpty {
+            sessions = sessions.filter { $0.title.localizedCaseInsensitiveContains(query) }
         }
-        
+        if let raw = args["type"] as? String, raw != "all" {
+            guard let type = KnowledgeSourceType(rawValue: raw) else { throw KnowledgeToolError.invalidParameter("Unknown source type") }
+            sessions = sessions.filter { KnowledgeSourceType.from(sessionType: $0.sessionType) == type }
+        }
+        if let raw = args["origin"] as? String, raw != "all" {
+            guard let origin = KnowledgeSourceOrigin(rawValue: raw) else { throw KnowledgeToolError.invalidParameter("Unknown origin") }
+            sessions = sessions.filter { KnowledgeScopeSnapshot.origin($0) == origin }
+        }
+        let field = args["date_field"] as? String ?? "created"
+        guard ["created", "modified"].contains(field) else { throw KnowledgeToolError.invalidParameter("date_field must be created or modified") }
+        let from = try Self.date(args["date_from"] as? String)
+        let to = try Self.date(args["date_to"] as? String)
+        if let from, let to, from > to { throw KnowledgeToolError.invalidParameter("Reversed date range") }
+        sessions = sessions.filter {
+            let date = field == "created" ? $0.createdAt : $0.modifiedAt
+            return (from == nil || date >= from!) && (to == nil || date <= to!)
+        }
+        return sessions.sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+
+    static func date(_ raw: String?) throws -> Date? {
+        guard let raw else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let result = formatter.date(from: raw) ?? ISO8601DateFormatter().date(from: raw) else {
+            throw KnowledgeToolError.invalidParameter("Invalid ISO8601 date: \(raw)")
+        }
+        return result
+    }
+
+    private func inventory(_ args: [String: Any], aggregate: Bool) async throws -> KnowledgeToolResult {
+        let sessions = try await filteredInventory(args)
+        let offset = args["cursor"] as? Int ?? 0
+        let limit = args["limit"] as? Int ?? 32
+        guard offset >= 0, offset <= sessions.count, limit > 0, limit <= 100 else { throw KnowledgeToolError.invalidParameter("Invalid inventory page") }
+        var rows: [[String: Any]] = []
+        for item in sessions.dropFirst(offset).prefix(limit) { rows.append(await metadata(item, probe: false)) }
+        var data: [String: Any] = ["sessions": rows, "count": rows.count, "returned_count": rows.count,
+                                  "total_count": sessions.count, "complete": offset + rows.count == sessions.count,
+                                  "next_cursor": offset + rows.count < sessions.count ? offset + rows.count : NSNull(),
+                                  "date_field": args["date_field"] as? String ?? "created",
+                                  "citations": rows.flatMap { $0["citations"] as? [[String: Any]] ?? [] }]
+        if aggregate {
+            let facts = sessions.map { KnowledgeMediaFacts.from($0) }
+            let known = facts.compactMap(\.mediaDuration)
+            let groupBy = args["group_by"] as? String
+            guard groupBy == nil || ["type", "origin"].contains(groupBy!) else { throw KnowledgeToolError.invalidParameter("Invalid group_by") }
+            let sortBy = args["sort_by"] as? String ?? "created"
+            guard ["created", "modified", "duration"].contains(sortBy) else { throw KnowledgeToolError.invalidParameter("Invalid sort_by") }
+            let sorted = sessions.sorted {
+                let lhs = sortBy == "duration" ? (KnowledgeMediaFacts.from($0).mediaDuration ?? -.infinity) :
+                    (sortBy == "modified" ? $0.modifiedAt : $0.createdAt).timeIntervalSince1970
+                let rhs = sortBy == "duration" ? (KnowledgeMediaFacts.from($1).mediaDuration ?? -.infinity) :
+                    (sortBy == "modified" ? $1.modifiedAt : $1.createdAt).timeIntervalSince1970
+                return lhs == rhs ? $0.id.uuidString < $1.id.uuidString : lhs > rhs
+            }
+            var groups: [String: Int] = [:]
+            for item in sessions {
+                let key = groupBy == "type" ? KnowledgeSourceType.from(sessionType: item.sessionType).rawValue : KnowledgeScopeSnapshot.origin(item).rawValue
+                groups[key, default: 0] += 1
+            }
+            let aggregate: [String: Any] = ["count": sessions.count, "media_duration_sum_sec": known.reduce(0, +),
+                "duration_known_count": known.count, "duration_unknown_count": sessions.count - known.count,
+                "group_by": groupBy as Any? ?? NSNull(), "groups": groupBy == nil ? [:] : groups,
+                "sort_by": sortBy, "sorted_session_ids": sorted.dropFirst(offset).prefix(limit).map { $0.id.uuidString },
+                "input_set_version": workspace?.snapshot.cacheNamespace ?? "live",
+                "filters": args.filter { !["limit", "cursor"].contains($0.key) },
+                "duration_policy": "source hints only; missing local media metadata counted as unknown", "semantic_count": false]
+            data["aggregate"] = aggregate
+            // A single aggregate citation references the versioned, complete input set.
+            let ref = KnowledgeSourceRef(sourceID: "aggregate:" + (workspace?.snapshot.cacheNamespace ?? requestID.uuidString),
+                sourceType: "aggregate", title: "Visible source inventory", uri: nil, page: nil, startTime: nil,
+                endTime: nil, parentID: nil, chunkIndex: -6, language: nil, speaker: nil,
+                snippet: KnowledgeJSON.encode(aggregate), matchText: nil)
+            data["citations"] = [KnowledgeJSON.citation(ref)]
+        }
+        return .success(data)
+    }
+
+    private func summary(_ args: [String: Any]) async throws -> KnowledgeToolResult {
+        let source = try await session(args)
         let service = await MainActor.run { SessionIndexCoordinator.shared.searchService }
-        guard let summary = try await service.sessionSummary(id: sessionID) else {
-            return .error("Session not found or no summary available")
+        let indexed = source.summaryMarkdown == nil ? try await service.sessionSummary(id: source.id)?.markdown : nil
+        guard let text = source.summaryMarkdown ?? indexed, !text.isEmpty else {
+            return .success(["session_id": source.id.uuidString, "status": "unavailable", "summary_markdown": NSNull(), "complete": false])
         }
-        
-        let citation = sessionCitation(
-            sessionID: sessionID,
-            title: summary.title,
-            sourceType: "sessionSummary",
-            snippet: summary.markdown,
-            chunkIndex: -2
-        )
-        return .success([
-            "session_id": sessionID.uuidString,
-            "title": summary.title,
-            "tag": summary.tag as Any,
-            "summary_markdown": summary.markdown as Any,
-            "citations": [citation],
-        ])
+        let offset = args["cursor"] as? Int ?? 0
+        guard offset >= 0, offset <= text.count else { throw KnowledgeToolError.invalidParameter("Invalid summary cursor") }
+        let page = String(text.dropFirst(offset).prefix(8_000))
+        let ref = reference(source, kind: "sessionSummary", chunk: -2_000_000 - offset, text: page)
+        return .success(["session_id": source.id.uuidString, "summary_markdown": page, "generated_summary": true,
+                         "returned_count": page.count, "total_count": text.count, "complete": offset + page.count == text.count,
+                         "next_cursor": offset + page.count < text.count ? offset + page.count : NSNull(),
+                         "citations": [KnowledgeJSON.citation(ref)]])
     }
-    
-    private func sessionGetSegments(_ args: [String: Any]) async throws -> KnowledgeToolResult {
-        guard let sessionIDStr = args["session_id"] as? String,
-              let sessionID = UUID(uuidString: sessionIDStr) else {
-            throw KnowledgeToolError.invalidParameter("session_id must be valid UUID")
-        }
-        guard isSessionAllowedByScope(sessionID) else {
-            return .error("Session is outside the current knowledge scope")
-        }
-        
+
+    private func read(_ args: [String: Any], tool: String) async throws -> KnowledgeToolResult {
+        let source = try await session(args)
+        let service = await MainActor.run { SessionIndexCoordinator.shared.searchService }
+        let segments = (source.transcript ?? source.dubTranscript)?.segments
         let start = args["start"] as? Double
         let end = args["end"] as? Double
-        let limit = args["limit"] as? Int ?? 20
-        
-        let filter = SessionSearchFilter(sessionID: sessionID, start: start, end: end, limit: limit)
-        let service = await MainActor.run { SessionIndexCoordinator.shared.searchService }
-        
+        guard (start == nil || start! >= 0), (end == nil || end! >= 0), (start == nil || end == nil || start! <= end!) else {
+            throw KnowledgeToolError.invalidParameter("Invalid time range")
+        }
+        if tool == "session.get_speakers" {
+            let indexed = try await service.speakerList(id: source.id)
+            let speakers = Set((segments ?? []).compactMap(\.speaker) + indexed.map(\.displayName)).sorted()
+            let ref = reference(source, kind: "speaker", chunk: -3, text: speakers.joined(separator: ", "))
+            return .success(["speakers": speakers, "complete": true, "labels_available": !speakers.isEmpty,
+                             "citations": [KnowledgeJSON.citation(ref)]])
+        }
+        let offset = args["cursor"] as? Int ?? 0
+        let limit = args["limit"] as? Int ?? 80
+        guard offset >= 0, limit > 0, limit <= 200 else { throw KnowledgeToolError.invalidParameter("Invalid transcript page") }
         let hits: [SessionSearchHit]
-        if let start, let end {
-            hits = try await service.transcriptContext(sessionID: sessionID, start: start, end: end, pad: 0)
+        let total: Int
+        let pageOffset: Int
+        if let segments {
+            let all = segments.enumerated().map { index, segment in
+                SessionSearchHit(sessionID: source.id, title: source.title, unitID: index, kind: .transcriptChunk,
+                                 start: segment.start, end: segment.end, speakerLabels: segment.speaker.map { [$0] } ?? [],
+                                 text: segment.text, score: 1, matchSource: "direct_read", snippet: segment.text,
+                                 cueIDs: [], hasVideo: false, language: source.transcript?.language, quoteSpan: nil)
+            }.filter {
+                (start == nil || ($0.end ?? 0) >= start!) && (end == nil || ($0.start ?? 0) <= end!) &&
+                ((args["speaker"] as? String) == nil || $0.speakerLabels.contains(args["speaker"] as! String))
+            }.sorted { ($0.start ?? 0) < ($1.start ?? 0) }
+            hits = all
+            total = all.count
+            pageOffset = offset
         } else {
-            hits = try await service.transcriptLexicalSearch(query: "", filter: filter)
+            var filter = await retrievalService.makeVisibleFilter(scope: .session(source.id), originFilter: originFilter)
+            filter.limit = limit
+            filter.start = start
+            filter.end = end
+            filter.speakerLabel = args["speaker"] as? String
+            let indexed = try await service.store.transcriptPage(filter: filter, offset: offset)
+            hits = indexed.hits
+            total = indexed.total
+            pageOffset = 0
         }
-        
-        let segments = hits.map { hit in
-            Self.hitToDict(hit)
+        guard offset <= total else { throw KnowledgeToolError.invalidParameter("Invalid transcript cursor") }
+        var page: [SessionSearchHit] = []
+        var characters = 0
+        for hit in hits.dropFirst(pageOffset).prefix(limit) {
+            guard hit.text.count <= 16_000 else { throw KnowledgeToolError.invalidParameter("Transcript segment exceeds the supported page size") }
+            if characters + hit.text.count > 16_000 { break }
+            page.append(hit)
+            characters += hit.text.count
         }
-        
-        return .success([
-            "session_id": sessionID.uuidString,
-            "segment_count": segments.count,
-            "segments": segments,
-        ])
+        var data: [String: Any] = ["session_id": source.id.uuidString, "segments": page.map(Self.hitToDict),
+            "returned_count": page.count, "total_count": total,
+            "complete": offset + page.count == total,
+            "next_cursor": offset + page.count < total ? offset + page.count : NSNull(),
+            "read_provenance": segments != nil ? "original_segments" : "indexed_transcript_chunks",
+            "completeness_semantics": "available transcript, not necessarily entire media",
+            "returned_range": ["start": page.first?.start as Any? ?? NSNull(), "end": page.last?.end as Any? ?? NSNull()], "coverage": ["start": start as Any? ?? NSNull(), "end": end as Any? ?? NSNull(), "coordinate": "source_seconds"],
+            "citations": page.map { hit in
+                var ref = KnowledgeQAService.citation(from: hit)
+                if segments != nil { ref.chunkIndex = 1_000_000 + hit.unitID }
+                return KnowledgeJSON.citation(ref)
+            }]
+        if tool == "session.get_timeline" {
+            let bucket = args["bucket_seconds"] as? Int ?? 60
+            guard bucket > 0 else { throw KnowledgeToolError.invalidParameter("bucket_seconds must be positive") }
+            data["buckets"] = Self.bucketTimeline(hits: page, bucketSeconds: Double(bucket))
+        }
+        return .success(data)
     }
-    
-    private func sessionSearchSegments(_ args: [String: Any]) async throws -> KnowledgeToolResult {
-        guard let sessionIDStrs = args["session_ids"] as? [String] else {
-            throw KnowledgeToolError.missingParameter("session_ids")
+
+    private func search(_ args: [String: Any]) async throws -> KnowledgeToolResult {
+        guard let query = args["query"] as? String, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw KnowledgeToolError.invalidParameter("query must be non-empty")
         }
-        guard let query = args["query"] as? String else {
-            throw KnowledgeToolError.missingParameter("query")
-        }
-        
-        let sessionIDs = sessionIDStrs.compactMap { UUID(uuidString: $0) }
-        guard !sessionIDs.isEmpty else {
-            throw KnowledgeToolError.invalidParameter("session_ids must contain valid UUIDs")
-        }
-        guard sessionIDs.allSatisfy(isSessionAllowedByScope) else {
-            return .error("Session is outside the current knowledge scope")
-        }
-        
-        let limit = min(8, max(1, args["limit"] as? Int ?? 8))
-        let searchScope = KnowledgeQAScope.fromSelection(sessionIDs)
-        let result = try await retrievalService.search(
-            KnowledgeRetrievalRequest(
-                query: query,
-                scope: searchScope,
-                originFilter: originFilter,
-                resultLimit: limit,
-                requestID: requestID,
-                includeCatalog: false,
-                retrievalPath: .agent
-            )
-        )
-        let hits = result.hits
-        let citations = hits.map { citationToDict(KnowledgeQAService.citation(from: $0)) }
-        let results = hits.map { Self.hitToDict($0) }
-        return .success([
-            "hit_count": results.count,
-            "hits": results,
-            "citations": citations,
-        ])
+        let ids = try await sourceIDs(args)
+        let limit = min(32, max(1, args["limit"] as? Int ?? 8))
+        let result = try await retrievalService.search(KnowledgeRetrievalRequest(query: query,
+            scope: ids.map(KnowledgeQAScope.fromSelection) ?? scope, originFilter: originFilter, resultLimit: limit,
+            requestID: requestID, includeCatalog: false, retrievalPath: .agent,
+            useGraph: args["use_graph"] as? Bool ?? (workspace == nil)))
+        let visible = Set(await visibleSessions().map(\.id))
+        let hits = result.hits.filter { workspace == nil || visible.contains($0.sessionID) }
+        return .success(["hits": hits.count, "hit_count": hits.count,
+            "segments": hits.map(Self.hitToDict), "complete": false, "candidate_set_only": true,
+            "retrieval": ["hybrid_count": result.diagnostics.hybridHitCount,
+                          "graph_count": result.diagnostics.graphHitCount, "graph_executed": result.diagnostics.graphAttempted,
+                          "reranker": result.diagnostics.rerankerStatus.rawValue, "selected_count": hits.count,
+                          "source_count": Set(hits.map(\.sessionID)).count],
+            "citations": hits.map { KnowledgeJSON.citation(KnowledgeQAService.citation(from: $0)) }])
     }
-    
-    private func sessionGetTimeline(_ args: [String: Any]) async throws -> KnowledgeToolResult {
-        guard let sessionIDStr = args["session_id"] as? String,
-              let sessionID = UUID(uuidString: sessionIDStr) else {
-            throw KnowledgeToolError.invalidParameter("session_id must be valid UUID")
-        }
-        guard isSessionAllowedByScope(sessionID) else {
-            return .error("Session is outside the current knowledge scope")
-        }
-        
-        let bucketSeconds = args["bucket_seconds"] as? Int ?? 60
-        
-        let filter = SessionSearchFilter(sessionID: sessionID, limit: 500)
+
+    private func discover(_ args: [String: Any]) async throws -> KnowledgeToolResult {
         let service = await MainActor.run { SessionIndexCoordinator.shared.searchService }
-        let hits = try await service.transcriptLexicalSearch(query: "", filter: filter)
-        
-        let buckets = Self.bucketTimeline(hits: hits, bucketSeconds: Double(bucketSeconds))
-        
-        return .success([
-            "session_id": sessionID.uuidString,
-            "bucket_seconds": bucketSeconds,
-            "bucket_count": buckets.count,
-            "buckets": buckets,
-        ])
+        var filter = await retrievalService.makeVisibleFilter(scope: scope, originFilter: originFilter)
+        filter.limit = min(32, max(1, args["limit"] as? Int ?? 16))
+        let cards = try await service.sessionSearch(query: args["query"] as? String ?? "", filter: filter)
+        let visible = Set(await visibleSessions().map(\.id))
+        var rows: [[String: Any]] = []
+        for card in cards where visible.contains(card.sessionID) {
+            if let source = await visibleSessions().first(where: { $0.id == card.sessionID }) {
+                var row = await metadata(source, probe: false)
+                row["match_source"] = card.matchSource
+                rows.append(row)
+            }
+        }
+        return .success(["sources": rows, "returned_count": rows.count, "complete": false,
+                         "candidate_set_only": true, "citations": rows.flatMap { $0["citations"] as? [[String: Any]] ?? [] }])
     }
-    
-    private func knowledgeCompareSessions(_ args: [String: Any]) async throws -> KnowledgeToolResult {
-        guard let sessionIDStrs = args["session_ids"] as? [String] else {
-            throw KnowledgeToolError.missingParameter("session_ids")
-        }
-        
-        let sessionIDs = sessionIDStrs.compactMap { UUID(uuidString: $0) }
-        guard sessionIDs.count >= 2 else {
-            throw KnowledgeToolError.invalidParameter("session_ids must contain at least 2 valid UUIDs")
-        }
-        guard sessionIDs.allSatisfy(isSessionAllowedByScope) else {
-            return .error("Session is outside the current knowledge scope")
-        }
-        
-        let focusQuery = args["focus_query"] as? String
-        let mode = args["mode"] as? String ?? "themes"
-        
-        let service = await MainActor.run { SessionIndexCoordinator.shared.searchService }
-        var comparisons: [[String: Any]] = []
+
+    private func compare(_ args: [String: Any]) async throws -> KnowledgeToolResult {
+        guard let ids = try await sourceIDs(args, minimum: 2) else { throw KnowledgeToolError.missingParameter("session_ids") }
+        guard ids.count <= 16 else { throw KnowledgeToolError.invalidParameter("Compare at most 16 sources per operation") }
+        var rows: [[String: Any]] = []
         var citations: [[String: Any]] = []
-        
-        for sessionID in sessionIDs {
-            guard let summary = try await service.sessionSummary(id: sessionID) else { continue }
-            
-            var sessionData: [String: Any] = [
-                "session_id": sessionID.uuidString,
-                "title": summary.title,
-                "summary": summary.markdown as Any,
-            ]
-            
-            if let focusQuery, !focusQuery.isEmpty {
-                let focus = try await retrievalService.search(
-                    KnowledgeRetrievalRequest(
-                        query: focusQuery,
-                        scope: .session(sessionID),
-                        originFilter: originFilter,
-                        resultLimit: 3,
-                        requestID: requestID,
-                        includeCatalog: false,
-                        retrievalPath: .agent
-                    )
-                )
-                sessionData["focus_hits"] = focus.hits.map { Self.hitToDict($0) }
-                citations.append(contentsOf: focus.hits.map {
-                    citationToDict(KnowledgeQAService.citation(from: $0))
-                })
+        for id in ids {
+            let result = try await summary(["session_id": id.uuidString])
+            if case .success(var row) = result {
+                if let query = args["focus_query"] as? String, !query.isEmpty,
+                   case .success(let hits) = try await search(["session_ids": [id.uuidString], "query": query, "limit": 3]) {
+                    row["focus_evidence"] = hits
+                    citations += hits["citations"] as? [[String: Any]] ?? []
+                }
+                rows.append(row)
+                citations += row["citations"] as? [[String: Any]] ?? []
             }
-            
-            comparisons.append(sessionData)
-            citations.append(sessionCitation(
-                sessionID: sessionID,
-                title: summary.title,
-                sourceType: "sessionSummary",
-                snippet: summary.markdown,
-                chunkIndex: -2
-            ))
         }
-        
-        return .success([
-            "mode": mode,
-            "session_count": comparisons.count,
-            "comparisons": comparisons,
-            "citations": citations,
-        ])
+        return .success(["comparisons": rows, "session_count": rows.count, "citations": citations,
+                         "coverage_note": "Every requested source is retained; unavailable summaries remain unknown. Summaries do not verify exact decisions."])
     }
-    
-    private func finishWithEvidence(_ args: [String: Any]) -> KnowledgeToolResult {
-        guard let acceptedRefs = args["accepted_refs"] as? [String] else {
-            return .error("accepted_refs must be an array of citation IDs")
-        }
-        return .control(.finish(acceptedRefs: acceptedRefs))
+
+    private func reference(_ session: WorkbenchSession, kind: String, chunk: Int, text: String) -> KnowledgeSourceRef {
+        KnowledgeSourceRef(sourceID: session.id.uuidString, sourceType: kind, title: session.title, uri: nil, page: nil,
+                           startTime: nil, endTime: nil, parentID: nil, chunkIndex: chunk, language: nil,
+                           speaker: nil, snippet: text, matchText: nil)
     }
-    
-    private func askClarification(_ args: [String: Any]) -> KnowledgeToolResult {
-        guard let question = args["question"] as? String, !question.isEmpty else {
-            return .error("question must be a non-empty string")
-        }
-        return .control(.clarify(question: question))
+
+    static func hitToDict(_ hit: SessionSearchHit) -> [String: Any] {
+        ["session_id": hit.sessionID.uuidString, "text": hit.text, "start": hit.start as Any? ?? NSNull(),
+         "end": hit.end as Any? ?? NSNull(), "speakers": hit.speakerLabels]
     }
-    
+
     static func bucketTimeline(hits: [SessionSearchHit], bucketSeconds: Double) -> [[String: Any]] {
-        guard !hits.isEmpty, bucketSeconds > 0 else { return [] }
-        
-        var buckets: [[String: Any]] = []
-        var currentBucket: [SessionSearchHit] = []
-        var bucketStart = 0.0
-        
-        let sorted = hits.sorted { ($0.start ?? 0) < ($1.start ?? 0) }
-        
-        for hit in sorted {
-            let hitStart = hit.start ?? 0
-            let hitBucket = floor(hitStart / bucketSeconds) * bucketSeconds
-            
-            if currentBucket.isEmpty {
-                bucketStart = hitBucket
-                currentBucket.append(hit)
-            } else if hitBucket == bucketStart {
-                currentBucket.append(hit)
-            } else {
-                let bucketEnd = bucketStart + bucketSeconds
-                buckets.append([
-                    "start": bucketStart,
-                    "end": bucketEnd,
-                    "segment_count": currentBucket.count,
-                    "segments": currentBucket.map { Self.hitToDict($0) },
-                ])
-                bucketStart = hitBucket
-                currentBucket = [hit]
-            }
+        guard bucketSeconds > 0 else { return [] }
+        let grouped = Dictionary(grouping: hits) { floor(($0.start ?? 0) / bucketSeconds) * bucketSeconds }
+        return grouped.keys.sorted().map { start in
+            ["start": start, "end": start + bucketSeconds, "segment_count": grouped[start]!.count,
+             "segments": grouped[start]!.map(hitToDict)]
         }
-        
-        if !currentBucket.isEmpty {
-            let bucketEnd = bucketStart + bucketSeconds
-            buckets.append([
-                "start": bucketStart,
-                "end": bucketEnd,
-                "segment_count": currentBucket.count,
-                "segments": currentBucket.map { Self.hitToDict($0) },
-            ])
-        }
-        
-        return buckets
-    }
-    
-    private func sessionToDict(_ session: WorkbenchSession) -> [String: Any] {
-        let origin = KnowledgeSourceOrigin.resolve(
-            isCloudStorage: session.storage == .cloud,
-            hasRemoteSessionID: session.remoteSessionID != nil || session.isRemoteOnly
-        )
-        let duration = session.duration ?? 0
-        return [
-            "session_id": session.id.uuidString,
-            "title": session.title,
-            "type": session.sessionType.rawValue,
-            "duration": duration,
-            "modified_at": ISO8601DateFormatter().string(from: session.modifiedAt),
-            "origin": origin.rawValue,
-            "has_transcript": session.transcript != nil,
-        ]
-    }
-
-    private func isSessionAllowedByScope(_ sessionID: UUID) -> Bool {
-        switch scope {
-        case .all:
-            return true
-        case let .session(id):
-            return id == sessionID
-        case let .sessions(ids):
-            return ids.contains(sessionID)
-        }
-    }
-
-    private func sessionCitation(
-        sessionID: UUID,
-        title: String,
-        sourceType: String,
-        snippet: String? = nil,
-        chunkIndex: Int? = nil
-    ) -> [String: Any] {
-        let ref = KnowledgeSourceRef(
-            sourceID: sessionID.uuidString,
-            sourceType: sourceType,
-            title: title.isEmpty ? "Untitled session" : title,
-            uri: nil,
-            page: nil,
-            startTime: nil,
-            endTime: nil,
-            parentID: nil,
-            chunkIndex: chunkIndex,
-            language: nil,
-            speaker: nil,
-            snippet: snippet,
-            matchText: nil
-        )
-        return citationToDict(ref)
-    }
-
-    private func citationToDict(_ ref: KnowledgeSourceRef) -> [String: Any] {
-        var dict: [String: Any] = [
-            "id": ref.id,
-            "source_id": ref.sourceID,
-            "source_type": ref.sourceType,
-            "title": ref.title,
-        ]
-        if let uri = ref.uri { dict["uri"] = uri }
-        if let page = ref.page { dict["page"] = page }
-        if let startTime = ref.startTime { dict["start_time"] = startTime }
-        if let endTime = ref.endTime { dict["end_time"] = endTime }
-        if let chunkIndex = ref.chunkIndex { dict["chunk_index"] = chunkIndex }
-        if let language = ref.language { dict["language"] = language }
-        if let speaker = ref.speaker { dict["speaker"] = speaker }
-        if let snippet = ref.snippet { dict["snippet"] = snippet }
-        if let matchText = ref.matchText { dict["match_text"] = matchText }
-        return dict
-    }
-    
-    private static func hitToDict(_ hit: SessionSearchHit) -> [String: Any] {
-        var dict: [String: Any] = [
-            "session_id": hit.sessionID.uuidString,
-            "title": hit.title,
-            "text": hit.text,
-            "score": hit.score,
-        ]
-        if let start = hit.start { dict["start"] = start }
-        if let end = hit.end { dict["end"] = end }
-        if !hit.speakerLabels.isEmpty { dict["speakers"] = hit.speakerLabels }
-        if let snippet = hit.snippet { dict["snippet"] = snippet }
-        return dict
     }
 }
 
@@ -524,24 +403,15 @@ enum KnowledgeToolResult: @unchecked Sendable {
     case control(KnowledgeToolControl)
 }
 
-enum KnowledgeToolControl: Sendable {
-    case finish(acceptedRefs: [String])
-    case clarify(question: String)
-}
+enum KnowledgeToolControl: Sendable { case clarify(question: String) }
 
 enum KnowledgeToolError: LocalizedError, Sendable {
-    case unknownTool(String)
-    case missingParameter(String)
-    case invalidParameter(String)
-    
+    case unknownTool(String), missingParameter(String), invalidParameter(String)
     var errorDescription: String? {
         switch self {
-        case .unknownTool(let name):
-            return "Unknown tool: \(name)"
-        case .missingParameter(let param):
-            return "Missing required parameter: \(param)"
-        case .invalidParameter(let msg):
-            return "Invalid parameter: \(msg)"
+        case .unknownTool(let name): "Unknown tool: \(name)"
+        case .missingParameter(let name): "Missing required parameter: \(name)"
+        case .invalidParameter(let message): "Invalid parameter: \(message)"
         }
     }
 }

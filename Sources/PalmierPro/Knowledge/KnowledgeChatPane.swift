@@ -524,8 +524,7 @@ struct KnowledgeChatPane: View {
     }
 
     private var canSend: Bool {
-        !controller.isAnswering
-            && !controller.isPreparingKnowledgeModels
+        !controller.isPreparingKnowledgeModels
             && controller.accessBlockedMessage == nil
             && controller.answerBlockedMessage == nil
             && controller.canAskCurrentScope

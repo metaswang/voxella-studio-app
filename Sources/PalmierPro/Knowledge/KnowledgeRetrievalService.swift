@@ -29,6 +29,7 @@ struct KnowledgeRetrievalRequest: Sendable {
     var requestID: UUID
     var includeCatalog: Bool
     var retrievalPath: KnowledgeRetrievalPath
+    var useGraph: Bool
 
     init(
         query: String,
@@ -38,7 +39,8 @@ struct KnowledgeRetrievalRequest: Sendable {
         resultLimit: Int = 8,
         requestID: UUID,
         includeCatalog: Bool,
-        retrievalPath: KnowledgeRetrievalPath
+        retrievalPath: KnowledgeRetrievalPath,
+        useGraph: Bool = true
     ) {
         self.query = query
         self.originalQuery = originalQuery ?? query
@@ -48,10 +50,11 @@ struct KnowledgeRetrievalRequest: Sendable {
         self.requestID = requestID
         self.includeCatalog = includeCatalog
         self.retrievalPath = retrievalPath
+        self.useGraph = useGraph
     }
 
     var clampedResultLimit: Int {
-        min(8, max(1, resultLimit))
+        min(32, max(1, resultLimit))
     }
 }
 
@@ -112,7 +115,8 @@ struct KnowledgeRetrievalService: Sendable {
                 query: request.query,
                 filter: filter,
                 policy: policy,
-                requestID: request.requestID
+                requestID: request.requestID,
+                useGraph: request.useGraph
             )
         }
         diagnostics.hybridHitCount = hybridHits.count
@@ -120,12 +124,7 @@ struct KnowledgeRetrievalService: Sendable {
         diagnostics.graphStatus = graphStatus
         diagnostics.graphHitCount = graphHits.count
 
-        var candidates: [SessionSearchHit] = []
-        var seenUnitIDs = Set<Int>()
-        for hit in hybridHits + graphHits where seenUnitIDs.insert(hit.unitID).inserted {
-            candidates.append(hit)
-            if candidates.count == candidateLimit { break }
-        }
+        var candidates = Self.fuse(hybrid: hybridHits, graph: graphHits, limit: candidateLimit)
         candidates = Self.scoped(candidates, to: request.scope)
         diagnostics.candidateCount = candidates.count
         guard !candidates.isEmpty else {
@@ -138,7 +137,9 @@ struct KnowledgeRetrievalService: Sendable {
             candidates: candidates,
             service: service,
             policy: policy,
-            requestID: request.requestID
+            requestID: request.requestID,
+            limit: request.clampedResultLimit,
+            coverSources: request.scope.sessionIDs.count > 1
         )
         diagnostics.rerankerStatus = rerankerStatus
         let hits = Array(selected.prefix(request.clampedResultLimit))
@@ -226,8 +227,12 @@ struct KnowledgeRetrievalService: Sendable {
         query: String,
         filter: SessionSearchFilter,
         policy: KnowledgeQAExecutionPolicy,
-        requestID: UUID
+        requestID: UUID,
+        useGraph: Bool
     ) async throws -> ([SessionSearchHit], [SessionSearchHit], Bool, KnowledgeGraphRecallStatus) {
+        if !useGraph {
+            return (try await hybridRecall(service: service, query: query, filter: filter), [], false, .disabled)
+        }
         async let hybrid = hybridRecall(service: service, query: query, filter: filter)
         async let graph = graphRecallSoft(
             store: service.store,
@@ -306,7 +311,9 @@ struct KnowledgeRetrievalService: Sendable {
         candidates: [SessionSearchHit],
         service: SearchService,
         policy: KnowledgeQAExecutionPolicy,
-        requestID: UUID
+        requestID: UUID,
+        limit: Int,
+        coverSources: Bool
     ) async throws -> ([SessionSearchHit], KnowledgeRerankerStatus) {
         do {
             let scores = try await KnowledgeQATimeout.run(policy.rerank) {
@@ -327,7 +334,7 @@ struct KnowledgeRetrievalService: Sendable {
                 return ([], .used)
             }
             let vectors = (try? await service.store.textEmbeddings(unitIDs: admitted.map(\.hit.unitID))) ?? [:]
-            return (KnowledgeMMR.select(admitted, vectors: vectors).map(\.hit), .used)
+            return (KnowledgeMMR.select(admitted, vectors: vectors, limit: limit, coverSources: coverSources).map(\.hit), .used)
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as KnowledgeQAError {
@@ -342,7 +349,7 @@ struct KnowledgeRetrievalService: Sendable {
         let fallback = candidates.map { KnowledgeRerankedHit(hit: $0, score: $0.score) }
         let vectors = (try? await service.store.textEmbeddings(unitIDs: candidates.map(\.unitID))) ?? [:]
         try Task.checkCancellation()
-        return (KnowledgeMMR.select(fallback, vectors: vectors).map(\.hit), .failed)
+        return (KnowledgeMMR.select(fallback, vectors: vectors, limit: limit, coverSources: coverSources).map(\.hit), .failed)
     }
 
     private func catalogHits(filter: SessionSearchFilter) async throws -> [SessionSearchHit] {
@@ -379,6 +386,26 @@ struct KnowledgeRetrievalService: Sendable {
                 sourceModifiedAt: entry.sourceModifiedAt
             )
         }
+    }
+
+    /// Reciprocal-rank fusion preserves graph candidates before the shared cap.
+    /// Relevance admission and source coverage happen afterwards.
+    static func fuse(hybrid: [SessionSearchHit], graph: [SessionSearchHit], limit: Int) -> [SessionSearchHit] {
+        var scores: [String: Double] = [:]
+        var hits: [String: SessionSearchHit] = [:]
+        var order: [String: Int] = [:]
+        for channel in [hybrid, graph] {
+            var seen = Set<String>()
+            for (rank, hit) in channel.enumerated() {
+                let key = hit.sessionID.uuidString + ":" + String(hit.unitID)
+                guard seen.insert(key).inserted else { continue }
+                scores[key, default: 0] += 1 / Double(60 + rank + 1)
+                if hits[key] == nil { order[key] = order.count; hits[key] = hit }
+            }
+        }
+        return scores.keys.sorted {
+            scores[$0] == scores[$1] ? order[$0]! < order[$1]! : scores[$0]! > scores[$1]!
+        }.prefix(max(0, limit)).compactMap { hits[$0] }
     }
 
     private static func scoped(

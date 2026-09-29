@@ -214,9 +214,9 @@ final class KnowledgeBaseController {
             return true
         case .session:
             guard isSessionVisibleForCurrentAuth else { return false }
-            return selectedRow?.isQAAble ?? false
+            return selectedRow != nil
         case .sessions:
-            return selectedQAAbleCount >= 1
+            return selectedSessionIDs.contains { isSessionVisibleForCurrentAuth($0) }
         }
     }
 
@@ -589,8 +589,7 @@ final class KnowledgeBaseController {
 
     func send(query: String) {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isAnswering, !isPreparingKnowledgeModels,
-              activeRequestID == nil
+        guard !text.isEmpty, !isPreparingKnowledgeModels
         else { return }
         refreshAccessGate()
         guard accessBlockedMessage == nil else { return }
@@ -600,20 +599,13 @@ final class KnowledgeBaseController {
             return
         }
 
+        if isAnswering { cancelAnswer() }
+
         // Reserve the request slot before model preparation or task creation;
         // repeated submissions cannot replace the accepted round silently.
         activeRequestID = UUID()
         pendingQuery = text
         errorMessage = nil
-        refreshModelPlan()
-        if needsModelDownload {
-            showModelGate = true
-            showLocalResourcesTip(L10n.string("Prepare local search resources before asking."))
-            if needsModelLicenseAcceptance {
-                models.presentManager()
-            }
-            return
-        }
         flushPendingQueryIfNeeded()
     }
 
@@ -698,7 +690,7 @@ final class KnowledgeBaseController {
     private func flushPendingQueryIfNeeded() {
         guard KnowledgeQAReadyGate.shouldFlushPending(
             pendingQuery: pendingQuery,
-            missingCount: modelPlan.missingItems.count,
+            missingCount: 0,
             isAnswering: isAnswering
         ) else { return }
         refreshAccessGate()

@@ -6,11 +6,13 @@ import Foundation
 struct ProviderAgentClient: AgentClient {
     let route: LLMRuntimeRoute
     let session: URLSession
+    var maximumOutputTokens: Int? = nil
     var onModelSelected: @Sendable (String) async -> Void = { _ in }
 
-    init(route: LLMRuntimeRoute, session: URLSession = .shared) {
+    init(route: LLMRuntimeRoute, session: URLSession = .shared, maximumOutputTokens: Int? = nil) {
         self.route = route
         self.session = session
+        self.maximumOutputTokens = maximumOutputTokens
     }
 
     func stream(
@@ -26,7 +28,7 @@ struct ProviderAgentClient: AgentClient {
                     var emitted = false
                     do {
                         await onModelSelected(configuration.modelIdentifier)
-                        let client = SingleProviderAgentClient(configuration: configuration, session: session, timeout: route.policy.timeoutSeconds)
+                        let client = SingleProviderAgentClient(configuration: configuration, session: session, timeout: route.policy.timeoutSeconds, maximumOutputTokens: maximumOutputTokens)
                         let events = client.stream(
                             system: system, tools: tools, messages: messages, context: context
                         )
@@ -72,6 +74,7 @@ private struct SingleProviderAgentClient: AgentClient {
     let configuration: LLMRuntimeConfiguration
     let session: URLSession
     let timeout: Double
+    let maximumOutputTokens: Int?
 
     func stream(
         system: String,
@@ -120,6 +123,20 @@ private struct SingleProviderAgentClient: AgentClient {
             }
             if protocolKind == .openAIResponses, configuration.chatCapability.thinking == .automatic {
                 body.removeValue(forKey: "reasoning")
+            }
+            if let maximumOutputTokens {
+                switch protocolKind {
+                case .openAIResponses: body["max_output_tokens"] = maximumOutputTokens
+                case .anthropic:
+                    body["max_tokens"] = maximumOutputTokens
+                    if var thinking = body["thinking"] as? [String: Any], let tokens = thinking["budget_tokens"] as? Int {
+                        thinking["budget_tokens"] = min(tokens, max(1_024, maximumOutputTokens - 1_024))
+                        body["thinking"] = thinking
+                    }
+                case .openAICompatible:
+                    body["max_tokens"] = maximumOutputTokens
+                    body.removeValue(forKey: "max_completion_tokens")
+                }
             }
             request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
             Log.agent.notice(

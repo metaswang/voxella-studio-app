@@ -110,6 +110,23 @@ struct KnowledgeChatReliabilityTests {
         #expect(persisted.last?.recoveryActions == [.aiSettings])
     }
 
+    @Test func newConditionsCancelOldRunAndIgnoreLateResults() async throws {
+        let (controller, _, probe, root) = try await makeController()
+        defer { try? FileManager.default.removeItem(at: root) }
+        controller.send(query: "Compare all meetings")
+        try await waitUntil { probe.requestIDs.count == 1 }
+        let oldID = probe.requestIDs[0]
+        controller.send(query: "Only the final meeting risks")
+        try await waitUntil { probe.requestIDs.count == 2 }
+        let newID = probe.requestIDs[1]
+        probe.yield(.delta("obsolete worker answer"), to: oldID)
+        probe.yield(.finished("obsolete answer"), to: oldID)
+        probe.yield(.finished("final meeting risks"), to: newID)
+        try await waitUntil { !controller.isAnswering }
+        #expect(!controller.messages.contains { $0.content.contains("obsolete") })
+        #expect(controller.messages.last?.content == "final meeting risks")
+    }
+
     @Test func cancellationKeepsThePartialAnswerAndFailureEndsTheRound() async throws {
         let (controller, store, probe, root) = try await makeController()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -143,6 +160,7 @@ struct KnowledgeChatReliabilityTests {
 
     @Test func completeServiceResultsDoNotReplaySyntheticDeltas() async {
         var service = KnowledgeQAService()
+        service.useAgentRuntime = false
         service.skillsProvider = { [] }
         service.dependencies = KnowledgeQAExecutionDependencies(
             planner: { query, _, _, _ in .fallback(for: query) },

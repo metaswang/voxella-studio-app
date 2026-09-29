@@ -216,6 +216,11 @@ struct SessionIndexSnapshot: Sendable {
     var summaryMarkdown: String?
     var language: String?
     var duration: Double
+    var mediaDurationSec: Double? = nil
+    var durationProvenance: String = "legacy_unknown"
+    var lastSpokenEndSec: Double? = nil
+    var transcribedStartSec: Double? = nil
+    var transcribedEndSec: Double? = nil
     var hasVideo: Bool
     var mediaPath: String
     var sourceMTime: Double?

@@ -2,6 +2,8 @@ import Foundation
 
 struct HostedAgentClient: AgentClient {
     let settings: AgentRunSettings
+    var useCase: String? = nil
+    var maximumOutputTokens: Int? = nil
 
     func stream(
         system: String,
@@ -42,6 +44,7 @@ struct HostedAgentClient: AgentClient {
         request.setValue("text/event-stream", forHTTPHeaderField: "accept")
         request.setValue(context.outputMessageID.uuidString.lowercased(), forHTTPHeaderField: "X-Client-Request-ID")
         context.apply(to: &request, telemetryEnabled: true)
+        if let useCase { request.setValue(useCase, forHTTPHeaderField: "X-Voxella-LLM-Use-Case") }
         var body = OpenAIRequestBody.build(
                 // The server owns the actual model. This is a compatibility
                 // value and is intentionally not exposed by the hosted UI.
@@ -52,6 +55,7 @@ struct HostedAgentClient: AgentClient {
                 messages: messages
             )
         body["model"] = "voxella-hosted"
+        if let maximumOutputTokens { body["max_output_tokens"] = maximumOutputTokens }
         request.httpBody = try JSONSerialization.data(
             withJSONObject: body,
             options: [.sortedKeys]
