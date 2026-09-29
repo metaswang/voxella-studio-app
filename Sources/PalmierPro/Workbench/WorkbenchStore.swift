@@ -2118,6 +2118,8 @@ final class WorkbenchStore {
     /// Open the transcribe empty state on the Net Video entry instead of file import.
     var preferNetVideoEntry = false
     var preferRecordEntry = false
+    /// One-shot capture request consumed when the Record entry becomes visible.
+    var pendingLocalRecording: LocalRecordingRequest?
 
     func stageMediaImport(_ urls: [URL]) {
         transcriptionAdmissionError = nil
@@ -2242,6 +2244,25 @@ final class WorkbenchStore {
         preferRecordEntry = true
         selectedTranscriptionID = nil
         route = .transcribe
+    }
+
+    /// Opens Record and, when requested, starts the existing capture flow.
+    func showLocalRecording(_ request: LocalRecordingRequest) {
+        transcriptionAdmissionError = nil
+        preferNetVideoEntry = false
+        pendingLocalRecording = request
+        selectedTranscriptionID = nil
+        route = .transcribe
+        // Re-arm the flag so a second visit still notifies the transcribe view.
+        if preferRecordEntry {
+            preferRecordEntry = false
+        }
+        preferRecordEntry = true
+    }
+
+    func consumePendingLocalRecording() -> LocalRecordingRequest? {
+        defer { pendingLocalRecording = nil }
+        return pendingLocalRecording
     }
 
     func consumeNetVideoEntryPreference() -> Bool {

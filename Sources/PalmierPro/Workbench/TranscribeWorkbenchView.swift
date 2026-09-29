@@ -7,6 +7,7 @@ struct TranscribeWorkbenchView: View {
     @State private var speakerEditRequest: SpeakerEditRequest?
     @State private var showProcessingOptions = false
     @State private var entryMode: TranscriptionEntryMode = .importFiles
+    @State private var handledRecordingRequestID: UUID?
     @State private var netVideoURL = ""
     @State private var netVideoPhase: NetVideoImportPhase = .idle
     @State private var pendingNetVideoTitle: String?
@@ -56,6 +57,9 @@ struct TranscribeWorkbenchView: View {
             if prefersRecord {
                 applyPreferredEntryMode()
             }
+        }
+        .onChange(of: store.pendingLocalRecording) { _, _ in
+            startPendingLocalRecordingIfNeeded()
         }
         .onChange(of: store.pendingMediaImportURLs) { _, urls in
             showProcessingOptions = !urls.isEmpty
@@ -134,6 +138,29 @@ struct TranscribeWorkbenchView: View {
         } else if store.consumeNetVideoEntryPreference() {
             entryMode = .netVideo
         }
+        startPendingLocalRecordingIfNeeded()
+    }
+
+    private func startPendingLocalRecordingIfNeeded() {
+        guard let request = store.pendingLocalRecording else { return }
+        guard handledRecordingRequestID != request.id else { return }
+        handledRecordingRequestID = request.id
+        _ = store.consumePendingLocalRecording()
+        entryMode = .record
+        beginLocalRecording(request)
+    }
+
+    private func beginLocalRecording(_ request: LocalRecordingRequest) {
+        if recording.phase.isCapturing {
+            recording.showRecordingSetup()
+            return
+        }
+        guard recording.phase == .idle, !recording.isRequestingStart else { return }
+        guard request.startImmediately else {
+            recording.configuration = request.configuration(from: recording.configuration)
+            return
+        }
+        recording.start(request)
     }
 
     private func detail(index: Int) -> some View {
