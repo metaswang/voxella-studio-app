@@ -12,6 +12,7 @@ final class RecordingSessionController {
     var configuration = RecordingCaptureConfiguration()
     var devices: [RecordingAudioDevice] = []
     var phase: RecordingPhase = .idle
+    private(set) var isRequestingStart = false
     var elapsed: TimeInterval = 0
     var isMicrophoneMuted = false
     var errorMessage: String?
@@ -22,7 +23,7 @@ final class RecordingSessionController {
     @ObservationIgnored let liveWaveform = RecordingLiveWaveformStore()
 
     var isPaused: Bool { phase == .paused }
-    var canStart: Bool { !phase.isActive && configuration.hasAudioSource }
+    var canStart: Bool { phase == .idle && !isRequestingStart && configuration.hasAudioSource }
 
     private let engine = ScreenCaptureRecordingEngine()
     private let hider = RecordingAppHider()
@@ -32,6 +33,7 @@ final class RecordingSessionController {
     private var sessionID = UUID()
     private var timerTask: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
+    private var accessPreparationTask: Task<Void, Never>?
     private var startedAt: Date?
     private var pauseAccumulated: TimeInterval = 0
     private var pauseStartedAt: Date?
@@ -100,6 +102,7 @@ final class RecordingSessionController {
     }
 
     func setCaptureMode(_ mode: RecordingCaptureMode) {
+        guard phase == .idle, !isRequestingStart else { return }
         configuration.applyMode(mode)
         configuration.microphone = RecordingAudioDeviceEnumerator.resolvedMicrophone(
             configuration.microphone,
@@ -109,17 +112,36 @@ final class RecordingSessionController {
     }
 
     func start(mode: RecordingCaptureMode) {
-        guard phase == .idle else { return }
+        guard phase == .idle, !isRequestingStart else { return }
         setCaptureMode(mode)
         requestStart()
     }
 
-    func requestStart() {
-        Task { @MainActor [weak self] in
+    func start(_ request: LocalRecordingRequest) {
+        guard phase == .idle, !isRequestingStart else { return }
+        configuration = request.configuration(from: configuration)
+        requestStart(targetBundleIdentifier: request.applicationBundleIdentifier)
+    }
+
+    func requestStart(targetBundleIdentifier: String? = nil) {
+        guard canStart else { return }
+        isRequestingStart = true
+        let requestedConfiguration = configuration
+        accessPreparationTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            defer {
+                self.isRequestingStart = false
+                self.accessPreparationTask = nil
+            }
             do {
                 try await AccountService.shared.prepareNewContentAccess()
-                self.start()
+                try Task.checkCancellation()
+                guard self.phase == .idle else { return }
+                self.configuration = requestedConfiguration
+                self.isRequestingStart = false
+                self.start(preferredBundleIdentifier: targetBundleIdentifier)
+            } catch is CancellationError {
+                return
             } catch is AppAccessError {
                 self.errorMessage = nil
                 return
@@ -139,7 +161,7 @@ final class RecordingSessionController {
         WorkbenchStore.shared.showRecordImport()
     }
 
-    func start() {
+    private func start(preferredBundleIdentifier: String? = nil) {
         do {
             try AccountService.shared.requireNewContentAccess()
         } catch is AppAccessError {
@@ -201,7 +223,9 @@ final class RecordingSessionController {
                 try Task.checkCancellation()
                 guard self.sessionID == id, self.phase == .preparing || self.phase == .picking else { return }
 
-                let picked = try await self.pickCaptureSource()
+                let picked = try await self.pickCaptureSource(
+                    preferredBundleIdentifier: preferredBundleIdentifier
+                )
                 try Task.checkCancellation()
                 guard self.sessionID == id else { return }
 
@@ -312,6 +336,7 @@ final class RecordingSessionController {
     }
 
     func prepareForTermination() async -> RecordingTerminationOutcome {
+        accessPreparationTask?.cancel()
         switch phase {
         case .idle:
             return .idle
@@ -461,7 +486,7 @@ final class RecordingSessionController {
         var displayID: CGDirectDisplayID?
     }
 
-    private func pickCaptureSource() async throws -> PickedSource {
+    private func pickCaptureSource(preferredBundleIdentifier: String? = nil) async throws -> PickedSource {
         switch configuration.mode {
         case .audioOnly:
             guard configuration.capturesSystemAudio else {
@@ -487,6 +512,10 @@ final class RecordingSessionController {
             updateControls()
             return PickedSource(filter: pickedFilter, sourceRect: nil, displayID: nil)
         case .window:
+            if let preferredBundleIdentifier,
+               let picked = try await targetedWindow(bundleIdentifier: preferredBundleIdentifier) {
+                return picked
+            }
             phase = .picking
             updateControls()
             let filter = try await RecordingContentPicker.shared.pick(style: .window)
@@ -511,6 +540,43 @@ final class RecordingSessionController {
             updateControls()
             return picked
         }
+    }
+
+    /// Only bypasses the picker when the app has one eligible window and full capture access already exists.
+    private func targetedWindow(bundleIdentifier: String) async throws -> PickedSource? {
+        guard RecordingPermission.tccAllowsScreenCapture() else { return nil }
+        let content: SCShareableContent
+        do {
+            content = try await RecordingPermission.shareableContent()
+        } catch {
+            try Task.checkCancellation()
+            Log.recording.notice("meeting window enumeration failed; using system picker error=\(Log.detail(error))")
+            return nil
+        }
+        try Task.checkCancellation()
+        let candidates = content.windows.map { window in
+            RecordingWindowCandidate(
+                id: window.windowID,
+                bundleIdentifier: window.owningApplication?.bundleIdentifier,
+                isOnScreen: window.isOnScreen,
+                layer: window.windowLayer,
+                frame: window.frame
+            )
+        }
+        guard let windowID = RecordingWindowSelection.unambiguousWindowID(
+            in: candidates, bundleIdentifier: bundleIdentifier
+        ), let window = content.windows.first(where: { $0.windowID == windowID }) else {
+            Log.recording.notice("meeting window unavailable or ambiguous for bundle=\(bundleIdentifier); using system picker")
+            return nil
+        }
+        Log.recording.notice(
+            "recording meeting window bundle=\(bundleIdentifier) title=\(window.title ?? "") size=\(Int(window.frame.width))x\(Int(window.frame.height))"
+        )
+        return PickedSource(
+            filter: SCContentFilter(desktopIndependentWindow: window),
+            sourceRect: nil,
+            displayID: nil
+        )
     }
 
     private func displayFilterOrPick(displayID: CGDirectDisplayID? = nil) async throws -> PickedSource {

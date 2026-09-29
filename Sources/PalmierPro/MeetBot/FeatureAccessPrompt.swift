@@ -216,7 +216,7 @@ struct FeatureAccessPrompt: View {
         case .signedOut:
             return feature == .calendarSettings
                 ? L10n.string("Sign in to connect Google Calendar and configure Meet Bot automation.")
-                : L10n.string("Sign in to send a visible bot to Google Meet, Teams, or Zoom meetings.")
+                : L10n.string("Sign in to send a visible notetaker to Google Meet, Teams, or Zoom. Remote notetaker requires a Starter plan or higher.")
         case .upgradeRequired:
             return L10n.string("Meet Bot and Google Calendar require a Starter plan or higher.")
         case .allowed:
