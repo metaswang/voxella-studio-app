@@ -155,14 +155,12 @@ struct TranscribeWorkbenchView: View {
             recording.showRecordingSetup()
             return
         }
-        guard request.startImmediately, recording.phase == .idle else {
-            recording.setCaptureMode(request.mode)
+        guard recording.phase == .idle, !recording.isRequestingStart else { return }
+        guard request.startImmediately else {
+            recording.configuration = request.configuration(from: recording.configuration)
             return
         }
-        recording.start(
-            mode: request.mode,
-            targetBundleIdentifier: request.applicationBundleIdentifier
-        )
+        recording.start(request)
     }
 
     private func detail(index: Int) -> some View {

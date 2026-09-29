@@ -2249,6 +2249,7 @@ final class WorkbenchStore {
     /// Opens Record and, when requested, starts the existing capture flow.
     func showLocalRecording(_ request: LocalRecordingRequest) {
         transcriptionAdmissionError = nil
+        preferNetVideoEntry = false
         pendingLocalRecording = request
         selectedTranscriptionID = nil
         route = .transcribe

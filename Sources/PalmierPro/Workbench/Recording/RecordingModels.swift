@@ -51,6 +51,14 @@ struct LocalRecordingRequest: Equatable, Sendable {
     var mode: RecordingCaptureMode
     var applicationBundleIdentifier: String?
     var startImmediately: Bool
+
+    func configuration(from current: RecordingCaptureConfiguration) -> RecordingCaptureConfiguration {
+        var result = current
+        result.applyMode(mode)
+        // Meeting shortcuts must include the other participants, including when using headphones.
+        result.capturesSystemAudio = true
+        return result
+    }
 }
 
 enum RecordingMicrophoneSource: Equatable, Hashable, Sendable {

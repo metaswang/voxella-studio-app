@@ -12,6 +12,7 @@ final class RecordingSessionController {
     var configuration = RecordingCaptureConfiguration()
     var devices: [RecordingAudioDevice] = []
     var phase: RecordingPhase = .idle
+    private(set) var isRequestingStart = false
     var elapsed: TimeInterval = 0
     var isMicrophoneMuted = false
     var errorMessage: String?
@@ -22,7 +23,7 @@ final class RecordingSessionController {
     @ObservationIgnored let liveWaveform = RecordingLiveWaveformStore()
 
     var isPaused: Bool { phase == .paused }
-    var canStart: Bool { !phase.isActive && configuration.hasAudioSource }
+    var canStart: Bool { phase == .idle && !isRequestingStart && configuration.hasAudioSource }
 
     private let engine = ScreenCaptureRecordingEngine()
     private let hider = RecordingAppHider()
@@ -32,6 +33,7 @@ final class RecordingSessionController {
     private var sessionID = UUID()
     private var timerTask: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
+    private var accessPreparationTask: Task<Void, Never>?
     private var startedAt: Date?
     private var pauseAccumulated: TimeInterval = 0
     private var pauseStartedAt: Date?
@@ -40,8 +42,6 @@ final class RecordingSessionController {
     private var captureBackend = "none"
     private var pendingStopReason: RecordingStopReason?
     private var activeConfiguration: RecordingCaptureConfiguration?
-    /// Meeting app to capture directly, consumed by the next window start.
-    private var pendingTargetBundleIdentifier: String?
 
     private init() {
         statusItem.attach(self)
@@ -102,6 +102,7 @@ final class RecordingSessionController {
     }
 
     func setCaptureMode(_ mode: RecordingCaptureMode) {
+        guard phase == .idle, !isRequestingStart else { return }
         configuration.applyMode(mode)
         configuration.microphone = RecordingAudioDeviceEnumerator.resolvedMicrophone(
             configuration.microphone,
@@ -110,25 +111,41 @@ final class RecordingSessionController {
         )
     }
 
-    func start(mode: RecordingCaptureMode, targetBundleIdentifier: String? = nil) {
-        guard phase == .idle else { return }
-        pendingTargetBundleIdentifier = targetBundleIdentifier
+    func start(mode: RecordingCaptureMode) {
+        guard phase == .idle, !isRequestingStart else { return }
         setCaptureMode(mode)
         requestStart()
     }
 
-    func requestStart() {
-        Task { @MainActor [weak self] in
+    func start(_ request: LocalRecordingRequest) {
+        guard phase == .idle, !isRequestingStart else { return }
+        configuration = request.configuration(from: configuration)
+        requestStart(targetBundleIdentifier: request.applicationBundleIdentifier)
+    }
+
+    func requestStart(targetBundleIdentifier: String? = nil) {
+        guard canStart else { return }
+        isRequestingStart = true
+        let requestedConfiguration = configuration
+        accessPreparationTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            defer {
+                self.isRequestingStart = false
+                self.accessPreparationTask = nil
+            }
             do {
                 try await AccountService.shared.prepareNewContentAccess()
-                self.start()
+                try Task.checkCancellation()
+                guard self.phase == .idle else { return }
+                self.configuration = requestedConfiguration
+                self.isRequestingStart = false
+                self.start(preferredBundleIdentifier: targetBundleIdentifier)
+            } catch is CancellationError {
+                return
             } catch is AppAccessError {
-                self.pendingTargetBundleIdentifier = nil
                 self.errorMessage = nil
                 return
             } catch {
-                self.pendingTargetBundleIdentifier = nil
                 self.errorMessage = error.localizedDescription
             }
         }
@@ -144,9 +161,7 @@ final class RecordingSessionController {
         WorkbenchStore.shared.showRecordImport()
     }
 
-    func start() {
-        let preferredBundleIdentifier = pendingTargetBundleIdentifier
-        pendingTargetBundleIdentifier = nil
+    private func start(preferredBundleIdentifier: String? = nil) {
         do {
             try AccountService.shared.requireNewContentAccess()
         } catch is AppAccessError {
@@ -321,6 +336,7 @@ final class RecordingSessionController {
     }
 
     func prepareForTermination() async -> RecordingTerminationOutcome {
+        accessPreparationTask?.cancel()
         switch phase {
         case .idle:
             return .idle
@@ -526,19 +542,31 @@ final class RecordingSessionController {
         }
     }
 
-    /// Records the largest on-screen window of a meeting app. Falls back to the system picker when none qualifies.
+    /// Only bypasses the picker when the app has one eligible window and full capture access already exists.
     private func targetedWindow(bundleIdentifier: String) async throws -> PickedSource? {
-        try await RecordingPermission.requestScreenCapture()
-        let content = try await RecordingPermission.shareableContent()
-        let candidates = content.windows.filter { window in
-            guard window.owningApplication?.bundleIdentifier == bundleIdentifier else { return false }
-            guard window.isOnScreen, window.windowLayer == 0 else { return false }
-            return window.frame.width >= 280 && window.frame.height >= 180
+        guard RecordingPermission.tccAllowsScreenCapture() else { return nil }
+        let content: SCShareableContent
+        do {
+            content = try await RecordingPermission.shareableContent()
+        } catch {
+            try Task.checkCancellation()
+            Log.recording.notice("meeting window enumeration failed; using system picker error=\(Log.detail(error))")
+            return nil
         }
-        guard let window = candidates.max(by: { lhs, rhs in
-            lhs.frame.width * lhs.frame.height < rhs.frame.width * rhs.frame.height
-        }) else {
-            Log.recording.notice("no meeting window for bundle=\(bundleIdentifier); using system picker")
+        try Task.checkCancellation()
+        let candidates = content.windows.map { window in
+            RecordingWindowCandidate(
+                id: window.windowID,
+                bundleIdentifier: window.owningApplication?.bundleIdentifier,
+                isOnScreen: window.isOnScreen,
+                layer: window.windowLayer,
+                frame: window.frame
+            )
+        }
+        guard let windowID = RecordingWindowSelection.unambiguousWindowID(
+            in: candidates, bundleIdentifier: bundleIdentifier
+        ), let window = content.windows.first(where: { $0.windowID == windowID }) else {
+            Log.recording.notice("meeting window unavailable or ambiguous for bundle=\(bundleIdentifier); using system picker")
             return nil
         }
         Log.recording.notice(

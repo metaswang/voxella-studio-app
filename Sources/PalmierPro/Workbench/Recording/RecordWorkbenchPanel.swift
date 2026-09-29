@@ -80,7 +80,7 @@ struct RecordWorkbenchPanel: View {
                     RecordingInfoButton(title: mode.title, message: mode.detail)
                         .padding(.trailing, AppTheme.Spacing.md)
                 }
-                .disabled(session.phase.isActive)
+                .disabled(session.phase.isActive || session.isRequestingStart)
             }
         }
     }
@@ -100,7 +100,7 @@ struct RecordWorkbenchPanel: View {
                 }
                 .labelsHidden()
                 .frame(width: AppTheme.Workbench.recordingDevicePickerWidth, alignment: .leading)
-                .disabled(session.phase.isActive)
+                .disabled(session.phase.isActive || session.isRequestingStart)
             }
 
             sourceCard(
@@ -110,7 +110,7 @@ struct RecordWorkbenchPanel: View {
             ) {
                 Toggle(L10n.string("Capture"), isOn: $session.configuration.capturesSystemAudio)
                     .toggleStyle(.checkbox)
-                    .disabled(session.phase.isActive)
+                    .disabled(session.phase.isActive || session.isRequestingStart)
             }
         }
     }
