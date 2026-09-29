@@ -71,6 +71,13 @@ struct HomeView: View {
         .onChange(of: appState.editorPresentation) { _, presentation in
             HomeWindowController.shared.applyEditorMode(presentation == .active)
         }
+        .onChange(of: navigationScreen, initial: true) { _, screen in
+            WorkbenchNavigator.shared.note(screen)
+        }
+    }
+
+    private var navigationScreen: WorkbenchScreen? {
+        WorkbenchNavigator.captureCurrentScreen()
     }
 
     private func presentSessionSearch() {
@@ -247,6 +254,8 @@ private struct WorkbenchTopBar: View {
             .buttonStyle(.plain)
             .help(L10n.string(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"))
             .accessibilityLabel(L10n.string(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"))
+
+            WorkbenchHistoryControls()
 
             if store.route != .session {
                 Text(L10n.string(store.route.title))
@@ -458,6 +467,9 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
+        if let window {
+            WorkbenchNavigator.shared.installMouseNavigationIfNeeded(in: window)
+        }
         guard !hasAppliedInitialWindowState, let window else { return }
         hasAppliedInitialWindowState = true
         if OnboardingState.shared.isComplete, !window.isZoomed, !window.styleMask.contains(.fullScreen) {

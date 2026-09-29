@@ -160,6 +160,24 @@ enum WorkbenchTranscriptTrack: String, Codable, CaseIterable, Identifiable, Send
     var label: String { self == .source ? "Source" : "Translation" }
 }
 
+/// Transcript and subtitle tabs remember language choices independently.
+enum SessionLanguageTab: String, Sendable {
+    case transcript
+    case subtitles
+}
+
+private func canonicalDisplayLanguage(
+    _ code: String?,
+    in tracks: [WorkbenchTranslationTrack]
+) -> String? {
+    guard let code else { return nil }
+    let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    return tracks.first {
+        $0.languageCode.caseInsensitiveCompare(trimmed) == .orderedSame
+    }?.languageCode
+}
+
 struct WorkbenchTranslationTrack: Codable, Identifiable, Equatable, Sendable {
     var languageCode: String
     var track: SubtitleTrack
@@ -223,6 +241,9 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var translationTracks: [WorkbenchTranslationTrack] = []
     var selectedTranslationLanguageCode: String?
     var selectedTrack: WorkbenchTranscriptTrack?
+    /// Empty string means the user chose Original. Nil means the tab has no explicit choice yet.
+    var transcriptDisplayLanguageCode: String?
+    var subtitleDisplayLanguageCode: String?
     var summaryMarkdown: String?
     var summaryTemplateID: String?
     var summaryTemplateName: String?
@@ -354,6 +375,31 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         if selectedTrack == .translation, translationTrack != nil { return .translation }
         return .source
     }
+
+    /// Freeze both tab defaults before updating the shared translation used by other workflows.
+    @discardableResult
+    mutating func rememberDisplayLanguage(_ code: String?, for tab: SessionLanguageTab) -> Bool {
+        let previousTranscript = transcriptDisplayLanguageCode
+        let previousSubtitles = subtitleDisplayLanguageCode
+        let previousTranslation = selectedTranslationLanguageCode
+        let previousTrack = selectedTrack
+        let fallback = canonicalDisplayLanguage(selectedTranslationLanguageCode, in: translationTracks) ?? ""
+        transcriptDisplayLanguageCode = transcriptDisplayLanguageCode ?? fallback
+        subtitleDisplayLanguageCode = subtitleDisplayLanguageCode ?? fallback
+        let canonical = canonicalDisplayLanguage(code, in: translationTracks)
+        switch tab {
+        case .transcript: transcriptDisplayLanguageCode = canonical ?? ""
+        case .subtitles: subtitleDisplayLanguageCode = canonical ?? ""
+        }
+        if let canonical {
+            selectedTranslationLanguageCode = canonical
+            selectedTrack = .translation
+        }
+        return previousTranscript != transcriptDisplayLanguageCode
+            || previousSubtitles != subtitleDisplayLanguageCode
+            || previousTranslation != selectedTranslationLanguageCode
+            || previousTrack != selectedTrack
+    }
     var sourceTimedResult: TranscriptionResult? {
         subtitleTrack?.asTranscriptionResult(
             preservingWords: result?.words ?? [],
@@ -427,6 +473,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         case result, editedText, useLLMSubtitleProcessing, targetLanguageCode, cloudVocalRepairEnabled
         case subtitleTrack, translationTrack, translationTracks
         case selectedTranslationLanguageCode, selectedTrack
+        case transcriptDisplayLanguageCode, subtitleDisplayLanguageCode
         case summaryMarkdown, summaryTemplateID, summaryTemplateName, summaryTemplateUserEdition
         case sessionTag, internalSummary, summaryState, summaryErrorMessage
         case progress, progressMessage, progressStage, flowProgressStage
@@ -489,7 +536,9 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         pendingCloudSyncError: String? = nil,
         isRecordedCapture: Bool = false,
         listenAudioPath: String? = nil,
-        listenEnhanceState: ListenEnhanceState = .idle
+        listenEnhanceState: ListenEnhanceState = .idle,
+        transcriptDisplayLanguageCode: String? = nil,
+        subtitleDisplayLanguageCode: String? = nil
     ) {
         self.id = id
         self.sourcePath = sourcePath
@@ -542,6 +591,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         self.isRecordedCapture = isRecordedCapture
         self.listenAudioPath = listenAudioPath
         self.listenEnhanceState = listenEnhanceState
+        self.transcriptDisplayLanguageCode = transcriptDisplayLanguageCode
+        self.subtitleDisplayLanguageCode = subtitleDisplayLanguageCode
     }
 
     init(from decoder: Decoder) throws {
@@ -587,6 +638,14 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
             forKey: .selectedTranslationLanguageCode
         ) ?? translationTracks.first?.languageCode
         selectedTrack = try container.decodeIfPresent(WorkbenchTranscriptTrack.self, forKey: .selectedTrack)
+        transcriptDisplayLanguageCode = try container.decodeIfPresent(
+            String.self,
+            forKey: .transcriptDisplayLanguageCode
+        )
+        subtitleDisplayLanguageCode = try container.decodeIfPresent(
+            String.self,
+            forKey: .subtitleDisplayLanguageCode
+        )
         summaryMarkdown = try container.decodeIfPresent(String.self, forKey: .summaryMarkdown)
         summaryTemplateID = try container.decodeIfPresent(String.self, forKey: .summaryTemplateID)
         summaryTemplateName = try container.decodeIfPresent(String.self, forKey: .summaryTemplateName)
@@ -652,6 +711,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(translationTrack, forKey: .translationTrack)
         try container.encodeIfPresent(selectedTranslationLanguageCode, forKey: .selectedTranslationLanguageCode)
         try container.encodeIfPresent(selectedTrack, forKey: .selectedTrack)
+        try container.encodeIfPresent(transcriptDisplayLanguageCode, forKey: .transcriptDisplayLanguageCode)
+        try container.encodeIfPresent(subtitleDisplayLanguageCode, forKey: .subtitleDisplayLanguageCode)
         try container.encodeIfPresent(summaryMarkdown, forKey: .summaryMarkdown)
         try container.encodeIfPresent(summaryTemplateID, forKey: .summaryTemplateID)
         try container.encodeIfPresent(summaryTemplateName, forKey: .summaryTemplateName)
@@ -1035,6 +1096,9 @@ struct WorkbenchSession: Identifiable, Sendable {
     var subtitleTrack: SubtitleTrack?
     var translationTracks: [WorkbenchTranslationTrack]
     var selectedTranslationLanguageCode: String?
+    /// Empty string means Original was chosen for that tab. Nil means no explicit choice yet.
+    var transcriptDisplayLanguageCode: String? = nil
+    var subtitleDisplayLanguageCode: String? = nil
     var summaryMarkdown: String?
     var summaryTemplateID: String?
     var summaryTemplateName: String?
@@ -1524,6 +1588,12 @@ final class WorkbenchStore {
     private(set) var remoteSessionLoadingID: UUID?
     private var remoteSessionLoadTask: Task<Void, Never>?
     private var remoteSessionsLoadGeneration = UUID()
+    /// In-memory choices so a tab remembers Original even before the job snapshot is read back.
+    private struct SessionLanguagePicks {
+        var transcript: String?
+        var subtitles: String?
+    }
+    private var sessionLanguagePicks: [UUID: SessionLanguagePicks] = [:]
     /// Signed enhanced-audio links are short lived, so keep them in memory only.
     private(set) var enhancedAudioURLs: [UUID: URL] = [:]
 
@@ -1583,6 +1653,8 @@ final class WorkbenchStore {
                 subtitleTrack: job.subtitleTrack,
                 translationTracks: job.translationTracks,
                 selectedTranslationLanguageCode: job.selectedTranslationLanguageCode,
+                transcriptDisplayLanguageCode: job.transcriptDisplayLanguageCode,
+                subtitleDisplayLanguageCode: job.subtitleDisplayLanguageCode,
                 summaryMarkdown: job.summaryMarkdown,
                 summaryTemplateID: job.summaryTemplateID,
                 summaryTemplateName: job.summaryTemplateName,
@@ -5037,6 +5109,64 @@ final class WorkbenchStore {
             }
             return false
         }
+    }
+
+    func displayLanguage(for tab: SessionLanguageTab, session: WorkbenchSession) -> String? {
+        if let picks = sessionLanguagePicks[session.id] {
+            switch tab {
+            case .transcript:
+                return canonicalDisplayLanguage(picks.transcript, in: session.translationTracks)
+            case .subtitles:
+                return canonicalDisplayLanguage(picks.subtitles, in: session.translationTracks)
+            }
+        }
+        let stored = switch tab {
+        case .transcript: session.transcriptDisplayLanguageCode
+        case .subtitles: session.subtitleDisplayLanguageCode
+        }
+        if let stored {
+            return canonicalDisplayLanguage(stored, in: session.translationTracks)
+        }
+        return canonicalDisplayLanguage(session.selectedTranslationLanguageCode, in: session.translationTracks)
+    }
+
+    /// Remembers a transcript or subtitle tab choice without bumping the session's modified time.
+    /// Pass nil to remember Original.
+    func rememberDisplayLanguage(
+        _ code: String?,
+        for tab: SessionLanguageTab,
+        session: WorkbenchSession
+    ) {
+        let canonical = canonicalDisplayLanguage(code, in: session.translationTracks)
+        var picks = SessionLanguagePicks(
+            transcript: displayLanguage(for: .transcript, session: session),
+            subtitles: displayLanguage(for: .subtitles, session: session)
+        )
+        switch tab {
+        case .transcript:
+            picks.transcript = canonical
+        case .subtitles:
+            picks.subtitles = canonical
+        }
+        sessionLanguagePicks[session.id] = picks
+
+        guard let transcriptionID = session.transcriptionID,
+              let index = transcriptions.firstIndex(where: { $0.id == transcriptionID }) else { return }
+        if transcriptions[index].rememberDisplayLanguage(canonical, for: tab) { save() }
+    }
+
+    func selectSessionForHistory(_ id: UUID) -> Bool {
+        guard let session = sessions.first(where: { $0.id == id }) else { return false }
+        remoteSessionLoadTask?.cancel()
+        remoteSessionLoadTask = nil
+        remoteSessionLoadingID = nil
+        selectedSessionID = id
+        route = .session
+        // Cloud media URLs expire; history must refresh them just like openSession().
+        if session.isRemoteOnly {
+            loadRemoteSession(id)
+        }
+        return true
     }
 
     func selectTranslationLanguage(_ languageCode: String, forTranscription id: UUID) {

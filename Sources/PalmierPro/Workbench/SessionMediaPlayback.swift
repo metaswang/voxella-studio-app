@@ -25,7 +25,7 @@ final class SessionPlaybackController {
     var activeCueID: Int?
     var duration = 0.0
     var playbackRate = 1.0
-    var subtitleMode: SessionSubtitleDisplayMode = .original
+    private(set) var subtitleMode: SessionSubtitleDisplayMode = .original
     var playerViewRef: SessionPlayerView?
     var fullscreenController: SessionFullscreenWindowController?
 
@@ -37,6 +37,7 @@ final class SessionPlaybackController {
     private var loadGeneration = UUID()
     private var seekGeneration = UUID()
     private var lastEnabledSubtitleMode: SessionSubtitleDisplayMode = .original
+    private var preferredSubtitleMode: SessionSubtitleDisplayMode = .original
 
     func configureSubtitles(
         subtitleTrack: SubtitleTrack?,
@@ -44,6 +45,7 @@ final class SessionPlaybackController {
     ) {
         self.subtitleTrack = subtitleTrack
         self.translationTracks = translationTracks
+        resolveSubtitleMode()
     }
 
     func configureHighlightCues(_ cues: [SubtitleCue]) {
@@ -73,16 +75,17 @@ final class SessionPlaybackController {
     }
 
     func selectSubtitleMode(_ mode: SessionSubtitleDisplayMode) {
-        subtitleMode = mode
+        preferredSubtitleMode = mode
         if mode != .off {
             lastEnabledSubtitleMode = mode
         }
+        resolveSubtitleMode()
     }
 
     func toggleSubtitles() {
         if subtitleMode == .off {
             if isAvailable(lastEnabledSubtitleMode) {
-                subtitleMode = lastEnabledSubtitleMode
+                selectSubtitleMode(lastEnabledSubtitleMode)
             } else if subtitleTrack != nil {
                 selectSubtitleMode(.original)
             } else if let first = translationTracks.first {
@@ -90,6 +93,20 @@ final class SessionPlaybackController {
             }
         } else {
             lastEnabledSubtitleMode = subtitleMode
+            selectSubtitleMode(.off)
+        }
+    }
+
+    /// Track refreshes may temporarily remove a translation. Keep the user's preference
+    /// while displaying an available fallback; only an explicit Off stays disabled.
+    private func resolveSubtitleMode() {
+        if preferredSubtitleMode == .off || isAvailable(preferredSubtitleMode) {
+            subtitleMode = preferredSubtitleMode
+        } else if subtitleTrack != nil {
+            subtitleMode = .original
+        } else if let first = translationTracks.first {
+            subtitleMode = .translation(first.languageCode)
+        } else {
             subtitleMode = .off
         }
     }
@@ -329,13 +346,6 @@ final class SessionPlaybackController {
            !Task.isCancelled,
            generation == loadGeneration {
             posterImage = NSImage(data: data)
-        }
-        if subtitleTrack != nil {
-            selectSubtitleMode(.original)
-        } else if let first = translationTracks.first {
-            selectSubtitleMode(.translation(first.languageCode))
-        } else {
-            subtitleMode = .off
         }
     }
 
@@ -624,6 +634,18 @@ struct SessionFullscreenChrome: View {
         .menuStyle(.borderlessButton)
         .disabled(playback.subtitleTrack == nil && playback.translationTracks.isEmpty)
         .help(L10n.string("Subtitles"))
+        .id(fullscreenSubtitleIdentity)
+    }
+
+    private var fullscreenSubtitleIdentity: String {
+        switch playback.subtitleMode {
+        case .off:
+            "off"
+        case .original:
+            "original"
+        case .translation(let code):
+            "translation:\(code)"
+        }
     }
 
     private var fullscreenSpeedMenu: some View {
@@ -647,11 +669,11 @@ struct SessionFullscreenChrome: View {
 
     @ViewBuilder
     private func labelWithCheck(_ title: String, selected: Bool) -> some View {
-        HStack {
-            Text(L10n.display(title))
-            if selected {
-                Image(systemName: "checkmark")
-            }
+        let label = L10n.display(title)
+        if selected {
+            Label(label, systemImage: "checkmark")
+        } else {
+            Text(label)
         }
     }
 
