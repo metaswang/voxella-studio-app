@@ -347,7 +347,11 @@ if [ "$MODE" = "mas" ]; then
     exit 1
   fi
 elif [ "$MODE" = "sign" ] || [ "$MODE" = "dist" ]; then
-  PROVISIONING_PROFILE="${DEVELOPER_ID_PROVISIONING_PROFILE:-${PROVISIONING_PROFILE:-}}"
+  # `--sign` and `--dist` must keep the same Developer ID designated
+  # requirement as the distributed app. Falling back to the local Apple
+  # Development profile makes TCC grants (Screen Recording, Microphone, etc.)
+  # look enabled in System Settings while remaining unusable by this build.
+  PROVISIONING_PROFILE="${DEVELOPER_ID_PROVISIONING_PROFILE:-}"
   PROVISIONING_PROFILE="${PROVISIONING_PROFILE/#\~/$HOME}"
   ENTITLEMENTS_TEMPLATE="${ENTITLEMENTS_TEMPLATE:-$DEVELOPER_ID_ENTITLEMENTS}"
   if [ -z "$PROVISIONING_PROFILE" ]; then
@@ -406,12 +410,20 @@ if [ -z "$profile_certificate" ]; then
   exit 1
 fi
 
-# The local debug profile is an Apple Development profile, while .env keeps
-# distribution identities for release builds. Do not combine those identities:
-# AMFI rejects an otherwise valid app when its embedded profile is signed by a
-# different certificate. Use the profile-bound identity for the local launch
-# path only; release MAS and Developer ID distribution keep their explicit identities.
-if [ "$CONFIG" = "debug" ] && { [ "$MODE" = "sign" ] || [ "$MODE" = "mas" ]; } \
+# A Developer ID build must never silently switch to an Apple Development
+# identity. Besides invalidating existing TCC grants, it no longer represents
+# the signing mode requested by `--sign` / `--dist`.
+if { [ "$MODE" = "sign" ] || [ "$MODE" = "dist" ]; } \
+    && [[ "$profile_certificate" != Developer\ ID\ Application:* ]]; then
+  echo "!! $MODE requires a Developer ID Application provisioning profile; got: $profile_certificate" >&2
+  echo "!! set DEVELOPER_ID_PROVISIONING_PROFILE to the matching Developer ID profile" >&2
+  exit 1
+fi
+
+# A debug MAS build may intentionally use an Apple Development profile for
+# local StoreKit sandbox testing. Match that profile's certificate rather than
+# combining it with the distribution identity from .env.
+if [ "$CONFIG" = "debug" ] && [ "$MODE" = "mas" ] \
     && [[ "$profile_certificate" == Apple\ Development:* ]]; then
   if ! security find-certificate -p -c "$profile_certificate" >/dev/null 2>&1; then
     echo "!! profile certificate is not installed in the login keychain: $profile_certificate" >&2

@@ -1,0 +1,4 @@
+interface:
+  display_name: "VoxStudio TestFlight Release"
+  short_description: "Build, validate, and upload the MAS package"
+  default_prompt: "Use $voxstudio-testflight-release to prepare, validate, upload, and verify a VoxStudio macOS TestFlight build."

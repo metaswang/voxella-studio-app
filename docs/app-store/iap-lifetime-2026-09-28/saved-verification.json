@@ -1,0 +1,20 @@
+{
+  "notesMatch": true,
+  "languagesMatch": true,
+  "images": [
+    {
+      "alt": "lifetime-promotional-1024.png",
+      "height": 1024,
+      "loaded": true,
+      "width": 1024
+    },
+    {
+      "alt": "SOURCE",
+      "height": 1800,
+      "loaded": true,
+      "width": 2880
+    }
+  ],
+  "saveDisabled": true,
+  "status": "Prepare for Submission"
+}

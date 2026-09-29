@@ -1,0 +1,21 @@
+VoxStudio Lifetime
+Product ID: com.voxella.studio.lifetime
+Type: Non-consumable, one-time purchase. No subscription or automatic renewal.
+
+What this purchase provides
+Lifetime access to VoxStudio on Mac, including unlimited new projects and free software upgrades for life. Existing projects remain available. Cloud AI credits and Starter/Pro subscriptions are separate and are not included in this purchase.
+
+How to locate and test the purchase
+1. Launch the Mac app. A VoxStudio account is not required to purchase or restore Lifetime access.
+2. Click Settings (the gear button in the app sidebar), then select Account. The Lifetime access card is shown at the top of the Account screen. The main window may also show a Buy Lifetime shortcut when this Mac does not have Lifetime access.
+3. On an Apple Account that does not already own this product, the card shows the localized App Store price and a Buy Lifetime button. Click Buy Lifetime to open Apple's StoreKit purchase sheet.
+4. Complete the transaction using the App Review purchase environment. After StoreKit verifies the transaction, the card changes to Purchased / Lifetime purchased, and new project creation is unlocked.
+5. To restore a previous purchase, return to Settings > Account and click Restore purchases using the same Apple Account.
+
+Screenshot, purchased state, and account linking
+The attached screenshot shows the actual Settings > Account purchase screen while signed out, with the Singapore storefront price of S$69.98, the one-time purchase label, Buy Lifetime button, included benefits, Restore purchases, Terms, and Privacy controls. The app displays the localized price provided by StoreKit; prices may differ by storefront. The screenshot has been placed on a 2880 x 1800 canvas without resizing or changing its contents.
+On an Apple Account that already owns the product, the purchase button and price are replaced by the Purchased status.
+Signing in to a VoxStudio account is optional for local Lifetime access. A purchase made while signed out can be linked to a VoxStudio account later from the Account screen. No VoxStudio demo account or cloud AI credit purchase is needed to review the Lifetime purchase and its local project access.
+
+The Mac App Store build uses Apple In-App Purchase for this product. Terms of Use: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+Privacy policy: https://voxstudio.me/privacy.html

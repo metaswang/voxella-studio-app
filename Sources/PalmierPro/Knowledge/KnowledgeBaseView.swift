@@ -14,14 +14,15 @@ struct KnowledgeBaseView: View {
         GeometryReader { geo in
             let total = max(geo.size.width, 1)
             let left = Self.clampedLeftWidth(total: total, ratio: splitRatio)
+            let chatWidth = max(1, total - left - AppTheme.Workbench.sessionSplitDividerHitWidth)
             HStack(spacing: 0) {
                 KnowledgeSourceListView(controller: controller)
                     .frame(width: left)
 
                 splitter(total: total)
 
-                KnowledgeChatPane(controller: controller)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                KnowledgeChatPane(controller: controller, availableWidth: chatWidth)
+                    .frame(width: chatWidth, height: max(1, geo.size.height))
             }
         }
         .background(AppTheme.Background.baseColor)
@@ -101,8 +102,9 @@ struct KnowledgeBaseView: View {
     // MARK: - Ratio helpers
 
     static func clampedLeftWidth(total: CGFloat, ratio: CGFloat) -> CGFloat {
-        let minLeft = AppTheme.Knowledge.minimumSourceWidth
-        let maxLeft = max(total - AppTheme.Knowledge.minimumChatWidth, minLeft)
+        let available = max(1, total - AppTheme.Workbench.sessionSplitDividerHitWidth)
+        let minLeft = min(AppTheme.Knowledge.minimumSourceWidth, max(1, available - AppTheme.Knowledge.minimumChatWidth))
+        let maxLeft = max(available - AppTheme.Knowledge.minimumChatWidth, minLeft)
         return min(max(total * ratio, minLeft), maxLeft)
     }
 

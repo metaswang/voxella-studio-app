@@ -383,6 +383,8 @@
 "Entire display plus audio" = "整个显示器和音频";
 "One window plus audio" = "一个窗口和音频";
 "Selected area plus audio" = "选定区域和音频";
+"Drag to draw a recording area. Esc to cancel." = "拖拽以绘制录制区域。按 Esc 取消。";
+"Drag the dashed area to move it, use the handles to resize, or drag outside to redraw. Press Return to start. Press Esc to cancel." = "拖拽虚线区域可移动，拖拽圆点可调整大小，在区域外拖拽可重新绘制。按 Return 开始，按 Esc 取消。";
 "Microphone" = "麦克风";
 "Choose a microphone or turn microphone capture off." = "选择麦克风，或关闭麦克风录制。";
 "Off" = "关闭";

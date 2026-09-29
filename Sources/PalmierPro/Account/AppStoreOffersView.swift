@@ -79,7 +79,7 @@ struct AppStoreOffersView: View {
                     Text(L10n.string("Lifetime access"))
                         .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
                         .foregroundStyle(AppTheme.Text.primaryColor)
-                    Text(L10n.string("A one-time purchase for VoxStudio on this platform."))
+                    Text(L10n.string("One-time Mac access with free software upgrades for life."))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.secondaryColor)
                         .fixedSize(horizontal: false, vertical: true)
@@ -107,6 +107,7 @@ struct AppStoreOffersView: View {
                 featureRow("Unlimited new projects")
                 featureRow("Existing projects stay available")
                 featureRow("AI credits purchased separately")
+                featureRow("Free lifetime software upgrades")
             }
 
             if isLifetimePurchased {
@@ -159,13 +160,6 @@ struct AppStoreOffersView: View {
                 }
                 .buttonStyle(.capsule(.prominent, size: .regular))
                 .disabled(account.isPurchasingAppStoreProduct)
-            }
-
-            if let purchaseError = account.lastError {
-                Label(L10n.display(purchaseError), systemImage: "exclamationmark.triangle")
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Status.errorColor)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if !account.isSignedIn && account.hasLocalLifetimeCredential {

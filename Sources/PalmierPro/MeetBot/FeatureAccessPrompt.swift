@@ -13,6 +13,8 @@ struct FeatureAccessPrompt: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            WorkbenchTopTipBanner()
+
             Image(systemName: "lock.open.fill")
                 .font(.system(size: AppTheme.IconSize.lg, weight: AppTheme.FontWeight.semibold))
                 .foregroundStyle(AppTheme.Accent.primary)
@@ -24,13 +26,6 @@ struct FeatureAccessPrompt: View {
                 Text(message)
                     .font(.system(size: AppTheme.FontSize.md))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if let error = account.lastError, isWorking == false {
-                Text(L10n.display(error))
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Status.errorColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
 

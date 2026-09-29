@@ -1,4 +1,4 @@
 interface:
   display_name: "VoxStudio Release"
-  short_description: "Build and verify a macOS 15+ VoxStudio release"
-  default_prompt: "Use $voxstudio-release to auto-bump and record the next patch version, build, verify macOS 15 compatibility, and publish a VoxStudio DMG."
+  short_description: "Publish the Developer ID DMG to Cloudflare R2"
+  default_prompt: "Use $voxstudio-release to auto-bump and record the next patch version, build and notarize the direct-distribution VoxStudio DMG, verify it, and publish it to Cloudflare R2."

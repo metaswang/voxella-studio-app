@@ -22,12 +22,6 @@ struct AccountPopoverCard: View {
 
             Divider().overlay(AppTheme.Border.subtleColor)
             footerRow
-
-            if let error = account.lastError {
-                Text(L10n.display(error))
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Status.errorColor)
-            }
         }
         .padding(AppTheme.Spacing.md)
         .frame(width: Self.cardWidth)

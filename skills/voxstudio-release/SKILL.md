@@ -1,11 +1,15 @@
 ---
 name: voxstudio-release
-description: Build, sign, notarize, verify, and publish a macOS VoxStudio DMG for Developer ID distribution. Use when preparing a user-downloadable release, diagnosing packaging/signing omissions, or publishing the VoxStudio DMG to Cloudflare R2.
+description: Build, sign, notarize, verify, and publish the macOS VoxStudio Developer ID DMG to Cloudflare R2. Use for a direct-download release, Sparkle/appcast or notarization work, DMG packaging/signing diagnosis, or R2 promotion; do not use for local debug builds or Mac App Store/TestFlight packages.
 ---
 
 # VoxStudio Release
 
-Use this project skill for the complete macOS release flow. It keeps the build, signing, notarization, verification, and Cloudflare R2 publication parameters together so a release is reproducible.
+Use this project skill for the complete direct-distribution macOS release flow.
+It keeps the Developer ID build, signing, notarization, verification, Sparkle,
+and Cloudflare R2 publication parameters together so a release is reproducible.
+Use `$voxstudio-debug-build` for local debug apps and
+`$voxstudio-testflight-release` for the MAS `.pkg` channel.
 
 Read references/release-runbook.md before performing a release. Use `scripts/r2_release.py` for prepare → upload → verify → cache-check → promote → postcheck. Do not upload to Hugging Face.
 
@@ -15,7 +19,9 @@ For shader packaging or hardware/OS qualification, read [Metal compatibility](re
 
 - Build and local verification are allowed when the user asks for a DMG or release check.
 - Upload to Cloudflare R2 only when the user explicitly asks to publish or update it.
-- Upload a Mac App Store build to App Store Connect / TestFlight only when the user explicitly asks for a TestFlight update. For an update, reuse the existing internal tester group(s) that contain the preceding valid build when the match is unambiguous. Do not add external groups/testers or submit for App Review unless separately requested.
+- Do not build or upload a Mac App Store/TestFlight package through this skill;
+  that flow has independent identities, profiles, entitlements, validation, and
+  authorization in `$voxstudio-testflight-release`.
 - Do not upload to Hugging Face, and do not delete existing Hugging Face files.
 - Never commit, push, create a release, or modify unrelated repositories unless the user explicitly requests it.
 - Preserve unrelated worktree changes, including changes outside this release skill.
@@ -27,7 +33,7 @@ For shader packaging or hardware/OS qualification, read [Metal compatibility](re
 - Work from the repository root: /Users/adamwang/Project/subdub/voxella-studio-app.
 - The supported deployment range is macOS 15.0 or later on arm64. Package.swift and the app Info.plist must declare 15.0; bundle.sh must confirm the Mach-O value matches, and release.sh must copy the plist value into new Sparkle items.
 - Keep macOS 26-only APIs behind availability checks with a functional macOS 15 fallback. Do not raise the deployment target to avoid compatibility work.
-- The Convex 0.8.1 binary target contains vendor objects stamped with the build host's newer macOS version even though its package declares macOS 10.15. Record linker warnings and require a real macOS 15 launch, sign-in, and backend-query smoke test before claiming runtime compatibility.
+- The Convex 0.8.1 binary target contains vendor objects stamped with the build host's newer macOS version even though its package declares macOS 10.15. Preserve linker warnings and record macOS 15 launch, sign-in, and backend-query results when available. If that device coverage is unavailable, mark it unverified; it does not block a requested publication.
 - The final distribution command is:
 
       ./scripts/bundle.sh release --dist
@@ -45,19 +51,27 @@ For shader packaging or hardware/OS qualification, read [Metal compatibility](re
 - TEAM_IDENTIFIER must match the Team ID in that certificate. The bundle script can derive it from the certificate when omitted.
 - NOTARY_PROFILE must name an existing xcrun notarytool Keychain profile.
 - If NOTARY_PROFILE is missing, recover it before building by following the API-key or app-specific-password procedure in the runbook.
-- Developer ID builds embed Sparkle for in-app update checks and installation. Sparkle Ed25519 signing also signs the appcast and DMG. `SUPublicEDKey` must match the private key used by `sign_update`; do not publish an unsigned appcast or an artifact signed by an unrelated key. Mac App Store builds omit Sparkle.
+- Developer ID builds embed Sparkle for in-app update checks and installation. Sparkle Ed25519 signing also signs the appcast and DMG. `SUPublicEDKey` must match the private key used by `sign_update`; do not publish an unsigned appcast or an artifact signed by an unrelated key.
 - If the existing Sparkle private key is unavailable, recover it before publishing. If key rotation is intentional, generate a new Ed25519 key, export a backup to the ignored `.secrets/` directory with mode 600, update `SUPublicEDKey`, and ship a transition release deliberately. Existing Sparkle installations that trust the old public key will not accept updates signed only by the new key.
 - App Store Connect API keys are managed at https://appstoreconnect.apple.com/access/integrations/api.
 - A Team API key uses an `AuthKey_<KEY_ID>.p8` private key; a `.provisionprofile` is never a notarization credential.
 - Keep local notarization private keys under `.secrets/`, which is ignored by Git, with restrictive file permissions. Never print, commit, or upload the key.
-- The current working-tree packaging path requires a provisioning profile for both Developer ID and Mac App Store signed builds. The Developer ID profile must authorize `com.apple.application-identifier`, `com.apple.developer.team-identifier`, and `keychain-access-groups` for `TEAMID.com.voxella.studio`; set `DEVELOPER_ID_PROVISIONING_PROFILE` for `--sign` / `--dist`, and `MAS_PROVISIONING_PROFILE` for `--mas`. Never substitute an Apple Development or MAS profile for a Developer ID profile. Missing or certificate-mismatched profiles must fail before publication.
+- The current working-tree Developer ID packaging path requires a provisioning profile. It must authorize `com.apple.application-identifier`, `com.apple.developer.team-identifier`, and `keychain-access-groups` for `TEAMID.com.voxella.studio`; set `DEVELOPER_ID_PROVISIONING_PROFILE` for `--sign` / `--dist`. Never substitute generic `PROVISIONING_PROFILE`, an Apple Development profile, or an MAS profile. Missing or certificate-mismatched profiles must fail before publication.
 - This repository's confirmed Developer ID Distribution profile is `.secrets/VoxStudio_Developer_ID.provisionprofile`. When `DEVELOPER_ID_PROVISIONING_PROFILE` is not already configured, check this path before reporting that the profile is missing, and pass its absolute path to the release command. Validate its metadata and certificate match without printing the binary profile or other secrets.
 - Historical releases before the profile-bound signing changes could package a Developer ID app without embedding a provisioning profile. Do not infer from an older successful DMG that the current profile is present, and do not silently restore the historical path. Before diagnosing a missing profile, inspect `git diff -- scripts/bundle.sh` and follow the behavior of the current script; report the historical-vs-current signing-path difference explicitly.
+- Keep the Developer ID designated requirement stable across signed debug and
+  distribution builds. macOS TCC grants are code-requirement-bound, not
+  path-bound: silently signing `com.voxella.studio` with Apple Development can
+  leave System Settings showing Screen Recording enabled while Display/Region
+  preflight fails with a `tccd` requirement mismatch. Fix the identity/profile
+  pairing before resetting permissions.
 - Developer ID microphone recording requires `com.apple.security.device.audio-input=true` in the signed app. `scripts/bundle.sh release --sign` and `release --dist` must use `scripts/VoxStudio.developer-id.entitlements` for this capability.
 - Keep `NSMicrophoneUsageDescription` in the final app `Contents/Info.plist`; an entitlement without the usage description is not sufficient for TCC authorization.
 - The signed app must embed `Contents/embedded.provisionprofile` and carry the matching Keychain access group. Do not fall back to the login keychain.
 - Developer ID builds must not carry `com.apple.developer.applesignin`.
-- Ad-hoc debug builds use an isolated in-memory credential store. Formal credential and Keychain acceptance uses `./scripts/bundle.sh debug --sign`.
+- Local debug acceptance belongs to `$voxstudio-debug-build`. Ad-hoc builds use
+  an isolated in-memory credential store; identity-dependent acceptance uses
+  `./scripts/bundle.sh debug --sign` with the Developer ID profile.
 - Google and Apple account login use the browser OAuth/PKCE flow in the current app. Do not reintroduce native GoogleSignIn SDK configuration or restricted entitlements into this release.
 - Expected outputs are .build/VoxStudio.app and .build/VoxStudio.dmg.
 
@@ -94,11 +108,14 @@ Do not claim that `VOXSTUDIO_DISABLE_14_DAY_TRIAL_LIMIT` changes the build: that
 1. Before a formal release's version selection, build, signing, notarization, or DMG creation, run `git pull` from the repository root. If `git pull` is blocked by local changes or produces conflicts, stop and report the blocker; never automatically stash, commit, discard, or overwrite worktree changes. After a successful pull, perform all remaining preflight checks against the pulled checkout. Editing this skill or locally validating packaging changes is not a formal release: test the current working tree without pulling, bumping, or publishing.
 2. Check the worktree and release configuration without exposing secret values.
 3. Read the runbook and confirm the exact certificate, notary profile, output paths, and R2 credentials. Confirm which provisioning-profile mode the current `scripts/bundle.sh` implements; if that mode requires a profile and it is unavailable or mismatched, stop before building or uploading.
-4. When a new artifact still needs physical-device qualification, run `RELEASE_TARGET=dmg ./scripts/release.sh` to select the version and produce the signed/notarized local DMG. Complete step 5 against that exact artifact, then publish it with the runbook's separate `scripts/r2_release.py` invocation; do not invoke the wrapper again and accidentally bump/rebuild the tested artifact. The default `./scripts/release.sh` publishes immediately and is appropriate only when the requested release workflow already accounts for qualification. The first Cloudflare publication needs `RELEASE_BOOTSTRAP=1`. `RELEASE_PROMOTE=0` still uploads, and `RELEASE_DRY_RUN=1` still bumps/builds locally; neither is a build-only substitute. Use `RELEASE_RESUME=1` to continue an existing failed publication without rebuilding.
-5. Verify the app, mounted DMG app, macOS 15 deployment metadata, staple tickets, Developer ID signatures, microphone entitlement, restricted entitlements, Gatekeeper assessments, and packaged Metal manifest. Follow the physical-device matrix in [Metal compatibility](references/metal-compatibility.md); record actual results and untested combinations separately. The user may perform device tests; do not claim them completed on their behalf.
+4. If physical-device qualification is desired before publication, run `RELEASE_TARGET=dmg ./scripts/release.sh` to select the version and produce a signed/notarized local DMG. Publish the same artifact with the runbook's separate `scripts/r2_release.py` invocation; do not invoke the wrapper again and bump/rebuild it. Pending physical-device checks do not block a requested publication; record them as unverified. The default `./scripts/release.sh` publishes immediately. The first Cloudflare publication needs `RELEASE_BOOTSTRAP=1`. `RELEASE_PROMOTE=0` still uploads, and `RELEASE_DRY_RUN=1` still bumps/builds locally; neither is a build-only substitute. Use `RELEASE_RESUME=1` to continue an existing failed publication without rebuilding.
+5. Verify the app, mounted DMG app, macOS 15 deployment metadata, staple tickets, Developer ID signatures, microphone entitlement, restricted entitlements, Gatekeeper assessments, and packaged Metal manifest. Follow the physical-device matrix in [Metal compatibility](references/metal-compatibility.md) when devices are available; record actual results and untested combinations separately. Pending physical-device results do not block publication, and must remain marked unverified.
 6. Record the previous version, new version, build number, DMG byte count, and SHA-256 before reporting publication.
 7. Verify the public version URL, latest redirect, Cloudflare appcast enclosure, and that Check for Updates opens the immutable version URL.
-8. If the user also requests TestFlight, build the Mac App Store package for the same selected marketing version/build, verify the MAS profile and signing identities, ensure the build number is unused in App Store Connect, validate the package, then upload it. Read “TestFlight upload” in [the release runbook](references/release-runbook.md). Report upload and processing status separately; do not claim tester distribution until the intended existing internal tester group shows the build.
+8. If the user also requests TestFlight, freeze and record this channel's selected
+   marketing version/build, then follow `$voxstudio-testflight-release` for the
+   separate MAS artifact. Do not reuse Developer ID identities, profiles,
+   entitlements, notarization, or Sparkle checks for that package.
 
 ## Cloudflare R2 defaults
 
@@ -149,10 +166,10 @@ Report:
 - app and mounted-DMG Gatekeeper results;
 - Package.swift, Info.plist, Mach-O, and Sparkle minimum-system-version checks;
 - restricted-entitlement and embedded-profile checks;
-- `com.apple.security.device.audio-input=true` and `NSMicrophoneUsageDescription` checks;
+- `com.apple.security.device.audio-input=true`, `NSMicrophoneUsageDescription`,
+  and installed-app microphone/Display/Region TCC checks;
 - DMG size and SHA-256;
 - R2 identity, versioned URL, latest URL, appcast URL, and whether promote completed;
-- when requested, the Mac App Store package version/build, signing and package-validation results, App Store Connect upload ID/status, processing state, and existing tester group(s) assigned; distinguish uploaded/processing from available to testers;
 - whether Sparkle deltas were generated, uploaded, and verified, or the specific reason they were skipped; report full-DMG fallback availability;
 - confirmation that the Developer ID app's Sparkle updater uses the immutable Cloudflare appcast, and that old Hugging Face builds are not claimed to migrate automatically;
 - anything not verified or requiring manual UI confirmation.

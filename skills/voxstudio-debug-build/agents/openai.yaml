@@ -1,0 +1,4 @@
+interface:
+  display_name: "VoxStudio Debug Build"
+  short_description: "Build signed local MAS or direct debug apps"
+  default_prompt: "Use $voxstudio-debug-build to choose the correct local debug channel, build and sign VoxStudio, verify its identity, and launch it safely."

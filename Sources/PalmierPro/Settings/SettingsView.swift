@@ -113,6 +113,8 @@ private struct SettingsDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            WorkbenchTopTipBanner()
+
             if tab != .models && tab != .voiceLibrary {
                 Text(tab.label)
                     .font(.system(size: AppTheme.FontSize.title1, weight: AppTheme.FontWeight.regular))

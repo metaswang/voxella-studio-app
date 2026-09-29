@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import LocalAuthentication
 import Security
@@ -88,7 +89,37 @@ struct SecurityItemClient: Sendable {
 }
 
 enum KeychainStore {
-    static let service = "com.voxella.studio.credentials.v3"
+    static let productionService = "com.voxella.studio.credentials.v3"
+    static let service = credentialService(for: VoxellaAPIConfiguration.baseURL)
+
+    /// Keep existing production credentials; other APIs get independent credentials,
+    /// pending payments and offline entitlements in the same access group.
+    static func credentialService(for apiBaseURL: URL) -> String {
+        func normalized(_ url: URL) -> String {
+            guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+                return url.absoluteString
+            }
+            components.scheme = components.scheme?.lowercased()
+            components.host = components.host?.lowercased()
+            if (components.scheme == "https" && components.port == 443)
+                || (components.scheme == "http" && components.port == 80) {
+                components.port = nil
+            }
+            components.user = nil
+            components.password = nil
+            components.query = nil
+            components.fragment = nil
+            while components.path.hasSuffix("/") { components.path.removeLast() }
+            return components.string ?? url.absoluteString
+        }
+        let origin = normalized(apiBaseURL)
+        guard origin != normalized(VoxellaAPIConfiguration.productionBaseURL) else {
+            return productionService
+        }
+        let digest = SHA256.hash(data: Data(origin.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        return "\(productionService).api.\(digest)"
+    }
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var overrideBackend: (any CredentialStoreBackend)?

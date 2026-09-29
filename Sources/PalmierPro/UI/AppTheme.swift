@@ -561,7 +561,7 @@ enum AppTheme {
         static var recordingDevicePickerWidth: CGFloat { AppTheme.zoomed(220) }
         static var recordingInfoPopoverWidth: CGFloat { AppTheme.zoomed(280) }
         static var recordingRegionMinSize: CGFloat { AppTheme.zoomed(48) }
-        static var recordingRegionHandleSize: CGFloat { AppTheme.zoomed(8) }
+        static var recordingRegionHandleSize: CGFloat { AppTheme.zoomed(10) }
         static var recordingControlsWidth: CGFloat { AppTheme.zoomed(360) }
         static var recordingControlsHeight: CGFloat { AppTheme.zoomed(52) }
         static var recordingControlsButtonSize: CGFloat { AppTheme.zoomed(32) }

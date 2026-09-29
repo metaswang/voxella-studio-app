@@ -2,19 +2,48 @@ import SwiftUI
 
 struct WorkbenchTopTipBanner: View {
     @Bindable private var tips = WorkbenchTipCenter.shared
+    @Bindable private var account = AccountService.shared
 
     var body: some View {
-        if let tip = tips.tip {
-            banner(tip)
-                .padding(.horizontal, AppTheme.Workbench.tipHorizontalInset)
-                .padding(.vertical, AppTheme.Workbench.tipVerticalInset)
-                .transition(
-                    .asymmetric(
-                        insertion: .move(edge: .top).combined(with: .opacity),
-                        removal: .opacity
+        Group {
+            if let tip = tips.tip {
+                banner(tip)
+                    .padding(.horizontal, AppTheme.Workbench.tipHorizontalInset)
+                    .padding(.vertical, AppTheme.Workbench.tipVerticalInset)
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .top).combined(with: .opacity),
+                            removal: .opacity
+                        )
                     )
-                )
+            }
         }
+        .animation(.easeInOut(duration: AppTheme.Anim.transition), value: tips.tip?.id)
+        .onChange(of: account.lastError) { _, message in
+            showAccountMessage(message)
+        }
+#if !MAC_APP_STORE
+        .onChange(of: account.anonymousLifetimePhase) { _, phase in
+            guard case let .failed(message) = phase else { return }
+            showAccountMessage(message)
+        }
+#endif
+    }
+
+    private func showAccountMessage(_ message: String?) {
+        guard let message = message?.trimmingCharacters(in: .whitespacesAndNewlines), !message.isEmpty else { return }
+        let kind: WorkbenchTipKind
+        if message == L10n.string("Recovery code copied.")
+            || message == L10n.string("This purchase is linked to your account.") {
+            kind = .success
+        } else if message == L10n.string("Linking this purchase to your account…") {
+            kind = .info
+        } else if message == L10n.string("Lifetime is active. Account benefits will sync when the connection returns.") {
+            kind = .warning
+        } else {
+            kind = .error
+        }
+        tips.show(message, kind: kind, id: "account-feedback:\(message)")
     }
 
     private func banner(_ tip: WorkbenchTip) -> some View {

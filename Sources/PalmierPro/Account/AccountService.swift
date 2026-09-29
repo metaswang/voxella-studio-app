@@ -2067,8 +2067,37 @@ final class AccountService {
             return
         }
         if pending.recoveryCode == nil { anonymousLifetimePhase = .awaitingPayment }
-        if openBrowser, let url = pending.checkoutURL {
-            openInBrowser(url)
+        if openBrowser, let checkoutID = pending.checkoutID {
+            guard !isOpeningStripeCheckout else { return }
+            isOpeningStripeCheckout = true
+            defer { isOpeningStripeCheckout = false }
+            do {
+                // A cached URL is not proof this API owns the payment. Confirm it
+                // before reopening, including after an environment switch.
+                let response = try await api.anonymousLifetimeStatus(
+                    checkoutID: checkoutID,
+                    fingerprint: pending.fingerprint,
+                    claimCredential: pending.claimCredential
+                )
+                if response.status == "complete" {
+                    await applyAnonymousLifetimeResponse(response, pending: pending)
+                    return
+                }
+                guard response.status == "open", let url = response.checkoutURL else {
+                    AnonymousLifetimeCheckoutStore.clear()
+                    anonymousLifetimePhase = .idle
+                    return
+                }
+                var refreshed = pending
+                refreshed.checkoutURL = url
+                refreshed.expiresAt = response.expiresAt
+                try AnonymousLifetimeCheckoutStore.save(refreshed)
+                openInBrowser(url)
+            } catch {
+                lastError = error.localizedDescription
+                anonymousLifetimePhase = .failed(error.localizedDescription)
+                return
+            }
         }
         startAnonymousPoll(attempts: 40)
     }

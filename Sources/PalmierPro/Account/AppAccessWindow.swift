@@ -27,14 +27,17 @@ final class AppAccessWindow {
             window.makeKey()
             return
         }
-        let controller = NSHostingController(rootView: ScrollView {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                accessHeader
-                AccountPane()
+        let controller = NSHostingController(rootView: VStack(spacing: 0) {
+            WorkbenchTopTipBanner()
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                    accessHeader
+                    AccountPane()
+                }
+                .padding(.horizontal, AppTheme.Spacing.xxl)
+                .padding(.vertical, AppTheme.Spacing.xl)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, AppTheme.Spacing.xxl)
-            .padding(.vertical, AppTheme.Spacing.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(AppTheme.Background.surfaceColor)
         .frame(width: AppTheme.Auth.purchaseWindowWidth)

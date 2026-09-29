@@ -33,7 +33,6 @@ struct HomeView: View {
                 }
                 Divider()
                 WorkbenchTopTipBanner()
-                    .animation(.easeInOut(duration: AppTheme.Anim.transition), value: tips.tip?.id)
 
                 ZStack {
                     if let project = appState.activeProject {

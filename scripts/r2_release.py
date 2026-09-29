@@ -383,17 +383,28 @@ def generate_deltas_with_sparkle(
                 signature = delta_enc.get(f"{{{ns['sparkle']}}}edSignature", "")
                 
                 # Find matching .delta file in temp_dir
-                # Sparkle names: {to_version} {to_build} {from_build}.delta
+                # Sparkle's generator names deltas using the bundle name and
+                # build numbers (for example, VoxStudio115-108.delta). Keep
+                # accepting the older version/build-based name as well.
                 expected_delta_name = f"{current_version} {current_build} {from_build}.delta"
                 matching_delta = temp_dir / expected_delta_name
                 
                 if not matching_delta.is_file():
-                    # Fallback: search by from_build in filename
-                    delta_files = list(temp_dir.glob("*.delta"))
-                    for df in delta_files:
-                        if f" {from_build}.delta" in df.name:
-                            matching_delta = df
-                            break
+                    # Sparkle 2 currently emits <bundle><to-build>-<from-build>.delta.
+                    # Match both build numbers so a same-base delta for another
+                    # target build cannot be attached to this appcast item.
+                    suffix = f"{current_build}-{from_build}.delta"
+                    candidates = [
+                        delta_file
+                        for delta_file in temp_dir.glob("*.delta")
+                        if delta_file.name.endswith(suffix)
+                    ]
+                    if len(candidates) > 1:
+                        raise PublishError(
+                            f"multiple Sparkle deltas match builds {current_build} <- {from_build}"
+                        )
+                    if candidates:
+                        matching_delta = candidates[0]
                 
                 if not matching_delta.is_file():
                     continue

@@ -389,6 +389,8 @@
 "Entire display plus audio" = "Entire display plus audio";
 "One window plus audio" = "One window plus audio";
 "Selected area plus audio" = "Selected area plus audio";
+"Drag to draw a recording area. Esc to cancel." = "Drag to draw a recording area. Esc to cancel.";
+"Drag the dashed area to move it, use the handles to resize, or drag outside to redraw. Press Return to start. Press Esc to cancel." = "Drag the dashed area to move it, use the handles to resize, or drag outside to redraw. Press Return to start. Press Esc to cancel.";
 "Microphone" = "Microphone";
 "Choose a microphone or turn microphone capture off." = "Choose a microphone or turn microphone capture off.";
 "Off" = "Off";

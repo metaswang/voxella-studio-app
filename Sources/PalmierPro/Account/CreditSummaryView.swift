@@ -93,13 +93,6 @@ private struct CreditActionsPopover: View {
             } else {
                 freeActions
             }
-
-            if let error = account.lastError {
-                Text(L10n.display(error))
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
         .padding(AppTheme.Spacing.md)
         .frame(width: Self.popoverWidth)

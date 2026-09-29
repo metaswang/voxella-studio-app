@@ -27,13 +27,6 @@ struct AccountPane: View {
                 signedOutBody
             }
 
-            if let error = account.lastError {
-                Text(L10n.display(error))
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Status.errorColor)
-                    .frame(maxWidth: AppTheme.Auth.contentWidth, alignment: .leading)
-            }
-
             if let storeMessage = account.credentialStoreMessage {
                 Text(L10n.display(storeMessage))
                     .font(.system(size: AppTheme.FontSize.sm))
@@ -281,11 +274,6 @@ struct AccountPane: View {
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.secondaryColor)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let offlineUntil = licenseKeyOfflineValidUntilText {
-                        Text(offlineUntil)
-                            .font(.system(size: AppTheme.FontSize.xs))
-                            .foregroundStyle(AppTheme.Text.tertiaryColor)
-                    }
                     Button(L10n.string("Manage devices…")) {
                         ActivateLicenseWindowController.shared.show()
                     }
@@ -313,13 +301,6 @@ struct AccountPane: View {
 
     private var licenseKeyRedeemedDetail: String {
         L10n.string("This Mac stays unlocked. Use Manage devices to free a slot for another Mac, or re-open activation anytime.")
-    }
-
-    private var licenseKeyOfflineValidUntilText: String? {
-        guard let record = try? LicenseKeyLocalCredential.load(),
-              record.isChronologicallyValid(at: .now) else { return nil }
-        let formatted = record.expiresAt.formatted(date: .abbreviated, time: .shortened)
-        return L10n.format("Offline access valid until %@", formatted)
     }
 #endif
 

@@ -103,7 +103,8 @@ release; a compatible rebuild replaces the old library rather than adding a
 second copy. Report actual size changes and remaining coverage honestly.
 
 When device testing is pending, use `RELEASE_TARGET=dmg ./scripts/release.sh` to
-prepare the final local artifact. After testing and when publication is requested,
-sign that same DMG's appcast metadata and run the existing separate R2 publication
-flow in the runbook. Never rebuild between qualification and publication without
-invalidating the corresponding artifact-specific test record.
+prepare the final local artifact if you want to qualify it before publication.
+Physical-device tests are recommended but do not block a requested R2 release;
+record pending combinations as unverified. Publish the same DMG with the existing
+separate R2 flow in the runbook. Never rebuild between qualification and
+publication without invalidating the corresponding artifact-specific test record.

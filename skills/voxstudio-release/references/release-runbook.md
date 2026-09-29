@@ -26,7 +26,7 @@ Confirm the supported deployment target remains macOS 15.0 across build and rele
       /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' Sources/PalmierPro/Resources/Info.plist | rg -q '^15\.0$'
       rg -n 'MINIMUM_SYSTEM_VERSION.*LSMinimumSystemVersion|minimum_system_version' scripts/release.sh
 
-The complete release includes Textual and bundled speech, both of which require macOS 15. Keep macOS 26-only APIs behind availability checks and preserve the macOS 15 fallback instead of raising the target. The Convex binary target may emit warnings for vendor objects stamped with the build host's newer macOS version; preserve those warnings in the release record and complete the macOS 15 runtime smoke test below.
+The complete release includes Textual and bundled speech, both of which require macOS 15. Keep macOS 26-only APIs behind availability checks and preserve the macOS 15 fallback instead of raising the target. The Convex binary target may emit warnings for vendor objects stamped with the build host's newer macOS version; preserve those warnings in the release record. Run the macOS 15 runtime smoke test below when a suitable device is available. If it is unavailable, record that coverage as unverified; it does not block publication.
 
 Read [Metal compatibility](metal-compatibility.md) for the macOS 15 / Metal 3.2
 packaging policy, cache invalidation, and M1–M4 physical-device qualification.
@@ -35,7 +35,7 @@ Do not compile shaders with implicit host defaults or patch SwiftPM dependency c
 
 Inspect release variables without printing values:
 
-      for name in SIGNING_IDENTITY TEAM_IDENTIFIER NOTARY_PROFILE DEVELOPER_ID_PROVISIONING_PROFILE MAS_PROVISIONING_PROFILE; do
+      for name in SIGNING_IDENTITY TEAM_IDENTIFIER NOTARY_PROFILE DEVELOPER_ID_PROVISIONING_PROFILE; do
         if grep -q "^$name=" .env.prod 2>/dev/null || grep -q "^$name=" .env 2>/dev/null; then
           echo "$name is configured"
         else
@@ -50,7 +50,7 @@ Confirm the signing mode in the actual checkout before interpreting a missing pr
       git diff -- scripts/bundle.sh
       rg -n 'DEVELOPER_ID_PROVISIONING_PROFILE|embedded\.provisionprofile|profile_certificate' scripts/bundle.sh
 
-The current working-tree packaging path is profile-bound for Developer ID and MAS signing. A Developer ID profile must be bound to the selected `Developer ID Application` certificate and must authorize the app identifier and keychain access group. An Apple Development profile or an MAS profile is not a substitute. Older releases used a historical Developer ID path that did not embed a provisioning profile, so older successful artifacts do not prove that the current checkout has a usable Developer ID profile. If the current script requires one and none is available, stop and report the mismatch before building or publishing.
+The current working-tree packaging path is profile-bound for Developer ID signing. A Developer ID profile must be bound to the selected `Developer ID Application` certificate and must authorize the app identifier and keychain access group. Generic `PROVISIONING_PROFILE`, an Apple Development profile, or an MAS profile is not a substitute. Older releases used a historical Developer ID path that did not embed a provisioning profile, so older successful artifacts do not prove that the current checkout has a usable Developer ID profile. If the current script requires one and none is available, stop and report the mismatch before building or publishing.
 
 This repository has a confirmed Developer ID Distribution profile at:
 
@@ -163,15 +163,17 @@ Formal releases must use the release wrapper with no manually supplied version:
 
       ./scripts/release.sh
 
-If physical-device checks are still pending, stage the release locally instead:
+To stage locally for optional physical-device qualification before publication:
 
       RELEASE_TARGET=dmg ./scripts/release.sh
 
 This still selects the next version and notarizes the DMG, but does not upload it.
-Test this exact DMG as described in [Metal compatibility](metal-compatibility.md),
-then use section 9's separate publisher with its recorded version/build/signature.
-Do not rerun the wrapper after testing: that would select a different version and
-rebuild. `RELEASE_PROMOTE=0` uploads before stopping and is not build-only.
+When device coverage is pending, publication may proceed on the user's explicit
+request after the package checks below; record the untested combinations in the
+release record. If testing the artifact first, use that same DMG with section 9's
+separate publisher and its recorded version/build/signature. Do not rerun the
+wrapper after testing: that would select a different version and rebuild.
+`RELEASE_PROMOTE=0` uploads before stopping and is not build-only.
 
 Before it changes `Info.plist`, the wrapper reads the current
 `CFBundleShortVersionString` and the highest version in the published
@@ -261,9 +263,9 @@ Run these checks after release --dist:
       xcrun stapler validate "$APP"
       spctl --assess --type execute --verbose=4 "$APP"
 
-The expected spctl result is accepted with a notarized Developer ID source. Under the current profile-bound path, a missing or certificate-mismatched profile, missing Keychain access group, or Apple sign-in entitlement is a release blocker.
+The expected spctl result is accepted with a notarized Developer ID source. Under the current profile-bound path, a missing or certificate-mismatched profile, a missing Keychain access group, or the presence of the restricted Apple sign-in entitlement is a release blocker.
 
-On an Apple Silicon Mac running macOS 15, launch the notarized app from the mounted DMG, sign in, and perform one authenticated backend read. This smoke test is required because compile-time availability checks cannot prove that the prebuilt Convex Rust archive avoids newer runtime symbols.
+When an Apple Silicon Mac running macOS 15 is available, launch the notarized app from the mounted DMG, sign in, and perform one authenticated backend read. This provides runtime coverage for the prebuilt Convex Rust archive. If the test is not run, record macOS 15 runtime coverage as unverified; publication can proceed after the package checks in this runbook pass.
 
 ## 6. Verify the DMG and the app inside it
 
@@ -300,7 +302,7 @@ Mount the DMG read-only and repeat the executable checks against the copy users 
 
 If any check fails, keep the artifact local, inspect the signing output, fix the packaging configuration, and rebuild. Do not upload an unverified or partially stapled DMG.
 
-## 7. Post-install microphone/TCC check
+## 7. Post-install microphone and Screen Recording checks
 
 After installing the DMG, launch `/Applications/VoxStudio.app` and test
 `Voice Library -> New reference -> Start recording`. The expected result is a
@@ -308,18 +310,33 @@ macOS microphone prompt on first use, followed by an active recording state;
 the app must not remain on `Microphone access is denied` when the current app
 is enabled in System Settings.
 
-If System Settings still shows an older `Voxella Studio.app` entry, first quit
-all VoxStudio/Voxella Studio processes and confirm that the test is using
-`/Applications/VoxStudio.app`. A stale TCC decision can be cleared for this
-bundle ID with the user-authorized command below, then the app must be quit
-and relaunched before requesting permission again:
+Also test Display and Region capture against the installed app. A successful
+Window capture through the ScreenCaptureKit picker does not prove that the
+global Display/Region preflight is authorized.
+
+If System Settings shows access enabled but the app still reports denial, first
+quit every VoxStudio/Voxella Studio process, confirm the test path, and inspect
+the installed app's authority and designated requirement:
+
+      codesign -dv --verbose=4 /Applications/VoxStudio.app
+      codesign -dr - /Applications/VoxStudio.app
+
+TCC grants are bound to that requirement, not just the visible path or bundle
+identifier. A grant recorded for Developer ID will not match a build silently
+signed with Apple Development; `tccd` may report `Failed to match existing code
+requirement` and OSStatus `-67050`. Correct the signing identity/profile and
+rebuild before resetting any permission.
+
+Only after the signature is correct may stale decisions be cleared with the
+user's authorization. Quit and relaunch the app before requesting again:
 
       tccutil reset Microphone com.voxella.studio
+      tccutil reset ScreenCapture com.voxella.studio
 
 Do not delete an older app bundle as part of release packaging unless the user
 explicitly requests cleanup. The release evidence must identify the tested
 bundle path, display name, bundle identifier, signature, and microphone
-permission result.
+and Display/Region permission results.
 
 ## 8. Record the exact artifact
 
@@ -423,27 +440,17 @@ Rollback download delivery by setting the public Worker's `RELEASE_DELIVERY_MODE
 
 Do not routinely purge immutable files or remove old R2 releases. Keep targeted emergency invalidation for incorrect cached content/headers, using the Workers Cache purge mechanism rather than assuming a zone purge controls this cache. HTTP/3 experiments require actual h2/h3 evidence and a separate zone-scoped change/rollback; no path-level HTTP/3 rule is configured.
 
-## 11. TestFlight upload
+## 11. TestFlight channel boundary
 
-Use this path only when the user requests a TestFlight update. The Mac App Store artifact uses the `MacAppStore` SwiftPM trait, a MAS provisioning profile, a `3rd Party Mac Developer Application` identity, and a `3rd Party Mac Developer Installer` identity. It omits Sparkle and is packaged as `.build/VoxStudio.pkg`; it does not use Developer ID notarization.
+TestFlight is a separate release workflow. Use
+`skills/voxstudio-testflight-release/SKILL.md` and its runbook for MAS
+application/installer identities, the distribution profile, App Store Connect
+validation and upload, processing, and internal tester groups.
 
-Use the exact marketing version and build selected for the release. Before building, check App Store Connect for that build number under the app and macOS platform; the `CFBundleVersion` must be unused. If it is already present, stop and select a new build number before producing either channel artifact rather than attempting to re-upload a duplicate.
-
-Build and validate locally:
-
-      ./scripts/bundle-mas.sh
-      ./scripts/check-mas-billing.sh .build/VoxStudio.app
-      codesign --verify --deep --strict .build/VoxStudio.app
-      pkgutil --check-signature .build/VoxStudio.pkg
-      xcrun altool --validate-app .build/VoxStudio.pkg --type osx --api-key "$APP_STORE_CONNECT_API_KEY_ID" --api-issuer "$APP_STORE_CONNECT_API_ISSUER_ID"
-
-`bundle-mas.sh` loads `.env.prod` when present, otherwise `.env`. Confirm its MAS app and installer identities, provisioning profile, App Store Connect API key file, and StoreKit product configuration without printing secret values. Verify the profile Team ID, app identifier, expiration, and embedded signing certificate match the configured MAS application identity. The package is signed with the installer identity. The App Store Connect API key must have upload permission.
-
-Upload only after validation succeeds:
-
-      xcrun altool --upload-package .build/VoxStudio.pkg --api-key "$APP_STORE_CONNECT_API_KEY_ID" --api-issuer "$APP_STORE_CONNECT_API_ISSUER_ID" --wait
-
-Wait for App Store Connect processing, then check the build under TestFlight or query its processing state. Report the marketing version, build number, upload/delivery ID if provided, and processing status. “Uploaded” or “Processing” does not mean the build is available to testers. For an explicit TestFlight update, inspect which existing internal tester group(s) contain the preceding valid build and associate the new build with those same group(s) when the match is unambiguous. Verify that the new build appears in each group's Builds view. If the App Store Connect API rejects an internal-group association with `Cannot add internal group to a build`, use the visible App Store Connect UI as the supported fallback; do not retry alternate API endpoints or add individuals as a workaround. If the browser session has expired, leave the TestFlight build page open for the user to sign in and finish the group association. Do not create groups, add external groups/testers, change beta review information, or submit the app version for App Review unless separately requested.
+When the user requests both channels, record the exact marketing version and
+build selected here before starting the MAS build. The artifacts may share those
+two values, but they must not share profiles, entitlements, signing identities,
+Sparkle/notarization steps, or acceptance results.
 
 ## 12. Final report
 

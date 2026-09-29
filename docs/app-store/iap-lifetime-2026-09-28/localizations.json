@@ -1,0 +1,44 @@
+[
+  {
+    "locale": "en-US",
+    "language": "English (U.S.)",
+    "name": "VoxStudio Lifetime",
+    "description": "Lifetime Mac access with free upgrades."
+  },
+  {
+    "locale": "zh-Hans",
+    "language": "Chinese (Simplified)",
+    "name": "VoxStudio 终身使用权",
+    "description": "终身 Mac 使用权，含终身免费软件升级。"
+  },
+  {
+    "locale": "de-DE",
+    "language": "German",
+    "name": "VoxStudio Lebenslang",
+    "description": "Mac-Zugang und Updates auf Lebenszeit."
+  },
+  {
+    "locale": "es-ES",
+    "language": "Spanish (Spain)",
+    "name": "VoxStudio de por vida",
+    "description": "Acceso al Mac y actualizaciones de por vida."
+  },
+  {
+    "locale": "fr-FR",
+    "language": "French",
+    "name": "VoxStudio à vie",
+    "description": "Accès Mac à vie et mises à jour gratuites."
+  },
+  {
+    "locale": "ja",
+    "language": "Japanese",
+    "name": "VoxStudio 永続アクセス",
+    "description": "Mac版を買い切り。ソフトウェアの更新は永久無料。"
+  },
+  {
+    "locale": "pt-BR",
+    "language": "Portuguese (Brazil)",
+    "name": "VoxStudio Vitalício",
+    "description": "Acesso ao Mac e atualizações vitalícias."
+  }
+]

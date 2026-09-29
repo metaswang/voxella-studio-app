@@ -1,0 +1,22 @@
+Create a premium App Store in-app purchase promotional image for VoxStudio Lifetime Access. Square 1024 × 1024 pixels, full-bleed opaque artwork, no border, no rounded app-icon mask.
+
+Use the provided screenshots only as visual reference for the actual VoxStudio app, its light theme, and its video-editing timeline. The chosen real session is “Make Your Own Lemonade.” The timeline screenshot shows a real multi-track edit with subtitle clips, video thumbnails, and an audio waveform. Preserve the recognizable visual idea of a video editor timeline, but do not reproduce screenshot UI literally and do not let any small UI text become readable.
+
+Composition:
+- A soft, atmospheric, intentionally defocused video-editing timeline fills the background edge-to-edge. Keep its rows, playhead, filmstrip thumbnails, purple subtitle blocks, and audio waveform recognizable as a real timeline. Blur enough that it reads as context rather than clutter.
+- Match the clean, bright VoxStudio light-theme feeling: warm ivory and pale gray surfaces, subtle lavender/purple track accents, restrained violet and teal highlights, natural soft shadows, crisp editorial typography.
+- In the foreground, create one coherent, high-end product-story composition rather than a grid of unrelated icons. Show three steps flowing together: a real transcript document with a waveform and a small infinity symbol to communicate unlimited on-device transcription; a polished microphone and waveform/voice track for voiceover; an AI editing element visibly arranging footage and captions into a finished video preview.
+- Include several distinct source-media cues (for example a travel scene, a person speaking, a product/food shot, and audio) so the story clearly means any media can become a finished video. The lemonade screenshot is only a real-app visual reference; do not make this image solely about lemons, lemon drinks, or a kitchen.
+- Make the finished video preview feel vivid and desirable, with a strong central focal point. Use elegant layered cards with depth, but keep generous spacing and visual hierarchy.
+- The result should sell creative capability at a glance: transform recordings, footage, and other media into a polished video, all within one Mac creative studio.
+
+Typography: render only these exact short English text strings, spelled correctly, with clean high-contrast sans-serif type:
+“Any media. One finished video.”
+“LOCAL ∞ TRANSCRIPTION”
+“VOICEOVER”
+“AI VIDEO EDIT”
+Make the headline prominent but not overpowering; keep the three feature labels short, clear, and visually secondary. Do not invent any other text, numbers, UI labels, prices, badges, or buttons.
+
+Brand restrictions: do not use Palmier, Palmier Pro, Palmier branding, logos, UI, or assets. Do not introduce other company/product logos. Do not imitate Apple device hardware. Do not include purchase buttons, pricing, or fake App Store UI.
+
+Keep all important elements well inside the square safe area. Ensure the image still reads clearly as a small App Store offer image.

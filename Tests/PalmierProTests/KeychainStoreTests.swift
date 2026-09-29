@@ -3,6 +3,31 @@ import Security
 import Testing
 @testable import PalmierPro
 
+@Suite("API credential isolation")
+struct APICredentialIsolationTests {
+    @Test func productionKeepsExistingCredentials() {
+        for origin in ["https://voxstudio.me", "https://VOXSTUDIO.me:443/"] {
+            #expect(KeychainStore.credentialService(for: URL(string: origin)!)
+                == "com.voxella.studio.credentials.v3")
+        }
+    }
+
+    @Test func localAndProductionPaymentsAndLicensesCannotShareCredentials() {
+        let local = KeychainStore.credentialService(for: URL(string: "http://localhost:5173")!)
+        let production = KeychainStore.credentialService(for: URL(string: "https://voxstudio.me")!)
+        #expect(local != production)
+        #expect(local == KeychainStore.credentialService(for: URL(string: "http://LOCALHOST:5173/")!))
+        #expect(local != KeychainStore.credentialService(for: URL(string: "http://localhost:8000")!))
+        #expect(local != KeychainStore.credentialService(for: URL(string: "https://localhost:5173")!))
+    }
+
+    @Test func apiPrefixesAreIsolated() {
+        let origin = URL(string: "https://example.com")!
+        let prefixed = URL(string: "https://example.com/staging")!
+        #expect(KeychainStore.credentialService(for: origin) != KeychainStore.credentialService(for: prefixed))
+    }
+}
+
 @Suite(.serialized)
 struct KeychainStoreTests {
     @Test func accessibilityPreservesDeviceBindingAndBackgroundPolicy() {
