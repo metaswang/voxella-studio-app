@@ -518,6 +518,7 @@ final class AgentService {
                         appendToolUse(id: id, name: name, inputJSON: inputJSON, toAssistant: assistantID)
                     case .messageStop(let reason):
                         stopReason = reason
+                    case .tokenUsage: break
                     }
                 }
 

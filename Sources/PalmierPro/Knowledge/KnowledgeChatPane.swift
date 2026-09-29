@@ -12,7 +12,6 @@ struct KnowledgeChatPane: View {
     var availableWidth: CGFloat
     @State private var isNearBottom = true
     @State private var isUserScrolling = false
-    @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @State private var scrollTask: Task<Void, Never>?
     @State private var isClearHovered = false
 
@@ -133,72 +132,82 @@ struct KnowledgeChatPane: View {
     }
 
     private var messages: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                if controller.messages.isEmpty {
-                    emptyState
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, AppTheme.Spacing.mdLg)
+        ScrollViewReader { proxy in
+            ScrollView {
+                // Streaming rows change height and insert/remove controls. A lazy
+                // stack anchored to an estimated bottom can keep remeasuring those
+                // rows without settling, monopolizing the main run loop.
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                    if controller.messages.isEmpty {
+                        emptyState
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, AppTheme.Spacing.mdLg)
+                    }
+                    ForEach(controller.messages) { message in
+                        KnowledgeMessageRow(
+                            message: message,
+                            status: message.isStreaming ? controller.statusText : nil,
+                            cardWidth: min(AppTheme.Knowledge.messageMaxWidth,
+                                max(1, availableWidth - AppTheme.Spacing.mdLg * 2 - AppTheme.Spacing.xxl - 8)),
+                            onStop: controller.cancelAnswer,
+                            onCitation: controller.openCitation,
+                            onRecovery: controller.performRecoveryAction
+                        )
+                        .equatable()
+                        .id(message.id)
+                    }
+                    Color.clear.frame(height: 1).id("knowledge-chat-bottom")
                 }
-                ForEach(controller.messages) { message in
-                    KnowledgeMessageRow(
-                        message: message,
-                        status: message.isStreaming ? controller.statusText : nil,
-                        cardWidth: min(AppTheme.Knowledge.messageMaxWidth,
-                            max(1, availableWidth - AppTheme.Spacing.mdLg * 2 - AppTheme.Spacing.xxl - 8)),
-                        onStop: controller.cancelAnswer,
-                        onCitation: controller.openCitation,
-                        onRecovery: controller.performRecoveryAction
-                    )
-                    .equatable()
-                    .id(message.id)
+                .frame(width: max(1, availableWidth - AppTheme.Spacing.mdLg * 2))
+                .padding(.horizontal, AppTheme.Spacing.mdLg)
+                .padding(.vertical, AppTheme.Spacing.md)
+            }
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height <= 48
+            } action: { _, nearBottom in
+                // Content growth must not turn off the user's existing follow intent.
+                if isUserScrolling { isNearBottom = nearBottom }
+            }
+            .onScrollPhaseChange { _, phase, context in
+                let userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+                if isUserScrolling || userScrolling {
+                    let geometry = context.geometry
+                    isNearBottom = geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height <= 48
                 }
-                Color.clear.frame(height: 1).id("knowledge-chat-bottom")
+                isUserScrolling = userScrolling
+                if userScrolling { scrollTask?.cancel() }
             }
-            .frame(width: max(1, availableWidth - AppTheme.Spacing.mdLg * 2))
-            .padding(.horizontal, AppTheme.Spacing.mdLg)
-            .padding(.vertical, AppTheme.Spacing.md)
-        }
-        .scrollPosition($scrollPosition)
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height <= 48
-        } action: { _, nearBottom in
-            // Content growth must not turn off the user's existing follow intent.
-            if isUserScrolling { isNearBottom = nearBottom }
-        }
-        .onScrollPhaseChange { _, phase, context in
-            let userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
-            if isUserScrolling || userScrolling {
-                let geometry = context.geometry
-                isNearBottom = geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height <= 48
+            .onChange(of: controller.messages.last) { previous, latest in
+                guard let latest else { return }
+                let submitted = previous?.id != latest.id && (latest.role == .user || latest.isStreaming)
+                guard submitted || isNearBottom else { return }
+                if submitted { isNearBottom = true }
+                scrollToBottom(using: proxy)
             }
-            isUserScrolling = userScrolling
-            if userScrolling { scrollTask?.cancel() }
-        }
-        .onChange(of: controller.messages.last) { previous, latest in
-            guard let latest else { return }
-            let submitted = previous?.id != latest.id && (latest.role == .user || latest.isStreaming)
-            guard submitted || isNearBottom else { return }
-            if submitted { isNearBottom = true }
-            scrollTask?.cancel()
-            let conversationID = controller.conversation?.id
-            scrollTask = Task { @MainActor in
-                // Coalesce changes and leave the current layout transaction first.
-                do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
-                guard !Task.isCancelled, controller.conversation?.id == conversationID else { return }
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) { scrollPosition.scrollTo(edge: .bottom) }
+            .onChange(of: controller.conversation?.id) { _, _ in
+                scrollTask?.cancel()
+                isNearBottom = true
+                isUserScrolling = false
+                scrollToBottom(using: proxy)
             }
+            .onAppear { scrollToBottom(using: proxy) }
+            .onDisappear { scrollTask?.cancel() }
         }
-        .onChange(of: controller.conversation?.id) { _, _ in
-            scrollTask?.cancel()
-            isNearBottom = true
-            isUserScrolling = false
-            scrollPosition = ScrollPosition(edge: .bottom)
-        }
-        .onDisappear { scrollTask?.cancel() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func scrollToBottom(using proxy: ScrollViewProxy) {
+        scrollTask?.cancel()
+        let conversationID = controller.conversation?.id
+        scrollTask = Task { @MainActor in
+            // Coalesce updates after layout, then target the concrete sentinel
+            // once. Do not retain an edge anchor that follows estimated sizes.
+            do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+            guard !Task.isCancelled, controller.conversation?.id == conversationID else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { proxy.scrollTo("knowledge-chat-bottom", anchor: .bottom) }
+        }
     }
 
     @ViewBuilder
@@ -524,8 +533,7 @@ struct KnowledgeChatPane: View {
     }
 
     private var canSend: Bool {
-        !controller.isAnswering
-            && !controller.isPreparingKnowledgeModels
+        !controller.isPreparingKnowledgeModels
             && controller.accessBlockedMessage == nil
             && controller.answerBlockedMessage == nil
             && controller.canAskCurrentScope
@@ -662,7 +670,8 @@ private struct KnowledgeMessageRow: View, Equatable {
     }
 
     private func citationRow(_ citations: [KnowledgeSourceRef]) -> some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+        let sources = KnowledgeAnswerPresentation.sourceGroups(citations)
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             HStack(spacing: AppTheme.Spacing.xs) {
                 Image(systemName: "link.circle.fill")
                     .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
@@ -672,7 +681,7 @@ private struct KnowledgeMessageRow: View, Equatable {
                     .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
 
-                Text(verbatim: "\(citations.count)")
+                Text(verbatim: "\(sources.count)")
                     .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold, design: .rounded))
                     .foregroundStyle(AppTheme.Accent.link)
                     .padding(.horizontal, AppTheme.Spacing.xs)
@@ -685,15 +694,15 @@ private struct KnowledgeMessageRow: View, Equatable {
                 Spacer(minLength: 0)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text(L10n.format("%@, %@", L10n.string("Sources"), citations.count)))
+            .accessibilityLabel(Text(L10n.format("%@, %@", L10n.string("Sources"), sources.count)))
             .help(L10n.string("Select a source to open its matching transcript"))
 
-            FlowCitationChips(citations: citations) { ref in
+            FlowCitationChips(sources: sources) { ref in
                 onCitation(ref)
             }
 
-            if citations.count > 8 {
-                Text(L10n.format("+%@ %@", citations.count - 8, L10n.string("more sources")))
+            if sources.count > 8 {
+                Text(L10n.format("+%@ %@", sources.count - 8, L10n.string("more sources")))
                     .font(.system(size: AppTheme.FontSize.xxs))
                     .foregroundStyle(AppTheme.Text.mutedColor)
                     .padding(.leading, AppTheme.Spacing.smMd)
@@ -919,74 +928,102 @@ private struct KnowledgeAnswerStatusControl: View {
 /// card has plenty of room. Each source now gets the complete answer width and
 /// can wrap naturally when the title is genuinely longer than that width.
 private struct FlowCitationChips: View {
-    let citations: [KnowledgeSourceRef]
+    let sources: [KnowledgeCitationSource]
     let onTap: (KnowledgeSourceRef) -> Void
 
     var body: some View {
-        LazyVGrid(
-            columns: [GridItem(.flexible(minimum: 0), spacing: AppTheme.Spacing.xs)],
-            alignment: .leading,
-            spacing: AppTheme.Spacing.xs
-        ) {
-            ForEach(citations.prefix(8)) { ref in
-                Button {
-                    onTap(ref)
-                } label: {
-                    HStack(spacing: AppTheme.Spacing.xs) {
-                        Image(systemName: "link")
-                            .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold))
-                        Text(ref.chipLabel)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .multilineTextAlignment(.leading)
-                        Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            ForEach(sources.prefix(8)) { source in
+                let ref = source.primaryReference
+                HStack(spacing: AppTheme.Spacing.xs) {
+                    Button {
+                        onTap(ref)
+                    } label: {
+                        HStack(spacing: AppTheme.Spacing.xs) {
+                            Image(systemName: ref.sessionUUID == nil ? "doc.text" : "link")
+                                .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold))
+                            Text(ref.chipLabel)
+                                .lineLimit(nil)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Text.secondaryColor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, AppTheme.Spacing.sm)
-                    .padding(.vertical, AppTheme.Spacing.xs)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
-                            .fill(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.medium))
-                    )
+                    .buttonStyle(.plain)
+                    .disabled(ref.sessionUUID == nil)
+                    .help(ref.sessionUUID == nil ? ref.chipLabel : L10n.string("Open transcript"))
+                    .accessibilityLabel(Text(ref.sessionUUID == nil ? ref.chipLabel : L10n.format("Open transcript: %@", ref.chipLabel)))
+                    if source.navigationReferences.count > 1 {
+                        Menu {
+                            ForEach(source.navigationReferences) { anchor in
+                                Button(anchor.chipLabel) { onTap(anchor) }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help(L10n.string("Select a source to open its matching transcript"))
+                    }
                 }
-                .buttonStyle(.plain)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .help(L10n.string("Open transcript"))
-                .accessibilityLabel(Text(L10n.format("Open transcript: %@", ref.chipLabel)))
-                .accessibilityHint(L10n.string("Select a source to open its matching transcript"))
+                .padding(.horizontal, AppTheme.Spacing.sm)
+                .padding(.vertical, AppTheme.Spacing.xs)
+                .background(
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                        .fill(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.medium))
+                )
+                .accessibilityHint(ref.sessionUUID == nil ? ref.chipLabel : L10n.string("Select a source to open its matching transcript"))
             }
         }
     }
 }
 
+/// Source rows group evidence without changing the native citation-number map.
+/// Timed evidence remains individually navigable within its source row.
+struct KnowledgeCitationSource: Identifiable {
+    let id: String
+    var citations: [KnowledgeSourceRef]
+
+    var navigationReferences: [KnowledgeSourceRef] {
+        var seen = Set<String>()
+        let timed = citations.filter { $0.startTime != nil && seen.insert($0.id).inserted }
+        return timed.isEmpty ? Array(citations.suffix(1)) : timed
+    }
+
+    var primaryReference: KnowledgeSourceRef { navigationReferences[0] }
+}
+
 /// Keeps machine-generated citation tokens out of the reading flow. The source
-/// list below the answer is the readable, clickable evidence affordance, so a
-/// user never has to decode a bare `45` or `[1, 4]` in otherwise natural prose.
+/// list below the answer is the readable, clickable evidence affordance.
+/// Unbracketed numeric facts remain intact.
 enum KnowledgeAnswerPresentation {
-    private static let numericCitationPattern = #"(?:\[\s*\d{1,3}(?:\s*[,，]\s*\d{1,3})*\s*\]|【\s*\d{1,3}(?:\s*[,，]\s*\d{1,3})*\s*】)"#
-    private static let bareCitationPattern = #"[ \t]+\d{1,3}(?=[ \t]*(?:[。！？.!?；;，,、]|$))"#
+    static func sourceGroups(_ citations: [KnowledgeSourceRef]) -> [KnowledgeCitationSource] {
+        var sources: [KnowledgeCitationSource] = []
+        var indices: [String: Int] = [:]
+        for ref in citations {
+            if let index = indices[ref.sourceID] {
+                sources[index].citations.append(ref)
+            } else {
+                indices[ref.sourceID] = sources.count
+                sources.append(.init(id: ref.sourceID, citations: [ref]))
+            }
+        }
+        return sources
+    }
 
     static func displayText(_ text: String, citationCount: Int) -> String {
         let hasCitationEvidence = citationCount > 0
-            || containsMatch(text, pattern: numericCitationPattern)
-            || hasRepeatedBareCitationTokens(in: text)
+            || !KnowledgeCitationMarkers.numbers(in: text).isEmpty
         guard hasCitationEvidence else { return text }
 
-        var value = replacing(
-            text,
-            pattern: numericCitationPattern
-        )
+        let value = KnowledgeCitationMarkers.removing(from: text)
 
-        // Some model/provider combinations emit citation indexes as a bare
-        // token at the end of a sentence (`…内容 45。`). Only match a token
-        // separated by horizontal whitespace and followed by punctuation or
-        // the end of the answer, so ordinary values such as `20次` survive.
-        value = replacing(
-            value,
-            pattern: bareCitationPattern
-        )
+        // Bare numbers are indistinguishable from actual facts such as
+        // “共有 4。” or “预算是 45。”; only bracketed markers are removable.
         return replacing(
             value,
             pattern: #"[ \t]+([。！？.!?；;，,、])"#,
@@ -1009,23 +1046,6 @@ enum KnowledgeAnswerPresentation {
         )
     }
 
-    private static func containsMatch(_ text: String, pattern: String) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
-        let range = NSRange(location: 0, length: text.utf16.count)
-        return regex.firstMatch(in: text, options: [], range: range) != nil
-    }
-
-    private static func hasRepeatedBareCitationTokens(in text: String) -> Bool {
-        let bulletLines = text.components(separatedBy: .newlines).filter { line in
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.hasPrefix("- ")
-                || trimmed.hasPrefix("* ")
-                || trimmed.hasPrefix("• ")
-        }
-        return bulletLines.filter {
-            containsMatch($0, pattern: bareCitationPattern)
-        }.count >= 3
-    }
 }
 
 private struct KnowledgeAnswerText: View {

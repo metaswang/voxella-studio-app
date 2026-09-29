@@ -12,7 +12,8 @@ struct KnowledgeToolRegistryTests {
         let names = Set(allTools.map(\.name))
         #expect(names.contains("knowledge.search"))
         #expect(names.contains("session.list"))
-        #expect(names.contains("finish_with_evidence"))
+        #expect(!names.contains("finish_with_evidence"))
+        #expect(names.contains("analysis.update"))
         #expect(names.contains("ask_clarification"))
     }
     

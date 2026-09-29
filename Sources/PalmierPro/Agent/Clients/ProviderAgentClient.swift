@@ -6,11 +6,13 @@ import Foundation
 struct ProviderAgentClient: AgentClient {
     let route: LLMRuntimeRoute
     let session: URLSession
+    var maximumOutputTokens: Int? = nil
     var onModelSelected: @Sendable (String) async -> Void = { _ in }
 
-    init(route: LLMRuntimeRoute, session: URLSession = .shared) {
+    init(route: LLMRuntimeRoute, session: URLSession = .shared, maximumOutputTokens: Int? = nil) {
         self.route = route
         self.session = session
+        self.maximumOutputTokens = maximumOutputTokens
     }
 
     func stream(
@@ -26,7 +28,7 @@ struct ProviderAgentClient: AgentClient {
                     var emitted = false
                     do {
                         await onModelSelected(configuration.modelIdentifier)
-                        let client = SingleProviderAgentClient(configuration: configuration, session: session, timeout: route.policy.timeoutSeconds)
+                        let client = SingleProviderAgentClient(configuration: configuration, session: session, timeout: route.policy.timeoutSeconds, maximumOutputTokens: maximumOutputTokens)
                         let events = client.stream(
                             system: system, tools: tools, messages: messages, context: context
                         )
@@ -72,6 +74,7 @@ private struct SingleProviderAgentClient: AgentClient {
     let configuration: LLMRuntimeConfiguration
     let session: URLSession
     let timeout: Double
+    let maximumOutputTokens: Int?
 
     func stream(
         system: String,
@@ -120,6 +123,20 @@ private struct SingleProviderAgentClient: AgentClient {
             }
             if protocolKind == .openAIResponses, configuration.chatCapability.thinking == .automatic {
                 body.removeValue(forKey: "reasoning")
+            }
+            if let maximumOutputTokens {
+                switch protocolKind {
+                case .openAIResponses: body["max_output_tokens"] = maximumOutputTokens
+                case .anthropic:
+                    body["max_tokens"] = maximumOutputTokens
+                    if var thinking = body["thinking"] as? [String: Any], let tokens = thinking["budget_tokens"] as? Int {
+                        thinking["budget_tokens"] = min(tokens, max(1_024, maximumOutputTokens - 1_024))
+                        body["thinking"] = thinking
+                    }
+                case .openAICompatible:
+                    body["max_tokens"] = maximumOutputTokens
+                    body.removeValue(forKey: "max_completion_tokens")
+                }
             }
             request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
             Log.agent.notice(
@@ -259,9 +276,15 @@ struct OpenAICompatibleStreamParser {
         if let error = root["error"] as? [String: Any] {
             throw AgentClientTransportError.streamError(provider: .openAI, message: error["message"] as? String ?? "Provider error.")
         }
-        guard let choice = (root["choices"] as? [[String: Any]])?.first else { return [] }
-        let delta = choice["delta"] as? [String: Any] ?? [:]
         var events: [AgentStreamEvent] = []
+        if let usage = root["usage"] as? [String: Any],
+           let input = usage["prompt_tokens"], let output = usage["completion_tokens"],
+           let reported = AgentTokenUsage.from(["input_tokens": input, "output_tokens": output]) {
+            events.append(.tokenUsage(reported))
+        }
+        // Some compatible endpoints report usage in a final chunk with no choices.
+        guard let choice = (root["choices"] as? [[String: Any]])?.first else { return events }
+        let delta = choice["delta"] as? [String: Any] ?? [:]
         if let text = delta["content"] as? String, !text.isEmpty { events.append(.textDelta(text)) }
         for call in delta["tool_calls"] as? [[String: Any]] ?? [] {
             let index = call["index"] as? Int ?? 0

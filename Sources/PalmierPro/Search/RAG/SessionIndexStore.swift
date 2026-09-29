@@ -35,6 +35,11 @@ actor SessionIndexStore {
         if !columns.contains("source_modified_at") {
             try sqlite.execute("ALTER TABLE sessions ADD COLUMN source_modified_at REAL")
         }
+        for (name, type) in [("media_duration_sec", "REAL"), ("last_spoken_end_sec", "REAL"),
+                             ("transcribed_start_sec", "REAL"), ("transcribed_end_sec", "REAL"),
+                             ("duration_provenance", "TEXT NOT NULL DEFAULT 'legacy_unknown'")] where !columns.contains(name) {
+            try sqlite.execute("ALTER TABLE sessions ADD COLUMN \(name) \(type)")
+        }
         try sqlite.execute(
             "UPDATE sessions SET source_modified_at = source_mtime WHERE source_modified_at IS NULL AND source_mtime IS NOT NULL"
         )
@@ -81,6 +86,7 @@ actor SessionIndexStore {
                     .optional(snapshot.sourceModifiedAt ?? snapshot.sourceMTime),
                 ]
             )
+            try patchDurationFacts(snapshot: snapshot)
             for speaker in snapshot.speakers {
                 try sqlite.run(
                     "INSERT INTO speakers(session_id, label, display_name) VALUES (?, ?, ?)",
@@ -366,6 +372,51 @@ actor SessionIndexStore {
                 .double(Date().timeIntervalSince1970), .text(snapshot.sessionID.uuidString),
             ]
         )
+        try patchDurationFacts(snapshot: snapshot)
+    }
+
+    /// Additive metadata repair; never touches units, vectors or ingest generation.
+    func patchMediaFacts(sessionID: UUID, mediaDuration: Double?, provenance: String,
+                         lastSpokenEnd: Double?, transcribedStart: Double?, transcribedEnd: Double?) throws {
+        try sqlite.run("""
+            UPDATE sessions SET media_duration_sec = ?, duration_provenance = ?,
+                last_spoken_end_sec = ?, transcribed_start_sec = ?, transcribed_end_sec = ? WHERE id = ?
+            """, binds: [.optional(mediaDuration), .text(provenance), .optional(lastSpokenEnd),
+                         .optional(transcribedStart), .optional(transcribedEnd), .text(sessionID.uuidString)])
+    }
+
+    func durationFacts(sessionID: UUID) throws -> (media: Double?, provenance: String, lastSpoken: Double?)? {
+        guard let row = try sqlite.query("SELECT media_duration_sec, duration_provenance, last_spoken_end_sec FROM sessions WHERE id = ?",
+                                         binds: [.text(sessionID.uuidString)]).first else { return nil }
+        return (row.double("media_duration_sec"), row.text("duration_provenance") ?? "legacy_unknown", row.double("last_spoken_end_sec"))
+    }
+
+    private func patchDurationFacts(snapshot: SessionIndexSnapshot) throws {
+        try patchMediaFacts(sessionID: snapshot.sessionID, mediaDuration: snapshot.mediaDurationSec,
+            provenance: snapshot.durationProvenance, lastSpokenEnd: snapshot.lastSpokenEndSec,
+            transcribedStart: snapshot.transcribedStartSec, transcribedEnd: snapshot.transcribedEndSec)
+    }
+
+    /// Actual consecutive original indexed units, independent of FTS query.
+    /// Visibility and exact speaker/time filters also apply to the count query.
+    func transcriptPage(filter: SessionSearchFilter, offset: Int) throws -> (hits: [SessionSearchHit], total: Int) {
+        guard filter.sourceOrigins?.isEmpty != true, filter.sessionIDs?.isEmpty != true else { return ([], 0) }
+        var binds: [SessionSQLiteValue] = []
+        var conditions = " WHERE u.kind = 'transcript_chunk'" + Self.filterSQL(filter, binds: &binds)
+        if let start = filter.start, filter.end == nil {
+            conditions += " AND u.end_s >= ?"
+            binds.append(.double(start))
+        }
+        if let end = filter.end, filter.start == nil {
+            conditions += " AND u.start_s <= ?"
+            binds.append(.double(end))
+        }
+        let from = " FROM units u JOIN sessions s ON s.id = u.session_id"
+        let total = try sqlite.query("SELECT COUNT(*) AS total" + from + conditions, binds: binds).first?.int("total") ?? 0
+        let sql = "SELECT u.*, s.title, s.has_video, s.language, s.source_origin, s.duration_sec" + from + conditions + " ORDER BY u.start_s, u.id LIMIT ? OFFSET ?"
+        let rows = try sqlite.query(sql, binds: binds + [.int(filter.limit), .int(offset)])
+        let hits = rows.compactMap { hit(from: $0, matchSource: "indexed_read", invertRank: false) }
+        return (try decorateSpeakers(hits), total)
     }
 
     func searchLexical(

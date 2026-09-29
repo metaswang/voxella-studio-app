@@ -5,7 +5,7 @@ category: knowledge
 status: published
 selection_summary: Single-session transcript deep-dive
 applies_when: User is asking about content within one specific selected session
-allowed_tools: session.get_segments, session.search_segments, session.get_timeline, finish_with_evidence, ask_clarification
+allowed_tools: session.get_segments, session.search_segments, session.get_timeline, ask_clarification
 supports_evidence_goals: semantic_qa, timeline_analysis
 analysis_modes: extract, timeline
 ---
@@ -20,7 +20,6 @@ This skill provides detailed answers by reading and searching within a single se
 - Use `session.get_segments` to retrieve consecutive segments for context (e.g., start/end time ranges)
 - Use `session.get_timeline` when the user asks "around X minutes" or needs temporal context
 - Always scope all tool calls to the single target session
-- Call `finish_with_evidence` with transcript segment citations
 
 ## Evidence Guidance
 
@@ -33,3 +32,8 @@ This skill provides detailed answers by reading and searching within a single se
 - Provide precise timestamps (mm:ss format) for all quotes
 - Include speaker names when known
 - Quote verbatim when accuracy matters; paraphrase for summaries
+
+
+## Adaptive evidence method
+
+Read available metadata first. Use summaries to navigate long sources; read short transcripts directly. Follow every next_cursor before describing a read as complete. Verify exact decisions, negations and corrections in continuous original context. Stop when supported and answer naturally with the workspace citation numbers. Empty search means not found, never absence.

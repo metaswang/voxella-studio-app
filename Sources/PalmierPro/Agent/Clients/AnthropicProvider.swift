@@ -13,6 +13,31 @@ enum AgentUsageLog {
     }
 }
 
+struct AnthropicUsageAccumulator {
+    private var counts: [String: Int] = [:]
+    private var hasFinalOutput = false
+    private var invalid = false
+
+    mutating func update(_ usage: [String: Any], finalOutput: Bool) {
+        for key in ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"] {
+            guard let raw = usage[key], !(raw is NSNull) else { continue }
+            guard let value = raw as? Int, value >= 0, value <= 1_000_000_000 else {
+                invalid = true
+                continue
+            }
+            // message_delta counts are cumulative, not incremental.
+            counts[key] = value
+            if key == "output_tokens", finalOutput { hasFinalOutput = true }
+        }
+    }
+
+    var finalUsage: AgentTokenUsage? {
+        guard !invalid, hasFinalOutput, let input = counts["input_tokens"], let output = counts["output_tokens"] else { return nil }
+        let totalInput = input + (counts["cache_creation_input_tokens"] ?? 0) + (counts["cache_read_input_tokens"] ?? 0)
+        return AgentTokenUsage.from(["input_tokens": totalInput, "output_tokens": output])
+    }
+}
+
 enum AnthropicSSE {
     static func parse(
         bytes: URLSession.AsyncBytes,
@@ -20,6 +45,7 @@ enum AnthropicSSE {
     ) async throws {
         var pendingTools: [Int: (id: String, name: String, json: String)] = [:]
         var finished = false
+        var usageAccumulator = AnthropicUsageAccumulator()
         for try await line in bytes.lines {
             try Task.checkCancellation()
             guard line.hasPrefix("data:"),
@@ -32,6 +58,7 @@ enum AnthropicSSE {
                 if let message = event["message"] as? [String: Any],
                    let usage = message["usage"] as? [String: Any] {
                     AgentUsageLog.record(usage)
+                    usageAccumulator.update(usage, finalOutput: false)
                 }
 
             case "content_block_start":
@@ -76,6 +103,9 @@ enum AnthropicSSE {
                 }
 
             case "message_delta":
+                if let usage = event["usage"] as? [String: Any] {
+                    usageAccumulator.update(usage, finalOutput: true)
+                }
                 if let delta = event["delta"] as? [String: Any],
                    let raw = delta["stop_reason"] as? String {
                     continuation.yield(.messageStop(stopReason: AgentStopReason(rawValue: raw) ?? .other))
@@ -88,6 +118,7 @@ enum AnthropicSSE {
                 }
 
             case "message_stop":
+                if let usage = usageAccumulator.finalUsage { continuation.yield(.tokenUsage(usage)) }
                 finished = true
 
             default: break

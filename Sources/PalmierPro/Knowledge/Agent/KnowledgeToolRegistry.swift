@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 /// Registry of knowledge agent tools: schema definitions and Mac whitelist.
 /// Tools use dotted names (e.g., `knowledge.search`) and JSON-encoded arguments/results.
@@ -12,7 +13,13 @@ enum KnowledgeToolRegistry {
         .sessionSearchSegments,
         .sessionGetTimeline,
         .knowledgeCompareSessions,
-        .finishWithEvidence,
+        .sessionGetSpeakers,
+        .sessionAggregate,
+        .sourceSearch,
+        .findText,
+        .readSkill,
+        .readPayload,
+        .analysisUpdate,
         .askClarification,
     ]
     
@@ -41,20 +48,24 @@ struct KnowledgeToolDefinition: Sendable {
         parameters: [
             .init(name: "query", type: "string", description: "Search query", required: true),
             .init(name: "session_ids", type: "array", description: "Optional session UUID list to scope search", required: false),
-            .init(name: "limit", type: "integer", description: "Max hits (default 8)", required: false),
+            .init(name: "limit", type: "integer", description: "Max hits (default 8, up to 32)", required: false),
+            .init(name: "use_graph", type: "boolean", description: "Explicitly enable graph hints for entity/multi-hop queries", required: false),
         ]
     )
     
     static let sessionList = KnowledgeToolDefinition(
         name: "session.list",
-        description: "List sessions filtered by query text, type, origin, or date range. Respects login visibility.",
+        description: "Enumerate the authorized inventory with explicit paging. Title query is a literal title filter, not a semantic theme filter. Follow every next_cursor for exhaustive classification. Respects login visibility.",
         parameters: [
             .init(name: "query", type: "string", description: "Text query to filter titles", required: false),
             .init(name: "type", type: "string", description: "Session type filter (recording, meeting, upload, net_video, dub)", required: false),
             .init(name: "origin", type: "string", description: "Origin filter (local, cloud, all)", required: false),
             .init(name: "date_from", type: "string", description: "ISO8601 date lower bound", required: false),
             .init(name: "date_to", type: "string", description: "ISO8601 date upper bound", required: false),
-            .init(name: "limit", type: "integer", description: "Max results (default 50; enough for the visible collection)", required: false),
+            .init(name: "limit", type: "integer", description: "Page size (default 32, max 100); follow next_cursor for the full inventory", required: false),
+            .init(name: "cursor", type: "integer", description: "Offset from next_cursor", required: false),
+            .init(name: "date_field", type: "string", description: "created or modified (default created); neither is a recording date", required: false),
+            .init(name: "has_transcript", type: "boolean", description: "Optional filter for readable timed transcript material (original or dub)", required: false),
         ]
     )
     
@@ -71,6 +82,7 @@ struct KnowledgeToolDefinition: Sendable {
         description: "Get the summary markdown for one session.",
         parameters: [
             .init(name: "session_id", type: "string", description: "Session UUID", required: true),
+            .init(name: "cursor", type: "integer", description: "Character offset for summary paging", required: false),
         ]
     )
     
@@ -81,7 +93,9 @@ struct KnowledgeToolDefinition: Sendable {
             .init(name: "session_id", type: "string", description: "Session UUID", required: true),
             .init(name: "start", type: "number", description: "Start time in seconds (optional)", required: false),
             .init(name: "end", type: "number", description: "End time in seconds (optional)", required: false),
-            .init(name: "limit", type: "integer", description: "Max segments (default 20)", required: false),
+            .init(name: "limit", type: "integer", description: "Page size (default 80, max 200)", required: false),
+            .init(name: "cursor", type: "integer", description: "Offset from next_cursor", required: false),
+            .init(name: "speaker", type: "string", description: "Optional exact speaker label", required: false),
         ]
     )
     
@@ -91,19 +105,16 @@ struct KnowledgeToolDefinition: Sendable {
         parameters: [
             .init(name: "session_ids", type: "array", description: "Session UUID list", required: true),
             .init(name: "query", type: "string", description: "Search query", required: true),
-            .init(name: "limit", type: "integer", description: "Max hits (default 8)", required: false),
+            .init(name: "limit", type: "integer", description: "Max hits (default 8, up to 32)", required: false),
+            .init(name: "use_graph", type: "boolean", description: "Explicitly enable graph hints for entity/multi-hop queries", required: false),
         ]
     )
     
     static let sessionGetTimeline = KnowledgeToolDefinition(
-        name: "session.get_timeline",
-        description: "Get bucketed timeline of transcript segments for temporal analysis.",
-        parameters: [
-            .init(name: "session_id", type: "string", description: "Session UUID", required: true),
-            .init(name: "bucket_seconds", type: "integer", description: "Bucket size in seconds (default 60)", required: false),
-        ]
-    )
-    
+        name: "session.get_timeline", description: "Read a paginated bucketed timeline; follow next_cursor to cover the full source.",
+        parameters: sessionGetSegments.parameters + [
+            .init(name: "bucket_seconds", type: "integer", description: "Positive bucket size (default 60)", required: false)])
+
     static let knowledgeCompareSessions = KnowledgeToolDefinition(
         name: "knowledge.compare_sessions",
         description: "Compare themes across 2+ sessions. Returns structured comparison evidence.",
@@ -114,14 +125,38 @@ struct KnowledgeToolDefinition: Sendable {
         ]
     )
     
-    static let finishWithEvidence = KnowledgeToolDefinition(
-        name: "finish_with_evidence",
-        description: "Control tool: finish with accepted evidence refs. Agent must call this when sufficient evidence is gathered.",
-        parameters: [
-            .init(name: "accepted_refs", type: "array", description: "List of accepted citation ref IDs", required: true),
-        ]
-    )
-    
+    static let sessionGetSpeakers = KnowledgeToolDefinition(
+        name: "session.get_speakers", description: "Read speaker labels; missing labels do not prove nobody spoke.",
+        parameters: [.init(name: "session_id", type: "string", description: "Session UUID", required: true)])
+    static let sessionAggregate = KnowledgeToolDefinition(
+        name: "session.aggregate", description: "Exact count, duration sum, grouping and sorting over the FULL filtered metadata inventory; cannot count semantic themes.",
+        parameters: sessionList.parameters + [
+            .init(name: "group_by", type: "string", description: "type or origin (optional)", required: false),
+            .init(name: "sort_by", type: "string", description: "created, modified or duration; duration probes local media across the filtered population and preserves unknowns", required: false),
+            .init(name: "sort_order", type: "string", description: "asc or desc (default desc). Unknown duration always sorts last. Includes known shortest/longest and unknown count.", required: false)])
+    static let sourceSearch = KnowledgeToolDefinition(
+        name: "knowledge.search_sources", description: "Discover source candidates through summary AND transcript search. Top-K candidates are not a complete inventory.",
+        parameters: [.init(name: "query", type: "string", description: "Source discovery query", required: true),
+                     .init(name: "limit", type: "integer", description: "Max sources, up to 32", required: false)])
+    static let findText = KnowledgeToolDefinition(
+        name: "knowledge.find_text", description: "Exhaustive literal phrase lookup over available original timed transcripts in the authorized scope. Case-insensitive, with whitespace normalized. Returns paginated matches, original time anchors and unavailable sources. Use for questions about every source containing exact words, not semantic themes.",
+        parameters: [.init(name: "text", type: "string", description: "Literal words or phrase to find", required: true),
+                     .init(name: "session_ids", type: "array", description: "Optional authorized source UUID list", required: false),
+                     .init(name: "cursor", type: "integer", description: "Match offset from next_cursor", required: false),
+                     .init(name: "limit", type: "integer", description: "Page size (default 32, max 100)", required: false)])
+    static let readSkill = KnowledgeToolDefinition(
+        name: "read_skill", description: "Read a skill method on demand. Does not expand core permissions.",
+        parameters: [.init(name: "skill_id", type: "string", description: "Skill ID from the catalog", required: true)])
+    static let readPayload = KnowledgeToolDefinition(
+        name: "read_payload", description: "Re-read a saved observation by handle with explicit paging.",
+        parameters: [.init(name: "payload_ref", type: "string", description: "Payload handle", required: true),
+                     .init(name: "cursor", type: "integer", description: "Character offset", required: false)])
+    static let analysisUpdate = KnowledgeToolDefinition(
+        name: "analysis.update", description: "Initialize or update source × dimension evidence coverage. Retain unchecked, not_found, conflict, unavailable and explicit absent separately. Supported/conflict/absent require evidence IDs.",
+        parameters: [.init(name: "session_ids", type: "array", description: "Visible source UUIDs to initialize", required: false),
+                     .init(name: "dimensions", type: "array", description: "Question dimensions to initialize", required: false),
+                     .init(name: "cells", type: "array", description: "Updates with session_id, dimension, status, finding and evidence_ids", required: false)])
+
     static let askClarification = KnowledgeToolDefinition(
         name: "ask_clarification",
         description: "Control tool: ask user a clarification question when evidence is insufficient or query is ambiguous.",
@@ -136,4 +171,63 @@ struct KnowledgeToolParameter: Sendable {
     let type: String
     let description: String
     let required: Bool
+}
+
+extension KnowledgeToolDefinition {
+    var nativeName: String { name.replacingOccurrences(of: ".", with: "_") }
+
+    var schema: AgentToolSchema {
+        var properties: [String: Any] = [:]
+        for parameter in parameters {
+            var field: [String: Any] = ["type": parameter.type, "description": parameter.description]
+            if parameter.type == "array" {
+                field["items"] = ["type": "string"]
+                if parameter.name == "cells" {
+                    field["items"] = ["type": "object", "additionalProperties": false,
+                        "properties": [
+                            "session_id": ["type": "string"], "dimension": ["type": "string"],
+                            "status": ["type": "string", "enum": ["unchecked", "not_found", "supported", "conflict", "absent", "unavailable"]],
+                            "finding": ["type": "string"], "evidence_ids": ["type": "array", "items": ["type": "string"]]],
+                        "required": ["session_id", "dimension", "status", "finding", "evidence_ids"]]
+                }
+            }
+            properties[parameter.name] = field
+        }
+        return AgentToolSchema(name: nativeName, description: description, inputSchema: [
+            "type": "object", "properties": properties,
+            "required": parameters.filter(\.required).map(\.name), "additionalProperties": false])
+    }
+
+    func validate(_ args: [String: Any]) throws {
+        for key in args.keys where !parameters.contains(where: { $0.name == key }) {
+            throw KnowledgeToolError.invalidParameter("Unexpected parameter: \(key)")
+        }
+        for parameter in parameters {
+            guard let value = args[parameter.name], !(value is NSNull) else {
+                if parameter.required { throw KnowledgeToolError.missingParameter(parameter.name) }
+                continue
+            }
+            let number = value as? NSNumber
+            let isBoolean = number.map { CFGetTypeID($0) == CFBooleanGetTypeID() } ?? false
+            let valid: Bool
+            switch parameter.type {
+            case "string": valid = value is String
+            case "array": valid = parameter.name == "cells" ? value is [[String: Any]] : value is [String]
+            case "boolean": valid = isBoolean
+            case "integer": valid = number.map { !isBoolean && $0.doubleValue.isFinite && $0.doubleValue.rounded() == $0.doubleValue && abs($0.doubleValue) <= 1_000_000 } ?? false
+            case "number": valid = number.map { !isBoolean && $0.doubleValue.isFinite } ?? false
+            default: valid = false
+            }
+            guard valid else { throw KnowledgeToolError.invalidParameter(parameter.name + " has the wrong type") }
+            if parameter.name == "cells", let rows = value as? [[String: Any]] {
+                let allowed = Set(["session_id", "dimension", "status", "finding", "evidence_ids"])
+                for row in rows {
+                    guard Set(row.keys) == allowed, row["session_id"] is String, row["dimension"] is String,
+                          row["status"] is String, row["finding"] is String, row["evidence_ids"] is [String] else {
+                        throw KnowledgeToolError.invalidParameter("cells must satisfy the complete nested schema")
+                    }
+                }
+            }
+        }
+    }
 }

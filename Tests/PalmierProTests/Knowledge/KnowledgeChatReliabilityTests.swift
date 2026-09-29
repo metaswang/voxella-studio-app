@@ -110,6 +110,23 @@ struct KnowledgeChatReliabilityTests {
         #expect(persisted.last?.recoveryActions == [.aiSettings])
     }
 
+    @Test func newConditionsCancelOldRunAndIgnoreLateResults() async throws {
+        let (controller, _, probe, root) = try await makeController()
+        defer { try? FileManager.default.removeItem(at: root) }
+        controller.send(query: "Compare all meetings")
+        try await waitUntil { probe.requestIDs.count == 1 }
+        let oldID = probe.requestIDs[0]
+        controller.send(query: "Only the final meeting risks")
+        try await waitUntil { probe.requestIDs.count == 2 }
+        let newID = probe.requestIDs[1]
+        probe.yield(.delta("obsolete worker answer"), to: oldID)
+        probe.yield(.finished("obsolete answer"), to: oldID)
+        probe.yield(.finished("final meeting risks"), to: newID)
+        try await waitUntil { !controller.isAnswering }
+        #expect(!controller.messages.contains { $0.content.contains("obsolete") })
+        #expect(controller.messages.last?.content == "final meeting risks")
+    }
+
     @Test func cancellationKeepsThePartialAnswerAndFailureEndsTheRound() async throws {
         let (controller, store, probe, root) = try await makeController()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -141,8 +158,25 @@ struct KnowledgeChatReliabilityTests {
         #expect(controller.errorMessage != nil)
     }
 
+    @Test func providerFailurePreservesPublishedEvidenceAndReportsTheError() async throws {
+        let (controller, store, probe, root) = try await makeController()
+        defer { try? FileManager.default.removeItem(at: root) }
+        controller.send(query: "question")
+        try await waitUntil { probe.requestIDs.count == 1 }
+        let id = probe.requestIDs[0]
+        probe.yield(.delta("Already confirmed evidence."), to: id)
+        probe.yield(.failed("research budget reached"), to: id)
+        try await waitUntil { !controller.isAnswering }
+        #expect(controller.messages.last?.content == "Already confirmed evidence.")
+        #expect(controller.messages.last?.isStreaming == false)
+        #expect(controller.errorMessage == "research budget reached")
+        let persisted = try await store.messages(for: try #require(controller.conversation).id)
+        #expect(persisted.last?.content == "Already confirmed evidence.")
+    }
+
     @Test func completeServiceResultsDoNotReplaySyntheticDeltas() async {
         var service = KnowledgeQAService()
+        service.useAgentRuntime = false
         service.skillsProvider = { [] }
         service.dependencies = KnowledgeQAExecutionDependencies(
             planner: { query, _, _, _ in .fallback(for: query) },
@@ -231,6 +265,77 @@ struct KnowledgeChatReliabilityTests {
             guard let document = scroll.documentView else { return false }
             return document.bounds.maxY - scroll.documentVisibleRect.maxY <= 48
         }
+    }
+
+    @Test func growingMultiTurnHistorySettlesLayoutAndMemory() async throws {
+        let (controller, _, probe, root) = try await makeController()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let conversationID = try #require(controller.conversation).id
+        let citation = try #require(history(conversationID: conversationID).citations.first)
+        for _ in 0..<3 {
+            controller.messages.append(.init(conversationID: conversationID, role: .user,
+                content: "transcript 认为 coding-agent 的 best practices 发生了什么变化？"))
+            controller.messages.append(.init(conversationID: conversationID, role: .assistant,
+                content: "能力进步很快，最佳实践也在迅速变化。\n\n" + String(repeating: "积累的冗长指令需要重新审视。", count: 12),
+                citations: [citation]))
+        }
+        // A local incident replay can supply the saved conversation without any
+        // provider requests or changes to the user's conversation store.
+        if let path = ProcessInfo.processInfo.environment["VOXSTUDIO_KB_LAYOUT_FIXTURE"] {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            controller.messages = try decoder.decode([KnowledgeMessage].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+            if controller.messages.last?.role == .user { controller.messages.removeLast() }
+        }
+        let (window, host) = makeHost(controller, width: 1000)
+        defer { window.close() }
+        window.orderFront(nil)
+        settleVisibleLayout(host)
+        var baseline = footprint()
+        var peak = baseline
+        for cycle in 0..<24 {
+            controller.send(query: "accumulated bloated instructions 会造成什么问题？")
+            try await waitUntil { probe.requestIDs.count == cycle + 1 }
+            try await Task.sleep(for: .milliseconds(30))
+            settleVisibleLayout(host)
+            let id = probe.requestIDs[cycle]
+            probe.yield(.citations([citation]), to: id)
+            for text in ["- 指令随着时间积累变得冗长。", "\n\n- 可能增加维护和资源消耗。"] {
+                probe.yield(.delta(text), to: id)
+                try await Task.sleep(for: .milliseconds(30))
+                settleVisibleLayout(host)
+            }
+            probe.yield(.finished("- 指令随着时间积累变得冗长。\n\n- 可能增加维护和资源消耗。"), to: id)
+            try await waitUntil { !controller.isAnswering }
+            try await Task.sleep(for: .milliseconds(30))
+            settleVisibleLayout(host)
+            if cycle == 3 { baseline = footprint(); peak = baseline }
+            if cycle >= 4 { peak = max(peak, footprint()) }
+        }
+        let seconds = max(0, Int(ProcessInfo.processInfo.environment["VOXSTUDIO_KB_STRESS_SECONDS"] ?? "0") ?? 0)
+        if seconds > 0 {
+            controller.send(query: "waiting after a growing conversation")
+            try await waitUntil { probe.requestIDs.count == 25 }
+            let clock = ContinuousClock()
+            let started = clock.now
+            var lastReport = -30.0
+            while started.duration(to: clock.now) < .seconds(seconds) {
+                let tick = clock.now
+                try await Task.sleep(for: .milliseconds(100))
+                settleVisibleLayout(host)
+                #expect(tick.duration(to: clock.now) < .milliseconds(500))
+                peak = max(peak, footprint())
+                let elapsed = started.duration(to: clock.now).secondsValue
+                if elapsed - lastReport >= 30 {
+                    print("KB growing history waiting_s=\(Int(elapsed)) footprint_mb=\(footprint() / 1024 / 1024)")
+                    lastReport = elapsed
+                }
+            }
+            controller.cancelAnswer()
+            settleVisibleLayout(host)
+        }
+        #expect(peak < baseline + 100 * 1024 * 1024)
+        print("KB growing history baseline_mb=\(baseline / 1024 / 1024) peak_mb=\(peak / 1024 / 1024)")
     }
 
     /// Set VOXSTUDIO_KB_STRESS_SECONDS=600 for the ten-minute acceptance run.
@@ -347,6 +452,15 @@ struct KnowledgeChatReliabilityTests {
     private func layout(_ host: NSHostingController<KnowledgeChatPane>) {
         let start = ContinuousClock().now
         host.view.layoutSubtreeIfNeeded()
+        #expect(start.duration(to: ContinuousClock().now) < .milliseconds(500))
+    }
+
+    private func settleVisibleLayout(_ host: NSHostingController<KnowledgeChatPane>) {
+        let start = ContinuousClock().now
+        host.view.layoutSubtreeIfNeeded()
+        // SwiftUI also flushes graph transactions from a native run-loop
+        // observer. Synchronous layout alone does not exercise that path.
+        _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
         #expect(start.duration(to: ContinuousClock().now) < .milliseconds(500))
     }
 

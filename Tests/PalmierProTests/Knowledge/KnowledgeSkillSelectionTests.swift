@@ -17,44 +17,14 @@ struct KnowledgeSkillSelectionTests {
     }
 
     @Test
-    func promptRequestsOnlyTheSmallStructuredSelection() {
-        let skill = Skill(
-            id: "mac_kb_content_qa",
-            name: "Content QA",
-            description: "Answers semantic questions from indexed content.",
-            path: URL(fileURLWithPath: "/tmp/content-qa/SKILL.md")
-        )
-
-        let prompt = KnowledgeAgentRuntime.skillSelectionPrompt(
-            query: "张三为什么提出该方案？",
-            scope: .all,
-            skills: [skill]
-        )
-
-        #expect(prompt.user.contains("张三为什么提出该方案？"))
-
-        #expect(prompt.system.contains("selected_skill_ids"))
-        #expect(prompt.system.contains("no explanation"))
-        #expect(!prompt.system.contains("Think step-by-step"))
-        #expect(prompt.system.contains(skill.id))
-    }
-
-    @Test
-    func parserAcceptsNewShapeAndLegacyArrayButRejectsUnexpectedFields() {
-        #expect(
-            KnowledgeAgentRuntime.parseSkillSelection(
-                #"{"selected_skill_ids":["a","b","a","c"]}"#
-            ) == ["a", "b", "a"]
-        )
-        #expect(
-            KnowledgeAgentRuntime.parseSkillSelection(#"["a", "b"]"#) == ["a", "b"]
-        )
-        #expect(
-            KnowledgeAgentRuntime.parseSkillSelection(
-                #"{"selected_skill_ids":["a"],"reason":"extra"}"#
-            ) == nil
-        )
-        #expect(KnowledgeAgentRuntime.parseSkillSelection(#"{"selected_skill_ids":[1]}"#) == nil)
+    func nativePromptDisclosesMethodsProgressively() {
+        let skill = Skill(id: "method", name: "Method", description: "Read then verify",
+                          path: URL(fileURLWithPath: "/tmp/method/SKILL.md"))
+        let prompt = KnowledgeAgentRuntime.systemPrompt(skills: [skill])
+        #expect(prompt.contains("read_skill"))
+        #expect(prompt.contains("method: Read then verify"))
+        #expect(!prompt.contains("selected_skill_ids"))
+        #expect(!prompt.contains("Think step-by-step"))
     }
 
     @Test

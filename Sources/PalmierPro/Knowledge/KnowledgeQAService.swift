@@ -360,8 +360,16 @@ struct KnowledgeQAService: Sendable {
     var executionPolicy: KnowledgeQAExecutionPolicy = .default
     var dependencies: KnowledgeQAExecutionDependencies = .live
     var chatStore: KnowledgeChatStore = .shared
-    var useAgentRuntime: Bool = true
+    var useAgentRuntime: Bool = {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["VOXELLA_KB_QA_VARIANT"] != "B0"
+        #else
+        true
+        #endif
+    }()
     var skillsProvider: (@Sendable () async -> [Skill])?
+    var agentClientFactory: (@Sendable () async throws -> any AgentClient)?
+    var scopeSnapshotProvider: (@Sendable () async -> KnowledgeScopeSnapshot)?
 
     var isPipelineInjected: Bool {
         dependencies.planner != nil
@@ -445,6 +453,23 @@ struct KnowledgeQAService: Sendable {
             return
         }
 
+        if preferAgent {
+            let runtime = KnowledgeAgentRuntime(
+                scope: request.scope,
+                originFilter: request.originFilter,
+                allowCloud: request.allowCloud,
+                retrievalService: makeRetrievalService(),
+                enforceAccess: !isPipelineInjected,
+                skillsProvider: skillsProvider ?? {
+                    await MainActor.run { SkillStore.shared.knowledgeSkills() }
+                },
+                clientFactory: agentClientFactory ?? { try await KnowledgeAgentRuntime.makeClient(allowCloud: request.allowCloud) },
+                snapshotProvider: scopeSnapshotProvider
+            )
+            try await runtime.run(request, continuation: continuation)
+            return
+        }
+
         let deadline = KnowledgeQADeadline(
             duration: executionPolicy.overall,
             clock: dependencies.clock
@@ -466,24 +491,6 @@ struct KnowledgeQAService: Sendable {
             continuation.yield(.clarification(question))
             Self.logOutcome(.clarification, request: request)
             continuation.finish()
-            return
-        }
-
-        if preferAgent {
-            var fallback = self
-            fallback.useAgentRuntime = false
-            let runtime = KnowledgeAgentRuntime(
-                scope: request.scope,
-                originFilter: request.originFilter,
-                allowCloud: request.allowCloud,
-                queryPlan: queryPlan,
-                retrievalService: makeRetrievalService(),
-                fallbackService: fallback,
-                skillsProvider: skillsProvider ?? {
-                    await MainActor.run { SkillStore.shared.knowledgeSkills() }
-                }
-            )
-            try await runtime.run(request, continuation: continuation)
             return
         }
 

@@ -5,6 +5,8 @@ enum KnowledgeUserFacingCopy {
         if let error = error as? KnowledgeQAError, let message = error.errorDescription {
             return message
         }
+        if let error = error as? KnowledgeNativeRunError { return error.localizedDescription }
+        if let error = error as? AgentClientTransportError { return error.localizedDescription }
         if error is CancellationError {
             return "This request was cancelled."
         }

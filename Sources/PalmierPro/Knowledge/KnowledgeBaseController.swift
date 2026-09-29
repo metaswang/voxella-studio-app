@@ -14,7 +14,7 @@ final class KnowledgeBaseController {
     var typeFilter: KnowledgeSourceType = .all
     var indexFilter: KnowledgeIndexFilter = .all
     var originFilter: KnowledgeOriginFilter = .all
-    /// Default hides empty/unindexed sessions. On: include them (grayed, not QA-able).
+    /// Default lists sources with content; Show all also includes metadata-only sources.
     var showAllSessions = false
 
     var conversation: KnowledgeConversation?
@@ -146,12 +146,11 @@ final class KnowledgeBaseController {
         selectedSessionIDs.contains(id)
     }
 
-    var searchableSessionCount: Int {
+    var availableSessionCount: Int {
         let allowed = KnowledgeSourceOrigin.effectiveOrigins(
-            isSignedIn: AccountService.shared.isSignedIn
+            isSignedIn: AccountService.shared.isSignedIn, uiFilter: originFilter.origins
         )
         return WorkbenchStore.shared.sessions
-            .filter(Self.isP0Searchable)
             .filter {
                 allowed.contains(
                     KnowledgeSourceOrigin.resolve(
@@ -204,7 +203,7 @@ final class KnowledgeBaseController {
 
     var selectedQAAbleCount: Int {
         selectedSessionIDs.filter { id in
-            isSessionVisibleForCurrentAuth(id) && (row(for: id)?.isQAAble ?? false)
+            isSessionVisibleForCurrentAuth(id) && row(for: id) != nil
         }.count
     }
 
@@ -214,9 +213,9 @@ final class KnowledgeBaseController {
             return true
         case .session:
             guard isSessionVisibleForCurrentAuth else { return false }
-            return selectedRow?.isQAAble ?? false
+            return selectedRow != nil
         case .sessions:
-            return selectedQAAbleCount >= 1
+            return selectedSessionIDs.contains { isSessionVisibleForCurrentAuth($0) }
         }
     }
 
@@ -264,21 +263,21 @@ final class KnowledgeBaseController {
             if WorkbenchStore.shared.isHydrating {
                 return L10n.string("Loading saved sessions…")
             }
-            let count = searchableSessionCount
+            let count = availableSessionCount
             return L10n.format(
                 count == 1 ? "Ask across %@ session" : "Ask across %@ sessions",
                 count
             )
         case .session:
-            if let row = selectedRow, !row.isQAAble {
-                return L10n.string("Transcription required first")
+            if let row = selectedRow, !row.hasSearchableContent {
+                return L10n.string("Ask about available metadata and summaries")
             }
             return L10n.string("Fast QA for this session only")
         case let .sessions(ids):
             let qaAble = selectedQAAbleCount
             let skipped = ids.count - qaAble
             if qaAble == 0 {
-                return L10n.string("No QA-able sessions in selection")
+                return L10n.string("No available sources in selection")
             }
             if skipped > 0 {
                 return L10n.format(
@@ -392,7 +391,7 @@ final class KnowledgeBaseController {
     }
 
     func openTranscript(for id: UUID, target: KnowledgeTranscriptTarget? = nil) {
-        guard let session = session(for: id), session.transcript != nil else { return }
+        guard let session = session(for: id), KnowledgeTranscriptMaterial.displayTranscript(for: session) != nil else { return }
         transcriptSessionID = id
         transcriptTarget = target
     }
@@ -582,15 +581,14 @@ final class KnowledgeBaseController {
         }
     }
 
-    /// Send / Voice-final entry. Model readiness is gated here, not on page enter.
+    /// Send / Voice-final entry. Tools use the capabilities available to this scope.
     func send() {
         send(query: draft)
     }
 
     func send(query: String) {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isAnswering, !isPreparingKnowledgeModels,
-              activeRequestID == nil
+        guard !text.isEmpty, !isPreparingKnowledgeModels
         else { return }
         refreshAccessGate()
         guard accessBlockedMessage == nil else { return }
@@ -600,20 +598,13 @@ final class KnowledgeBaseController {
             return
         }
 
+        if isAnswering { cancelAnswer() }
+
         // Reserve the request slot before model preparation or task creation;
         // repeated submissions cannot replace the accepted round silently.
         activeRequestID = UUID()
         pendingQuery = text
         errorMessage = nil
-        refreshModelPlan()
-        if needsModelDownload {
-            showModelGate = true
-            showLocalResourcesTip(L10n.string("Prepare local search resources before asking."))
-            if needsModelLicenseAcceptance {
-                models.presentManager()
-            }
-            return
-        }
         flushPendingQueryIfNeeded()
     }
 
@@ -698,7 +689,7 @@ final class KnowledgeBaseController {
     private func flushPendingQueryIfNeeded() {
         guard KnowledgeQAReadyGate.shouldFlushPending(
             pendingQuery: pendingQuery,
-            missingCount: modelPlan.missingItems.count,
+            missingCount: 0,
             isAnswering: isAnswering
         ) else { return }
         refreshAccessGate()
@@ -843,7 +834,7 @@ final class KnowledgeBaseController {
                     upsertAssistant(assistant, conversationID: conversationID)
                 case let .failed(message):
                     receivedTerminalEvent = true
-                    assistant.content = message
+                    if assistant.content.isEmpty { assistant.content = message }
                     assistant.isStreaming = false
                     upsertAssistant(assistant, conversationID: conversationID)
                     errorMessage = message

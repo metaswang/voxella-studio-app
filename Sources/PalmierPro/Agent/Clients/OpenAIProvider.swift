@@ -269,6 +269,7 @@ struct OpenAIStreamParser {
         eventType: String,
         response: [String: Any]
     ) throws -> [AgentStreamEvent] {
+        let usageEvents = AgentTokenUsage.from(response["usage"] as? [String: Any]).map { [AgentStreamEvent.tokenUsage($0)] } ?? []
         let status = response["status"] as? String
         if eventType == "response.failed" || status == "failed" {
             let error = response["error"] as? [String: Any]
@@ -281,9 +282,9 @@ struct OpenAIStreamParser {
             throw CancellationError()
         }
         if eventType == "response.incomplete" || status == "incomplete" {
-            return [.messageStop(stopReason: incompleteStopReason(response))]
+            return usageEvents + [.messageStop(stopReason: incompleteStopReason(response))]
         }
-        return [.messageStop(stopReason: terminalStopReason(response))]
+        return usageEvents + [.messageStop(stopReason: terminalStopReason(response))]
     }
 
     private func outputEvents(for item: [String: Any]) -> [AgentStreamEvent] {
