@@ -96,6 +96,15 @@ struct KnowledgeTranscriptMaterial: Sendable {
     let provenance: String
     let citationChunkBase: Int
 
+    static func displayTranscript(for session: WorkbenchSession) -> TranscriptionResult? {
+        if let transcript = session.transcript, !transcript.segments.isEmpty { return transcript }
+        if let material = from(session) {
+            return .init(text: material.segments.map(\.text).joined(separator: " "), language: material.language,
+                         words: [], segments: material.segments)
+        }
+        return session.transcript.flatMap { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+    }
+
     static func from(_ session: WorkbenchSession) -> Self? {
         if let transcript = session.transcript, !transcript.segments.isEmpty {
             return .init(segments: transcript.segments, language: transcript.language,
@@ -145,6 +154,13 @@ actor KnowledgeMediaDurationCache {
     static let shared = KnowledgeMediaDurationCache()
     private var durations: [String: Double] = [:]
 
+    func knownFacts(for session: WorkbenchSession) -> KnowledgeMediaFacts {
+        guard let url = session.sourceURL, url.isFileURL,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else { return .from(session) }
+        let key = url.path + ":" + String(describing: attrs[.modificationDate]) + ":" + String(describing: attrs[.size])
+        return .from(session, probedDuration: durations[key])
+    }
+
     func facts(for session: WorkbenchSession) async -> KnowledgeMediaFacts {
         guard let url = session.sourceURL, url.isFileURL,
               let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else {
@@ -167,6 +183,28 @@ struct KnowledgeToolObservation: Sendable {
     let json: String
     let isError: Bool
     let citations: [KnowledgeSourceRef]
+
+    /// Text stays complete in the observation body. UI references and the saved
+    /// raw payload retain their excerpts; native requests need each text once.
+    var modelJSON: String {
+        guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else { return json }
+        func compact(_ value: Any) -> Any {
+            if let rows = value as? [Any] { return rows.map(compact) }
+            guard var row = value as? [String: Any] else { return value }
+            for (key, item) in row where key != "citations" { row[key] = compact(item) }
+            let bodyKeys = ["segments", "summary_markdown", "aggregate", "sources", "sessions", "speakers", "comparisons", "capabilities"]
+            if bodyKeys.contains(where: { row[$0] != nil }), let refs = row["citations"] as? [[String: Any]] {
+                row["citations"] = refs.map { ref in
+                    var ref = ref
+                    ref.removeValue(forKey: "snippet")
+                    ref.removeValue(forKey: "match_text")
+                    return ref
+                }
+            }
+            return row
+        }
+        return KnowledgeJSON.encode(compact(object) as? [String: Any] ?? object)
+    }
 
     static func error(_ message: String) -> Self {
         Self(json: KnowledgeJSON.encode(["error": message, "recoverable": true]), isError: true, citations: [])
@@ -265,8 +303,8 @@ actor KnowledgeEvidenceWorkspace {
         var row = KnowledgeJSON.citation(ref)
         row.removeValue(forKey: "match_text")
         row["title"] = String(ref.title.prefix(240))
-        row["snippet"] = ref.snippet.map { String($0.prefix(180)) }
-        row["excerpt_complete"] = (ref.snippet?.count ?? 0) <= 180
+        row["snippet"] = ref.sourceType == "sessionCard" ? nil : ref.snippet.map { String($0.prefix(120)) }
+        row["excerpt_complete"] = ref.sourceType != "sessionCard" && (ref.snippet?.count ?? 0) <= 120
         row["speaker"] = ref.speaker.map { String($0.prefix(100)) }
         row["evidence_id"] = evidenceIDs.first(where: { $0.value == ref.id })?.key
         row["citation_number"] = (references.firstIndex(where: { $0.id == ref.id }) ?? 0) + 1
@@ -274,9 +312,9 @@ actor KnowledgeEvidenceWorkspace {
     }
 
     func priorEvidenceIndex() -> String {
-        let index = references.suffix(24).map(evidenceIndexRow)
+        let index = references.suffix(12).map(evidenceIndexRow)
         var data: [String: Any] = ["prior_evidence": index, "total_evidence_count": references.count,
-                                  "complete_index": references.count <= 24, "saved_payload_refs": Array(payloads.keys.sorted().suffix(16))]
+                                  "complete_index": references.count <= 12, "saved_payload_refs": Array(payloads.keys.sorted().suffix(8))]
         if let analysis, let encoded = try? JSONEncoder().encode(analysis),
            let object = try? JSONSerialization.jsonObject(with: encoded) { data["analysis"] = object }
         // Detailed views remain in recoverable observations, never silently flood context.
@@ -299,7 +337,11 @@ actor KnowledgeEvidenceWorkspace {
         }
         let refs = (data["citations"] as? [[String: Any]] ?? []).compactMap(KnowledgeJSON.reference)
         data["citations"] = refs.map { ref in
-            if !references.contains(where: { $0.id == ref.id }) { references.append(ref) }
+            if let index = references.firstIndex(where: { $0.id == ref.id }) {
+                // A metadata probe can resolve a previously unknown media fact.
+                // Keep its number, but retain the most recent original observation.
+                references[index] = ref
+            } else { references.append(ref) }
             let generation = ref.sessionUUID.flatMap { snapshot.generations[$0] } ?? snapshot.cacheNamespace
             let evidenceID = "ev_" + KnowledgeScopeSnapshot.digest(Data((ref.id + generation).utf8))
             evidenceIDs[evidenceID] = ref.id
@@ -359,6 +401,18 @@ actor KnowledgeEvidenceWorkspace {
     }
 
     func citations() -> [KnowledgeSourceRef] { references }
+
+    func answerCitations(_ text: String) -> [KnowledgeSourceRef] {
+        let numbers = KnowledgeCitationMarkers.numbers(in: text)
+        if !numbers.isEmpty {
+            return references.enumerated().compactMap { numbers.contains($0.offset + 1) ? $0.element : nil }
+        }
+        // An uncited answer must not acquire unrelated seed cards as sources.
+        // Keep actually read content as a compatibility fallback for providers
+        // that omit markers; metadata-only answers may use their fact cards.
+        let content = references.filter { $0.sourceType != "sessionCard" }
+        return content.isEmpty ? references : content
+    }
 
     func readPayload(_ handle: String, offset: Int, allowedSources: Set<UUID>? = nil) -> KnowledgeToolObservation {
         guard let payload = payloads[handle], offset >= 0, offset <= payload.count else {
@@ -443,8 +497,23 @@ actor KnowledgeEvidenceCache {
     private var memories: [String: KnowledgeWorkspaceMemory] = [:]
     private var memoryOrder: [String] = []
 
+    static let memoryByteLimit = 8 * 1_024 * 1_024
+    static let entryByteLimit = 16 * 1_024 * 1_024
+
+    static func estimatedBytes(_ memory: KnowledgeWorkspaceMemory) -> Int {
+        let analysisBytes = memory.analysis.flatMap { try? JSONEncoder().encode($0).count } ?? 0
+        return analysisBytes + memory.payloads.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count } +
+        memory.references.reduce(0) { $0 + ($1.snippet?.utf8.count ?? 0) + ($1.matchText?.utf8.count ?? 0) + $1.title.utf8.count + 256 } +
+        memory.readCoverage.values.flatMap { $0 }.reduce(0) { $0 + $1.utf8.count }
+    }
+
     func memory(_ key: String) -> KnowledgeWorkspaceMemory? { memories[key] }
     func saveMemory(_ memory: KnowledgeWorkspaceMemory, key: String) {
+        guard Self.estimatedBytes(memory) <= Self.memoryByteLimit else {
+            memories.removeValue(forKey: key)
+            memoryOrder.removeAll { $0 == key }
+            return
+        }
         if memories[key] == nil { memoryOrder.append(key) }
         memories[key] = memory
         while memoryOrder.count > 8 { memories.removeValue(forKey: memoryOrder.removeFirst()) }
@@ -452,9 +521,54 @@ actor KnowledgeEvidenceCache {
 
     func get(_ key: String) -> KnowledgeToolObservation? { entries[key] }
     func put(_ value: KnowledgeToolObservation, key: String) {
-        guard !value.isError else { return }
+        guard !value.isError, value.json.utf8.count <= Self.memoryByteLimit else { return }
         if entries[key] == nil { order.append(key) }
-        entries[key] = value
-        while order.count > 64 { entries.removeValue(forKey: order.removeFirst()) }
+        // Replaying JSON calls workspace.record again. Saving the growing
+        // entire workspace reference array in every entry multiplies memory.
+        entries[key] = .init(json: value.json, isError: false, citations: [])
+        while order.count > 64 || entries.values.reduce(0, { $0 + $1.json.utf8.count }) > Self.entryByteLimit {
+            entries.removeValue(forKey: order.removeFirst())
+        }
+    }
+}
+
+enum KnowledgeCitationMarkers {
+    static let pattern = #"(?:\[\s*\d{1,6}(?:\s*[-–—]\s*\d{1,6})?(?:\s*[,，]\s*\d{1,6}(?:\s*[-–—]\s*\d{1,6})?)*\s*\]|【\s*\d{1,6}(?:\s*[-–—]\s*\d{1,6})?(?:\s*[,，]\s*\d{1,6}(?:\s*[-–—]\s*\d{1,6})?)*\s*】)"#
+
+    private static func parse(_ marker: Substring) -> [Int]? {
+        let inner = marker.dropFirst().dropLast()
+        var values: [Int] = []
+        for part in inner.split(whereSeparator: { $0 == "," || $0 == "，" }) {
+            let ends = part.split(whereSeparator: { $0 == "-" || $0 == "–" || $0 == "—" }).compactMap {
+                Int($0.trimmingCharacters(in: .whitespaces))
+            }
+            guard let first = ends.first, first > 0 else { return nil }
+            if ends.count == 1 { values.append(first) }
+            else {
+                guard ends.count == 2, ends[1] >= first, ends[1] - first < 1_000 else { return nil }
+                values += first...ends[1]
+            }
+            guard values.count <= 1_000 else { return nil }
+        }
+        return values
+    }
+
+    static func numbers(in text: String) -> Set<Int> {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        return Set(regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).flatMap { match -> [Int] in
+            guard let range = Range(match.range, in: text) else { return [] }
+            return parse(text[range]) ?? []
+        })
+    }
+
+    static func removing(from text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        var value = text
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+            guard let original = Range(match.range, in: text), parse(text[original]) != nil,
+                  let range = Range(match.range, in: value) else { continue }
+            value.removeSubrange(range)
+        }
+        return value
     }
 }

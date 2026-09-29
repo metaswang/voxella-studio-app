@@ -17,7 +17,7 @@
 
 目录列表、摘要、原文与时间结构均显式返回 complete/next_cursor。complete 指当前过滤后的可用资料读完，不能证明全媒体已经转录，也不能证明语义上不存在某事件。旧索引连续读取直接查询原文 units，不依赖空 FTS 搜索。
 
-媒体时长列是 additive migration。旧 duration_sec 保留 legacy 语义，新媒体字段在实际元数据读取时补齐，不触及 vectors 或 ingest generation。目录时长聚合使用来源明确的 hint；尚未探测的本地时长算 unknown，不用转录终点填补。
+媒体时长列是 additive migration。旧 duration_sec 保留 legacy 语义，新媒体字段在实际元数据读取时补齐，不触及 vectors 或 ingest generation。明确按 duration 排序的目录聚合会以最多四个并发读取探测完整筛选集合的本地媒体；其余目录操作使用已缓存探测值或来源明确的 hint。不可读媒体的总长算 unknown，不用转录终点填补。
 
 ## 开发对照与预算
 

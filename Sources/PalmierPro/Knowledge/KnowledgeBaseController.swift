@@ -391,7 +391,7 @@ final class KnowledgeBaseController {
     }
 
     func openTranscript(for id: UUID, target: KnowledgeTranscriptTarget? = nil) {
-        guard let session = session(for: id), session.transcript != nil else { return }
+        guard let session = session(for: id), KnowledgeTranscriptMaterial.displayTranscript(for: session) != nil else { return }
         transcriptSessionID = id
         transcriptTarget = target
     }

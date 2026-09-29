@@ -120,6 +120,9 @@ struct KnowledgeEvidenceWorkspaceTests {
         #expect(KnowledgeMediaFacts.from(source).lastSpokenEnd == 15)
         source.transcript = nil
         #expect(KnowledgeMediaFacts.from(source).transcribedStart == 10)
+        let displayed = try #require(KnowledgeTranscriptMaterial.displayTranscript(for: source))
+        #expect(displayed.segments.map(\.text) == ["最终决定延期。", "仍须核查风险。"])
+        #expect(KnowledgeTranscriptNavigation.segmentIndex(for: .init(startTime: 13, endTime: 15, matchText: "风险"), in: displayed.segments) == 1)
     }
 
     @Test func analysisDistinguishesNotFoundFromAbsenceAndRejectsForeignEvidence() async throws {
@@ -278,6 +281,23 @@ struct KnowledgeEvidenceWorkspaceTests {
         await pool.cancelAll()
     }
 
+    @Test func usageReconciliationIsIdempotentAndCannotRefundAnotherWorker() async throws {
+        let budget = KnowledgeRunBudget()
+        let a = UUID(), b = UUID(), c = UUID()
+        let input = String(repeating: "x", count: 90_000)
+        try await budget.reserve(messages: [], system: input, reservationID: a)
+        try await budget.reserve(messages: [], system: input, reservationID: b)
+        try await budget.reconcile(.init(inputTokens: 800, outputTokens: 200), reservationID: a)
+        try await budget.reconcile(.init(inputTokens: 0, outputTokens: 0), reservationID: a) // duplicate ignored
+        try await budget.reconcile(.init(inputTokens: 0, outputTokens: 0), reservationID: UUID()) // unknown ignored
+        try await budget.reserve(messages: [], system: input, reservationID: c)
+        await #expect(throws: KnowledgeNativeRunError.self) { try await budget.reserve(messages: [], system: input) }
+        try await budget.reconcile(.init(inputTokens: 800, outputTokens: 200), reservationID: c)
+        await #expect(throws: KnowledgeNativeRunError.self) {
+            try await budget.reconcile(.init(inputTokens: 240_000, outputTokens: 1), reservationID: b)
+        }
+    }
+
     @Test func fusionAndCoverageRetainRelevantSourcesBeyondEightHits() {
         let a = UUID(), b = UUID()
         let hybrid = (0..<30).map { hit(session: a, unit: $0) }
@@ -333,6 +353,180 @@ struct KnowledgeEvidenceWorkspaceTests {
 }
 
 struct KnowledgeNativeRuntimeTests {
+    @Test func reportedUsageLetsOpaqueNativeStateContinueWithoutIncreasingBudget() async throws {
+        let fixtures = KnowledgeEvidenceWorkspaceTests()
+        let source = fixtures.fixture(segments: (0..<6).map { .init(text: "原文 \($0)", start: Double($0), end: Double($0 + 1)) })
+        let snapshot = fixtures.snapshot([source])
+        let client = KnowledgeReplayClient { index, _, _ in
+            let usage = AgentStreamEvent.tokenUsage(.init(inputTokens: 4_000, outputTokens: 1_000))
+            if index < 5 {
+                return [.reasoningComplete(itemID: "reasoning-\(index)", summary: "", encryptedContent: String(repeating: "x", count: 30_000), model: .terra),
+                        .toolUseComplete(id: "read-\(index)", name: "session_get_segments", inputJSON: KnowledgeJSON.encode([
+                            "session_id": source.id.uuidString, "cursor": index, "limit": 1])), usage, .messageStop(stopReason: .toolUse)]
+            }
+            #expect(index == 5)
+            return [.textDelta("已核查各片段。[2–6]"), usage, .messageStop(stopReason: .endTurn)]
+        }
+        var service = KnowledgeQAService()
+        service.agentClientFactory = { client }
+        service.scopeSnapshotProvider = { snapshot }
+        service.skillsProvider = { [] }
+        var finished = false
+        for await event in service.answer(.init(queryText: "连续核查", conversationID: UUID(), scope: .all)) {
+            if case .finished = event { finished = true }
+            if case .failed(let text) = event { Issue.record("\(text)") }
+        }
+        #expect(finished)
+    }
+
+    @Test func stagedComparisonWithPriorEvidenceRetainsRoomForAnAnswer() async throws {
+        let fixtures = KnowledgeEvidenceWorkspaceTests()
+        let sources = (0..<3).map { index in
+            fixtures.fixture(title: "Named source \(index)", summary: String(repeating: "摘要\(index)。", count: 200),
+                segments: [.init(text: String(repeating: "原文\(index)。", count: 60), start: 0, end: 30)])
+        }
+        let snapshot = fixtures.snapshot(sources + (0..<44).map { fixtures.fixture(title: "Other \($0)") })
+        let conversationID = UUID()
+        let prior = KnowledgeEvidenceWorkspace(snapshot: snapshot)
+        for index in 0..<25 {
+            let ref = KnowledgeSourceRef(sourceID: sources[0].id.uuidString, sourceType: "transcript", title: sources[0].title,
+                uri: nil, page: nil, startTime: Double(index), endTime: Double(index + 1), parentID: nil,
+                chunkIndex: index, language: nil, speaker: "Speaker 1", snippet: String(repeating: "先前话题", count: 500), matchText: nil)
+            _ = await prior.record(KnowledgeJSON.encode(["citations": [KnowledgeJSON.citation(ref)]]))
+        }
+        let key = conversationID.uuidString + snapshot.cacheNamespace
+        await KnowledgeEvidenceCache.shared.saveMemory(await prior.memory(), key: key)
+        let client = KnowledgeReplayClient { index, _, messages in
+            func call(_ id: String, _ tool: String, _ source: Int, title: Bool = false) -> AgentStreamEvent {
+                .toolUseComplete(id: id, name: tool, inputJSON: KnowledgeJSON.encode(title ?
+                    ["query": sources[source].title] : ["session_id": sources[source].id.uuidString]))
+            }
+            let calls: [AgentStreamEvent]
+            switch index {
+            case 0: calls = [call("title0", "session_list", 0, title: true)]
+            case 1: calls = [call("title1", "session_list", 1, title: true), call("title2", "session_list", 2, title: true), call("summary0", "session_get_summary", 0)]
+            case 2: calls = sources.indices.map { call("metadata\($0)", "knowledge_get_session_metadata", $0) } +
+                [call("summary1", "session_get_summary", 1), call("summary2", "session_get_summary", 2)]
+            case 3: calls = sources.indices.map { call("original\($0)", "session_get_segments", $0) }
+            default:
+                #expect(index == 4)
+                #expect(messages.last?.content.count == 4)
+                return [.textDelta("已完成三个来源的原文比较。"), .messageStop(stopReason: .endTurn)]
+            }
+            return calls + [.messageStop(stopReason: .toolUse)]
+        }
+        var service = KnowledgeQAService()
+        service.agentClientFactory = { client }
+        service.scopeSnapshotProvider = { snapshot }
+        service.skillsProvider = { [] }
+        var finished = false
+        for await event in service.answer(.init(queryText: "比较三个指定来源", conversationID: conversationID, scope: .all)) {
+            if case .finished = event { finished = true }
+            if case .failed(let text) = event { Issue.record("\(text)") }
+        }
+        #expect(finished)
+    }
+
+    @Test func threeSourceComparisonKeepsFullObservationsWithinTheSharedBudget() async throws {
+        let fixtures = KnowledgeEvidenceWorkspaceTests()
+        let sources = (0..<3).map { index in
+            fixtures.fixture(title: "Explicit source \(index)", summary: String(repeating: "完整摘要\(index)。", count: 700),
+                segments: [.init(text: String(repeating: "原文\(index)。", count: 400), start: 0, end: 30)])
+        }
+        let snapshot = fixtures.snapshot(sources + (0..<44).map { fixtures.fixture(title: "Other \($0)") })
+        let client = KnowledgeReplayClient { index, _, messages in
+            if index == 0 {
+                return sources.enumerated().map { number, source in
+                    .toolUseComplete(id: "locate-\(number)", name: "session_list", inputJSON: KnowledgeJSON.encode(["query": source.title]))
+                } + [.messageStop(stopReason: .toolUse)]
+            }
+            if index == 1 {
+                return sources.enumerated().flatMap { number, source -> [AgentStreamEvent] in
+                    [.toolUseComplete(id: "summary-\(number)", name: "session_get_summary", inputJSON: KnowledgeJSON.encode(["session_id": source.id.uuidString])),
+                     .toolUseComplete(id: "original-\(number)", name: "session_get_segments", inputJSON: KnowledgeJSON.encode(["session_id": source.id.uuidString]))]
+                } + [.messageStop(stopReason: .toolUse)]
+            }
+            #expect(index == 2)
+            let results = messages.last?.content.compactMap { block -> String? in
+                guard case .content(.toolResult(_, let contents, let error)) = block,
+                      case .text(let text) = contents.first else { return nil }
+                #expect(!error)
+                return text
+            } ?? []
+            #expect(results.count == 6)
+            for number in 0..<3 {
+                #expect(results[number * 2].contains(String(repeating: "完整摘要\(number)。", count: 700)))
+                #expect(results[number * 2 + 1].contains(String(repeating: "原文\(number)。", count: 400)))
+                #expect(!results[number * 2].contains("\"snippet\""))
+                #expect(!results[number * 2 + 1].contains("\"match_text\""))
+                #expect(results[number * 2].contains("payload_ref") && results[number * 2].contains("citation_number"))
+            }
+            return [.textDelta("三份来源已逐一核查。"), .messageStop(stopReason: .endTurn)]
+        }
+        var service = KnowledgeQAService()
+        service.agentClientFactory = { client }
+        service.scopeSnapshotProvider = { snapshot }
+        service.skillsProvider = { [] }
+        var finished = false
+        for await event in service.answer(.init(queryText: "比较三份来源", conversationID: UUID(), scope: .all)) {
+            if case .finished = event { finished = true }
+            if case .failed(let text) = event { Issue.record("\(text)") }
+        }
+        #expect(finished)
+        // Compaction must not discard the original UI excerpt or recoverable payload.
+        let executor = fixtures.makeExecutor(sources)
+        let original = try await executor.executeNative(name: "session_get_segments", inputJSON: KnowledgeJSON.encode(["session_id": sources[0].id.uuidString]))
+        #expect(original.json.contains("snippet"))
+        #expect(original.citations.first?.snippet == sources[0].transcript?.segments.first?.text)
+        #expect(!original.modelJSON.contains("\"snippet\""))
+        guard case .string(let handle) = try LLMJSONValue.parseObject(original.json)["payload_ref"] else { return }
+        let recovered = try await executor.executeNative(name: "read_payload", inputJSON: KnowledgeJSON.encode(["payload_ref": handle]))
+        #expect(recovered.json.contains("snippet"))
+    }
+
+    @Test func newQuestionStaysLastAfterHistoryFactsAndNativeToolResults() async throws {
+        let fixtures = KnowledgeEvidenceWorkspaceTests()
+        let source = fixtures.fixture(segments: [.init(text: "Thank you", start: 10, end: 12)])
+        let snapshot = fixtures.snapshot([source])
+        let conversationID = UUID()
+        let query = "哪些来源出现 Thank you？"
+        let client = KnowledgeReplayClient { index, _, messages in
+            guard case .content(.text(let current)) = messages.last?.content.last else {
+                Issue.record("Current question must follow context and observations"); return []
+            }
+            #expect(current.hasPrefix("Current user question"))
+            #expect(current.hasSuffix(query))
+            if index == 0 {
+                guard case .content(.text(let old)) = messages.first?.content.first else { return [] }
+                #expect(old.hasPrefix("Historical user message"))
+                return [.toolUseComplete(id: "find", name: "knowledge_find_text", inputJSON: #"{"text":"Thank you"}"#),
+                        .messageStop(stopReason: .toolUse)]
+            }
+            #expect(index == 1)
+            guard case .content(.toolResult(let id, _, let error)) = messages.last?.content.first else {
+                Issue.record("Question reminder must preserve native tool result"); return []
+            }
+            #expect(id == "find" && !error)
+            let body = OpenAIRequestBody.build(modelName: "gpt-6-luna", reasoningEffort: .medium,
+                                              system: "test", tools: [], messages: messages)
+            let input = body["input"] as? [[String: Any]]
+            #expect(input?.last?["role"] as? String == "user")
+            #expect(input?.contains { $0["type"] as? String == "function_call_output" } == true)
+            return [.textDelta("该来源 0:10 说 Thank you。[2]"), .messageStop(stopReason: .endTurn)]
+        }
+        var service = KnowledgeQAService()
+        service.agentClientFactory = { client }
+        service.scopeSnapshotProvider = { snapshot }
+        service.skillsProvider = { [] }
+        let history = [KnowledgeMessage(conversationID: conversationID, role: .user, content: "最长最短资料？")]
+        var finished = false
+        for await event in service.answer(.init(queryText: query, conversationID: conversationID, scope: .all, history: history)) {
+            if case .finished = event { finished = true }
+            if case .failed(let text) = event { Issue.record("\(text)") }
+        }
+        #expect(finished)
+    }
+
     @Test func fullInventoryAggregateFitsTheNativeFollowUpBudget() async throws {
         let fixtures = KnowledgeEvidenceWorkspaceTests()
         let sources = (0..<63).map { fixtures.fixture(title: "Meeting \($0)", duration: 10) }
@@ -342,7 +536,12 @@ struct KnowledgeNativeRuntimeTests {
                 return [.toolUseComplete(id: "aggregate", name: "session_aggregate", inputJSON: "{\"group_by\":\"type\"}"),
                         .messageStop(stopReason: .toolUse)]
             }
-            #expect(messages.last?.content.count == 1)
+            if index == 1 {
+                return [.toolUseComplete(id: "read-after-inventory", name: "session_get_summary", inputJSON: KnowledgeJSON.encode(["session_id": sources[0].id.uuidString])),
+                        .messageStop(stopReason: .toolUse)]
+            }
+            #expect(index == 2)
+            #expect(messages.last?.content.count == 2)
             return [.textDelta("共有 63 份资料，总长 630 秒。"), .messageStop(stopReason: .endTurn)]
         }
         var service = KnowledgeQAService()
@@ -365,7 +564,7 @@ struct KnowledgeNativeRuntimeTests {
         let client = KnowledgeReplayClient { index, tools, messages in
             #expect(index == 0)
             #expect(tools.contains { $0.name == "knowledge_search" })
-            if case .content(.text(let input)) = messages.last?.content.first {
+            if case .content(.text(let input)) = messages.dropLast().last?.content.first {
                 #expect(input.contains("1800")); #expect(input.contains("1440"))
             } else { Issue.record("Missing scope facts") }
             return [.textDelta("视频总长 30 分钟"), .textDelta("，最后口播在 24 分钟。[1]"), .messageStop(stopReason: .endTurn)]
@@ -412,7 +611,7 @@ struct KnowledgeNativeRuntimeTests {
         let snapshot = fixtures.snapshot([source])
         let client = KnowledgeReplayClient { _, tools, messages in
             let main = tools.contains { $0.name == "knowledge_delegate" }
-            if messages.count == 1 {
+            if messages.count == (main ? 2 : 1) {
                 if main {
                     return [.toolUseComplete(id: "delegate", name: "knowledge_delegate", inputJSON: KnowledgeJSON.encode([
                         "session_id": source.id.uuidString, "question": "核查决定", "success_criteria": "有来源的决定"])),
@@ -479,7 +678,7 @@ struct KnowledgeNativeRuntimeTests {
                         .messageStop(stopReason: .toolUse)]
             }
             let results = messages.last?.content ?? []
-            #expect(results.count == 2)
+            #expect(results.count == 3)
             if case .content(.toolResult(let id, let content, let isError)) = results[0] {
                 #expect(id == "good"); #expect(!isError)
                 if case .text(let text) = content.first { #expect(text.contains("最终决定延期")); #expect(text.contains("payload_ref")) }

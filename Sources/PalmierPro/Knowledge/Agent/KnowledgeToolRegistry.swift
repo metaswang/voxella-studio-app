@@ -16,6 +16,7 @@ enum KnowledgeToolRegistry {
         .sessionGetSpeakers,
         .sessionAggregate,
         .sourceSearch,
+        .findText,
         .readSkill,
         .readPayload,
         .analysisUpdate,
@@ -54,7 +55,7 @@ struct KnowledgeToolDefinition: Sendable {
     
     static let sessionList = KnowledgeToolDefinition(
         name: "session.list",
-        description: "List sessions filtered by query text, type, origin, or date range. Respects login visibility.",
+        description: "Enumerate the authorized inventory with explicit paging. Title query is a literal title filter, not a semantic theme filter. Follow every next_cursor for exhaustive classification. Respects login visibility.",
         parameters: [
             .init(name: "query", type: "string", description: "Text query to filter titles", required: false),
             .init(name: "type", type: "string", description: "Session type filter (recording, meeting, upload, net_video, dub)", required: false),
@@ -64,6 +65,7 @@ struct KnowledgeToolDefinition: Sendable {
             .init(name: "limit", type: "integer", description: "Page size (default 32, max 100); follow next_cursor for the full inventory", required: false),
             .init(name: "cursor", type: "integer", description: "Offset from next_cursor", required: false),
             .init(name: "date_field", type: "string", description: "created or modified (default created); neither is a recording date", required: false),
+            .init(name: "has_transcript", type: "boolean", description: "Optional filter for readable timed transcript material (original or dub)", required: false),
         ]
     )
     
@@ -130,11 +132,18 @@ struct KnowledgeToolDefinition: Sendable {
         name: "session.aggregate", description: "Exact count, duration sum, grouping and sorting over the FULL filtered metadata inventory; cannot count semantic themes.",
         parameters: sessionList.parameters + [
             .init(name: "group_by", type: "string", description: "type or origin (optional)", required: false),
-            .init(name: "sort_by", type: "string", description: "created, modified or duration (descending)", required: false)])
+            .init(name: "sort_by", type: "string", description: "created, modified or duration; duration probes local media across the filtered population and preserves unknowns", required: false),
+            .init(name: "sort_order", type: "string", description: "asc or desc (default desc). Unknown duration always sorts last. Includes known shortest/longest and unknown count.", required: false)])
     static let sourceSearch = KnowledgeToolDefinition(
         name: "knowledge.search_sources", description: "Discover source candidates through summary AND transcript search. Top-K candidates are not a complete inventory.",
         parameters: [.init(name: "query", type: "string", description: "Source discovery query", required: true),
                      .init(name: "limit", type: "integer", description: "Max sources, up to 32", required: false)])
+    static let findText = KnowledgeToolDefinition(
+        name: "knowledge.find_text", description: "Exhaustive literal phrase lookup over available original timed transcripts in the authorized scope. Case-insensitive, with whitespace normalized. Returns paginated matches, original time anchors and unavailable sources. Use for questions about every source containing exact words, not semantic themes.",
+        parameters: [.init(name: "text", type: "string", description: "Literal words or phrase to find", required: true),
+                     .init(name: "session_ids", type: "array", description: "Optional authorized source UUID list", required: false),
+                     .init(name: "cursor", type: "integer", description: "Match offset from next_cursor", required: false),
+                     .init(name: "limit", type: "integer", description: "Page size (default 32, max 100)", required: false)])
     static let readSkill = KnowledgeToolDefinition(
         name: "read_skill", description: "Read a skill method on demand. Does not expand core permissions.",
         parameters: [.init(name: "skill_id", type: "string", description: "Skill ID from the catalog", required: true)])

@@ -328,6 +328,19 @@ struct AgentRequestContext: Equatable, Sendable {
     }
 }
 
+struct AgentTokenUsage: Equatable, Sendable {
+    let inputTokens: Int
+    let outputTokens: Int
+
+    static func from(_ value: [String: Any]?) -> Self? {
+        guard let input = value?["input_tokens"] as? Int,
+              let output = value?["output_tokens"] as? Int,
+              input >= 0, output >= 0, input <= 1_000_000_000, output <= 1_000_000_000 else { return nil }
+        // output_tokens already includes reasoning and other invisible tokens.
+        return .init(inputTokens: input, outputTokens: output)
+    }
+}
+
 enum AgentStreamEvent: Equatable, Sendable {
     case thinkingDelta(String)
     case thinkingSignature(String)
@@ -336,6 +349,7 @@ enum AgentStreamEvent: Equatable, Sendable {
     case reasoningComplete(itemID: String?, summary: String, encryptedContent: String, model: AgentModel? = nil)
     case textDelta(String)
     case toolUseComplete(id: String, name: String, inputJSON: String)
+    case tokenUsage(AgentTokenUsage)
     case messageStop(stopReason: AgentStopReason)
 }
 

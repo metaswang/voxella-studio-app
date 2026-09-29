@@ -276,9 +276,15 @@ struct OpenAICompatibleStreamParser {
         if let error = root["error"] as? [String: Any] {
             throw AgentClientTransportError.streamError(provider: .openAI, message: error["message"] as? String ?? "Provider error.")
         }
-        guard let choice = (root["choices"] as? [[String: Any]])?.first else { return [] }
-        let delta = choice["delta"] as? [String: Any] ?? [:]
         var events: [AgentStreamEvent] = []
+        if let usage = root["usage"] as? [String: Any],
+           let input = usage["prompt_tokens"], let output = usage["completion_tokens"],
+           let reported = AgentTokenUsage.from(["input_tokens": input, "output_tokens": output]) {
+            events.append(.tokenUsage(reported))
+        }
+        // Some compatible endpoints report usage in a final chunk with no choices.
+        guard let choice = (root["choices"] as? [[String: Any]])?.first else { return events }
+        let delta = choice["delta"] as? [String: Any] ?? [:]
         if let text = delta["content"] as? String, !text.isEmpty { events.append(.textDelta(text)) }
         for call in delta["tool_calls"] as? [[String: Any]] ?? [] {
             let index = call["index"] as? Int ?? 0

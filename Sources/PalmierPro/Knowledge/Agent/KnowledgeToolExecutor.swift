@@ -72,6 +72,7 @@ struct KnowledgeToolExecutor: Sendable {
         case "session.get_segments", "session.get_timeline", "session.get_speakers": return try await read(args, tool: toolName)
         case "knowledge.compare_sessions": return try await compare(args)
         case "knowledge.search_sources": return try await discover(args)
+        case "knowledge.find_text": return try await findText(args)
         case "ask_clarification":
             guard let question = args["question"] as? String, !question.isEmpty else { throw KnowledgeToolError.missingParameter("question") }
             return .control(.clarify(question: question))
@@ -130,7 +131,9 @@ struct KnowledgeToolExecutor: Sendable {
             "last_spoken_end_sec": facts.lastSpokenEnd as Any? ?? NSNull(),
             "transcribed_range": ["start": facts.transcribedStart as Any? ?? NSNull(),
                                   "end": facts.transcribedEnd as Any? ?? NSNull(), "coordinate": "source_seconds"],
-            "has_transcript": material != nil || session.transcript != nil || session.dubTranscript != nil,
+            "has_transcript": material != nil,
+            "transcript_segment_count": material?.segments.count ?? 0,
+            "transcript_character_count": material?.segments.reduce(0, { $0 + $1.text.count }) ?? 0,
             "has_summary": session.summaryMarkdown?.isEmpty == false,
             "capabilities": ["metadata": true, "summary": session.summaryMarkdown?.isEmpty == false,
                              "direct_transcript": material != nil,
@@ -140,6 +143,29 @@ struct KnowledgeToolExecutor: Sendable {
         let ref = reference(session, kind: "sessionCard", chunk: -1, text: KnowledgeJSON.encode(data))
         data["citations"] = [KnowledgeJSON.citation(ref)]
         return data
+    }
+
+    /// Compact catalog facts leave budget for reading the sources discovered
+    /// here. Full capability/provenance metadata remains available on demand.
+    func catalogCard(_ source: WorkbenchSession, facts: KnowledgeMediaFacts? = nil) async -> [String: Any] {
+        let facts = if let facts { facts } else { await KnowledgeMediaDurationCache.shared.knownFacts(for: source) }
+        let material = KnowledgeTranscriptMaterial.from(source)
+        return ["session_id": source.id.uuidString, "title": source.title,
+                "type": KnowledgeSourceType.from(sessionType: source.sessionType).rawValue,
+                "origin": KnowledgeScopeSnapshot.origin(source).rawValue,
+                "created_at": ISO8601DateFormatter().string(from: source.createdAt),
+                "modified_at": ISO8601DateFormatter().string(from: source.modifiedAt),
+                "has_transcript": material != nil,
+                "transcript_segment_count": material?.segments.count ?? 0,
+                "transcript_character_count": material?.segments.reduce(0, { $0 + $1.text.count }) ?? 0,
+                "has_summary": source.summaryMarkdown?.isEmpty == false,
+                "media_duration_sec": facts.mediaDuration as Any? ?? NSNull(),
+                "media_duration_provenance": facts.provenance]
+    }
+
+    func catalogCitation(_ source: WorkbenchSession, card: [String: Any]) -> [String: Any] {
+        let facts = card.filter { !["session_id", "title", "modified_at"].contains($0.key) }
+        return KnowledgeJSON.citation(reference(source, kind: "sessionCard", chunk: -1, text: KnowledgeJSON.encode(facts)))
     }
 
     private func filteredInventory(_ args: [String: Any]) async throws -> [WorkbenchSession] {
@@ -154,6 +180,9 @@ struct KnowledgeToolExecutor: Sendable {
         if let raw = args["origin"] as? String, raw != "all" {
             guard let origin = KnowledgeSourceOrigin(rawValue: raw) else { throw KnowledgeToolError.invalidParameter("Unknown origin") }
             sessions = sessions.filter { KnowledgeScopeSnapshot.origin($0) == origin }
+        }
+        if let hasTranscript = args["has_transcript"] as? Bool {
+            sessions = sessions.filter { (KnowledgeTranscriptMaterial.from($0) != nil) == hasTranscript }
         }
         let field = args["date_field"] as? String ?? "created"
         guard ["created", "modified"].contains(field) else { throw KnowledgeToolError.invalidParameter("date_field must be created or modified") }
@@ -178,43 +207,78 @@ struct KnowledgeToolExecutor: Sendable {
     }
 
     private func inventory(_ args: [String: Any], aggregate: Bool) async throws -> KnowledgeToolResult {
-        let sessions = try await filteredInventory(args)
+        var sessions = try await filteredInventory(args)
         let offset = args["cursor"] as? Int ?? 0
         let limit = args["limit"] as? Int ?? 32
         guard offset >= 0, offset <= sessions.count, limit > 0, limit <= 100 else { throw KnowledgeToolError.invalidParameter("Invalid inventory page") }
-        var rows: [[String: Any]] = []
-        for item in sessions.dropFirst(offset).prefix(limit) { rows.append(await metadata(item, probe: false)) }
+        let sortBy = args["sort_by"] as? String ?? "created"
+        let sortOrder = args["sort_order"] as? String ?? "desc"
+        guard ["created", "modified", "duration"].contains(sortBy), ["asc", "desc"].contains(sortOrder) else {
+            throw KnowledgeToolError.invalidParameter("Invalid sort_by or sort_order")
+        }
+        var facts: [UUID: KnowledgeMediaFacts] = [:]
+        // Explicit duration aggregates resolve the whole filtered population;
+        // reading a catalog page never probes every media file implicitly.
+        for batchStart in stride(from: 0, to: sessions.count, by: 4) {
+            let batch = Array(sessions[batchStart..<min(batchStart + 4, sessions.count)])
+            let results = await withTaskGroup(of: (UUID, KnowledgeMediaFacts).self) { group in
+                for item in batch {
+                    group.addTask {
+                        let value = if aggregate && sortBy == "duration" {
+                            await KnowledgeMediaDurationCache.shared.facts(for: item)
+                        } else { await KnowledgeMediaDurationCache.shared.knownFacts(for: item) }
+                        return (item.id, value)
+                    }
+                }
+                var output: [(UUID, KnowledgeMediaFacts)] = []
+                for await row in group { output.append(row) }
+                return output
+            }
+            for (id, value) in results { facts[id] = value }
+            try Task.checkCancellation()
+        }
+        if aggregate {
+            sessions.sort {
+                let lhs = sortBy == "duration" ? facts[$0.id]?.mediaDuration : (sortBy == "modified" ? $0.modifiedAt : $0.createdAt).timeIntervalSince1970
+                let rhs = sortBy == "duration" ? facts[$1.id]?.mediaDuration : (sortBy == "modified" ? $1.modifiedAt : $1.createdAt).timeIntervalSince1970
+                guard let lhs else { return rhs == nil && $0.id.uuidString < $1.id.uuidString }
+                guard let rhs else { return true }
+                return lhs == rhs ? $0.id.uuidString < $1.id.uuidString : (sortOrder == "asc" ? lhs < rhs : lhs > rhs)
+            }
+        }
+        var rows: [[String: Any]] = [], citations: [[String: Any]] = []
+        for item in sessions.dropFirst(offset).prefix(limit) {
+            let card = await catalogCard(item, facts: facts[item.id])
+            rows.append(card)
+            citations.append(catalogCitation(item, card: card))
+        }
         var data: [String: Any] = ["sessions": rows, "count": rows.count, "returned_count": rows.count,
                                   "total_count": sessions.count, "complete": offset + rows.count == sessions.count,
                                   "next_cursor": offset + rows.count < sessions.count ? offset + rows.count : NSNull(),
                                   "date_field": args["date_field"] as? String ?? "created",
-                                  "citations": rows.flatMap { $0["citations"] as? [[String: Any]] ?? [] }]
+                                  "citations": citations]
         if aggregate {
-            let facts = sessions.map { KnowledgeMediaFacts.from($0) }
-            let known = facts.compactMap(\.mediaDuration)
+            let knownSessions = sessions.filter { facts[$0.id]?.mediaDuration != nil }
+            let known = knownSessions.compactMap { facts[$0.id]?.mediaDuration }
             let groupBy = args["group_by"] as? String
             guard groupBy == nil || ["type", "origin"].contains(groupBy!) else { throw KnowledgeToolError.invalidParameter("Invalid group_by") }
-            let sortBy = args["sort_by"] as? String ?? "created"
-            guard ["created", "modified", "duration"].contains(sortBy) else { throw KnowledgeToolError.invalidParameter("Invalid sort_by") }
-            let sorted = sessions.sorted {
-                let lhs = sortBy == "duration" ? (KnowledgeMediaFacts.from($0).mediaDuration ?? -.infinity) :
-                    (sortBy == "modified" ? $0.modifiedAt : $0.createdAt).timeIntervalSince1970
-                let rhs = sortBy == "duration" ? (KnowledgeMediaFacts.from($1).mediaDuration ?? -.infinity) :
-                    (sortBy == "modified" ? $1.modifiedAt : $1.createdAt).timeIntervalSince1970
-                return lhs == rhs ? $0.id.uuidString < $1.id.uuidString : lhs > rhs
-            }
             var groups: [String: Int] = [:]
             for item in sessions {
                 let key = groupBy == "type" ? KnowledgeSourceType.from(sessionType: item.sessionType).rawValue : KnowledgeScopeSnapshot.origin(item).rawValue
                 groups[key, default: 0] += 1
             }
+            let longest = knownSessions.max { facts[$0.id]!.mediaDuration! < facts[$1.id]!.mediaDuration! }
+            let shortest = knownSessions.min { facts[$0.id]!.mediaDuration! < facts[$1.id]!.mediaDuration! }
+            let longestCard: Any = if let longest { await catalogCard(longest, facts: facts[longest.id]) } else { NSNull() }
+            let shortestCard: Any = if let shortest { await catalogCard(shortest, facts: facts[shortest.id]) } else { NSNull() }
             let aggregate: [String: Any] = ["count": sessions.count, "media_duration_sum_sec": known.reduce(0, +),
                 "duration_known_count": known.count, "duration_unknown_count": sessions.count - known.count,
                 "group_by": groupBy as Any? ?? NSNull(), "groups": groupBy == nil ? [:] : groups,
-                "sort_by": sortBy, "sorted_session_ids": sorted.dropFirst(offset).prefix(limit).map { $0.id.uuidString },
+                "sort_by": sortBy, "sort_order": sortOrder, "sorted_session_ids": rows.compactMap { $0["session_id"] },
+                "longest_known": longestCard, "shortest_known": shortestCard,
                 "input_set_version": workspace?.snapshot.cacheNamespace ?? "live",
                 "filters": args.filter { !["limit", "cursor"].contains($0.key) },
-                "duration_policy": "source hints only; missing local media metadata counted as unknown", "semantic_count": false]
+                "duration_policy": "Local media probed for duration sorting; other aggregates use cached metadata or explicit hints. Unknowns cannot establish global extrema.", "semantic_count": false]
             data["aggregate"] = aggregate
             // Filters, grouping and the returned sort page are part of this
             // evidence identity; another aggregate must not reuse its citation.
@@ -270,7 +334,12 @@ struct KnowledgeToolExecutor: Sendable {
         let total: Int
         let pageOffset: Int
         if let segments {
-            let allHits: [SessionSearchHit] = segments.enumerated().map { index, segment in
+            let parts = segments.flatMap { segment -> [TranscriptionSegment] in
+                Self.textPages(segment.text, limit: 8_000).map { text in
+                    .init(text: text, start: segment.start, end: segment.end, speaker: segment.speaker)
+                }
+            }
+            let allHits: [SessionSearchHit] = parts.enumerated().map { index, segment in
                 return SessionSearchHit(sessionID: source.id, title: source.title, unitID: index, kind: .transcriptChunk,
                                  start: segment.start, end: segment.end, speakerLabels: segment.speaker.map { [$0] } ?? [],
                                  text: segment.text, score: 1, matchSource: "direct_read", snippet: segment.text,
@@ -318,6 +387,7 @@ struct KnowledgeToolExecutor: Sendable {
             "complete": offset + page.count == total,
             "next_cursor": offset + page.count < total ? offset + page.count : NSNull(),
             "read_provenance": material?.provenance ?? "indexed_transcript_chunks",
+            "pagination_unit": "text parts with original segment timestamps; no inferred sub-segment timing",
             "completeness_semantics": "available transcript, not necessarily entire media",
             "returned_range": ["start": page.compactMap(\.start).min() as Any? ?? NSNull(), "end": page.compactMap(\.end).max() as Any? ?? NSNull()], "coverage": ["start": start as Any? ?? NSNull(), "end": end as Any? ?? NSNull(), "coordinate": "source_seconds"],
             "citations": page.map { hit in
@@ -359,17 +429,93 @@ struct KnowledgeToolExecutor: Sendable {
         var filter = await retrievalService.makeVisibleFilter(scope: scope, originFilter: originFilter)
         filter.limit = min(32, max(1, args["limit"] as? Int ?? 16))
         let cards = try await service.sessionSearch(query: args["query"] as? String ?? "", filter: filter)
-        let visible = Set(await visibleSessions().map(\.id))
-        var rows: [[String: Any]] = []
+        let sources = await visibleSessions()
+        let visible = Set(sources.map(\.id))
+        var rows: [[String: Any]] = [], citations: [[String: Any]] = []
         for card in cards where visible.contains(card.sessionID) {
-            if let source = await visibleSessions().first(where: { $0.id == card.sessionID }) {
-                var row = await metadata(source, probe: false)
+            if let source = sources.first(where: { $0.id == card.sessionID }) {
+                var row = await catalogCard(source)
+                citations.append(catalogCitation(source, card: row))
                 row["match_source"] = card.matchSource
+                row["match_excerpt"] = String((card.snippet ?? card.summaryExcerpt ?? "").prefix(2_000))
+                row["match_excerpt_complete"] = (card.snippet ?? card.summaryExcerpt ?? "").count <= 2_000
+                row["verification_note"] = "Source candidate only; read original transcript to verify factual claims"
                 rows.append(row)
             }
         }
         return .success(["sources": rows, "returned_count": rows.count, "complete": false,
-                         "candidate_set_only": true, "citations": rows.flatMap { $0["citations"] as? [[String: Any]] ?? [] }])
+                         "candidate_set_only": true, "citations": citations])
+    }
+
+    static func textPages(_ text: String, limit: Int) -> [String] {
+        guard text.count > limit else { return [text] }
+        var result: [String] = [], start = text.startIndex
+        while start < text.endIndex {
+            let end = text.index(start, offsetBy: limit, limitedBy: text.endIndex) ?? text.endIndex
+            result.append(String(text[start..<end]))
+            start = end
+        }
+        return result
+    }
+
+    private func findText(_ args: [String: Any]) async throws -> KnowledgeToolResult {
+        guard let text = args["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              text.count <= 1_000 else { throw KnowledgeToolError.invalidParameter("text must be a nonempty literal phrase up to 1000 characters") }
+        let ids = try await sourceIDs(args)
+        let sources = await visibleSessions().filter { ids == nil || ids!.contains($0.id) }
+        let pattern = text.split(whereSeparator: \.isWhitespace).map { NSRegularExpression.escapedPattern(for: String($0)) }.joined(separator: #"\s+"#)
+        let expression = try NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        var matches: [(SessionSearchHit, Int, String)] = [], unavailable: [String] = []
+        var checked = 0
+        for source in sources {
+            try Task.checkCancellation()
+            guard let material = KnowledgeTranscriptMaterial.from(source) else {
+                unavailable.append(source.id.uuidString)
+                continue
+            }
+            checked += 1
+            // Joining original segments also finds a phrase split at an ASR
+            // boundary. Offsets map back to actual times; no fabricated timing.
+            let segments = material.segments
+            let joined = segments.map(\.text).joined(separator: " ") as NSString
+            let ranges = expression.matches(in: joined as String, range: NSRange(location: 0, length: joined.length))
+            var offset = 0
+            for (index, segment) in segments.enumerated() {
+                let length = (segment.text as NSString).length
+                let interval = NSRange(location: offset, length: length)
+                let found = ranges.filter { NSIntersectionRange(interval, $0.range).length > 0 }
+                if !found.isEmpty {
+                    let local = max(0, found[0].range.location - offset)
+                    let snippetStart = max(0, local - 160)
+                    let snippetLength = min(length - snippetStart, 700)
+                    let snippet = (segment.text as NSString).substring(with: NSRange(location: snippetStart, length: snippetLength))
+                    let hit = SessionSearchHit(sessionID: source.id, title: source.title, unitID: index, kind: .transcriptChunk,
+                        start: segment.start, end: segment.end, speakerLabels: segment.speaker.map { [$0] } ?? [],
+                        text: snippet, score: 1, matchSource: "literal_scan", snippet: snippet, cueIDs: [],
+                        hasVideo: false, language: material.language, quoteSpan: nil)
+                    matches.append((hit, material.citationChunkBase, material.provenance))
+                }
+                offset += length + 1
+            }
+        }
+        let cursor = args["cursor"] as? Int ?? 0, limit = args["limit"] as? Int ?? 32
+        guard cursor >= 0, cursor <= matches.count, limit > 0, limit <= 100 else { throw KnowledgeToolError.invalidParameter("Invalid literal match page") }
+        let page = Array(matches.dropFirst(cursor).prefix(limit))
+        return .success(["text": text, "segments": page.map { hit, _, provenance in
+                var row = Self.hitToDict(hit); row["read_provenance"] = provenance; return row
+            },
+            "returned_count": page.count, "total_count": matches.count,
+            "matched_source_count": Set(matches.map { $0.0.sessionID }).count,
+            "checked_source_count": checked, "scope_source_count": sources.count, "unavailable_source_ids": unavailable,
+            "complete": cursor + page.count == matches.count, "all_sources_readable": unavailable.isEmpty,
+            "next_cursor": cursor + page.count < matches.count ? cursor + page.count : NSNull(),
+            "match_semantics": "case-insensitive literal phrase with normalized whitespace; snippets are bounded excerpts of timed material, original preferred with marked dub fallback",
+            "citations": page.map { hit, base, _ in
+                var ref = KnowledgeQAService.citation(from: hit)
+                // Literal excerpts differ from full segment observations.
+                ref.chunkIndex = base + 100_000_000 + hit.unitID
+                return KnowledgeJSON.citation(ref)
+            }])
     }
 
     private func compare(_ args: [String: Any]) async throws -> KnowledgeToolResult {

@@ -4,6 +4,36 @@ import Testing
 
 @Suite("Configured agent transport", .serialized)
 struct AgentProviderTransportTests {
+    @Test func anthropicUsageUsesCumulativeOutputAndAllInputBuckets() {
+        var usage = AnthropicUsageAccumulator()
+        usage.update(["input_tokens": 100, "output_tokens": 1, "cache_creation_input_tokens": 20, "cache_read_input_tokens": 30], finalOutput: false)
+        #expect(usage.finalUsage == nil)
+        usage.update(["output_tokens": 10], finalOutput: true)
+        usage.update(["input_tokens": 110, "output_tokens": 25], finalOutput: true)
+        #expect(usage.finalUsage == .init(inputTokens: 160, outputTokens: 25))
+        usage.update(["output_tokens": -1], finalOutput: true)
+        #expect(usage.finalUsage == nil)
+    }
+
+    @Test func compatibleUsageOnlyChunkIsNotDiscarded() throws {
+        var parser = OpenAICompatibleStreamParser()
+        let events = try parser.consume(line: #"data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":20,"completion_tokens_details":{"reasoning_tokens":15}}}"#)
+        #expect(events == [.tokenUsage(.init(inputTokens: 100, outputTokens: 20))])
+        #expect(try parser.consume(line: #"data: {"choices":[],"usage":{"prompt_tokens":100}}"#).isEmpty)
+    }
+
+    @Test func responsesTerminalUsageIncludesInvisibleOutputOnce() throws {
+        var parser = OpenAIStreamParser()
+        let events = try parser.consume(event: ["type": "response.completed", "response": [
+            "status": "completed", "output": [], "usage": ["input_tokens": 120, "output_tokens": 80,
+                "input_tokens_details": ["cached_tokens": 100], "output_tokens_details": ["reasoning_tokens": 60]]]])
+        #expect(events == [.tokenUsage(.init(inputTokens: 120, outputTokens: 80)), .messageStop(stopReason: .endTurn)])
+        #expect(AgentTokenUsage.from(["input_tokens": 10]) == nil)
+        #expect(AgentTokenUsage.from(["input_tokens": -1, "output_tokens": 0]) == nil)
+        var missing = OpenAIStreamParser()
+        #expect(try missing.consume(event: ["type": "response.completed", "response": ["status": "completed"]]) == [.messageStop(stopReason: .endTurn)])
+    }
+
     @Test func openAIEndpointsSeparateAgentFromTextCompletions() throws {
         for baseURL in [
             "https://api.openai.com/v1",

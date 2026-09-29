@@ -940,7 +940,7 @@ private struct FlowCitationChips: View {
                         onTap(ref)
                     } label: {
                         HStack(spacing: AppTheme.Spacing.xs) {
-                            Image(systemName: "link")
+                            Image(systemName: ref.sessionUUID == nil ? "doc.text" : "link")
                                 .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold))
                             Text(ref.chipLabel)
                                 .lineLimit(nil)
@@ -953,8 +953,9 @@ private struct FlowCitationChips: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
-                    .help(L10n.string("Open transcript"))
-                    .accessibilityLabel(Text(L10n.format("Open transcript: %@", ref.chipLabel)))
+                    .disabled(ref.sessionUUID == nil)
+                    .help(ref.sessionUUID == nil ? ref.chipLabel : L10n.string("Open transcript"))
+                    .accessibilityLabel(Text(ref.sessionUUID == nil ? ref.chipLabel : L10n.format("Open transcript: %@", ref.chipLabel)))
                     if source.navigationReferences.count > 1 {
                         Menu {
                             ForEach(source.navigationReferences) { anchor in
@@ -975,7 +976,7 @@ private struct FlowCitationChips: View {
                     RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
                         .fill(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.medium))
                 )
-                .accessibilityHint(L10n.string("Select a source to open its matching transcript"))
+                .accessibilityHint(ref.sessionUUID == nil ? ref.chipLabel : L10n.string("Select a source to open its matching transcript"))
             }
         }
     }
@@ -997,12 +998,9 @@ struct KnowledgeCitationSource: Identifiable {
 }
 
 /// Keeps machine-generated citation tokens out of the reading flow. The source
-/// list below the answer is the readable, clickable evidence affordance, so a
-/// user never has to decode a bare `45` or `[1, 4]` in otherwise natural prose.
+/// list below the answer is the readable, clickable evidence affordance.
+/// Unbracketed numeric facts remain intact.
 enum KnowledgeAnswerPresentation {
-    private static let numericCitationPattern = #"(?:\[\s*\d{1,3}(?:\s*[,，]\s*\d{1,3})*\s*\]|【\s*\d{1,3}(?:\s*[,，]\s*\d{1,3})*\s*】)"#
-    private static let bareCitationPattern = #"[ \t]+\d{1,3}(?=[ \t]*(?:[。！？.!?；;，,、]|$))"#
-
     static func sourceGroups(_ citations: [KnowledgeSourceRef]) -> [KnowledgeCitationSource] {
         var sources: [KnowledgeCitationSource] = []
         var indices: [String: Int] = [:]
@@ -1019,23 +1017,13 @@ enum KnowledgeAnswerPresentation {
 
     static func displayText(_ text: String, citationCount: Int) -> String {
         let hasCitationEvidence = citationCount > 0
-            || containsMatch(text, pattern: numericCitationPattern)
-            || hasRepeatedBareCitationTokens(in: text)
+            || !KnowledgeCitationMarkers.numbers(in: text).isEmpty
         guard hasCitationEvidence else { return text }
 
-        var value = replacing(
-            text,
-            pattern: numericCitationPattern
-        )
+        let value = KnowledgeCitationMarkers.removing(from: text)
 
-        // Some model/provider combinations emit citation indexes as a bare
-        // token at the end of a sentence (`…内容 45。`). Only match a token
-        // separated by horizontal whitespace and followed by punctuation or
-        // the end of the answer, so ordinary values such as `20次` survive.
-        value = replacing(
-            value,
-            pattern: bareCitationPattern
-        )
+        // Bare numbers are indistinguishable from actual facts such as
+        // “共有 4。” or “预算是 45。”; only bracketed markers are removable.
         return replacing(
             value,
             pattern: #"[ \t]+([。！？.!?；;，,、])"#,
@@ -1058,23 +1046,6 @@ enum KnowledgeAnswerPresentation {
         )
     }
 
-    private static func containsMatch(_ text: String, pattern: String) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
-        let range = NSRange(location: 0, length: text.utf16.count)
-        return regex.firstMatch(in: text, options: [], range: range) != nil
-    }
-
-    private static func hasRepeatedBareCitationTokens(in text: String) -> Bool {
-        let bulletLines = text.components(separatedBy: .newlines).filter { line in
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.hasPrefix("- ")
-                || trimmed.hasPrefix("* ")
-                || trimmed.hasPrefix("• ")
-        }
-        return bulletLines.filter {
-            containsMatch($0, pattern: bareCitationPattern)
-        }.count >= 3
-    }
 }
 
 private struct KnowledgeAnswerText: View {

@@ -35,7 +35,7 @@ struct KnowledgeTranscriptView: View {
     }
 
     private var lines: [KnowledgeTranscriptLine] {
-        guard let transcript = session.transcript else { return [] }
+        guard let transcript = KnowledgeTranscriptMaterial.displayTranscript(for: session) else { return [] }
         if !transcript.segments.isEmpty {
             return transcript.segments.enumerated().map { index, segment in
                 KnowledgeTranscriptLine(index: index, segment: segment)
@@ -66,7 +66,7 @@ struct KnowledgeTranscriptView: View {
 
     private var citationLineID: String? {
         guard let target,
-              let transcript = session.transcript,
+              let transcript = KnowledgeTranscriptMaterial.displayTranscript(for: session),
               let index = KnowledgeTranscriptNavigation.segmentIndex(
                   for: target,
                   in: transcript.segments
