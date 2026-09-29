@@ -43,27 +43,23 @@ struct AccountPane: View {
             licenseKeySection
 #endif
 
-            if showsPaidAccess {
-                subscriptionSection
+            plansSection
 #if !MAC_APP_STORE
-                if account.featureAccessSnapshot.license != .lifetime {
-                    SettingsGroup(title: "Lifetime purchase") {
-                        AppAccessOffersView(lifetimeOnly: true)
-                    }
-                } else if account.anonymousLifetimePhase != .idle || account.canLinkAnonymousLifetime {
-                    SettingsGroup(title: "Lifetime purchase") {
-                        AppAccessOffersView(statusOnly: true)
-                    }
+            if account.featureAccessSnapshot.license != .lifetime {
+                SettingsGroup(title: "Lifetime purchase") {
+                    AppAccessOffersView(lifetimeOnly: true)
                 }
+            } else if account.anonymousLifetimePhase != .idle || account.canLinkAnonymousLifetime {
+                SettingsGroup(title: "Lifetime purchase") {
+                    AppAccessOffersView(statusOnly: true)
+                }
+            }
 #endif
 #if MAC_APP_STORE
-                AppStoreOffersView(credits: false)
+            AppStoreOffersView(credits: false)
 #endif
-                if account.canPurchaseCredits {
-                    creditsSection
-                }
-            } else {
-                unpaidSection
+            if account.canPurchaseCredits {
+                creditsSection
             }
 
 #if !MAC_APP_STORE
@@ -85,15 +81,6 @@ struct AccountPane: View {
 #endif
     }
 
-    private var showsPaidAccess: Bool {
-        if account.isPaid || account.featureAccessSnapshot.license == .lifetime { return true }
-#if MAC_APP_STORE
-        return account.hasLocalLifetimeCredential
-#else
-        return false
-#endif
-    }
-
     private func trialSection(_ presentation: TrialPresentation) -> some View {
         SettingsGroup(title: "Free trial") {
             TrialDetailsView(presentation: presentation, showsPurchaseAction: false)
@@ -112,14 +99,22 @@ struct AccountPane: View {
         }
     }
 
-    private var subscriptionSection: some View {
-        SettingsGroup(title: "Subscription") {
+    /// Cloud recurring plan. Independent of Lifetime, which is permanent software ownership on this Mac.
+    private var plansSection: some View {
+        SettingsGroup(title: "Plans") {
             card {
                 HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                        Text(account.localizedAppAccessLabel)
+                        Text(account.tier.localizedUpgradeLabel)
                             .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
                             .foregroundStyle(AppTheme.Text.primaryColor)
+
+                        if let status = cloudPlanStatus {
+                            Text(status)
+                                .font(.system(size: AppTheme.FontSize.sm))
+                                .foregroundStyle(AppTheme.Text.secondaryColor)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
 
                         if account.account?.user.cancelAtPeriodEnd == true,
                            let date = formattedPeriodEnd {
@@ -131,27 +126,84 @@ struct AccountPane: View {
 
                     Spacer(minLength: AppTheme.Spacing.lg)
 
-                    Button {
-                        Task { await account.manageSubscription() }
-                    } label: {
-                        HStack(spacing: AppTheme.Spacing.xs) {
-                            Text(L10n.string("Manage subscription"))
-                            Image(systemName: "arrow.up.right")
-                                .font(.system(
-                                    size: AppTheme.FontSize.xs,
-                                    weight: AppTheme.FontWeight.semibold
-                                ))
-                                .accessibilityHidden(true)
+                    if account.isPaid {
+                        Button {
+                            Task { await account.manageSubscription() }
+                        } label: {
+                            HStack(spacing: AppTheme.Spacing.xs) {
+                                Text(L10n.string("Manage plans"))
+                                Image(systemName: "arrow.up.right")
+                                    .font(.system(
+                                        size: AppTheme.FontSize.xs,
+                                        weight: AppTheme.FontWeight.semibold
+                                    ))
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .buttonStyle(accountSecondaryButtonStyle)
+#if MAC_APP_STORE
+                        .disabled(account.appAccess.subscriptionSource != .appStore)
+#endif
+                        .pointerStyle(.link)
+                    }
+                }
+
+                if showsCloudUpgrade {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                        ForEach(upgradePlans) { plan in
+                            cloudUpgradeRow(plan)
                         }
                     }
-                    .buttonStyle(accountSecondaryButtonStyle)
-                    .disabled(!account.isPaid)
-#if MAC_APP_STORE
-                    .disabled(account.appAccess.subscriptionSource != .appStore)
-#endif
-                    .pointerStyle(.link)
                 }
             }
+        }
+    }
+
+    private var showsCloudUpgrade: Bool {
+        switch account.tier.rawValue {
+        case "free", "starter", "basic": return true
+        default: return false
+        }
+    }
+
+    private var upgradePlans: [AvailablePlan] {
+        account.availablePlans
+            .filter { $0.tier.subscriptionRank > account.tier.subscriptionRank }
+            .sorted { $0.tier.subscriptionRank < $1.tier.subscriptionRank }
+    }
+
+    private var cloudPlanStatus: String? {
+        switch account.tier.rawValue {
+        case "free":
+            return L10n.string("Upgrade to Starter or Pro for monthly credits.")
+        case "starter", "basic":
+            return L10n.string("Upgrade for a higher monthly credit allowance.")
+        default:
+            return nil
+        }
+    }
+
+    private func cloudUpgradeRow(_ plan: AvailablePlan) -> some View {
+        HStack(spacing: AppTheme.Spacing.sm) {
+            Text(plan.tier.localizedUpgradeLabel)
+                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                .foregroundStyle(AppTheme.Text.primaryColor)
+            Text(L10n.format("$%@/mo", plan.effectiveMonthlyPriceUsd))
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+                .monospacedDigit()
+            if let credits = plan.monthlyBudgetCredits {
+                Text(L10n.format("%@ credits", credits))
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    .monospacedDigit()
+            }
+            Spacer(minLength: 0)
+            Button(L10n.string("Upgrade")) {
+                Task { await account.subscribe(tier: plan.tier) }
+            }
+            .buttonStyle(.capsule(plan.tier.subscriptionRank == upgradePlans.first?.tier.subscriptionRank ? .prominent : .secondary))
+            .controlSize(.small)
         }
     }
 

@@ -755,7 +755,8 @@ struct VoxellaUserPlans: Decodable, Sendable {
         currentPeriodEnd = try container.decodeIfPresent(String.self, forKey: .currentPeriodEnd)
         statusNote = try container.decodeIfPresent(String.self, forKey: .statusNote)
         plans = try container.decodeIfPresent([VoxellaBillingPlan].self, forKey: .plans) ?? []
-        appAccess = try container.decodeIfPresent(AppAccessResponse.self, forKey: .appAccess)
+        // A malformed software-access payload must not drop the cloud plan list.
+        appAccess = try? container.decode(AppAccessResponse.self, forKey: .appAccess)
     }
 }
 
