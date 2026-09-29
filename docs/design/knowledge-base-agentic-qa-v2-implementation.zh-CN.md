@@ -21,7 +21,7 @@
 
 ## 开发对照与预算
 
-Debug 构建中通过 `VOXELLA_KB_QA_VARIANT` 选择完整对照路径或工具能力：B0=legacy，B1=native 基础，B2=自适应读取/来源发现，B3=覆盖表/聚合，B4=有限 worker（默认）。关闭能力不回退文本 JSON 协议。Release 使用完整能力，是否调用 worker 仍由主 agent 决定。
+Debug 构建中通过 `VOXELLA_KB_QA_VARIANT` 选择完整对照路径或工具能力：B0=legacy，B1=native 基础，B2=自适应读取/来源发现，B3=覆盖表/聚合，B4=有限 worker（默认）。关闭能力不回退文本 JSON 协议。Release 使用完整能力，是否调用 worker 仍由主 agent 决定。这些开关比较当前分支的工具能力；共用已重构的 retrieval/读取实现，不能冒充冻结的旧版基线。严格 B0 基线须单独构建重构前 `f2d9f81b`，并记录其源码 revision。
 
 同一问答主 agent 与 worker 共用最多 16 次原生模型回合、180 秒运行时间、240,000 的保守上下文/输出预留单位。每个请求输出 cap 为 4,096；主循环最多 8 回合，worker 最多 4 回合、深度 1。BYOK 初次路由失败仍允许既有 fallback/retry；这些传输尝试及 Hosted 内部 fallback 的精确 token/费用由实际 provider 和网关计量，目前不是硬费用上限。不能将客户端预留量冒充账单。
 
