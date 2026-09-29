@@ -77,13 +77,7 @@ struct HomeView: View {
     }
 
     private var navigationScreen: WorkbenchScreen? {
-        WorkbenchScreen.capture(
-            editorActive: appState.editorPresentation == .active,
-            route: store.route,
-            sessionID: store.selectedSessionID,
-            transcriptionID: store.selectedTranscriptionID,
-            dubID: store.selectedDubID
-        )
+        WorkbenchNavigator.captureCurrentScreen()
     }
 
     private func presentSessionSearch() {
@@ -449,9 +443,6 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
         window.collectionBehavior = [.fullScreenNone]
         window.center()
         super.init(window: window)
-        // Install against the constructed window; HomeView may appear before
-        // this singleton finishes initializing.
-        WorkbenchNavigator.shared.installMouseNavigationIfNeeded(in: window)
         window.delegate = self
         zoomObserver = NotificationCenter.default.addObserver(
             forName: .voxellaZoomScaleDidChange,
@@ -476,6 +467,9 @@ final class HomeWindowController: NSWindowController, NSWindowDelegate {
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
+        if let window {
+            WorkbenchNavigator.shared.installMouseNavigationIfNeeded(in: window)
+        }
         guard !hasAppliedInitialWindowState, let window else { return }
         hasAppliedInitialWindowState = true
         if OnboardingState.shared.isComplete, !window.isZoomed, !window.styleMask.contains(.fullScreen) {
