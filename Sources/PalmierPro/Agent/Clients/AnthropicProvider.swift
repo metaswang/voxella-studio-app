@@ -19,6 +19,7 @@ enum AnthropicSSE {
         continuation: AsyncThrowingStream<AgentStreamEvent, Error>.Continuation
     ) async throws {
         var pendingTools: [Int: (id: String, name: String, json: String)] = [:]
+        var finished = false
         for try await line in bytes.lines {
             try Task.checkCancellation()
             guard line.hasPrefix("data:"),
@@ -86,9 +87,13 @@ enum AnthropicSSE {
                     throw AgentClientTransportError.streamError(provider: .anthropic, message: msg)
                 }
 
+            case "message_stop":
+                finished = true
+
             default: break
             }
         }
+        guard finished else { throw AgentClientTransportError.streamError(provider: .anthropic, message: "The response stream ended before completion.") }
     }
 }
 
@@ -102,6 +107,24 @@ enum AnthropicRequestBody {
     ) -> [String: Any] {
         precondition(model.provider == .anthropic)
         precondition(model.supportedReasoningEfforts.contains(reasoningEffort))
+        return build(
+            modelName: model.rawValue,
+            reasoningEffort: LLMReasoningEffort(rawValue: reasoningEffort.rawValue) ?? .medium,
+            system: system,
+            tools: tools,
+            messages: messages
+        )
+    }
+
+    static func build(
+        modelName: String,
+        reasoningEffort: LLMReasoningEffort,
+        system: String,
+        tools: [AgentToolSchema],
+        messages: [AgentRequestMessage],
+        extraBody: [String: LLMJSONValue] = [:],
+        capability: ChatModelCapability? = nil
+    ) -> [String: Any] {
         var toolBlocks: [[String: Any]] = tools.map {
             ["name": $0.name, "description": $0.description, "input_schema": $0.inputSchema]
         }
@@ -124,15 +147,15 @@ enum AnthropicRequestBody {
             messageBlocks.append(lastMsg)
         }
         var body: [String: Any] = [
-            "model": model.rawValue,
-            "max_tokens": model.maxOutputTokens,
+            "model": modelName,
+            "max_tokens": 64_000,
             "stream": true,
             "system": [["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]],
             "messages": messageBlocks,
-            "output_config": ["effort": reasoningEffort.rawValue],
-            "thinking": ["type": "adaptive", "display": "summarized"],
         ]
+        (capability ?? .known(modelName)).applyAnthropic(to: &body, effort: reasoningEffort)
         if !toolBlocks.isEmpty { body["tools"] = toolBlocks }
+        for (key, value) in anthropicJSON(extraBody) { body[key] = value }
         return body
     }
 
@@ -192,5 +215,20 @@ enum AnthropicRequestBody {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return [:] }
         return object
+    }
+}
+
+private func anthropicJSON(_ value: [String: LLMJSONValue]) -> [String: Any] {
+    Dictionary(uniqueKeysWithValues: value.map { ($0.key, anthropicJSON($0.value)) })
+}
+
+private func anthropicJSON(_ value: LLMJSONValue) -> Any {
+    switch value {
+    case .string(let value): value
+    case .number(let value): value
+    case .bool(let value): value
+    case .object(let value): anthropicJSON(value)
+    case .array(let value): value.map(anthropicJSON)
+    case .null: NSNull()
     }
 }

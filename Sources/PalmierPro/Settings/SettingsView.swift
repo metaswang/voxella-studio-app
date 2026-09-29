@@ -45,7 +45,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @State private var selectedTab: SettingsTab
-    @State private var providerConnectionStates: [UUID: ProviderConnectionState] = [:]
 
     init(initialTab: SettingsTab = .account) {
         _selectedTab = State(initialValue: initialTab)
@@ -60,10 +59,7 @@ struct SettingsView: View {
             SettingsSidebar(selectedTab: $selectedTab, visibleTabs: visibleTabs)
                 .frame(width: AppTheme.Settings.sidebarWidth)
 
-            SettingsDetail(
-                tab: selectedTab,
-                providerConnectionStates: $providerConnectionStates
-            )
+            SettingsDetail(tab: selectedTab)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(AppTheme.Background.surfaceColor)
         }
@@ -114,7 +110,6 @@ private struct SettingsSidebar: View {
 
 private struct SettingsDetail: View {
     let tab: SettingsTab
-    @Binding var providerConnectionStates: [UUID: ProviderConnectionState]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -171,7 +166,7 @@ private struct SettingsDetail: View {
                             case .models, .voiceLibrary:
                                 EmptyView()
                             case .ai:
-                                AISettingsPane(connectionStates: $providerConnectionStates)
+                                AISettingsPane()
                             case .agent:
                                 AgentPane()
                             case .skills:

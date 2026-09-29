@@ -2648,3 +2648,11 @@
 /* Lifetime software upgrades */
 "Free lifetime software upgrades" = "终身免费软件升级";
 "One-time Mac access with free software upgrades for life." = "一次性购买 Mac 使用权，并可终身免费升级软件。";
+
+/* Provider chat controls */
+"Refresh models" = "刷新模型";
+"AI Service settings…" = "AI Service 设置…";
+"About AI assistant" = "关于 AI 助手";
+"Could not save connection status:" = "无法保存连接测试状态：";
+"Model list unavailable. Retry refresh or keep using the configured model." = "模型列表暂不可用。请重试刷新，或继续使用当前配置的模型。";
+"Cloud automatically chooses an available AI model. Sign in to ask questions; usage follows your plan and consumes cloud credits. Relevant knowledge excerpts and your question are sent to the cloud service to generate an answer. Enable BYOK to choose a model and use your own provider key; requests then go to that provider and are billed by it." = "云端会自动选择可用的 AI 模型。登录后才能提问；使用量遵循套餐并消耗云端积分。相关知识片段和问题会发送到云端服务以生成回答。开启 BYOK 可选择模型并使用自己的 Provider 密钥；请求将发送到该 Provider，并由其计费。";

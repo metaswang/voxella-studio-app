@@ -53,6 +53,10 @@ struct OpenAICompatibleClient: LLMConfigurableTextClient {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Client-Request-ID")
         var extraBody = configuration.resolvedExtraBody
+        if configuration.useCase == .chat, configuration.profile.agentProtocol == .openAICompatible,
+           configuration.chatCapability.thinking == .budget, let effort = configuration.reasoningEffort {
+            extraBody["reasoning"] = effort == .none ? .object(["enabled": .bool(false)]) : .object(["max_tokens": .number(effort == .low ? 1_024 : effort == .medium ? 4_096 : 8_192)])
+        }
         if let structuredOutput = options.structuredOutput {
             // Request-scoped structured output must win over an old provider
             // override so the selector cannot silently return free-form text.
@@ -168,8 +172,12 @@ struct ResilientLLMTextClient: LLMConfigurableTextClient {
         sleeper: Sleeper? = nil
     ) {
         self.route = route
-        let clientFactory = clientFactory ?? {
-            OpenAICompatibleClient(configuration: $0, policy: $1)
+        let clientFactory = clientFactory ?? { configuration, policy in
+            if configuration.profile.provider == .anthropic { return AnthropicTextClient(configuration: configuration, policy: policy) as any LLMTextClient }
+            if configuration.useCase == .chat, configuration.profile.agentProtocol == .openAIResponses {
+                return OpenAIResponsesTextClient(configuration: configuration, policy: policy) as any LLMTextClient
+            }
+            return OpenAICompatibleClient(configuration: configuration, policy: policy) as any LLMTextClient
         }
         self.clients = route.configurations.map {
             ClientEntry(
@@ -195,6 +203,26 @@ struct ResilientLLMTextClient: LLMConfigurableTextClient {
     ) async throws -> String {
         var failures: [LLMAttemptFailure] = []
         let attempts = route.policy.maximumAttemptsPerModel
+
+        if route.useCase == .chat {
+            for entry in clients {
+                for attempt in 1...attempts {
+                    try Task.checkCancellation()
+                    do {
+                        return try await Self.complete(entry.client, system: system, user: user, options: options)
+                    } catch is CancellationError { throw CancellationError() }
+                    catch {
+                        failures.append(.init(model: entry.configuration.modelIdentifier, attempt: attempt,
+                            reason: Self.failureDescription(error), detail: Self.failureDetail(error)))
+                        guard Self.isRetryable(error) else { break }
+                        if attempt < attempts {
+                            try await sleeper(.seconds(Self.retryDelay(error: error, attempt: attempt, initial: route.policy.initialBackoffSeconds)))
+                        }
+                    }
+                }
+            }
+            throw LLMClientError.exhausted(failures)
+        }
 
         for attempt in 1...attempts {
             var retryDelay: Double?
@@ -412,8 +440,9 @@ enum LLMClientError: LocalizedError, Sendable {
             return "The AI service returned an unsupported response. Try again later."
         case .emptyResponse:
             return "The AI service returned no answer. Try again."
-        case .exhausted:
-            return "The AI service cannot complete the request right now. Try again later."
+        case .exhausted(let failures):
+            return Self.openRouterAuthenticationRecoveryMessage(for: failures)
+                ?? "All configured LLM models failed: \(Self.failureSummary(failures))"
         }
     }
 

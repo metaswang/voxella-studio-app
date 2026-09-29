@@ -131,6 +131,7 @@ struct KnowledgeQAServiceHelpersTests {
         #expect(plan.searchQuery == "主要主题")
         #expect(plan.standaloneQuery == "主要主题")
         #expect(plan.clarificationQuestion == nil)
+        #expect(plan.evidenceNeeds == .transcript)
         #expect(plan.answerConstraints == ["用中文回答", "只用 3 句话"])
     }
 
@@ -411,6 +412,8 @@ struct KnowledgeQAServiceHelpersTests {
             originFilter: nil
         )
         #expect(session.contains("one selected session"))
+        #expect(session.contains("Session duration:"))
+        #expect(session.contains("time="))
     }
 
     @Test
@@ -537,11 +540,38 @@ struct KnowledgeRerankAndContextTests {
         )
 
         #expect(context.contains("Session title: Weekly review"))
+        #expect(!context.contains("Session duration:"))
         #expect(context.contains("before neighbor"))
         #expect(context.contains("anchor"))
         #expect(context.contains("after neighbor"))
         #expect(context.count <= 1_000)
         #expect(KnowledgeQAService.citation(from: anchor).chunkIndex == 10)
+    }
+
+    @Test
+    func catalogDurationIsEvidenceWithoutUsingExcerptTimestamps() {
+        let sessionID = UUID()
+        let anchor = hit(sessionID: sessionID, unitID: 10, text: "partial remark")
+        var metadata = KnowledgeSessionContextMetadata(title: "Weekly review", summary: nil)
+        metadata.duration = 754
+        let withExcerpt = KnowledgeContextBuilder.build(
+            anchors: [anchor],
+            metadata: [sessionID: metadata],
+            neighbors: [:],
+            maxChars: 1_000
+        )
+        let catalogOnly = KnowledgeContextBuilder.build(
+            anchors: [],
+            metadata: [sessionID: metadata],
+            neighbors: [:],
+            maxChars: 1_000,
+            catalogSessionIDs: [sessionID]
+        )
+
+        #expect(withExcerpt.contains("Session duration: 00:12:34"))
+        #expect(withExcerpt.contains("time="))
+        #expect(catalogOnly.contains("Session duration: 00:12:34"))
+        #expect(!catalogOnly.contains("time="))
     }
 
     @Test
@@ -785,6 +815,77 @@ struct KnowledgeQueryPlanDecodingTests {
         #expect(plan.standaloneQuery == "张三 方案")
         #expect(plan.searchQuery == "张三 方案")
         #expect(plan.clarificationQuestion == nil)
+        #expect(plan.evidenceNeeds == .transcript)
+    }
+
+    @Test
+    func evidenceNeedsSelectsCatalogWithoutALanguageKeyword() throws {
+        let catalog = try KnowledgeQAService.decodeQueryPlan(
+            #"{"search_query":"此视频","answer_constraints":[],"evidence_needs":"catalog"}"#
+        )
+        let both = try KnowledgeQAService.decodeQueryPlan(
+            #"{"search_query":"此视频 内容","answer_constraints":[],"evidence_needs":"both"}"#
+        )
+        let unknown = try KnowledgeQAService.decodeQueryPlan(
+            #"{"search_query":"此视频","answer_constraints":[],"evidence_needs":"metadata"}"#
+        )
+
+        #expect(catalog.evidenceNeeds == .catalog)
+        #expect(both.evidenceNeeds == .both)
+        #expect(unknown.evidenceNeeds == .transcript)
+        #expect(KnowledgeQAService.queryPlannerPrompt.contains("evidence_needs"))
+        #expect(KnowledgeQAService.queryPlannerPrompt.contains("recording or session itself"))
+    }
+
+    @Test
+    func catalogSessionsFollowScopeOrPriorCitations() {
+        let selected = UUID()
+        let other = UUID()
+        let hit = SessionSearchHit(
+            sessionID: other,
+            title: "Other",
+            unitID: 1,
+            kind: .transcriptChunk,
+            start: 1,
+            end: 2,
+            speakerLabels: [],
+            text: "excerpt",
+            score: 1,
+            matchSource: "test",
+            snippet: "excerpt",
+            cueIDs: [],
+            hasVideo: false,
+            language: "en",
+            quoteSpan: nil
+        )
+        let history = [
+            KnowledgeMessage(
+                conversationID: UUID(),
+                role: .assistant,
+                content: "previous",
+                citations: [
+                    KnowledgeSourceRef(
+                        sourceID: other.uuidString,
+                        sourceType: "sessionTranscript",
+                        title: "Other",
+                        uri: nil,
+                        page: nil,
+                        startTime: 1,
+                        endTime: 2,
+                        parentID: nil,
+                        chunkIndex: 1,
+                        language: nil,
+                        speaker: nil,
+                        snippet: "excerpt",
+                        matchText: nil
+                    )
+                ]
+            )
+        ]
+
+        #expect(KnowledgeQAService.catalogSessionIDs(hits: [hit], scope: .session(selected), history: history) == [selected])
+        #expect(KnowledgeQAService.catalogSessionIDs(hits: [hit], scope: .all, history: history) == [other])
+        #expect(KnowledgeQAService.catalogSessionIDs(hits: [], scope: .all, history: history) == [other])
     }
 
     @Test

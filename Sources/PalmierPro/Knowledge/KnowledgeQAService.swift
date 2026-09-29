@@ -49,18 +49,57 @@ enum KnowledgeAnswerLanguage: Equatable, Sendable {
     }
 }
 
+/// Which evidence the answer may use. Omitted planner output stays on transcript
+/// search so older plans keep their current behavior.
+enum KnowledgeEvidenceNeeds: String, Equatable, Sendable {
+    case transcript
+    case catalog
+    case both
+
+    var wantsCatalog: Bool {
+        switch self {
+        case .catalog, .both: true
+        case .transcript: false
+        }
+    }
+
+    static func parse(_ raw: String?) -> Self {
+        switch raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "catalog": .catalog
+        case "both": .both
+        default: .transcript
+        }
+    }
+}
+
 struct KnowledgeQueryPlan: Equatable, Sendable {
     let standaloneQuery: String
     let searchQuery: String
     let answerConstraints: [String]
     let clarificationQuestion: String?
+    let evidenceNeeds: KnowledgeEvidenceNeeds
+
+    init(
+        standaloneQuery: String,
+        searchQuery: String,
+        answerConstraints: [String],
+        clarificationQuestion: String?,
+        evidenceNeeds: KnowledgeEvidenceNeeds = .transcript
+    ) {
+        self.standaloneQuery = standaloneQuery
+        self.searchQuery = searchQuery
+        self.answerConstraints = answerConstraints
+        self.clarificationQuestion = clarificationQuestion
+        self.evidenceNeeds = evidenceNeeds
+    }
 
     static func fallback(for query: String) -> Self {
         Self(
             standaloneQuery: query,
             searchQuery: query,
             answerConstraints: [],
-            clarificationQuestion: nil
+            clarificationQuestion: nil,
+            evidenceNeeds: .transcript
         )
     }
 
@@ -68,6 +107,12 @@ struct KnowledgeQueryPlan: Equatable, Sendable {
         let question = clarificationQuestion?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return !question.isEmpty
     }
+}
+
+struct KnowledgeAnswerEvidence: Sendable {
+    var text: String
+    var metadata: [UUID: KnowledgeSessionContextMetadata]
+    var catalogSessionIDs: [UUID]
 }
 
 enum KnowledgeQueryUnderstandingStatus: String, Sendable {
@@ -517,8 +562,25 @@ struct KnowledgeQAService: Sendable {
         }
 
         let answerLanguage = KnowledgeAnswerLanguage.detect(from: query)
-        let citations = hits.map { Self.citation(from: $0) }
-        if hits.isEmpty {
+        var answerHits = hits
+        var citations = hits.map { Self.citation(from: $0) }
+        var catalogContext: String?
+        if hits.isEmpty, !retrievalTimedOut, !retrievalFailed, queryPlan.evidenceNeeds.wantsCatalog {
+            let evidence = await prepareAnswerEvidence(
+                hits: [],
+                scope: request.scope,
+                history: request.history,
+                evidenceNeeds: queryPlan.evidenceNeeds,
+                maxChars: maxContextChars
+            )
+            let catalogText = evidence.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !catalogText.isEmpty {
+                catalogContext = evidence.text
+                answerHits = Self.catalogHits(from: evidence)
+                citations = Self.catalogCitations(from: evidence)
+            }
+        }
+        if hits.isEmpty, catalogContext == nil {
             let message: String
             if retrievalTimedOut {
                 message = Self.retrievalTimeoutMessage(scope: request.scope, language: answerLanguage)
@@ -531,10 +593,6 @@ struct KnowledgeQAService: Sendable {
             continuation.yield(.status(
                 retrievalTimedOut ? "Search timed out" : (retrievalFailed ? "Search failed" : "No evidence found")
             ))
-            for chunk in Self.chunkForStreaming(message) {
-                try Task.checkCancellation()
-                continuation.yield(.delta(chunk))
-            }
             continuation.yield(.finished(message))
             Self.logOutcome(
                 retrievalTimedOut ? .timedOut : (retrievalFailed ? .failed : .noEvidence),
@@ -549,16 +607,20 @@ struct KnowledgeQAService: Sendable {
         Log.search.info("knowledge qa stage=composing scope=\(Self.scopeName(request.scope)) citations=\(citations.count) request_id=\(request.requestID.uuidString)")
 
         let context: String
-        do {
-            let budget = try deadline.budget(.seconds(2))
-            context = try await KnowledgeQATimeout.run(budget) {
-                await self.buildContext(hits: hits)
+        if let catalogContext {
+            context = catalogContext
+        } else {
+            do {
+                let budget = try deadline.budget(.seconds(2))
+                context = try await KnowledgeQATimeout.run(budget) {
+                    await self.buildContext(hits: hits)
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                Log.search.warning("knowledge qa stage=context-timeout request_id=\(request.requestID.uuidString)")
+                context = Self.buildContext(hits: hits, maxChars: maxContextChars)
             }
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            Log.search.warning("knowledge qa stage=context-timeout request_id=\(request.requestID.uuidString)")
-            context = Self.buildContext(hits: hits, maxChars: maxContextChars)
         }
         let system = Self.systemPrompt(
             mode: request.answerMode,
@@ -587,14 +649,10 @@ struct KnowledgeQAService: Sendable {
             continuation.yield(.recoveryActions([.account, .aiSettings]))
             let fallback = Self.excerptFallback(
                 query: query,
-                hits: hits,
+                hits: answerHits,
                 language: answerLanguage
             )
             continuation.yield(.status("Showing excerpts…"))
-            for chunk in Self.chunkForStreaming(fallback) {
-                try Task.checkCancellation()
-                continuation.yield(.delta(chunk))
-            }
             continuation.yield(.finished(fallback))
             Self.logOutcome(.fallback, request: request, detail: "hosted_credits_exhausted")
             continuation.finish()
@@ -618,14 +676,10 @@ struct KnowledgeQAService: Sendable {
             }
             let fallback = Self.excerptFallback(
                 query: query,
-                hits: hits,
+                hits: answerHits,
                 language: answerLanguage
             )
             continuation.yield(.status("Showing excerpts…"))
-            for chunk in Self.chunkForStreaming(fallback) {
-                try Task.checkCancellation()
-                continuation.yield(.delta(chunk))
-            }
             continuation.yield(.finished(fallback))
             Self.logOutcome(.fallback, request: request, detail: "answer_model")
             continuation.finish()
@@ -634,14 +688,10 @@ struct KnowledgeQAService: Sendable {
             Log.search.warning("knowledge qa stage=answer-fallback reason=\(error.localizedDescription)")
             let fallback = Self.excerptFallback(
                 query: query,
-                hits: hits,
+                hits: answerHits,
                 language: answerLanguage
             )
             continuation.yield(.status("Showing excerpts…"))
-            for chunk in Self.chunkForStreaming(fallback) {
-                try Task.checkCancellation()
-                continuation.yield(.delta(chunk))
-            }
             continuation.yield(.finished(fallback))
             Self.logOutcome(.fallback, request: request, detail: "answer_model")
             continuation.finish()
@@ -651,10 +701,6 @@ struct KnowledgeQAService: Sendable {
         try Task.checkCancellation()
         continuation.yield(.status("Showing answer…"))
         Log.search.info("knowledge qa stage=showing-answer scope=\(Self.scopeName(request.scope)) chars=\(answerText.count) request_id=\(request.requestID.uuidString)")
-        for chunk in Self.chunkForStreaming(answerText) {
-            try Task.checkCancellation()
-            continuation.yield(.delta(chunk))
-        }
         continuation.yield(.finished(answerText))
         Self.logOutcome(.completed, request: request)
         continuation.finish()
@@ -775,7 +821,7 @@ struct KnowledgeQAService: Sendable {
                     targetTranscriptLanguage,
                     allowCloud
                 )
-                Log.search.info("knowledge qa stage=planner-complete standalone_chars=\(plan.standaloneQuery.count) search_chars=\(plan.searchQuery.count) constraints=\(plan.answerConstraints.count) request_id=\(request.requestID.uuidString)")
+                Log.search.info("knowledge qa stage=planner-complete standalone_chars=\(plan.standaloneQuery.count) search_chars=\(plan.searchQuery.count) constraints=\(plan.answerConstraints.count) evidence_needs=\(plan.evidenceNeeds.rawValue) request_id=\(request.requestID.uuidString)")
                 return plan
             }
             // Query understanding is a short, bounded planning step. Using the
@@ -794,7 +840,7 @@ struct KnowledgeQAService: Sendable {
                 )
             )
             let plan = try Self.decodeQueryPlan(response)
-            Log.search.info("knowledge qa stage=planner-complete standalone_chars=\(plan.standaloneQuery.count) search_chars=\(plan.searchQuery.count) constraints=\(plan.answerConstraints.count) request_id=\(request.requestID.uuidString)")
+            Log.search.info("knowledge qa stage=planner-complete standalone_chars=\(plan.standaloneQuery.count) search_chars=\(plan.searchQuery.count) constraints=\(plan.answerConstraints.count) evidence_needs=\(plan.evidenceNeeds.rawValue) request_id=\(request.requestID.uuidString)")
             return plan
         } catch is CancellationError {
             Log.search.info("knowledge qa stage=planner-cancelled request_id=\(request.requestID.uuidString)")
@@ -912,6 +958,172 @@ struct KnowledgeQAService: Sendable {
         try await makeTextClient(allowCloud: allowCloud, useCase: .chat)
     }
 
+    /// Sessions whose catalog facts belong in the answer.
+    /// A selected scope is authoritative. Across the whole library, only sessions
+    /// already retrieved or cited in the recent conversation are included.
+    static func catalogSessionIDs(
+        hits: [SessionSearchHit],
+        scope: KnowledgeQAScope,
+        history: [KnowledgeMessage]
+    ) -> [UUID] {
+        if !scope.sessionIDs.isEmpty {
+            return scope.sessionIDs
+        }
+        var seen = Set<UUID>()
+        var ids: [UUID] = []
+        for hit in hits where seen.insert(hit.sessionID).inserted {
+            ids.append(hit.sessionID)
+        }
+        for message in history.suffix(6) {
+            for citation in message.citations {
+                guard let id = citation.sessionUUID, seen.insert(id).inserted else { continue }
+                ids.append(id)
+            }
+        }
+        return ids
+    }
+
+    static func isTranscriptEvidence(_ hit: SessionSearchHit) -> Bool {
+        guard hit.kind != .sessionCard else { return false }
+        let text = hit.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !text.isEmpty
+    }
+
+    func prepareAnswerEvidence(
+        hits: [SessionSearchHit],
+        scope: KnowledgeQAScope,
+        history: [KnowledgeMessage],
+        evidenceNeeds: KnowledgeEvidenceNeeds,
+        maxChars: Int
+    ) async -> KnowledgeAnswerEvidence {
+        let transcriptHits = hits.filter(Self.isTranscriptEvidence)
+        let catalogIDs = Self.catalogSessionIDs(hits: hits, scope: scope, history: history)
+        let includeCatalog = evidenceNeeds.wantsCatalog || !transcriptHits.isEmpty
+        var loadIDs: [UUID] = []
+        var seen = Set<UUID>()
+        if includeCatalog {
+            for id in catalogIDs where seen.insert(id).inserted {
+                loadIDs.append(id)
+            }
+        }
+        for hit in transcriptHits where seen.insert(hit.sessionID).inserted {
+            loadIDs.append(hit.sessionID)
+        }
+        let metadata = await loadSessionMetadata(ids: loadIDs, hits: hits)
+        let text = KnowledgeContextBuilder.build(
+            anchors: transcriptHits,
+            metadata: metadata,
+            neighbors: [:],
+            maxChars: maxChars,
+            catalogSessionIDs: includeCatalog ? catalogIDs : []
+        )
+        return KnowledgeAnswerEvidence(
+            text: text,
+            metadata: metadata,
+            catalogSessionIDs: includeCatalog ? catalogIDs : []
+        )
+    }
+
+    static func catalogHits(from evidence: KnowledgeAnswerEvidence) -> [SessionSearchHit] {
+        evidence.catalogSessionIDs.enumerated().compactMap { index, id in
+            guard let metadata = evidence.metadata[id] else { return nil }
+            return SessionSearchHit(
+                sessionID: id,
+                title: metadata.title,
+                unitID: -(index + 1),
+                kind: .sessionCard,
+                start: nil,
+                end: metadata.duration > 0 ? metadata.duration : nil,
+                speakerLabels: [],
+                text: metadata.title,
+                score: 1,
+                matchSource: "catalog",
+                snippet: metadata.title,
+                cueIDs: [],
+                hasVideo: false,
+                language: nil,
+                quoteSpan: nil,
+                duration: metadata.duration,
+                sourceOrigin: metadata.sourceOrigin,
+                sessionType: metadata.sessionType,
+                sourceCreatedAt: metadata.sourceCreatedAt,
+                sourceModifiedAt: metadata.sourceModifiedAt
+            )
+        }
+    }
+
+    static func catalogCitations(from evidence: KnowledgeAnswerEvidence) -> [KnowledgeSourceRef] {
+        evidence.catalogSessionIDs.compactMap { id in
+            guard let metadata = evidence.metadata[id] else { return nil }
+            return catalogCitation(sessionID: id, metadata: metadata)
+        }
+    }
+
+    static func catalogCitation(
+        sessionID: UUID,
+        metadata: KnowledgeSessionContextMetadata
+    ) -> KnowledgeSourceRef {
+        var parts = [metadata.title]
+        if metadata.duration > 0 {
+            parts.append(KnowledgeContextBuilder.formatDuration(metadata.duration))
+        }
+        let snippet = parts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+        return KnowledgeSourceRef(
+            sourceID: sessionID.uuidString,
+            sourceType: "sessionCard",
+            title: metadata.title.isEmpty ? "Untitled session" : metadata.title,
+            uri: nil,
+            page: nil,
+            startTime: nil,
+            endTime: nil,
+            parentID: nil,
+            chunkIndex: nil,
+            language: nil,
+            speaker: nil,
+            snippet: snippet.isEmpty ? metadata.title : snippet,
+            matchText: nil
+        )
+    }
+
+    private func loadSessionMetadata(
+        ids: [UUID],
+        hits: [SessionSearchHit]
+    ) async -> [UUID: KnowledgeSessionContextMetadata] {
+        guard !ids.isEmpty else { return [:] }
+        let store = await MainActor.run { SessionIndexCoordinator.shared.searchService.store }
+        var metadata: [UUID: KnowledgeSessionContextMetadata] = [:]
+        for id in ids {
+            let hit = hits.first { $0.sessionID == id }
+            if let card = try? await store.sessionCard(id: id) {
+                // Keep the summary out of this block. It is spoken-content context,
+                // and a recording question should be answered from catalog fields.
+                metadata[id] = KnowledgeSessionContextMetadata(
+                    title: card.title,
+                    summary: nil,
+                    duration: card.duration,
+                    sessionType: card.sessionType,
+                    sourceOrigin: card.sourceOrigin,
+                    sourceCreatedAt: card.sourceCreatedAt,
+                    sourceModifiedAt: card.sourceModifiedAt
+                )
+            } else if let hit {
+                metadata[id] = KnowledgeSessionContextMetadata(
+                    title: hit.title,
+                    summary: nil,
+                    duration: hit.duration,
+                    sessionType: hit.sessionType,
+                    sourceOrigin: hit.sourceOrigin,
+                    sourceCreatedAt: hit.sourceCreatedAt,
+                    sourceModifiedAt: hit.sourceModifiedAt
+                )
+            }
+        }
+        return metadata
+    }
+
     static func buildContext(hits: [SessionSearchHit], maxChars: Int) -> String {
         // Search commonly returns several chunks from one session.  Do not
         // use `Dictionary(uniqueKeysWithValues:)` here: duplicate session IDs
@@ -999,10 +1211,13 @@ struct KnowledgeQAService: Sendable {
         return """
         You are Vox Studio Knowledge Base assistant.
         \(scopeLine)
-        Use only the provided transcript excerpts as evidence.
+        Use only the provided evidence.
+        Catalog facts (session title, duration, type, origin, and dates) answer questions about the recording or session itself.
+        A line beginning with "Session duration:" is that session's duration. When it is present, answer with it. When a question about the recording has no session duration, say the duration is unavailable.
+        Transcript timestamps on lines beginning with "time=" locate speech inside the recording. They are not the recording's duration. Do not estimate a total duration from the latest excerpt timestamp.
         The user's output constraints are instructions about how to format the answer, not evidence and not search terms. Follow them when they are compatible with the evidence.
         Treat an explicit length or format constraint as a required contract. Before finalizing, verify the answer satisfies it without adding a preface, explanation of the constraint, or extra conclusion.
-        If the excerpts are insufficient, say you could not find enough evidence and list the closest sources.
+        If the question is about what was said and the excerpts are insufficient, say you could not find enough evidence and list the closest sources.
         Do not fabricate quotes, speakers, or timestamps.
         The app presents readable, clickable sources below the answer. Do not append bare numbers as citations to prose. If an inline citation is essential, use only [n] matching the excerpt numbers; never emit a standalone token such as `45` or `123`.
         \(style)
@@ -1017,9 +1232,14 @@ struct KnowledgeQAService: Sendable {
         Separate retrieval semantics from instructions about the answer's length, language, style, citations, or format.
         If a pronoun or reference could reasonably match more than one person, plan, meeting, or other entity, do not guess. Return a clarification_question and leave search_query as the current question.
         Return strict JSON only, with this shape:
-        {"standalone_query":"fully resolved question with referents filled in","search_query":"semantic terms and entities only","answer_constraints":["output requirements"],"clarification_question":null}
+        {"standalone_query":"fully resolved question with referents filled in","search_query":"semantic terms and entities only","answer_constraints":["output requirements"],"clarification_question":null,"evidence_needs":"transcript"}
         standalone_query is the current question with people, plans, meetings, and times resolved. It is used for skill selection and routing, not as evidence.
         search_query must contain only topics, entities, relationships, and time needed to find evidence. Remove answer-format instructions.
+        evidence_needs is one of "transcript", "catalog", or "both".
+        Use "catalog" when the question asks about the recording or session itself: its length, date, type, origin, title, counts, or which sessions match those properties.
+        Use "transcript" when the question asks what was said, decided, or described.
+        Use "both" when the answer needs recording facts and spoken content.
+        This choice is about the kind of evidence, not the language of the question.
         When the planner input supplies a target transcript language, write search_query in that language and script because the indexed transcript is stored in its source language. Translate the semantic search intent when needed, but keep named entities, acronyms, and proper nouns in their original spelling unless the transcript language clearly uses a localized form. This rule applies only to search_query; keep standalone_query and answer_constraints in the user's own wording.
         If no target transcript language is supplied, keep search_query in the language and script used by the current question. Do not translate or transliterate it unless the user explicitly asks for translation.
         Do not answer the question. Do not invent entities. If there is no explicit output constraint, return an empty array for answer_constraints. If no clarification is needed, set clarification_question to null.
@@ -1096,12 +1316,14 @@ struct KnowledgeQAService: Sendable {
             let searchQuery: String
             let answerConstraints: [String]
             let clarificationQuestion: String?
+            let evidenceNeeds: String?
 
             enum CodingKeys: String, CodingKey {
                 case standaloneQuery = "standalone_query"
                 case searchQuery = "search_query"
                 case answerConstraints = "answer_constraints"
                 case clarificationQuestion = "clarification_question"
+                case evidenceNeeds = "evidence_needs"
             }
 
             init(from decoder: Decoder) throws {
@@ -1110,6 +1332,7 @@ struct KnowledgeQAService: Sendable {
                 searchQuery = try container.decode(String.self, forKey: .searchQuery)
                 answerConstraints = try container.decodeIfPresent([String].self, forKey: .answerConstraints) ?? []
                 clarificationQuestion = try container.decodeIfPresent(String.self, forKey: .clarificationQuestion)
+                evidenceNeeds = try container.decodeIfPresent(String.self, forKey: .evidenceNeeds)
             }
         }
 
@@ -1146,7 +1369,8 @@ struct KnowledgeQAService: Sendable {
             standaloneQuery: standaloneQuery,
             searchQuery: searchQuery,
             answerConstraints: Array(constraints),
-            clarificationQuestion: clarificationQuestion
+            clarificationQuestion: clarificationQuestion,
+            evidenceNeeds: KnowledgeEvidenceNeeds.parse(wire.evidenceNeeds)
         )
     }
 

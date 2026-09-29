@@ -1,7 +1,9 @@
 import Foundation
 
-extension Notification.Name {
-    static let agentAPIKeyChanged = Notification.Name("agentAPIKeyChanged")
+enum AgentAPIProtocol: Equatable, Sendable {
+    case openAIResponses
+    case openAICompatible
+    case anthropic
 }
 
 enum AgentProvider: String, CaseIterable, Sendable {
@@ -15,49 +17,6 @@ enum AgentProvider: String, CaseIterable, Sendable {
         }
     }
 
-    private var credentialStorage: (account: String, environment: String) {
-        switch self {
-        case .anthropic: ("anthropic-api-key", "ANTHROPIC_API_KEY")
-        case .openAI: ("openai-api-key", "OPENAI_API_KEY")
-        }
-    }
-
-    fileprivate var storedAPIKey: String {
-        #if DEBUG
-        let environmentValue = ProcessInfo.processInfo.environment[credentialStorage.environment]?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !environmentValue.isEmpty { return environmentValue }
-        #endif
-        do {
-            return try KeychainStore.loadProtected(account: credentialStorage.account).get() ?? ""
-        } catch {
-            return ""
-        }
-    }
-
-    var credentialStatus: CredentialLoadResult {
-        KeychainStore.loadProtected(account: credentialStorage.account)
-    }
-
-    @concurrent
-    func loadAPIKey() async -> String {
-        storedAPIKey
-    }
-
-    @concurrent
-    func loadAPIKeyResult() async -> CredentialLoadResult {
-        credentialStatus
-    }
-
-    @concurrent
-    func setAPIKey(_ key: String?) async throws {
-        if let key {
-            try KeychainStore.saveProtected(key, account: credentialStorage.account)
-        } else {
-            try KeychainStore.deleteProtected(account: credentialStorage.account)
-        }
-        NotificationCenter.default.post(name: .agentAPIKeyChanged, object: rawValue)
-    }
 }
 
 enum AgentReasoningEffort: String, CaseIterable, Sendable {
@@ -321,38 +280,6 @@ enum AgentRoute: Equatable, Sendable {
     case unavailable
 }
 
-enum AgentRouting {
-    static func route(
-        model: AgentModel,
-        credentials: AgentCredentialSnapshot,
-        hasHostedCredits: Bool,
-        hasPaidPlan: Bool
-    ) -> AgentRoute {
-        if !credentials[model.provider].isEmpty { return .direct }
-        if model.requiresPaidHostedPlan && !hasPaidPlan { return .unavailable }
-        return hasHostedCredits ? .hosted : .unavailable
-    }
-}
-
-struct AgentCredentialSnapshot: Equatable, Sendable {
-    private let apiKeys: [AgentProvider: String]
-
-    init(_ apiKeys: [AgentProvider: String] = [:]) {
-        self.apiKeys = apiKeys
-    }
-
-    subscript(provider: AgentProvider) -> String {
-        apiKeys[provider, default: ""]
-    }
-
-    @concurrent
-    static func loadFromKeychain() async -> AgentCredentialSnapshot {
-        AgentCredentialSnapshot(Dictionary(uniqueKeysWithValues: AgentProvider.allCases.map {
-            ($0, $0.storedAPIKey)
-        }))
-    }
-}
-
 enum AgentStopReason: String, Sendable {
     case endTurn = "end_turn"
     case toolUse = "tool_use"
@@ -405,8 +332,8 @@ enum AgentStreamEvent: Equatable, Sendable {
     case thinkingDelta(String)
     case thinkingSignature(String)
     case redactedThinking(String)
-    case reasoningSummaryDelta(String)
-    case reasoningComplete(itemID: String?, summary: String, encryptedContent: String)
+    case reasoningSummaryDelta(String, model: AgentModel? = nil)
+    case reasoningComplete(itemID: String?, summary: String, encryptedContent: String, model: AgentModel? = nil)
     case textDelta(String)
     case toolUseComplete(id: String, name: String, inputJSON: String)
     case messageStop(stopReason: AgentStopReason)
@@ -424,9 +351,22 @@ enum AgentClientTransportError: LocalizedError {
             "Add your API key in Settings to use AI chat."
         case .insufficientCredits:
             "This AI service cannot complete the request right now. Try again later."
-        case .httpError, .streamError:
-            "This AI service cannot complete the request right now. Try again later."
+        case .httpError(let provider, let status, let body):
+            Self.httpErrorDescription(provider: provider, status: status, body: body)
+        case .streamError(let provider, let message):
+            "\(provider.displayName): \(message)"
         }
+    }
+
+    private static func httpErrorDescription(provider: AgentProvider, status: Int, body: String) -> String {
+        let prefix = "\(provider.displayName) request failed (HTTP \(status))."
+        guard let root = try? JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any],
+              let error = root["error"] as? [String: Any],
+              let message = error["message"] as? String,
+              !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return prefix
+        }
+        return prefix + " " + LLMDiagnostics.preview(Data(message.utf8), limit: 600)
     }
 }
 
@@ -462,11 +402,12 @@ enum AgentHTTP {
 
     static func bytes(
         for request: URLRequest,
+        session: URLSession = .shared,
         makeError: (Int, String) -> any Error
     ) async throws -> URLSession.AsyncBytes {
         var request = request
         request.timeoutInterval = streamIdleTimeout
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        let (bytes, response) = try await session.bytes(for: request)
         guard let response = response as? HTTPURLResponse, response.statusCode >= 400 else {
             return bytes
         }

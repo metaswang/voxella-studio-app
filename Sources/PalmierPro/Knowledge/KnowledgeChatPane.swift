@@ -6,6 +6,9 @@ struct KnowledgeChatPane: View {
     @Bindable var controller: KnowledgeBaseController
     @Bindable private var workbench = WorkbenchStore.shared
     @Bindable private var models = LocalModelManager.shared
+    @Bindable private var aiSettings = LLMSettingsStore.shared
+    @Bindable private var catalog = ProviderModelCatalog.shared
+    @State private var showAIInfo = false
     @FocusState private var inputFocused: Bool
     @State private var isClearHovered = false
 
@@ -49,6 +52,10 @@ struct KnowledgeChatPane: View {
         .background(chatBackground)
         .onAppear {
             controller.syncModelPlan(livePlan)
+        }
+        .task { if aiSettings.useBYOK { await catalog.refresh(settings: aiSettings) } }
+        .onReceive(NotificationCenter.default.publisher(for: .aiConfigurationDidChange)) { _ in
+            Task { if aiSettings.useBYOK { await catalog.refresh(settings: aiSettings) } }
         }
         .onChange(of: livePlan) { _, newPlan in
             controller.syncModelPlan(newPlan)
@@ -540,10 +547,65 @@ struct KnowledgeChatPane: View {
             }
 
             HStack(spacing: AppTheme.Spacing.sm) {
-                KnowledgeComposerControlLabel(
-                    title: L10n.string("AI assistant"),
-                    systemImage: "sparkles"
-                )
+                if aiSettings.useBYOK {
+                    Menu {
+                        ForEach(aiSettings.providers.filter { $0.agentProtocol != nil }) { provider in
+                            Section(provider.normalizedDisplayName) {
+                                ForEach(aiSettings.chatModelOptions.filter { option in
+                                    guard option.reference.hasPrefix(provider.normalizedPrefix + "/") else { return false }
+                                    if provider.agentProtocol == .openAICompatible {
+                                        return option.modelName.hasPrefix("openai/gpt-")
+                                            || (option.modelName.hasPrefix("anthropic/claude-") && ["haiku", "sonnet", "opus"].contains(where: { option.modelName.contains($0) }))
+                                    }
+                                    return true
+                                }) { option in
+                                    Button {
+                                        aiSettings.selectChatModel(option)
+                                    } label: {
+                                        if option.id == aiSettings.effectiveChatModelOption?.id { Label(option.modelName, systemImage: "checkmark") }
+                                        else { Text(verbatim: option.modelName) }
+                                    }.disabled(!option.isAvailable)
+                                }
+                                if let error = catalog.errors[provider.id] { Text(L10n.display(error)) }
+                            }
+                        }
+                        Divider()
+                        Button(L10n.string("Refresh models"), systemImage: "arrow.clockwise") {
+                            Task { await catalog.refresh(settings: aiSettings, force: true) }
+                        }.disabled(!catalog.loading.isEmpty)
+                        Button(L10n.string("AI Service settings…")) { controller.performRecoveryAction(.aiSettings) }
+                    } label: {
+                        KnowledgeComposerControlLabel(title: aiSettings.effectiveChatModelOption.map { $0.providerName + " · " + $0.modelName } ?? L10n.string("Configure BYOK"), systemImage: "chevron.down")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .disabled(controller.isAnswering)
+                    if !aiSettings.chatReasoningEffortsForCurrentModel.isEmpty {
+                        Menu {
+                            ForEach(aiSettings.chatReasoningEffortsForCurrentModel) { effort in
+                                Button(L10n.string(effort.labelKey)) { aiSettings.chatReasoningEffort = effort }
+                            }
+                        } label: {
+                            KnowledgeComposerControlLabel(title: L10n.string(aiSettings.effectiveChatReasoningEffort.labelKey), systemImage: "brain")
+                        }.menuStyle(.borderlessButton).fixedSize().disabled(controller.isAnswering)
+                    }
+                } else {
+                    KnowledgeComposerControlLabel(title: L10n.string("AI assistant"), systemImage: "sparkles")
+                    Button { showAIInfo.toggle() } label: { Image(systemName: "info.circle") }
+                        .buttonStyle(.plain)
+                        .help(L10n.string("About AI assistant"))
+                        .popover(isPresented: $showAIInfo) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(L10n.string("About AI assistant")).font(.headline)
+                                Text(L10n.string("Cloud automatically chooses an available AI model. Sign in to ask questions; usage follows your plan and consumes cloud credits. Relevant knowledge excerpts and your question are sent to the cloud service to generate an answer. Enable BYOK to choose a model and use your own provider key; requests then go to that provider and are billed by it."))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                HStack {
+                                    Button(L10n.string("Account")) { showAIInfo = false; controller.performRecoveryAction(.account) }
+                                    Button(L10n.string("AI Service")) { showAIInfo = false; controller.performRecoveryAction(.aiSettings) }
+                                }
+                            }.padding().frame(width: 360)
+                        }
+                }
                 Spacer(minLength: AppTheme.Spacing.sm)
             }
         }

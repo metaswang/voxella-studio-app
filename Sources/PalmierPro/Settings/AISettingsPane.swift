@@ -31,7 +31,7 @@ enum ProviderConnectionState: Equatable {
 struct AISettingsPane: View {
     @Bindable private var settings = LLMSettingsStore.shared
     @Bindable private var graphSettings = KnowledgeGraphSettings.shared
-    @Binding private var connectionStates: [UUID: ProviderConnectionState]
+    @Bindable private var connections = ProviderConnectivityStore.shared
     @State private var isAdvancedExpanded = false
     @State private var selectedProviderID: UUID?
     @State private var providerDraft = LLMProviderProfile.defaultOpenAI
@@ -59,10 +59,6 @@ struct AISettingsPane: View {
         case fallbackModels(LLMUseCase)
     }
 
-    init(connectionStates: Binding<[UUID: ProviderConnectionState]> = .constant([:])) {
-        _connectionStates = connectionStates
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
             SettingsSection(title: L10n.string("AI access")) {
@@ -72,9 +68,6 @@ struct AISettingsPane: View {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
                     SettingsSection(title: "Providers") {
                         providerConfiguration
-                    }
-                    SettingsSection(title: L10n.string("Agent Chat BYOK")) {
-                        agentCredentialsConfiguration
                     }
                     SettingsSection(title: "Task Models") {
                         taskModelConfiguration
@@ -96,6 +89,10 @@ struct AISettingsPane: View {
         }
         .onDisappear {
             persistDrafts()
+        }
+        .task { await connections.refresh(settings: settings) }
+        .onReceive(NotificationCenter.default.publisher(for: .aiConfigurationDidChange)) { _ in
+            Task { await connections.refresh(settings: settings) }
         }
         .confirmationDialog(
             L10n.format("Remove %@?", providerPendingRemoval?.displayName ?? L10n.string("provider")),
@@ -149,18 +146,6 @@ struct AISettingsPane: View {
             : L10n.string("Sign in to use hosted AI, or enable BYOK to use your own keys.")
     }
 
-    private var agentCredentialsConfiguration: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-            Text(L10n.string("Use your own provider keys for AI chat. They are stored in the macOS Keychain."))
-                .font(.system(size: AppTheme.FontSize.sm))
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
-                .fixedSize(horizontal: false, vertical: true)
-            ForEach(AgentProvider.allCases, id: \.self) { provider in
-                BYOKAgentKeyRow(provider: provider)
-            }
-        }
-    }
-
     private var providerConfiguration: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             HStack(alignment: .top, spacing: AppTheme.Spacing.lg) {
@@ -204,6 +189,16 @@ struct AISettingsPane: View {
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .fixedSize(horizontal: false, vertical: true)
+                if let record = connections.records[providerDraft.id] {
+                    Text(record.testedAt, format: .dateTime.year().month().day().hour().minute())
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                }
+                if let error = connections.persistenceError {
+                    Text(L10n.string("Could not save connection status:") + " " + error)
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Status.errorColor)
+                }
             }
 
             Spacer(minLength: AppTheme.Spacing.sm)
@@ -400,8 +395,8 @@ struct AISettingsPane: View {
             // Only edits to the currently selected provider invalidate a
             // previous connectivity result.
             if oldValue.id == newValue.id,
-               oldValue.provider != newValue.provider || oldValue.baseURL != newValue.baseURL {
-                connectionStates[newValue.id] = .untested
+               oldValue.normalizedBaseURL != newValue.normalizedBaseURL {
+                connections.invalidate(newValue.id)
             }
             persistProviderIfValid()
             if routingChanged {
@@ -428,14 +423,7 @@ struct AISettingsPane: View {
                     .focused($focusedField, equals: .APIKey)
                     .onSubmit { flushCredentialIfReady() }
                     .onPasteCommand(of: [.plainText], perform: pasteCredential)
-                    .onChange(of: APIKeyDraft) { _, newValue in
-                        // Clearing the draft is also used when changing rows or
-                        // after a successful save. Only a newly entered key is
-                        // a meaningful credential change here.
-                        if selectedProviderID != nil,
-                           !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            connectionStates[providerDraft.id] = .untested
-                        }
+                    .onChange(of: APIKeyDraft) { _, _ in
                         scheduleCredentialAutosave()
                     }
                     .disabled(isSavingCredential || selectedProviderID == nil)
@@ -619,7 +607,7 @@ struct AISettingsPane: View {
     }
 
     private func connectionState(for providerID: UUID) -> ProviderConnectionState {
-        connectionStates[providerID] ?? .untested
+        connections.states[providerID] ?? .untested
     }
 
     private func connectionStateColor(for providerID: UUID) -> Color {
@@ -679,54 +667,26 @@ struct AISettingsPane: View {
     }
 
     private func testSelectedProviderConnection() {
-        guard let providerID = selectedProviderID,
-              providerValidationMessage == nil else { return }
-
+        guard let providerID = selectedProviderID, providerValidationMessage == nil else { return }
         persistProviderIfValid()
         guard let profile = settings.provider(id: providerID) else { return }
         let draftKey = APIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let localEndpoint = isLocalProvider(profile)
-        connectionStates[providerID] = .testing
+        isSavingCredential = true
         statusMessage = nil
-        statusIsError = false
-
         Task { @MainActor in
+            defer { isSavingCredential = false }
             do {
-                let key: String
-                if draftKey.isEmpty {
-                    if let storedKey = try await settings.loadAPIKey(for: providerID), !storedKey.isEmpty {
-                        key = storedKey
-                    } else if localEndpoint {
-                        key = ""
-                    } else {
-                        throw LLMProviderConnectionError.missingAPIKey
-                    }
-                } else {
+                if !draftKey.isEmpty {
                     try await settings.saveAPIKey(draftKey, providerID: providerID)
-                    key = draftKey
-                    APIKeyDraft = ""
+                    if selectedProviderID == providerID { APIKeyDraft = "" }
+                } else if settings.apiKeySaveState(for: providerID) == .saving {
+                    throw LLMProviderConnectionError.transport(L10n.string("Wait for the API key to finish saving, then test again."))
                 }
-
-                try await LLMProviderConnectivityTester().test(profile: profile, apiKey: key)
-                connectionStates[providerID] = .connected
-                if selectedProviderID == providerID {
-                    statusMessage = L10n.string("Connection successful. This provider is ready to use.")
-                    statusIsError = false
-                }
-            } catch is CancellationError {
-                guard selectedProviderID == providerID else { return }
-                connectionStates[providerID] = .untested
+                let key = try await settings.loadAPIKey(for: providerID) ?? ""
+                await connections.test(profile: profile, key: key, settings: settings)
             } catch {
-                let isRateLimited = error is LLMProviderConnectionError
-                    && (error as? LLMProviderConnectionError) == .rateLimited
-                connectionStates[providerID] = .failed(
-                    error.localizedDescription,
-                    isRateLimited: isRateLimited
-                )
-                if selectedProviderID == providerID {
-                    statusMessage = error.localizedDescription
-                    statusIsError = true
-                }
+                statusIsError = true
+                statusMessage = error.localizedDescription
             }
         }
     }
@@ -798,7 +758,9 @@ struct AISettingsPane: View {
             ? LLMOpenRouterRouting(enabled: true, sort: .latency)
             : .init()
         prefixFollowsName = true
-        connectionStates[providerDraft.id] = .untested
+        if selectedProvider?.normalizedBaseURL != providerDraft.normalizedBaseURL {
+            connections.invalidate(providerDraft.id)
+        }
     }
 
     private func persistProviderIfValid() {
@@ -882,7 +844,7 @@ struct AISettingsPane: View {
         settings.cancelPendingAPIKeySave(for: providerID)
         APIKeyDraft = ""
         maskedAPIKey = ""
-        connectionStates[providerID] = .untested
+        connections.invalidate(providerID)
         isSavingCredential = true
         Task {
             defer { isSavingCredential = false }
@@ -997,162 +959,6 @@ struct AISettingsPane: View {
         } catch {
             statusIsError = true
             statusMessage = error.localizedDescription
-        }
-    }
-}
-
-private struct BYOKAgentKeyRow: View {
-    let provider: AgentProvider
-
-    @State private var hasKey = false
-    @State private var maskedKey = ""
-    @State private var draft = ""
-    @State private var statusMessage: String?
-    @State private var statusIsError = false
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
-            HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.sm) {
-                Text(provider.keyTitle)
-                    .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.medium))
-                    .foregroundStyle(AppTheme.Text.primaryColor)
-                Button {
-                    NSWorkspace.shared.open(provider.keyURL, configuration: .init(), completionHandler: nil)
-                } label: {
-                    HStack(spacing: AppTheme.Spacing.xxs) {
-                        Text(provider.keyLinkTitle)
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
-                    }
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Accent.link)
-                }
-                .buttonStyle(.plain)
-                .fixedSize()
-            }
-            HStack(spacing: AppTheme.Spacing.sm) {
-                SecureField(
-                    hasKey ? maskedKey : provider.keyPlaceholder,
-                    text: $draft
-                )
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: AppTheme.FontSize.sm, design: .monospaced))
-                .focused($isFocused)
-                .onSubmit(save)
-
-                if !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Button(L10n.string("Save"), action: save)
-                        .buttonStyle(.capsule(.prominent, size: .regular))
-                        .controlSize(.large)
-                } else if hasKey {
-                    Button(role: .destructive, action: remove) {
-                        Image(systemName: "trash")
-                            .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
-                    }
-                    .buttonStyle(.capsule(.secondary, size: .regular))
-                    .controlSize(.large)
-                    .help(L10n.string("Remove API key"))
-                }
-            }
-
-            if let statusMessage {
-                Text(L10n.display(statusMessage))
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(statusIsError ? AppTheme.Status.errorColor : AppTheme.Text.tertiaryColor)
-            }
-        }
-        .onAppear {
-            Task { await reload() }
-        }
-    }
-
-    private func save() {
-        let key = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { return }
-        draft = ""
-        isFocused = false
-        Task {
-            do {
-                try await provider.setAPIKey(key)
-                apply(key)
-                statusIsError = false
-                statusMessage = nil
-            } catch {
-                statusIsError = true
-                statusMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private func remove() {
-        draft = ""
-        Task {
-            do {
-                try await provider.setAPIKey(nil)
-                apply("")
-                statusIsError = false
-                statusMessage = nil
-            } catch {
-                statusIsError = true
-                statusMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private func reload() async {
-        let result = await provider.loadAPIKeyResult()
-        switch result {
-        case .present(let key):
-            apply(key)
-            statusIsError = false
-            statusMessage = nil
-        case .notConfigured:
-            apply("")
-            statusIsError = false
-            statusMessage = nil
-        case .temporarilyUnavailable, .configurationError, .corrupted:
-            apply("")
-            statusIsError = true
-            statusMessage = result.statusMessage
-        }
-    }
-
-    private func apply(_ key: String) {
-        hasKey = !key.isEmpty
-        maskedKey = key.count > 4
-            ? String(repeating: "•", count: 36) + key.suffix(4)
-            : String(repeating: "•", count: 32)
-    }
-}
-
-@MainActor
-private extension AgentProvider {
-    var keyTitle: String {
-        switch self {
-        case .anthropic: L10n.string("Anthropic API Key")
-        case .openAI: L10n.string("OpenAI API Key")
-        }
-    }
-
-    var keyLinkTitle: String {
-        switch self {
-        case .anthropic: L10n.string("Get Anthropic API key")
-        case .openAI: L10n.string("Get OpenAI API key")
-        }
-    }
-
-    var keyPlaceholder: String {
-        switch self {
-        case .anthropic: "sk-ant-…"
-        case .openAI: "sk-…"
-        }
-    }
-
-    var keyURL: URL {
-        switch self {
-        case .anthropic: URL(string: "https://console.anthropic.com/settings/keys")!
-        case .openAI: URL(string: "https://platform.openai.com/api-keys")!
         }
     }
 }

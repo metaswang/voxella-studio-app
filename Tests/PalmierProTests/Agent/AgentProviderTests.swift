@@ -105,15 +105,6 @@ struct AgentProviderTests {
         #expect(try JSONDecoder().decode(AgentModel.self, from: encoded) == model)
     }
 
-    @Test func routingUsesOnlyTheSelectedProvidersKey() {
-        #expect(route(.sonnet5, key: .openAI) == .unavailable)
-        #expect(route(.luna, key: .anthropic) == .unavailable)
-        #expect(route(.fable5, key: .anthropic, hasCredits: true) == .direct)
-        #expect(route(.terra, hasCredits: true) == .hosted)
-        #expect(route(.fable5, hasCredits: true) == .unavailable)
-        #expect(route(.sol, hasCredits: true, isPaid: true) == .hosted)
-    }
-
     @Test func anthropicReasoningUsesMediumDefaultAndExplicitEffort() throws {
         for model in AgentModel.allCases.filter({ $0.provider == .anthropic }) {
             let body = AnthropicRequestBody.build(
@@ -121,7 +112,7 @@ struct AgentProviderTests {
             let outputConfig = try #require(body["output_config"] as? [String: String])
             let thinking = try #require(body["thinking"] as? [String: String])
             #expect(outputConfig["effort"] == "medium")
-            #expect(thinking == ["type": "adaptive", "display": "summarized"])
+            #expect(thinking == ["type": "adaptive"])
             #expect(body["max_tokens"] as? Int == 64_000)
         }
         let explicit = AnthropicRequestBody.build(
@@ -237,15 +228,56 @@ struct AgentProviderTests {
         }
     }
 
-    private func route(
-        _ model: AgentModel,
-        key: AgentProvider? = nil, hasCredits: Bool = false, isPaid: Bool = false
-    ) -> AgentRoute {
-        AgentRouting.route(
-            model: model,
-            credentials: AgentCredentialSnapshot(key.map { [$0: "key"] } ?? [:]),
-            hasHostedCredits: hasCredits, hasPaidPlan: isPaid
+    @Test func openAICompatibleRequestMapsToolsAndStreamEvents() throws {
+        let profile = LLMProviderProfile(
+            provider: .openRouter,
+            prefix: "openrouter",
+            displayName: "OpenRouter",
+            baseURL: "https://openrouter.ai/api/v1",
+            model: "openai/gpt-5-nano"
         )
+        let configuration = LLMRuntimeConfiguration(
+            profile: profile,
+            modelIdentifier: "openrouter/openai/gpt-5-nano",
+            modelName: "openai/gpt-5-nano",
+            endpoint: URL(string: "https://openrouter.ai/api/v1/chat/completions")!,
+            apiKey: "test-key",
+            useCase: .chat,
+            reasoningEffort: .minimal
+        )
+        let body = OpenAICompatibleAgentRequestBody.build(
+            configuration: configuration,
+            system: "Instructions",
+            tools: [AgentToolSchema(name: "inspect", description: "Inspect", inputSchema: ["type": "object"])],
+            messages: [AgentRequestMessage(role: .user, content: [.content(.text("Hello"))])]
+        )
+        #expect(body["model"] as? String == "openai/gpt-5-nano")
+        #expect(body["stream"] as? Bool == true)
+        #expect((body["tools"] as? [[String: Any]])?.count == 1)
+
+        var parser = OpenAICompatibleStreamParser()
+        #expect(try parser.consume(line: #"data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}"#) == [.textDelta("Hello")])
+        #expect(try parser.consume(line: #"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"inspect","arguments":"{}"}}]},"finish_reason":null}]}"#).isEmpty)
+        #expect(try parser.consume(line: #"data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#) == [
+            .toolUseComplete(id: "call_1", name: "inspect", inputJSON: "{}"),
+            .messageStop(stopReason: .toolUse),
+        ])
+        try parser.finish()
+    }
+
+    @Test func anthropicProviderUsesMessagesEndpointAndNativeBody() throws {
+        let profile = LLMProviderProfile(
+            provider: .anthropic,
+            baseURL: "https://api.anthropic.com/v1",
+            model: "claude-sonnet-5"
+        )
+        #expect(try profile.completionEndpoint() == URL(string: "https://api.anthropic.com/v1/messages")!)
+        let body = AnthropicRequestBody.build(
+            modelName: "claude-sonnet-5", reasoningEffort: .medium,
+            system: "Instructions", tools: [], messages: []
+        )
+        #expect(body["model"] as? String == "claude-sonnet-5")
+        #expect(body["thinking"] as? [String: String] == ["type": "adaptive"])
     }
 
     private func openAIBody(
@@ -270,7 +302,7 @@ struct AgentProviderTests {
 struct AgentProviderPersistenceTests {
     @Test func hostedModelsCanBeSelectedWithoutProviderAPIKeys() throws {
         try withDefaults { defaults in
-            let service = AgentService(userDefaults: defaults)
+            let service = AgentService(userDefaults: defaults, transportOverride: .hosted)
 
             #expect(service.canSelectModel(.sonnet5, transport: .hosted))
             #expect(service.canSelectModel(.terra, transport: .hosted))
@@ -288,7 +320,7 @@ struct AgentProviderPersistenceTests {
 
     @Test func reasoningSelectionsPersistAndRestorePerModel() throws {
         try withDefaults { defaults in
-            let service = AgentService(userDefaults: defaults)
+            let service = AgentService(userDefaults: defaults, transportOverride: .hosted)
             let selections: [(AgentModel, AgentReasoningEffort)] = [
                 (.sol, .high), (.sonnet5, .max), (.terra, .none),
             ]
@@ -300,7 +332,7 @@ struct AgentProviderPersistenceTests {
                 service.model = model
                 #expect(service.reasoningEffort == effort)
             }
-            let restored = AgentService(userDefaults: defaults)
+            let restored = AgentService(userDefaults: defaults, transportOverride: .hosted)
             #expect(restored.model == .terra)
             #expect(restored.reasoningEffort == .none)
             restored.model = .sol
@@ -310,7 +342,7 @@ struct AgentProviderPersistenceTests {
 
     @Test func runSettingsRemainStableAfterPickerChanges() throws {
         try withDefaults { defaults in
-            let service = AgentService(userDefaults: defaults)
+            let service = AgentService(userDefaults: defaults, transportOverride: .hosted)
             service.model = .sol
             service.reasoningEffort = .high
             let snapshot = service.snapshotRunSettings()

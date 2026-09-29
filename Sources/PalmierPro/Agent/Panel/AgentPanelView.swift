@@ -136,8 +136,8 @@ struct AgentPanelView: View {
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .frame(width: AppTheme.IconSize.xs, height: AppTheme.IconSize.xs)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(verbatim: provider.chatPresentation.byokLabel))
-                .help(provider.chatPresentation.byokHelp)
+                .accessibilityLabel(Text(verbatim: "using \(provider.normalizedDisplayName) API key"))
+                .help("Streaming through your \(provider.normalizedDisplayName) provider configuration")
         }
     }
 
@@ -271,11 +271,11 @@ struct AgentPanelView: View {
             return L10n.string("You do not have enough credits for this AI request.")
         case .upstream(let message):
             Log.agent.error("agent upstream failure: \(message)")
-            return L10n.string("AI chat is temporarily unavailable. Please try again.")
+            return message
         case .unavailable:
             return AITransportPolicy.current == .unavailable
                 ? L10n.string("Sign in to use hosted AI, or enable BYOK in Settings.")
-                : L10n.string("AI chat is temporarily unavailable. Please try again.")
+                : L10n.string("Configure an OpenAI, OpenRouter, or Anthropic provider and API key for AI editing chat.")
         case .refusal:
             return L10n.string("AI chat could not complete this request. Revise the prompt and try again.")
         }
@@ -334,7 +334,7 @@ struct AgentPanelView: View {
     private var missingKeyLinkLabel: String {
         AITransportPolicy.current == .unavailable
             ? L10n.string("Sign in or enable BYOK")
-            : service.model.provider.chatPresentation.missingKeyLinkTitle
+            : L10n.string("Configure an AI provider")
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
@@ -363,7 +363,7 @@ struct AgentPanelView: View {
                 onSend: submit,
                 onCancel: { service.cancel() }
             ) {
-                Label(L10n.string("AI assistant"), systemImage: "sparkles")
+                Label(service.activeBYOKModelReference ?? L10n.string("AI assistant"), systemImage: "sparkles")
                     .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                 byokIndicator
@@ -497,30 +497,5 @@ private struct ChatTabView: View {
     private var displayTitle: String {
         let t = session.title
         return t.count > 20 ? String(t.prefix(20)) + "…" : t
-    }
-}
-
-@MainActor
-private extension AgentProvider {
-    var chatPresentation: (
-        byokLabel: String, byokHelp: String,
-        unavailableMessage: String, missingKeyLinkTitle: String
-    ) {
-        switch self {
-        case .anthropic:
-            (
-                L10n.string("using Anthropic API key"),
-                L10n.string("Streaming through your Anthropic API key (BYOK)"),
-                L10n.string("Add your API key to use AI chat."),
-                L10n.string("or add your own Anthropic key")
-            )
-        case .openAI:
-            (
-                L10n.string("using OpenAI API key"),
-                L10n.string("Streaming through your OpenAI API key (BYOK)"),
-                L10n.string("Add your API key to use AI chat."),
-                L10n.string("or add your own OpenAI key")
-            )
-        }
     }
 }
