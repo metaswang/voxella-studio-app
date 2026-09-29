@@ -71,6 +71,22 @@ struct HomeView: View {
         .onChange(of: appState.editorPresentation) { _, presentation in
             HomeWindowController.shared.applyEditorMode(presentation == .active)
         }
+        .onChange(of: navigationScreen, initial: true) { _, screen in
+            WorkbenchNavigator.shared.note(screen)
+        }
+        .task {
+            WorkbenchNavigator.shared.installMouseNavigationIfNeeded()
+        }
+    }
+
+    private var navigationScreen: WorkbenchScreen? {
+        WorkbenchScreen.capture(
+            editorActive: appState.editorPresentation == .active,
+            route: store.route,
+            sessionID: store.selectedSessionID,
+            transcriptionID: store.selectedTranscriptionID,
+            dubID: store.selectedDubID
+        )
     }
 
     private func presentSessionSearch() {
@@ -247,6 +263,8 @@ private struct WorkbenchTopBar: View {
             .buttonStyle(.plain)
             .help(L10n.string(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"))
             .accessibilityLabel(L10n.string(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"))
+
+            WorkbenchHistoryControls()
 
             if store.route != .session {
                 Text(L10n.string(store.route.title))

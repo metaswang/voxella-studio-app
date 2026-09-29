@@ -330,6 +330,9 @@ final class SessionPlaybackController {
            generation == loadGeneration {
             posterImage = NSImage(data: data)
         }
+        if subtitleMode == .off || isAvailable(subtitleMode) {
+            return
+        }
         if subtitleTrack != nil {
             selectSubtitleMode(.original)
         } else if let first = translationTracks.first {
@@ -624,6 +627,18 @@ struct SessionFullscreenChrome: View {
         .menuStyle(.borderlessButton)
         .disabled(playback.subtitleTrack == nil && playback.translationTracks.isEmpty)
         .help(L10n.string("Subtitles"))
+        .id(fullscreenSubtitleIdentity)
+    }
+
+    private var fullscreenSubtitleIdentity: String {
+        switch playback.subtitleMode {
+        case .off:
+            "off"
+        case .original:
+            "original"
+        case .translation(let code):
+            "translation:\(code)"
+        }
     }
 
     private var fullscreenSpeedMenu: some View {
@@ -647,11 +662,11 @@ struct SessionFullscreenChrome: View {
 
     @ViewBuilder
     private func labelWithCheck(_ title: String, selected: Bool) -> some View {
-        HStack {
-            Text(L10n.display(title))
-            if selected {
-                Image(systemName: "checkmark")
-            }
+        let label = L10n.display(title)
+        if selected {
+            Label(label, systemImage: "checkmark")
+        } else {
+            Text(label)
         }
     }
 
