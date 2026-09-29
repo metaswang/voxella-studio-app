@@ -557,8 +557,8 @@ struct KnowledgeListRow: Identifiable, Equatable, Sendable {
     /// P0: "indexed" ~ has transcript / searchable result. Not SessionIndex lexical/embedding.
     var isIndexed: Bool { lexicalReady }
     var isIndexing: Bool { hasTranscript && !lexicalReady }
-    /// Unindexed rows (no transcript) can be listed when "Show all" is on, but cannot be asked.
-    var isQAAble: Bool { isIndexed }
+    /// Content availability affects styling; metadata remains available for QA.
+    var hasSearchableContent: Bool { isIndexed }
 
     var statusLabel: String {
         if isIndexed { return "Indexed (approx.)" }
@@ -567,10 +567,10 @@ struct KnowledgeListRow: Identifiable, Equatable, Sendable {
     }
 
     var indexStatusHelp: String {
-        if isQAAble {
+        if hasSearchableContent {
             return "Approximate: based on transcript presence. Real SessionIndex lexical/embedding flags land in P1."
         }
-        return "Transcription is required first before this session can be used for QA."
+        return "Metadata and summaries can be used for QA; transcript content is unavailable."
     }
 
     /// P0 searchable / indexed approximation. Real SessionIndex flags are P1.

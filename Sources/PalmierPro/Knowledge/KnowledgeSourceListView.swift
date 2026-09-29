@@ -135,7 +135,7 @@ struct KnowledgeSourceListView: View {
                 .toggleStyle(.checkbox)
                 .font(.system(size: AppTheme.FontSize.xxs))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
-                .help(L10n.string("Include sessions without a transcript. They are grayed out and cannot be used for QA until transcribed."))
+                .help(L10n.string("Include sources without a transcript. Ask about their available metadata and summaries."))
             }
             .font(.system(size: AppTheme.FontSize.xxs))
         }
@@ -176,7 +176,7 @@ struct KnowledgeSourceListView: View {
 
     private func sessionRow(_ row: KnowledgeListRow) -> some View {
         let selected = controller.isSessionSelected(row.id)
-        let qaAble = row.isQAAble
+        let qaAble = row.hasSearchableContent
         return HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 Button {
@@ -326,7 +326,7 @@ extension KnowledgeBaseController {
         if WorkbenchStore.shared.isHydrating {
             return L10n.string("Loading saved sessions…")
         }
-        let count = searchableSessionCount
+        let count = availableSessionCount
         return L10n.format(
             count == 1 ? "Ask across %@ session" : "Ask across %@ sessions",
             count

@@ -14,7 +14,7 @@ final class KnowledgeBaseController {
     var typeFilter: KnowledgeSourceType = .all
     var indexFilter: KnowledgeIndexFilter = .all
     var originFilter: KnowledgeOriginFilter = .all
-    /// Default hides empty/unindexed sessions. On: include them (grayed, not QA-able).
+    /// Default lists sources with content; Show all also includes metadata-only sources.
     var showAllSessions = false
 
     var conversation: KnowledgeConversation?
@@ -146,12 +146,11 @@ final class KnowledgeBaseController {
         selectedSessionIDs.contains(id)
     }
 
-    var searchableSessionCount: Int {
+    var availableSessionCount: Int {
         let allowed = KnowledgeSourceOrigin.effectiveOrigins(
-            isSignedIn: AccountService.shared.isSignedIn
+            isSignedIn: AccountService.shared.isSignedIn, uiFilter: originFilter.origins
         )
         return WorkbenchStore.shared.sessions
-            .filter(Self.isP0Searchable)
             .filter {
                 allowed.contains(
                     KnowledgeSourceOrigin.resolve(
@@ -204,7 +203,7 @@ final class KnowledgeBaseController {
 
     var selectedQAAbleCount: Int {
         selectedSessionIDs.filter { id in
-            isSessionVisibleForCurrentAuth(id) && (row(for: id)?.isQAAble ?? false)
+            isSessionVisibleForCurrentAuth(id) && row(for: id) != nil
         }.count
     }
 
@@ -264,21 +263,21 @@ final class KnowledgeBaseController {
             if WorkbenchStore.shared.isHydrating {
                 return L10n.string("Loading saved sessions…")
             }
-            let count = searchableSessionCount
+            let count = availableSessionCount
             return L10n.format(
                 count == 1 ? "Ask across %@ session" : "Ask across %@ sessions",
                 count
             )
         case .session:
-            if let row = selectedRow, !row.isQAAble {
-                return L10n.string("Transcription required first")
+            if let row = selectedRow, !row.hasSearchableContent {
+                return L10n.string("Ask about available metadata and summaries")
             }
             return L10n.string("Fast QA for this session only")
         case let .sessions(ids):
             let qaAble = selectedQAAbleCount
             let skipped = ids.count - qaAble
             if qaAble == 0 {
-                return L10n.string("No QA-able sessions in selection")
+                return L10n.string("No available sources in selection")
             }
             if skipped > 0 {
                 return L10n.format(
@@ -582,7 +581,7 @@ final class KnowledgeBaseController {
         }
     }
 
-    /// Send / Voice-final entry. Model readiness is gated here, not on page enter.
+    /// Send / Voice-final entry. Tools use the capabilities available to this scope.
     func send() {
         send(query: draft)
     }

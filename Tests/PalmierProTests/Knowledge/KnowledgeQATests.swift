@@ -628,10 +628,10 @@ struct KnowledgeListRowP0Tests {
     }
 
     @Test
-    func indexedStatusIsApproximateAndQAAble() {
+    func indexedStatusIsApproximateAndHasContent() {
         let indexed = row(indexed: true)
         #expect(indexed.isIndexed)
-        #expect(indexed.isQAAble)
+        #expect(indexed.hasSearchableContent)
         #expect(indexed.statusLabel == "Indexed (approx.)")
         #expect(indexed.indexStatusHelp.contains("Approximate"))
         #expect(KnowledgeListRow.p0IsSearchable(hasTranscript: true, hasUsableResult: false))
@@ -640,12 +640,12 @@ struct KnowledgeListRowP0Tests {
     }
 
     @Test
-    func unindexedRowIsNotQAAble() {
+    func unindexedRowStillSupportsMetadataQuestions() {
         let empty = row(indexed: false)
         #expect(!empty.isIndexed)
-        #expect(!empty.isQAAble)
+        #expect(!empty.hasSearchableContent)
         #expect(empty.statusLabel == "No transcript")
-        #expect(empty.indexStatusHelp.contains("Transcription is required"))
+        #expect(empty.indexStatusHelp.contains("Metadata and summaries"))
     }
 
     @Test
