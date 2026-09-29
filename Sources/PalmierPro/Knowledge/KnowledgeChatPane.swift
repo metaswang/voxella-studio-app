@@ -12,7 +12,6 @@ struct KnowledgeChatPane: View {
     var availableWidth: CGFloat
     @State private var isNearBottom = true
     @State private var isUserScrolling = false
-    @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @State private var scrollTask: Task<Void, Never>?
     @State private var isClearHovered = false
 
@@ -133,72 +132,82 @@ struct KnowledgeChatPane: View {
     }
 
     private var messages: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-                if controller.messages.isEmpty {
-                    emptyState
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, AppTheme.Spacing.mdLg)
+        ScrollViewReader { proxy in
+            ScrollView {
+                // Streaming rows change height and insert/remove controls. A lazy
+                // stack anchored to an estimated bottom can keep remeasuring those
+                // rows without settling, monopolizing the main run loop.
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                    if controller.messages.isEmpty {
+                        emptyState
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, AppTheme.Spacing.mdLg)
+                    }
+                    ForEach(controller.messages) { message in
+                        KnowledgeMessageRow(
+                            message: message,
+                            status: message.isStreaming ? controller.statusText : nil,
+                            cardWidth: min(AppTheme.Knowledge.messageMaxWidth,
+                                max(1, availableWidth - AppTheme.Spacing.mdLg * 2 - AppTheme.Spacing.xxl - 8)),
+                            onStop: controller.cancelAnswer,
+                            onCitation: controller.openCitation,
+                            onRecovery: controller.performRecoveryAction
+                        )
+                        .equatable()
+                        .id(message.id)
+                    }
+                    Color.clear.frame(height: 1).id("knowledge-chat-bottom")
                 }
-                ForEach(controller.messages) { message in
-                    KnowledgeMessageRow(
-                        message: message,
-                        status: message.isStreaming ? controller.statusText : nil,
-                        cardWidth: min(AppTheme.Knowledge.messageMaxWidth,
-                            max(1, availableWidth - AppTheme.Spacing.mdLg * 2 - AppTheme.Spacing.xxl - 8)),
-                        onStop: controller.cancelAnswer,
-                        onCitation: controller.openCitation,
-                        onRecovery: controller.performRecoveryAction
-                    )
-                    .equatable()
-                    .id(message.id)
+                .frame(width: max(1, availableWidth - AppTheme.Spacing.mdLg * 2))
+                .padding(.horizontal, AppTheme.Spacing.mdLg)
+                .padding(.vertical, AppTheme.Spacing.md)
+            }
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height <= 48
+            } action: { _, nearBottom in
+                // Content growth must not turn off the user's existing follow intent.
+                if isUserScrolling { isNearBottom = nearBottom }
+            }
+            .onScrollPhaseChange { _, phase, context in
+                let userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+                if isUserScrolling || userScrolling {
+                    let geometry = context.geometry
+                    isNearBottom = geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height <= 48
                 }
-                Color.clear.frame(height: 1).id("knowledge-chat-bottom")
+                isUserScrolling = userScrolling
+                if userScrolling { scrollTask?.cancel() }
             }
-            .frame(width: max(1, availableWidth - AppTheme.Spacing.mdLg * 2))
-            .padding(.horizontal, AppTheme.Spacing.mdLg)
-            .padding(.vertical, AppTheme.Spacing.md)
-        }
-        .scrollPosition($scrollPosition)
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height <= 48
-        } action: { _, nearBottom in
-            // Content growth must not turn off the user's existing follow intent.
-            if isUserScrolling { isNearBottom = nearBottom }
-        }
-        .onScrollPhaseChange { _, phase, context in
-            let userScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
-            if isUserScrolling || userScrolling {
-                let geometry = context.geometry
-                isNearBottom = geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height <= 48
+            .onChange(of: controller.messages.last) { previous, latest in
+                guard let latest else { return }
+                let submitted = previous?.id != latest.id && (latest.role == .user || latest.isStreaming)
+                guard submitted || isNearBottom else { return }
+                if submitted { isNearBottom = true }
+                scrollToBottom(using: proxy)
             }
-            isUserScrolling = userScrolling
-            if userScrolling { scrollTask?.cancel() }
-        }
-        .onChange(of: controller.messages.last) { previous, latest in
-            guard let latest else { return }
-            let submitted = previous?.id != latest.id && (latest.role == .user || latest.isStreaming)
-            guard submitted || isNearBottom else { return }
-            if submitted { isNearBottom = true }
-            scrollTask?.cancel()
-            let conversationID = controller.conversation?.id
-            scrollTask = Task { @MainActor in
-                // Coalesce changes and leave the current layout transaction first.
-                do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
-                guard !Task.isCancelled, controller.conversation?.id == conversationID else { return }
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) { scrollPosition.scrollTo(edge: .bottom) }
+            .onChange(of: controller.conversation?.id) { _, _ in
+                scrollTask?.cancel()
+                isNearBottom = true
+                isUserScrolling = false
+                scrollToBottom(using: proxy)
             }
+            .onAppear { scrollToBottom(using: proxy) }
+            .onDisappear { scrollTask?.cancel() }
         }
-        .onChange(of: controller.conversation?.id) { _, _ in
-            scrollTask?.cancel()
-            isNearBottom = true
-            isUserScrolling = false
-            scrollPosition = ScrollPosition(edge: .bottom)
-        }
-        .onDisappear { scrollTask?.cancel() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func scrollToBottom(using proxy: ScrollViewProxy) {
+        scrollTask?.cancel()
+        let conversationID = controller.conversation?.id
+        scrollTask = Task { @MainActor in
+            // Coalesce updates after layout, then target the concrete sentinel
+            // once. Do not retain an edge anchor that follows estimated sizes.
+            do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+            guard !Task.isCancelled, controller.conversation?.id == conversationID else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { proxy.scrollTo("knowledge-chat-bottom", anchor: .bottom) }
+        }
     }
 
     @ViewBuilder
@@ -923,11 +932,7 @@ private struct FlowCitationChips: View {
     let onTap: (KnowledgeSourceRef) -> Void
 
     var body: some View {
-        LazyVGrid(
-            columns: [GridItem(.flexible(minimum: 0), spacing: AppTheme.Spacing.xs)],
-            alignment: .leading,
-            spacing: AppTheme.Spacing.xs
-        ) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             ForEach(sources.prefix(8)) { source in
                 let ref = source.primaryReference
                 HStack(spacing: AppTheme.Spacing.xs) {

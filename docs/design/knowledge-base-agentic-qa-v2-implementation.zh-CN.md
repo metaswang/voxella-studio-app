@@ -64,3 +64,12 @@ Debug 构建中通过 `VOXELLA_KB_QA_VARIANT` 选择完整对照路径或工具�
 - 原生流式回答失败时保留已经发布的文字，单独显示错误并结束当前回合。
 - 审查后知识库/provider/索引及相邻功能回归：213 tests / 43 suites 通过。新增测试包含上述故障复现、引用分组与时间点保留、字幕读取、聚合证据身份、检索回退和配音缓存版本。
 - 审查修复版本执行 `./scripts/bundle.sh debug --sign` 成功并启动；在原 Donald Hoffman 对话中确认 Sources 从两条重复项变为一个来源。说话人计数按用户确认保留，未修改识别或计数逻辑。
+
+## 提问后无响应与内存增长
+
+- 无响应现场的主线程采样停留在 SwiftUI `GraphHost.flushTransactions`、`LazySubviewPlacements` 和 `LazyStack.measureEstimates`，包含聊天列表的滚动几何回调。CPU 接近 100%；两次采集之间约 33 秒，physical footprint 从 2.1 GB 增至 2.4 GB，峰值 5.0 GB，主要增长位于 malloc heap。该回合日志只有 chat started，没有后续模型请求；本地搜索模型已卸载。
+- 消除消息列表的懒高度估计与持续底部锚定：消息使用实际高度的 VStack，滚动通过 ScrollViewReader 在布局后合并更新，一次性定位明确的末尾标记。保留用户向上阅读时的跟随控制、取消和会话切换检查。最多八行的 Sources 也改为普通 VStack，避免嵌套懒布局。
+- 新增持续增长的多轮聊天窗口回归。原有循环每轮重置历史，本次保留 24 轮的消息，并经过原生 run-loop observer 验证布局、流式更新、等待和内存；可用 `VOXSTUDIO_KB_STRESS_SECONDS` 延长等待，用 `VOXSTUDIO_KB_LAYOUT_FIXTURE` 在本地回放保存的对话。回放使用受控响应，不发送 provider 请求、不修改原对话存储。保存的对话回放未稳定复现原版挂起，故现场采样与回放验收分别记录，不将回放通过当作确定性的前后复现证明。
+- 修复后的原对话回放通过 24 轮连续提问及 120 秒等待检查，主线程心跳和各次窗口布局均低于 500 ms。预热后 footprint 基线及峰值均为 190 MB，等待期间为 167–170 MB；等待时采样的主线程以 run-loop 等待为主，进程 CPU 约 0.8%。这些数字属于本地受控窗口回放，不代表真实模型问答延迟或费用。
+- 修复后知识库、provider、索引及相邻导航/播放/录制回归：214 tests / 43 suites 通过，包含长回答底部可见性、输入换行/缩放、取消与晚到事件、持续多轮消息和内存检查。
+- `./scripts/bundle.sh debug --sign` 成功且签名验证通过，已启动新版本。原 Rethinking Skills 对话完整加载，输入框编辑/发送按钮启用及上下滚动响应正常；没有重新发送原问题到云模型。
