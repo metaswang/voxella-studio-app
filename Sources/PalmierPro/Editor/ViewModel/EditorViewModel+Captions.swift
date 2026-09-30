@@ -3,6 +3,12 @@ import Foundation
 
 extension EditorViewModel {
     struct CaptionRequest {
+        static var defaultLocalStyle: TextStyle {
+            var style = TextStyle(fontSize: AppTheme.Caption.defaultFontSize)
+            style.shadow.enabled = false
+            return style
+        }
+
         var sourceClipIds: [String] = []
         var autoDetect: Bool = false
         var style: TextStyle = TextStyle()

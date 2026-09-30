@@ -4,14 +4,9 @@ struct CaptionTab: View {
     @Environment(EditorViewModel.self) var editor
     @Bindable private var models = LocalModelManager.shared
 
-    @State private var style: TextStyle = CaptionTab.defaultStyle
+    @State private var style = EditorViewModel.CaptionRequest.defaultLocalStyle
     @State private var center = AppTheme.Caption.defaultCenter
 
-    private static var defaultStyle: TextStyle {
-        var s = TextStyle(fontSize: AppTheme.Caption.defaultFontSize)
-        s.shadow.enabled = false
-        return s
-    }
     @State private var selectedTrackId: String?
     @State private var selectedClipTargets: [String] = []
     private let provider: TranscriptionProvider = .local
@@ -211,8 +206,8 @@ struct CaptionTab: View {
 
     private var styleSection: some View {
         TextStyleControls(
-            selection: TextStyleSelection(styles: [style], fallback: Self.defaultStyle),
-            defaults: Self.defaultStyle,
+            selection: TextStyleSelection(styles: [style], fallback: EditorViewModel.CaptionRequest.defaultLocalStyle),
+            defaults: EditorViewModel.CaptionRequest.defaultLocalStyle,
             styleExpanded: $styleExpanded,
             groupsExpandedByDefault: false,
             actions: styleActions

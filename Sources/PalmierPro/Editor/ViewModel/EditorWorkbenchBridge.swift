@@ -151,8 +151,7 @@ extension EditorViewModel {
                 guard mediaType == .video || mediaType.isAudio else { continue }
                 self.timeline.tracks[loc.trackIndex].clips[loc.clipIndex].sourceSessionId = session.id
             }
-            if let sourceTrack = session.subtitleTrack
-                ?? session.transcript.map(SubtitleTrack.fromTranscript) {
+            if let sourceTrack = session.subtitleTrack {
                 self.insertSessionSubtitleTrack(
                     session,
                     track: sourceTrack,

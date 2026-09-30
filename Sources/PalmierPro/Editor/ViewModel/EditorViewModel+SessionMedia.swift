@@ -188,8 +188,10 @@ extension EditorViewModel {
             throw WorkbenchEditorBridgeError.failedToPlaceSession
         }
 
-        if let sourceTrack = session.subtitleTrack
-            ?? session.transcript.map(SubtitleTrack.fromTranscript) {
+        let hasSourceCues = session.subtitleTrack?.cues.contains {
+            $0.start.isFinite && $0.end.isFinite && $0.end > $0.start
+        } == true
+        if hasSourceCues, let sourceTrack = session.subtitleTrack {
             insertSessionSubtitleTrack(
                 session,
                 track: sourceTrack,
@@ -204,6 +206,26 @@ extension EditorViewModel {
                 scope: .translation(languageCode: translation.languageCode),
                 startFrame: resolvedStart
             )
+        }
+
+        // Raw ASR segments are not subtitle cues. Use the same local caption
+        // flow as the Captions panel, scoped to this newly placed session.
+        if !hasSourceCues, !captionTargets(ids: mediaClipIDs).isEmpty {
+            do {
+                let captionIDs = try await generateCaptions(for: CaptionRequest(
+                    sourceClipIds: mediaClipIDs,
+                    style: CaptionRequest.defaultLocalStyle,
+                    provider: .local
+                ))
+                if captionIDs.isEmpty {
+                    mediaPanelToast = MediaPanelToast(message: L10n.string("No speech detected."))
+                }
+                Log.project.info("session local captions id=\(session.id.uuidString) clips=\(captionIDs.count)")
+            } catch {
+                // Media placement still succeeds if local captioning is unavailable.
+                mediaPanelToast = MediaPanelToast(message: error.localizedDescription)
+                Log.project.warning("session local captions failed id=\(session.id.uuidString) error=\(error.localizedDescription)")
+            }
         }
     }
 
