@@ -8,12 +8,15 @@ final class MCPService {
 
     static let port: UInt16 = 19789
 
-    private static let enabledKey = "io.palmier.pro.mcp.enabled"
+    private static let enabledKey = "io.voxstudio.mcp.enabled"
+    private static let legacyEnabledKey = "io.palmier.pro.mcp.enabled"
 
     static var isEnabledPreference: Bool {
         get {
             let defaults = UserDefaults.standard
-            if defaults.object(forKey: enabledKey) == nil { return true }
+            if defaults.object(forKey: enabledKey) == nil {
+                return defaults.object(forKey: legacyEnabledKey) == nil ? true : defaults.bool(forKey: legacyEnabledKey)
+            }
             return defaults.bool(forKey: enabledKey)
         }
         set {
@@ -36,9 +39,9 @@ final class MCPService {
         let httpServer = MCPHTTPServer(port: Self.port) { [self] in
             let toolExecutor = await makeSessionToolExecutor()
             let server = Server(
-                name: "palmier-pro",
+                name: "voxstudio",
                 version: "1.0.0",
-                instructions: AgentInstructions.serverInstructions + AgentInstructions.projectNavigation,
+                instructions: AgentInstructions.serverInstructions + AgentInstructions.projectNavigation + MCPKnowledgeTools.instructions + MCPMediaTools.instructions,
                 capabilities: .init(
                     resources: .init(subscribe: false, listChanged: false),
                     tools: .init(listChanged: true)
@@ -81,8 +84,9 @@ final class MCPService {
             Tool(name: def.name.rawValue, description: def.description, inputSchema: def.mcpSchemaValue)
         }
 
+        let allTools = tools + MCPKnowledgeTools.tools + MCPMediaTools.tools
         await server.withMethodHandler(ListTools.self) { _ in
-            .init(tools: tools)
+            .init(tools: allTools)
         }
 
         await server.withMethodHandler(CallTool.self) { params in
@@ -93,6 +97,12 @@ final class MCPService {
     // Convert args on the main actor so the non-Sendable dict never crosses the hop.
     private static func dispatchCall(_ params: CallTool.Parameters, executor: ToolExecutor) async -> CallTool.Result {
         let args = ToolArgsBridge.argsFromMCP(params.arguments ?? [:])
+        if MCPMediaTools.definitions.contains(where: { $0.name == params.name }) {
+            return await MCPMediaTools.execute(name: params.name, args: args).toMCPResult()
+        }
+        if MCPKnowledgeTools.definitions.contains(where: { $0.name == params.name }) {
+            return await MCPKnowledgeTools.execute(name: params.name, args: args).toMCPResult()
+        }
         let result = await executor.execute(name: params.name, args: args, source: "mcp")
         return result.toMCPResult()
     }
@@ -101,13 +111,13 @@ final class MCPService {
         let resources = [
             Resource(
                 name: "Video Models",
-                uri: "palmier://models/video",
+                uri: "voxstudio://models/video",
                 description: "Available AI video generation models and their capabilities",
                 mimeType: "application/json"
             ),
             Resource(
                 name: "Image Models",
-                uri: "palmier://models/image",
+                uri: "voxstudio://models/image",
                 description: "Available AI image generation models and their capabilities",
                 mimeType: "application/json"
             ),
@@ -125,10 +135,10 @@ final class MCPService {
     @MainActor
     private static func readResource(uri: String) -> ReadResource.Result {
         switch uri {
-        case "palmier://models/video":
+        case "voxstudio://models/video", "palmier://models/video":
             let json = ToolExecutor.jsonString(VideoModelConfig.allModels.map { ToolExecutor.videoModelInfo($0) }) ?? "[]"
             return .init(contents: [.text(json, uri: uri, mimeType: "application/json")])
-        case "palmier://models/image":
+        case "voxstudio://models/image", "palmier://models/image":
             let json = ToolExecutor.jsonString(ImageModelConfig.allModels.map { ToolExecutor.imageModelInfo($0) }) ?? "[]"
             return .init(contents: [.text(json, uri: uri, mimeType: "application/json")])
         default:

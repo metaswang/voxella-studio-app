@@ -3,7 +3,7 @@ import SwiftUI
 struct SkillsPane: View {
     @Bindable private var store = SkillStore.shared
     @Bindable private var catalog = SkillCatalog.shared
-    @State private var collection: SkillCollection = .installed
+    @State private var collection: SkillCollection = .community
     @State private var query = ""
     @State private var presentedSkill: PresentedSkill?
     @State private var working: Set<String> = []
@@ -44,6 +44,9 @@ struct SkillsPane: View {
             ScrollView {
                 skillList
             }
+            // Installed and Community can share category/skill IDs but have different
+            // membership. Give each collection its own scroll subtree and reset position.
+            .id(collection)
             .appScrollEdgeEffect(.top)
         }
         .frame(maxWidth: AppTheme.Settings.contentMaxWidth, alignment: .leading)
@@ -62,7 +65,7 @@ struct SkillsPane: View {
 
     private var introduction: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            Text(L10n.string("Install skills to give the in-app agent specialized workflows."))
+            Text(L10n.string("Install skills for VoxStudio and connected agents."))
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
 
@@ -163,7 +166,9 @@ struct SkillsPane: View {
     }
 
     private var skillList: some View {
-        LazyVStack(spacing: AppTheme.Spacing.sm) {
+        // This small catalog does not need lazy section caching, which can retain
+        // the installed section's children when switching collections on macOS.
+        VStack(spacing: AppTheme.Spacing.sm) {
             switch collection {
             case .installed:
                 installedList

@@ -1,19 +1,25 @@
 {
   "manifest_version": "0.4",
-  "name": "palmier-pro",
-  "display_name": "Palmier Pro",
+  "name": "voxstudio",
+  "display_name": "VoxStudio",
   "version": "0.2.0",
-  "description": "Edit your videos with Palmier Pro from Claude Desktop.",
-  "long_description": "Connects Claude Desktop to the local MCP server inside Palmier Pro — an AI-native Mac video editor. Once installed, Claude can read your timeline, edit clips, generate media, and manage tracks.",
+  "description": "Connect VoxStudio media, knowledge, and video editing tools to Claude Desktop.",
+  "long_description": "Connects Claude Desktop to the local MCP server inside VoxStudio. Transcribe and translate media, create reference voices and voiceovers, preview results, search knowledge, and edit video timelines.",
   "icon": "icon.png",
   "author": {
-    "name": "Palmier",
-    "url": "https://palmier.io"
+    "name": "VoxStudio"
   },
-  "homepage": "https://palmier.io",
-  "keywords": ["video", "editor", "timeline", "creative", "media"],
+  "keywords": [
+    "video",
+    "editor",
+    "timeline",
+    "creative",
+    "media"
+  ],
   "compatibility": {
-    "platforms": ["darwin"],
+    "platforms": [
+      "darwin"
+    ],
     "runtimes": {
       "node": ">=18.0.0"
     }
@@ -23,7 +29,9 @@
     "entry_point": "server/index.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/server/index.js"]
+      "args": [
+        "${__dirname}/server/index.js"
+      ]
     }
   }
 }

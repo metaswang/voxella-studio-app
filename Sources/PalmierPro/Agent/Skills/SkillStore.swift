@@ -255,11 +255,11 @@ final class SkillStore {
         }
     }
 
-    /// Copies under a `palmier-` prefix so we only overwrite our own prior copy
+    /// Copies under a `voxstudio-` prefix so we only overwrite our own prior copy
     @discardableResult
     func copy(_ skill: Skill, to agent: SkillExternalAgent) -> URL? {
         let source = skill.path.deletingLastPathComponent()
-        let dest = agent.skillsDirectory.appendingPathComponent("palmier-\(skill.id)", isDirectory: true)
+        let dest = agent.skillsDirectory.appendingPathComponent("voxstudio-\(skill.id)", isDirectory: true)
         let fm = FileManager.default
         do {
             try fm.createDirectory(at: agent.skillsDirectory, withIntermediateDirectories: true)

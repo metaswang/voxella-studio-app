@@ -110,12 +110,20 @@ enum SkillFrontmatter {
               !description.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
         let category = fields["category"]
         let isKBSkill = category == "knowledge" || category == "knowledge-qa"
+        // Bundled skills use comma-separated single-line values, while user
+        // skills can use YAML lists. Both forms must advertise real capabilities.
+        func values(_ key: String) -> [String] {
+            if let list = lists[key] { return list }
+            return (fields[key] ?? "").split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
         let metadata = isKBSkill ? KnowledgeSkillMetadata(
             selectionSummary: fields["selection_summary"],
             appliesWhen: fields["applies_when"],
-            allowedTools: lists["allowed_tools"] ?? [],
-            supportsEvidenceGoals: lists["supports_evidence_goals"] ?? [],
-            analysisModes: lists["analysis_modes"] ?? []
+            allowedTools: values("allowed_tools"),
+            supportsEvidenceGoals: values("supports_evidence_goals"),
+            analysisModes: values("analysis_modes")
         ) : nil
         return (name, description, category, metadata, body)
     }

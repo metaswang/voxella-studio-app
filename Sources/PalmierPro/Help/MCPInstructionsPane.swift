@@ -2,23 +2,24 @@ import AppKit
 import SwiftUI
 
 struct MCPInstructionsPane: View {
+    var embedded = false
     @State private var claudeInstallError: String?
 
     private var mcpEndpoint: String { "http://127.0.0.1:\(MCPService.port)/mcp" }
 
     private var claudeCodeCommand: String {
-        "claude mcp add --transport http voxella-studio \(mcpEndpoint)"
+        "claude mcp add --transport http voxstudio \(mcpEndpoint)"
     }
 
     private var codexCommand: String {
-        "codex mcp add voxella-studio --url \(mcpEndpoint)"
+        "codex mcp add voxstudio --url \(mcpEndpoint)"
     }
 
     private var cursorJSONConfig: String {
         """
         {
           "mcpServers": {
-            "voxella-studio": {
+            "voxstudio": {
               "type": "http",
               "url": "\(mcpEndpoint)"
             }
@@ -33,163 +34,299 @@ struct MCPInstructionsPane: View {
             let data = try? JSONSerialization.data(withJSONObject: config, options: [.sortedKeys]),
             let encoded = data.base64EncodedString().addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
         else { return nil }
-        return URL(string: "cursor://anysphere.cursor-deeplink/mcp/install?name=voxella-studio&config=\(encoded)")
+        return URL(string: "cursor://anysphere.cursor-deeplink/mcp/install?name=voxstudio&config=\(encoded)")
     }
+
+    private enum Client: String, CaseIterable {
+        case claudeDesktop = "Claude Desktop", claudeCode = "Claude Code", codex = "Codex", cursor = "Cursor"
+
+        var agent: SkillExternalAgent {
+            switch self {
+            case .claudeDesktop, .claudeCode: .claude
+            case .codex: .codex
+            case .cursor: .cursor
+            }
+        }
+    }
+
+    @State private var client: Client = .claudeDesktop
+    @State private var presentedSkill: SkillLink?
+    @State private var installing: Set<String> = []
+    @State private var skillError: String?
+    @Bindable private var catalog = SkillCatalog.shared
+    @Bindable private var store = SkillStore.shared
+
+    private struct SkillLink: Identifiable { let id: String }
+    private var running: Bool { AppState.shared.mcpService?.isRunning ?? false }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxl) {
-                Text(L10n.string("Connect an external agent to inspect and edit the active VoxStudio project."))
-                    .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.regular))
-                    .foregroundStyle(AppTheme.Text.secondaryColor)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                SettingsGroup(title: "Server URL") {
-                    endpointRow
+        Group {
+            if embedded {
+                content
+            } else {
+                ScrollView {
+                    content
+                        .frame(maxWidth: AppTheme.Settings.contentMaxWidth, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(AppTheme.Spacing.xlXxl)
                 }
-
-                SettingsGroup(title: "Connect an agent") {
-                    agentList
-                }
+                .appScrollEdgeEffect(.top)
             }
-            .frame(maxWidth: AppTheme.Settings.contentMaxWidth, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(.horizontal, AppTheme.Spacing.xlXxl)
-            .padding(.bottom, AppTheme.Spacing.xxl)
         }
-        .appScrollEdgeEffect(.top)
-        .alert(
-            L10n.string("Unable to open Claude Desktop"),
-            isPresented: Binding(
-                get: { claudeInstallError != nil },
-                set: { if !$0 { claudeInstallError = nil } }
-            )
-        ) {
-            Button("Dismiss") { claudeInstallError = nil }
+        .task {
+            await store.reloadInBackground()
+            await catalog.refresh()
+        }
+        .sheet(item: $presentedSkill) { item in
+            SkillDetailSheet(skillID: item.id)
+                .appZoomEnvironment(presentationBoundary: true)
+        }
+        .alert(L10n.string("Unable to complete setup"), isPresented: Binding(
+            get: { claudeInstallError != nil || skillError != nil },
+            set: { if !$0 { claudeInstallError = nil; skillError = nil } }
+        )) {
+            Button(L10n.string("Dismiss")) { claudeInstallError = nil; skillError = nil }
         } message: {
-            Text(claudeInstallError.map(L10n.display) ?? L10n.string("Try again."))
+            Text((claudeInstallError ?? skillError).map(L10n.display) ?? L10n.string("Try again."))
         }
     }
 
-    private var endpointRow: some View {
-        CodeBlockView(
-            content: mcpEndpoint,
-            fontSize: AppTheme.FontSize.sm,
-            foreground: AppTheme.Text.primaryColor,
-            verticalPadding: AppTheme.Spacing.smMd
-        )
-    }
-
-    private var agentList: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.zero) {
-            claudeDesktopSection
-            agentDivider
-            claudeCodeSection
-            agentDivider
-            codexSection
-            agentDivider
-            cursorSection
-        }
-    }
-
-    private var cursorSection: some View {
-        agentSection(
-            .cursor,
-            name: "Cursor",
-            description: "Install the VoxStudio MCP server in Cursor.",
-            action: ("Install in Cursor", openCursor)
-        ) {
-            ManualFallback(
-                intro: "Add this configuration to ~/.cursor/mcp.json.",
-                code: cursorJSONConfig
-            )
-        }
-    }
-
-    private var claudeDesktopSection: some View {
-        agentSection(
-            .claude,
-            name: "Claude Desktop",
-            description: "Install the bundled VoxStudio connector.",
-            action: ("Install in Claude Desktop", openClaudeDesktopBundle)
-        ) {
-            EmptyView()
-        }
-    }
-
-    private var claudeCodeSection: some View {
-        agentSection(
-            .claude,
-            name: "Claude Code",
-            description: "Run this command once in Terminal."
-        ) {
-            CodeBlockView(content: claudeCodeCommand)
-        }
-    }
-
-    private var codexSection: some View {
-        agentSection(
-            .codex,
-            name: "Codex",
-            description: "Run this command once in Terminal."
-        ) {
-            CodeBlockView(content: codexCommand)
-        }
-    }
-
-    private var agentDivider: some View {
-        Divider().overlay(AppTheme.Border.subtleColor)
-    }
-
-    private func agentSection<Details: View>(
-        _ agent: SkillExternalAgent,
-        name: String,
-        description: String,
-        action: (label: String, perform: () -> Void)? = nil,
-        @ViewBuilder details: () -> Details
-    ) -> some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            HStack(alignment: .center, spacing: AppTheme.Spacing.md) {
-                agentIdentity(agent: agent, name: name, description: description)
-                if let action {
-                    Spacer(minLength: AppTheme.Spacing.md)
-                    externalAction(action.label, action: action.perform)
-                }
+    private var content: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xlXxl) {
+            if !embedded { hero }
+            connection
+            workflows
+            Label(L10n.string("Keep VoxStudio open while your agent works."), systemImage: "info.circle")
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+            Button(L10n.string("Browse all skills")) {
+                SettingsWindowController.shared.show(tab: .skills)
             }
-            details()
+            .buttonStyle(.plain)
+            .foregroundStyle(AppTheme.Accent.link)
         }
-        .padding(.vertical, AppTheme.Spacing.mdLg)
     }
 
-    private func agentIdentity(agent: SkillExternalAgent, name: String, description: String) -> some View {
-        HStack(spacing: AppTheme.Spacing.md) {
-            ExternalAgentLogo(agent: agent, size: AppTheme.IconSize.lgXl)
+    private var hero: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
+            HStack {
+                Label("MCP", systemImage: "network")
+                    .font(.system(size: AppTheme.FontSize.xs, weight: .semibold))
+                    .tracking(2)
+                    .foregroundStyle(AppTheme.Accent.link)
+                Spacer()
+                Label(L10n.string(running ? "Server running" : "Server stopped"),
+                      systemImage: running ? "circle.inset.filled" : "circle")
+                    .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
+                    .foregroundStyle(running ? AppTheme.Status.successColor : AppTheme.Text.tertiaryColor)
+            }
+            Text(L10n.string("Your workspace. Your favorite agent."))
+                .font(.system(size: AppTheme.FontSize.title2, weight: .semibold))
+                .foregroundStyle(AppTheme.Text.primaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(L10n.string("Search your knowledge, find answers, and edit videos from the AI tools you already use."))
+                .font(.system(size: AppTheme.FontSize.smMd))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: AppTheme.Spacing.sm) {
+                capability("Knowledge & search", icon: "books.vertical")
+                capability("Video editing", icon: "timeline.selection")
+            }
+            if !running {
+                Button(L10n.string("Open MCP settings")) {
+                    SettingsWindowController.shared.show(tab: .agent)
+                }
+                .buttonStyle(.capsule(.secondary))
+            }
+        }
+        .padding(AppTheme.Spacing.lgXl)
+        .background {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+                .fill(LinearGradient(colors: [AppTheme.Accent.link.opacity(0.14), AppTheme.Background.raisedColor],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+                .strokeBorder(AppTheme.Accent.link.opacity(0.2), lineWidth: 1)
+        }
+    }
 
+    private func capability(_ title: String, icon: String) -> some View {
+        Label(L10n.string(title), systemImage: icon)
+            .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
+            .foregroundStyle(AppTheme.Text.secondaryColor)
+            .padding(.horizontal, AppTheme.Spacing.smMd)
+            .padding(.vertical, AppTheme.Spacing.xs)
+            .background(AppTheme.Background.surfaceColor.opacity(0.6), in: Capsule())
+    }
+
+    private func sectionHeading(_ number: String, title: String, subtitle: String) -> some View {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.smMd) {
+            Text(number)
+                .font(.system(size: AppTheme.FontSize.xs, weight: .semibold, design: .monospaced))
+                .foregroundStyle(AppTheme.Accent.link)
+                .padding(AppTheme.Spacing.sm)
+                .background(AppTheme.Accent.link.opacity(0.1), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text(name)
-                    .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
+                Text(L10n.string(title))
+                    .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
                     .foregroundStyle(AppTheme.Text.primaryColor)
-                Text(L10n.string(key: description))
-                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.regular))
+                Text(L10n.string(subtitle))
+                    .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
-    private func externalAction(_ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: AppTheme.Spacing.xxs) {
-                Text(L10n.string(key: label))
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.regular))
+    private var connection: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
+            sectionHeading("01", title: "Connect your agent", subtitle: "Choose a client. Set it up once.")
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: AppTheme.zoomed(125)), spacing: AppTheme.Spacing.sm)], spacing: AppTheme.Spacing.sm) {
+                ForEach(Client.allCases, id: \.self) { item in
+                    Button { client = item } label: {
+                        HStack(spacing: AppTheme.Spacing.sm) {
+                            ExternalAgentLogo(agent: item.agent, size: AppTheme.IconSize.lg)
+                            Text(item.rawValue)
+                                .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
+                            Spacer(minLength: 0)
+                        }
+                        .foregroundStyle(client == item ? AppTheme.Text.primaryColor : AppTheme.Text.secondaryColor)
+                        .padding(AppTheme.Spacing.smMd)
+                        .themedSurface(client == item ? AppTheme.Accent.link.opacity(0.12) : AppTheme.Background.raisedColor,
+                                       cornerRadius: AppTheme.Radius.sm,
+                                       border: client == item ? AppTheme.Accent.link.opacity(0.6) : AppTheme.Border.subtleColor)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(client == item ? .isSelected : [])
+                }
             }
-            .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.regular))
-            .foregroundStyle(AppTheme.Accent.link)
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                clientInstructions
+                Divider().overlay(AppTheme.Border.subtleColor)
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    Text(L10n.string("Server URL"))
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    Text(mcpEndpoint)
+                        .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                        .textSelection(.enabled)
+                    Spacer(minLength: 0)
+                    CopyButton(value: mcpEndpoint)
+                }
+            }
+            .padding(AppTheme.Spacing.mdLg)
+            .themedSurface(AppTheme.Background.raisedColor, cornerRadius: AppTheme.Radius.md)
         }
-        .buttonStyle(.plain)
-        .fixedSize()
-        .pointerStyle(.link)
+    }
+
+    @ViewBuilder private var clientInstructions: some View {
+        switch client {
+        case .claudeDesktop:
+            setupDescription("Install the connector, then enable it in Claude Desktop.")
+            Button(action: openClaudeDesktopBundle) {
+                Label(L10n.string("Install in Claude Desktop"), systemImage: "arrow.up.right")
+            }
+            .buttonStyle(.capsule(.prominent))
+        case .claudeCode:
+            setupDescription("Run this command in Terminal, then start a new Claude Code session.")
+            CodeBlockView(content: claudeCodeCommand)
+        case .codex:
+            setupDescription("Run this command in Terminal, then start a new Codex session.")
+            CodeBlockView(content: codexCommand)
+        case .cursor:
+            setupDescription("Add the server to Cursor, then enable it in MCP settings.")
+            Button(action: openCursor) {
+                Label(L10n.string("Install in Cursor"), systemImage: "arrow.up.right")
+            }
+            .buttonStyle(.capsule(.prominent))
+            ManualFallback(intro: "Add this configuration to ~/.cursor/mcp.json.", code: cursorJSONConfig)
+        }
+    }
+
+    private func setupDescription(_ text: String) -> some View {
+        Text(L10n.string(text))
+            .font(.system(size: AppTheme.FontSize.sm))
+            .foregroundStyle(AppTheme.Text.secondaryColor)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var workflows: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
+            sectionHeading("02", title: "Try a workflow", subtitle: "Copy a prompt into your agent. Add a skill for a guided workflow.")
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: AppTheme.zoomed(245)), spacing: AppTheme.Spacing.md)], spacing: AppTheme.Spacing.md) {
+                ForEach(MCPWorkflow.examples) { workflow in
+                    workflowCard(workflow)
+                }
+            }
+            Text(L10n.string("Skills install in VoxStudio. Open a skill and choose Add to External Agent to use it in Claude Code, Codex, or Cursor."))
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func workflowCard(_ workflow: MCPWorkflow) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            HStack {
+                Image(systemName: workflow.icon)
+                    .font(.system(size: AppTheme.FontSize.mdLg))
+                    .foregroundStyle(AppTheme.Accent.link)
+                Spacer()
+                Text(L10n.string(workflow.scope))
+                    .font(.system(size: AppTheme.FontSize.xxs, weight: .medium))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+            }
+            Text(L10n.string(workflow.title))
+                .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
+                .foregroundStyle(AppTheme.Text.primaryColor)
+            Text(L10n.string(workflow.prompt))
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, minHeight: AppTheme.zoomed(80), alignment: .topLeading)
+            HStack {
+                CopyButton(value: L10n.string(workflow.prompt), label: "Copy prompt")
+                Spacer(minLength: AppTheme.Spacing.xs)
+                Button {
+                    openSkill(workflow.skillID)
+                } label: {
+                    if installing.contains(workflow.skillID) {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label(L10n.string(store.skills.contains { $0.id == workflow.skillID } ? "Open skill" : "Get skill"), systemImage: "book.closed")
+                            .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(AppTheme.Accent.link)
+                .disabled(installing.contains(workflow.skillID))
+                .help(workflow.skillID)
+            }
+        }
+        .padding(AppTheme.Spacing.mdLg)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .themedSurface(AppTheme.Background.raisedColor, cornerRadius: AppTheme.Radius.md)
+    }
+
+    private func openSkill(_ id: String) {
+        if store.skills.contains(where: { $0.id == id }) {
+            presentedSkill = SkillLink(id: id)
+            return
+        }
+        installing.insert(id)
+        Task {
+            defer { installing.remove(id) }
+            if catalog.entry(id: id) == nil { await catalog.refresh() }
+            guard let entry = catalog.entry(id: id), await store.install(entry) else {
+                skillError = "Unable to download this skill. Check your connection and try again."
+                return
+            }
+            presentedSkill = SkillLink(id: id)
+        }
     }
 
     private func openCursor() {
@@ -220,7 +357,7 @@ struct MCPInstructionsPane: View {
     }
 
     private var claudeDesktopBundleURL: URL? {
-        BundledResource.url("palmier-pro.mcpb")
+        BundledResource.url("voxstudio.mcpb")
     }
 }
 
@@ -289,18 +426,24 @@ private struct CopyButton: View {
     private static let feedbackDuration: Duration = .seconds(1.4)
 
     let value: String
+    var label: String? = nil
     @State private var copied = false
 
     var body: some View {
         Button(action: copy) {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.regular))
-                .foregroundStyle(copied ? AppTheme.Text.primaryColor : AppTheme.Text.secondaryColor)
-                .frame(width: AppTheme.IconSize.lg, height: AppTheme.IconSize.lg)
-                .hoverHighlight()
+            HStack(spacing: AppTheme.Spacing.xs) {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                if let label { Text(L10n.string(copied ? "Copied" : label)) }
+            }
+            .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
+            .foregroundStyle(copied ? AppTheme.Status.successColor : AppTheme.Text.secondaryColor)
+            .frame(minWidth: AppTheme.IconSize.lg, minHeight: AppTheme.IconSize.lg)
+            .contentShape(Rectangle())
+            .hoverHighlight()
         }
         .buttonStyle(.plain)
         .help(L10n.string(copied ? "Copied" : "Copy"))
+        .accessibilityLabel(L10n.string(copied ? "Copied" : (label ?? "Copy")))
     }
 
     private func copy() {

@@ -18,6 +18,7 @@ struct AgentPane: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
             mcpHeader
             mcpStatusRow
+            MCPInstructionsPane(embedded: true)
         }
     }
 
@@ -27,25 +28,10 @@ struct AgentPane: View {
                 .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.medium))
                 .foregroundStyle(AppTheme.Text.primaryColor)
 
-            HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.sm) {
-                Text(L10n.string("Lets external clients like Cursor, Claude Desktop, Claude Code, and Codex edit your timeline."))
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button(action: openInstructions) {
-                    HStack(spacing: AppTheme.Spacing.xxs) {
-                        Text(L10n.string("Setup instructions"))
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
-                    }
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Accent.link)
-                }
-                .buttonStyle(.plain)
-                .fixedSize()
-                .pointerStyle(.link)
-            }
+            Text(L10n.string("Connect external clients like Cursor, Claude Desktop, Claude Code, and Codex to your workspace."))
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -86,9 +72,5 @@ struct AgentPane: View {
             .accessibilityLabel(L10n.string("MCP Server"))
         }
         .padding(.top, AppTheme.Spacing.xs)
-    }
-
-    private func openInstructions() {
-        HelpWindowController.shared.show(tab: .mcp)
     }
 }

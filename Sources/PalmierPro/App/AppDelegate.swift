@@ -198,11 +198,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @MainActor
-    @objc func showMCPInstructions(_ sender: Any?) {
-        HelpWindowController.shared.show(tab: .mcp)
-    }
-
-    @MainActor
     @objc func showFeedback(_ sender: Any?) {
         FeedbackWindowController.shared.show()
     }

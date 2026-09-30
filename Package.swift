@@ -137,7 +137,7 @@ let package = Package(
                 .copy("Resources/AppIcon.png"),
                 .copy("Resources/StatusBarIcon.svg"),
                 .copy("Resources/Fonts"),
-                .copy("Resources/MCPB/palmier-pro.mcpb"),
+                .copy("Resources/MCPB/voxstudio.mcpb"),
                 .copy("Resources/Images"),
                 .copy("Resources/Localization"),
                 .copy("Resources/Models"),

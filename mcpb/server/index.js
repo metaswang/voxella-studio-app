@@ -13,7 +13,7 @@ let reconnecting = null;     // shared promise; concurrent failures trigger one 
 let internalId = 0;
 let getStreamAbort = null;
 
-const log = (...a) => console.error('[palmier-shim]', ...a);
+const log = (...a) => console.error('[voxstudio-shim]', ...a);
 const writeOut = (msg) => process.stdout.write(JSON.stringify(msg) + '\n');
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 

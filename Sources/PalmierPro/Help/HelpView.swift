@@ -2,15 +2,11 @@ import SwiftUI
 
 enum HelpTab: String, CaseIterable, Identifiable {
     case shortcuts = "Shortcuts"
-    case mcp = "MCP"
 
     var id: String { rawValue }
 
     var icon: String {
-        switch self {
-        case .shortcuts: "keyboard"
-        case .mcp: "network"
-        }
+        "keyboard"
     }
 }
 
@@ -88,7 +84,6 @@ struct HelpView: View {
 
             switch selectedTab {
             case .shortcuts: ShortcutsPane()
-            case .mcp: MCPInstructionsPane()
             }
         }
     }
