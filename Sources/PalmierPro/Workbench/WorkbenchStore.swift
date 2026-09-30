@@ -4115,13 +4115,17 @@ final class WorkbenchStore {
         selectedTranscriptionID = nil
     }
 
+    func hasActiveMediaFlow(_ id: UUID) -> Bool {
+        flowTasks[id] != nil
+    }
+
     func prepareSubtitles(_ id: UUID) {
         prepareNewContentAccessAndRun { [weak self] in
             self?.prepareSubtitlesAuthorized(id)
         }
     }
 
-    private func prepareSubtitlesAuthorized(_ id: UUID) {
+    func prepareSubtitlesAuthorized(_ id: UUID) {
         guard admitNewContent(),
               let job = transcriptions.first(where: { $0.id == id }),
               flowTasks[id] == nil,
@@ -4193,7 +4197,7 @@ final class WorkbenchStore {
         }
     }
 
-    private func runTranslationAuthorized(_ id: UUID) {
+    func runTranslationAuthorized(_ id: UUID) {
         guard admitNewContent() else { return }
         guard flowTasks[id] == nil,
               let index = transcriptions.firstIndex(where: { $0.id == id }),
@@ -4248,7 +4252,7 @@ final class WorkbenchStore {
         }
     }
 
-    private func runDubAuthorized(_ id: UUID) {
+    func runDubAuthorized(_ id: UUID) {
         guard admitNewContent() else { return }
         guard flowTasks[id] == nil,
               let index = dubs.firstIndex(where: { $0.id == id }),
