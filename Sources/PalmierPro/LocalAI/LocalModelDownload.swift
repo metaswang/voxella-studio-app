@@ -483,6 +483,16 @@ enum LocalModelDownload {
         }
         return "The resource download failed. Try again."
     }
+
+    static func diagnostic(for error: Error) -> String {
+        #if BUNDLED_SPEECH
+        if let error = error as? DownloadError { return error.localizedDescription }
+        if let error = error as? LocalModelChunkIO.TransferError { return error.localizedDescription }
+        #endif
+        // URL errors may contain signed download URLs in their description or userInfo.
+        let nsError = error as NSError
+        return "\(nsError.domain) code=\(nsError.code)"
+    }
 }
 
 #if BUNDLED_SPEECH

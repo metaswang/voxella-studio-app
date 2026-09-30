@@ -2682,3 +2682,12 @@
 "Dub again" = "再次配音";
 "Back (⌘[)" = "返回 (⌘[)";
 "Forward (⌘])" = "前进 (⌘])";
+
+/* Local feature download errors */
+"The resource download was denied. Try again later." = "资源下载请求被拒绝，请稍后重试。";
+"Too many download requests were made. Wait a few minutes, then retry." = "下载请求过于频繁，请等待几分钟后重试。";
+"The resource download service is temporarily unavailable. Try again later." = "资源下载服务暂时不可用，请稍后重试。";
+"The resource download could not be verified. Try again later." = "无法验证下载的资源，请稍后重试。";
+"The resource download could not reach the service. Check your connection and retry." = "无法连接资源下载服务，请检查网络连接后重试。";
+"The resource could not be saved. Check disk space and permissions." = "无法保存资源，请检查磁盘空间和访问权限。";
+"The resource download failed. Try again." = "资源下载失败，请重试。";

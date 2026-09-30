@@ -987,7 +987,7 @@ final class LocalModelManager {
                 self.pendingASRActivation.remove(id)
                 let message = Self.userFacingDownloadError(error)
                 Log.transcription.error(
-                    "local model download failed id=\(id.rawValue) error=\(message)"
+                    "local model download failed id=\(id.rawValue) error=\(message) detail=\(LocalModelDownload.diagnostic(for: error))"
                 )
                 self.states[id] = .failed(message)
                 self.transferMetrics[id] = nil

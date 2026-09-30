@@ -50,7 +50,7 @@ struct LocalFeaturePreparationRow: View {
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
             } else if status.hasFailure {
-                Text(L10n.string("Download could not finish. Check your connection and available disk space, then retry."))
+                Text(L10n.display(status.currentMessage ?? "The resource download failed. Try again."))
                     .font(.system(size: AppTheme.FontSize.md))
                     .foregroundStyle(AppTheme.Status.errorColor)
             } else if !status.isReady {

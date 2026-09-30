@@ -2682,3 +2682,12 @@
 "Dub again" = "Dub again";
 "Back (⌘[)" = "Back (⌘[)";
 "Forward (⌘])" = "Forward (⌘])";
+
+/* Local feature download errors */
+"The resource download was denied. Try again later." = "The resource download was denied. Try again later.";
+"Too many download requests were made. Wait a few minutes, then retry." = "Too many download requests were made. Wait a few minutes, then retry.";
+"The resource download service is temporarily unavailable. Try again later." = "The resource download service is temporarily unavailable. Try again later.";
+"The resource download could not be verified. Try again later." = "The resource download could not be verified. Try again later.";
+"The resource download could not reach the service. Check your connection and retry." = "The resource download could not reach the service. Check your connection and retry.";
+"The resource could not be saved. Check disk space and permissions." = "The resource could not be saved. Check disk space and permissions.";
+"The resource download failed. Try again." = "The resource download failed. Try again.";
