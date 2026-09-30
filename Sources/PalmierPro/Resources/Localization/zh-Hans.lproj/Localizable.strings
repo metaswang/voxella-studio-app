@@ -2691,3 +2691,25 @@
 "The resource download could not reach the service. Check your connection and retry." = "无法连接资源下载服务，请检查网络连接后重试。";
 "The resource could not be saved. Check disk space and permissions." = "无法保存资源，请检查磁盘空间和访问权限。";
 "The resource download failed. Try again." = "资源下载失败，请重试。";
+
+"App" = "应用";
+"Selected apps on one display, with their audio" = "录制同一显示器上的所选应用及其声音";
+"Choose apps to record" = "选择要录制的应用";
+"Capture selected apps on one display. Other apps and the desktop stay out of the recording." = "录制同一显示器上的所选应用，其他应用和桌面不会被录入。";
+"Search apps" = "搜索应用";
+"No recordable apps on this display. Open an app window, then refresh." = "此显示器上没有可录制的应用。请打开应用窗口后刷新。";
+"%d apps selected" = "已选择 %d 个应用";
+"Display %d" = "显示器 %d";
+"App audio" = "应用声音";
+"Captures sound from the selected apps, including when using headphones. Other apps are excluded." = "捕获所选应用的声音，使用耳机时也可录入。其他应用的声音不会被录入。";
+"Record audio, a display, selected apps, a window, or a region. Video capture hides this window; use the recording controls to stop, pause, or discard." = "录制音频、显示器、所选应用、窗口或区域。录制视频时此窗口会隐藏；可使用录制控制条停止、暂停或丢弃录制。";
+"Choose an open meeting app to record its windows and audio. Save the file on this Mac, then transcribe it in VoxStudio." = "选择已打开的会议应用，录制它的窗口和声音。文件保存在本机，可在 VoxStudio 中转写。";
+"App audio on" = "应用声音已开启";
+"Microphone on" = "麦克风已开启";
+"Microphone off" = "麦克风已关闭";
+"No supported meeting app is open. Open one, or choose an app or window below. For a browser meeting, choose its window." = "没有检测到已打开的会议应用。请打开会议应用，或在下方选择应用、窗口等录制方式。网页会议请选择所在窗口。";
+"Open apps are detected locally. This does not indicate that a call is in progress." = "在本机检测已打开的应用；此状态不表示正在通话。";
+"Record this app" = "录制此应用";
+"The selected app has no recordable window on this display. Open its window and try again." = "所选应用在此显示器上没有可录制窗口。请打开它的窗口后重试。";
+"The selected apps are no longer running. The recording so far was saved." = "所选应用已全部退出，已保存录制的内容。";
+"An app closed. Recording continues with the remaining selected apps." = "一个应用已退出，将继续录制其余所选应用。";

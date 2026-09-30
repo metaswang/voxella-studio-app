@@ -39,13 +39,13 @@ struct RecordWorkbenchPanel: View {
 
             RecordingInfoButton(
                 title: L10n.string("About recording"),
-                message: L10n.string("Record audio, a display, a window, or a selected region. Video capture hides this window while recording; use the menu bar item to stop, pause, or discard.")
+                message: L10n.string("Record audio, a display, selected apps, a window, or a region. Video capture hides this window; use the recording controls to stop, pause, or discard.")
             )
         }
     }
 
     private var modePicker: some View {
-        HStack(spacing: AppTheme.Spacing.smMd) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: AppTheme.zoomed(150)), spacing: AppTheme.Spacing.smMd)], spacing: AppTheme.Spacing.smMd) {
             ForEach(RecordingCaptureMode.allCases) { mode in
                 Button {
                     session.setCaptureMode(mode)
@@ -53,7 +53,7 @@ struct RecordWorkbenchPanel: View {
                     HStack(spacing: AppTheme.Spacing.sm) {
                         Label(mode.title, systemImage: mode.systemImage)
                             .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
-                        Spacer(minLength: 0)
+                        Spacer(minLength: AppTheme.zoomed(28))
                     }
                     .padding(.horizontal, AppTheme.Spacing.md)
                     .padding(.vertical, AppTheme.Spacing.mdLg)
@@ -104,9 +104,11 @@ struct RecordWorkbenchPanel: View {
             }
 
             sourceCard(
-                title: L10n.string("System audio"),
+                title: L10n.string(session.configuration.mode == .application ? "App audio" : "System audio"),
                 systemImage: "speaker.wave.2",
-                info: L10n.string("Captures audio playing through this Mac. Requires Screen Recording permission. Keep this enabled when recording a display, window, or region without a microphone.")
+                info: session.configuration.mode == .application
+                    ? L10n.string("Captures sound from the selected apps, including when using headphones. Other apps are excluded.")
+                    : L10n.string("Captures audio playing through this Mac. Requires Screen Recording permission. Keep this enabled when recording a display, window, or region without a microphone.")
             ) {
                 Toggle(L10n.string("Capture"), isOn: $session.configuration.capturesSystemAudio)
                     .toggleStyle(.checkbox)

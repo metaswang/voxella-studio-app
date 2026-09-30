@@ -724,40 +724,7 @@ struct TranscribeWorkbenchView: View {
                         }
                     }
 
-                    HStack(alignment: .top, spacing: AppTheme.Spacing.xl) {
-                        if entryMode == .netVideo {
-                            guidanceCard(
-                                eyebrow: "BEST FIT",
-                                title: "When net video is the best choice",
-                                detail: netVideoKind == .video
-                                    ? "The talk is already public on YouTube and you want a local video with its audio, without a separate download."
-                                    : "The talk is already public on YouTube and you want audio extracted on this Mac, without a separate download.",
-                                systemImage: "link"
-                            )
-                            guidanceCard(
-                                eyebrow: "AFTER EXTRACT",
-                                title: "Same workspace from here",
-                                detail: netVideoKind == .video
-                                    ? "After the video file is local, processing options, transcription, translation, and export follow the existing session flow."
-                                    : "After the audio file is local, processing options, transcription, translation, and export follow the existing session flow.",
-                                systemImage: "arrow.up.circle"
-                            )
-                        } else {
-                            guidanceCard(
-                                eyebrow: "BEST FIT",
-                                title: "When import is the best choice",
-                                detail: "You already have a local source file and want the shortest path to transcript, translation, or export.",
-                                systemImage: "wand.and.stars"
-                            )
-                            guidanceCard(
-                                eyebrow: "AFTER START",
-                                title: "Keep the workflow moving",
-                                detail: "Once a session is created, edit, translate, export, and prepare a dub without leaving this workspace.",
-                                systemImage: "arrow.up.circle"
-                    )
                 }
-            }
-        }
 
                 WorkbenchRecentTranscriptSessionsSection(
                     modeTitle: recentSessionsTitle,
@@ -1112,34 +1079,6 @@ struct TranscribeWorkbenchView: View {
         }
         .padding(AppTheme.Spacing.lgXl)
         .background(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.subtle), in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
-        .overlay {
-            if entryMode != .netVideo {
-                RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
-                    .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-            }
-        }
-    }
-
-    private func guidanceCard(
-        eyebrow: String,
-        title: String,
-        detail: String,
-        systemImage: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            Label(eyebrow, systemImage: systemImage)
-                .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.bold))
-                .foregroundStyle(AppTheme.Text.mutedColor)
-            Text(L10n.string(key: title))
-                .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
-            Text(L10n.string(key: detail))
-                .font(.system(size: AppTheme.FontSize.sm))
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(AppTheme.Spacing.lgXl)
-        .frame(maxWidth: .infinity, minHeight: AppTheme.zoomed(150), alignment: .topLeading)
-        .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
         .overlay {
             if entryMode != .netVideo {
                 RoundedRectangle(cornerRadius: AppTheme.Radius.xl)

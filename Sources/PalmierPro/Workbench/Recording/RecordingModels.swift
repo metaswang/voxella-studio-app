@@ -4,6 +4,7 @@ import Foundation
 enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
     case audioOnly
     case display
+    case application
     case window
     case region
 
@@ -17,6 +18,7 @@ enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .audioOnly: L10n.string("Audio")
         case .display: L10n.string("Display")
+        case .application: L10n.string("App")
         case .window: L10n.string("Window")
         case .region: L10n.string("Region")
         }
@@ -26,6 +28,7 @@ enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .audioOnly: "mic"
         case .display: "display"
+        case .application: "app"
         case .window: "macwindow"
         case .region: "rectangle.dashed"
         }
@@ -35,6 +38,7 @@ enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .audioOnly: L10n.string("Microphone, with optional system audio")
         case .display: L10n.string("Entire display plus audio")
+        case .application: L10n.string("Selected apps on one display, with their audio")
         case .window: L10n.string("One window plus audio")
         case .region: L10n.string("Selected area plus audio")
         }
@@ -51,12 +55,15 @@ struct LocalRecordingRequest: Equatable, Sendable {
     var mode: RecordingCaptureMode
     var applicationBundleIdentifier: String?
     var startImmediately: Bool
+    var applicationProcessID: Int32? = nil
 
     func configuration(from current: RecordingCaptureConfiguration) -> RecordingCaptureConfiguration {
         var result = current
         result.applyMode(mode)
         // Meeting shortcuts must include the other participants, including when using headphones.
         result.capturesSystemAudio = true
+        // The shortcut preserves an explicit microphone choice, including Off.
+        result.microphone = current.microphone
         return result
     }
 }
@@ -401,6 +408,8 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
     case diskSpaceLow
     case emptyRecording
     case captureTargetUnavailable
+    case applicationUnavailable
+    case captureApplicationsUnavailable
     case microphoneUnavailable
     case terminationUnsafe(String)
 
@@ -436,6 +445,10 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
             "The recording did not capture any media."
         case .captureTargetUnavailable:
             "The selected display is no longer available. The recording so far was saved."
+        case .applicationUnavailable:
+            "The selected app has no recordable window on this display. Open its window and try again."
+        case .captureApplicationsUnavailable:
+            "The selected apps are no longer running. The recording so far was saved."
         case .microphoneUnavailable:
             "The selected microphone is unavailable. Reconnect it or choose another input."
         case .terminationUnsafe(let message):

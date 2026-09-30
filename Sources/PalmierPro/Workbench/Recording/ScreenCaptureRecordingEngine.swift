@@ -16,6 +16,7 @@ struct RecordingEngineRequest {
     var liveWaveform: RecordingLiveWaveformStore
     var onAudioLevelWarning: (@Sendable (RecordingAudioLevelWarning) -> Void)?
     var onRuntimeEvent: (@Sendable (RecordingRuntimeEvent) -> Void)?
+    var applicationSelection: RecordingApplicationSelection? = nil
 }
 
 private struct RecordingAudioLevelMeter {
@@ -112,6 +113,8 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     private let queue = DispatchQueue(label: "com.voxella.studio.recording", qos: .userInitiated)
     private let supervisorQueue = DispatchQueue(label: "com.voxella.studio.recording.supervisor", qos: .userInitiated)
     private let hostClock = CMClockGetHostTimeClock()
+    // SCStreamConfiguration's color property is unowned; retain it for the stream lifetime.
+    private let applicationBackgroundColor = CGColor(gray: 0, alpha: 1)
     private lazy var microphone = MicrophoneCaptureEngine(outputQueue: queue)
 
     private var stream: SCStream?
@@ -177,6 +180,8 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     private var lastCompleteVideoFrame: TimeInterval = 0
     private var lastVideoAppended: TimeInterval = 0
     private var lastVideoPTS: Double?
+    private var lastEncodedVideoBuffer: CVPixelBuffer?
+    private var lastScreenFrameStatus: SCFrameStatus?
     private var pendingStopReason: RecordingStopReason = .userStop
     private let healthSnapshot = OSAllocatedUnfairLock(initialState: RecordingHealthSnapshot())
     private let durableSalvage = OSAllocatedUnfairLock(initialState: false)
@@ -412,12 +417,26 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             }
             let size = outputSize(filter: filter, sourceRect: request.sourceRect)
             videoSize = size
-            let videoSettings: [String: Any] = [
+            var videoSettings: [String: Any] = [
                 AVVideoCodecKey: AVVideoCodecType.h264,
                 AVVideoWidthKey: size.width,
                 AVVideoHeightKey: size.height,
                 AVVideoScalingModeKey: AVVideoScalingModeResizeAspect,
             ]
+            if request.configuration.mode == .application {
+                // Application capture changes cadence when windows become idle
+                // or hidden. Keep decode order equal to presentation order so
+                // fragmented MP4 does not need reordered frame timing across
+                // those transitions. Bound camera-preview bitrate as well.
+                videoSettings[AVVideoCompressionPropertiesKey] = [
+                    AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                    AVVideoAverageBitRateKey: max(2_000_000, min(20_000_000, size.width * size.height * 2)),
+                    AVVideoExpectedSourceFrameRateKey: 30,
+                    AVVideoAllowFrameReorderingKey: false,
+                    AVVideoMaxKeyFrameIntervalKey: 60,
+                    AVVideoMaxKeyFrameIntervalDurationKey: 2,
+                ] as [String: Any]
+            }
             let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
             videoInput.expectsMediaDataInRealTime = true
             guard writer.canAdd(videoInput) else {
@@ -461,6 +480,11 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         didStartSession = true
         self.writer = writer
         outputURL = url
+        // Each writer starts its own timeline at zero. Comparing its frames to
+        // the previous segment's PTS would discard video until it catches up.
+        lastVideoPTS = nil
+        lastVideoAppended = 0
+        didLogWriterAppendFailure = false
         didAppendMedia = false
         didAppendVideo = false
         didAppendMicrophone = false
@@ -524,8 +548,9 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
                         reason: Log.detail(error)
                     )
                 )
-            } else if let request = currentRequest {
-                recreateStreamLocked(reason: Log.detail(error), request: request, generation: generation)
+            } else {
+                isRecoveringStream = false
+                recoverStreamLocked(reason: Log.detail(error), streamStopped: true)
             }
             return
         }
@@ -829,7 +854,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
                 }
                 return results
             }
-            let readable = inspections.filter(\.isReadable).map(\.url)
+            let readable = RecordingMediaValidator.readableURLs(in: urls, inspections: inspections)
             let unreadable = inspections.filter { !$0.isReadable }
             var warnings = unreadable.map { "Unreadable segment: \($0.url.lastPathComponent)" }
             var resultURL = readable.last ?? urls.last ?? currentURL
@@ -1076,6 +1101,8 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         lastCompleteVideoFrame = 0
         lastVideoAppended = 0
         lastVideoPTS = nil
+        lastEncodedVideoBuffer = nil
+        lastScreenFrameStatus = nil
         recoveryGeneration = 0
         microphone.stop()
         healthSnapshot.withLock { $0 = RecordingHealthSnapshot() }
@@ -1097,6 +1124,9 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         configuration.showsCursor = request.configuration.capturesVideo
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.queueDepth = 8
+        if request.configuration.mode == .application {
+            configuration.backgroundColor = applicationBackgroundColor
+        }
         if let sourceRect = request.sourceRect, sourceRect.width > 0, sourceRect.height > 0 {
             configuration.sourceRect = sourceRect
         }
@@ -1179,15 +1209,55 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         let now = ProcessInfo.processInfo.systemUptime
         lastVideoCallback = now
         guard !isStopping, !isPaused else { return }
-        guard Self.isCompleteScreenFrame(sampleBuffer) else { return }
-        lastCompleteVideoFrame = now
-        guard writer?.status == .writing,
-              let input = videoInput,
-              input.isReadyForMoreMediaData,
-              let adaptor = pixelBufferAdaptor,
-              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            return
+        guard CMSampleBufferIsValid(sampleBuffer) else { return }
+        let status = Self.screenFrameStatus(sampleBuffer)
+        let action = RecordingVideoHealth.frameAction(status: status, applicationMode: currentRequest?.configuration.mode == .application)
+        let changed = lastScreenFrameStatus != status
+        lastScreenFrameStatus = status
+        if action == .image { lastCompleteVideoFrame = now }
+        if action == .ignore { return }
+        if action != .image, !changed, now - lastVideoAppended < 1 { return }
+        let pixelBuffer: CVPixelBuffer
+        switch action {
+        case .image:
+            guard let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+            pixelBuffer = image
+        case .repeatImage:
+            guard let previous = lastEncodedVideoBuffer else { return }
+            pixelBuffer = previous
+        case .black:
+            guard let black = makeBlackVideoBuffer() else { return }
+            pixelBuffer = black
+        case .ignore: return
         }
+        let frameTime = RecordingVideoHealth.frameTimestamp(
+            action: action,
+            sampleTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer),
+            hostTime: CMClockGetTime(hostClock)
+        )
+        appendVideoBuffer(pixelBuffer, at: frameTime, now: now)
+    }
+
+    private func appendStaticVideoFrame(at now: TimeInterval) {
+        guard currentRequest?.configuration.mode == .application, includesVideo,
+              !isStopping, !isPaused, now - lastVideoAppended >= 1 else { return }
+        let action = RecordingVideoHealth.frameAction(status: lastScreenFrameStatus, applicationMode: true)
+        let buffer: CVPixelBuffer?
+        switch action {
+        case .repeatImage: buffer = lastEncodedVideoBuffer
+        case .black: buffer = makeBlackVideoBuffer()
+        default: return
+        }
+        guard let buffer else { return }
+        // Static streams may stop sending callbacks entirely. Keep the writer's
+        // video track progressing without changing the selected content.
+        appendVideoBuffer(buffer, at: CMClockGetTime(hostClock), now: now)
+    }
+
+    private func appendVideoBuffer(_ pixelBuffer: CVPixelBuffer, at frameTime: CMTime, now: TimeInterval) {
+        guard writer?.status == .writing,
+              let input = videoInput, input.isReadyForMoreMediaData,
+              let adaptor = pixelBufferAdaptor else { return }
         if !didLogVideoFormat {
             didLogVideoFormat = true
             Log.recording.notice(
@@ -1196,18 +1266,31 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         }
         ensureSessionStarted()
         guard let encodedBuffer = pixelBufferForWriter(pixelBuffer) else { return }
-        let pts = sessionPTS(from: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        let pts = sessionPTS(from: frameTime)
+        if let lastVideoPTS, pts.seconds <= lastVideoPTS { return }
         if adaptor.append(encodedBuffer, withPresentationTime: pts) {
             didAppendVideo = true
             didAppendMedia = true
             lastVideoAppended = now
             lastVideoPTS = pts.seconds
+            lastEncodedVideoBuffer = encodedBuffer
         } else {
             logAppendFailure(kind: "video")
             if writer?.status == .failed {
                 rotateWriterLocked(reason: "video append failed")
             }
         }
+    }
+
+    private func makeBlackVideoBuffer() -> CVPixelBuffer? {
+        guard let pool = pixelBufferAdaptor?.pixelBufferPool else { return nil }
+        var buffer: CVPixelBuffer?
+        guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &buffer) == kCVReturnSuccess,
+              let buffer, CVPixelBufferLockBaseAddress(buffer, []) == kCVReturnSuccess else { return nil }
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        guard let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+        memset(base, 0, CVPixelBufferGetBytesPerRow(buffer) * CVPixelBufferGetHeight(buffer))
+        return buffer
     }
 
     private func pixelBufferForWriter(_ source: CVPixelBuffer) -> CVPixelBuffer? {
@@ -1257,6 +1340,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         updateHealthSnapshotLocked()
         guard !isStopping, !isPaused, let input else { return }
         if writer?.status == .failed {
+            logAppendFailure(kind: "writer before audio append")
             rotateWriterLocked(reason: "writer failed during audio append")
             return
         }
@@ -1474,16 +1558,15 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         }
     }
 
-    private static func isCompleteScreenFrame(_ sampleBuffer: CMSampleBuffer) -> Bool {
-        guard CMSampleBufferIsValid(sampleBuffer) else { return false }
+    private static func screenFrameStatus(_ sampleBuffer: CMSampleBuffer) -> SCFrameStatus? {
         guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let first = attachments.first else {
-            return CMSampleBufferGetImageBuffer(sampleBuffer) != nil
+            return nil
         }
         if let rawValue = first[.status] as? Int, let status = SCFrameStatus(rawValue: rawValue) {
-            return status == .complete
+            return status
         }
-        return CMSampleBufferGetImageBuffer(sampleBuffer) != nil
+        return nil
     }
 
     private func logAppendFailure(kind: String) {
@@ -1575,53 +1658,50 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         Log.recording.notice(
             "recording stream recovering reason=\(reason) attempt=\(streamRecoveryAttempts) session=\(sessionID.uuidString)"
         )
-        if streamStopped || stream == nil {
-            recreateStreamLocked(reason: reason, request: request, generation: generation)
-            return
-        }
+        let displayID = currentDisplayID
+        let recoveringStream = streamStopped ? nil : stream
+        nonisolated(unsafe) let previousFilter = contentFilter ?? request.contentFilter
         Task { [weak self] in
             guard let self else { return }
             do {
-                let filter = try await self.rebuildContentFilter()
-                guard recGen == self.recoveryGeneration, generation == self.captureGeneration else { return }
-                guard let stream = self.stream else { throw RecordingError.noDisplay }
-                try await stream.updateContentFilter(filter)
+                let filter = try await self.rebuildContentFilter(request: request, displayID: displayID, previousFilter: previousFilter)
+                var recreate = recoveringStream == nil
+                if let recoveringStream {
+                    do { try await recoveringStream.updateContentFilter(filter) }
+                    catch { recreate = true }
+                }
+                let needsRecreation = recreate
                 self.queue.async {
                     guard self.recoveryGeneration == recGen, self.captureGeneration == generation, !self.isStopping else { return }
                     self.contentFilter = filter
+                    if needsRecreation {
+                        self.recreateStreamLocked(reason: reason, request: request, generation: generation, filter: filter)
+                        return
+                    }
                     self.isRecoveringStream = false
                     self.emit(.recovering(source: "stream", message: "Waiting for capture audio…"))
                 }
-            } catch let lost as RecordingError where lost == .captureTargetUnavailable {
+            } catch let lost as RecordingError where lost == .captureTargetUnavailable || lost == .captureApplicationsUnavailable {
                 self.queue.async {
                     guard self.recoveryGeneration == recGen, self.captureGeneration == generation else { return }
                     self.isRecoveringStream = false
-                    self.emit(.captureTargetLost(message: lost.localizedDescription ?? ""))
-                    self.emit(.failed(error: .captureTargetUnavailable, reason: "display lost"))
+                    self.emit(.captureTargetLost(message: lost.localizedDescription))
+                    self.emit(.failed(error: lost, reason: "capture target lost"))
                 }
             } catch {
                 self.queue.async {
                     guard self.recoveryGeneration == recGen, self.captureGeneration == generation, !self.isStopping else { return }
-                    self.recreateStreamLocked(reason: reason, request: request, generation: generation)
+                    self.isRecoveringStream = false
+                    self.emit(.failed(error: .captureInterrupted("Capture stopped and could not be restored. The recording so far was saved."), reason: reason))
                 }
             }
         }
     }
 
-    private func recreateStreamLocked(reason: String, request: RecordingEngineRequest, generation: UInt64) {
+    private func recreateStreamLocked(reason: String, request: RecordingEngineRequest, generation: UInt64, filter: SCContentFilter) {
         let old = stream
         stream = nil
         old?.stopCapture { _ in }
-        guard let filter = contentFilter ?? request.contentFilter else {
-            isRecoveringStream = false
-            emit(
-                .failed(
-                    error: .captureInterrupted("Capture stopped and no display is available. The recording so far was saved."),
-                    reason: reason
-                )
-            )
-            return
-        }
         do {
             try startStreamLocked(filter: filter, request: request, generation: generation)
         } catch {
@@ -1635,9 +1715,16 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         }
     }
 
-    private func rebuildContentFilter() async throws -> SCContentFilter {
+    private func rebuildContentFilter(request: RecordingEngineRequest, displayID: UInt32?, previousFilter: SCContentFilter?) async throws -> SCContentFilter {
+        if request.configuration.mode == .application {
+            guard let selection = request.applicationSelection else { throw RecordingError.captureApplicationsUnavailable }
+            let content = try await RecordingPermission.shareableContent(includeOffscreenWindows: true)
+            return try RecordingApplicationContent.filter(selection: selection, content: content, requireAll: false)
+        }
+        // A window filter stays window-scoped when reconnecting.
+        if request.configuration.mode == .window, let previousFilter { return previousFilter }
         let content = try await RecordingPermission.shareableContent()
-        guard let displayID = currentDisplayID,
+        guard let displayID,
               let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw RecordingError.captureTargetUnavailable
         }
@@ -1698,6 +1785,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         }
         guard !isPaused, let started = captureStartedAt else { return }
         let now = ProcessInfo.processInfo.systemUptime
+        appendStaticVideoFrame(at: now)
         applyHealthDecision(
             microphoneHealth.evaluate(at: now, startedAt: started, enabled: microphoneEnabled),
             source: "microphone",
@@ -1711,7 +1799,10 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
         if includesVideo,
            lastCompleteVideoFrame > 0,
            lastVideoAppended > 0,
-           now - lastVideoAppended >= RecordingCaptureHealth.videoFreezeTimeout,
+           RecordingVideoHealth.shouldFail(now: now, lastCallback: lastVideoCallback,
+                                          lastCompleteFrame: lastCompleteVideoFrame, lastAppend: lastVideoAppended,
+                                          frameAction: RecordingVideoHealth.frameAction(status: lastScreenFrameStatus,
+                                              applicationMode: currentRequest?.configuration.mode == .application)),
            (microphoneEnabled && now - microphoneHealth.lastReceived <= RecordingCaptureHealth.stallTimeout)
             || (systemAudioEnabled && now - systemAudioHealth.lastReceived <= RecordingCaptureHealth.stallTimeout) {
             emit(
@@ -1763,7 +1854,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     private func rotateWriterLocked(reason: String) {
         guard !isStopping, let request = currentRequest, let currentURL = outputURL else { return }
         Log.recording.error(
-            "recording rotating writer reason=\(reason) session=\(sessionID.uuidString) path=\(currentURL.lastPathComponent)"
+            "recording rotating writer reason=\(reason) session=\(sessionID.uuidString) path=\(currentURL.lastPathComponent) error=\(writer?.error.map(Log.detail) ?? "none")"
         )
         let localDuration = max(
             microphoneCursor.nextPTS?.seconds ?? 0,

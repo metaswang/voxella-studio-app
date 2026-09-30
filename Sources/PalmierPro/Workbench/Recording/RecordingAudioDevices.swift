@@ -214,9 +214,9 @@ enum RecordingPermission {
     }
 
     /// Shareable content that can be used to start an `SCStream`.
-    static func shareableContent() async throws -> SCShareableContent {
+    static func shareableContent(includeOffscreenWindows: Bool = false) async throws -> SCShareableContent {
         do {
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: !includeOffscreenWindows)
             if !content.displays.isEmpty {
                 return content
             }

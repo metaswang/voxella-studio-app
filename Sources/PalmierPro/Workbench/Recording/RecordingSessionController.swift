@@ -13,6 +13,7 @@ final class RecordingSessionController {
     var devices: [RecordingAudioDevice] = []
     var phase: RecordingPhase = .idle
     private(set) var isRequestingStart = false
+    private(set) var activeApplicationSelection: RecordingApplicationSelection?
     var elapsed: TimeInterval = 0
     var isMicrophoneMuted = false
     var errorMessage: String?
@@ -84,6 +85,12 @@ final class RecordingSessionController {
         Task { [weak self] in
             self?.recoverInterruptedSessions()
         }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            let exitedPID = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
+            Task { @MainActor in self?.checkApplicationTargets(excluding: exitedPID) }
+        }
     }
 
     func refreshDevices() {
@@ -120,10 +127,10 @@ final class RecordingSessionController {
     func start(_ request: LocalRecordingRequest) {
         guard phase == .idle, !isRequestingStart else { return }
         configuration = request.configuration(from: configuration)
-        requestStart(targetBundleIdentifier: request.applicationBundleIdentifier)
+        requestStart(targetBundleIdentifier: request.applicationBundleIdentifier, targetProcessID: request.applicationProcessID)
     }
 
-    func requestStart(targetBundleIdentifier: String? = nil) {
+    func requestStart(targetBundleIdentifier: String? = nil, targetProcessID: Int32? = nil) {
         guard canStart else { return }
         isRequestingStart = true
         let requestedConfiguration = configuration
@@ -139,7 +146,7 @@ final class RecordingSessionController {
                 guard self.phase == .idle else { return }
                 self.configuration = requestedConfiguration
                 self.isRequestingStart = false
-                self.start(preferredBundleIdentifier: targetBundleIdentifier)
+                self.start(preferredBundleIdentifier: targetBundleIdentifier, preferredProcessID: targetProcessID)
             } catch is CancellationError {
                 return
             } catch is AppAccessError {
@@ -161,7 +168,7 @@ final class RecordingSessionController {
         WorkbenchStore.shared.showRecordImport()
     }
 
-    private func start(preferredBundleIdentifier: String? = nil) {
+    private func start(preferredBundleIdentifier: String? = nil, preferredProcessID: Int32? = nil) {
         do {
             try AccountService.shared.requireNewContentAccess()
         } catch is AppAccessError {
@@ -224,10 +231,11 @@ final class RecordingSessionController {
                 guard self.sessionID == id, self.phase == .preparing || self.phase == .picking else { return }
 
                 let picked = try await self.pickCaptureSource(
-                    preferredBundleIdentifier: preferredBundleIdentifier
+                    preferredBundleIdentifier: preferredBundleIdentifier, preferredProcessID: preferredProcessID
                 )
                 try Task.checkCancellation()
                 guard self.sessionID == id else { return }
+                self.activeApplicationSelection = picked.applicationSelection
 
                 let outputURL = try await self.makeOutputURL()
                 try Task.checkCancellation()
@@ -252,7 +260,8 @@ final class RecordingSessionController {
                         Task { @MainActor [weak self] in
                             self?.handleRuntimeEvent(event, sessionID: id)
                         }
-                    }
+                    },
+                    applicationSelection: picked.applicationSelection
                 )
                 self.captureBackend = Self.backendName(for: self.activeConfiguration ?? self.configuration)
                 try await self.engine.start(request)
@@ -267,6 +276,8 @@ final class RecordingSessionController {
                 }
                 self.startedAt = Date()
                 self.phase = .recording
+                self.checkApplicationTargets()
+                guard self.phase == .recording else { return }
                 self.sleepPreventer.start()
                 self.startTimer()
                 self.updateControls()
@@ -383,6 +394,7 @@ final class RecordingSessionController {
         if wasPicking {
             DisplayRegionOverlayController.shared.cancelSelection()
             RecordingContentPicker.shared.cancelPending()
+            RecordingApplicationPicker.shared.cancelPending()
         }
         let finishMode = mode ?? (discard ? .discard : .export)
 
@@ -484,9 +496,10 @@ final class RecordingSessionController {
         var filter: SCContentFilter?
         var sourceRect: CGRect?
         var displayID: CGDirectDisplayID?
+        var applicationSelection: RecordingApplicationSelection? = nil
     }
 
-    private func pickCaptureSource(preferredBundleIdentifier: String? = nil) async throws -> PickedSource {
+    private func pickCaptureSource(preferredBundleIdentifier: String? = nil, preferredProcessID: Int32? = nil) async throws -> PickedSource {
         switch configuration.mode {
         case .audioOnly:
             guard configuration.capturesSystemAudio else {
@@ -523,6 +536,8 @@ final class RecordingSessionController {
             phase = .preparing
             updateControls()
             return PickedSource(filter: filter, sourceRect: nil, displayID: nil)
+        case .application:
+            return try await pickApplications(bundleIdentifier: preferredBundleIdentifier, processID: preferredProcessID)
         case .region:
             phase = .picking
             updateControls()
@@ -540,6 +555,41 @@ final class RecordingSessionController {
             updateControls()
             return picked
         }
+    }
+
+    private func pickApplications(bundleIdentifier: String?, processID: Int32?) async throws -> PickedSource {
+        let content = try await RecordingPermission.shareableContent()
+        try Task.checkCancellation()
+        let candidates = RecordingApplicationContent.candidates(in: content)
+        let preferred: RecordingApplicationCandidate?
+        if let bundleIdentifier {
+            let matching = candidates.filter {
+                $0.application.bundleIdentifier == bundleIdentifier && (processID == nil || $0.id == processID)
+            }
+            guard !matching.isEmpty else { throw RecordingError.applicationUnavailable }
+            preferred = matching.count == 1 ? matching.first : nil
+        } else {
+            preferred = nil
+        }
+        let selection: RecordingApplicationSelection
+        if let preferred, preferred.displayIDs.count == 1, let displayID = preferred.displayIDs.first {
+            selection = RecordingApplicationSelection(displayID: displayID, applications: [preferred.application])
+        } else {
+            phase = .picking
+            updateControls()
+            selection = try await RecordingApplicationPicker.shared.pick(content: content, preferred: preferred?.application)
+        }
+        try Task.checkCancellation()
+        let current = try await RecordingPermission.shareableContent()
+        try Task.checkCancellation()
+        guard RecordingApplicationSelectionResolver.validate(selection, candidates: RecordingApplicationContent.candidates(in: current)) else {
+            throw RecordingError.applicationUnavailable
+        }
+        let filter = try RecordingApplicationContent.filter(selection: selection, content: current, requireAll: true)
+        phase = .preparing
+        updateControls()
+        floatingControls.present(session: self, displayID: selection.displayID)
+        return PickedSource(filter: filter, sourceRect: nil, displayID: selection.displayID, applicationSelection: selection)
     }
 
     /// Only bypasses the picker when the app has one eligible window and full capture access already exists.
@@ -660,9 +710,16 @@ final class RecordingSessionController {
     private func startTimer() {
         timerTask?.cancel()
         timerTask = Task { [weak self] in
+            var lastTargetCheck: TimeInterval = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(200))
                 guard let self, self.phase.isCapturing else { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                if self.activeApplicationSelection != nil, now - lastTargetCheck >= 1 {
+                    lastTargetCheck = now
+                    self.checkApplicationTargets()
+                    guard self.phase.isCapturing else { return }
+                }
                 self.elapsed = self.currentElapsed()
                 self.updateControls()
             }
@@ -703,6 +760,7 @@ final class RecordingSessionController {
         isMicrophoneMuted = false
         captureBackend = "none"
         activeConfiguration = nil
+        activeApplicationSelection = nil
         pendingStopReason = nil
         liveWaveform.reset()
         updateControls()
@@ -721,18 +779,16 @@ final class RecordingSessionController {
             guard phase.isCapturing else { return }
             pendingStopReason = stopReason(for: error, fallback: reason)
             logStop(reason: pendingStopReason?.logLabel ?? reason, error: error)
-            errorMessage = error.localizedDescription
+            errorMessage = error == .captureApplicationsUnavailable ? nil : error.localizedDescription
             finish(discard: false)
         case .userStopped:
             guard phase.isCapturing else { return }
             pendingStopReason = .systemUserStopped
             errorMessage = "Recording was stopped from the system Screen Recording control."
             finish(discard: false)
-        case .captureTargetLost(let message):
+        case .captureTargetLost:
             guard phase.isCapturing else { return }
             pendingStopReason = .captureTargetLost
-            errorMessage = message
-            liveAudioWarning = message
         }
     }
 
@@ -742,7 +798,7 @@ final class RecordingSessionController {
             .diskSpace
         case .microphoneUnavailable:
             .microphoneLost
-        case .captureTargetUnavailable:
+        case .captureTargetUnavailable, .captureApplicationsUnavailable:
             .captureTargetLost
         case .writerFailed(let message):
             .writerFailed(message)
@@ -760,14 +816,45 @@ final class RecordingSessionController {
 
     private func handleDidWake() {
         guard phase.isCapturing else { return }
+        checkApplicationTargets()
+        guard phase.isCapturing else { return }
         logStop(reason: "system did wake")
         engine.handleSystemWake()
     }
 
     private func handleDisplayChange() {
         guard phase.isCapturing, configuration.requiresScreenCapture else { return }
+        if let selected = activeApplicationSelection,
+           !NSScreen.screens.contains(where: { $0.displayID == selected.displayID }) {
+            pendingStopReason = .captureTargetLost
+            errorMessage = RecordingError.captureTargetUnavailable.localizedDescription
+            finish(discard: false)
+            return
+        }
         logStop(reason: "display change")
         engine.handleDisplayChange()
+    }
+
+    private func checkApplicationTargets(excluding exitedPID: Int32? = nil) {
+        guard phase.isCapturing, let selection = activeApplicationSelection else { return }
+        // Workspace's runningApplications snapshot can still contain the app
+        // while its termination notification is being delivered. Honor that
+        // notification directly and also recheck exact PIDs while capturing.
+        let running = selection.applications.compactMap { target -> RecordingApplicationTarget? in
+            guard target.processID != exitedPID,
+                  let app = NSRunningApplication(processIdentifier: target.processID),
+                  let bundleID = app.bundleIdentifier, !app.isTerminated else { return nil }
+            return RecordingApplicationTarget(bundleIdentifier: bundleID, processID: app.processIdentifier,
+                                              name: app.localizedName ?? bundleID)
+        }
+        let survivors = selection.survivingApplications(in: running)
+        if survivors.isEmpty {
+            Log.recording.notice("recording selected applications exited session=\(sessionID.uuidString)")
+            pendingStopReason = .captureTargetLost
+            finish(discard: false)
+        } else if survivors.count < selection.applications.count {
+            liveAudioWarning = "An app closed. Recording continues with the remaining selected apps."
+        }
     }
 
     private func recoverInterruptedSessions() {

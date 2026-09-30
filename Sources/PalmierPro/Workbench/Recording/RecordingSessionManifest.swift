@@ -232,6 +232,12 @@ enum RecordingMediaValidator {
         var hasVideo: Bool
     }
 
+    /// Parallel inspections finish in arbitrary order; media stays chronological.
+    static func readableURLs(in orderedURLs: [URL], inspections: [Inspection]) -> [URL] {
+        let readable = Set(inspections.filter(\.isReadable).map(\.url))
+        return orderedURLs.filter { readable.contains($0) }
+    }
+
     static func inspect(_ url: URL) async -> Inspection {
         let exists = FileManager.default.fileExists(atPath: url.path)
         let size = Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)

@@ -32,6 +32,21 @@ struct RecordingTimeoutTests {
 
 @Suite("Recording journal recovery")
 struct RecordingJournalRecoveryTests {
+    @Test func parallelInspectionsKeepSegmentChronology() {
+        let first = URL(fileURLWithPath: "/tmp/recording.mp4")
+        let second = URL(fileURLWithPath: "/tmp/recording-seg1.mp4")
+        let unreadable = URL(fileURLWithPath: "/tmp/recording-seg2.mp4")
+        let inspections = [
+            RecordingMediaValidator.Inspection(url: second, exists: true, fileSize: 100,
+                                               isReadable: true, duration: 20, hasAudio: true, hasVideo: true),
+            RecordingMediaValidator.Inspection(url: unreadable, exists: true, fileSize: 100,
+                                               isReadable: false, duration: nil, hasAudio: false, hasVideo: false),
+            RecordingMediaValidator.Inspection(url: first, exists: true, fileSize: 100,
+                                               isReadable: true, duration: 110, hasAudio: true, hasVideo: true),
+        ]
+        #expect(RecordingMediaValidator.readableURLs(in: [first, second, unreadable], inspections: inspections) == [first, second])
+    }
+
     @Test func failedAndInProgressCandidatesAreRecoveredAndGrouped() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("recording-journal-\(UUID().uuidString)")

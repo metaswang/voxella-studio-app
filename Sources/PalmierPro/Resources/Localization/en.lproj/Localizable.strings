@@ -2691,3 +2691,25 @@
 "The resource download could not reach the service. Check your connection and retry." = "The resource download could not reach the service. Check your connection and retry.";
 "The resource could not be saved. Check disk space and permissions." = "The resource could not be saved. Check disk space and permissions.";
 "The resource download failed. Try again." = "The resource download failed. Try again.";
+
+"App" = "App";
+"Selected apps on one display, with their audio" = "Selected apps on one display, with their audio";
+"Choose apps to record" = "Choose apps to record";
+"Capture selected apps on one display. Other apps and the desktop stay out of the recording." = "Capture selected apps on one display. Other apps and the desktop stay out of the recording.";
+"Search apps" = "Search apps";
+"No recordable apps on this display. Open an app window, then refresh." = "No recordable apps on this display. Open an app window, then refresh.";
+"%d apps selected" = "%d apps selected";
+"Display %d" = "Display %d";
+"App audio" = "App audio";
+"Captures sound from the selected apps, including when using headphones. Other apps are excluded." = "Captures sound from the selected apps, including when using headphones. Other apps are excluded.";
+"Record audio, a display, selected apps, a window, or a region. Video capture hides this window; use the recording controls to stop, pause, or discard." = "Record audio, a display, selected apps, a window, or a region. Video capture hides this window; use the recording controls to stop, pause, or discard.";
+"Choose an open meeting app to record its windows and audio. Save the file on this Mac, then transcribe it in VoxStudio." = "Choose an open meeting app to record its windows and audio. Save the file on this Mac, then transcribe it in VoxStudio.";
+"App audio on" = "App audio on";
+"Microphone on" = "Microphone on";
+"Microphone off" = "Microphone off";
+"No supported meeting app is open. Open one, or choose an app or window below. For a browser meeting, choose its window." = "No supported meeting app is open. Open one, or choose an app or window below. For a browser meeting, choose its window.";
+"Open apps are detected locally. This does not indicate that a call is in progress." = "Open apps are detected locally. This does not indicate that a call is in progress.";
+"Record this app" = "Record this app";
+"The selected app has no recordable window on this display. Open its window and try again." = "The selected app has no recordable window on this display. Open its window and try again.";
+"The selected apps are no longer running. The recording so far was saved." = "The selected apps are no longer running. The recording so far was saved.";
+"An app closed. Recording continues with the remaining selected apps." = "An app closed. Recording continues with the remaining selected apps.";

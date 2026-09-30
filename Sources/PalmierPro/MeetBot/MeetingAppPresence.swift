@@ -29,14 +29,31 @@ enum MeetingAppCatalog {
             bundleIdentifiers: ["Cisco-Systems.Spark", "com.cisco.webexmeetingsapp"],
             systemImage: "video.bubble.left.fill"
         ),
+        MeetingAppDefinition(id: "tencent-meeting", name: "Tencent Meeting", bundleIdentifiers: ["com.tencent.meeting", "com.tencent.tencentmeeting"], systemImage: "video.fill"),
+        MeetingAppDefinition(id: "lark", name: "Feishu / Lark", bundleIdentifiers: ["com.electron.lark"], systemImage: "video.fill"),
+        MeetingAppDefinition(id: "dingtalk", name: "DingTalk", bundleIdentifiers: ["com.alibaba.DingTalkMac"], systemImage: "video.fill"),
+        MeetingAppDefinition(id: "slack", name: "Slack", bundleIdentifiers: ["com.tinyspeck.slackmacgap"], systemImage: "bubble.left.and.bubble.right.fill"),
+        MeetingAppDefinition(id: "discord", name: "Discord", bundleIdentifiers: ["com.hnc.Discord"], systemImage: "headphones"),
+        MeetingAppDefinition(id: "facetime", name: "FaceTime", bundleIdentifiers: ["com.apple.FaceTime"], systemImage: "video.fill"),
     ]
+
+    static func detect(in applications: [RecordingApplicationTarget]) -> [DetectedMeetingApp] {
+        apps.flatMap { definition in
+            applications.filter { definition.bundleIdentifiers.contains($0.bundleIdentifier) }
+                .sorted { $0.processID < $1.processID }
+                .map { DetectedMeetingApp(definition: definition, bundleIdentifier: $0.bundleIdentifier,
+                                         processID: $0.processID, name: $0.name) }
+        }
+    }
 }
 
 struct DetectedMeetingApp: Identifiable, Equatable, Sendable {
     var definition: MeetingAppDefinition
     var bundleIdentifier: String
+    var processID: Int32
+    var name: String
 
-    var id: String { definition.id }
+    var id: Int32 { processID }
 }
 
 @MainActor
@@ -52,6 +69,7 @@ final class MeetingAppPresence {
         let names = [
             NSWorkspace.didLaunchApplicationNotification,
             NSWorkspace.didTerminateApplicationNotification,
+            NSWorkspace.didActivateApplicationNotification,
         ]
         for name in names {
             let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -61,21 +79,27 @@ final class MeetingAppPresence {
             }
             observers.append(observer)
         }
+        let observer = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
+                                                             object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
+        observers.append(observer)
     }
 
     func stop() {
         let center = NSWorkspace.shared.notificationCenter
         for observer in observers {
             center.removeObserver(observer)
+            NotificationCenter.default.removeObserver(observer)
         }
         observers.removeAll()
     }
 
     func refresh() {
-        let bundleIDs = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
-        running = MeetingAppCatalog.apps.compactMap { definition in
-            guard let bundleID = definition.bundleIdentifiers.first(where: bundleIDs.contains) else { return nil }
-            return DetectedMeetingApp(definition: definition, bundleIdentifier: bundleID)
-        }
+        running = MeetingAppCatalog.detect(in: NSWorkspace.shared.runningApplications.compactMap { app in
+            guard !app.isTerminated, let bundleID = app.bundleIdentifier else { return nil }
+            return RecordingApplicationTarget(bundleIdentifier: bundleID, processID: app.processIdentifier,
+                                              name: app.localizedName ?? bundleID)
+        })
     }
 }

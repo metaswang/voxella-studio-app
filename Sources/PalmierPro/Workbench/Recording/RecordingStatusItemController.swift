@@ -122,7 +122,9 @@ final class RecordingStatusItemController: NSObject {
         statusItem.button?.image = WorkbenchBrandIcon.statusBarImage()
         statusItem.button?.imagePosition = .imageLeading
         statusItem.button?.contentTintColor = nil
+        let applications = session.activeApplicationSelection?.applications.map(\.name).joined(separator: ", ")
         statusItem.button?.toolTip = L10n.string(isCapturing ? "Recording controls" : "Start a recording")
+            + (isCapturing && applications?.isEmpty == false ? " · " + (applications ?? "") : "")
         statusItem.button?.title = isCapturing ? " \(RecordingTimeFormat.clock(session.elapsed))" : ""
         statusItem.length = isCapturing ? NSStatusItem.variableLength : NSStatusItem.squareLength
     }
