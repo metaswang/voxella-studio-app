@@ -1772,7 +1772,7 @@ final class LLMSettingsStore {
         ProviderModelCatalog.shared.invalidate(providerID)
     }
 
-    func runtimeRoute(for useCase: LLMUseCase) async throws -> LLMRuntimeRoute {
+    func runtimeRoute(for useCase: LLMUseCase, allowedProviderIDs: Set<UUID>? = nil) async throws -> LLMRuntimeRoute {
         let route = route(for: useCase)
         let policy = try route.policy.validated(for: useCase)
         let reasoningEffort = useCase == .chat ? effectiveChatReasoningEffort : nil
@@ -1789,6 +1789,7 @@ final class LLMSettingsStore {
                 )
                 continue
             }
+            if let allowedProviderIDs, !allowedProviderIDs.contains(profile.id) { continue }
             let validated = try profile.validated()
             do {
                 guard let key = try await loadCredential(for: validated) else {

@@ -8,11 +8,14 @@ actor MediaFlowExecutor: MediaJobEventSource {
     static let shared = MediaFlowExecutor()
 
     typealias LLMClientFactory = @Sendable () async throws -> any LLMTextClient
+    typealias TranscriptionFactory = @Sendable (URL, TranscriptionFlowPayload) async throws -> LocalTranscriptionOutput
 
     private let llmClientFactory: LLMClientFactory?
+    private let transcriptionFactory: TranscriptionFactory?
 
-    init(llmClientFactory: LLMClientFactory? = nil) {
+    init(llmClientFactory: LLMClientFactory? = nil, transcriptionFactory: TranscriptionFactory? = nil) {
         self.llmClientFactory = llmClientFactory
+        self.transcriptionFactory = transcriptionFactory
     }
 
     private struct FlowContext {
@@ -115,22 +118,27 @@ actor MediaFlowExecutor: MediaJobEventSource {
                     guard let mediaURL = context.mediaURL else {
                         throw MediaFlowError.missingMedia
                     }
-                    let output = try await LocalSpeechPipeline.shared.transcribeDetailed(
-                        sourceURL: mediaURL,
-                        languageCode: payload.languageCode,
-                        speakerCount: payload.speakerCount,
-                        clipRangeSeconds: payload.clipRangeSeconds,
-                        progressUpdate: { update in
-                            progressEvent(
-                                .transcription,
-                                update.stage.rawValue,
-                                update.fraction,
-                                update.completed,
-                                update.total,
-                                update.message
-                            )
-                        }
-                    )
+                    let output: LocalTranscriptionOutput
+                    if let transcriptionFactory {
+                        output = try await transcriptionFactory(mediaURL, payload)
+                    } else {
+                        output = try await LocalSpeechPipeline.shared.transcribeDetailed(
+                            sourceURL: mediaURL,
+                            languageCode: payload.languageCode,
+                            speakerCount: payload.speakerCount,
+                            clipRangeSeconds: payload.clipRangeSeconds,
+                            progressUpdate: { update in
+                                progressEvent(
+                                    .transcription,
+                                    update.stage.rawValue,
+                                    update.fraction,
+                                    update.completed,
+                                    update.total,
+                                    update.message
+                                )
+                            }
+                        )
+                    }
                     let transcript = payload.clipRangeSeconds.map {
                         output.result.offsetting(by: $0.lowerBound)
                     } ?? output.result
@@ -149,6 +157,8 @@ actor MediaFlowExecutor: MediaJobEventSource {
                        }) {
                         try await recoverWhisperPunctuation(
                             transcript: transcript,
+                            diarizationDiagnostics: output.diarizationDiagnostics,
+                            alignmentDiagnostics: output.alignmentDiagnostics,
                             payload: SubtitleProcessingPayload(),
                             llmClients: &LLMClients,
                             context: &context,
@@ -211,11 +221,34 @@ actor MediaFlowExecutor: MediaJobEventSource {
                     guard let transcript = context.transcript else {
                         throw MediaFlowError.missingTranscript
                     }
+                    let byokBecameUnavailable = payload.requiresConnectedBYOK && llmClientFactory == nil
+                        ? await MainActor.run {
+                            LLMSettingsStore.shared.subtitleSegmentationMethod(
+                                connectionStates: ProviderConnectivityStore.shared.states
+                            ) == .localCaptions
+                        }
+                        : false
+                    if payload.segmentationMethod == .localCaptions || byokBecameUnavailable {
+                        let track = try LocalSubtitleProcessor.process(transcript)
+                        context.subtitles = track
+                        progressEvent(
+                            .subtitlePreparation,
+                            "local_subtitle_preparation",
+                            1,
+                            nil,
+                            nil,
+                            "Subtitles segmented locally"
+                        )
+                        continuation.yield(.artifact(.subtitles(track, rebuiltSegments: nil)))
+                        break
+                    }
                     if LLMClients[.subtitleProcessing] == nil {
                         do {
-                            LLMClients[.subtitleProcessing] = try await makeLLMClient(
-                                for: .subtitleProcessing
-                            )
+                            if payload.requiresConnectedBYOK, llmClientFactory == nil {
+                                LLMClients[.subtitleProcessing] = try await LLMSettingsStore.shared.connectedSubtitleClient()
+                            } else {
+                                LLMClients[.subtitleProcessing] = try await makeLLMClient(for: .subtitleProcessing)
+                            }
                         } catch {
                             try Task.checkCancellation()
                             try applyPreparedSubtitleFallback(
@@ -405,6 +438,8 @@ actor MediaFlowExecutor: MediaJobEventSource {
     /// cleanup. BYOK or hosted text must already be usable; otherwise keep ASR text.
     private func recoverWhisperPunctuation(
         transcript: TranscriptionResult,
+        diarizationDiagnostics: DiarizationDiagnostics,
+        alignmentDiagnostics: TranscriptionAlignmentDiagnostics,
         payload: SubtitleProcessingPayload,
         llmClients: inout [LLMUseCase: any LLMTextClient],
         context: inout FlowContext,
@@ -438,7 +473,7 @@ actor MediaFlowExecutor: MediaJobEventSource {
                     )
                 }
             )
-            context.transcript = TranscriptionResult(
+            let correctedTranscript = TranscriptionResult(
                 text: TranscriptSegmenter.joinedText(
                     output.rebuiltSegments.map(\.text),
                     language: transcript.language
@@ -448,10 +483,11 @@ actor MediaFlowExecutor: MediaJobEventSource {
                 segments: output.rebuiltSegments,
                 asrEngine: transcript.asrEngine
             )
+            context.transcript = correctedTranscript
             context.warnings.append(contentsOf: output.warnings)
-            context.subtitles = output.track
+            // Punctuation recovery does not opt the user into a subtitle track.
             continuation.yield(
-                .artifact(.subtitles(output.track, rebuiltSegments: output.rebuiltSegments))
+                .artifact(.transcription(correctedTranscript, diarizationDiagnostics, alignmentDiagnostics))
             )
         } catch is CancellationError {
             throw CancellationError()
