@@ -38,10 +38,17 @@ final class RecordingStatusItemController: NSObject {
         case .idle:
             addHeader(L10n.string("VoxStudio Recording"), to: menu)
             menu.addItem(.separator())
-            addItem(L10n.string("Record Screen"), action: #selector(recordDisplay), to: menu)
-            addItem(L10n.string("Record Window"), action: #selector(recordWindow), to: menu)
-            addItem(L10n.string("Record Selected Area"), action: #selector(recordRegion), to: menu)
-            addItem(L10n.string("Record Audio Only"), action: #selector(recordAudio), to: menu)
+            addSubmenu(
+                L10n.string("Start Recording"),
+                imageName: "record.circle",
+                items: [
+                    (L10n.string("Record Screen"), #selector(recordDisplay), "display"),
+                    (L10n.string("Record Window"), #selector(recordWindow), "macwindow"),
+                    (L10n.string("Record Selected Area"), #selector(recordRegion), "selection.pin.in.out"),
+                    (L10n.string("Record Audio Only"), #selector(recordAudio), "waveform"),
+                ],
+                to: menu
+            )
             addItem(
                 L10n.string("Voice Input…"),
                 action: #selector(showVoiceInput),

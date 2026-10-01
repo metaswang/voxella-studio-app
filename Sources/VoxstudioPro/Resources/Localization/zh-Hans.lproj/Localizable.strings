@@ -696,6 +696,7 @@
 
 /* 录制状态栏菜单 */
 "VoxStudio Recording" = "VoxStudio 录制";
+"Start Recording" = "开始录制";
 "Record Screen" = "录制屏幕";
 "Record Window" = "录制窗口";
 "Record Selected Area" = "录制选定区域";

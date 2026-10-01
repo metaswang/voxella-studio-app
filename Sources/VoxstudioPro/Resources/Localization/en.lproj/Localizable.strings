@@ -2256,6 +2256,7 @@
 
 /* Recording status-bar menu */
 "VoxStudio Recording" = "VoxStudio Recording";
+"Start Recording" = "Start Recording";
 "Record Screen" = "Record Screen";
 "Record Window" = "Record Window";
 "Record Selected Area" = "Record Selected Area";
