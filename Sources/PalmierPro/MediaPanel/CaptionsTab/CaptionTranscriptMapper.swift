@@ -32,13 +32,51 @@ enum CaptionTranscriptMapper {
         minDuration: Double,
         fits: @escaping (String) -> Bool
     ) -> [CaptionBuilder.Phrase] {
-        let hasWordTimings = result.words.contains { $0.start != nil && $0.end != nil }
         let source = sourceSpan(for: clip)
         let rate = Double(fps)
         guard rate > 0 else { return [] }
         let visibleStart = source.start / rate
         let visibleEnd = source.end / rate
+        return phrases(
+            result: result,
+            visibleStart: visibleStart,
+            visibleEnd: visibleEnd,
+            maxWords: maxWords,
+            minDuration: minDuration,
+            fits: fits
+        )
+    }
+
+    /// The workbench uses the same phrase builder as Generate Local Captions,
+    /// without needing to create a timeline clip or transcribe the media again.
+    static func phrases(
+        for result: TranscriptionResult,
+        maxWords: Int? = nil,
+        minDuration: Double,
+        fits: @escaping (String) -> Bool
+    ) -> [CaptionBuilder.Phrase] {
+        let starts = result.segments.map(\.start) + result.words.compactMap(\.start)
+        let ends = result.segments.map(\.end) + result.words.compactMap(\.end)
+        return phrases(
+            result: result,
+            visibleStart: starts.filter(\.isFinite).min() ?? 0,
+            visibleEnd: ends.filter(\.isFinite).max() ?? 0,
+            maxWords: maxWords,
+            minDuration: minDuration,
+            fits: fits
+        )
+    }
+
+    private static func phrases(
+        result: TranscriptionResult,
+        visibleStart: Double,
+        visibleEnd: Double,
+        maxWords: Int?,
+        minDuration: Double,
+        fits: @escaping (String) -> Bool
+    ) -> [CaptionBuilder.Phrase] {
         guard visibleEnd > visibleStart else { return [] }
+        let hasWordTimings = result.words.contains { $0.start != nil && $0.end != nil }
 
         if hasWordTimings {
             // Prefer word timings so phrase boundaries survive clipped/reordered source fragments.

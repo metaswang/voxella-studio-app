@@ -3,6 +3,7 @@ import SwiftUI
 struct TranscribeWorkbenchView: View {
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var llmSettings = LLMSettingsStore.shared
+    @Bindable private var connections = ProviderConnectivityStore.shared
     @State private var openingInEditorID: UUID?
     @State private var speakerEditRequest: SpeakerEditRequest?
     @State private var showProcessingOptions = false
@@ -350,11 +351,14 @@ struct TranscribeWorkbenchView: View {
     private func subtitleFlowCard(_ job: WorkbenchTranscriptionJob) -> some View {
         GroupBox(L10n.string("Subtitle flow")) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
-                Toggle(
-                    L10n.string("Clean and segment subtitles with the configured LLM"),
-                    isOn: subtitleProcessingBinding(job.id)
-                )
-                .disabled(job.normalizedTargetLanguageCode != nil)
+                HStack(spacing: AppTheme.Spacing.xs) {
+                    Toggle(
+                        L10n.string("Segment subtitles"),
+                        isOn: subtitleProcessingBinding(job.id)
+                    )
+                    .disabled(job.normalizedTargetLanguageCode != nil)
+                    SubtitleSegmentationInfoButton(compute: job.compute)
+                }
 
                 if job.normalizedTargetLanguageCode != nil {
                     Text(L10n.string("Translation includes subtitle cleanup and segmentation so timing and speaker boundaries stay aligned."))
@@ -382,16 +386,23 @@ struct TranscribeWorkbenchView: View {
                     let useCase: LLMUseCase = job.normalizedTargetLanguageCode == nil
                         ? .subtitleProcessing
                         : .translation
-                    let isConfigured = llmSettings.hasUsableModel(for: useCase)
-                    Image(systemName: isConfigured ? "checkmark.shield.fill" : "key.slash")
+                    let usesCloudSubtitles = job.compute == .cloud && useCase == .subtitleProcessing
+                    let usesLocalCaptions = job.compute == .local && useCase == .subtitleProcessing
+                        && llmSettings.subtitleSegmentationMethod(connectionStates: connections.states) == .localCaptions
+                    let isConfigured = usesCloudSubtitles || usesLocalCaptions || llmSettings.hasUsableModel(for: useCase)
+                    Image(systemName: usesCloudSubtitles ? "cloud" : usesLocalCaptions ? "desktopcomputer" : isConfigured ? "checkmark.shield.fill" : "key.slash")
                         .foregroundStyle(
                             isConfigured
                                 ? AppTheme.Status.successColor
                                 : AppTheme.Status.warningColor
                         )
-                    Text(isConfigured
-                        ? llmRouteDescription(for: useCase)
-                        : L10n.string("An API key is required only for enabled AI steps."))
+                    Text(usesCloudSubtitles
+                        ? L10n.string("VoxStudio Cloud")
+                        : usesLocalCaptions
+                            ? L10n.string("Local captions · No API key required")
+                            : isConfigured
+                                ? llmRouteDescription(for: useCase)
+                                : L10n.string("An API key is required only for enabled AI steps."))
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                         .lineLimit(1)
@@ -1438,9 +1449,7 @@ struct TranscribeWorkbenchView: View {
                     return false
                 }
                 return job.normalizedTargetLanguageCode != nil
-                    || job.shouldProcessSubtitles(
-                        hasUsableLLM: llmSettings.hasUsableModel(for: .subtitleProcessing)
-                    )
+                    || job.shouldProcessSubtitles
             },
             set: { value in
                 store.updateTranscription(id) { $0.useLLMSubtitleProcessing = value }
@@ -1484,9 +1493,7 @@ struct TranscribeWorkbenchView: View {
            llmSettings.hasUsableModel(for: .translation) {
             return "\(prefix): transcribe + translate"
         }
-        if job.shouldProcessSubtitles(
-            hasUsableLLM: llmSettings.hasUsableModel(for: .subtitleProcessing)
-        ) {
+        if job.shouldProcessSubtitles {
             return "\(prefix): transcribe + subtitles"
         }
         return job.state == .completed ? "Re-transcribe" : "Transcribe"

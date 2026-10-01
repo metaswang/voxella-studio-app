@@ -778,6 +778,7 @@ struct LocalFirstWorkbenchTests {
 
         let steps = WorkbenchMediaFlowPlanner.transcriptionSteps(
             for: job,
+            subtitleSegmentationMethod: .llm,
             hasSubtitleModel: true,
             hasTranslationModel: true
         )

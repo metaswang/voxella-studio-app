@@ -64,7 +64,7 @@ struct TranscriptionAIUpgradePrompt: View {
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
 
-            Text(L10n.string("Basic transcription still includes timestamped transcript segments. AI subtitles, correction, punctuation, translation, and summaries are skipped."))
+            Text(L10n.string("Basic transcription includes timestamped transcript segments. If Segment subtitles is selected, captions are generated locally. AI correction, punctuation, translation, and summaries are skipped."))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.mutedColor)
                 .fixedSize(horizontal: false, vertical: true)

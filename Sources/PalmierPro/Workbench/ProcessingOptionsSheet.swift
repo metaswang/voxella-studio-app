@@ -315,9 +315,12 @@ struct ProcessingOptionsSheet: View {
                 .menuIndicator(.hidden)
             }
 
-            Toggle(L10n.string("Segment subtitles"), isOn: $enableSubtitleSegmentation)
-                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
-                .toggleStyle(.checkbox)
+            HStack(spacing: AppTheme.Spacing.xs) {
+                Toggle(L10n.string("Segment subtitles"), isOn: $enableSubtitleSegmentation)
+                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
+                    .toggleStyle(.checkbox)
+                SubtitleSegmentationInfoButton(compute: computeDestination)
+            }
 
             if isSingleFile, allowsClipSelection {
                 clipSection

@@ -233,6 +233,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var batchID: UUID?
     var result: TranscriptionResult?
     var editedText = ""
+    /// Persisted legacy name for the user's subtitle segmentation opt-in;
+    /// the selected method can now be LLM refinement or local captions.
     var useLLMSubtitleProcessing: Bool?
     var targetLanguageCode: String?
     var cloudVocalRepairEnabled = false
@@ -311,8 +313,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         return Double(startMs) / 1000 ... Double(endMs) / 1000
     }
 
-    func shouldProcessSubtitles(hasUsableLLM: Bool) -> Bool {
-        hasUsableLLM && (useLLMSubtitleProcessing ?? false)
+    var shouldProcessSubtitles: Bool {
+        useLLMSubtitleProcessing ?? false
     }
 
     var normalizedTargetLanguageCode: String? {
@@ -1379,6 +1381,7 @@ enum WorkbenchMediaFlowPlanner {
 
     static func transcriptionSteps(
         for job: WorkbenchTranscriptionJob,
+        subtitleSegmentationMethod: SubtitleSegmentationMethod,
         hasSubtitleModel: Bool,
         hasTranslationModel: Bool
     ) -> [MediaFlowStep] {
@@ -1391,8 +1394,11 @@ enum WorkbenchMediaFlowPlanner {
         ]
         let targetLanguage = job.normalizedTargetLanguageCode
         let shouldTranslate = hasSubtitleModel && hasTranslationModel && targetLanguage != nil
-        if job.shouldProcessSubtitles(hasUsableLLM: hasSubtitleModel) || shouldTranslate {
-            steps.append(.prepareSubtitles(SubtitleProcessingPayload()))
+        if job.shouldProcessSubtitles || shouldTranslate {
+            steps.append(.prepareSubtitles(SubtitleProcessingPayload(
+                segmentationMethod: hasSubtitleModel ? subtitleSegmentationMethod : .localCaptions,
+                requiresConnectedBYOK: true
+            )))
         }
         if shouldTranslate, let targetLanguage {
             steps.append(.translate(TranslationFlowPayload(targetLanguage: targetLanguage)))
@@ -3784,6 +3790,9 @@ final class WorkbenchStore {
             }
             if !isCloud {
                 _ = await LLMSettingsStore.shared.credentialAvailable()
+                if LLMSettingsStore.shared.useBYOK {
+                    await ProviderConnectivityStore.shared.refresh(settings: LLMSettingsStore.shared)
+                }
             }
             let hasSubtitleModel = !isCloud && LLMSettingsStore.shared.hasUsableModel(
                 for: .subtitleProcessing
@@ -3807,6 +3816,9 @@ final class WorkbenchStore {
                         ? []
                         : WorkbenchMediaFlowPlanner.transcriptionSteps(
                             for: flowJob,
+                            subtitleSegmentationMethod: LLMSettingsStore.shared.subtitleSegmentationMethod(
+                                connectionStates: ProviderConnectivityStore.shared.states
+                            ),
                             hasSubtitleModel: hasSubtitleModel,
                             hasTranslationModel: hasTranslationModel
                         )

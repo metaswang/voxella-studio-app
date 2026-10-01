@@ -83,6 +83,7 @@ struct TranscriptionProcessingOptions: Equatable, Sendable {
     var speakerCount: SpeakerCountOption = .auto
     var enableTranslation = false
     var targetLanguageCode: String?
+    /// Legacy field name shared with saved jobs; enables either subtitle method.
     var useLLMSubtitleProcessing: Bool? = false
     var cloudVocalRepairEnabled = false
     var clipStartMs: Int?

@@ -1725,28 +1725,28 @@ struct MediaFlowTests {
         var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/interview.mov")
 
         #expect(
-            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: false, hasTranslationModel: false)
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, subtitleSegmentationMethod: .llm, hasSubtitleModel: false, hasTranslationModel: false)
                 .map { $0.stage.rawValue }
                 == ["transcription"]
         )
         #expect(
-            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: true, hasTranslationModel: true)
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, subtitleSegmentationMethod: .llm, hasSubtitleModel: true, hasTranslationModel: true)
                 .map { $0.stage.rawValue }
                 == ["transcription"]
         )
 
         job.useLLMSubtitleProcessing = false
         #expect(
-            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: true, hasTranslationModel: true)
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, subtitleSegmentationMethod: .llm, hasSubtitleModel: true, hasTranslationModel: true)
                 .map { $0.stage.rawValue }
                 == ["transcription"]
         )
 
         job.useLLMSubtitleProcessing = true
         #expect(
-            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: false, hasTranslationModel: false)
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, subtitleSegmentationMethod: .llm, hasSubtitleModel: false, hasTranslationModel: false)
                 .map { $0.stage.rawValue }
-                == ["transcription"]
+                == ["transcription", "subtitlePreparation"]
         )
     }
 
@@ -1756,12 +1756,12 @@ struct MediaFlowTests {
         job.targetLanguageCode = "zh-CN"
 
         #expect(
-            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: false, hasTranslationModel: false)
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, subtitleSegmentationMethod: .llm, hasSubtitleModel: false, hasTranslationModel: false)
                 .map { $0.stage.rawValue }
-                == ["transcription"]
+                == ["transcription", "subtitlePreparation"]
         )
         #expect(
-            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: true, hasTranslationModel: true)
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, subtitleSegmentationMethod: .llm, hasSubtitleModel: true, hasTranslationModel: true)
                 .map { $0.stage.rawValue }
                 == ["transcription", "subtitlePreparation", "translation"]
         )
@@ -1788,7 +1788,7 @@ struct MediaFlowTests {
         job.targetLanguageCode = "zh-CN"
 
         #expect(
-            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: true, hasTranslationModel: false)
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, subtitleSegmentationMethod: .llm, hasSubtitleModel: true, hasTranslationModel: false)
                 .map { $0.stage.rawValue }
                 == ["transcription"]
         )
@@ -1837,7 +1837,7 @@ struct MediaFlowTests {
         job.targetLanguageCode = " es-MX "
 
         #expect(
-            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, hasSubtitleModel: true, hasTranslationModel: true)
+            WorkbenchMediaFlowPlanner.transcriptionSteps(for: job, subtitleSegmentationMethod: .llm, hasSubtitleModel: true, hasTranslationModel: true)
                 .map { $0.stage.rawValue }
                 == ["transcription", "subtitlePreparation", "translation"]
         )

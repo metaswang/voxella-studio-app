@@ -405,6 +405,10 @@ struct ScriptAlignmentPayload: Sendable {
 }
 
 struct SubtitleProcessingPayload: Sendable {
+    var segmentationMethod: SubtitleSegmentationMethod = .llm
+    /// Automatic workbench processing must not switch to hosted AI if the
+    /// user changes BYOK settings while speech recognition is running.
+    var requiresConnectedBYOK = false
     /// Source words packed into one LLM subtitle request.
     var maximumTokensPerBatch = 480
     /// Speaker-safe source segments per two-pass subtitle batch.
