@@ -2258,8 +2258,10 @@
 "VoxStudio Recording" = "VoxStudio Recording";
 "Start Recording" = "Start Recording";
 "Record Screen" = "Record Screen";
+"Record App" = "Record App";
 "Record Window" = "Record Window";
 "Record Selected Area" = "Record Selected Area";
+"Record Mobile Device" = "Record Mobile Device";
 "Record Audio Only" = "Record Audio Only";
 "Voice Input…" = "Voice Input…";
 "Recording Setup…" = "Recording Setup…";

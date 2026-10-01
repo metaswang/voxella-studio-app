@@ -43,8 +43,10 @@ final class RecordingStatusItemController: NSObject {
                 imageName: "record.circle",
                 items: [
                     (L10n.string("Record Screen"), #selector(recordDisplay), "display"),
+                    (L10n.string("Record App"), #selector(recordApplication), "app"),
                     (L10n.string("Record Window"), #selector(recordWindow), "macwindow"),
                     (L10n.string("Record Selected Area"), #selector(recordRegion), "selection.pin.in.out"),
+                    (L10n.string("Record Mobile Device"), #selector(recordMobileDevice), "iphone"),
                     (L10n.string("Record Audio Only"), #selector(recordAudio), "waveform"),
                 ],
                 to: menu
@@ -198,6 +200,10 @@ final class RecordingStatusItemController: NSObject {
         session?.start(mode: .display)
     }
 
+    @objc private func recordApplication() {
+        session?.start(mode: .application)
+    }
+
     @objc private func recordWindow() {
         session?.start(mode: .window)
     }
@@ -208,6 +214,10 @@ final class RecordingStatusItemController: NSObject {
 
     @objc private func recordAudio() {
         session?.start(mode: .audioOnly)
+    }
+
+    @objc private func recordMobileDevice() {
+        session?.start(mode: .mobileDevice)
     }
 
     @objc private func showVoiceInput() {
