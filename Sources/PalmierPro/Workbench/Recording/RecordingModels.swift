@@ -7,6 +7,7 @@ enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
     case application
     case window
     case region
+    case mobileDevice
 
     var id: String { rawValue }
 
@@ -21,6 +22,7 @@ enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
         case .application: L10n.string("App")
         case .window: L10n.string("Window")
         case .region: L10n.string("Region")
+        case .mobileDevice: L10n.string("Mobile Device")
         }
     }
 
@@ -31,6 +33,7 @@ enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
         case .application: "app"
         case .window: "macwindow"
         case .region: "rectangle.dashed"
+        case .mobileDevice: "iphone"
         }
     }
 
@@ -41,6 +44,7 @@ enum RecordingCaptureMode: String, CaseIterable, Identifiable, Sendable {
         case .application: L10n.string("Selected apps on one display, with their audio")
         case .window: L10n.string("One window plus audio")
         case .region: L10n.string("Selected area plus audio")
+        case .mobileDevice: L10n.string("USB iPhone or iPad screen, with optional device audio and microphone")
         }
     }
 
@@ -88,11 +92,15 @@ struct RecordingCaptureConfiguration: Equatable, Sendable {
     var mode: RecordingCaptureMode = .display
     var microphone: RecordingMicrophoneSource = .systemDefault
     var capturesSystemAudio = true
+    var mobileDeviceID: String?
+    var capturesDeviceAudio = true
+    var mobilePreset: RecordingMobilePreset = .high
+    var video = RecordingVideoSettings.load()
 
     var capturesVideo: Bool { mode.capturesVideo }
 
     var requiresScreenCapture: Bool {
-        capturesVideo || capturesSystemAudio
+        mode != .mobileDevice && (capturesVideo || capturesSystemAudio)
     }
 
     var requiresScreenCapturePermissionRequest: Bool {
@@ -100,8 +108,11 @@ struct RecordingCaptureConfiguration: Equatable, Sendable {
     }
 
     var hasAudioSource: Bool {
-        microphone.isEnabled || capturesSystemAudio
+        microphone.isEnabled || capturesPrimaryAudio
     }
+
+    var capturesPrimaryAudio: Bool { mode == .mobileDevice ? capturesDeviceAudio : capturesSystemAudio }
+    var hasCaptureSource: Bool { capturesVideo || hasAudioSource }
 
     mutating func applyMode(_ newMode: RecordingCaptureMode) {
         guard newMode != mode else {
@@ -110,7 +121,9 @@ struct RecordingCaptureConfiguration: Equatable, Sendable {
         }
         let wasVideo = mode.capturesVideo
         mode = newMode
-        if newMode == .audioOnly {
+        if newMode == .mobileDevice {
+            microphone = .off
+        } else if newMode == .audioOnly {
             capturesSystemAudio = false
             if !microphone.isEnabled {
                 microphone = .systemDefault
@@ -122,13 +135,8 @@ struct RecordingCaptureConfiguration: Equatable, Sendable {
     }
 
     mutating func normalizeAudioSources() {
-        guard !hasAudioSource else { return }
-        if capturesVideo {
-            capturesSystemAudio = true
-            microphone = .systemDefault
-        } else {
-            microphone = .systemDefault
-        }
+        guard !capturesVideo, !hasAudioSource else { return }
+        microphone = .systemDefault
     }
 }
 
@@ -150,11 +158,13 @@ struct RecordingAudioMeterTick: Sendable {
 enum RecordingAudioTrack: String, Sendable {
     case microphone
     case systemAudio
+    case deviceAudio
 
     var title: String {
         switch self {
         case .microphone: "microphone"
         case .systemAudio: "system audio"
+        case .deviceAudio: "device audio"
         }
     }
 }
@@ -167,6 +177,8 @@ struct RecordingAudioLevelWarning: Sendable {
         switch track {
         case .microphone:
             "The microphone level has been low for several seconds. Move closer to the microphone or raise the input volume."
+        case .deviceAudio:
+            "The device audio level has been low for several seconds. Raise the volume in the app playing on your iPhone or iPad."
         case .systemAudio:
             "The system audio level has been low for several seconds. Raise the Mac playback volume or choose a source that is playing audio."
         }
@@ -293,11 +305,13 @@ enum RecordingPhase: Equatable, Sendable {
     case recording
     case paused
     case finishing
+    case reviewing
+    case trimming
 
     var isActive: Bool {
         switch self {
         case .idle: false
-        case .preparing, .picking, .recording, .paused, .finishing: true
+        case .preparing, .picking, .recording, .paused, .finishing, .reviewing, .trimming: true
         }
     }
 
@@ -381,11 +395,14 @@ struct RecordingRegionSelection: Sendable {
 enum RecordingPermissionKind: Equatable, Sendable {
     case microphone
     case screenCapture
+    case camera
 
     var settingsURL: URL? {
         switch self {
         case .microphone:
             URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+        case .camera:
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")
         case .screenCapture:
             URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
         }
@@ -396,6 +413,8 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
     case cancelled
     case alreadyRecording
     case audioSourceRequired
+    case cameraDenied
+    case mobileDeviceUnavailable
     case microphoneDenied
     case microphoneRestricted
     case screenCaptureDenied
@@ -421,6 +440,10 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
             "A recording is already in progress."
         case .audioSourceRequired:
             "Choose a microphone or system audio before recording."
+        case .cameraDenied:
+            "Allow camera access in System Settings to capture a USB iPhone or iPad screen."
+        case .mobileDeviceUnavailable:
+            "Connect your iPhone or iPad via USB, unlock it, and trust this Mac."
         case .microphoneDenied:
             "Microphone access is denied. Allow it in System Settings → Privacy & Security → Microphone, then retry."
         case .microphoneRestricted:
@@ -458,6 +481,8 @@ enum RecordingError: LocalizedError, Equatable, Sendable {
 
     var permissionKind: RecordingPermissionKind? {
         switch self {
+        case .cameraDenied:
+            .camera
         case .microphoneDenied, .microphoneRestricted:
             .microphone
         case .screenCaptureDenied, .screenCapturePermissionRequired:

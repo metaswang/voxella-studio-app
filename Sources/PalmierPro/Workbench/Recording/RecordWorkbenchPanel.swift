@@ -13,6 +13,11 @@ struct RecordWorkbenchPanel: View {
             }
 
             modePicker
+            if session.configuration.mode == .mobileDevice { mobileSource }
+            if session.configuration.capturesVideo && session.configuration.mode != .mobileDevice {
+                RecordingVideoSettingsView(settings: $session.configuration.video)
+                    .disabled(session.phase.isActive || session.isRequestingStart)
+            }
             audioSources
             actionRow
             messages
@@ -39,7 +44,7 @@ struct RecordWorkbenchPanel: View {
 
             RecordingInfoButton(
                 title: L10n.string("About recording"),
-                message: L10n.string("Record audio, a display, selected apps, a window, or a region. Video capture hides this window; use the recording controls to stop, pause, or discard.")
+                message: L10n.string("Record audio, a display, selected apps, a window, a region, or a USB iPhone/iPad. Review and trim video before transcription.")
             )
         }
     }
@@ -104,15 +109,47 @@ struct RecordWorkbenchPanel: View {
             }
 
             sourceCard(
-                title: L10n.string(session.configuration.mode == .application ? "App audio" : "System audio"),
+                title: L10n.string(session.configuration.mode == .mobileDevice ? "Device audio" : session.configuration.mode == .application ? "App audio" : "System audio"),
                 systemImage: "speaker.wave.2",
-                info: session.configuration.mode == .application
+                info: session.configuration.mode == .mobileDevice
+                    ? L10n.string("Captures sound from your connected iPhone or iPad. Turn this off when device audio is unavailable, such as during a call.")
+                    : session.configuration.mode == .application
                     ? L10n.string("Captures sound from the selected apps, including when using headphones. Other apps are excluded.")
                     : L10n.string("Captures audio playing through this Mac. Requires Screen Recording permission. Keep this enabled when recording a display, window, or region without a microphone.")
             ) {
-                Toggle(L10n.string("Capture"), isOn: $session.configuration.capturesSystemAudio)
+                Toggle(L10n.string("Capture"), isOn: Binding(
+                    get: { session.configuration.capturesPrimaryAudio },
+                    set: { value in
+                        if session.configuration.mode == .mobileDevice { session.configuration.capturesDeviceAudio = value }
+                        else { session.configuration.capturesSystemAudio = value }
+                    }))
                     .toggleStyle(.checkbox)
                     .disabled(session.phase.isActive || session.isRequestingStart)
+            }
+        }
+    }
+
+    private var mobileSource: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            HStack {
+                Picker(L10n.string("Mobile Device"), selection: $session.configuration.mobileDeviceID) {
+                    Text(L10n.string("Choose a device")).tag(String?.none)
+                    ForEach(session.mobileDevices) { Text($0.name).tag(Optional($0.id)) }
+                }
+                Picker(L10n.string("Quality preset"), selection: $session.configuration.mobilePreset) {
+                    ForEach(session.supportedMobilePresets) { Text(L10n.string(key: $0.title)).tag($0) }
+                }
+                Button(L10n.string("Refresh")) { session.refreshMobileDevices() }
+                Button(L10n.string("Preview device")) { session.previewMobileDevice() }
+                    .disabled(session.configuration.mobileDeviceID == nil)
+            }
+            .disabled(session.phase.isActive || session.isRequestingStart)
+            if session.mobileDevices.isEmpty {
+                Label(L10n.string("Connect your iPhone or iPad via USB, unlock it, and trust this Mac."), systemImage: "iphone.slash")
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+            }
+            if session.phase.isCapturing {
+                Button(L10n.string("Show device preview")) { session.showMobilePreview() }
             }
         }
     }
@@ -214,6 +251,9 @@ struct RecordWorkbenchPanel: View {
                 .buttonStyle(.bordered)
                 .help(L10n.string("Discard recording"))
                 .accessibilityLabel(L10n.string("Discard recording"))
+            } else if session.phase == .reviewing || session.phase == .trimming {
+                Button(L10n.string("Show recording")) { session.showRecordingSetup() }
+                    .buttonStyle(.borderedProminent)
             } else {
                 Button {
                     session.requestStart()
@@ -259,7 +299,11 @@ struct RecordWorkbenchPanel: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
 
-        if !session.configuration.hasAudioSource && !session.phase.isActive {
+        if let url = session.savedRecordingURL {
+            Button(L10n.string("Show recording in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                .buttonStyle(.link)
+        }
+        if !session.configuration.hasCaptureSource && !session.phase.isActive {
             Label(L10n.string("Select an audio source"), systemImage: "waveform.badge.exclamationmark")
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Status.warningColor)
@@ -271,6 +315,8 @@ struct RecordWorkbenchPanel: View {
         case .preparing: L10n.string("Preparing…")
         case .picking: L10n.string("Choose source…")
         case .finishing: L10n.string("Finishing…")
+        case .reviewing: L10n.string("Review recording")
+        case .trimming: L10n.string("Trimming recording…")
         default: L10n.string("Start recording")
         }
     }
