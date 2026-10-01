@@ -47,7 +47,7 @@ final class DisplayRegionOverlayController: NSObject {
         let handleSize = AppTheme.Workbench.recordingRegionHandleSize
         let drawHint = L10n.string("Drag to draw a recording area. Esc to cancel.")
         let editHint = L10n.string(
-            "Drag the dashed area to move it, use the handles to resize, or drag outside to redraw. Press Return to start. Press Esc to cancel."
+            "Drag to move · Handles to resize · Return to record · Esc to cancel"
         )
         let startTitle = L10n.string("Start recording")
         var currentWindow: NSWindow?
@@ -108,6 +108,7 @@ final class DisplayRegionOverlayController: NSObject {
         presentSetupPanel(screen: currentScreen)
         currentWindow?.orderFrontRegardless()
         currentWindow?.makeKey()
+        setupPanel?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -123,12 +124,13 @@ final class DisplayRegionOverlayController: NSObject {
         setup.redraw = { [weak self] in self?.activeView?.redrawSelection() }
         setup.start = { [weak self] in self?.activeView?.startRecording() }
         setup.cancel = { [weak self] in self?.cancelSelection() }
-        let width = min(1050 * AppZoomScale.shared.scale, screen.visibleFrame.width - 32)
-        let panel = RegionSetupPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 175),
+        let width = min(680 * AppZoomScale.shared.scale, screen.visibleFrame.width - 24)
+        let panel = RegionSetupPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 120),
                             styleMask: [.borderless], backing: .buffered, defer: false)
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
         panel.isOpaque = false
         panel.backgroundColor = .clear
+        panel.title = L10n.string("Recording area")
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
@@ -143,13 +145,13 @@ final class DisplayRegionOverlayController: NSObject {
     private func positionSetupPanel(screen: NSScreen, rect: CGRect) {
         guard let panel = setupPanel else { return }
         let visible = screen.visibleFrame
-        let width = min(1050 * AppZoomScale.shared.scale, visible.width - 32)
+        let width = min(680 * AppZoomScale.shared.scale, visible.width - 24)
         if abs(panel.frame.width - width) > 1, let setup {
             panel.contentView = NSHostingView(rootView: RecordingRegionSetupView(state: setup)
                 .frame(width: width).fixedSize(horizontal: false, vertical: true).appLocalization().appZoomEnvironment())
         }
         if let content = panel.contentView {
-            panel.setContentSize(NSSize(width: width, height: max(175, content.fittingSize.height)))
+            panel.setContentSize(NSSize(width: width, height: max(100, content.fittingSize.height)))
         }
         let selected = rect.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY)
         let below = selected.minY - panel.frame.height - 12
@@ -158,7 +160,9 @@ final class DisplayRegionOverlayController: NSObject {
         if !rect.isNull, below >= visible.minY { y = below }
         else if !rect.isNull, above + panel.frame.height <= visible.maxY { y = above }
         else { y = visible.minY + 12 }
-        panel.setFrameOrigin(NSPoint(x: visible.midX - panel.frame.width / 2, y: y))
+        let centerX = rect.isNull ? visible.midX : selected.midX
+        let x = min(max(visible.minX + 12, centerX - panel.frame.width / 2), visible.maxX - panel.frame.width - 12)
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
     private func closeOverlays() {
@@ -258,6 +262,7 @@ private final class RegionSelectionView: NSView {
         // The start action lives in the excluded setup panel. Keep its validity
         // state here for keyboard handling without placing it over the content.
         startButton.isEnabled = false
+        startButton.setAccessibilityElement(false)
         startButton.isHidden = true
         addSubview(startButton)
         startButton.alphaValue = 0
@@ -402,7 +407,7 @@ private final class RegionSelectionView: NSView {
             dim.append(NSBezierPath(rect: currentRect))
             dim.windingRule = .evenOdd
         }
-        AppTheme.MediaOverlay.background.withAlphaComponent(0.5).setFill()
+        AppTheme.MediaOverlay.background.withAlphaComponent(0.38).setFill()
         dim.fill()
 
         let hint = isValid(currentRect) ? editHint : drawHint
@@ -429,7 +434,7 @@ private final class RegionSelectionView: NSView {
         context.stroke(currentRect)
         context.restoreGState()
 
-        NSColor.systemYellow.setFill()
+        NSColor.white.setFill()
         for handle in RecordingRegionHandle.allCases {
             let center = RecordingRegionGeometry.center(for: handle, in: currentRect)
             NSBezierPath(ovalIn: CGRect(
@@ -538,8 +543,8 @@ enum RecordingRegionHandle: CaseIterable {
 enum RecordingRegionGeometry {
     static let defaultSize = CGSize(width: 600, height: 450)
     static let handleHitOutset: CGFloat = 6
-    static let selectionLineWidth: CGFloat = 4
-    static let dashLengths: [CGFloat] = [4, 4]
+    static let selectionLineWidth: CGFloat = 2
+    static let dashLengths: [CGFloat] = [6, 4]
 
     static func dragRect(from start: CGPoint, to end: CGPoint, bounds: CGRect) -> CGRect {
         CGRect(

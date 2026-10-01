@@ -2768,3 +2768,25 @@
 "720p" = "720p";
 "1080p" = "1080p";
 "The device audio level has been low for several seconds. Raise the volume in the app playing on your iPhone or iPad." = "The device audio level has been low for several seconds. Raise the volume in the app playing on your iPhone or iPad.";
+
+"Drag to select an area" = "Drag to select an area";
+"Recording settings" = "Recording settings";
+"Press Return to start recording" = "Press Return to start recording";
+"Drag to move · Handles to resize · Return to record · Esc to cancel" = "Drag to move · Handles to resize · Return to record · Esc to cancel";
+"Transcription options" = "Transcription options";
+"Captions & translation" = "Captions & translation";
+"No speech detected" = "No speech detected";
+"Transcription needs attention" = "Transcription needs attention";
+"Preview the recording to check its sound. Record again with system audio or a microphone enabled." = "Preview the recording to check its sound. Record again with system audio or a microphone enabled.";
+"Your media is saved. Review the issue below, then try again." = "Your media is saved. Review the issue below, then try again.";
+"Turn this media into an editable transcript. Adjust language and captions in Options." = "Turn this media into an editable transcript. Adjust language and captions in Options.";
+"Processed on this Mac" = "Processed on this Mac";
+"Processed in VoxStudio Cloud" = "Processed in VoxStudio Cloud";
+"Saved on this Mac" = "Saved on this Mac";
+"Saved in VoxStudio Cloud" = "Saved in VoxStudio Cloud";
+"Preview media" = "Preview media";
+"Record again" = "Record again";
+"Choose another file" = "Choose another file";
+
+"Options" = "Options";
+"Recording area" = "Recording area";

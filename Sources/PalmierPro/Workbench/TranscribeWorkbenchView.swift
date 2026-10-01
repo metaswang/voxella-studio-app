@@ -7,6 +7,7 @@ struct TranscribeWorkbenchView: View {
     @State private var openingInEditorID: UUID?
     @State private var speakerEditRequest: SpeakerEditRequest?
     @State private var showProcessingOptions = false
+    @State private var showTranscriptionOptions = false
     @State private var entryMode: TranscriptionEntryMode = .importFiles
     @State private var handledRecordingRequestID: UUID?
     @State private var netVideoURL = ""
@@ -167,85 +168,207 @@ struct TranscribeWorkbenchView: View {
     private func detail(index: Int) -> some View {
         let job = store.transcriptions[index]
         return VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: AppTheme.Spacing.md) {
+                Image(systemName: job.isRecordedCapture ? "record.circle" : "doc.waveform")
+                    .font(.system(size: AppTheme.FontSize.lg))
+                    .foregroundStyle(AppTheme.Accent.link)
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                     Text(job.sessionTitle)
                         .font(.system(size: AppTheme.FontSize.lg, weight: .semibold))
-                    Text(job.sourcePath)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(job.originalFilename)
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .help(job.sourcePath)
                 }
-                Spacer()
-                Button {
-                    store.selectedTranscriptionID = nil
-                } label: {
-                    Label(L10n.string("New transcription"), systemImage: "plus")
-                }
-                .buttonStyle(.borderless)
-                .help(L10n.string("Start a new transcription task"))
-                Button(L10n.string("Show in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([job.sourceURL]) }
-                    .buttonStyle(.borderless)
-                Button {
-                    sendToEditor(job)
-                } label: {
-                    if openingInEditorID == job.id {
-                        HStack(spacing: 7) {
-                            ProgressView().controlSize(.small)
-                            Text(L10n.string("Opening editor…"))
-                        }
-                    } else {
-                        Label(L10n.string("Open with captions"), systemImage: "captions.bubble")
-                    }
+                Spacer(minLength: AppTheme.Spacing.md)
+                Button { showTranscriptionOptions.toggle() } label: {
+                    Label(L10n.string("Options"), systemImage: "slider.horizontal.3")
                 }
                 .buttonStyle(.bordered)
-                .disabled(job.result == nil || job.state.isActive || openingInEditorID != nil)
-                if job.state.isActive {
-                    Button(role: .cancel) {
-                        store.cancelTranscription(job.id)
-                    } label: {
-                        Label("Cancel", systemImage: "stop.circle")
+                .popover(isPresented: $showTranscriptionOptions, arrowEdge: .bottom) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                            Text(L10n.string("Transcription options"))
+                                .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
+                            configuration(job)
+                                .disabled(job.state.isActive)
+                        }
+                        .padding(AppTheme.Spacing.lg)
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(job.state == .cancelling)
-                } else {
-                    Button {
-                        start(job)
-                    } label: {
-                        Label(primaryActionLabel(job), systemImage: "waveform.badge.magnifyingglass")
+                    .frame(width: AppTheme.zoomed(390))
+                    .frame(maxHeight: AppTheme.zoomed(520))
+                    .appLocalization()
+                    .appZoomEnvironment()
+                }
+                if job.result != nil {
+                    Button { sendToEditor(job) } label: {
+                        if openingInEditorID == job.id {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label(L10n.string("Open with captions"), systemImage: "captions.bubble")
+                        }
                     }
                     .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return, modifiers: [.command])
+                    .disabled(job.state.isActive || openingInEditorID != nil)
                 }
+                if job.result != nil && job.state.isActive {
+                    Button(L10n.string("Cancel")) { store.cancelTranscription(job.id) }
+                        .buttonStyle(.bordered)
+                        .disabled(job.state == .cancelling)
+                }
+                Menu {
+                    Button(L10n.string("New transcription")) { store.selectedTranscriptionID = nil }
+                    Button(L10n.string("Preview media")) { NSWorkspace.shared.open(job.sourceURL) }
+                    Button(L10n.string("Show in Finder")) {
+                        NSWorkspace.shared.activateFileViewerSelecting([job.sourceURL])
+                    }
+                    if job.result != nil, !job.state.isActive {
+                        Divider()
+                        Button(L10n.string("Re-transcribe")) { start(job) }
+                    }
+                } label: { Image(systemName: "ellipsis") }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help(L10n.string("Session options"))
+                .accessibilityLabel(L10n.string("Session options"))
             }
             .padding(AppTheme.Spacing.lgXl)
+            .background(AppTheme.Background.surfaceColor)
 
             Divider()
-
             HStack(spacing: 0) {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: AppTheme.zoomed(18)) {
-                        configuration(job)
-                        processingState(job)
-                        diagnostics(job)
-                        transcriptEditor(job)
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+                        if job.result != nil {
+                            processingState(job)
+                            diagnostics(job)
+                            transcriptEditor(job)
+                        } else {
+                            transcriptionStartState(job)
+                        }
                     }
                     .padding(AppTheme.Spacing.xl)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: job.result == nil ? AppTheme.zoomed(760) : .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(minWidth: AppTheme.zoomed(520), maxWidth: .infinity)
-
-                Divider()
-                timeline(job)
-                    .frame(
-                        minWidth: AppTheme.zoomed(360),
-                        idealWidth: AppTheme.zoomed(430),
-                        maxWidth: AppTheme.zoomed(480)
-                    )
+                .frame(maxWidth: .infinity)
+                if !job.displayedSegments.isEmpty {
+                    Divider()
+                    timeline(job)
+                        .frame(
+                            minWidth: AppTheme.zoomed(300),
+                            idealWidth: AppTheme.zoomed(360),
+                            maxWidth: AppTheme.zoomed(420)
+                        )
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func transcriptionStartState(_ job: WorkbenchTranscriptionJob) -> some View {
+        let hasError = job.errorMessage != nil
+        let isSilent = job.errorMessage?.localizedCaseInsensitiveContains("audio level is too low or silent") == true
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+            HStack(spacing: AppTheme.Spacing.mdLg) {
+                Image(systemName: hasError ? "waveform.slash" : "waveform")
+                    .font(.system(size: AppTheme.FontSize.title1, weight: .medium))
+                    .foregroundStyle(hasError ? AppTheme.Status.warningColor : AppTheme.Accent.link)
+                    .frame(width: AppTheme.zoomed(56), height: AppTheme.zoomed(56))
+                    .background(
+                        (hasError ? AppTheme.Status.warningColor : AppTheme.Accent.link).opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: AppTheme.Radius.md)
+                    )
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    Text(L10n.string(isSilent ? "No speech detected" : hasError ? "Transcription needs attention" : "Ready to transcribe"))
+                        .font(.system(size: AppTheme.FontSize.title2, weight: .semibold))
+                    Text(L10n.string(isSilent
+                        ? "Preview the recording to check its sound. Record again with system audio or a microphone enabled."
+                        : hasError ? "Your media is saved. Review the issue below, then try again."
+                        : "Turn this media into an editable transcript. Adjust language and captions in Options."))
+                        .font(.system(size: AppTheme.FontSize.smMd))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if !isSilent, let error = job.errorMessage {
+                Text(L10n.display(error))
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Status.errorColor)
+                    .textSelection(.enabled)
+            }
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Label(L10n.string(key: job.compute == .local ? "Processed on this Mac" : "Processed in VoxStudio Cloud"),
+                      systemImage: job.compute == .local ? "lock.shield" : "icloud")
+                Spacer()
+                Text(L10n.string(key: job.storage == .local ? "Saved on this Mac" : "Saved in VoxStudio Cloud"))
+            }
+            .font(.system(size: AppTheme.FontSize.xs))
+            .foregroundStyle(AppTheme.Text.mutedColor)
+            Divider()
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: AppTheme.Spacing.md) {
+                    transcriptionRecoveryActions(job, isSilent: isSilent)
+                }
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                    transcriptionRecoveryActions(job, isSilent: isSilent)
+                }
+            }
+        }
+        .padding(AppTheme.Spacing.xlXxl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.Background.prominentColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
+                .strokeBorder(AppTheme.Border.subtleColor.opacity(0.5), lineWidth: AppTheme.BorderWidth.hairline)
+        }
+        .padding(.top, AppTheme.Spacing.xl)
+    }
+
+    @ViewBuilder
+    private func transcriptionRecoveryActions(_ job: WorkbenchTranscriptionJob, isSilent: Bool) -> some View {
+        if job.state.isActive {
+            ProgressView(value: job.progress)
+            Button(L10n.string("Cancel")) { store.cancelTranscription(job.id) }
+                .disabled(job.state == .cancelling)
+        } else {
+            if isSilent && job.isRecordedCapture {
+                Button { recordAgain() } label: {
+                    Label(L10n.string("Record again"), systemImage: "record.circle")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            Button { NSWorkspace.shared.open(job.sourceURL) } label: {
+                Label(L10n.string("Preview media"), systemImage: "play.circle")
+            }
+            .buttonStyle(.bordered)
+            if job.errorMessage != nil && !(isSilent && job.isRecordedCapture) {
+                Button { importMedia() } label: {
+                    Label(L10n.string("Choose another file"), systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+            }
+            if isSilent {
+                Button(L10n.string("Try again")) { start(job) }
+                    .buttonStyle(.borderless)
+            } else {
+                Button { start(job) } label: {
+                    Label(L10n.string(job.errorMessage == nil ? "Transcribe" : "Try again"), systemImage: "waveform")
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return, modifiers: [.command])
+            }
+        }
+    }
+
+    private func recordAgain() {
+        entryMode = .record
+        store.selectedTranscriptionID = nil
+        store.showRecordImport()
     }
 
     @ViewBuilder
@@ -292,7 +415,7 @@ struct TranscribeWorkbenchView: View {
     }
 
     private func configuration(_ job: WorkbenchTranscriptionJob) -> some View {
-        HStack(alignment: .top, spacing: AppTheme.Spacing.lg) {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
             recognitionCard(job)
             subtitleFlowCard(job)
         }
@@ -339,17 +462,11 @@ struct TranscribeWorkbenchView: View {
     }
 
     private func recognitionPrivacyCopy(for job: WorkbenchTranscriptionJob) -> String {
-        L10n.format(
-            "%@: %@ · %@: %@",
-            L10n.string(TaskPlacementCopy.keepSessionTitle),
-            L10n.string(key: job.storage.label),
-            L10n.string(TaskPlacementCopy.processWithTitle),
-            L10n.string(key: job.compute.label)
-        )
+        L10n.string(key: job.compute == .local ? "Processed on this Mac" : "Processed in VoxStudio Cloud")
     }
 
     private func subtitleFlowCard(_ job: WorkbenchTranscriptionJob) -> some View {
-        GroupBox(L10n.string("Subtitle flow")) {
+        GroupBox(L10n.string("Captions & translation")) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
                 HStack(spacing: AppTheme.Spacing.xs) {
                     Toggle(
@@ -382,35 +499,37 @@ struct TranscribeWorkbenchView: View {
                     .frame(width: AppTheme.zoomed(180))
                 }
 
-                HStack(alignment: .center, spacing: AppTheme.Spacing.smMd) {
-                    let useCase: LLMUseCase = job.normalizedTargetLanguageCode == nil
-                        ? .subtitleProcessing
-                        : .translation
-                    let usesCloudSubtitles = job.compute == .cloud && useCase == .subtitleProcessing
-                    let usesLocalCaptions = job.compute == .local && useCase == .subtitleProcessing
-                        && llmSettings.subtitleSegmentationMethod(connectionStates: connections.states) == .localCaptions
-                    let isConfigured = usesCloudSubtitles || usesLocalCaptions || llmSettings.hasUsableModel(for: useCase)
-                    Image(systemName: usesCloudSubtitles ? "cloud" : usesLocalCaptions ? "desktopcomputer" : isConfigured ? "checkmark.shield.fill" : "key.slash")
-                        .foregroundStyle(
-                            isConfigured
-                                ? AppTheme.Status.successColor
-                                : AppTheme.Status.warningColor
-                        )
-                    Text(usesCloudSubtitles
-                        ? L10n.string("VoxStudio Cloud")
-                        : usesLocalCaptions
-                            ? L10n.string("Local captions · No API key required")
-                            : isConfigured
-                                ? llmRouteDescription(for: useCase)
-                                : L10n.string("An API key is required only for enabled AI steps."))
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
-                        .lineLimit(1)
-                    Spacer()
-                    Button(L10n.string("AI Settings…")) {
-                        SettingsWindowController.shared.show(tab: .ai)
+                if job.shouldProcessSubtitles || job.normalizedTargetLanguageCode != nil {
+                    HStack(alignment: .center, spacing: AppTheme.Spacing.smMd) {
+                        let useCase: LLMUseCase = job.normalizedTargetLanguageCode == nil
+                            ? .subtitleProcessing
+                            : .translation
+                        let usesCloudSubtitles = job.compute == .cloud && useCase == .subtitleProcessing
+                        let usesLocalCaptions = job.compute == .local && useCase == .subtitleProcessing
+                            && llmSettings.subtitleSegmentationMethod(connectionStates: connections.states) == .localCaptions
+                        let isConfigured = usesCloudSubtitles || usesLocalCaptions || llmSettings.hasUsableModel(for: useCase)
+                        Image(systemName: usesCloudSubtitles ? "cloud" : usesLocalCaptions ? "desktopcomputer" : isConfigured ? "checkmark.shield.fill" : "key.slash")
+                            .foregroundStyle(
+                                isConfigured
+                                    ? AppTheme.Status.successColor
+                                    : AppTheme.Status.warningColor
+                            )
+                        Text(usesCloudSubtitles
+                            ? L10n.string("VoxStudio Cloud")
+                            : usesLocalCaptions
+                                ? L10n.string("Local captions · No API key required")
+                                : isConfigured
+                                    ? llmRouteDescription(for: useCase)
+                                    : L10n.string("An API key is required only for enabled AI steps."))
+                            .font(.system(size: AppTheme.FontSize.xs))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
+                            .lineLimit(1)
+                        Spacer()
+                        Button(L10n.string("AI Settings…")) {
+                            SettingsWindowController.shared.show(tab: .ai)
+                        }
+                        .buttonStyle(.borderless)
                     }
-                    .buttonStyle(.borderless)
                 }
 
                 if job.result != nil,
@@ -1484,19 +1603,6 @@ struct TranscribeWorkbenchView: View {
             get: { store.transcriptions.first { $0.id == id }?.editedText ?? "" },
             set: { value in store.updateTranscription(id) { $0.editedText = value } }
         )
-    }
-
-    private func primaryActionLabel(_ job: WorkbenchTranscriptionJob) -> String {
-        let prefix = job.state == .completed ? "Run again" : "Run"
-        if job.targetLanguageCode != nil,
-           llmSettings.hasUsableModel(for: .subtitleProcessing),
-           llmSettings.hasUsableModel(for: .translation) {
-            return "\(prefix): transcribe + translate"
-        }
-        if job.shouldProcessSubtitles {
-            return "\(prefix): transcribe + subtitles"
-        }
-        return job.state == .completed ? "Re-transcribe" : "Transcribe"
     }
 
     private func llmRouteDescription(for useCase: LLMUseCase) -> String {

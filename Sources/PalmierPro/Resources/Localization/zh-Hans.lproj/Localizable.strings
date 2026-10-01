@@ -2768,3 +2768,25 @@
 "720p" = "720p 分辨率";
 "1080p" = "1080p 分辨率";
 "The device audio level has been low for several seconds. Raise the volume in the app playing on your iPhone or iPad." = "设备声音已持续数秒音量偏低，请调高 iPhone 或 iPad 上播放应用的音量。";
+
+"Drag to select an area" = "拖动以选择录制区域";
+"Recording settings" = "录制设置";
+"Press Return to start recording" = "按回车开始录制";
+"Drag to move · Handles to resize · Return to record · Esc to cancel" = "拖动移动 · 拖动控制点缩放 · 回车录制 · Esc 取消";
+"Transcription options" = "转录选项";
+"Captions & translation" = "字幕与翻译";
+"No speech detected" = "未检测到语音";
+"Transcription needs attention" = "转录需要处理";
+"Preview the recording to check its sound. Record again with system audio or a microphone enabled." = "预览录制以检查声音。开启系统音频或麦克风后重新录制。";
+"Your media is saved. Review the issue below, then try again." = "媒体文件已保存。查看下方问题后重试。";
+"Turn this media into an editable transcript. Adjust language and captions in Options." = "将媒体转为可编辑的转录。在“选项”中调整语言和字幕。";
+"Processed on this Mac" = "在本机处理";
+"Processed in VoxStudio Cloud" = "在 VoxStudio Cloud 处理";
+"Saved on this Mac" = "保存在本机";
+"Saved in VoxStudio Cloud" = "保存在 VoxStudio Cloud";
+"Preview media" = "预览媒体";
+"Record again" = "重新录制";
+"Choose another file" = "选择其他文件";
+
+"Options" = "选项";
+"Recording area" = "录制区域";
