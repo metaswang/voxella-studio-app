@@ -75,6 +75,10 @@ final class RecordingStatusItemController: NSObject {
                 imageName: "person.2"
             )
 
+        case .reviewing, .trimming:
+            addHeader(L10n.string(session.phase == .trimming ? "Trimming recording…" : "Review recording"), to: menu)
+            addItem(L10n.string("Show recording"), action: #selector(showRecordingSetup), to: menu)
+
         case .preparing, .picking, .finishing:
             addHeader(
                 L10n.string(session.phase == .finishing ? "Finishing Recording…" : "Preparing Recording…"),
@@ -93,6 +97,9 @@ final class RecordingStatusItemController: NSObject {
             )
             menu.addItem(.separator())
             addItem(L10n.string("Stop Recording"), action: #selector(stopRecording), to: menu)
+            if session.configuration.mode == .mobileDevice {
+                addItem(L10n.string("Show device preview"), action: #selector(showMobilePreview), to: menu)
+            }
             addItem(
                 L10n.string(session.isPaused ? "Resume Recording" : "Pause Recording"),
                 action: #selector(togglePause),
@@ -177,6 +184,8 @@ final class RecordingStatusItemController: NSObject {
         image?.isTemplate = true
         return image
     }
+
+    @objc private func showMobilePreview() { session?.showMobilePreview() }
 
     @objc private func recordDisplay() {
         session?.start(mode: .display)

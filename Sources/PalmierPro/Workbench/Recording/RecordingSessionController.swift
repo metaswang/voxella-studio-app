@@ -11,6 +11,8 @@ final class RecordingSessionController {
 
     var configuration = RecordingCaptureConfiguration()
     var devices: [RecordingAudioDevice] = []
+    var mobileDevices: [RecordingMobileDevice] = []
+    var savedRecordingURL: URL?
     var phase: RecordingPhase = .idle
     private(set) var isRequestingStart = false
     private(set) var activeApplicationSelection: RecordingApplicationSelection?
@@ -23,10 +25,17 @@ final class RecordingSessionController {
     var permissionSettingsURL: URL?
     @ObservationIgnored let liveWaveform = RecordingLiveWaveformStore()
 
+    var supportedMobilePresets: [RecordingMobilePreset] {
+        mobileDevices.first { $0.id == configuration.mobileDeviceID }?.presets ?? RecordingMobilePreset.allCases
+    }
+
     var isPaused: Bool { phase == .paused }
-    var canStart: Bool { phase == .idle && !isRequestingStart && configuration.hasAudioSource }
+    var canStart: Bool { phase == .idle && !isRequestingStart && configuration.hasCaptureSource && (configuration.mode != .mobileDevice || configuration.mobileDeviceID != nil) }
 
     private let engine = ScreenCaptureRecordingEngine()
+    private let review = RecordingReviewController()
+    private var mobilePreviewSource: MobileDeviceCaptureSource?
+    private var mobilePreviewConfiguration: RecordingCaptureConfiguration?
     private let hider = RecordingAppHider()
     private let statusItem = RecordingStatusItemController()
     private let floatingControls = RecordingFloatingControlsController()
@@ -46,6 +55,11 @@ final class RecordingSessionController {
 
     private init() {
         statusItem.attach(self)
+        for name in [AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.refreshMobileDevices() }
+            }
+        }
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
@@ -83,7 +97,7 @@ final class RecordingSessionController {
             }
         }
         Task { [weak self] in
-            self?.recoverInterruptedSessions()
+            await self?.recoverInterruptedSessions()
         }
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
@@ -93,7 +107,60 @@ final class RecordingSessionController {
         }
     }
 
+    func refreshMobileDevices() {
+        mobileDevices = RecordingMobileDevices.devices()
+        guard !phase.isActive else { return }
+        if !mobileDevices.contains(where: { $0.id == configuration.mobileDeviceID }) {
+            configuration.mobileDeviceID = mobileDevices.first?.id
+        }
+    }
+
+    func showMobilePreview() { engine.showMobilePreview() }
+
+    func previewMobileDevice() {
+        guard phase == .idle, !isRequestingStart, let id = configuration.mobileDeviceID else { return }
+        let requested = configuration
+        isRequestingStart = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.isRequestingStart = false }
+            do {
+                try await self.preparePermissions()
+                await self.closeMobilePreview()
+                let source = MobileDeviceCaptureSource()
+                self.mobilePreviewSource = source
+                self.mobilePreviewConfiguration = requested
+                MobileDevicePreviewController.shared.show(source: source)
+                source.start(deviceID: id, preset: requested.mobilePreset, capturesAudio: requested.capturesDeviceAudio,
+                             onSample: { _, _, _ in }, onError: { [weak self, weak source] error in
+                    Task { @MainActor [weak self, weak source] in
+                        guard let self, let source, self.mobilePreviewSource === source else { return }
+                        self.errorMessage = error.localizedDescription
+                        await self.closeMobilePreview()
+                    }
+                })
+            } catch {
+                self.errorMessage = error.localizedDescription
+                self.failedPermission = (error as? RecordingError)?.permissionKind
+                self.permissionSettingsURL = self.failedPermission?.settingsURL
+            }
+        }
+    }
+
+    private func closeMobilePreview() async {
+        guard let source = mobilePreviewSource else { return }
+        mobilePreviewSource = nil
+        mobilePreviewConfiguration = nil
+        MobileDevicePreviewController.shared.close()
+        _ = try? await RecordingTimeout.withTimeout(seconds: RecordingLifecycleTimeout.streamStop) {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                source.stop { continuation.resume() }
+            }
+        }
+    }
+
     func refreshDevices() {
+        refreshMobileDevices()
         Task { [weak self] in
             let devices = await RecordingAudioDeviceEnumerator.devices()
             let defaultDeviceID = RecordingAudioDeviceEnumerator.defaultInputUID()
@@ -110,6 +177,7 @@ final class RecordingSessionController {
 
     func setCaptureMode(_ mode: RecordingCaptureMode) {
         guard phase == .idle, !isRequestingStart else { return }
+        if mode != .mobileDevice { Task { await closeMobilePreview() } }
         configuration.applyMode(mode)
         configuration.microphone = RecordingAudioDeviceEnumerator.resolvedMicrophone(
             configuration.microphone,
@@ -159,6 +227,7 @@ final class RecordingSessionController {
     }
 
     func showRecordingSetup() {
+        if phase == .reviewing || phase == .trimming { review.show(); return }
         if phase.isCapturing {
             floatingControls.present(session: self)
             return
@@ -179,11 +248,12 @@ final class RecordingSessionController {
             return
         }
         guard canStart else {
-            if !configuration.hasAudioSource {
+            if !configuration.hasCaptureSource {
                 errorMessage = RecordingError.audioSourceRequired.localizedDescription
             }
             return
         }
+        savedRecordingURL = nil
         errorMessage = nil
         permissionMessage = nil
         permissionSettingsURL = nil
@@ -226,7 +296,7 @@ final class RecordingSessionController {
                 }
                 self.activeConfiguration = self.configuration
 
-                try await self.preparePermissions()
+                try await self.preparePermissions(requestAudio: self.configuration.mode != .region)
                 try Task.checkCancellation()
                 guard self.sessionID == id, self.phase == .preparing || self.phase == .picking else { return }
 
@@ -235,8 +305,25 @@ final class RecordingSessionController {
                 )
                 try Task.checkCancellation()
                 guard self.sessionID == id else { return }
+                self.configuration.microphone = RecordingAudioDeviceEnumerator.resolvedMicrophone(
+                    self.configuration.microphone, devices: self.devices,
+                    defaultDeviceID: RecordingAudioDeviceEnumerator.defaultInputUID())
+                if let deviceID = self.configuration.microphone.deviceID,
+                   RecordingAudioDeviceEnumerator.captureDevice(uniqueID: deviceID) == nil {
+                    throw RecordingError.microphoneUnavailable
+                }
+                try await self.preparePermissions()
+                try Task.checkCancellation()
+                self.configuration.video.save()
+                self.activeConfiguration = self.configuration
                 self.activeApplicationSelection = picked.applicationSelection
 
+                if let previewConfiguration = self.mobilePreviewConfiguration,
+                   (previewConfiguration.mobileDeviceID != self.configuration.mobileDeviceID
+                    || previewConfiguration.mobilePreset != self.configuration.mobilePreset
+                    || previewConfiguration.capturesDeviceAudio != self.configuration.capturesDeviceAudio) {
+                    await self.closeMobilePreview()
+                }
                 let outputURL = try await self.makeOutputURL()
                 try Task.checkCancellation()
                 guard self.sessionID == id, self.phase == .preparing else { return }
@@ -261,9 +348,14 @@ final class RecordingSessionController {
                             self?.handleRuntimeEvent(event, sessionID: id)
                         }
                     },
-                    applicationSelection: picked.applicationSelection
+                    applicationSelection: picked.applicationSelection,
+                    mobilePreviewSource: self.mobilePreviewSource
                 )
                 self.captureBackend = Self.backendName(for: self.activeConfiguration ?? self.configuration)
+                // Ownership moves before starting: a failed engine start also
+                // stops this session, so it must never be reused as a preview.
+                self.mobilePreviewSource = nil
+                self.mobilePreviewConfiguration = nil
                 try await self.engine.start(request)
                 guard self.sessionID == id, self.phase == .preparing else {
                     await self.engine.cancel(expectedSessionID: id)
@@ -351,6 +443,11 @@ final class RecordingSessionController {
         switch phase {
         case .idle:
             return .idle
+        case .reviewing:
+            review.cancel()
+            return .salvaged
+        case .trimming:
+            return .unsafe("Recording is being trimmed. Wait for it to finish before quitting.")
         case .preparing, .picking:
             pendingStopReason = .termination
             discard()
@@ -432,8 +529,17 @@ final class RecordingSessionController {
                 case .rawSegments, .recoveryRequired:
                     stagedURLs = stopResult.segmentURLs.isEmpty ? [stopResult.url] : stopResult.segmentURLs
                 }
-                WorkbenchStore.shared.stageRecordedMedia(urls: stagedURLs, sessionID: stopResult.sessionID)
-                self.resetToIdle()
+                let inspection = await RecordingMediaValidator.inspect(stopResult.url)
+                if finishMode != .salvage, inspection.hasVideo, inspection.isReadable,
+                   stopResult.outcome == .complete || stopResult.outcome == .partial {
+                    try self.presentReview(stopResult)
+                } else if stagedURLs.count > 1 || finishMode == .salvage {
+                    WorkbenchStore.shared.stageRecordedMedia(urls: stagedURLs, sessionID: stopResult.sessionID)
+                    self.resetToIdle()
+                } else {
+                    self.stageCompletedRecording(urls: stagedURLs, sessionID: stopResult.sessionID, hasAudio: inspection.hasAudio)
+                    self.resetToIdle()
+                }
             } catch let error as RecordingError where error == .cancelled {
                 self.restoreApp()
                 guard self.sessionID == id else { return }
@@ -452,6 +558,42 @@ final class RecordingSessionController {
         }
     }
 
+    private func presentReview(_ result: RecordingStopResult) throws {
+        try RecordingTrimTransaction.markForReview(result)
+        sleepPreventer.stop()
+        phase = .reviewing
+        updateControls()
+        review.present(result: result, onBusy: { [weak self] busy in
+            self?.phase = busy ? .trimming : .reviewing
+            self?.updateControls()
+        }, onComplete: { [weak self] url in
+            guard let self else { return }
+            Task { @MainActor in
+                if let url {
+                    let inspection = await RecordingMediaValidator.inspect(url)
+                    self.stageCompletedRecording(urls: [url], sessionID: result.sessionID, hasAudio: inspection.hasAudio)
+                } else {
+                    let journal = RecordingTrimTransaction.manifest(for: result)
+                    RecordingSessionManifest.markRegistered(sessionID: journal.sessionID, in: WorkbenchStore.recordingMediaDirectory)
+                    self.savedRecordingURL = journal.outputURL
+                    self.liveAudioWarning = "Recording saved. Transcription was not started."
+                }
+                self.resetToIdle()
+            }
+        })
+    }
+
+    private func stageCompletedRecording(urls: [URL], sessionID: UUID?, hasAudio: Bool) {
+        if hasAudio {
+            WorkbenchStore.shared.stageRecordedMedia(urls: urls, sessionID: sessionID)
+        } else {
+            if let sessionID { RecordingSessionManifest.markRegistered(sessionID: sessionID.uuidString, in: WorkbenchStore.recordingMediaDirectory) }
+            else { RecordingSessionManifest.markRegistered(urls: urls) }
+            savedRecordingURL = urls.first
+            liveAudioWarning = "Video saved without audio. Add an audio source to transcribe your next recording."
+        }
+    }
+
     func refreshPermissionState() {
         guard failedPermission != nil else { return }
         Task { [weak self] in
@@ -460,6 +602,8 @@ final class RecordingSessionController {
             guard let kind else { return }
             let isAuthorized: Bool
             switch kind {
+            case .camera:
+                isAuthorized = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
             case .microphone:
                 isAuthorized = RecordingPermission.microphoneStatus() == .authorized
             case .screenCapture:
@@ -482,8 +626,11 @@ final class RecordingSessionController {
         }
     }
 
-    private func preparePermissions() async throws {
-        if configuration.microphone.isEnabled {
+    private func preparePermissions(requestAudio: Bool = true) async throws {
+        if configuration.mode == .mobileDevice {
+            guard await AVCaptureDevice.requestAccess(for: .video) else { throw RecordingError.cameraDenied }
+        }
+        if requestAudio && (configuration.microphone.isEnabled || (configuration.mode == .mobileDevice && configuration.capturesDeviceAudio)) {
             try await RecordingPermission.requestMicrophone()
         }
         try Task.checkCancellation()
@@ -501,6 +648,11 @@ final class RecordingSessionController {
 
     private func pickCaptureSource(preferredBundleIdentifier: String? = nil, preferredProcessID: Int32? = nil) async throws -> PickedSource {
         switch configuration.mode {
+        case .mobileDevice:
+            guard let id = configuration.mobileDeviceID, RecordingMobileDevices.devices().contains(where: { $0.id == id }) else {
+                throw RecordingError.mobileDeviceUnavailable
+            }
+            return PickedSource(filter: nil, sourceRect: nil, displayID: nil)
         case .audioOnly:
             guard configuration.capturesSystemAudio else {
                 return PickedSource(filter: nil, sourceRect: nil, displayID: nil)
@@ -543,7 +695,9 @@ final class RecordingSessionController {
             updateControls()
             hider.hideWorkbenchWindows()
             didHideApp = true
-            let selection = try await DisplayRegionOverlayController.shared.selectRegion()
+            let setup = try await DisplayRegionOverlayController.shared.selectRegion(configuration: configuration, devices: devices)
+            let selection = setup.selection
+            configuration = setup.configuration
             try Task.checkCancellation()
             guard phase == .picking else { throw RecordingError.cancelled }
             phase = .preparing
@@ -690,7 +844,7 @@ final class RecordingSessionController {
         let directory = WorkbenchStore.recordingMediaDirectory
         let capturesVideo = configuration.capturesVideo
         var audioTracks = 0
-        if configuration.capturesSystemAudio { audioTracks += 1 }
+        if configuration.capturesPrimaryAudio { audioTracks += 1 }
         if configuration.microphone.isEnabled { audioTracks += 1 }
         return try await Task.detached(priority: .utility) {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -857,13 +1011,33 @@ final class RecordingSessionController {
         }
     }
 
-    private func recoverInterruptedSessions() {
+    private func recoverInterruptedSessions() async {
         let recovered = RecordingSessionManifest.recoverInterruptedSessions(
             in: WorkbenchStore.recordingMediaDirectory
         )
         guard phase == .idle, let session = recovered.first else { return }
         liveAudioWarning = "A previous recording was recovered after an interruption."
-        WorkbenchStore.shared.stageRecordedMedia(urls: session.urls, sessionID: UUID(uuidString: session.sessionID))
+        if session.urls.count == 1,
+           session.manifest.status == RecordingSessionManifest.pendingReview || session.manifest.status == RecordingSessionManifest.pendingTrim {
+            if let pending = session.manifest.trimPendingPath {
+                let url = URL(fileURLWithPath: pending)
+                if url.deletingLastPathComponent() == session.manifest.outputURL.deletingLastPathComponent(),
+                   url.lastPathComponent.hasPrefix("trim-export-") { try? FileManager.default.removeItem(at: url) }
+            }
+            let inspection = await RecordingMediaValidator.inspect(session.urls[0])
+            guard phase == .idle else { return }
+            guard inspection.isReadable, inspection.hasVideo else {
+                errorMessage = "Could not preview this recording. The file was kept."
+                return
+            }
+            RecordingTrimTransaction.cleanupCommittedOriginals(session.manifest)
+            let result = RecordingStopResult(url: session.urls[0], diagnostics: RecordingSessionDiagnostics(microphone: nil, systemAudio: nil),
+                                             warnings: session.manifest.warnings ?? [], sessionID: UUID(uuidString: session.sessionID))
+            do { try presentReview(result) }
+            catch { errorMessage = error.localizedDescription }
+        } else {
+            WorkbenchStore.shared.stageRecordedMedia(urls: session.urls, sessionID: UUID(uuidString: session.sessionID))
+        }
     }
 
     private func logStop(reason: String, error: Error? = nil, extra: String? = nil) {
@@ -880,6 +1054,7 @@ final class RecordingSessionController {
     }
 
     private static func backendName(for configuration: RecordingCaptureConfiguration) -> String {
+        if configuration.mode == .mobileDevice { return "usbDevice" }
         if configuration.requiresScreenCapture {
             return "stream"
         }

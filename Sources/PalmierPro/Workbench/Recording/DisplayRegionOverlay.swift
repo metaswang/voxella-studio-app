@@ -1,3 +1,4 @@
+import SwiftUI
 import AppKit
 import CoreGraphics
 import Foundation
@@ -7,10 +8,14 @@ final class DisplayRegionOverlayController: NSObject {
     static let shared = DisplayRegionOverlayController()
 
     private var windows: [NSWindow] = []
-    private var continuation: CheckedContinuation<RecordingRegionSelection, Error>?
+    private var setupPanel: NSPanel?
+    private var setup: RecordingRegionSetupState?
+    private weak var activeView: RegionSelectionView?
+    private var continuation: CheckedContinuation<RecordingRegionSetupResult, Error>?
 
-    func selectRegion() async throws -> RecordingRegionSelection {
+    func selectRegion(configuration: RecordingCaptureConfiguration, devices: [RecordingAudioDevice]) async throws -> RecordingRegionSetupResult {
         cancelSelection()
+        setup = RecordingRegionSetupState(configuration: configuration, devices: devices)
         return try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
             presentOverlays()
@@ -80,24 +85,80 @@ final class DisplayRegionOverlayController: NSObject {
                 drawHint: drawHint,
                 editHint: editHint,
                 startTitle: startTitle,
-                onBegin: { [weak self] active in self?.clearSelections(except: active) },
+                onBegin: { [weak self] active in
+                    self?.activeView = active
+                    self?.clearSelections(except: active)
+                },
+                onChange: { [weak self] active, rect in
+                    guard self?.activeView === active else { return }
+                    self?.setup?.rect = rect
+                    self?.positionSetupPanel(screen: screen, rect: rect)
+                },
                 onComplete: { [weak self] result in self?.handle(result) }
             )
             window.contentView = view
             window.orderFrontRegardless()
             if screen.displayID == currentScreen.displayID {
                 currentWindow = window
+                activeView = view
+                setup?.rect = initialRect ?? .null
             }
             return window
         }
+        presentSetupPanel(screen: currentScreen)
         currentWindow?.orderFrontRegardless()
         currentWindow?.makeKey()
         NSApp.activate(ignoringOtherApps: true)
     }
 
     private func handle(_ result: Result<RecordingRegionSelection, Error>) {
+        let configuration = setup?.configuration ?? RecordingCaptureConfiguration()
         closeOverlays()
-        resume(result)
+        resume(result.map { RecordingRegionSetupResult(selection: $0, configuration: configuration) })
+    }
+
+    private func presentSetupPanel(screen: NSScreen) {
+        guard let setup else { return }
+        setup.resize = { [weak self] size in self?.activeView?.resizeSelection(to: size) }
+        setup.redraw = { [weak self] in self?.activeView?.redrawSelection() }
+        setup.start = { [weak self] in self?.activeView?.startRecording() }
+        setup.cancel = { [weak self] in self?.cancelSelection() }
+        let width = min(1050 * AppZoomScale.shared.scale, screen.visibleFrame.width - 32)
+        let panel = RegionSetupPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 175),
+                            styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentView = NSHostingView(rootView: RecordingRegionSetupView(state: setup)
+            .frame(width: width).fixedSize(horizontal: false, vertical: true).appLocalization().appZoomEnvironment())
+        setupPanel = panel
+        positionSetupPanel(screen: screen, rect: setup.rect)
+        panel.orderFrontRegardless()
+    }
+
+    private func positionSetupPanel(screen: NSScreen, rect: CGRect) {
+        guard let panel = setupPanel else { return }
+        let visible = screen.visibleFrame
+        let width = min(1050 * AppZoomScale.shared.scale, visible.width - 32)
+        if abs(panel.frame.width - width) > 1, let setup {
+            panel.contentView = NSHostingView(rootView: RecordingRegionSetupView(state: setup)
+                .frame(width: width).fixedSize(horizontal: false, vertical: true).appLocalization().appZoomEnvironment())
+        }
+        if let content = panel.contentView {
+            panel.setContentSize(NSSize(width: width, height: max(175, content.fittingSize.height)))
+        }
+        let selected = rect.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY)
+        let below = selected.minY - panel.frame.height - 12
+        let above = selected.maxY + 12
+        let y: CGFloat
+        if !rect.isNull, below >= visible.minY { y = below }
+        else if !rect.isNull, above + panel.frame.height <= visible.maxY { y = above }
+        else { y = visible.minY + 12 }
+        panel.setFrameOrigin(NSPoint(x: visible.midX - panel.frame.width / 2, y: y))
     }
 
     private func closeOverlays() {
@@ -108,6 +169,12 @@ final class DisplayRegionOverlayController: NSObject {
             window.close()
         }
         windows = []
+        setupPanel?.orderOut(nil)
+        setupPanel?.contentView = nil
+        setupPanel?.close()
+        setupPanel = nil
+        setup = nil
+        activeView = nil
     }
 
     @objc private func environmentChanged() {
@@ -121,11 +188,15 @@ final class DisplayRegionOverlayController: NSObject {
         }
     }
 
-    private func resume(_ result: Result<RecordingRegionSelection, Error>) {
+    private func resume(_ result: Result<RecordingRegionSetupResult, Error>) {
         guard let continuation else { return }
         self.continuation = nil
         continuation.resume(with: result)
     }
+}
+
+private final class RegionSetupPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
 }
 
 private final class RegionSelectionWindow: NSWindow {
@@ -148,6 +219,7 @@ private final class RegionSelectionView: NSView {
     private let handleSize: CGFloat
     private let drawHint: String
     private let editHint: String
+    private let onChange: (RegionSelectionView, CGRect) -> Void
     private let onBegin: (RegionSelectionView) -> Void
     private let onComplete: (Result<RecordingRegionSelection, Error>) -> Void
     private var interaction: Interaction?
@@ -166,6 +238,7 @@ private final class RegionSelectionView: NSView {
         editHint: String,
         startTitle: String,
         onBegin: @escaping (RegionSelectionView) -> Void,
+        onChange: @escaping (RegionSelectionView, CGRect) -> Void,
         onComplete: @escaping (Result<RecordingRegionSelection, Error>) -> Void
     ) {
         self.screen = screen
@@ -173,6 +246,7 @@ private final class RegionSelectionView: NSView {
         self.handleSize = handleSize
         self.drawHint = drawHint
         self.editHint = editHint
+        self.onChange = onChange
         self.onBegin = onBegin
         self.onComplete = onComplete
         super.init(frame: NSRect(origin: .zero, size: screen.frame.size))
@@ -181,7 +255,12 @@ private final class RegionSelectionView: NSView {
         startButton.title = startTitle
         startButton.keyEquivalent = "\r"
         startButton.translatesAutoresizingMaskIntoConstraints = false
+        // The start action lives in the excluded setup panel. Keep its validity
+        // state here for keyboard handling without placing it over the content.
+        startButton.isEnabled = false
+        startButton.isHidden = true
         addSubview(startButton)
+        startButton.alphaValue = 0
         NSLayoutConstraint.activate([
             startButton.centerXAnchor.constraint(equalTo: centerXAnchor),
             startButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -AppTheme.Spacing.xxl)
@@ -261,6 +340,7 @@ private final class RegionSelectionView: NSView {
             return
         }
         updateCursor(at: current)
+        onChange(self, currentRect)
         needsDisplay = true
     }
 
@@ -277,6 +357,7 @@ private final class RegionSelectionView: NSView {
         interaction = nil
         startButton.isHidden = !isValid(currentRect)
         updateCursor(at: convert(event.locationInWindow, from: nil))
+        onChange(self, currentRect)
         needsDisplay = true
     }
 
@@ -367,7 +448,27 @@ private final class RegionSelectionView: NSView {
         )
     }
 
-    @objc private func startRecording() {
+    func resizeSelection(to size: CGSize) {
+        guard size.width.isFinite, size.height.isFinite, !currentRect.isNull else { return }
+        let proposed = CGRect(origin: currentRect.origin, size: CGSize(
+            width: min(bounds.width, max(minimumSize, size.width)),
+            height: min(bounds.height, max(minimumSize, size.height))))
+        guard let placed = RecordingRegionGeometry.placed(proposed, in: bounds, minimum: minimumSize) else { return }
+        claimSelection()
+        currentRect = placed
+        startButton.isHidden = false
+        onChange(self, currentRect)
+        needsDisplay = true
+    }
+
+    func redrawSelection() {
+        clearSelection()
+        onChange(self, currentRect)
+        window?.makeKey()
+        window?.makeFirstResponder(self)
+    }
+
+    @objc func startRecording() {
         guard !startButton.isHidden, interaction == nil, isValid(currentRect) else { return }
         guard NSScreen.screens.contains(where: { $0.displayID == screen.displayID && $0.frame == screen.frame }) else {
             complete(.failure(RecordingError.noDisplay))

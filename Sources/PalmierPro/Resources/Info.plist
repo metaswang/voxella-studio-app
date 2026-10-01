@@ -117,6 +117,8 @@
 	<string>15.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>VoxStudio captures the screen of your USB-connected iPhone or iPad.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VoxStudio uses the microphone when you record a transcript session or a local reference voice.</string>
 	<key>NSScreenCaptureUsageDescription</key>

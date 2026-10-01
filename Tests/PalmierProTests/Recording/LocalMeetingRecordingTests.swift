@@ -4,7 +4,8 @@ import Testing
 
 @Suite("Local meeting recording")
 struct LocalMeetingRecordingTests {
-    @Test(arguments: RecordingCaptureMode.allCases)
+    // Mac meeting shortcuts do not select a USB mobile screen.
+    @Test(arguments: RecordingCaptureMode.allCases.filter { $0 != .mobileDevice })
     func meetingShortcutsIncludeRemoteParticipants(mode: RecordingCaptureMode) {
         let request = LocalRecordingRequest(
             mode: mode, applicationBundleIdentifier: nil, startImmediately: true

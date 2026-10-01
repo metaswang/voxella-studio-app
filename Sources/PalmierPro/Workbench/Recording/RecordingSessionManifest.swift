@@ -34,6 +34,11 @@ struct RecordingSessionManifest: Codable, Equatable, Sendable {
     var includesVideo: Bool?
     var audioTrackCount: Int?
     var warnings: [String]?
+    var journalPath: String?
+    var trimPendingPath: String?
+    var trimDiscardPaths: [String]?
+    var trimStart: Double?
+    var trimEnd: Double?
     var stopReason: String?
 
     static let capturing = "capturing"
@@ -41,17 +46,19 @@ struct RecordingSessionManifest: Codable, Equatable, Sendable {
     static let pendingFinalize = "pendingFinalize"
     static let rawSaved = "rawSaved"
     static let pendingExport = "pendingExport"
+    static let pendingReview = "pendingReview"
+    static let pendingTrim = "pendingTrim"
     static let pendingImport = "pendingImport"
     static let registered = "registered"
     static let completed = "completed"
     static let failed = "failed"
 
     static let recoverableStatuses: Set<String> = [
-        capturing, inProgress, pendingFinalize, rawSaved, pendingExport, pendingImport, failed,
+        capturing, inProgress, pendingFinalize, rawSaved, pendingExport, pendingImport, pendingReview, pendingTrim, failed,
     ]
 
     var manifestURL: URL {
-        Self.manifestURL(for: URL(fileURLWithPath: outputPath))
+        journalPath.map { URL(fileURLWithPath: $0) } ?? Self.manifestURL(for: URL(fileURLWithPath: outputPath))
     }
 
     var outputURL: URL { URL(fileURLWithPath: outputPath) }
@@ -203,7 +210,7 @@ struct RecordingSessionManifest: Codable, Equatable, Sendable {
     }
 
     private static func existingMediaURLs(for manifest: RecordingSessionManifest) -> [URL] {
-        if manifest.status == pendingImport || manifest.status == rawSaved || manifest.status == pendingExport {
+        if manifest.status == pendingImport || manifest.status == pendingReview || manifest.status == pendingTrim || manifest.status == rawSaved || manifest.status == pendingExport {
             let size = (try? manifest.outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             if FileManager.default.fileExists(atPath: manifest.outputURL.path), size > 0 {
                 return [manifest.outputURL]

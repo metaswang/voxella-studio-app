@@ -3,6 +3,8 @@ import Foundation
 
 /// Exports a wall-clock media window to a durable temp/workbench file.
 enum MediaRangeExtractor {
+    enum Precision: Sendable { case compressedCopy, frameAccurate }
+
     struct ExtractionError: LocalizedError {
         let reason: String
         var errorDescription: String? { "Clip extraction failed: \(reason)" }
@@ -12,7 +14,8 @@ enum MediaRangeExtractor {
     static func extract(
         sourceURL: URL,
         range: ClosedRange<Double>,
-        destinationURL: URL
+        destinationURL: URL,
+        precision: Precision = .compressedCopy
     ) async throws {
         let start = range.lowerBound
         let end = range.upperBound
@@ -45,6 +48,17 @@ enum MediaRangeExtractor {
         )
 
         let fileType: AVFileType = hasVideo ? .mp4 : .m4a
+        if precision == .frameAccurate {
+            do {
+                try await export(asset, range: timeRange,
+                                 preset: hasVideo ? AVAssetExportPresetHighestQuality : AVAssetExportPresetAppleM4A,
+                                 fileType: fileType, to: destinationURL)
+            } catch {
+                try? FileManager.default.removeItem(at: destinationURL)
+                throw error
+            }
+            return
+        }
         do {
             // Copy compressed tracks first. Video boundaries may land on nearby keyframes.
             try await export(asset, range: timeRange, preset: AVAssetExportPresetPassthrough,

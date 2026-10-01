@@ -101,6 +101,11 @@ private struct RecordingFloatingControlsView: View {
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.sm) {
+            if session.configuration.mode == .mobileDevice {
+                Button { session.showMobilePreview() } label: { Image(systemName: "iphone") }
+                    .buttonStyle(.borderless)
+                    .help(L10n.string("Show device preview"))
+            }
             Image(systemName: "circle.fill")
                 .font(.system(size: AppTheme.FontSize.xxs))
                 .foregroundStyle(session.isPaused ? AppTheme.Status.warningColor : AppTheme.Status.errorColor)
