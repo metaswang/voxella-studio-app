@@ -85,6 +85,15 @@ enum WorkbenchNavGlyph: Hashable {
                 .frame(width: size, height: size)
         }
     }
+
+    @MainActor
+    func menuImage(size: CGFloat = 16) -> NSImage? {
+        let renderer = ImageRenderer(content: view(size: size).foregroundStyle(Color.primary))
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        guard let image = renderer.nsImage else { return nil }
+        image.isTemplate = true
+        return image
+    }
 }
 
 /// Calendar with a bot badge — ported from web `MeetingIcon.tsx` (512 viewBox).

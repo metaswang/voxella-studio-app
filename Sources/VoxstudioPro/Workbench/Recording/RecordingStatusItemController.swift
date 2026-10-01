@@ -78,10 +78,16 @@ final class RecordingStatusItemController: NSObject {
                 imageName: "waveform.and.mic"
             )
             addItem(
-                L10n.string("Remote Meeting Notetaker"),
-                action: #selector(showMeetingNotetaker),
+                L10n.string(WorkbenchRoute.meetBot.title),
+                action: #selector(showMeetingRecorder),
                 to: menu,
-                imageName: "person.2"
+                image: WorkbenchRoute.meetBot.navGlyph.menuImage()
+            )
+            addItem(
+                L10n.string(WorkbenchRoute.videoEditor.title),
+                action: #selector(showVideoEditor),
+                to: menu,
+                image: WorkbenchRoute.videoEditor.navGlyph.menuImage()
             )
 
         case .reviewing, .trimming:
@@ -156,7 +162,8 @@ final class RecordingStatusItemController: NSObject {
         action: Selector,
         to menu: NSMenu,
         keyEquivalent: VoiceInputShortcutOption? = nil,
-        imageName: String? = nil
+        imageName: String? = nil,
+        image: NSImage? = nil
     ) {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent == nil ? "" : " ")
         if let keyEquivalent {
@@ -164,6 +171,8 @@ final class RecordingStatusItemController: NSObject {
         }
         if let imageName {
             item.image = menuImage(named: imageName)
+        } else {
+            item.image = image
         }
         item.target = self
         item.isEnabled = true
@@ -249,10 +258,18 @@ final class RecordingStatusItemController: NSObject {
         }
     }
 
-    @objc private func showMeetingNotetaker() {
+    @objc private func showMeetingRecorder() {
+        showWorkbenchRoute(.meetBot)
+    }
+
+    @objc private func showVideoEditor() {
+        showWorkbenchRoute(.videoEditor)
+    }
+
+    private func showWorkbenchRoute(_ route: WorkbenchRoute) {
         NSApp.activate(ignoringOtherApps: true)
         AppState.shared.showHome()
-        WorkbenchStore.shared.route = .meetBot
+        WorkbenchStore.shared.route = route
     }
 
     @objc private func showRecordingSetup() {
