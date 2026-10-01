@@ -624,6 +624,9 @@
 "Lifetime payment confirmed. Activate the recovery code to unlock this Mac." = "永久アクセスのお支払いを確認しました。この Mac を解除するには復元コードを有効化してください。";
 "Retry activation" = "有効化を再試行";
 "This Lifetime payment was refunded or disputed." = "この永久アクセスのお支払いは返金または異議申し立ての対象となりました。";
+"High mobile recording quality info" = "デバイスで利用できる高品質の映像・音声設定を使用します。細部を重視する場合に適していますが、ファイルサイズが大きくなることがあります。結果はデバイスによって異なります。";
+"Medium mobile recording quality info" = "中程度の映像・音声品質を使用し、細部とファイルサイズのバランスを取ります。結果はデバイスによって異なります。";
+"Low mobile recording quality info" = "低めの映像・音声品質を使用して、データ量とファイルサイズを抑えます。結果はデバイスによって異なります。";
 
 /* Lifetime software upgrades */
 "Free lifetime software upgrades" = "ソフトウェアの生涯無料アップグレード";

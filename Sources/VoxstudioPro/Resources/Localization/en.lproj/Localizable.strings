@@ -2749,6 +2749,9 @@
 "Captures sound from your connected iPhone or iPad. Turn this off when device audio is unavailable, such as during a call." = "Captures sound from your connected iPhone or iPad. Turn this off when device audio is unavailable, such as during a call.";
 "Choose a device" = "Choose a device";
 "Quality preset" = "Quality preset";
+"High mobile recording quality info" = "Requests high-quality video and audio from your device. Choose it when detail matters; recordings may be larger. Actual results depend on the device.";
+"Medium mobile recording quality info" = "Requests medium-quality video and audio for a balance between detail and file size. Actual results depend on the device.";
+"Low mobile recording quality info" = "Requests lower-quality video and audio to reduce data and file size. Actual results depend on the device.";
 "Preview device" = "Preview device";
 "Show device preview" = "Show device preview";
 "Show recording in Finder" = "Show recording in Finder";

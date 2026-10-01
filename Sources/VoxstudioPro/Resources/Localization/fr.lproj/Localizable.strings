@@ -624,6 +624,9 @@
 "Lifetime payment confirmed. Activate the recovery code to unlock this Mac." = "Paiement à vie confirmé. Activez le code de récupération pour déverrouiller ce Mac.";
 "Retry activation" = "Réessayer l’activation";
 "This Lifetime payment was refunded or disputed." = "Ce paiement à vie a été remboursé ou contesté.";
+"High mobile recording quality info" = "Demande une capture vidéo et audio de haute qualité. À privilégier pour les détails ; les fichiers peuvent être plus volumineux. Le résultat dépend de l’appareil.";
+"Medium mobile recording quality info" = "Demande une capture vidéo et audio de qualité moyenne, pour équilibrer les détails et la taille du fichier. Le résultat dépend de l’appareil.";
+"Low mobile recording quality info" = "Demande une capture vidéo et audio de qualité inférieure afin de réduire les données et la taille du fichier. Le résultat dépend de l’appareil.";
 
 /* Lifetime software upgrades */
 "Free lifetime software upgrades" = "Mises à niveau logicielles gratuites à vie";

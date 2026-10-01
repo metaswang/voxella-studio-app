@@ -160,29 +160,6 @@ struct RecordWorkbenchPanel: View {
 
     private var mobileSource: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-            HStack(spacing: AppTheme.Spacing.md) {
-                Image(systemName: "ipad.and.iphone")
-                    .font(.system(size: AppTheme.FontSize.title1))
-                    .foregroundStyle(AppTheme.Accent.link)
-                    .frame(width: AppTheme.zoomed(52), height: AppTheme.zoomed(52))
-                    .background(AppTheme.Accent.link.opacity(AppTheme.Opacity.subtle), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    Text(L10n.string("Mobile Device"))
-                        .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
-                    Text(L10n.string("Capture your device screen and sound."))
-                        .font(.system(size: AppTheme.FontSize.xs))
-                        .foregroundStyle(AppTheme.Text.secondaryColor)
-                }
-                Spacer(minLength: AppTheme.Spacing.sm)
-                Label(L10n.string(session.mobileCameraAccessDenied ? "Camera access required" : session.mobileDevices.isEmpty ? "Waiting for device" : "Connected"),
-                      systemImage: session.mobileDevices.isEmpty ? "circle.dotted" : "checkmark.circle.fill")
-                    .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
-                    .foregroundStyle(session.mobileDevices.isEmpty ? AppTheme.Text.secondaryColor : AppTheme.Status.successColor)
-                    .padding(.horizontal, AppTheme.Spacing.md)
-                    .padding(.vertical, AppTheme.Spacing.sm)
-                    .background(AppTheme.Background.raisedColor, in: Capsule())
-            }
-
             if session.mobileCameraAccessDenied {
                 Label(L10n.string("Allow camera access in System Settings to capture a USB iPhone or iPad screen."), systemImage: "lock.shield")
                     .font(.system(size: AppTheme.FontSize.sm))
@@ -215,11 +192,18 @@ struct RecordWorkbenchPanel: View {
             Divider().opacity(AppTheme.Opacity.medium)
             HStack(spacing: AppTheme.Spacing.md) {
                 if !session.mobileDevices.isEmpty {
-                    Picker(L10n.string("Quality preset"), selection: $session.configuration.mobilePreset) {
-                        ForEach(session.supportedMobilePresets) { Text(L10n.string(key: $0.title)).tag($0) }
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        Picker(L10n.string("Quality preset"), selection: $session.configuration.mobilePreset) {
+                            ForEach(session.supportedMobilePresets) { Text(L10n.string(key: $0.title)).tag($0) }
+                        }
+                        .frame(maxWidth: AppTheme.zoomed(250))
+                        .disabled(session.phase.isActive || session.isRequestingStart)
+
+                        RecordingInfoButton(
+                            title: "Quality preset",
+                            message: mobilePresetInfoKey
+                        )
                     }
-                    .frame(maxWidth: AppTheme.zoomed(250))
-                    .disabled(session.phase.isActive || session.isRequestingStart)
                 }
                 Button { session.refreshMobileDevices() } label: {
                     Label(L10n.string("Refresh"), systemImage: "arrow.clockwise")
@@ -242,6 +226,14 @@ struct RecordWorkbenchPanel: View {
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
                 .strokeBorder(AppTheme.Accent.link.opacity(AppTheme.Opacity.soft), lineWidth: AppTheme.BorderWidth.thin)
+        }
+    }
+
+    private var mobilePresetInfoKey: String {
+        switch session.configuration.mobilePreset {
+        case .high: "High mobile recording quality info"
+        case .medium: "Medium mobile recording quality info"
+        case .low: "Low mobile recording quality info"
         }
     }
 

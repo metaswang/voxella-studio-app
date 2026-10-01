@@ -2749,6 +2749,9 @@
 "Captures sound from your connected iPhone or iPad. Turn this off when device audio is unavailable, such as during a call." = "录制所连接 iPhone 或 iPad 的声音。通话等情况下无法获取设备声音时，请关闭此选项。";
 "Choose a device" = "选择设备";
 "Quality preset" = "质量预设";
+"High mobile recording quality info" = "使用设备支持的高质量视频和音频采集设置。适合注重细节的录制，但文件可能更大。实际效果因设备而异。";
+"Medium mobile recording quality info" = "使用中等质量的视频和音频采集设置，在细节与文件大小之间取得平衡。实际效果因设备而异。";
+"Low mobile recording quality info" = "使用较低质量的视频和音频采集设置，以减少数据量和文件大小。实际效果因设备而异。";
 "Preview device" = "预览设备";
 "Show device preview" = "显示设备预览";
 "Show recording in Finder" = "在 Finder 中显示录制文件";
