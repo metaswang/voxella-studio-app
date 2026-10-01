@@ -77,7 +77,7 @@ For shader packaging or hardware/OS qualification, read [Metal compatibility](re
 
 ## 14-day trial behavior
 
-In the current checkout, the normal client trial is enabled by `DeviceTrialClock.durationDays = 14` in `Sources/PalmierPro/Account/DeviceTrialClock.swift`. Build the requested trial-enabled artifact without adding a trial-bypass environment variable. Verify the compiled source and the relevant trial tests before publication.
+In the current checkout, the normal client trial is enabled by `DeviceTrialClock.durationDays = 14` in `Sources/VoxstudioPro/Account/DeviceTrialClock.swift`. Build the requested trial-enabled artifact without adding a trial-bypass environment variable. Verify the compiled source and the relevant trial tests before publication.
 
 Do not claim that `VOXSTUDIO_DISABLE_14_DAY_TRIAL_LIMIT` changes the build: that variable is not implemented by the current source or packaging scripts. If a future release needs a temporary bypass, add and test an explicit feature flag first, then document its scope here; never infer a bypass from an environment variable that the build does not consume.
 
@@ -88,7 +88,7 @@ Do not claim that `VOXSTUDIO_DISABLE_14_DAY_TRIAL_LIMIT` changes the build: that
 
       SPARKLE_ROOT='.build/sparkle-tools'
       "$SPARKLE_ROOT/bin/generate_keys" -p
-      /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Sources/PalmierPro/Resources/Info.plist
+      /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Sources/VoxstudioPro/Resources/Info.plist
       "$SPARKLE_ROOT/bin/sign_update" -p .build/VoxStudio.dmg
 
 - If `generate_keys -p` does not return the public key in `Info.plist`, stop and recover the original private key. Do not silently generate a replacement for an established release stream.

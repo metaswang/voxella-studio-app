@@ -252,20 +252,20 @@ MCP client session
 
 | 目的 | 文件 |
 | --- | --- |
-| Video Editor chat UI host | `Sources/PalmierPro/Agent/Panel/AgentPanelView.swift` |
-| Chat input / Video Editor media mentions | `Sources/PalmierPro/Agent/Panel/AgentInputBox.swift` |
-| 会话、流式、工具调用 loop | `Sources/PalmierPro/Agent/AgentService.swift` |
-| Chat JSON model / 编解码 | `Sources/PalmierPro/Agent/ChatSessionStore.swift` |
-| Chat message / tool result renderer | `Sources/PalmierPro/Agent/Panel/AgentMessageView.swift` |
-| 工具清单与 MCP / in-app 可见性 | `Sources/PalmierPro/Agent/Tools/ToolDefinitions.swift` |
-| 视频工具的共享 executor | `Sources/PalmierPro/Agent/Tools/ToolExecutor.swift` 与 `ToolExecutor+*.swift` |
-| MCP HTTP service / 每 client executor | `Sources/PalmierPro/Agent/MCP/MCPService.swift`、`MCPHTTPServer.swift` |
-| Video Editor 的 agent owner | `Sources/PalmierPro/Editor/ViewModel/EditorViewModel.swift` |
-| `.palmier` chat 保存和恢复 | `Sources/PalmierPro/Project/VideoProject.swift` |
-| Session Editor 页面 | `Sources/PalmierPro/Workbench/WorkbenchSessionView.swift` |
-| Session state、持久化、任务、写操作 | `Sources/PalmierPro/Workbench/WorkbenchStore.swift` |
-| Session cue 编辑 UI | `Sources/PalmierPro/Workbench/SessionSegmentEditor.swift` |
-| Session 导出 UI / 逻辑入口 | `Sources/PalmierPro/Workbench/SessionExportCenter.swift`、`SessionExport.swift` |
+| Video Editor chat UI host | `Sources/VoxstudioPro/Agent/Panel/AgentPanelView.swift` |
+| Chat input / Video Editor media mentions | `Sources/VoxstudioPro/Agent/Panel/AgentInputBox.swift` |
+| 会话、流式、工具调用 loop | `Sources/VoxstudioPro/Agent/AgentService.swift` |
+| Chat JSON model / 编解码 | `Sources/VoxstudioPro/Agent/ChatSessionStore.swift` |
+| Chat message / tool result renderer | `Sources/VoxstudioPro/Agent/Panel/AgentMessageView.swift` |
+| 工具清单与 MCP / in-app 可见性 | `Sources/VoxstudioPro/Agent/Tools/ToolDefinitions.swift` |
+| 视频工具的共享 executor | `Sources/VoxstudioPro/Agent/Tools/ToolExecutor.swift` 与 `ToolExecutor+*.swift` |
+| MCP HTTP service / 每 client executor | `Sources/VoxstudioPro/Agent/MCP/MCPService.swift`、`MCPHTTPServer.swift` |
+| Video Editor 的 agent owner | `Sources/VoxstudioPro/Editor/ViewModel/EditorViewModel.swift` |
+| `.palmier` chat 保存和恢复 | `Sources/VoxstudioPro/Project/VideoProject.swift` |
+| Session Editor 页面 | `Sources/VoxstudioPro/Workbench/WorkbenchSessionView.swift` |
+| Session state、持久化、任务、写操作 | `Sources/VoxstudioPro/Workbench/WorkbenchStore.swift` |
+| Session cue 编辑 UI | `Sources/VoxstudioPro/Workbench/SessionSegmentEditor.swift` |
+| Session 导出 UI / 逻辑入口 | `Sources/VoxstudioPro/Workbench/SessionExportCenter.swift`、`SessionExport.swift` |
 
 ## ChatGPT 协作时可直接使用的任务提示
 

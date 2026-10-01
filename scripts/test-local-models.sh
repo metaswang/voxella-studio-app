@@ -6,7 +6,7 @@ repo_dir=${0:A:h:h}
 cd "$repo_dir"
 requested_filter=${1:-LocalModelInferenceTests}
 if [[ "$requested_filter" != */* && "$requested_filter" != *Tests ]]; then
-  test_filter="PalmierProTests.LocalModelInferenceTests/$requested_filter()"
+  test_filter="VoxstudioProTests.LocalModelInferenceTests/$requested_filter()"
 else
   test_filter=$requested_filter
 fi

@@ -105,7 +105,7 @@ analysis_modes: [summarize, compare, classify, synthesize]
 
 实现落点建议：
 
-- `Sources/PalmierPro/Knowledge/Agent/KnowledgeToolRegistry.swift` — schema + allowlist  
+- `Sources/VoxstudioPro/Knowledge/Agent/KnowledgeToolRegistry.swift` — schema + allowlist
 - `KnowledgeToolExecutor.swift` — 调现有 `SearchService` / `WorkbenchStore` / SessionIndex / summary 字段  
 - `KnowledgeAgentRuntime.swift` — select → route → loop → gate → 接上 `KnowledgeQAService` 事件流或替换其 `answer` 入口  
 

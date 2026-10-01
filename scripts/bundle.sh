@@ -39,7 +39,7 @@ fi
 
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
-RESOURCES="$ROOT/Sources/PalmierPro/Resources"
+RESOURCES="$ROOT/Sources/VoxstudioPro/Resources"
 DEBUG_ENTITLEMENTS="$ROOT/scripts/VoxStudio.debug.entitlements"
 DEVELOPER_ID_ENTITLEMENTS="$ROOT/scripts/VoxStudio.developer-id.entitlements"
 APP="$ROOT/.build/VoxStudio.app"
@@ -143,7 +143,7 @@ fi
 cp "$RESOURCES/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # Flatten SwiftPM's resource bundle into the app's Resources tree.
-RES_BUNDLE="$(dirname "$BIN")/PalmierPro_PalmierPro.bundle"
+RES_BUNDLE="$(dirname "$BIN")/VoxstudioPro_VoxstudioPro.bundle"
 if [ -d "$RES_BUNDLE/Fonts" ]; then
   cp -R "$RES_BUNDLE/Fonts" "$APP/Contents/Resources/"
 else

@@ -273,7 +273,7 @@ Hosted 网关继续使用 Responses/SSE 透传、服务端选模型、401/402、
 
 ## 10. 验收与消融实验
 
-复用 `Tests/PalmierProTests/Knowledge`、Search 与 Agent provider/transport tests，以及现有 dataset experiment。计划阶段没有重跑实际 provider 或生产数据。
+复用 `Tests/VoxstudioProTests/Knowledge`、Search 与 Agent provider/transport tests，以及现有 dataset experiment。计划阶段没有重跑实际 provider 或生产数据。
 
 建立至少 60 个真实形态的问题，覆盖：元数据、概述、精确引语、时间定位、人物、指代追问、目录统计、主题穷举、多来源对比、变化/冲突、证据缺失、多语言。数据包含未完成索引、无摘要、媒体尾部静音、部分转录、同名来源、跨账户云数据与旧索引。
 

@@ -41,10 +41,10 @@ def prepare():
             dense=s['language'] in ['zh-Hans','ja']
             inputs.append(dict(id=s['id'],language=s['language'],text=s['text'],budget=budget,
                                maximum=(18 if dense else 56) if budget=='default' else (24 if dense else 72)))
-    files = ['Sources/PalmierPro/MediaFlow/SubtitleLLMProcessor.swift',
-             'Sources/PalmierPro/MediaFlow/SubtitleTokenRemapper.swift',
-             'Sources/PalmierPro/Transcription/Transcription.swift',
-             'Sources/PalmierPro/MediaFlow/SubtitleCascadePrompt.swift']
+    files = ['Sources/VoxstudioPro/MediaFlow/SubtitleLLMProcessor.swift',
+             'Sources/VoxstudioPro/MediaFlow/SubtitleTokenRemapper.swift',
+             'Sources/VoxstudioPro/Transcription/Transcription.swift',
+             'Sources/VoxstudioPro/MediaFlow/SubtitleCascadePrompt.swift']
     result = replay(inputs)
     (HERE/'baseline.json').write_text(json.dumps(result,ensure_ascii=False)+'\n')
     manifest={'app_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
@@ -57,10 +57,10 @@ def prepare():
     print(json.dumps({'counts':dict(counts),'samples':len(samples),'baseline_runs':len(inputs)}))
 
 def replay(inputs):
-    files = ['Sources/PalmierPro/MediaFlow/SubtitleLLMProcessor.swift',
-             'Sources/PalmierPro/MediaFlow/SubtitleTokenRemapper.swift',
-             'Sources/PalmierPro/Transcription/Transcription.swift',
-             'Sources/PalmierPro/MediaFlow/SubtitleCascadePrompt.swift']
+    files = ['Sources/VoxstudioPro/MediaFlow/SubtitleLLMProcessor.swift',
+             'Sources/VoxstudioPro/MediaFlow/SubtitleTokenRemapper.swift',
+             'Sources/VoxstudioPro/Transcription/Transcription.swift',
+             'Sources/VoxstudioPro/MediaFlow/SubtitleCascadePrompt.swift']
     source = [(ROOT/f).read_text() for f in files]
     readability=source[0].split('enum SubtitleReadabilityPolicy {',1)[1]
     remapper=source[1].split('    // MARK: - Normalization helpers',1)[0]+'}\n'

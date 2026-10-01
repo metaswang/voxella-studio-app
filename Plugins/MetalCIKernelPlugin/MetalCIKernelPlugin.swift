@@ -7,7 +7,7 @@ struct MetalCIKernelPlugin: BuildToolPlugin {
     func createBuildCommands(context: PluginContext, target: Target) async throws -> [Command] {
         let metalDir = context.package.directoryURL.appending(path: "Metal")
         let builder = context.package.directoryURL.appending(path: "scripts/build_metal.py")
-        let plist = context.package.directoryURL.appending(path: "Sources/PalmierPro/Resources/Info.plist")
+        let plist = context.package.directoryURL.appending(path: "Sources/VoxstudioPro/Resources/Info.plist")
         let names = (try? FileManager.default.contentsOfDirectory(atPath: metalDir.path()))?
             .filter { $0.hasSuffix(".metal") } ?? []
 

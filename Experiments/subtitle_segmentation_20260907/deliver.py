@@ -80,7 +80,7 @@ def main():
     for c in configs[:2]:
         for r in c['summary']:
             if r['method']=='H2_ids_dp' and r['language']=='ALL' and r['split']=='ALL':wide.append([c['label'],r['budget'],f'{r["f1_macro_all"]:.3f}',r['protected_breaks'],r['short'],r['fallback_count']])
-    src=HERE.parents[1]/'Sources/PalmierPro'
+    src=HERE.parents[1]/'Sources/VoxstudioPro'
     report=f'''# 字幕文本切分研究与实验报告
 
 2026-09-07。范围严格限定为带标点的 `transcript segments[] → subtitles[]`，不研究音频、word alignment、字幕 start/end 或阅读速度。本次完成 65 条数据、两个模型的主要矩阵，以及 GPT-5 nano 推理设置补充实验，共 **785 次在线实验请求**（另有两个小型连通性/模型版本探测）。

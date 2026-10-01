@@ -56,4 +56,4 @@
 
 ## 重现
 
-参见 [实验协议](PROTOCOL.md)、[Docker 检查脚本](check-docker.sh)、`Tests/PalmierProTests/LocalAI/LanguageVoteSessionExperiment.swift`。
+参见 [实验协议](PROTOCOL.md)、[Docker 检查脚本](check-docker.sh)、`Tests/VoxstudioProTests/LocalAI/LanguageVoteSessionExperiment.swift`。

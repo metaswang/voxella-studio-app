@@ -27,7 +27,7 @@ def main() -> int:
         r'Bundle\.main\.bundleURL\.appendingPathComponent\("Contents/Resources"\)'
         r'\.appendingPathComponent\("([^\"]+\.bundle)"\)\.path'
     )
-    expected = {"PalmierPro_PalmierPro.bundle", "YouTubeKit_YouTubeKit.bundle"}
+    expected = {"VoxstudioPro_VoxstudioPro.bundle", "YouTubeKit_YouTubeKit.bundle"}
     patched_names: set[str] = set()
     accessor_count = 0
 

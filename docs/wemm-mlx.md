@@ -40,7 +40,7 @@ Suggested queries for the supplied video:
 6. `a woman talking about treatment for herself and her children`
 7. `a cooking demonstration` (negative control)
 
-The Swift implementation lives in `Sources/PalmierPro/Search/Models/` and is compiled only with the existing `BundledSpeech` trait. The current app search UI is unchanged; `--wemm-eval` is an isolated evaluation entry point for validating model quality before replacing or augmenting the production index.
+The Swift implementation lives in `Sources/VoxstudioPro/Search/Models/` and is compiled only with the existing `BundledSpeech` trait. The current app search UI is unchanged; `--wemm-eval` is an isolated evaluation entry point for validating model quality before replacing or augmenting the production index.
 
 ## Joint subtitle + video search
 

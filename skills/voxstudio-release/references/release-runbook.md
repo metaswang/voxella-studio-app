@@ -23,7 +23,7 @@ the remaining preflight checks against the pulled checkout.
 Confirm the supported deployment target remains macOS 15.0 across build and release metadata:
 
       rg -n 'platforms: \[\.macOS\(\.v15\)\]' Package.swift
-      /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' Sources/PalmierPro/Resources/Info.plist | rg -q '^15\.0$'
+      /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' Sources/VoxstudioPro/Resources/Info.plist | rg -q '^15\.0$'
       rg -n 'MINIMUM_SYSTEM_VERSION.*LSMinimumSystemVersion|minimum_system_version' scripts/release.sh
 
 The complete release includes Textual and bundled speech, both of which require macOS 15. Keep macOS 26-only APIs behind availability checks and preserve the macOS 15 fallback instead of raising the target. The Convex binary target may emit warnings for vendor objects stamped with the build host's newer macOS version; preserve those warnings in the release record. Run the macOS 15 runtime smoke test below when a suitable device is available. If it is unavailable, record that coverage as unverified; it does not block publication.
@@ -129,13 +129,13 @@ The command must no longer report `No Keychain password item found`. Use the sam
 
 ## 1A. Recover or rotate the Sparkle Ed25519 key
 
-Sparkle appcast signing is independent of Developer ID signing and Apple notarization. The public key in `Sources/PalmierPro/Resources/Info.plist` must match the private key used for every published appcast enclosure. Developer ID builds embed Sparkle and use it to check the Cloudflare feed and install updates in-app; Mac App Store builds omit Sparkle.
+Sparkle appcast signing is independent of Developer ID signing and Apple notarization. The public key in `Sources/VoxstudioPro/Resources/Info.plist` must match the private key used for every published appcast enclosure. Developer ID builds embed Sparkle and use it to check the Cloudflare feed and install updates in-app; Mac App Store builds omit Sparkle.
 
 Check the existing key without printing private material:
 
       SPARKLE_ROOT='.build/sparkle-tools'
       "$SPARKLE_ROOT/bin/generate_keys" -p
-      /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Sources/PalmierPro/Resources/Info.plist
+      /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Sources/VoxstudioPro/Resources/Info.plist
       "$SPARKLE_ROOT/bin/sign_update" -p .build/VoxStudio.dmg
 
 If the Keychain lookup fails or the public key differs, stop and recover the original Sparkle private key before publishing. A newly generated key cannot update already-installed apps that trust the old `SUPublicEDKey`.

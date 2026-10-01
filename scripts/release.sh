@@ -18,7 +18,7 @@ if [ $# -ne 0 ]; then
 fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PLIST="$ROOT/Sources/PalmierPro/Resources/Info.plist"
+PLIST="$ROOT/Sources/VoxstudioPro/Resources/Info.plist"
 APPCAST="$ROOT/appcast.xml"
 DMG="$ROOT/.build/VoxStudio.dmg"
 SPARKLE_ROOT="$ROOT/.build/sparkle-tools"

@@ -214,7 +214,7 @@ The `r2_release.py` prepare stage automatically:
 
 ## References
 
-- `Sources/PalmierPro/App/AppUpdater.swift` — Sparkle integration
+- `Sources/VoxstudioPro/App/AppUpdater.swift` — Sparkle integration
 - `scripts/bundle.sh` — Framework embedding + signing
 - `scripts/r2_release.py` — Archive retention
 - `scripts/generate_delta_appcast.sh` — Delta generation script

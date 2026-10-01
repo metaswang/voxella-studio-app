@@ -24,10 +24,10 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:618–625`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:654–679`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:723–739`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:794–798`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:618–625`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:654–679`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:723–739`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:794–798`
 
 **问题与影响：** finishWriting 超时后，completePreservedOutput 先收集现存 URL，再调用 resetLocked；后者对仍处于 writing 的 writer 调用 cancelWriting。Apple 的契约明确：如果 writer 已创建输出文件，cancelWriting 会删除它。后续 Task 可能仍以刚才收集的 URL 返回成功。另一个可达分支是“请求视频、已写音频、没有视频帧”：该分支在 preserveOutputIfNeeded 前已经 cancelWriting。故“只有明确丢弃才删除”目前不成立。
 
@@ -41,12 +41,12 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:503–558`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:564–575`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:654–679`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:682–737`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:824–852`
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionController.swift:213–216`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:503–558`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:564–575`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:654–679`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:682–737`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:824–852`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionController.swift:213–216`
 
 **问题与影响：** captureGeneration 在采集启动侧有使用，但 completeWriter、writer.finishWriting 回调及 8 秒/20 秒兜底不校验所属停止操作。completeWriter 用的是当前 self.writer。resetLocked 又将 isStopping、finishResumed、didFinalizeWriter 清零。录音 A 经兜底完成后启动 B，A 的迟到回调仍可 finalize/reset B；旧 resume 也会读写 B 的共享 finishResumed。Controller 的过期启动分支还会无条件 engine.cancel()，没有 expectedSessionID。
 
@@ -60,9 +60,9 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:186–204`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:255–280`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1494–1511`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:186–204`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:255–280`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1494–1511`
 
 **问题与影响：** withThrowingTaskGroup 的作用域退出会等待全部子任务。抛出超时和 cancelAll 不会自动恢复悬挂的 CheckedContinuation；stop 的 operation 没有取消处理。start 的取消处理又投递到可能被阻塞的同一 queue。原始 helper 的独立 Swift 实验：超时 50 ms、底层回调 400 ms，实际约 401 ms 后才返回超时。cancel() 本身没有超时。
 
@@ -76,11 +76,11 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:327–338`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:536–558`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1309–1317`
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:46–85`
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:209–250`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:327–338`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:536–558`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1309–1317`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:46–85`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:209–250`
 
 **问题与影响：** 初次 microphone.start 在录音引擎 queue 上直接运行，内部最终同步 startRunning；stop 用 captureQueue.sync 等待 stopLocked，内部又有 stopRunning。健康检查 timer 和部分取消/超时工作同样运行在引擎 queue。任一原生启停阻塞时，writer、健康检查、保存兜底可能一起无法执行。Apple 明确 startRunning/stopRunning 为阻塞操作；有一个 serial queue 并不等于拥有独立监督能力。
 
@@ -94,11 +94,11 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:355–370`
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:403–424`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:484–491`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1198–1209`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1339–1382`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:355–370`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:403–424`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:484–491`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1198–1209`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1339–1382`
 
 **问题与影响：** 麦克风仅在 start/rebuild 成功后就 emit(.recovered)，并非等到稳定音频；引擎收到它后清除 stallBeganAt，并把 lastReceived 与 lastAppended 都设为 now。流重建成功也这样做。于是“重启调用成功但始终没有样本”可每约 6 秒重复一次，30 秒内不到 8 次，不触发重试窗口上限；15 秒断流上限始终被重置。忠实逻辑模型运行 120 秒，实际样本 0，重启 20 次，仍未 failed。另外 failureTimeout 从首次发现 stall 起算，没有重置时也约需断流 20–21 秒才停止。
 
@@ -112,9 +112,9 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1224–1282`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1293–1306`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1528–1546`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1224–1282`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1293–1306`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1528–1546`
 
 **问题与影响：** didStopWithError 对非 userStopped 错误统一进入 recoverStreamLocked。有 displayID 和 stream 对象时优先 updateContentFilter，成功后宣布恢复，却没有 startCapture；更新过滤器不是重新启动已停止流的流程。isRecovering 没有作为入口的 single-flight guard。异步 Task 在 await 后才读取 self.stream，且 generation 校验发生在 updateContentFilter 的副作用之后，所以过期/重叠恢复可以改到新对象。
 
@@ -128,9 +128,9 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1055–1097`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1215–1221`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1343–1382`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1055–1097`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1215–1221`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1343–1382`
 
 **问题与影响：** 健康检查能识别 microphone write/system audio write，但两者最终仍进入 recoverAfterInterruptionLocked，只重启麦克风/SCStream。若输入持续有样本，writer 仍是 writing、但 isReadyForMoreMediaData 长期为 false，重连采集并不能修复写入端。恢复又可能改写健康时间戳，让错误掩盖或反复重连；一个轨道故障还可能中断另一个健康轨道。
 
@@ -144,9 +144,9 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:934–960`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1343–1356`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:618–625`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:934–960`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1343–1356`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:618–625`
 
 **问题与影响：** 视频 append 在 writer 状态、ready、frame status 或 pixel transfer 不满足时直接 return；健康统计仅有麦克风与系统音频。只要两条音频仍进展，即使视频从中途开始完全不写，当前健康检查也不会发现。停止时 !didAppendVideo 仅检查整场是否曾写过视频，不能发现中途冻结。
 
@@ -160,10 +160,10 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:159–168`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:920–925`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:950–958`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1010–1020`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:159–168`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:920–925`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:950–958`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1010–1020`
 
 **问题与影响：** mic tap 已带有 when.hostTime，但写入时没有使用 CMSampleBuffer 的采集 PTS；audio/video 都调用当前 hostClock 的 writerPTS。音频还用 50 ms 阈值决定是否补静音，否则接到 nextAudioPTS。CPU/磁盘造成的队列延迟因此可能被写成静音空洞；突发交付时重新贴到 cursor，真实小丢块又可能被压缩。这不是“保留采集时钟”，只是“使用单调时钟读取处理时间”。
 
@@ -177,10 +177,10 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1013–1027`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1055–1074`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1100–1145`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:635–639`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1013–1027`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1055–1074`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1100–1145`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:635–639`
 
 **问题与影响：** appendSilence 返回 Void，只局部更新 pts，不更新 nextAudioPTS、lastAppended、每轨已写标志。若补静音成功一部分后背压，随后真实 buffer 被丢弃，下一次会从旧 cursor 重补，造成重叠 PTS。静音麦克风分支更会在零样本 append 成功时，仍推进 nextAudioPTS 并更新 lastAppended。永久断流后停止也没有按统一终点处理尾部缺口，仅对从未有样本的轨道塞 2048 帧。
 
@@ -194,10 +194,10 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:415–421`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:920–925`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1386–1423`
-- `Sources/PalmierPro/Workbench/Recording/RecordingAudioMixer.swift:101–132`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:415–421`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:920–925`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1386–1423`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingAudioMixer.swift:101–132`
 
 **问题与影响：** rotateWriter 清空 nextAudioPTS、重置 didStartSession，但没有为新片段建立 local origin，也没有重置 didAppendMedia/Video/Microphone/SystemAudio。新 writer startSession(.zero) 后继续使用整场 PTS。例如录到 600 秒换段，新片段首个样本仍接近 600 秒。拼接又取每段 [0, asset.duration] 顺序累加；这可能加入大的前导空段、重复计算偏移或插入非法 track range。具体导出表现需实测，时间模型不一致本身已可由代码确认。
 
@@ -211,9 +211,9 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1386–1423`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:569–574`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:842–852`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1386–1423`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:569–574`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:842–852`
 
 **问题与影响：** rotateWriter 在安装新 writer 前令 self.writer=nil；installWriter 抛错后只恢复 outputURL 并 emit failed。Controller 保存时 finalizeWriter 的 guard 发现 writer=nil，就 reset 并返回 emptyRecording；completedSegments 也被清空。原始片段可能还在磁盘，但正常保存链路没有交付它们。旧 writer 的 finish 回调也只日志记录，没有形成可等待的“片段已封口”状态。
 
@@ -227,10 +227,10 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1432–1437`
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionManifest.swift:3–14`
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionManifest.swift:62–89`
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionController.swift:637–644`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1432–1437`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionManifest.swift:3–14`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionManifest.swift:62–89`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionController.swift:637–644`
 
 **问题与影响：** preserveOutputIfNeeded 把 manifest 写成 failed，而 recoverInterruptedSessions 只接受 inProgress。所以写入失败、异常保全的片段恰好会被跳过。manifest 还是单文件结构，没有分段序号、时序与交接状态；Controller 每次只 stage recovered.first，没有统一展示一个会话的所有片段。已用原始扫描器实测 failed 候选被排除。
 
@@ -244,9 +244,9 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:731–789`
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionManifest.swift:76–79`
-- `Sources/PalmierPro/Workbench/Recording/RecordingAudioMixer.swift:103–132`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:731–789`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionManifest.swift:76–79`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingAudioMixer.swift:103–132`
 
 **问题与影响：** 保全只看 fileExists；重启恢复最多看 size>0，均未检查媒体是否可读。单文件可直接 success；多文件拼接失败则 urls.last fallback，并继续 success。最后一段可能最短甚至损坏，前面的有效内容不会出现在返回结果中；fallbackError 也不再体现。这里不能断言所有原始文件都删除，但可确认“保存成功”与“完整、可播放、包含全部片段”没有对应关系。
 
@@ -260,12 +260,12 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:777–789`
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionController.swift:343–354`
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionController.swift:637–644`
-- `Sources/PalmierPro/Workbench/WorkbenchStore.swift:1940–1944`
-- `Sources/PalmierPro/Workbench/WorkbenchStore.swift:1992–2007`
-- `Sources/PalmierPro/Workbench/WorkbenchStore.swift:6678–6692`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:777–789`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionController.swift:343–354`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionController.swift:637–644`
+- `Sources/VoxstudioPro/Workbench/WorkbenchStore.swift:1940–1944`
+- `Sources/VoxstudioPro/Workbench/WorkbenchStore.swift:1992–2007`
+- `Sources/VoxstudioPro/Workbench/WorkbenchStore.swift:6678–6692`
 
 **问题与影响：** 引擎返回之前已删除 manifest；启动恢复更在 stage 之前删除。stageRecordedMedia 只设置内存 pendingMediaImportURLs；Workbench 保存快照仅 transcriptions/dubs，不包含该待导入状态。用户尚未确认导入就退出/崩溃时，原始媒体可能仍在磁盘，但 manifest 和内存入口都不在，下次恢复扫描找不到它。正常退出完成录制也会走这条链。
 
@@ -279,13 +279,13 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionController.swift:293–314`
-- `Sources/PalmierPro/App/AppDelegate.swift:84–108`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:545–558`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:668–679`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:742–789`
-- `Sources/PalmierPro/Workbench/Recording/RecordingAudioMixer.swift:138–150`
-- `Sources/PalmierPro/Workbench/Recording/RecordingModels.swift:197–201`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionController.swift:293–314`
+- `Sources/VoxstudioPro/App/AppDelegate.swift:84–108`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:545–558`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:668–679`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:742–789`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingAudioMixer.swift:138–150`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingModels.swift:197–201`
 
 **问题与影响：** prepareForTermination 25 秒后只日志，不返回失败；AppDelegate 随后仍 reply(true)。停止过程可能先等 stream 8 秒、再等 writer 20 秒，本身已超过 25 秒；后续 concatenate/mix 是 export，没有同等明确的截止时间。reset 已提前执行，原 writer 的兜底不再覆盖这些后处理。退出可能打断未封口/未交接的数据，即使 shouldTerminate 接入点本身正确。
 
@@ -299,11 +299,11 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:46–104`
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:140–175`
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:236–240`
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:416–430`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:327–338`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:46–104`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:140–175`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:236–240`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:416–430`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:327–338`
 
 **问题与影响：** start 直接在调用队列修改 onSample、isStoppingCapture、captureToken 等；restart 在 captureQueue；tap/output 回调又读取它们。部分数据字段只有 @unchecked Sendable，并无实际隔离。tap 排队块和 CaptureSessionSink 都通过 self 的当前 callback 交付样本，没有携带录制 generation；旧样本/旧 noteStableAudio 在快速启停后有机会被算入新会话，甚至重置新会话重试计数。
 
@@ -317,9 +317,9 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:140–168`
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:434–451`
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:461–486`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:140–168`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:434–451`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:461–486`
 
 **问题与影响：** 达到 maxPendingTapBuffers 后，每次丢块仍向 captureQueue 投递 droppedTapBuffers+=1 和 logTapBackpressureIfNeeded 两个任务。所谓日志只发一次的判断发生在入队之后，因此阻塞时仍可积累大量控制任务。tap 还逐块分配 AVAudioPCMBuffer，拷贝失败直接打日志；这只是部分减轻实时线程工作，不是完整有界/实时安全桥接。
 
@@ -333,8 +333,8 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/RecordingAudioTranscoder.swift:39–99`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1133–1145`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingAudioTranscoder.swift:39–99`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1133–1145`
 
 **问题与影响：** 相同非 canonical 格式跨块保留 converter 是进步，但 canonical 快捷分支直接 return，未处理已有 converter。A(非 canonical)→canonical→A 可重新使用旧状态；切换到另一非 canonical 格式又直接替换 converter，没有处理旧延迟数据。flush 只 convert 一次，没有 drain 到 endOfStream；写入处忽略 ready 和 append 返回值，也不更新 cursor/flags。具体尾音数量依实际 converter 状态而定，不应宣称每次都会丢。
 
@@ -348,7 +348,7 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1293–1306`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1293–1306`
 
 **问题与影响：** rebuildContentFilter 在找不到 currentDisplayID 时静默选 content.displays.first 并更新 currentDisplayID。拔掉原先选择的外接屏后，恢复可能改录包含私人内容的另一屏；区域模式还会沿用原来的 sourceRect。这里仅指所选 display/region 的 fallback，不是声称 window 模式会直接变成全屏录制。
 
@@ -362,9 +362,9 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/RecordingAudioDevices.swift:103–128`
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionController.swift:85–95`
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionController.swift:159–164`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingAudioDevices.swift:103–128`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionController.swift:85–95`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionController.swift:159–164`
 
 **问题与影响：** 底层给显式设备绑定 UID 的方向正确，但 resolvedMicrophone 在显式 UID 不在 devices 时返回默认/第一台/系统默认。start 使用缓存 devices 再做一次解析；枚举未完成或设备短暂缺席都可能改变用户选择。refreshDevices 异步返回后不检查 phase，会修改 configuration，而引擎可能已经使用旧 request，造成 UI/日志和实际设备不一致。
 
@@ -378,12 +378,12 @@
 
 **代码位置**
 
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionController.swift:317–324`
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionController.swift:598–617`
-- `Sources/PalmierPro/Workbench/Recording/RecordingSessionController.swift:647–656`
-- `Sources/PalmierPro/Workbench/Recording/RecordingModels.swift:153–176`
-- `Sources/PalmierPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1088–1096`
-- `Sources/PalmierPro/Workbench/Recording/MicrophoneCaptureEngine.swift:150–151`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionController.swift:317–324`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionController.swift:598–617`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingSessionController.swift:647–656`
+- `Sources/VoxstudioPro/Workbench/Recording/RecordingModels.swift:153–176`
+- `Sources/VoxstudioPro/Workbench/Recording/ScreenCaptureRecordingEngine.swift:1088–1096`
+- `Sources/VoxstudioPro/Workbench/Recording/MicrophoneCaptureEngine.swift:150–151`
 
 **问题与影响：** runtime failed 和系统 userStopped 会先记录真实原因，再调用 finish(discard:false)，后者又统一写 user stop。按最后一条 stop 日志排查会被误导。RecordingSessionDiagnostics 仅包含音量档位；failedAppends、conversionFailures、tap 丢块和最后真实收样/写入时间没有进入终态结果，无法凭结束摘要判断丢音发生在哪层。
 

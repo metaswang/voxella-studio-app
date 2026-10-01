@@ -143,9 +143,9 @@ Hosted `/api/v1/llm/responses` 的 `402` 且嵌套 `error.type/code = insufficie
 
 ## 代码落点
 
-- Agent runtime：[`KnowledgeAgentRuntime.swift`](../../Sources/PalmierPro/Knowledge/Agent/KnowledgeAgentRuntime.swift)
-- tool schema/allowlist：[`KnowledgeToolRegistry.swift`](../../Sources/PalmierPro/Knowledge/Agent/KnowledgeToolRegistry.swift)
-- tool 执行：[`KnowledgeToolExecutor.swift`](../../Sources/PalmierPro/Knowledge/Agent/KnowledgeToolExecutor.swift)
-- 共享 Hybrid + Graph 检索：[`KnowledgeRetrievalService.swift`](../../Sources/PalmierPro/Knowledge/KnowledgeRetrievalService.swift)
-- skill 解析与加载：[`Skill.swift`](../../Sources/PalmierPro/Agent/Skills/Skill.swift)、[`SkillStore.swift`](../../Sources/PalmierPro/Agent/Skills/SkillStore.swift)
-- query planning、legacy RAG 与回答 composer：[`KnowledgeQAService.swift`](../../Sources/PalmierPro/Knowledge/KnowledgeQAService.swift)
+- Agent runtime：[`KnowledgeAgentRuntime.swift`](../../Sources/VoxstudioPro/Knowledge/Agent/KnowledgeAgentRuntime.swift)
+- tool schema/allowlist：[`KnowledgeToolRegistry.swift`](../../Sources/VoxstudioPro/Knowledge/Agent/KnowledgeToolRegistry.swift)
+- tool 执行：[`KnowledgeToolExecutor.swift`](../../Sources/VoxstudioPro/Knowledge/Agent/KnowledgeToolExecutor.swift)
+- 共享 Hybrid + Graph 检索：[`KnowledgeRetrievalService.swift`](../../Sources/VoxstudioPro/Knowledge/KnowledgeRetrievalService.swift)
+- skill 解析与加载：[`Skill.swift`](../../Sources/VoxstudioPro/Agent/Skills/Skill.swift)、[`SkillStore.swift`](../../Sources/VoxstudioPro/Agent/Skills/SkillStore.swift)
+- query planning、legacy RAG 与回答 composer：[`KnowledgeQAService.swift`](../../Sources/VoxstudioPro/Knowledge/KnowledgeQAService.swift)

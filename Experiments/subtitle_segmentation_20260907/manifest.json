@@ -2,10 +2,10 @@
   "app_commit": "3f05bdec3fdac1f7ae1542a44c01aa02167caa55",
   "worker_commit": "eb36df398e99d6889929181986cd0c70be2fcfcb",
   "sha256": {
-    "Sources/PalmierPro/MediaFlow/SubtitleLLMProcessor.swift": "87faa5c5fbe94281f2e93a074703414280c55265ea65415046092338e9c3209b",
-    "Sources/PalmierPro/MediaFlow/SubtitleTokenRemapper.swift": "187fffe67da3e5bbbf52fc995394ce7254e3a4c139ef799deb54173e3793314d",
-    "Sources/PalmierPro/Transcription/Transcription.swift": "f863ff0af69f28f2675c10c51ac9ee9dd4cffd39317fe0b91accbf67c428ce7a",
-    "Sources/PalmierPro/MediaFlow/SubtitleCascadePrompt.swift": "fbfc40a8bcbb7cf1e3fb3ff5cee6384b213f8d4c45b5cc6b6f591b2ca2a0688e"
+    "Sources/VoxstudioPro/MediaFlow/SubtitleLLMProcessor.swift": "87faa5c5fbe94281f2e93a074703414280c55265ea65415046092338e9c3209b",
+    "Sources/VoxstudioPro/MediaFlow/SubtitleTokenRemapper.swift": "187fffe67da3e5bbbf52fc995394ce7254e3a4c139ef799deb54173e3793314d",
+    "Sources/VoxstudioPro/Transcription/Transcription.swift": "f863ff0af69f28f2675c10c51ac9ee9dd4cffd39317fe0b91accbf67c428ce7a",
+    "Sources/VoxstudioPro/MediaFlow/SubtitleCascadePrompt.swift": "fbfc40a8bcbb7cf1e3fb3ff5cee6384b213f8d4c45b5cc6b6f591b2ca2a0688e"
   },
   "dataset_sha256": "2ac4b2869ff58f74fcc3507ba8eec89a69f5e7d3caff99b5f3a5c504366eeb03",
   "counts": {

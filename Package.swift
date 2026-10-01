@@ -3,10 +3,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "PalmierPro",
+    name: "VoxstudioPro",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "VoxStudio", targets: ["PalmierPro"]),
+        .executable(name: "VoxStudio", targets: ["VoxstudioPro"]),
     ],
     traits: [
         .trait(name: "BundledSpeech", description: "Include on-device speech models and MLX."),
@@ -32,7 +32,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "PalmierPro",
+            name: "VoxstudioPro",
             dependencies: [
                 .product(name: "MCP", package: "swift-sdk"),
                 .product(name: "ConvexMobile", package: "convex-swift"),
@@ -127,7 +127,7 @@ let package = Package(
                 ),
                 "CSQLiteVec",
             ],
-            path: "Sources/PalmierPro",
+            path: "Sources/VoxstudioPro",
             exclude: [
                 "Resources/Info.plist",
                 "Resources/AppIcon.icon",
@@ -179,13 +179,13 @@ let package = Package(
         ),
         .plugin(name: "MetalCIKernelPlugin", capability: .buildTool()),
         .testTarget(
-            name: "PalmierProTests",
+            name: "VoxstudioProTests",
             dependencies: [
-                "PalmierPro",
+                "VoxstudioPro",
                 "CSQLiteVec",
                 .product(name: "MCP", package: "swift-sdk"),
             ],
-            path: "Tests/PalmierProTests",
+            path: "Tests/VoxstudioProTests",
             swiftSettings: [
                 .define("BUNDLED_SPEECH", .when(traits: ["BundledSpeech"])),
                 .define("SPARKLE_UPDATES", .when(traits: ["SparkleUpdates"])),

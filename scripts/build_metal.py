@@ -35,7 +35,7 @@ def capture(args, **kwargs):
 
 
 def policy():
-    with (ROOT / "Sources/PalmierPro/Resources/Info.plist").open("rb") as stream:
+    with (ROOT / "Sources/VoxstudioPro/Resources/Info.plist").open("rb") as stream:
         minimum = plistlib.load(stream)["LSMinimumSystemVersion"]
     if minimum != MINIMUM:
         raise ValueError("Review Metal compatibility policy when changing LSMinimumSystemVersion")

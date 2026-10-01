@@ -5,10 +5,10 @@
 Read the current source values:
 
 ```bash
-/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Sources/PalmierPro/Resources/Info.plist
-/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Sources/PalmierPro/Resources/Info.plist
+/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Sources/VoxstudioPro/Resources/Info.plist
+/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Sources/VoxstudioPro/Resources/Info.plist
 git status --short --branch
-git diff -- scripts/bundle.sh scripts/bundle-mas.sh Sources/PalmierPro/Resources/Info.plist
+git diff -- scripts/bundle.sh scripts/bundle-mas.sh Sources/VoxstudioPro/Resources/Info.plist
 ```
 
 Before an upload, inspect the app's macOS builds in App Store Connect. The

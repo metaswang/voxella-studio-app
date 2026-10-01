@@ -24,15 +24,15 @@ Gemini 的 `H1_reward_1.5` 在 65 条样本上全部保留原文、全部满足�
 顺，它可以把这个这髂骨把它能够自动
 ```
 
-因此 `这｜个`、`比较｜顺` 已在持久化 cue 中，不是 SwiftUI 根据卡片宽度自动折行。[本地最小证据](/Users/adamwang/Project/subdub/voxella-studio-app/Experiments/subtitle_segmentation_20260907/local_evidence.json) 只保留截图对应片段；本机完整转录没有发给外部模型。界面通过 [SessionSegmentEditor.swift](/Users/adamwang/Project/subdub/voxella-studio-app/Sources/PalmierPro/Workbench/SessionSegmentEditor.swift:391) 调用 `renderedSubtitleText` 隐藏部分行尾标点，所以视觉上缺少句号不一定代表存储里没有句号。
+因此 `这｜个`、`比较｜顺` 已在持久化 cue 中，不是 SwiftUI 根据卡片宽度自动折行。[本地最小证据](/Users/adamwang/Project/subdub/voxella-studio-app/Experiments/subtitle_segmentation_20260907/local_evidence.json) 只保留截图对应片段；本机完整转录没有发给外部模型。界面通过 [SessionSegmentEditor.swift](/Users/adamwang/Project/subdub/voxella-studio-app/Sources/VoxstudioPro/Workbench/SessionSegmentEditor.swift:391) 调用 `renderedSubtitleText` 隐藏部分行尾标点，所以视觉上缺少句号不一定代表存储里没有句号。
 
 代码路径为 `MediaFlowExecutor.prepareSubtitles → SubtitlePostprocessPipeline → SubtitleCascadePrompt / SubtitleReadabilityPolicy → SubtitleTrack → WorkbenchStore → SessionSegmentEditor`。文本输出落在 `SubtitleTrack.cues`；Transcript 标签另取较长的 `result.segments`。本轮未修改这些生产代码。
 
 可证实的机制问题：
 
-1. **中日文兜底候选可落在词内。** [characterRunTokens](/Users/adamwang/Project/subdub/voxella-studio-app/Sources/PalmierPro/MediaFlow/SubtitleTokenRemapper.swift:99) 对非 ASCII 字符逐字拆分，[splitTokenIndices](/Users/adamwang/Project/subdub/voxella-studio-app/Sources/PalmierPro/MediaFlow/SubtitleLLMProcessor.swift:186) 主要评分长度、均衡和少量标点，没有词法或依存保护。当前 Swift 在截图同类合成文本中实际产生 `比较｜顺`，并切出 `节｜奏`、`调｜整`。
-2. **合规字数不能保证语义边界。** 当前 [segmentationFailureReason](/Users/adamwang/Project/subdub/voxella-studio-app/Sources/PalmierPro/MediaFlow/SubtitlePostprocessPipeline.swift:786) 主要校验文本、数量和上限；原文没变且不超长的坏边界可以通过。本轮 L0 的 Gemini 输出没有超长，所以 L0 的 19 次保护短语断裂不能归咎于后续长度兜底。
-3. **超长后处理会改变好边界。** [cascade](/Users/adamwang/Project/subdub/voxella-studio-app/Sources/PalmierPro/MediaFlow/SubtitlePostprocessPipeline.swift:680) 遇到超长行优先本地重切。Nano 组实际触发了这一路径的文本重放，见 L0-length-repair 数据；它能消除部分超长，也可能重新断词或改变空格。当前完整长段的只读 Swift 重放再次出现了 `比较｜顺`，但批次不同，不能当作历史执行的精确复现。
+1. **中日文兜底候选可落在词内。** [characterRunTokens](/Users/adamwang/Project/subdub/voxella-studio-app/Sources/VoxstudioPro/MediaFlow/SubtitleTokenRemapper.swift:99) 对非 ASCII 字符逐字拆分，[splitTokenIndices](/Users/adamwang/Project/subdub/voxella-studio-app/Sources/VoxstudioPro/MediaFlow/SubtitleLLMProcessor.swift:186) 主要评分长度、均衡和少量标点，没有词法或依存保护。当前 Swift 在截图同类合成文本中实际产生 `比较｜顺`，并切出 `节｜奏`、`调｜整`。
+2. **合规字数不能保证语义边界。** 当前 [segmentationFailureReason](/Users/adamwang/Project/subdub/voxella-studio-app/Sources/VoxstudioPro/MediaFlow/SubtitlePostprocessPipeline.swift:786) 主要校验文本、数量和上限；原文没变且不超长的坏边界可以通过。本轮 L0 的 Gemini 输出没有超长，所以 L0 的 19 次保护短语断裂不能归咎于后续长度兜底。
+3. **超长后处理会改变好边界。** [cascade](/Users/adamwang/Project/subdub/voxella-studio-app/Sources/VoxstudioPro/MediaFlow/SubtitlePostprocessPipeline.swift:680) 遇到超长行优先本地重切。Nano 组实际触发了这一路径的文本重放，见 L0-length-repair 数据；它能消除部分超长，也可能重新断词或改变空格。当前完整长段的只读 Swift 重放再次出现了 `比较｜顺`，但批次不同，不能当作历史执行的精确复现。
 4. **仅有 segments 的接口仍受 word 数量约束。** `makeSourceWords` 在没有 words 时把每个 segment 当作一个 SourceWord，而后续要求字幕条数不超过 sourceWordCount。两条长 segment 合理切成十余条字幕，也可能被拒绝。因此新文本切分核心不能直接保留这个依赖 word 数量的校验。
 5. **token 重拼会改动正字法空格。** Swift R0 的 65 条全部保留非空白字符，但 16 条违反“只允许边界空白变化”的严格契约，例如 `U.S. → U. S.`、`USB-C → USB - C`、`a-t-elle → a - t - elle`。这不是删字率；表中“原文通过”专门反映内部空白也应保留。
 6. **现有批次由 source words 重新组成文本。** 跨 segment/批次的上下文只能帮助理解，不能移动已被固定的输入范围。纯文本方案应把原 segment 作为来源映射，允许同说话人的相邻片段共同决定 cue 边界；明确的说话人/编辑边界仍须保留。
