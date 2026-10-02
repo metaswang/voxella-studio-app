@@ -1298,6 +1298,7 @@ struct WorkbenchSnapshot: Codable, Sendable {
     var schemaVersion: Int? = 6
     var transcriptions: [WorkbenchTranscriptionJob]
     var dubs: [WorkbenchDubJob]
+    var speakerColors: [String: SessionSpeakerColors]? = nil
 }
 
 private struct TranscriptionCloudEditableProjection: Equatable {
@@ -1569,6 +1570,7 @@ final class WorkbenchStore {
     var selectedTranscriptionID: UUID?
     var selectedDubID: UUID?
     var selectedSessionID: UUID?
+    private(set) var speakerColors: [String: SessionSpeakerColors] = [:]
     /// Active multi-file / upload-style batch. While set, the Transcribe route shows the waiting UI.
     var activeTranscriptionBatch: TranscriptionBatchState?
     var transcriptionAdmissionError: String?
@@ -1589,6 +1591,7 @@ final class WorkbenchStore {
     private var saveRequestedBeforeHydration = false
     private var saveRevision = 0
     private(set) var remoteSessions: [UUID: WorkbenchSession] = [:]
+    private(set) var remoteSpeakerNames: [UUID: [String: String]] = [:]
     private(set) var isLoadingRemoteSessions = false
     private(set) var remoteSessionsError: String?
     private(set) var remoteSessionLoadingID: UUID?
@@ -1888,6 +1891,7 @@ final class WorkbenchStore {
         remoteSessionLoadTask?.cancel()
         remoteSessionLoadTask = nil
         remoteSessions = [:]
+        remoteSpeakerNames = [:]
         enhancedAudioURLs = [:]
         remoteSessionsError = nil
         isLoadingRemoteSessions = false
@@ -1949,6 +1953,14 @@ final class WorkbenchStore {
                 let rendering = try await self.voxellaAPI.sessionRenderingData(id)
                 try Task.checkCancellation()
                 guard self.selectedSessionID == id else { return }
+                self.remoteSpeakerNames[id] = rendering.detail.options?.speakerNames ?? [:]
+                if let savedColors = rendering.detail.options?.speakerColors {
+                    var colors = SessionSpeakerColors()
+                    for (key, hex) in savedColors {
+                        if let color = SessionSpeakerColor(hex: hex) { colors.set(color, for: key) }
+                    }
+                    self.speakerColors[id.uuidString] = colors
+                }
                 let opened = Self.remoteSession(
                     from: rendering.detail,
                     transcriptSegments: rendering.transcriptSegments,
@@ -2982,6 +2994,7 @@ final class WorkbenchStore {
     }
 
     func renameSpeaker(_ current: String, to replacement: String, inTranscription id: UUID) {
+        renameSessionSpeakerColor(sessionID: id, current: current, replacement: replacement)
         updateTranscription(id) { job in
             job.result = job.result?.renamingSpeaker(current, to: replacement)
             job.subtitleTrack = job.subtitleTrack?.renamingSpeaker(current, to: replacement)
@@ -3001,6 +3014,32 @@ final class WorkbenchStore {
         case source
         case translation(String)
         case dub
+    }
+
+    func sessionSpeakerColors(sessionID: UUID, labels: [String]) -> SessionSpeakerColors {
+        var colors = speakerColors[sessionID.uuidString] ?? SessionSpeakerColors()
+        colors.ensure(labels)
+        return colors
+    }
+
+    func ensureSessionSpeakerColors(sessionID: UUID, labels: [String]) {
+        let colors = sessionSpeakerColors(sessionID: sessionID, labels: labels)
+        guard speakerColors[sessionID.uuidString] != colors else { return }
+        speakerColors[sessionID.uuidString] = colors
+        save()
+    }
+
+    func setSessionSpeakerColor(sessionID: UUID, speaker: String, color: SessionSpeakerColor) {
+        var colors = speakerColors[sessionID.uuidString] ?? SessionSpeakerColors()
+        colors.set(color, for: speaker)
+        speakerColors[sessionID.uuidString] = colors
+        save()
+    }
+
+    private func renameSessionSpeakerColor(sessionID: UUID, current: String, replacement: String) {
+        guard var colors = speakerColors[sessionID.uuidString] else { return }
+        colors.rename(current, to: replacement)
+        speakerColors[sessionID.uuidString] = colors
     }
 
     func updateSessionCueText(
@@ -3077,6 +3116,20 @@ final class WorkbenchStore {
         return didSplit
     }
 
+    func assignSessionCuesSpeaker(sessionID: UUID, scope: SessionCueScope, cueIDs: [Int], speaker: String) {
+        let label = speaker.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !label.isEmpty else { return }
+        ensureSessionSpeakerColors(sessionID: sessionID, labels: [label])
+        mutateSessionCueTrack(sessionID: sessionID, scope: scope) { track in
+            var updated = track
+            for id in cueIDs {
+                guard let next = updated.assigningSpeaker(toCue: id, speaker: label) else { return nil }
+                updated = next
+            }
+            return updated
+        }
+    }
+
     func assignSessionCueSpeaker(
         sessionID: UUID,
         scope: SessionCueScope,
@@ -3103,9 +3156,11 @@ final class WorkbenchStore {
             guard let transcriptionID = sessions.first(where: { $0.id == sessionID })?.transcriptionID
                     ?? (transcriptions.contains(where: { $0.id == sessionID }) ? sessionID : nil)
             else { return }
+            if sessionID != transcriptionID { renameSessionSpeakerColor(sessionID: sessionID, current: source, replacement: destination) }
             renameSpeaker(source, to: destination, inTranscription: transcriptionID)
         case .dub:
             guard let dubID = resolveDubID(forSession: sessionID) else { return }
+            renameSessionSpeakerColor(sessionID: sessionID, current: source, replacement: destination)
             updateDub(dubID) { job in
                 job.subtitleTrack = job.subtitleTrack?.renamingSpeaker(source, to: destination)
                 job.alignedTranscript = job.alignedTranscript?.renamingSpeaker(source, to: destination)
@@ -6341,6 +6396,7 @@ final class WorkbenchStore {
                 && job.remoteGenerationID != nil
         } ?? []
         if let snapshot {
+            speakerColors = (snapshot.speakerColors ?? [:]).merging(speakerColors) { _, current in current }
             let currentTranscriptionIDs = Set(transcriptions.map(\.id))
             let currentDubIDs = Set(dubs.map(\.id))
             let persistedTranscriptions = snapshot.transcriptions
@@ -7040,7 +7096,8 @@ final class WorkbenchStore {
         let snapshot = WorkbenchSnapshot(
             schemaVersion: 7,
             transcriptions: transcriptions,
-            dubs: dubs
+            dubs: dubs,
+            speakerColors: speakerColors
         )
         saveRevision += 1
         let revision = saveRevision

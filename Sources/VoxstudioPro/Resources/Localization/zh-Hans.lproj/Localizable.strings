@@ -2815,3 +2815,9 @@
 "Recording begins when the selected source is available." = "所选来源就绪后才会开始录制。";
 "Cancel recording setup" = "取消录制准备";
 "Couldn't start screen capture. Check the source and try again." = "无法启动屏幕录制。请检查所选来源，然后重试。";
+
+"Speaker color" = "说话人颜色";
+
+"Custom color…" = "自定义颜色…";
+
+"Change color…" = "修改颜色…";

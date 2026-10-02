@@ -127,6 +127,7 @@ struct WorkbenchSessionDetailView: View {
     @Bindable private var account = AccountService.shared
     @State private var selectedTrack = SessionPlaybackTrack.original
     @State private var selectedTab = SessionDetailTab.transcript
+    @State private var expandedTranscriptParagraphID: Int?
     /// `nil` means Original; otherwise a translation language code.
     @State private var transcriptLanguageCode: String?
     @State private var subtitleLanguageCode: String?
@@ -445,7 +446,7 @@ struct WorkbenchSessionDetailView: View {
                         maxHeight: .infinity,
                         alignment: .top
                     )
-                    .background(AppTheme.Background.baseColor)
+                    .background(SessionTranscriptCanvas.color)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -1059,8 +1060,11 @@ struct WorkbenchSessionDetailView: View {
             cues: cues,
             activeCueID: activeCueID,
             speakerLabels: speakerLabels(for: session, cues: cues),
+            speakerDisplayNames: session.isRemoteOnly ? store.remoteSpeakerNames[session.id] ?? [:] : [:],
             allowsEditing: allowsEditing,
             showsSubtitleDisplayText: selectedTab == .subtitles,
+            aggregatesSpeakers: selectedTab == .transcript,
+            expandedParagraphID: $expandedTranscriptParagraphID,
             emptyText: selectedTab == .transcript
                 ? L10n.string("No timed transcript is available for this track.")
                 : L10n.string("No subtitle track is available."),
@@ -1077,7 +1081,11 @@ struct WorkbenchSessionDetailView: View {
     ) {
         guard let cueID, cues.contains(where: { $0.id == cueID }) else { return }
         withAnimation(.easeInOut(duration: AppTheme.Anim.transition)) {
-            proxy.scrollTo(cueID, anchor: .center)
+            let target = SessionTranscriptDisplayRow.scrollID(
+                cueID: cueID, in: cues, aggregate: selectedTab == .transcript,
+                expandedID: expandedTranscriptParagraphID
+            )
+            proxy.scrollTo(target, anchor: .center)
         }
     }
 
