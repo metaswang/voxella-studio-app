@@ -37,7 +37,7 @@ struct SessionSegmentEditor: View {
             )
             .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.emptyStateMinHeight)
         } else {
-            LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            LazyVStack(alignment: .leading, spacing: showsSubtitleDisplayText ? 0 : AppTheme.Spacing.lg) {
                 ForEach(displayRows) { row in
                     switch row {
                     case .paragraph(let paragraph):
@@ -61,6 +61,10 @@ struct SessionSegmentEditor: View {
                     }
                 }
             }
+            // Transcript paragraphs and subtitle rows reuse cue IDs but have
+            // different heights. Discard the lazy layout cache when switching
+            // tracks, languages or presentation modes.
+            .id(contentKey)
             .padding(.vertical, AppTheme.Spacing.lg)
             .onAppear { store.ensureSessionSpeakerColors(sessionID: sessionID, labels: speakerLabels) }
             .onChange(of: speakerLabels) { _, labels in
@@ -329,7 +333,7 @@ private struct SessionMergeDivider: View {
             .buttonStyle(.plain)
             .help(L10n.string("Merge with segment below"))
         }
-        .frame(height: AppTheme.Spacing.lg)
+        .frame(height: AppTheme.Spacing.md)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .animation(.easeInOut(duration: AppTheme.Anim.hover), value: isHovered)
@@ -465,8 +469,9 @@ struct SessionCueRow: View {
                 }
             }
         }
-        .padding(AppTheme.Spacing.lgXl)
-        .frame(minHeight: AppTheme.Workbench.transcriptCardMinHeight, alignment: .topLeading)
+        .padding(.horizontal, AppTheme.Spacing.lgXl)
+        .padding(.vertical, showsSubtitleDisplayText ? AppTheme.Spacing.sm : AppTheme.Spacing.lgXl)
+        .frame(minHeight: showsSubtitleDisplayText ? 0 : AppTheme.Workbench.transcriptCardMinHeight, alignment: .topLeading)
         .background(isEditing ? AppTheme.Background.raisedColor : Color.clear, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
         .onHover { isHovered = $0 }
     }
