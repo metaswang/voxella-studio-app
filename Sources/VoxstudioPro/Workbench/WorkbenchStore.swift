@@ -1486,23 +1486,24 @@ actor WorkbenchPersistence {
     }
 
     func save(_ snapshot: WorkbenchSnapshot, revision: Int) {
-        guard !denyOverwriteAfterCorruptLoad else {
-            Log.project.error("workbench save skipped: prior load failed to decode")
-            return
-        }
-        guard revision >= latestRevision,
-              let data = try? JSONEncoder().encode(snapshot) else { return }
-        do {
-            try FileManager.default.createDirectory(
-                at: URL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try data.write(to: URL, options: .atomic)
-            latestRevision = revision
-        } catch {
-            Log.project.error("workbench save failed: \(error.localizedDescription)")
-        }
+        do { try saveCommitted(snapshot, revision: revision) }
+        catch { Log.project.error("workbench save failed: \(error.localizedDescription)") }
     }
+
+    /// Returns only after atomic replacement; callers must not turn failures into success.
+    func saveCommitted(_ snapshot: WorkbenchSnapshot, revision: Int) throws {
+        guard !denyOverwriteAfterCorruptLoad else {
+            throw MCPDocumentError("corrupt_snapshot", "Workbench recovery is required before saving")
+        }
+        guard revision >= latestRevision else {
+            throw MCPDocumentError("conflict", "A newer Workbench snapshot has already been saved; reload")
+        }
+        let data = try JSONEncoder().encode(snapshot)
+        try FileManager.default.createDirectory(at: URL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: URL, options: .atomic)
+        latestRevision = revision
+    }
+
 }
 
 @Observable
@@ -7099,6 +7100,13 @@ final class WorkbenchStore {
     private static func nextCloudSyncRevision(_ revision: Int) -> Int {
         guard revision >= 0 else { return 1 }
         return revision == Int.max ? 1 : revision + 1
+    }
+
+    func saveMCPChanges() async throws {
+        guard hasHydrated else { throw MCPDocumentError("loading", "Workbench is loading") }
+        let snapshot = WorkbenchSnapshot(schemaVersion: 7, transcriptions: transcriptions, dubs: dubs, speakerColors: speakerColors)
+        saveRevision += 1
+        try await persistence.saveCommitted(snapshot, revision: saveRevision)
     }
 
     private func save() {

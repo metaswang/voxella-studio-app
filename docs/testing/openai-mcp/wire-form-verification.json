@@ -1,0 +1,7 @@
+{
+  "standard_capability_does_not_enable_native": true,
+  "cancel": true,
+  "decline": true,
+  "invalid_accept_rejected": true,
+  "method_not_found_fallback": true
+}

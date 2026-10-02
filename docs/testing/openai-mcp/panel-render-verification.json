@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-03",
+  "root_cause": "String.replace replacement string expanded bundled JavaScript dollar sequences into repeated template HTML",
+  "before": {
+    "header_copies": 33,
+    "script_parses": false,
+    "error": "missing ) after argument list",
+    "bytes": 1119920
+  },
+  "after": {
+    "header_copies": 1,
+    "script_parses": true,
+    "bytes": 931806,
+    "sha256": "d58f22af40abac8ede7d4988ab3bb60cc56842ebda3e262b671de873d6d48fa5",
+    "served_resource_matches_source": true
+  },
+  "validation": {
+    "typescript_check": true,
+    "build_syntax_gate": true,
+    "signed_bundle": true,
+    "running_app_restarted": true,
+    "real_browser_render": true,
+    "official_app_bridge_handshake": true,
+    "initial_fixture_session_rendered": true,
+    "refresh_bridge_call": true,
+    "desktop_plugin_panel_verified": false
+  },
+  "screenshot": "render-preview.png"
+}

@@ -47,9 +47,11 @@ final class MCPService {
                     tools: .init(listChanged: true)
                 )
             )
-            await Self.registerTools(on: server, executor: toolExecutor)
-            await Self.registerResources(on: server)
-            return MCPServerInstance(server: server) { clientInfo in
+            let extensions = await MCPOpenAIExtensions(server: server)
+            await Self.registerTools(on: server, executor: toolExecutor, extensions: extensions)
+            await Self.registerResources(on: server, extensions: extensions)
+            return MCPServerInstance(server: server) { clientInfo, capabilities in
+                await extensions.initialize(capabilities)
                 await toolExecutor.setMCPClientInfo(MCPClientInfo(clientInfo))
             }
         }
@@ -79,36 +81,47 @@ final class MCPService {
         Log.mcp.notice("http server stopped")
     }
 
-    nonisolated static func registerTools(on server: Server, executor: ToolExecutor) async {
+    nonisolated static func registerTools(on server: Server, executor: ToolExecutor, extensions: MCPOpenAIExtensions? = nil) async {
         let tools: [Tool] = ToolDefinitions.mcpServer.map { def in
             Tool(name: def.name.rawValue, description: def.description, inputSchema: def.mcpSchemaValue)
         }
 
-        let allTools = tools + MCPKnowledgeTools.tools + MCPMediaTools.tools
+        let allTools = (tools + MCPKnowledgeTools.tools + MCPMediaTools.tools).map(Self.annotate) + (extensions == nil ? [] : MCPOpenAIExtensions.tools)
         await server.withMethodHandler(ListTools.self) { _ in
             .init(tools: allTools)
         }
 
         await server.withMethodHandler(CallTool.self) { params in
-            await dispatchCall(params, executor: executor)
+            await dispatchCall(params, executor: executor, extensions: extensions)
         }
     }
 
+    nonisolated private static func annotate(_ tool: Tool) -> Tool {
+        let readOnly = Set(["get_project", "get_clip", "list_media", "voice.list", "media.status", "session.list", "session.get", "session.transcript", "session.search", "knowledge.search", "knowledge.find_text", "knowledge.ask"])
+        return Tool(name: tool.name, title: tool.title, description: tool.description, inputSchema: tool.inputSchema, annotations: .init(readOnlyHint: readOnly.contains(tool.name), destructiveHint: !readOnly.contains(tool.name), idempotentHint: readOnly.contains(tool.name), openWorldHint: true), outputSchema: tool.outputSchema, _meta: tool._meta)
+    }
+
     // Convert args on the main actor so the non-Sendable dict never crosses the hop.
-    private static func dispatchCall(_ params: CallTool.Parameters, executor: ToolExecutor) async -> CallTool.Result {
+    private static func dispatchCall(_ params: CallTool.Parameters, executor: ToolExecutor, extensions: MCPOpenAIExtensions?) async -> CallTool.Result {
+        if let extensions, MCPOpenAIExtensions.tools.contains(where: { $0.name == params.name }) { return await extensions.execute(params) }
         let args = ToolArgsBridge.argsFromMCP(params.arguments ?? [:])
         if MCPMediaTools.definitions.contains(where: { $0.name == params.name }) {
-            return await MCPMediaTools.execute(name: params.name, args: args).toMCPResult()
+            let result = MCPOpenAIExtensions.adapted(await MCPMediaTools.execute(name: params.name, args: args))
+            if params.name == "media.preview", let extensions {
+                do { return try extensions.registerPreview(result) }
+                catch { return .init(content: [.text(error.localizedDescription)], isError: true) }
+            }
+            return result
         }
         if MCPKnowledgeTools.definitions.contains(where: { $0.name == params.name }) {
-            return await MCPKnowledgeTools.execute(name: params.name, args: args).toMCPResult()
+            return MCPOpenAIExtensions.adapted(await MCPKnowledgeTools.execute(name: params.name, args: args))
         }
         let result = await executor.execute(name: params.name, args: args, source: "mcp")
         return result.toMCPResult()
     }
 
-    private nonisolated static func registerResources(on server: Server) async {
-        let resources = [
+    private nonisolated static func registerResources(on server: Server, extensions: MCPOpenAIExtensions) async {
+        let resources = MCPOpenAIExtensions.uiResources.map { Resource(name: $0.name, uri: $0.uri, mimeType: "text/html;profile=mcp-app") } + [
             Resource(
                 name: "Video Models",
                 uri: "voxstudio://models/video",
@@ -128,7 +141,8 @@ final class MCPService {
         }
 
         await server.withMethodHandler(ReadResource.self) { params in
-            await Self.readResource(uri: params.uri)
+            if params.uri.hasPrefix("ui://") || params.uri.hasPrefix("voxstudio://sessions/") || params.uri.hasPrefix("voxstudio://documents/") || params.uri.hasPrefix("voxstudio://previews/") { return try await extensions.readResource(params.uri) }
+            return await Self.readResource(uri: params.uri)
         }
     }
 

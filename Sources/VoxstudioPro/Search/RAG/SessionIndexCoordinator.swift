@@ -10,6 +10,7 @@ final class SessionIndexCoordinator {
     #endif
     private var ingestTask: Task<Void, Never>?
     private var pending: [UUID: SessionIndexSnapshot] = [:]
+    private var forceReindexIDs: Set<UUID> = []
     private var pendingCardPatches: [UUID: SessionIndexSnapshot] = [:]
     private var pendingSpeakerPatches: [UUID: [SessionSpeaker]] = [:]
     private var pendingRemovals: Set<UUID> = []
@@ -47,9 +48,10 @@ final class SessionIndexCoordinator {
         #endif
     }
 
-    func ingest(_ job: WorkbenchTranscriptionJob) {
+    func ingest(_ job: WorkbenchTranscriptionJob, force: Bool = false) {
         guard let snapshot = SessionIndexSnapshot.from(job) else { return }
         pending[snapshot.sessionID] = snapshot
+        if force { forceReindexIDs.insert(snapshot.sessionID) }
         pump()
     }
 
@@ -211,7 +213,8 @@ final class SessionIndexCoordinator {
         pending.removeAll()
         for snapshot in snapshots {
             do {
-                let freshness = try await store.freshness(sessionID: snapshot.sessionID)
+                let force = forceReindexIDs.remove(snapshot.sessionID) != nil
+                let freshness = force ? nil : try await store.freshness(sessionID: snapshot.sessionID)
                 switch SessionIndexIngestAction.resolve(
                     freshness: freshness,
                     generation: snapshot.generation

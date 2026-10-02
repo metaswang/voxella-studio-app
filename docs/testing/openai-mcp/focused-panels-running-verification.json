@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-03",
+  "native_host_acceptance": false,
+  "tool_count": 99,
+  "video_html_removed": true,
+  "native_editor_tools_present": true,
+  "resources": {
+    "library": {
+      "uri": "ui://voxstudio/library/v2",
+      "mimeType": "text/html;profile=mcp-app",
+      "bytes": 547721,
+      "sha256": "2f637d0c30c0ab9e1bc47b87ffe885bf15e87bc5d72450cabd8e118086bb2258",
+      "running_bytes_match": true
+    },
+    "transcription": {
+      "uri": "ui://voxstudio/transcription/v1",
+      "mimeType": "text/html;profile=mcp-app",
+      "bytes": 551306,
+      "sha256": "5aa3d94524e09a0b82aa160ecac2d7582d62f974d2001214dc9c453ec82d3590",
+      "running_bytes_match": true
+    },
+    "session": {
+      "uri": "ui://voxstudio/session/v1",
+      "mimeType": "text/html;profile=mcp-app",
+      "bytes": 555241,
+      "sha256": "f414614cb36a8168dc3f623675a862917ac0e76f0034570a0219a131675d6689",
+      "running_bytes_match": true
+    },
+    "dubbing": {
+      "uri": "ui://voxstudio/dubbing/v1",
+      "mimeType": "text/html;profile=mcp-app",
+      "bytes": 551854,
+      "sha256": "4aa4861297218680d5221c706040323974408d05d77087f5cef78b2768def3f3",
+      "running_bytes_match": true
+    }
+  },
+  "library_view": "library",
+  "session_count": 27,
+  "library_refresh_match": true,
+  "native_duration_present": true,
+  "plugin_cache": {
+    "plugin.json": "8d7f7ae02fc4424bbce07db5dbd7eebde5555c987e7f0dce2994e356538a75f6",
+    ".codex-plugin/plugin.json": "ef1f8c826f57308db9ec527d9b9bd7015f103bbb39016c74c406d949979fa9dc",
+    "mcp.json": "4fa2c0573c9c7c0ff28f8255806c08c5e078efb881fd43ea181ffafcd2a2e8c8",
+    ".mcp.json": "022785aca86575109bcc80bab99bb3770400a2b653e56e94f80f5ad2fcbe33a2",
+    "skills/onboarding/SKILL.md": "dfe6aebb43063e5468e3399111c6d0f9cef8e03fed80703f4c81732f79c83ab9",
+    "skills/media-workflow/SKILL.md": "f75598358a68c1b773d54c29cfc3978a380d654508b3bf02747c4d3920e899cc",
+    "skills/video-editing/SKILL.md": "d4f77785af25ef098044043fb0fba78a5e2d5403ec059a34bfb244e579de4fc7"
+  }
+}

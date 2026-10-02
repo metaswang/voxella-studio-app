@@ -14,7 +14,7 @@ let package = Package(
         .trait(name: "MacAppStore", description: "Build the Mac App Store purchase surface."),
     ],
     dependencies: [
-        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.11.0"),
+        .package(path: "Vendor/swift-sdk"),
         .package(url: "https://github.com/get-convex/convex-swift", from: "0.8.0"),
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.3"),
         .package(url: "https://github.com/ml-explore/mlx-swift", exact: "0.31.5"),
@@ -141,6 +141,7 @@ let package = Package(
                 .copy("Resources/Images"),
                 .copy("Resources/Localization"),
                 .copy("Resources/Models"),
+                .copy("Resources/MCPApps"),
                 .copy("Resources/KnowledgeSkills"),
             ],
             swiftSettings: [

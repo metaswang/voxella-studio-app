@@ -1,0 +1,31 @@
+{
+  "cdn_verified": true,
+  "url": "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.1.0/f116e011f1e6abe2550901c1fa345733a805f3633c2b7f18f7098120db29a539/VoxStudio-OpenAI-Plugin.zip",
+  "sha256": "f116e011f1e6abe2550901c1fa345733a805f3633c2b7f18f7098120db29a539",
+  "size": 11016,
+  "cache_control": "public, max-age=31536000, immutable",
+  "get_status": 200,
+  "head_status": 200,
+  "plugin_conditional_status": 304,
+  "dmg_status": 200,
+  "dmg_content_type": "application/x-apple-diskimage",
+  "appcast_status": 200,
+  "appcast_content_type": "application/xml; charset=utf-8",
+  "worker_version": "71e5dbef-bd54-42df-ae3a-6eebab27f66a",
+  "baseline_worker_version": "5a5b16e9-a818-45c8-8c5f-e2cab5b5950e",
+  "worker_tests_passed": 52,
+  "baseline_bundle_sha256": "e674ff05a8065ca798f0c93e8f50f6feceb78eedb40dc9e919a430a3b6d78c23",
+  "baseline_matches_live_script": true,
+  "package_tests_passed": 3,
+  "package_file_count": 14,
+  "plugin_version": "0.1.0",
+  "settings_verified": {
+    "codex_steps_visible": true,
+    "info_popover_visible": true,
+    "chatgpt_switch_and_download_button": "Pending: Mac locked during final UI check",
+    "final_heading_rebuild": "Signed build passed; relaunch pending unlock"
+  },
+  "source_worktree": "Contains pre-existing and current uncommitted changes",
+  "signed_debug_build": true,
+  "notarized_debug_build": false
+}

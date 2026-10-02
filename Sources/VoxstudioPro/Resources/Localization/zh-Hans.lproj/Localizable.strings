@@ -2835,3 +2835,37 @@
 "Delete %@ sessions?" = "删除 %@ 个会话？";
 "The %@ selected sessions and their saved workflow data will be removed." = "将删除选中的 %@ 个会话及其保存的工作流数据。";
 "Deleting session…" = "正在删除会话…";
+
+/* OpenAI local plugin installation */
+"Transcribe media, create voiceovers, and edit your Mac app timeline from your favorite AI agent." = "使用你喜欢的 AI 助手转录媒体、生成配音，并编辑 Mac app 中的时间线。";
+"Transcription & voiceover" = "转录与配音";
+"VoxStudio plugin" = "VoxStudio 插件";
+"About the OpenAI plugin" = "关于 OpenAI 插件";
+"The ZIP contains a local marketplace, plugin manifests, workflow skills and an installer. VoxStudio provides the MCP server and panels." = "ZIP 包含本地插件市场、插件配置、工作流技能及安装脚本。MCP 服务和交互面板由 VoxStudio 提供。";
+"Use a desktop client with local plugin support on this Mac. ChatGPT web and cloud sessions cannot connect to this local server. Client versions may offer different plugin features." = "请在本机使用支持本地插件的桌面客户端。ChatGPT 网页和云端会话无法连接此本地服务；不同客户端版本支持的插件能力可能不同。";
+"Disable any old direct MCP connection named voxstudio before enabling this plugin. A same-name connection can hide the plugin tools." = "启用插件前，请停用旧的、名为 voxstudio 的直接 MCP 连接。同名连接可能遮蔽插件工具。";
+"Panels use English. Video edits run in the native VoxStudio timeline; there is no HTML video editor." = "交互面板固定使用英文。视频编辑在 VoxStudio 原生时间线中执行，插件不提供 HTML 视频编辑器。";
+"Official plugin guide" = "官方插件指南";
+"Recommended for ChatGPT Work and Codex on this Mac. Keep VoxStudio running and MCP enabled." = "推荐用于本机的 ChatGPT Work 和 Codex。请保持 VoxStudio 运行并启用 MCP。";
+"Download and extract" = "下载并解压";
+"Download the ZIP and extract it in Downloads. Keep the extracted folder in place after installation." = "下载 ZIP 后，在“下载”目录解压。安装后请保留解压目录，不要移动或删除。";
+"Download plugin" = "下载插件";
+"Copy download URL" = "复制下载链接";
+"Install from Terminal" = "在终端安装";
+"Run this after extracting the ZIP. If you chose another folder, use its install.sh path. The installer registers VoxStudio Local and installs the plugin." = "解压后运行以下命令。若解压到其他目录，请使用该目录中的 install.sh 路径。脚本会注册 VoxStudio Local 并安装插件。";
+"Enable and start a new chat" = "启用插件并新建会话";
+"In your desktop client's Plugins page, enable VoxStudio under VoxStudio Local. Restart the client if it is missing, then open a new chat." = "在桌面客户端的“插件”页面，启用 VoxStudio Local 下的 VoxStudio。若看不到插件，请重启客户端，再新建会话。";
+"Open my VoxStudio sessions." = "打开我的 VoxStudio 会话列表。";
+"Advanced: MCP tools only" = "高级：仅连接 MCP 工具";
+"Use this instead of the plugin for a direct tool connection. This does not install plugin skills or panel entry points. Do not enable both setups." = "如仅需直接调用工具，可使用此方式替代插件安装。它不会安装插件技能或面板入口；请勿同时启用两种连接。";
+"The plugin includes workflow skills. Copy a prompt into a new chat." = "插件已包含工作流技能。复制提示词，在新会话中使用。";
+"Use separate panels for sessions, transcription and voiceover. Describe video edits in chat to update the Mac app timeline." = "会话列表、转录和配音使用各自独立的面板。请在聊天中描述视频修改，由 Mac app 时间线执行。";
+"Open your sessions" = "打开会话列表";
+"Session library" = "会话库";
+"Transcription panel" = "转录面板";
+"Open the VoxStudio transcription panel so I can choose an audio or video file and review the options before starting." = "打开 VoxStudio 转录面板，让我选择音频或视频文件，并在开始前确认转录选项。";
+"Voiceover panel" = "配音面板";
+"Open the VoxStudio voiceover panel so I can choose a voice and enter my script." = "打开 VoxStudio 配音面板，让我选择声音并输入文稿。";
+"Edit the Mac timeline" = "编辑 Mac 时间线";
+"Inspect the active project in the VoxStudio Mac app. Tell me what is on its timeline, then help me edit it from this chat." = "查看 VoxStudio Mac app 中的当前项目，告诉我时间线上的内容，然后帮我通过聊天编辑它。";
+"Connect ChatGPT Work, Codex, Claude and Cursor to the VoxStudio workspace on this Mac." = "将 ChatGPT Work、Codex、Claude 和 Cursor 连接到本机的 VoxStudio 工作区。";

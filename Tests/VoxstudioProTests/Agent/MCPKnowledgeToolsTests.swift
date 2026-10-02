@@ -5,7 +5,7 @@ import Testing
 struct MCPKnowledgeToolsTests {
     @Test func publishesEveryChatbotOperationWithoutCollisions() {
         let names = MCPKnowledgeTools.tools.map(\.name)
-        #expect(Set(KnowledgeToolRegistry.allTools.map(\.name)).isSubset(of: Set(names)))
+        #expect(Set(KnowledgeToolRegistry.allTools.filter { !["read_payload", "read_skill", "analysis.update", "ask_clarification"].contains($0.name) }.map(\.name)).isSubset(of: Set(names)))
         #expect(names.contains("knowledge.ask"))
         let combined = names + ToolDefinitions.mcpServer.map { $0.name.rawValue }
         #expect(Set(combined).count == combined.count)
@@ -24,17 +24,16 @@ struct MCPKnowledgeToolsTests {
         }
     }
 
-    @Test @MainActor func controlsWorkWithoutAnEditor() async throws {
-        let result = await MCPKnowledgeTools.execute(name: "ask_clarification", args: ["question": "Which meeting?"])
-        #expect(!result.isError)
-        guard case let .text(text) = result.content.first else { Issue.record("Missing result"); return }
-        let json = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: String])
-        #expect(json["status"] == "clarification")
-        #expect(json["question"] == "Which meeting?")
+    @Test @MainActor func internalControlsAreNotPublicTools() async {
+        for name in ["read_payload", "read_skill", "analysis.update", "ask_clarification"] {
+            #expect(!MCPKnowledgeTools.tools.contains(where: { $0.name == name }))
+            #expect(await MCPKnowledgeTools.execute(name: name, args: [:]).isError)
+        }
     }
 
     @Test @MainActor func qaUsesSharedPipelineAndReturnsClarification() async throws {
         var service = KnowledgeQAService()
+        service.useAgentRuntime = false
         service.dependencies.planner = { query, history, _, _ in
             #expect(query == "What about that?")
             #expect(history.last?.content == "Discuss the roadmap")

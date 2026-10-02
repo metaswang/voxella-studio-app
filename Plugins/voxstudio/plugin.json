@@ -1,0 +1,34 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "voxstudio",
+  "version": "0.1.0",
+  "description": "Transcription, voiceover and focused video editing with the VoxStudio Mac app.",
+  "author": {
+    "name": "VoxStudio"
+  },
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/onboarding/SKILL.md",
+      "interface": {
+        "displayName": "VoxStudio",
+        "shortDescription": "Transcribe, create voiceovers and edit videos",
+        "longDescription": "Use dedicated panels for transcription, voiceover and session results. Describe video edits in chat to modify the native VoxStudio Mac app timeline through MCP tools.",
+        "developerName": "VoxStudio",
+        "category": "Productivity",
+        "capabilities": [
+          "Interactive",
+          "Read",
+          "Write"
+        ],
+        "composerIcon": "./assets/icon.svg",
+        "logo": "./assets/icon.svg",
+        "defaultPrompt": [
+          "Open my VoxStudio sessions",
+          "Transcribe an audio or video file",
+          "Create a voiceover",
+          "Edit the current timeline in the VoxStudio Mac app"
+        ]
+      }
+    }
+  }
+}

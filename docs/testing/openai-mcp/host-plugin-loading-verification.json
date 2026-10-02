@@ -1,0 +1,13 @@
+{
+  "verified_at": "2026-10-02T16:22:29.149760+00:00",
+  "symptom": "current chat did not load voxstudio.library",
+  "root_cause": "disabled direct MCP server voxstudio shadowed same-name bundled plugin MCP server",
+  "legacy_entry_renamed_to": "voxstudio_legacy_remote",
+  "legacy_entry_enabled": false,
+  "plugin_id": "voxstudio@voxstudio-local",
+  "http_origin": "http://127.0.0.1:19789",
+  "tool_count": 93,
+  "has_library": true,
+  "tools_error": null,
+  "desktop_panel_verified": false
+}

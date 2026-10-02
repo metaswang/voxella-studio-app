@@ -2835,3 +2835,37 @@
 "Delete %@ sessions?" = "Delete %@ sessions?";
 "The %@ selected sessions and their saved workflow data will be removed." = "The %@ selected sessions and their saved workflow data will be removed.";
 "Deleting session…" = "Deleting session…";
+
+/* OpenAI local plugin installation */
+"Transcribe media, create voiceovers, and edit your Mac app timeline from your favorite AI agent." = "Transcribe media, create voiceovers, and edit your Mac app timeline from your favorite AI agent.";
+"Transcription & voiceover" = "Transcription & voiceover";
+"VoxStudio plugin" = "VoxStudio plugin";
+"About the OpenAI plugin" = "About the OpenAI plugin";
+"The ZIP contains a local marketplace, plugin manifests, workflow skills and an installer. VoxStudio provides the MCP server and panels." = "The ZIP contains a local marketplace, plugin manifests, workflow skills and an installer. VoxStudio provides the MCP server and panels.";
+"Use a desktop client with local plugin support on this Mac. ChatGPT web and cloud sessions cannot connect to this local server. Client versions may offer different plugin features." = "Use a desktop client with local plugin support on this Mac. ChatGPT web and cloud sessions cannot connect to this local server. Client versions may offer different plugin features.";
+"Disable any old direct MCP connection named voxstudio before enabling this plugin. A same-name connection can hide the plugin tools." = "Disable any old direct MCP connection named voxstudio before enabling this plugin. A same-name connection can hide the plugin tools.";
+"Panels use English. Video edits run in the native VoxStudio timeline; there is no HTML video editor." = "Panels use English. Video edits run in the native VoxStudio timeline; there is no HTML video editor.";
+"Official plugin guide" = "Official plugin guide";
+"Recommended for ChatGPT Work and Codex on this Mac. Keep VoxStudio running and MCP enabled." = "Recommended for ChatGPT Work and Codex on this Mac. Keep VoxStudio running and MCP enabled.";
+"Download and extract" = "Download and extract";
+"Download the ZIP and extract it in Downloads. Keep the extracted folder in place after installation." = "Download the ZIP and extract it in Downloads. Keep the extracted folder in place after installation.";
+"Download plugin" = "Download plugin";
+"Copy download URL" = "Copy download URL";
+"Install from Terminal" = "Install from Terminal";
+"Run this after extracting the ZIP. If you chose another folder, use its install.sh path. The installer registers VoxStudio Local and installs the plugin." = "Run this after extracting the ZIP. If you chose another folder, use its install.sh path. The installer registers VoxStudio Local and installs the plugin.";
+"Enable and start a new chat" = "Enable and start a new chat";
+"In your desktop client's Plugins page, enable VoxStudio under VoxStudio Local. Restart the client if it is missing, then open a new chat." = "In your desktop client's Plugins page, enable VoxStudio under VoxStudio Local. Restart the client if it is missing, then open a new chat.";
+"Open my VoxStudio sessions." = "Open my VoxStudio sessions.";
+"Advanced: MCP tools only" = "Advanced: MCP tools only";
+"Use this instead of the plugin for a direct tool connection. This does not install plugin skills or panel entry points. Do not enable both setups." = "Use this instead of the plugin for a direct tool connection. This does not install plugin skills or panel entry points. Do not enable both setups.";
+"The plugin includes workflow skills. Copy a prompt into a new chat." = "The plugin includes workflow skills. Copy a prompt into a new chat.";
+"Use separate panels for sessions, transcription and voiceover. Describe video edits in chat to update the Mac app timeline." = "Use separate panels for sessions, transcription and voiceover. Describe video edits in chat to update the Mac app timeline.";
+"Open your sessions" = "Open your sessions";
+"Session library" = "Session library";
+"Transcription panel" = "Transcription panel";
+"Open the VoxStudio transcription panel so I can choose an audio or video file and review the options before starting." = "Open the VoxStudio transcription panel so I can choose an audio or video file and review the options before starting.";
+"Voiceover panel" = "Voiceover panel";
+"Open the VoxStudio voiceover panel so I can choose a voice and enter my script." = "Open the VoxStudio voiceover panel so I can choose a voice and enter my script.";
+"Edit the Mac timeline" = "Edit the Mac timeline";
+"Inspect the active project in the VoxStudio Mac app. Tell me what is on its timeline, then help me edit it from this chat." = "Inspect the active project in the VoxStudio Mac app. Tell me what is on its timeline, then help me edit it from this chat.";
+"Connect ChatGPT Work, Codex, Claude and Cursor to the VoxStudio workspace on this Mac." = "Connect ChatGPT Work, Codex, Claude and Cursor to the VoxStudio workspace on this Mac.";

@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-03",
+  "uri": "ui://voxstudio/session/v1",
+  "runtime_sha256": "3893ccbe6e2abb572b65e34c5710b1d771e8bff984b21a5d57b80c6ad5324d42",
+  "source_sha256": "3893ccbe6e2abb572b65e34c5710b1d771e8bff984b21a5d57b80c6ad5324d42",
+  "runtime_matches_source": true,
+  "runtime_has_play_button": true,
+  "bundle_sha256": {
+    ".build/VoxStudio.app/Contents/Resources/VoxstudioPro_VoxstudioPro.bundle/MCPApps/session.html": "3893ccbe6e2abb572b65e34c5710b1d771e8bff984b21a5d57b80c6ad5324d42"
+  },
+  "server_info": {
+    "name": "voxstudio",
+    "version": "1.0.0"
+  }
+}

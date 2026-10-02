@@ -1,0 +1,16 @@
+{
+  "mode": "real_app_data",
+  "session_count": 27,
+  "proxy_matches_direct_mcp": true,
+  "distinct_session_ids": true,
+  "writes_rejected": true,
+  "cross_origin_rejected": true,
+  "native_host_acceptance": false,
+  "browser_rows": 27,
+  "html_language": "en",
+  "real_session_detail_read": true,
+  "browser_refresh_verified": true,
+  "reconnected_after_app_restart": true,
+  "repository_app_window_recent_titles_match": true,
+  "unexpected_host_rejected": true
+}

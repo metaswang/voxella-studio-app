@@ -1,0 +1,20 @@
+{
+  "name": "voxstudio-local",
+  "interface": {
+    "displayName": "VoxStudio Local"
+  },
+  "plugins": [
+    {
+      "name": "voxstudio",
+      "source": {
+        "source": "local",
+        "path": "./Plugins/voxstudio"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

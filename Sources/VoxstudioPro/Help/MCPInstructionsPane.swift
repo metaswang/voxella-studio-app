@@ -4,6 +4,7 @@ import SwiftUI
 struct MCPInstructionsPane: View {
     var embedded = false
     @State private var claudeInstallError: String?
+    @State private var showingPluginInfo = false
 
     private var mcpEndpoint: String { "http://127.0.0.1:\(MCPService.port)/mcp" }
 
@@ -12,8 +13,12 @@ struct MCPInstructionsPane: View {
     }
 
     private var codexCommand: String {
-        "codex mcp add voxstudio --url \(mcpEndpoint)"
+        "codex mcp add voxstudio-direct --url \(mcpEndpoint)"
     }
+
+    private let pluginDownloadURL = URL(string: "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.1.0/f116e011f1e6abe2550901c1fa345733a805f3633c2b7f18f7098120db29a539/VoxStudio-OpenAI-Plugin.zip")!
+    private let pluginInstallCommand = "bash \"$HOME/Downloads/VoxStudio-OpenAI-Plugin/install.sh\""
+    private var usesOpenAIPlugin: Bool { client == .chatgpt || client == .codex }
 
     private var cursorJSONConfig: String {
         """
@@ -38,18 +43,18 @@ struct MCPInstructionsPane: View {
     }
 
     private enum Client: String, CaseIterable {
-        case claudeDesktop = "Claude Desktop", claudeCode = "Claude Code", codex = "Codex", cursor = "Cursor"
+        case chatgpt = "ChatGPT Work", claudeDesktop = "Claude Desktop", claudeCode = "Claude Code", codex = "Codex", cursor = "Cursor"
 
         var agent: SkillExternalAgent {
             switch self {
             case .claudeDesktop, .claudeCode: .claude
-            case .codex: .codex
+            case .chatgpt, .codex: .codex
             case .cursor: .cursor
             }
         }
     }
 
-    @State private var client: Client = .claudeDesktop
+    @State private var client: Client = .codex
     @State private var presentedSkill: SkillLink?
     @State private var installing: Set<String> = []
     @State private var skillError: String?
@@ -124,12 +129,13 @@ struct MCPInstructionsPane: View {
                 .font(.system(size: AppTheme.FontSize.title2, weight: .semibold))
                 .foregroundStyle(AppTheme.Text.primaryColor)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(L10n.string("Search your knowledge, find answers, and edit videos from the AI tools you already use."))
+            Text(L10n.string("Transcribe media, create voiceovers, and edit your Mac app timeline from your favorite AI agent."))
                 .font(.system(size: AppTheme.FontSize.smMd))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: AppTheme.Spacing.sm) {
                 capability("Knowledge & search", icon: "books.vertical")
+                capability("Transcription & voiceover", icon: "waveform")
                 capability("Video editing", icon: "timeline.selection")
             }
             if !running {
@@ -233,9 +239,8 @@ struct MCPInstructionsPane: View {
         case .claudeCode:
             setupDescription("Run this command in Terminal, then start a new Claude Code session.")
             CodeBlockView(content: claudeCodeCommand)
-        case .codex:
-            setupDescription("Run this command in Terminal, then start a new Codex session.")
-            CodeBlockView(content: codexCommand)
+        case .chatgpt, .codex:
+            openAIPluginInstructions
         case .cursor:
             setupDescription("Add the server to Cursor, then enable it in MCP settings.")
             Button(action: openCursor) {
@@ -243,6 +248,91 @@ struct MCPInstructionsPane: View {
             }
             .buttonStyle(.capsule(.prominent))
             ManualFallback(intro: "Add this configuration to ~/.cursor/mcp.json.", code: cursorJSONConfig)
+        }
+    }
+
+    private var openAIPluginInstructions: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Text(L10n.string("VoxStudio plugin"))
+                    .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
+                Text("0.1.0 · ZIP")
+                    .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                Spacer()
+                Button { showingPluginInfo.toggle() } label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: AppTheme.IconSize.md))
+                        .frame(width: AppTheme.zoomed(28), height: AppTheme.zoomed(28))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(AppTheme.Accent.link)
+                .accessibilityLabel(L10n.string("About the OpenAI plugin"))
+                .help(L10n.string("About the OpenAI plugin"))
+                .popover(isPresented: $showingPluginInfo) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                        Text(L10n.string("About the OpenAI plugin"))
+                            .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
+                        setupDescription("The ZIP contains a local marketplace, plugin manifests, workflow skills and an installer. VoxStudio provides the MCP server and panels.")
+                        setupDescription("Use a desktop client with local plugin support on this Mac. ChatGPT web and cloud sessions cannot connect to this local server. Client versions may offer different plugin features.")
+                        setupDescription("Disable any old direct MCP connection named voxstudio before enabling this plugin. A same-name connection can hide the plugin tools.")
+                        setupDescription("Panels use English. Video edits run in the native VoxStudio timeline; there is no HTML video editor.")
+                        Link(L10n.string("Official plugin guide"), destination: URL(string: "https://developers.openai.com/plugins/build/plugins")!)
+                    }
+                    .padding(AppTheme.Spacing.lg)
+                    .frame(width: AppTheme.zoomed(360))
+                }
+            }
+            setupDescription("Recommended for ChatGPT Work and Codex on this Mac. Keep VoxStudio running and MCP enabled.")
+            pluginStep("1", title: "Download and extract", detail: "Download the ZIP and extract it in Downloads. Keep the extracted folder in place after installation.") {
+                HStack(spacing: AppTheme.Spacing.md) {
+                    Button { NSWorkspace.shared.open(pluginDownloadURL) } label: {
+                        Label(L10n.string("Download plugin"), systemImage: "arrow.down.circle")
+                    }
+                    .buttonStyle(.capsule(.prominent))
+                    CopyButton(value: pluginDownloadURL.absoluteString, label: "Copy download URL")
+                }
+            }
+            pluginStep("2", title: "Install from Terminal", detail: "Run this after extracting the ZIP. If you chose another folder, use its install.sh path. The installer registers VoxStudio Local and installs the plugin.") {
+                CodeBlockView(content: pluginInstallCommand)
+            }
+            pluginStep("3", title: "Enable and start a new chat", detail: "In your desktop client's Plugins page, enable VoxStudio under VoxStudio Local. Restart the client if it is missing, then open a new chat.") {
+                HStack {
+                    Text(L10n.string("Open my VoxStudio sessions."))
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .textSelection(.enabled)
+                    Spacer()
+                    CopyButton(value: L10n.string("Open my VoxStudio sessions."), label: "Copy prompt")
+                }
+            }
+            if client == .codex {
+                DisclosureGroup(L10n.string("Advanced: MCP tools only")) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                        setupDescription("Use this instead of the plugin for a direct tool connection. This does not install plugin skills or panel entry points. Do not enable both setups.")
+                        CodeBlockView(content: codexCommand)
+                    }
+                    .padding(.top, AppTheme.Spacing.sm)
+                }
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+            }
+        }
+    }
+
+    private func pluginStep<Content: View>(_ number: String, title: String, detail: String,
+                                           @ViewBuilder action: () -> Content) -> some View {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.smMd) {
+            Text(number)
+                .font(.system(size: AppTheme.FontSize.xs, weight: .semibold, design: .monospaced))
+                .foregroundStyle(AppTheme.Accent.link)
+                .frame(width: AppTheme.zoomed(24), height: AppTheme.zoomed(24))
+                .background(AppTheme.Accent.link.opacity(0.1), in: Circle())
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                Text(L10n.string(title))
+                    .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
+                setupDescription(detail)
+                action()
+            }
         }
     }
 
@@ -255,17 +345,35 @@ struct MCPInstructionsPane: View {
 
     private var workflows: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
-            sectionHeading("02", title: "Try a workflow", subtitle: "Copy a prompt into your agent. Add a skill for a guided workflow.")
+            sectionHeading("02", title: "Try a workflow", subtitle: usesOpenAIPlugin
+                           ? "The plugin includes workflow skills. Copy a prompt into a new chat."
+                           : "Copy a prompt into your agent. Add a skill for a guided workflow.")
             LazyVGrid(columns: [GridItem(.adaptive(minimum: AppTheme.zoomed(245)), spacing: AppTheme.Spacing.md)], spacing: AppTheme.Spacing.md) {
-                ForEach(MCPWorkflow.examples) { workflow in
+                ForEach(workflowExamples) { workflow in
                     workflowCard(workflow)
                 }
             }
-            Text(L10n.string("Skills install in VoxStudio. Open a skill and choose Add to External Agent to use it in Claude Code, Codex, or Cursor."))
+            Text(L10n.string(usesOpenAIPlugin
+                            ? "Use separate panels for sessions, transcription and voiceover. Describe video edits in chat to update the Mac app timeline."
+                            : "Skills install in VoxStudio. Open a skill and choose Add to External Agent to use it in Claude Code, Codex, or Cursor."))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var workflowExamples: [MCPWorkflow] {
+        guard usesOpenAIPlugin else { return MCPWorkflow.examples }
+        return [
+            .init(id: "plugin-sessions", icon: "rectangle.stack", title: "Open your sessions",
+                  scope: "Session library", prompt: "Open my VoxStudio sessions.", skillID: ""),
+            .init(id: "plugin-transcription", icon: "text.bubble", title: "Transcribe media",
+                  scope: "Transcription panel", prompt: "Open the VoxStudio transcription panel so I can choose an audio or video file and review the options before starting.", skillID: ""),
+            .init(id: "plugin-voiceover", icon: "waveform.and.person.filled", title: "Create a voiceover",
+                  scope: "Voiceover panel", prompt: "Open the VoxStudio voiceover panel so I can choose a voice and enter my script.", skillID: ""),
+            .init(id: "plugin-timeline", icon: "timeline.selection", title: "Edit the Mac timeline",
+                  scope: "Open a video project", prompt: "Inspect the active project in the VoxStudio Mac app. Tell me what is on its timeline, then help me edit it from this chat.", skillID: "")
+        ]
     }
 
     private func workflowCard(_ workflow: MCPWorkflow) -> some View {
@@ -291,7 +399,7 @@ struct MCPInstructionsPane: View {
             HStack {
                 CopyButton(value: L10n.string(workflow.prompt), label: "Copy prompt")
                 Spacer(minLength: AppTheme.Spacing.xs)
-                Button {
+                if !usesOpenAIPlugin { Button {
                     openSkill(workflow.skillID)
                 } label: {
                     if installing.contains(workflow.skillID) {
@@ -305,6 +413,7 @@ struct MCPInstructionsPane: View {
                 .foregroundStyle(AppTheme.Accent.link)
                 .disabled(installing.contains(workflow.skillID))
                 .help(workflow.skillID)
+                }
             }
         }
         .padding(AppTheme.Spacing.mdLg)

@@ -1,0 +1,73 @@
+{
+  "date": "2026-10-03",
+  "scope": "Official AppBridge in local in-app browser; fixture and real app resources. Not ChatGPT/Codex native host acceptance.",
+  "checks": {
+    "fixtureVideo": {
+      "currentTime": 15,
+      "duration": 15,
+      "ended": true,
+      "error": null,
+      "paused": true,
+      "readyState": 4
+    },
+    "realVideoStart": {
+      "currentTime": 0.14897,
+      "duration": 15,
+      "error": null,
+      "paused": false,
+      "readyState": 4,
+      "videoHeight": 320,
+      "videoWidth": 568
+    },
+    "fixtureSeek": {
+      "currentTime": 0,
+      "duration": 15,
+      "error": null,
+      "readyState": 4
+    },
+    "realVideoEnd": {
+      "currentTime": 15,
+      "duration": 15,
+      "ended": true,
+      "error": null,
+      "paused": true,
+      "readyState": 4,
+      "videoHeight": 320,
+      "videoWidth": 568
+    },
+    "fixtureAudioStart": {
+      "currentTime": 0.304959,
+      "duration": 15,
+      "error": null,
+      "paused": false,
+      "readyState": 4
+    },
+    "fixtureAudioEnd": {
+      "currentTime": 15,
+      "duration": 15,
+      "ended": true,
+      "error": null,
+      "paused": true,
+      "readyState": 4
+    },
+    "realAudioStart": {
+      "currentTime": 0.208888,
+      "duration": 15.061333,
+      "error": null,
+      "paused": false,
+      "readyState": 4
+    },
+    "realAudioEnd": {
+      "currentTime": 15.061333,
+      "duration": 15.061333,
+      "ended": true,
+      "error": null,
+      "paused": true,
+      "readyState": 4
+    },
+    "realAudioSeek": {
+      "caption": "curator at the British Museum for over 45 years,",
+      "currentTime": 5.12
+    }
+  }
+}

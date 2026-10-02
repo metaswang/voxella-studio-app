@@ -1,0 +1,29 @@
+{
+  "tool_count": 93,
+  "has_workbench": true,
+  "library_error": false,
+  "library_result_keys": [
+    "content",
+    "structuredContent"
+  ],
+  "ui_error": null,
+  "ui_mime": "text/html;profile=mcp-app",
+  "ui_bytes": 1119920,
+  "server": {
+    "name": "voxstudio",
+    "version": "1.0.0"
+  },
+  "verified_at": "2026-10-02T15:57:02.770006+00:00",
+  "source_commit": "28908e4fb3e0e388ef3023e5ae3997e2b2128a6d",
+  "workspace_has_uncommitted_changes": true,
+  "executable": "/Users/adamwang/Project/subdub/voxella-studio-app/.build/VoxStudio.app/Contents/MacOS/VoxStudio",
+  "executable_sha256": "e2df1b950be9c57e52d8f5f6ddc7bc8ec9c79b6cce20a8456b2c4df896cc43df",
+  "listen_address": "127.0.0.1:19789",
+  "pid": 56350,
+  "plugin_version": "0.1.0",
+  "targeted_tests": {
+    "tests": 34,
+    "suites": 16,
+    "passed": true
+  }
+}

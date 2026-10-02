@@ -4,7 +4,13 @@ import Network
 
 struct MCPServerInstance: Sendable {
     let server: Server
-    let onInitialize: @Sendable (Client.Info) async -> Void
+    let onInitialize: @Sendable (Client.Info, Client.Capabilities) async -> Void
+    init(server: Server, onInitialize: @escaping @Sendable (Client.Info, Client.Capabilities) async -> Void) {
+        self.server = server; self.onInitialize = onInitialize
+    }
+    init(server: Server, onInitialize: @escaping @Sendable (Client.Info) async -> Void) {
+        self.server = server; self.onInitialize = { info, _ in await onInitialize(info) }
+    }
 }
 
 /// HTTP server for MCP. Each client session gets its own `Server` + stateful transport
@@ -58,13 +64,13 @@ actor MCPHTTPServer {
     func stop() {
         listener?.cancel()
         listener = nil
-        let closing = sessions.values.map(\.transport)
+        let closing = sessions.values.map(\.server)
         sessions.removeAll()
-        let fallbackTransport = fallback?.transport
+        let fallbackServer = fallback?.server
         fallback = nil
         Task {
-            for transport in closing { await transport.disconnect() }
-            await fallbackTransport?.disconnect()
+            for server in closing { await server.stop() }
+            await fallbackServer?.stop()
         }
     }
 
@@ -146,6 +152,7 @@ actor MCPHTTPServer {
             response = await session.transport.handleRequest(request)
             if request.method.uppercased() == "DELETE", response.statusCode == 200 {
                 sessions.removeValue(forKey: claimed)
+                await session.server.stop()
             } else if request.method.uppercased() == "GET", response.statusCode == 200 {
                 announceToolList(sessionID: claimed)
             }
@@ -154,8 +161,8 @@ actor MCPHTTPServer {
                 validationPipeline: StandardValidationPipeline(validators: baseValidators() + [SessionValidator()])
             )
             let instance = await makeServer()
-            try? await instance.server.start(transport: transport) { clientInfo, _ in
-                await instance.onInitialize(clientInfo)
+            try? await instance.server.start(transport: transport) { clientInfo, capabilities in
+                await instance.onInitialize(clientInfo, capabilities)
             }
             response = await transport.handleRequest(request)
             if let assigned = response.headers[HTTPHeaderName.sessionID] {
@@ -163,7 +170,7 @@ actor MCPHTTPServer {
                 sessions[assigned] = Session(server: instance.server, transport: transport, lastUsed: .now)
                 Log.mcp.notice("session started id=\(assigned) total=\(self.sessions.count)")
             } else {
-                await transport.disconnect()
+                await instance.server.stop()
             }
         } else {
             // Sessionless clients (and plain curl) get simple request/response semantics.
@@ -209,8 +216,8 @@ actor MCPHTTPServer {
         let pipeline = StandardValidationPipeline(validators: baseValidators())
         let instance = await makeServer()
         let pair = (server: instance.server, transport: StatelessHTTPServerTransport(validationPipeline: pipeline))
-        try? await pair.server.start(transport: pair.transport) { clientInfo, _ in
-            await instance.onInitialize(clientInfo)
+        try? await pair.server.start(transport: pair.transport) { clientInfo, capabilities in
+            await instance.onInitialize(clientInfo, capabilities)
         }
         fallback = pair
         return pair
@@ -231,7 +238,7 @@ actor MCPHTTPServer {
     private func evictSession(id: String) {
         guard let session = sessions.removeValue(forKey: id) else { return }
         Log.mcp.notice("session evicted id=\(id)")
-        Task { await session.transport.disconnect() }
+        Task { await session.server.stop() }
     }
 
     // MARK: - Response writing

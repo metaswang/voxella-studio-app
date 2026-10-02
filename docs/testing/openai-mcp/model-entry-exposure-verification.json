@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-03",
+  "previous_server_tool_count": 93,
+  "previous_model_tool_count": 23,
+  "original_library_previously_callable_in_model": false,
+  "compatibility_tool": "app_workbench",
+  "normalized_name": "mcp__voxstudio__app_workbench",
+  "new_tool_count": 94,
+  "alphabetical_position": 4,
+  "alias_matches_library_result": true,
+  "view": "library",
+  "ui_uri": "ui://voxstudio/workbench/v1",
+  "desktop_panel_verified": false,
+  "status": "signed app restarted; HTTP entry validated; model exposure pending next turn"
+}
