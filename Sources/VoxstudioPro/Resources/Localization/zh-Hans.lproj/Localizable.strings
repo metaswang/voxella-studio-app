@@ -2821,3 +2821,17 @@
 "Custom color…" = "自定义颜色…";
 
 "Change color…" = "修改颜色…";
+
+/* Recent session selection */
+"Deselect All" = "取消全选";
+"Select sessions" = "选择会话";
+"Select session" = "选择会话";
+"Deselect session" = "取消选择会话";
+"Select all visible sessions" = "选择当前显示的所有会话";
+"Delete selected sessions" = "删除选中的会话";
+"1 session selected" = "已选择 1 个会话";
+"Selected" = "已选择";
+"Not selected" = "未选择";
+"Delete %@ sessions?" = "删除 %@ 个会话？";
+"The %@ selected sessions and their saved workflow data will be removed." = "将删除选中的 %@ 个会话及其保存的工作流数据。";
+"Deleting session…" = "正在删除会话…";

@@ -2786,6 +2786,19 @@ final class WorkbenchStore {
         )
     }
 
+    func isDeletingSession(_ session: WorkbenchSession) -> Bool {
+        if deletingSessionIDs.contains(session.id) || deletingRemoteSessionIDs.contains(session.id) {
+            return true
+        }
+        if let transcriptionID = session.transcriptionID, deletingSessionIDs.contains(transcriptionID) {
+            return true
+        }
+        if let dubID = session.dubID, deletingSessionIDs.contains(dubID) {
+            return true
+        }
+        return session.remoteSessionID.map { deletingRemoteSessionIDs.contains($0) } ?? false
+    }
+
     func deleteSession(_ id: UUID) {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
         if case .remote(let remoteSessionID) = Self.sessionDeletionTarget(for: session) {

@@ -2821,3 +2821,17 @@
 "Custom color…" = "Custom color…";
 
 "Change color…" = "Change color…";
+
+/* Recent session selection */
+"Deselect All" = "Deselect All";
+"Select sessions" = "Select sessions";
+"Select session" = "Select session";
+"Deselect session" = "Deselect session";
+"Select all visible sessions" = "Select all visible sessions";
+"Delete selected sessions" = "Delete selected sessions";
+"1 session selected" = "1 session selected";
+"Selected" = "Selected";
+"Not selected" = "Not selected";
+"Delete %@ sessions?" = "Delete %@ sessions?";
+"The %@ selected sessions and their saved workflow data will be removed." = "The %@ selected sessions and their saved workflow data will be removed.";
+"Deleting session…" = "Deleting session…";
