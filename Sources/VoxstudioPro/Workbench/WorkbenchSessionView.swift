@@ -1927,11 +1927,13 @@ private struct SessionMediaPlayer: View {
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                        .foregroundStyle(playback.subtitleMode == .off ? AppTheme.Text.primaryColor : Color.white)
                         .frame(width: AppTheme.zoomed(20), height: AppTheme.zoomed(26))
                         .contentShape(Rectangle())
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
+                .tint(playback.subtitleMode == .off ? AppTheme.Text.primaryColor : Color.white)
                 .fixedSize(horizontal: true, vertical: true)
                 .id(playbackSubtitleMenuIdentity)
             }
