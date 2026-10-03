@@ -102,6 +102,9 @@ struct SpeakerAttribution: Equatable, Sendable {
     let speakerID: Int
     let confidence: Double
     let margin: Double
+    /// Mean winning probability over actual audio support, independent of the ratio.
+    var absoluteProbability: Double = 0
+    var supportDuration: Double = 0
 }
 
 /// Common diarization representation used by both the neural streaming path and
@@ -125,24 +128,31 @@ struct SpeakerActivityTimeline: Equatable, Sendable {
     }
 
     func attributionForWord(start rawStart: Double, end rawEnd: Double) -> SpeakerAttribution? {
+        guard rawStart.isFinite, rawEnd.isFinite, audioDuration.isFinite,
+              rawEnd > rawStart else { return nil }
         let start = min(audioDuration, max(0, rawStart))
         let end = min(audioDuration, max(start, rawEnd))
-        guard end >= start else { return nil }
+        guard end > start else { return nil }
 
         if frameDuration > 0, speakerCapacity > 0, !probabilities.isEmpty {
             let frameCount = probabilities.count / speakerCapacity
             guard frameCount > 0 else { return nil }
             let first = min(frameCount - 1, max(0, Int(floor(start / frameDuration))))
-            let last = min(frameCount - 1, max(first, Int(ceil(max(end, start + frameDuration) / frameDuration)) - 1))
+            let last = min(frameCount - 1, max(first, Int(ceil(end / frameDuration)) - 1))
             if first >= 0, last >= first {
                 var scores = [Double](repeating: 0, count: speakerCapacity)
+                var support = 0.0
                 for frame in first...last {
                     let frameStart = Double(frame) * frameDuration
                     let frameEnd = frameStart + frameDuration
                     let overlap = max(0, min(end, frameEnd) - max(start, frameStart))
-                    let weight = overlap > 0 ? overlap : frameDuration
+                    guard overlap > 0 else { continue }
+                    support += overlap
                     for speaker in 0..<speakerCapacity {
-                        scores[speaker] += Double(probabilities[frame * speakerCapacity + speaker]) * weight
+                        let probability = Double(probabilities[frame * speakerCapacity + speaker])
+                        if probability.isFinite {
+                            scores[speaker] += min(1, max(0, probability)) * overlap
+                        }
                     }
                 }
                 if let best = scores.indices.max(by: { scores[$0] < scores[$1] }), scores[best] > 0 {
@@ -153,17 +163,22 @@ struct SpeakerActivityTimeline: Equatable, Sendable {
                     return SpeakerAttribution(
                         speakerID: best,
                         confidence: confidence,
-                        margin: total > 0 ? margin / total : 0
+                        margin: total > 0 ? margin / total : 0,
+                        absoluteProbability: support > 0 ? scores[best] / support : 0,
+                        supportDuration: support
                     )
                 }
             }
+            // A present probability track is authoritative, including silent frames.
+            return nil
         }
 
         var overlapBySpeaker: [Int: Double] = [:]
         for interval in intervals {
+            guard interval.start.isFinite, interval.end.isFinite else { continue }
             let overlap = min(end, interval.end) - max(start, interval.start)
-            if overlap > 0 {
-                overlapBySpeaker[interval.speakerID, default: 0] += overlap * max(0.01, interval.confidence)
+            if overlap > 0, interval.confidence.isFinite, interval.confidence > 0 {
+                overlapBySpeaker[interval.speakerID, default: 0] += overlap * min(1, interval.confidence)
             }
         }
         if let best = overlapBySpeaker.max(by: { lhs, rhs in
@@ -173,24 +188,23 @@ struct SpeakerActivityTimeline: Equatable, Sendable {
             let total = overlapBySpeaker.values.reduce(0, +)
             let confidence = total > 0 ? (overlapBySpeaker[best] ?? 0) / total : 0
             let margin = ordered.count > 1 ? ordered[0] - ordered[1] : ordered[0]
+            var support = 0.0
+            var cursor = start
+            for interval in intervals.filter({ $0.speakerID == best && $0.confidence > 0
+                && $0.start.isFinite && $0.end.isFinite }).sorted(by: { $0.start < $1.start }) {
+                let upper = min(end, interval.end)
+                support += max(0, upper - max(cursor, interval.start))
+                cursor = max(cursor, upper)
+            }
             return SpeakerAttribution(
                 speakerID: best,
                 confidence: confidence,
-                margin: total > 0 ? margin / total : 0
+                margin: total > 0 ? margin / total : 0,
+                absoluteProbability: min(1, (overlapBySpeaker[best] ?? 0) / (end - start)),
+                supportDuration: support
             )
         }
-
-        let midpoint = (start + end) / 2
-        guard let nearest = intervals.min(by: { lhs, rhs in
-            abs((lhs.start + lhs.end) / 2 - midpoint) < abs((rhs.start + rhs.end) / 2 - midpoint)
-        }) else {
-            return nil
-        }
-        return SpeakerAttribution(
-            speakerID: nearest.speakerID,
-            confidence: max(0, min(1, nearest.confidence)),
-            margin: 0
-        )
+        return nil
     }
 }
 

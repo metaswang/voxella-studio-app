@@ -58,6 +58,7 @@ struct LongFormAlignmentResult: Sendable {
     let rejectedAlignmentChunkCount: Int
     let retriedAlignmentChunkCount: Int
     let longestRejectedUnitDuration: Double?
+    var timingQualities: [WordTimingQuality] = []
 }
 #endif
 
@@ -277,6 +278,12 @@ enum LongFormAlignmentEngine {
         let rejectedAlignmentChunkCount: Int
         let retriedAlignmentChunkCount: Int
         let longestRejectedUnitDuration: Double?
+        var timingQualities: [WordTimingQuality] = []
+
+        var resolvedQualities: [WordTimingQuality] {
+            timingQualities.count == words.count ? timingQualities
+                : Array(repeating: coarseTimedUnitCount == words.count ? .estimated : .aligned, count: words.count)
+        }
     }
 
     private struct AlignmentWorkChunk {
@@ -386,6 +393,7 @@ enum LongFormAlignmentEngine {
         let chunks = try alignmentWorkChunks(from: spans, capabilities: capabilities)
         let audioDuration = Double(audio.count) / Double(sampleRate)
         var result: [AlignedWord] = []
+        var qualities: [WordTimingQuality] = []
         var coarseTimedUnitCount = 0
         var rejectedAlignmentChunkCount = 0
         var retriedAlignmentChunkCount = 0
@@ -427,10 +435,12 @@ enum LongFormAlignmentEngine {
             if let rejectedDuration = alignedChunk.longestRejectedUnitDuration {
                 longestRejectedUnitDuration = max(longestRejectedUnitDuration ?? 0, rejectedDuration)
             }
-            for word in alignedChunk.words {
+            for (wordIndex, word) in alignedChunk.words.enumerated() {
                 let start = max(previousStart, min(Float(boundedEnd), max(Float(span.startTime), word.startTime)))
                 let end = min(Float(boundedEnd), max(start, word.endTime))
                 result.append(AlignedWord(text: word.text, startTime: start, endTime: end))
+                qualities.append(abs(start - word.startTime) > Float(capabilities.timestampTolerance)
+                    ? .estimated : alignedChunk.resolvedQualities[wordIndex])
                 previousStart = start
             }
             progress(
@@ -445,7 +455,8 @@ enum LongFormAlignmentEngine {
             coarseTimedUnitCount: coarseTimedUnitCount,
             rejectedAlignmentChunkCount: rejectedAlignmentChunkCount,
             retriedAlignmentChunkCount: retriedAlignmentChunkCount,
-            longestRejectedUnitDuration: longestRejectedUnitDuration
+            longestRejectedUnitDuration: longestRejectedUnitDuration,
+            timingQualities: qualities
         )
     }
 
@@ -609,7 +620,8 @@ enum LongFormAlignmentEngine {
                     rejectedDuration,
                     left.longestRejectedUnitDuration,
                     right.longestRejectedUnitDuration
-                )
+                ),
+                timingQualities: left.resolvedQualities + right.resolvedQualities
             )
         }
     }

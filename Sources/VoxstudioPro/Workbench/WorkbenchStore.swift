@@ -1648,7 +1648,8 @@ final class WorkbenchStore {
         taskAccess: any TranscriptionTaskAccessing = RoutedTranscriptionTaskAccess(),
         dubTaskAccess: any DubTaskAccessing = RoutedDubTaskAccess(),
         cloudSessionSync: any CloudSessionSyncing = VoxellaCloudSessionSync(),
-        voxellaAPI: VoxellaAPIClient = .shared
+        voxellaAPI: VoxellaAPIClient = .shared,
+        persistenceURL: URL? = nil
     ) {
         self.taskAccess = taskAccess
         self.dubTaskAccess = dubTaskAccess
@@ -1658,7 +1659,7 @@ final class WorkbenchStore {
             .flatMap(WorkbenchRoute.init(rawValue:))
         // Session detail requires an in-memory selection. Restore Recent when none exists.
         route = (storedRoute == .session ? .recent : storedRoute) ?? .recent
-        persistence = WorkbenchPersistence(URL: Self.snapshotURL)
+        persistence = WorkbenchPersistence(URL: persistenceURL ?? Self.snapshotURL)
         Task { await hydrate() }
     }
 
@@ -3027,6 +3028,22 @@ final class WorkbenchStore {
         if changed {
             scheduleCloudSync(forTranscription: id)
         }
+    }
+
+    /// Compare-and-swap keeps a late audio replay from overwriting newer edits.
+    @discardableResult
+    func applySpeakerBoundaryRepair(
+        inTranscription id: UUID, expected: TranscriptionResult, words: [TranscriptionWord],
+        diagnostics: SpeakerBoundaryRefinementDiagnostics
+    ) -> Bool {
+        guard let job = transcriptions.first(where: { $0.id == id }), job.result == expected,
+              let repaired = WorkbenchSpeakerBoundaryRepair.applying(to: job, words: words, diagnostics: diagnostics) else { return false }
+        updateTranscription(id) { current in
+            current.result = repaired.result
+            current.subtitleTrack = repaired.subtitleTrack
+            current.transcriptionAlignmentDiagnostics = repaired.transcriptionAlignmentDiagnostics
+        }
+        return true
     }
 
     func assignSpeaker(

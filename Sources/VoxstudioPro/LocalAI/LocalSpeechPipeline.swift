@@ -803,6 +803,7 @@ actor LocalSpeechPipeline {
             progressUpdate: progressUpdate
         )
         var aligned = alignment.words
+        var timingReferences = Self.timingReferences(alignment)
         let firstPassCovered = aligned.map {
             ASRSpeechRange(start: Double($0.startTime), end: Double($0.endTime))
         }
@@ -899,6 +900,7 @@ actor LocalSpeechPipeline {
                                 progressEnd: 0.88,
                                 progressUpdate: progressUpdate
                             )
+                            timingReferences.merge(Self.timingReferences(retryAlignment), uniquingKeysWith: { _, new in new })
                             retryLexicalUnitCount = retryAlignment.words.count
                             let firstPassCovered = aligned.map {
                                 ASRSpeechRange(start: Double($0.startTime), end: Double($0.endTime))
@@ -981,9 +983,14 @@ actor LocalSpeechPipeline {
         Log.transcription.notice(
             "Speaker assignment elapsed=\(String(format: "%.2f", assignElapsed))s words=\(attributed.count)"
         )
+        let attributedWithQuality = Self.applyingTimingQualities(attributed, references: timingReferences)
+        let boundaryRefinement = try await refineSpeakerBoundaries(
+            words: attributedWithQuality, timeline: timeline, samples: samples,
+            languageCode: resolvedLanguageCode, policy: diarizationPolicy
+        )
         let qualityStartedAt = DispatchTime.now().uptimeNanoseconds
         let words = TranscriptionQualityProcessor.postprocess(
-            attributed,
+            boundaryRefinement.words,
             chineseScript: TranscriptionLanguage(code: resolvedLanguageCode).chineseScript
         )
         let qualityElapsed = Double(DispatchTime.now().uptimeNanoseconds - qualityStartedAt) / 1_000_000_000
@@ -1013,7 +1020,8 @@ actor LocalSpeechPipeline {
             ownershipLexicalUnitCount: Self.lexicalUnitCount(ownership.spans),
             alignmentLexicalUnitCount: aligned.count,
             retryLexicalUnitCount: retryLexicalUnitCount,
-            finalLexicalUnitCount: words.count
+            finalLexicalUnitCount: words.count,
+            speakerBoundaryRefinement: boundaryRefinement.diagnostics
         )
         try Task.checkCancellation()
         return .timed(LocalTranscriptionOutput(
@@ -1034,6 +1042,41 @@ actor LocalSpeechPipeline {
         throw LocalAIError.modelsUnavailable
         #endif
     }
+
+    #if BUNDLED_SPEECH
+    private func refineSpeakerBoundaries(
+        words: [TranscriptionWord], timeline: SpeakerActivityTimeline, samples: [Float],
+        languageCode: String?, policy: SpeakerDiarizationPolicy
+    ) async throws -> SpeakerBoundaryRefiner.Result {
+        let candidates = SpeakerBoundaryRefiner.candidates(words: words, timeline: timeline, languageCode: languageCode)
+        guard !candidates.isEmpty else {
+            return .init(words: words, diagnostics: .init())
+        }
+        guard ASREngineLanguagePolicy.supportsForcedAlignment(languageCode) else {
+            return .init(words: words, diagnostics: .init(candidateCount: candidates.count, unresolvedCount: candidates.count))
+        }
+        // Keep CPU timeline probabilities; release the diarizer's model before
+        // loading another model on the native-timestamp route. The caller holds
+        // the pipeline inference gate throughout this operation.
+        streamingDiarizer = nil
+        Memory.clearCache()
+        let language = Self.alignerLanguage(from: languageCode)
+        return try await SpeakerBoundaryRefiner.refine(
+            words: words, timeline: timeline, languageCode: languageCode, policy: policy
+        ) { window in
+            let model = try await self.alignerModel()
+            let lower = max(0, Int((window.start * 16_000).rounded(.down)))
+            let upper = min(samples.count, Int((window.end * 16_000).rounded(.up)))
+            guard upper > lower else { throw LongFormAlignmentError.invalidSpan }
+            let offset = Double(lower) / 16_000
+            let local = model.align(audio: Array(samples[lower..<upper]), text: window.text,
+                                    sampleRate: 16_000, language: language)
+            return local.map {
+                .init(text: $0.text, start: Double($0.startTime) + offset, end: Double($0.endTime) + offset)
+            }
+        }
+    }
+    #endif
 
     func alignScript(
         sourceURL: URL,
@@ -1189,6 +1232,7 @@ actor LocalSpeechPipeline {
         )
         let words: [TranscriptionWord]
         var speakerWarnings: [String] = []
+        var boundaryDiagnostics: SpeakerBoundaryRefinementDiagnostics? = nil
         switch request.speakerAttribution {
         case .providedSpans:
             words = KnownTextSpeakerMapper.assign(words: untitledWords, spans: request.spans)
@@ -1208,18 +1252,25 @@ actor LocalSpeechPipeline {
                 ))
             }
             speakerWarnings = timeline.diagnostics.warnings
-            words = timeline.diagnostics.backend == .unavailable || timeline.diagnostics.backend == .disabled ? untitledWords : Self.assignSpeakers(
+            let attributed = timeline.diagnostics.backend == .unavailable || timeline.diagnostics.backend == .disabled ? untitledWords : Self.assignSpeakers(
                 to: aligned.words, timeline: timeline, audioDuration: audioDuration,
                 languageCode: resolvedLanguageCode,
                 policy: .standard(requestedSpeakerCount: requestedSpeakerCount)
             )
+            let refined = try await refineSpeakerBoundaries(
+                words: Self.applyingTimingQualities(attributed, references: Self.timingReferences(aligned)),
+                timeline: timeline, samples: samples, languageCode: resolvedLanguageCode,
+                policy: .standard(requestedSpeakerCount: requestedSpeakerCount)
+            )
+            words = refined.words
+            boundaryDiagnostics = refined.diagnostics
         }
         try Task.checkCancellation()
         progressUpdate(.init(stage: .finalizing, fraction: 0.98, message: "Building timed script segments…"))
         let result = TranscriptionResult(
             text: script,
             language: resolvedLanguageCode,
-            words: words,
+            words: boundaryDiagnostics == nil ? Self.applyingTimingQualities(words, references: Self.timingReferences(aligned)) : words,
             segments: Self.makeSegments(from: words)
         )
         progressUpdate(.init(stage: .finalizing, fraction: 1, message: "Script alignment ready"))
@@ -1228,7 +1279,7 @@ actor LocalSpeechPipeline {
             diagnostics: KnownTextAlignmentDiagnostics(
                 alignedUnitCount: aligned.words.count,
                 estimatedUnitCount: aligned.coarseTimedUnitCount,
-                speakerWarnings: speakerWarnings
+                speakerWarnings: speakerWarnings, speakerBoundaryRefinement: boundaryDiagnostics
             )
         )
         #else
@@ -1592,6 +1643,27 @@ actor LocalSpeechPipeline {
         )
     }
 
+    private static func timingKey(text: String, start: Double) -> String {
+        "\(text)|\(Int((start * 1000).rounded()))"
+    }
+
+    private static func timingReferences(_ result: LongFormAlignmentResult) -> [String: WordTimingQuality] {
+        var references: [String: WordTimingQuality] = [:]
+        for (index, word) in result.words.enumerated() {
+            let quality = result.timingQualities.count == result.words.count ? result.timingQualities[index]
+                : (result.coarseTimedUnitCount == result.words.count ? .estimated : .aligned)
+            references[timingKey(text: word.text, start: Double(word.startTime))] = quality
+        }
+        return references
+    }
+
+    private static func applyingTimingQualities(_ words: [TranscriptionWord], references: [String: WordTimingQuality]) -> [TranscriptionWord] {
+        words.map { word in
+            guard let start = word.start else { return word }
+            return word.withTimingQuality(references[timingKey(text: word.text, start: start)] ?? .unknown)
+        }
+    }
+
     private func timedWords(
         spans: [RecognizedSpan],
         nativeWords: [AlignedWord],
@@ -1607,7 +1679,7 @@ actor LocalSpeechPipeline {
         if usesNativeTimestamps {
             return LongFormAlignmentResult(
                 words: nativeWords,
-                coarseTimedUnitCount: nativeWords.count,
+                coarseTimedUnitCount: 0,
                 rejectedAlignmentChunkCount: 0,
                 retriedAlignmentChunkCount: 0,
                 longestRejectedUnitDuration: nil

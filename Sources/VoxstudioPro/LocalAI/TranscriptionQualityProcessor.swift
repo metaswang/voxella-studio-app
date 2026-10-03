@@ -70,7 +70,8 @@ enum TranscriptionQualityProcessor {
                 end: $0.end,
                 speaker: $0.speaker,
                 speakerConfidence: $0.speakerConfidence,
-                speakerBoundary: $0.speakerBoundary
+                speakerBoundary: $0.speakerBoundary,
+                timingQuality: $0.timingQuality
             )
         }
     }

@@ -10,6 +10,12 @@ struct SubtitleCue: Codable, Equatable, Identifiable, Sendable {
     var speaker: String?
     var characterBudget: Int?
     var overBudget: Bool
+    var timingQuality: SubtitleTimingQuality
+    /// UTF-16 offsets in text; presentation wrapping never changes cue timing.
+    var displayLineBreaks: [Int]?
+    var protectedSpans: [String]?
+    var segmentationHints: [String]?
+    var boundaryBefore: SpeakerBoundary?
 
     init(
         id: Int,
@@ -19,7 +25,12 @@ struct SubtitleCue: Codable, Equatable, Identifiable, Sendable {
         end: Double,
         speaker: String?,
         characterBudget: Int? = nil,
-        overBudget: Bool = false
+        overBudget: Bool = false,
+        timingQuality: SubtitleTimingQuality? = nil,
+        displayLineBreaks: [Int]? = nil,
+        protectedSpans: [String]? = nil,
+        segmentationHints: [String]? = nil,
+        boundaryBefore: SpeakerBoundary? = nil
     ) {
         self.id = id
         self.sourceIDs = sourceIDs
@@ -29,7 +40,35 @@ struct SubtitleCue: Codable, Equatable, Identifiable, Sendable {
         self.speaker = speaker
         self.characterBudget = characterBudget
         self.overBudget = overBudget
+        self.timingQuality = timingQuality ?? .unknown
+        self.displayLineBreaks = displayLineBreaks
+        self.protectedSpans = protectedSpans
+        self.segmentationHints = segmentationHints
+        self.boundaryBefore = boundaryBefore
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, sourceIDs, text, start, end, speaker, characterBudget, overBudget
+        case timingQuality, displayLineBreaks, protectedSpans, segmentationHints, boundaryBefore
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(Int.self, forKey: .id)
+        sourceIDs = try values.decode([Int].self, forKey: .sourceIDs)
+        text = try values.decode(String.self, forKey: .text)
+        start = try values.decode(Double.self, forKey: .start)
+        end = try values.decode(Double.self, forKey: .end)
+        speaker = try values.decodeIfPresent(String.self, forKey: .speaker)
+        characterBudget = try values.decodeIfPresent(Int.self, forKey: .characterBudget)
+        overBudget = try values.decodeIfPresent(Bool.self, forKey: .overBudget) ?? false
+        timingQuality = try values.decodeIfPresent(SubtitleTimingQuality.self, forKey: .timingQuality) ?? .unknown
+        displayLineBreaks = try values.decodeIfPresent([Int].self, forKey: .displayLineBreaks)
+        protectedSpans = try values.decodeIfPresent([String].self, forKey: .protectedSpans)
+        segmentationHints = try values.decodeIfPresent([String].self, forKey: .segmentationHints)
+        boundaryBefore = try values.decodeIfPresent(SpeakerBoundary.self, forKey: .boundaryBefore)
+    }
+
 }
 
 struct SubtitleTrack: Codable, Equatable, Sendable {
@@ -39,12 +78,14 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
     /// True when cue boundaries were produced from word-level timestamp anchors.
     /// Older persisted tracks do not have this field and are treated as unverified.
     var usesWordTimestamps: Bool
+    var processingVersion: String?
 
     init(
         sourceLanguage: String?,
         language: String?,
         cues: [SubtitleCue],
-        usesWordTimestamps: Bool = false
+        usesWordTimestamps: Bool = false,
+        processingVersion: String? = nil
     ) {
         self.sourceLanguage = sourceLanguage
         self.language = language
@@ -61,6 +102,7 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
             return normalized
         }
         self.usesWordTimestamps = usesWordTimestamps
+        self.processingVersion = processingVersion
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -68,11 +110,13 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
         case language
         case cues
         case usesWordTimestamps
+        case processingVersion
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sourceLanguage = try container.decodeIfPresent(String.self, forKey: .sourceLanguage)
+        processingVersion = try container.decodeIfPresent(String.self, forKey: .processingVersion)
         language = try container.decodeIfPresent(String.self, forKey: .language)
         let decodedCues = try container.decode([SubtitleCue].self, forKey: .cues)
         let resolvedLanguage = language ?? sourceLanguage
@@ -96,6 +140,7 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
         try container.encodeIfPresent(language, forKey: .language)
         try container.encode(cues, forKey: .cues)
         try container.encode(usesWordTimestamps, forKey: .usesWordTimestamps)
+        try container.encodeIfPresent(processingVersion, forKey: .processingVersion)
     }
 
     var text: String {

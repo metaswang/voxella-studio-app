@@ -30,34 +30,11 @@ enum LexicalSpeakerResolver {
         let timed = normalizedTimings(for: aligned, audioDuration: audioDuration)
         guard !timed.isEmpty else { return [] }
 
-        let units = lexicalUnits(
-            texts: timed.map(\.text),
-            starts: timed.map(\.start),
-            ends: timed.map(\.end),
-            languageCode: languageCode
-        )
-
-        var attributed: [TranscriptionWord] = []
-        attributed.reserveCapacity(timed.count)
-        for unit in units {
-            let attribution = timeline.attributionForWord(start: unit.start, end: unit.end)
-            let speaker = attribution.map { "Speaker \($0.speakerID + 1)" }
-            let confidence = attribution?.confidence
-            for index in unit.wordIndices {
-                let item = timed[index]
-                attributed.append(
-                    TranscriptionWord(
-                        text: item.text,
-                        start: item.start,
-                        end: item.end,
-                        speaker: speaker,
-                        speakerConfidence: confidence
-                    )
-                )
-            }
+        let words = timed.enumerated().map { index, item in
+            TranscriptionWord(text: item.text, start: item.start, end: aligned[index].endTime > aligned[index].startTime ? item.end : item.start,
+                              timingQuality: aligned[index].endTime > aligned[index].startTime ? .aligned : .estimated)
         }
-
-        return smoothLexicalAssignments(attributed, units: units, policy: policy)
+        return resolving(words, timeline: timeline, languageCode: languageCode, policy: policy)
     }
 
     static func wordsWithoutSpeakerAttribution(
@@ -90,6 +67,43 @@ enum LexicalSpeakerResolver {
         }
     }
     #endif
+
+    /// Shared by native ASR, forced alignment and local boundary replays.
+    static func resolving(
+        _ words: [TranscriptionWord],
+        timeline: SpeakerActivityTimeline,
+        languageCode: String?,
+        policy: SpeakerDiarizationPolicy = .standard(requestedSpeakerCount: nil)
+    ) -> [TranscriptionWord] {
+        guard words.allSatisfy({ $0.start?.isFinite == true && $0.end?.isFinite == true }) else { return words }
+        let units = lexicalUnits(texts: words.map(\.text), starts: words.map { $0.start! },
+                                 ends: words.map { $0.end! }, languageCode: languageCode)
+        var attributed = words
+        for unit in units {
+            // Keep the best supported identity on release tails; absolute evidence
+            // controls boundary strength and refinement acceptance, not label erasure.
+            let evidence = timeline.attributionForWord(start: unit.start, end: unit.end)
+            for index in unit.wordIndices {
+                let word = words[index]
+                attributed[index] = TranscriptionWord(
+                    text: word.text, start: word.start, end: word.end,
+                    speaker: evidence.map { "Speaker \($0.speakerID + 1)" },
+                    speakerConfidence: evidence?.confidence, timingQuality: word.timingQuality
+                )
+            }
+        }
+        return smoothLexicalAssignments(attributed, units: units, policy: policy, timeline: timeline)
+    }
+
+    static func markingBoundaries(
+        _ words: [TranscriptionWord], timeline: SpeakerActivityTimeline, languageCode: String?,
+        policy: SpeakerDiarizationPolicy = .standard(requestedSpeakerCount: nil)
+    ) -> [TranscriptionWord] {
+        guard words.allSatisfy({ $0.start?.isFinite == true && $0.end?.isFinite == true }) else { return words }
+        let units = lexicalUnits(texts: words.map(\.text), starts: words.map { $0.start! },
+                                 ends: words.map { $0.end! }, languageCode: languageCode)
+        return markingSpeakerBoundaries(words, units: units, policy: policy, timeline: timeline)
+    }
 
     static func lexicalUnits(
         texts: [String],
@@ -191,10 +205,11 @@ enum LexicalSpeakerResolver {
     private static func smoothLexicalAssignments(
         _ words: [TranscriptionWord],
         units: [LexicalUnit],
-        policy: SpeakerDiarizationPolicy
+        policy: SpeakerDiarizationPolicy,
+        timeline: SpeakerActivityTimeline
     ) -> [TranscriptionWord] {
         guard units.count >= 3 else {
-            return markingSpeakerBoundaries(words, units: units, policy: policy)
+            return markingSpeakerBoundaries(words, units: units, policy: policy, timeline: timeline)
         }
 
         var unitSpeakers: [String?] = units.map { unit in
@@ -223,7 +238,14 @@ enum LexicalSpeakerResolver {
 
             let start = units[runStart].start
             let end = units[runEnd - 1].end
-            guard end >= start, end - start <= policy.shortTurnDuration else { continue }
+            guard end > start, end - start <= policy.shortTurnDuration else { continue }
+            // A brief real reply must survive even when surrounded by the same host.
+            guard (runStart..<runEnd).allSatisfy({ unitIndex in
+                let unit = units[unitIndex]
+                guard let evidence = timeline.attributionForWord(start: unit.start, end: unit.end) else { return false }
+                return evidence.confidence < policy.softBoundaryConfidence
+                    && evidence.absoluteProbability < Double(policy.onsetThreshold)
+            }) else { continue }
             for unitIndex in runStart..<runEnd {
                 unitSpeakers[unitIndex] = previousSpeaker
             }
@@ -233,7 +255,8 @@ enum LexicalSpeakerResolver {
         resolved.reserveCapacity(words.count)
         for (unitIndex, unit) in units.enumerated() {
             let speaker = unitSpeakers[unitIndex]
-            let confidence = words[unit.wordIndices.lowerBound].speakerConfidence
+            let confidence = speaker == words[unit.wordIndices.lowerBound].speaker
+                ? words[unit.wordIndices.lowerBound].speakerConfidence : nil
             for wordIndex in unit.wordIndices {
                 let word = words[wordIndex]
                 resolved.append(
@@ -242,38 +265,43 @@ enum LexicalSpeakerResolver {
                         start: word.start,
                         end: word.end,
                         speaker: speaker,
-                        speakerConfidence: confidence
+                        speakerConfidence: confidence, timingQuality: word.timingQuality
                     )
                 )
             }
         }
-        return markingSpeakerBoundaries(resolved, units: units, policy: policy)
+        return markingSpeakerBoundaries(resolved, units: units, policy: policy, timeline: timeline)
     }
 
     private static func markingSpeakerBoundaries(
         _ words: [TranscriptionWord],
         units: [LexicalUnit],
-        policy: SpeakerDiarizationPolicy
+        policy: SpeakerDiarizationPolicy,
+        timeline: SpeakerActivityTimeline
     ) -> [TranscriptionWord] {
         var boundaryByWordIndex: [Int: SpeakerBoundary] = [:]
         for (unitIndex, unit) in units.enumerated() {
             let wordIndex = unit.wordIndices.lowerBound
             guard unitIndex > 0 else {
-                boundaryByWordIndex[wordIndex] = .none
+                boundaryByWordIndex[wordIndex] = SpeakerBoundary.none
                 continue
             }
             let previous = units[unitIndex - 1]
             let previousSpeaker = normalizedSpeaker(words[previous.wordIndices.lowerBound].speaker)
             let currentSpeaker = normalizedSpeaker(words[wordIndex].speaker)
             guard let previousSpeaker, let currentSpeaker, previousSpeaker != currentSpeaker else {
-                boundaryByWordIndex[wordIndex] = .none
+                boundaryByWordIndex[wordIndex] = SpeakerBoundary.none
                 continue
             }
             let confidence = min(
                 words[wordIndex].speakerConfidence ?? 0,
                 words[previous.wordIndices.lowerBound].speakerConfidence ?? 0
             )
-            if confidence < policy.softBoundaryConfidence {
+            let evidence = timeline.attributionForWord(start: unit.start, end: unit.end)
+            // A fading outgoing word must not cancel a clear incoming speaker.
+            let hasAbsoluteSupport = (evidence?.absoluteProbability ?? 0) >= Double(policy.onsetThreshold)
+                && (evidence?.margin ?? 0) >= 0.2
+            if !hasAbsoluteSupport || confidence < policy.softBoundaryConfidence {
                 boundaryByWordIndex[wordIndex] = .soft
             } else {
                 boundaryByWordIndex[wordIndex] = confidence >= policy.hardBoundaryConfidence ? .hard : .soft
@@ -287,7 +315,7 @@ enum LexicalSpeakerResolver {
                 end: word.end,
                 speaker: word.speaker,
                 speakerConfidence: word.speakerConfidence,
-                speakerBoundary: boundaryByWordIndex[index] ?? .none
+                speakerBoundary: boundaryByWordIndex[index] ?? .none, timingQuality: word.timingQuality
             )
         }
     }

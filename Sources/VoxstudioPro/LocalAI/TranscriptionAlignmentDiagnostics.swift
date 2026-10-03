@@ -21,6 +21,7 @@ struct TranscriptionAlignmentDiagnostics: Codable, Equatable, Sendable {
     var ownershipLexicalUnitCount: Int
     var alignmentLexicalUnitCount: Int
     var retryLexicalUnitCount: Int
+    var speakerBoundaryRefinement: SpeakerBoundaryRefinementDiagnostics
     var finalLexicalUnitCount: Int
 
     enum CodingKeys: String, CodingKey {
@@ -44,6 +45,7 @@ struct TranscriptionAlignmentDiagnostics: Codable, Equatable, Sendable {
         case ownershipLexicalUnitCount
         case alignmentLexicalUnitCount
         case retryLexicalUnitCount
+        case speakerBoundaryRefinement
         case finalLexicalUnitCount
     }
 
@@ -68,7 +70,8 @@ struct TranscriptionAlignmentDiagnostics: Codable, Equatable, Sendable {
         ownershipLexicalUnitCount: Int = 0,
         alignmentLexicalUnitCount: Int = 0,
         retryLexicalUnitCount: Int = 0,
-        finalLexicalUnitCount: Int = 0
+        finalLexicalUnitCount: Int = 0,
+        speakerBoundaryRefinement: SpeakerBoundaryRefinementDiagnostics = .init()
     ) {
         self.trimmedHallucinatedSpanCount = trimmedHallucinatedSpanCount
         self.rejectedAlignmentChunkCount = rejectedAlignmentChunkCount
@@ -90,6 +93,7 @@ struct TranscriptionAlignmentDiagnostics: Codable, Equatable, Sendable {
         self.ownershipLexicalUnitCount = ownershipLexicalUnitCount
         self.alignmentLexicalUnitCount = alignmentLexicalUnitCount
         self.retryLexicalUnitCount = retryLexicalUnitCount
+        self.speakerBoundaryRefinement = speakerBoundaryRefinement
         self.finalLexicalUnitCount = finalLexicalUnitCount
     }
 
@@ -115,10 +119,12 @@ struct TranscriptionAlignmentDiagnostics: Codable, Equatable, Sendable {
         ownershipLexicalUnitCount = try container.decodeIfPresent(Int.self, forKey: .ownershipLexicalUnitCount) ?? 0
         alignmentLexicalUnitCount = try container.decodeIfPresent(Int.self, forKey: .alignmentLexicalUnitCount) ?? 0
         retryLexicalUnitCount = try container.decodeIfPresent(Int.self, forKey: .retryLexicalUnitCount) ?? 0
+        speakerBoundaryRefinement = try container.decodeIfPresent(SpeakerBoundaryRefinementDiagnostics.self, forKey: .speakerBoundaryRefinement) ?? .init()
         finalLexicalUnitCount = try container.decodeIfPresent(Int.self, forKey: .finalLexicalUnitCount) ?? 0
     }
 
     var completionDetail: String? {
+        if speakerBoundaryRefinement.acceptedCount > 0 { return "speaker boundaries checked" }
         if estimatedUnitCount > 0 {
             return "\(estimatedUnitCount) word timings estimated"
         }
@@ -158,6 +164,9 @@ struct TranscriptionAlignmentDiagnostics: Codable, Equatable, Sendable {
             parts.append(
                 "re-recognized \(retriedUncoveredAcceptedCount) uncovered speech range\(retriedUncoveredAcceptedCount == 1 ? "" : "s") (\(seconds)s)"
             )
+        }
+        if speakerBoundaryRefinement.unresolvedCount > 0 {
+            parts.append("\(speakerBoundaryRefinement.unresolvedCount) speaker boundary checks unresolved")
         }
         return parts.isEmpty ? nil : "Transcript alignment \(parts.joined(separator: "; "))."
     }
