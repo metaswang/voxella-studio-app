@@ -1,0 +1,23 @@
+{
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "codec_name": "pcm_f32le",
+      "sample_rate": "24000",
+      "channels": 1
+    }
+  ],
+  "format": {
+    "filename": "/Users/adamwang/Library/Application Support/VoxStudio/Dubs/dub-flow-5CC7E4FB-1B7A-401A-8D94-A133EC2BDA37.wav",
+    "duration": "13.642667",
+    "size": "1313792"
+  },
+  "sha256": "65d8e0179262acaff4c709b87b4b99244a7491d1b5893319fae971ecab80251a",
+  "decode_exit_code": 0,
+  "decode_errors": "",
+  "levels": [
+    "[Parsed_volumedetect_0 @ 0xc11064900] mean_volume: -17.8 dB",
+    "[Parsed_volumedetect_0 @ 0xc11064900] max_volume: -1.5 dB"
+  ]
+}

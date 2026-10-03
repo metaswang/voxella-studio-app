@@ -1,0 +1,45 @@
+{
+  "capture_method": "Computer Use: expanded Cursor MCP outputs, Copy output pasted into unsent prompt for full AX reading, draft cleared; manually transcribed relevant fields. No Cursor hidden database or direct MCP used.",
+  "client": "Cursor 3.22.12 / Grok 4.7 High",
+  "target_pid": 78872,
+  "target_binary_sha256": "3271670c00a965dd5a6ba3b081de845923852e947a560329e66a211d0cb664c4",
+  "parameters_common": {"allow_cloud": false, "origin": "local", "answer_mode": "normal"},
+  "results": [
+    {
+      "case": "QA-1", "status": "completed", "verdict": "Pass",
+      "session_ids": ["9A7A9DD2-8D33-41D4-B30A-014434BDD170"],
+      "answer": "节目把 DeepSeek R1 的发布称为 **“DeepSeek moment”**：2025 年 1 月，中国开放权重公司 DeepSeek 发布 R1，其表现接近甚至达到当时的最先进水平，同时据称所需算力更少、成本更低，令业界感到意外；节目还将它视为 AI 竞争此后明显加速的一个节点。[7]",
+      "citations": [{"sourceID":"9A7A9DD2-8D33-41D4-B30A-014434BDD170","sourceType":"sessionTranscript","provenance":"original_segments","startTime":93.279998779296875,"endTime":173.36000061035156,"characterStart":1316,"characterEnd":2487,"chunkIndex":11676,"timingPrecision":"coarse","materialGeneration":"6456ec4a47464f5575be2ebc7cff37395903b9ce862024a3b22782d5842a1392"}],
+      "verification": "search_segments limit4 returned same canonical block. Full text contains deep seek moment, January2025, near or at state-of-the-art, allegedly much less compute for much cheaper, competition accelerating. Truncated snippet starts with podcast sponsorship but full referenced block supports claims. 据称 preserves allegedly."
+    },
+    {
+      "case": "QA-25", "status": "completed", "verdict": "Pass",
+      "session_ids": ["087E7676-38F9-46EB-87BE-069506457388"],
+      "answer": "“Cuneiform”意为“楔形”，源自拉丁语 *cuneus*（楔子）：文字笔画看起来像楔形。[3]\n\n19世纪考古发掘时，人们在伊拉克、叙利亚较大的古城，以及更南面的巴比伦城市重新发现了楔形文字泥板；其中一个重要发现地点是伊拉克的尼尼微。[3][8]",
+      "citations": [
+        {"sourceID":"087E7676-38F9-46EB-87BE-069506457388","sourceType":"sessionTranscript","provenance":"original_segments","startTime":424.5880126953125,"endTime":517.07196044921875,"characterStart":6481,"characterEnd":7920,"chunkIndex":12356,"timingPrecision":"coarse"},
+        {"sourceID":"087E7676-38F9-46EB-87BE-069506457388","sourceType":"sessionTranscript","provenance":"original_segments","startTime":1306.18798828125,"endTime":1401.2159423828125,"characterStart":20247,"characterEnd":21675,"chunkIndex":12369,"timingPrecision":"coarse"}
+      ],
+      "verification": "search_segments limit6. First complete segment directly supports wedge-shaped/cuneus,1840/1850,Iraq/Syrian/Babylonian cities. Second complete segment ends with In the 1850s, at Nineveh, which was the Assyrian capital ... fantastic library. Citation8 is attached to geography paragraph; not required to prove etymology. Its truncated snippet omits Nineveh, a display limitation, not unsupported whole evidence block."
+    },
+    {
+      "case": "QA-18", "status": "completed", "verdict": "Pass",
+      "session_ids": ["78EA1AC3-B5C0-496E-9E20-8670D0991442","F18F0A30-AFBE-4C80-AB1D-2143132A03DA"],
+      "answer": "两段材料的共同建议是：**不要假装挫折不存在，也别让它定义自己；先承认眼前的困难，再想想下一步能做什么，并采取一件具体的小行动。**它们都把挫折看作可能带来启发、帮助自己继续前进的一步，并鼓励以耐心和希望面对它。[3][4][5][6]",
+      "citations": [
+        {"sourceID":"F18F0A30-AFBE-4C80-AB1D-2143132A03DA","sourceType":"sessionTranscript","provenance":"original_segments","startTime":0.096000000834465055,"endTime":45.840000152587891,"characterStart":0,"characterEnd":804},
+        {"sourceID":"F18F0A30-AFBE-4C80-AB1D-2143132A03DA","sourceType":"sessionTranscript","provenance":"original_segments","startTime":45.919998168945312,"endTime":103.90400695800781,"characterStart":805,"characterEnd":1820},
+        {"sourceID":"78EA1AC3-B5C0-496E-9E20-8670D0991442","sourceType":"sessionTranscript","provenance":"original_segments","startTime":0.064000003039836856,"endTime":45.468002319335938,"characterStart":0,"characterEnd":807},
+        {"sourceID":"78EA1AC3-B5C0-496E-9E20-8670D0991442","sourceType":"sessionTranscript","provenance":"original_segments","startTime":45.468002319335938,"endTime":103.90400695800781,"characterStart":808,"characterEnd":1841}
+      ],
+      "verification": "Visible full citation text covers both sources: not pretend everything fine, next response/one small action/practical insight; do not let sourness define whole glass, failure may be next step, patience/action/hope. No outside source."
+    },
+    {
+      "case": "QA-SCOPE", "status": "completed", "verdict": "Pass",
+      "session_ids": ["087E7676-38F9-46EB-87BE-069506457388"],
+      "answer": "我无法从当前可访问的资料确认这一点：可见目录中只有《Origin of Writing》，没有找到《AI State of the Art & Future》或其中关于 DeepSeek R1 的内容。[1]",
+      "citations": [{"sourceID":"087E7676-38F9-46EB-87BE-069506457388","sourceType":"sessionCard","chunkIndex":-1,"title":"Origin of Writing"}],
+      "verification": "Only allowed Origin metadata cited, no AI source or external answer. Follow-up semantic search was scoped to Origin and returned candidate transcript blocks; this is not a literal zero-hit exhaustive absence proof. Pass criterion is answer abstention and no outside-scope evidence."
+    }
+  ]
+}

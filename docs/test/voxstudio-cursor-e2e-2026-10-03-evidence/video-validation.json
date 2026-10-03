@@ -1,0 +1,27 @@
+{
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "codec_name": "aac",
+      "sample_rate": "16000",
+      "channels": 1,
+      "r_frame_rate": "0/0",
+      "nb_frames": "162"
+    },
+    {
+      "codec_name": "h264",
+      "width": 1280,
+      "height": 720,
+      "r_frame_rate": "30/1",
+      "nb_frames": "307"
+    }
+  ],
+  "format": {
+    "duration": "10.233333",
+    "size": "7551344"
+  },
+  "sha256": "60ff9f059dd2122b13eed04628c1c9dc0d93d6c78decfec3cea63e07ab5ae587",
+  "decode_exit_code": 0,
+  "decode_errors": ""
+}

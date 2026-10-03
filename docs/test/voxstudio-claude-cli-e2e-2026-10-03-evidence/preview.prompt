@@ -1,0 +1,5 @@
+Only VoxStudio MCP, no subagents or other tools. Inspect existing synthetic local test sessions, never create duplicates or change settings:
+ZH 4BE2D051-403A-42DA-9DAE-970D9000F455
+EN 5B6E1C2C-E083-4F00-A9D8-1D725F5C3DAC
+Dubbing 46E25F9D-393F-45AF-8739-8C0FF9BE6886
+Call media.status once each. If completed, media.preview with start0, duration6 for ZH,4.5 for EN,15 for dubbing; open=false, play=false to avoid changing the ongoing editor UI. Preserve actual full output and preview paths, cue text/times, selected language, statuses. Verify ZH contains at least two 欢迎/测试/时间 anchors and EN at least two welcome/local/timestamp anchors. For dubbing verify metadata reference name Ad测试 and complete script cue coverage, but do not claim audible quality.

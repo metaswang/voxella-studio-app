@@ -1,0 +1,14 @@
+[
+  {
+    "path": "/Users/adamwang/Downloads/Voxella-Test-Fixtures/zh-single.wav",
+    "sha256": "5bfba367143dfbc5110763b0ba5dc1b3c13af73365f61cb005f164ca48bd3ed8"
+  },
+  {
+    "path": "/Users/adamwang/Downloads/Voxella-Test-Fixtures/en-single.wav",
+    "sha256": "e8c1ec7100ef637abdc1540379be3ac8640b72de10bc6096a90e51eee2ffb35a"
+  },
+  {
+    "path": "/Users/adamwang/Downloads/Voxella-Test-Fixtures/caption-link-video.mp4",
+    "sha256": "b179ceecf36e8cfa9f63839ac6335367aed3425547ef6b396713bfc9b587f038"
+  }
+]

@@ -1,0 +1,65 @@
+[
+  {
+    "label": "ZH",
+    "path": "/Users/adamwang/Library/Application Support/VoxStudio/MCPPreviews/28DE5FBA-8C10-487C-87F7-E4779374E398-0BE94891-3CB7-48DE-AF6C-D2FD2B476E4E.m4a",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "aac",
+          "sample_rate": "16000",
+          "channels": 1
+        }
+      ],
+      "format": {
+        "duration": "6.144000",
+        "size": "21828"
+      }
+    },
+    "decode_exit_code": 0,
+    "decode_errors": ""
+  },
+  {
+    "label": "EN",
+    "path": "/Users/adamwang/Library/Application Support/VoxStudio/MCPPreviews/DC3AE2D6-CAEB-47F4-837F-908FB9C42671-64A922E7-514B-40F8-9F1A-BBC354275C61.m4a",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "aac",
+          "sample_rate": "16000",
+          "channels": 1
+        }
+      ],
+      "format": {
+        "duration": "4.672000",
+        "size": "18421"
+      }
+    },
+    "decode_exit_code": 0,
+    "decode_errors": ""
+  },
+  {
+    "label": "VOICE",
+    "path": "/Users/adamwang/Library/Application Support/VoxStudio/MCPPreviews/A1928D3A-5E98-4A4C-A619-B2CDDAE1A3EA-1F4DE1CD-26F9-4CB0-BE0C-D60B08C8102C.m4a",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "aac",
+          "sample_rate": "24000",
+          "channels": 1
+        }
+      ],
+      "format": {
+        "duration": "13.738667",
+        "size": "57309"
+      }
+    },
+    "decode_exit_code": 0,
+    "decode_errors": ""
+  }
+]

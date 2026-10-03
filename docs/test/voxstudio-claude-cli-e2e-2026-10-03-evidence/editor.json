@@ -1,0 +1,651 @@
+[
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:26.850Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_vHZgzbwMjoj7RZpJipEJ5932",
+        "name": "mcp__voxstudio__get_timeline",
+        "input": {}
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:26.939Z",
+    "content": [
+      {
+        "type": "tool_result",
+        "content": "Editor not available",
+        "is_error": true,
+        "tool_use_id": "call_00_vHZgzbwMjoj7RZpJipEJ5932"
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:28.578Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ijghMYWqUOg5fEZDdodW8882",
+        "name": "mcp__voxstudio__manage_project",
+        "input": {
+          "action": "create",
+          "name": "Claude MCP E2E 20261003 Video",
+          "fps": 30,
+          "aspectRatio": "16:9",
+          "quality": "720p"
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:29.830Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_ijghMYWqUOg5fEZDdodW8882",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"canGenerate\":false,\"fps\":30,\"mediaCount\":0,\"name\":\"Claude MCP E2E 20261003 Video\",\"openCount\":1,\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/Claude MCP E2E 20261003 Video.voxella\",\"resolution\":\"1280x720\",\"status\":\"created\",\"timelines\":[{\"active\":true,\"name\":\"Timeline 1\",\"timelineId\":\"6664B37D\"}]}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:31.336Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_JvIc0JP3gPabuXJCRUYq2067",
+        "name": "mcp__voxstudio__get_timeline",
+        "input": {}
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:31.430Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_JvIc0JP3gPabuXJCRUYq2067",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"canGenerate\":false,\"currentFrame\":0,\"durationSeconds\":0,\"fps\":30,\"height\":720,\"id\":\"6664B37D\",\"name\":\"Timeline 1\",\"totalFrames\":0,\"tracks\":[],\"width\":1280}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:33.001Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ET_piIIA6CWYintCo3Fdco94672",
+        "name": "mcp__voxstudio__import_media",
+        "input": {
+          "source": {
+            "path": "/Users/adamwang/Downloads/Voxella-Test-Fixtures/caption-link-video.mp4"
+          },
+          "name": "caption-link-video"
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:33.280Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_ET_piIIA6CWYintCo3Fdco94672",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"mediaRef\":\"4120FADD\",\"name\":\"caption-link-video\",\"status\":\"ready\",\"type\":\"video\"}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:34.311Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_yCq3nuK6DtA8lxMVSwdy0153",
+        "name": "mcp__voxstudio__get_media",
+        "input": {
+          "ids": [
+            "4120FADD"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:34.504Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_yCq3nuK6DtA8lxMVSwdy0153",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"assets\":[{\"durationSeconds\":9.234,\"fps\":30,\"hasAudio\":true,\"height\":720,\"id\":\"4120FADD\",\"name\":\"caption-link-video\",\"type\":\"video\",\"width\":1280}]}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:35.895Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_e1TrFjbf7byt8qOFGv555506",
+        "name": "mcp__voxstudio__add_clips",
+        "input": {
+          "entries": [
+            {
+              "mediaRef": "4120FADD",
+              "startFrame": 0
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:35.932Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_e1TrFjbf7byt8qOFGv555506",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"clips\":[{\"audio\":{\"id\":\"3F8E8164\",\"track\":1},\"frames\":[0,277],\"id\":\"D9A16E03\",\"mediaRef\":\"4120FADD\",\"track\":0}],\"createdTracks\":[{\"index\":0,\"label\":\"V1\",\"type\":\"video\"},{\"index\":1,\"label\":\"A1\",\"type\":\"audio\"}]}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:37.502Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_DzuF2e8AVxx9rPzeD8i91661",
+        "name": "mcp__voxstudio__get_timeline",
+        "input": {}
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:37.517Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_DzuF2e8AVxx9rPzeD8i91661",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"canGenerate\":false,\"currentFrame\":0,\"durationSeconds\":9.233,\"fps\":30,\"height\":720,\"id\":\"6664B37D\",\"name\":\"Timeline 1\",\"totalFrames\":277,\"tracks\":[{\"clips\":[{\"audio\":{\"id\":\"3F8E8164\",\"track\":1},\"frames\":[0,277],\"id\":\"D9A16E03\",\"mediaRef\":\"4120FADD\"}],\"index\":0,\"label\":\"V1\",\"role\":{\"kind\":\"standard\"},\"trackId\":\"CC09D7C6\",\"type\":\"video\"},{\"index\":1,\"label\":\"A1\",\"linkedClips\":1,\"role\":{\"kind\":\"standard\"},\"trackId\":\"519D79E9\",\"type\":\"audio\"}],\"width\":1280}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:39.689Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_endIRrVOfmFMj5rJX0xA6107",
+        "name": "mcp__voxstudio__split_clips",
+        "input": {
+          "splits": [
+            {
+              "clipId": "D9A16E03",
+              "atFrame": 90
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:39.718Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_endIRrVOfmFMj5rJX0xA6107",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"clips\":[{\"audio\":{\"id\":\"3F8E8164\",\"track\":1},\"frames\":[0,90],\"id\":\"D9A16E03\",\"mediaRef\":\"4120FADD\",\"track\":0,\"trimEndFrame\":187},{\"audio\":{\"id\":\"748A9773\",\"track\":1},\"frames\":[90,277],\"id\":\"5EF538FE\",\"mediaRef\":\"4120FADD\",\"track\":0,\"trimStartFrame\":90}]}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:41.317Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_K1kwctzTthq0O75maUXY7960",
+        "name": "mcp__voxstudio__get_timeline",
+        "input": {}
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:41.378Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_K1kwctzTthq0O75maUXY7960",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"canGenerate\":false,\"currentFrame\":0,\"durationSeconds\":9.233,\"fps\":30,\"height\":720,\"id\":\"6664B37D\",\"name\":\"Timeline 1\",\"totalFrames\":277,\"tracks\":[{\"clips\":[{\"audio\":{\"id\":\"3F8E8164\",\"track\":1},\"frames\":[0,90],\"id\":\"D9A16E03\",\"mediaRef\":\"4120FADD\",\"trimEndFrame\":187},{\"audio\":{\"id\":\"748A9773\",\"track\":1},\"frames\":[90,277],\"id\":\"5EF538FE\",\"mediaRef\":\"4120FADD\",\"trimStartFrame\":90}],\"index\":0,\"label\":\"V1\",\"role\":{\"kind\":\"standard\"},\"trackId\":\"CC09D7C6\",\"type\":\"video\"},{\"index\":1,\"label\":\"A1\",\"linkedClips\":2,\"role\":{\"kind\":\"standard\"},\"trackId\":\"519D79E9\",\"type\":\"audio\"}],\"width\":1280}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:43.019Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_DE9FjP1LP31lqiEetAjZ5318",
+        "name": "mcp__voxstudio__move_clips",
+        "input": {
+          "moves": [
+            {
+              "clipId": "5EF538FE",
+              "toFrame": 120
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:43.064Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_DE9FjP1LP31lqiEetAjZ5318",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"clips\":[{\"audio\":{\"id\":\"748A9773\",\"track\":1},\"frames\":[120,307],\"id\":\"5EF538FE\",\"mediaRef\":\"4120FADD\",\"track\":0,\"trimStartFrame\":90}]}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:44.899Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ET_rT8VyK6vzoDHbTZbF65v1801",
+        "name": "mcp__voxstudio__get_timeline",
+        "input": {}
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:44.930Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_ET_rT8VyK6vzoDHbTZbF65v1801",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"canGenerate\":false,\"currentFrame\":0,\"durationSeconds\":10.233,\"fps\":30,\"height\":720,\"id\":\"6664B37D\",\"name\":\"Timeline 1\",\"totalFrames\":307,\"tracks\":[{\"clips\":[{\"audio\":{\"id\":\"3F8E8164\",\"track\":1},\"frames\":[0,90],\"id\":\"D9A16E03\",\"mediaRef\":\"4120FADD\",\"trimEndFrame\":187},{\"audio\":{\"id\":\"748A9773\",\"track\":1},\"frames\":[120,307],\"id\":\"5EF538FE\",\"mediaRef\":\"4120FADD\",\"trimStartFrame\":90}],\"gaps\":[[90,120]],\"index\":0,\"label\":\"V1\",\"role\":{\"kind\":\"standard\"},\"trackId\":\"CC09D7C6\",\"type\":\"video\"},{\"gaps\":[[90,120]],\"index\":1,\"label\":\"A1\",\"linkedClips\":2,\"role\":{\"kind\":\"standard\"},\"trackId\":\"519D79E9\",\"type\":\"audio\"}],\"width\":1280}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:46.811Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_V8IgQPntYYmVTnaMNSka2556",
+        "name": "mcp__voxstudio__undo",
+        "input": {}
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:46.883Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_V8IgQPntYYmVTnaMNSka2556",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "Undid the latest action. The timeline is restored to its state before that edit; re-read with get_timeline or get_transcript before editing again."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:48.251Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ET_yGPoKNo4h9MqOymRPQv16118",
+        "name": "mcp__voxstudio__get_timeline",
+        "input": {}
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:48.295Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_ET_yGPoKNo4h9MqOymRPQv16118",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"canGenerate\":false,\"currentFrame\":0,\"durationSeconds\":9.233,\"fps\":30,\"height\":720,\"id\":\"6664B37D\",\"name\":\"Timeline 1\",\"totalFrames\":277,\"tracks\":[{\"clips\":[{\"audio\":{\"id\":\"3F8E8164\",\"track\":1},\"frames\":[0,90],\"id\":\"D9A16E03\",\"mediaRef\":\"4120FADD\",\"trimEndFrame\":187},{\"audio\":{\"id\":\"748A9773\",\"track\":1},\"frames\":[90,277],\"id\":\"5EF538FE\",\"mediaRef\":\"4120FADD\",\"trimStartFrame\":90}],\"index\":0,\"label\":\"V1\",\"role\":{\"kind\":\"standard\"},\"trackId\":\"CC09D7C6\",\"type\":\"video\"},{\"index\":1,\"label\":\"A1\",\"linkedClips\":2,\"role\":{\"kind\":\"standard\"},\"trackId\":\"519D79E9\",\"type\":\"audio\"}],\"width\":1280}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:50.200Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_hlcsHN4d7NKTkQWFg7Xz7092",
+        "name": "mcp__voxstudio__move_clips",
+        "input": {
+          "moves": [
+            {
+              "clipId": "5EF538FE",
+              "toFrame": 120
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:50.273Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_hlcsHN4d7NKTkQWFg7Xz7092",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"clips\":[{\"audio\":{\"id\":\"748A9773\",\"track\":1},\"frames\":[120,307],\"id\":\"5EF538FE\",\"mediaRef\":\"4120FADD\",\"track\":0,\"trimStartFrame\":90}]}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:51.369Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ET_RnCnrDrRp6FE6BDnckgR7515",
+        "name": "mcp__voxstudio__get_timeline",
+        "input": {}
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:51.387Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_ET_RnCnrDrRp6FE6BDnckgR7515",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"canGenerate\":false,\"currentFrame\":0,\"durationSeconds\":10.233,\"fps\":30,\"height\":720,\"id\":\"6664B37D\",\"name\":\"Timeline 1\",\"totalFrames\":307,\"tracks\":[{\"clips\":[{\"audio\":{\"id\":\"3F8E8164\",\"track\":1},\"frames\":[0,90],\"id\":\"D9A16E03\",\"mediaRef\":\"4120FADD\",\"trimEndFrame\":187},{\"audio\":{\"id\":\"748A9773\",\"track\":1},\"frames\":[120,307],\"id\":\"5EF538FE\",\"mediaRef\":\"4120FADD\",\"trimStartFrame\":90}],\"gaps\":[[90,120]],\"index\":0,\"label\":\"V1\",\"role\":{\"kind\":\"standard\"},\"trackId\":\"CC09D7C6\",\"type\":\"video\"},{\"gaps\":[[90,120]],\"index\":1,\"label\":\"A1\",\"linkedClips\":2,\"role\":{\"kind\":\"standard\"},\"trackId\":\"519D79E9\",\"type\":\"audio\"}],\"width\":1280}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:54.544Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_3V2ZjEfRl4qjyAbMChgT0354",
+        "name": "mcp__voxstudio__add_texts",
+        "input": {
+          "entries": [
+            {
+              "startFrame": 0,
+              "endFrame": 90,
+              "content": "VoxStudio MCP Test",
+              "transform": {
+                "centerX": 0.5,
+                "centerY": 0.5
+              },
+              "style": {
+                "fontSize": 96,
+                "color": "#FFFFFF",
+                "bold": true,
+                "alignment": "center"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:54.637Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_3V2ZjEfRl4qjyAbMChgT0354",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"clips\":[{\"frames\":[0,90],\"id\":\"5232AA94\",\"mediaRef\":\"\",\"mediaType\":\"text\",\"textContent\":\"VoxStudio MCP Test\",\"track\":0,\"transform\":{\"height\":0.135,\"width\":0.505}}],\"createdTracks\":[{\"index\":0,\"label\":\"V2\",\"type\":\"video\"}],\"notes\":[\"Track indices shifted — re-read get_timeline before the next index-based call.\"]}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:28:57.872Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ih9fTy1ri6AAOc4FvCQs8985",
+        "name": "mcp__voxstudio__get_timeline",
+        "input": {}
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:28:57.887Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_ih9fTy1ri6AAOc4FvCQs8985",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"canGenerate\":false,\"currentFrame\":0,\"durationSeconds\":10.233,\"fps\":30,\"height\":720,\"id\":\"6664B37D\",\"name\":\"Timeline 1\",\"totalFrames\":307,\"tracks\":[{\"clips\":[{\"frames\":[0,90],\"id\":\"5232AA94\",\"mediaRef\":\"\",\"mediaType\":\"text\",\"textContent\":\"VoxStudio MCP Test\",\"transform\":{\"height\":0.135,\"width\":0.505}}],\"index\":0,\"label\":\"V2\",\"role\":{\"kind\":\"standard\"},\"trackId\":\"49FA1F4D\",\"type\":\"video\"},{\"clips\":[{\"audio\":{\"id\":\"3F8E8164\",\"track\":2},\"frames\":[0,90],\"id\":\"D9A16E03\",\"mediaRef\":\"4120FADD\",\"trimEndFrame\":187},{\"audio\":{\"id\":\"748A9773\",\"track\":2},\"frames\":[120,307],\"id\":\"5EF538FE\",\"mediaRef\":\"4120FADD\",\"trimStartFrame\":90}],\"gaps\":[[90,120]],\"index\":1,\"label\":\"V1\",\"role\":{\"kind\":\"standard\"},\"trackId\":\"CC09D7C6\",\"type\":\"video\"},{\"gaps\":[[90,120]],\"index\":2,\"label\":\"A1\",\"linkedClips\":2,\"role\":{\"kind\":\"standard\"},\"trackId\":\"519D79E9\",\"type\":\"audio\"}],\"width\":1280}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:29:01.053Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_jgzEoBcsyyeQdbW5RQMy4704",
+        "name": "mcp__voxstudio__export_project",
+        "input": {
+          "mode": "video",
+          "outputPath": "/private/tmp/voxstudio-claude-e2e-20261003/editor-output.mp4",
+          "overwrite": false,
+          "codec": "H.264",
+          "resolution": "720p"
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:29:01.078Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_jgzEoBcsyyeQdbW5RQMy4704",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"durationFrames\":307,\"durationSeconds\":10.233333333333333,\"format\":\"H.264\",\"fps\":30,\"jobId\":\"06565DB5-9CFE-40D1-8C05-EE9D8665CA3E\",\"mode\":\"video\",\"note\":\"The export is available in the Export dialog.\",\"path\":\"\\/private\\/tmp\\/voxstudio-claude-e2e-20261003\\/editor-output.mp4\",\"queuePosition\":0,\"status\":\"started\",\"timeline\":\"Timeline 1\"}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:29:02.531Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_b3iSjJQya66WgtWTp2C15773",
+        "name": "mcp__voxstudio__manage_exports",
+        "input": {
+          "action": "list"
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:29:02.543Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_b3iSjJQya66WgtWTp2C15773",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"exports\":[{\"filename\":\"editor-output.mp4\",\"jobId\":\"06565DB5-9CFE-40D1-8C05-EE9D8665CA3E\",\"path\":\"\\/private\\/tmp\\/voxstudio-claude-e2e-20261003\\/editor-output.mp4\",\"progress\":100,\"status\":\"completed\"}]}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:29:07.607Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_IhEsvKxigqYNTCxckudZ1793",
+        "name": "mcp__voxstudio__manage_project",
+        "input": {
+          "action": "list"
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:29:07.622Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_IhEsvKxigqYNTCxckudZ1793",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"active\":{\"name\":\"Claude MCP E2E 20261003 Video\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/Claude MCP E2E 20261003 Video.voxella\"},\"editorPresentation\":\"active\",\"openCount\":1,\"projects\":[{\"id\":\"05B6F760-B2F0-44BB-B014-C45C269A3D9D\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"Claude MCP E2E 20261003 Video\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/Claude MCP E2E 20261003 Video.voxella\"},{\"id\":\"506344BC-E896-4213-8A82-CDEED791AA7D\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"脊椎侧弯运动与日常注意事项 – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/脊椎侧弯运动与日常注意事项 – Clip.voxella\"},{\"id\":\"7863FD29-5FAD-4937-9C45-499492D82DA5\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"Make Your Own Lemonade – Clip Sep 28 at 11:05:46 AM\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/Make Your Own Lemonade – Clip Sep 28 at 11:05:46 AM.voxella\"},{\"id\":\"A4784454-2257-4F63-B92C-ACE6ABB05C13\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"Make Your Own Lemonade – Clip Sep 28 at 11:05:46 AM\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/Make Your Own Lemonade – Clip Sep 28 at 11:05:46 AM.voxella\"},{\"id\":\"D21B76E6-1316-4C21-9701-0ED49B13BA92\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"Donald Hoffman on Reality – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/Donald Hoffman on Reality – Clip.voxella\"},{\"id\":\"99276D88-4077-4602-B16F-910BED8C89B5\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"ios-app-1st-apple-review\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/ios-app-1st-apple-review.voxella\"},{\"id\":\"DCF79824-E0AE-4C89-9A43-08505F170729\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"调整骨盆错位动作 – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/调整骨盆错位动作 – Clip.voxella\"},{\"id\":\"C5E38524-EC50-43B6-AE90-9B213C6F226A\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"调整骨盆错位动作 – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/调整骨盆错位动作 – Clip.voxella\"},{\"id\":\"42294F81-D1AC-470C-A17F-6B2817E59CAA\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"Make Your Own Lemonade – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/Make Your Own Lemonade – Clip.voxella\"},{\"id\":\"76347D16-2A1A-457F-BE83-39309BF15E22\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"颈椎治疗与家庭手法学习反馈 – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/颈椎治疗与家庭手法学习反馈 – Clip.voxella\"},{\"id\":\"DD7E86D5-4EE5-4672-A53E-2BADE862F06C\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"大禹借瑶姬之力疏通巫山 – Clip Aug 22 at 7:48:34 AM\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/大禹借瑶姬之力疏通巫山 – Clip Aug 22 at 7:48:34 AM.voxella\"},{\"id\":\"4E1D760B-28A9-4055-9F76-B73FC9CDE03E\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"signal-2026-08-14-16-36-33-429 – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/signal-2026-08-14-16-36-33-429 – Clip.voxella\"},{\"id\":\"C9390D4C-E52E-42CA-85D7-776AB72E7D2F\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"大禹借瑶姬之力疏通巫山 – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/大禹借瑶姬之力疏通巫山 – Clip.voxella\"},{\"id\":\"AA083F2C-112B-4398-874C-40D937A3F041\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"颈椎护理与家庭手法学习 – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/颈椎护理与家庭手法学习 – Clip.voxella\"},{\"id\":\"9FB0512C-0EB1-47BA-A315-97CB36A9BBAB\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"123 – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/123 – Clip.voxella\"},{\"id\":\"20C721EB-5CD9-486B-A7C9-A5DA3BC5B7D8\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"吴国斌医师新加坡工作坊腿部活动指导 – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/吴国斌医师新加坡工作坊腿部活动指导 – Clip.voxella\"},{\"id\":\"99E96560-B745-404A-A517-2BE66AC13749\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"新加坡居家活动方法工作坊 – Clip Aug 5 at 7:54:26 AM\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/新加坡居家活动方法工作坊 – Clip Aug 5 at 7:54:26 AM.voxella\"},{\"id\":\"E52C16C8-D177-4D3C-BFB4-B71B274DA984\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"Untitled Project\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/Untitled Project.voxella\"},{\"id\":\"52F0941D-A381-4C1B-8FAB-56009D1BFFCC\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"新加坡居家活动方法工作坊 – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/新加坡居家活动方法工作坊 – Clip.voxella\"},{\"id\":\"E0496523-037B-44BA-8145-DFD913BFC688\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"healthevent-1\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/healthevent-1.voxella\"},{\"id\":\"BD5F81ED-82BF-4D87-8745-60DF923F93D8\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"新加坡腿腳活動工作坊 – Clip Aug 4 at 5:51:05 PM\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/新加坡腿腳活動工作坊 – Clip Aug 4 at 5:51:05 PM.voxella\"},{\"id\":\"F75657D3-C997-46C5-B187-3222D29827B4\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"新加坡腿腳活動工作坊 – Clip Aug 4 at 5:39:52 PM\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/新加坡腿腳活動工作坊 – Clip Aug 4 at 5:39:52 PM.voxella\"},{\"id\":\"32A3F735-4822-48D2-8713-F793EB729AEC\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"新加坡腿腳活動工作坊 – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/新加坡腿腳活動工作坊 – Clip.voxella\"},{\"id\":\"1BB856E3-DDA0-4C8D-9745-2562FD5B0B7D\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"healthevent_doc_wu – Clip\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/healthevent_doc_wu – Clip.voxella\"},{\"id\":\"B01E035F-EDFB-4C8D-BFA6-103BFD9F76B6\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"1234\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/1234.voxella\"},{\"id\":\"4B340569-82B9-4072-8922-0730FB60B9D7\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"warroom20251115.clip_002313_5_16k_last1min – Captioned Jul 30 at 8:02:41 AM\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/warroom20251115.clip_002313_5_16k_last1min – Captioned Jul 30 at 8:02:41 AM.voxella\"},{\"id\":\"41732FBB-AC98-429D-B1F9-50733230FAA2\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"11111\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/11111.voxella\"},{\"id\":\"F9D61507-22DB-421D-8912-D60827E44209\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"123\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/123.voxella\"},{\"id\":\"472BB036-6722-4ECE-B1B6-C2005B242648\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"1111\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/1111.voxella\"},{\"id\":\"ECE8F3E3-7C61-4AE6-BE29-FA2AAF0B9EA3\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"Codex E2E Chat\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/Codex E2E Chat.voxella\"},{\"id\":\"80CCDD9D-8646-4ACA-A4E7-E6CD974115F3\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"warroom20251115.clip_002313_5_16k_last1min – Captioned Jul 30 at 7:55:55 AM\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/warroom20251115.clip_002313_5_16k_last1min – Captioned Jul 30 at 7:55:55 AM.voxella\"},{\"id\":\"4487C566-7409-4672-B240-7E9C2136430A\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"warroom20251115.clip_002313_5_16k_last1min – Captioned\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/warroom20251115.clip_002313_5_16k_last1min – Captioned.voxella\"},{\"id\":\"02703DEC-1DEF-41D9-B6E8-0989AB2EE9D1\",\"isAccessible\":true,\"isActive\":false,\"isOpen\":false,\"isVisible\":false,\"name\":\"warroom20251115.clip_002313_5_16k_last1min – Captioned Jul 30 at 7:50:19 AM\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/warroom20251115.clip_002313_5_16k_last1min – Captioned Jul 30 at 7:50:19 AM.voxella\"}],\"visible\":{\"name\":\"Claude MCP E2E 20261003 Video\",\"path\":\"\\/Users\\/adamwang\\/Documents\\/Voxella Studio\\/Claude MCP E2E 20261003 Video.voxella\"}}"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "result",
+    "result": "Smoke complete. All steps ran against a brand-new disposable project; no existing user project was opened or touched (`openCount` stayed 1, only the new project).\n\n## 1. Session start & project creation\n\n- **`get_timeline` at start** → `Editor not available` — the expected error, since no project was open.\n- **`manage_project create`** → `status: created`\n  - Name: **Claude MCP E2E 20261003 Video**\n  - Project ID: **05B6F760-B2F0-44BB-B014-C45C269A3D9D** (from `list`; `create` itself returned no id)\n  - Path: **`/Users/adamwang/Documents/Voxella Studio/Claude MCP E2E 20261003 Video.voxella`**\n  - Applied: fps 30, aspectRatio 16:9, quality 720p → **1280x720**\n  - Timeline: `Timeline 1`, timelineId **6664B37D**\n  - `canGenerate: false` (no generation was requested or used)\n- **Initial `get_timeline`** → `totalFrames 0`, `durationSeconds 0`, `tracks: []`\n\n## 2. Import & placement\n\n- `import_media` (path source, no upload) → mediaRef **4120FADD**, `status: ready`\n- `get_media` → 9.234s, 1280x720, 30fps, `hasAudio: true`\n- `add_clips` (frame 0, auto track) → video **D9A16E03** `[0,277]` on V1, **linked audio 3F8E8164** on A1 (`createdTracks: V1, A1`)\n- `get_timeline` → `totalFrames 277`, `durationSeconds 9.233` ✓ matches the 9.237s fixture\n\n## 3. Split / move / undo / re-move (exact ranges)\n\n| State | Clip A (video / audio) | Clip B (video / audio) |\n|---|---|---|\n| After split@90 | D9A16E03 `[0,90]` trimEnd 187 / 3F8E8164 | 5EF538FE `[90,277]` trimStart 90 / 748A9773 |\n| After move→120 | D9A16E03 `[0,90]` trimEnd 187 / 3F8E8164 | 5EF538FE `[120,307]` trimStart 90 / 748A9773 |\n| After undo | D9A16E03 `[0,90]` trimEnd 187 / 3F8E8164 | 5EF538FE **`[90,277]`** trimStart 90 / 748A9773 |\n| After re-move→120 | D9A16E03 `[0,90]` trimEnd 187 / 3F8E8164 | 5EF538FE `[120,307]` trimStart 90 / 748A9773 |\n\n- **Undo returned clip B exactly to frame 90**, no residual gap (`totalFrames` went 307 → 277), trims intact.\n- **Audio alignment:** V1 and A1 reported *identical* gaps — `gaps: [[90,120]]` on both tracks in both moved states — so each linked partner (3F8E8164, 748A9773) followed its video frame-for-frame. Clip A and its trims were never altered.\n\n## 4. Text\n\n- `add_texts` → **5232AA94**, `[0,90]`, content `VoxStudio MCP Test`, on a **new top track V2** (index 0; indices shifted +1, re-read as noted).\n- Style **submitted**: fontSize 96 (canvas points, ~13% of the 720px height), color `#FFFFFF`, bold, alignment center, transform center (0.5, 0.5) with auto-fit box.\n- `get_timeline` echoes only `textContent` + transform (**auto-fit box 0.505 × 0.135**), *not* the style block — so the styling above is what I sent, not something the read-back confirmed.\n\n## 5. Save & export\n\n- **No save action exists** — the supported set is `list/open/create/close` only, so I did not invent one. `close` would save but also close, contradicting \"keep open for UI inspection\", so **I relied on autosave and left the project open and visible**.\n- `export_project` → jobId **06565DB5-9CFE-40D1-8C05-EE9D8665CA3E**, path **`/private/tmp/voxstudio-claude-e2e-20261003/editor-output.mp4`**, mode video, H.264, 720p, `overwrite: false`, returned `status: started`, `queuePosition: 0`, 307 frames / 10.233s.\n- **`manage_exports` (1 inspection, within the limit of 2)** → `status: completed`, `progress: 100`, same jobId/filename/path. **No errors or warnings reported.**\n\n## Final timeline (307 frames / 10.233s)\n\n- V2 (index 0): text 5232AA94 `[0,90]`\n- V1 (index 1): D9A16E03 `[0,90]`, 5EF538FE `[120,307]`, gap `[90,120]`\n- A1 (index 2): linked audio only, `linkedClips: 2`, gap `[90,120]`\n\n**Limitations, stated plainly:** I rendered no frames and viewed no image data, so I make **no claim about preview, playback, or rendered visual quality** — the text's on-screen appearance and the exported pixels are unverified. Every range, trim, gap, and status above is copied from tool output. No retries were needed; there were no schema errors.",
+    "is_error": false,
+    "permission_denials": [],
+    "duration_ms": 50715,
+    "modelUsage": {
+      "deepseek-v4-flash": {
+        "inputTokens": 44658,
+        "outputTokens": 5778,
+        "cacheReadInputTokens": 768512,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.751996,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "canonicalModel": "deepseek-v4-flash",
+        "provider": "firstParty"
+      }
+    },
+    "total_cost_usd": 0.751996
+  }
+]

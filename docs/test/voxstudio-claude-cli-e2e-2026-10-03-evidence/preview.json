@@ -1,0 +1,186 @@
+[
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:29:11.781Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ET_S4qSfXKK5hvnJrOKFe1k6371",
+        "name": "mcp__voxstudio__media_status",
+        "input": {
+          "session_id": "4BE2D051-403A-42DA-9DAE-970D9000F455"
+        }
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:29:11.824Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_01_ET_CT5NDTu1wnfnPFIEJCiB8339",
+        "name": "mcp__voxstudio__media_status",
+        "input": {
+          "session_id": "5B6E1C2C-E083-4F00-A9D8-1D725F5C3DAC"
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:29:11.852Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_ET_S4qSfXKK5hvnJrOKFe1k6371",
+        "type": "tool_result",
+        "content": "{\"kind\":\"transcription\",\"message\":\"Transcript and summary ready\",\"progress\":1,\"selected_language\":\"zh\",\"selected_track\":\"source\",\"session_id\":\"4BE2D051-403A-42DA-9DAE-970D9000F455\",\"status\":\"completed\",\"title\":\"Claude MCP E2E 20261003 ZH\",\"translation_languages\":[]}"
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:29:11.856Z",
+    "content": [
+      {
+        "tool_use_id": "call_01_ET_CT5NDTu1wnfnPFIEJCiB8339",
+        "type": "tool_result",
+        "content": "{\"kind\":\"transcription\",\"message\":\"Transcript and summary ready\",\"progress\":1,\"selected_language\":\"en\",\"selected_track\":\"source\",\"session_id\":\"5B6E1C2C-E083-4F00-A9D8-1D725F5C3DAC\",\"status\":\"completed\",\"title\":\"Claude MCP E2E 20261003 EN\",\"translation_languages\":[]}"
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:29:11.929Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_02_ET_NmsuLOPD7LN505NztqbV6912",
+        "name": "mcp__voxstudio__media_status",
+        "input": {
+          "session_id": "46E25F9D-393F-45AF-8739-8C0FF9BE6886"
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:29:11.948Z",
+    "content": [
+      {
+        "tool_use_id": "call_02_ET_NmsuLOPD7LN505NztqbV6912",
+        "type": "tool_result",
+        "content": "{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/Dubs/dub-flow-6AC69957-9139-42AF-8481-23016C956071.wav\",\"kind\":\"dubbing\",\"message\":\"Dub, subtitles, and summary ready\",\"progress\":1,\"session_id\":\"46E25F9D-393F-45AF-8739-8C0FF9BE6886\",\"status\":\"completed\",\"title\":\"Claude MCP E2E 20261003 Ad测试\"}"
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:29:14.161Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ShYkhFDIUy3moBjuHu9R9190",
+        "name": "mcp__voxstudio__media_preview",
+        "input": {
+          "session_id": "4BE2D051-403A-42DA-9DAE-970D9000F455",
+          "start": 0,
+          "duration": 6,
+          "open": false,
+          "play": false
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:29:14.205Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_ShYkhFDIUy3moBjuHu9R9190",
+        "type": "tool_result",
+        "content": "{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/MCPPreviews/4BE2D051-403A-42DA-9DAE-970D9000F455-4D2AD3E1-CD37-452E-8D5D-D0182F2CF803.m4a\",\"cues\":[{\"end\":5.920000076293945,\"id\":0,\"speaker\":\"\",\"start\":0,\"text\":\"欢迎使用Voicella Studio。这句话用于测试中文转写和词级时间戳。\"}],\"end\":6,\"language\":\"zh\",\"mime_type\":\"audio/mp4\",\"preview_resource_uri\":\"voxstudio://previews/1969D8F1-C439-4DE7-95B5-2824DA034738\",\"session_id\":\"4BE2D051-403A-42DA-9DAE-970D9000F455\",\"start\":0}"
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:29:14.443Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_01_k1FxingDjVbs0r1mOmo40440",
+        "name": "mcp__voxstudio__media_preview",
+        "input": {
+          "session_id": "5B6E1C2C-E083-4F00-A9D8-1D725F5C3DAC",
+          "start": 0,
+          "duration": 4.5,
+          "open": false,
+          "play": false
+        }
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:29:14.701Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_02_wxV4K7I0q8Ub7iv4RJH06046",
+        "name": "mcp__voxstudio__media_preview",
+        "input": {
+          "session_id": "46E25F9D-393F-45AF-8739-8C0FF9BE6886",
+          "start": 0,
+          "duration": 15,
+          "open": false,
+          "play": false
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:29:14.720Z",
+    "content": [
+      {
+        "tool_use_id": "call_01_k1FxingDjVbs0r1mOmo40440",
+        "type": "tool_result",
+        "content": "{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/MCPPreviews/5B6E1C2C-E083-4F00-A9D8-1D725F5C3DAC-8EC668FF-9570-4D60-912C-536E0B7FEAC9.m4a\",\"cues\":[{\"end\":4.800000190734863,\"id\":0,\"speaker\":\"\",\"start\":0,\"text\":\"Welcome to Voxella Studio. This sentence tests local word timestamps.\"}],\"end\":4.5,\"language\":\"en\",\"mime_type\":\"audio/mp4\",\"preview_resource_uri\":\"voxstudio://previews/C05E7CC1-1282-40F0-99D9-9BC3646DCF08\",\"session_id\":\"5B6E1C2C-E083-4F00-A9D8-1D725F5C3DAC\",\"start\":0}"
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:29:14.871Z",
+    "content": [
+      {
+        "tool_use_id": "call_02_wxV4K7I0q8Ub7iv4RJH06046",
+        "type": "tool_result",
+        "content": "{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/MCPPreviews/46E25F9D-393F-45AF-8739-8C0FF9BE6886-40E0F12A-2279-4541-A301-C433EAAE6DE0.m4a\",\"cues\":[{\"end\":1.2960000038146973,\"id\":0,\"speaker\":\"Ad测试\",\"start\":0.01600000075995922,\"text\":\"欢迎来到 VoxStudio。\"},{\"end\":5.795999546051025,\"id\":1,\"speaker\":\"Ad测试\",\"start\":2.3359999656677246,\"text\":\"今天，我们把灵感变成清晰的表达。\"},{\"end\":8.495999336242676,\"id\":2,\"speaker\":\"Ad测试\",\"start\":6.015999794006348,\"text\":\"先整理知识，再剪辑视频，\"},{\"end\":11.295999526977539,\"id\":3,\"speaker\":\"Ad测试\",\"start\":8.815999984741211,\"text\":\"最后用熟悉的声音讲述故事。\"},{\"end\":12.335999488830566,\"id\":4,\"speaker\":\"Ad测试\",\"start\":11.455999374389648,\"text\":\"准备好了吗？\"},{\"end\":12.928,\"id\":5,\"speaker\":\"Ad测试\",\"start\":12.57599925994873,\"text\":\"让我们开始。\"}],\"end\":12.96,\"language\":\"zh\",\"mime_type\":\"audio/mp4\",\"preview_resource_uri\":\"voxstudio://previews/6C07697A-60C2-474F-902A-A3DF45CC23E8\",\"session_id\":\"46E25F9D-393F-45AF-8739-8C0FF9BE6886\",\"start\":0}"
+      }
+    ]
+  },
+  {
+    "type": "result",
+    "result": "All three sessions reported `completed`. No duplicates created, no settings changed, `open=false` / `play=false` honored on all three preview calls.\n\n## 1. ZH — `4BE2D051-403A-42DA-9DAE-970D9000F455`\n\n**status** (once):\n```json\n{\"kind\":\"transcription\",\"message\":\"Transcript and summary ready\",\"progress\":1,\"selected_language\":\"zh\",\"selected_track\":\"source\",\"session_id\":\"4BE2D051-403A-42DA-9DAE-970D9000F455\",\"status\":\"completed\",\"title\":\"Claude MCP E2E 20261003 ZH\",\"translation_languages\":[]}\n```\n\n**preview** (start 0, duration 6):\n```json\n{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/MCPPreviews/4BE2D051-403A-42DA-9DAE-970D9000F455-4D2AD3E1-CD37-452E-8D5D-D0182F2CF803.m4a\",\"cues\":[{\"end\":5.920000076293945,\"id\":0,\"speaker\":\"\",\"start\":0,\"text\":\"欢迎使用Voicella Studio。这句话用于测试中文转写和词级时间戳。\"}],\"end\":6,\"language\":\"zh\",\"mime_type\":\"audio/mp4\",\"preview_resource_uri\":\"voxstudio://previews/1969D8F1-C439-4DE7-95B5-2824DA034738\",\"session_id\":\"4BE2D051-403A-42DA-9DAE-970D9000F455\",\"start\":0}\n```\n\nAnchors: **欢迎** (\"欢迎使用…\"), **测试** (\"用于测试中文转写…\"), **时间** (\"…词级时间戳\") — 3 of 3 present, passes the ≥2 requirement. Cue `0.000–5.920` sits inside the 0–6 window.\n\n## 2. EN — `5B6E1C2C-E083-4F00-A9D8-1D725F5C3DAC`\n\n**status** (once):\n```json\n{\"kind\":\"transcription\",\"message\":\"Transcript and summary ready\",\"progress\":1,\"selected_language\":\"en\",\"selected_track\":\"source\",\"session_id\":\"5B6E1C2C-E083-4F00-A9D8-1D725F5C3DAC\",\"status\":\"completed\",\"title\":\"Claude MCP E2E 20261003 EN\",\"translation_languages\":[]}\n```\n\n**preview** (start 0, duration 4.5):\n```json\n{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/MCPPreviews/5B6E1C2C-E083-4F00-A9D8-1D725F5C3DAC-8EC668FF-9570-4D60-912C-536E0B7FEAC9.m4a\",\"cues\":[{\"end\":4.800000190734863,\"id\":0,\"speaker\":\"\",\"start\":0,\"text\":\"Welcome to Voxella Studio. This sentence tests local word timestamps.\"}],\"end\":4.5,\"language\":\"en\",\"mime_type\":\"audio/mp4\",\"preview_resource_uri\":\"voxstudio://previews/C05E7CC1-1282-40F0-99D9-9BC3646DCF08\",\"session_id\":\"5B6E1C2C-E083-4F00-A9D8-1D725F5C3DAC\",\"start\":0}\n```\n\nAnchors: **Welcome**, **local** (\"tests local word…\"), **timestamps** — 3 of 3 present, passes. Note the cue's `end` is `4.800` while the requested window `end` is `4.5`: the sentence's tail extends ~0.3 s past the requested cutoff, i.e. the cue is reported whole rather than clamped to the window. Worth knowing but not a failure.\n\n## 3. Dubbing — `46E25F9D-393F-45AF-8739-8C0FF9BE6886`\n\n**status** (once):\n```json\n{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/Dubs/dub-flow-6AC69957-9139-42AF-8481-23016C956071.wav\",\"kind\":\"dubbing\",\"message\":\"Dub, subtitles, and summary ready\",\"progress\":1,\"session_id\":\"46E25F9D-393F-45AF-8739-8C0FF9BE6886\",\"status\":\"completed\",\"title\":\"Claude MCP E2E 20261003 Ad测试\"}\n```\n\n**preview** (start 0, duration 15):\n```json\n{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/MCPPreviews/46E25F9D-393F-45AF-8739-8C0FF9BE6886-40E0F12A-2279-4541-A301-C433EAAE6DE0.m4a\",\"cues\":[{\"end\":1.2960000038146973,\"id\":0,\"speaker\":\"Ad测试\",\"start\":0.01600000075995922,\"text\":\"欢迎来到 VoxStudio。\"},{\"end\":5.795999546051025,\"id\":1,\"speaker\":\"Ad测试\",\"start\":2.3359999656677246,\"text\":\"今天，我们把灵感变成清晰的表达。\"},{\"end\":8.495999336242676,\"id\":2,\"speaker\":\"Ad测试\",\"start\":6.015999794006348,\"text\":\"先整理知识，再剪辑视频，\"},{\"end\":11.295999526977539,\"id\":3,\"speaker\":\"Ad测试\",\"start\":8.815999984741211,\"text\":\"最后用熟悉的声音讲述故事。\"},{\"end\":12.335999488830566,\"id\":4,\"speaker\":\"Ad测试\",\"start\":11.455999374389648,\"text\":\"准备好了吗？\"},{\"end\":12.928,\"id\":5,\"speaker\":\"Ad测试\",\"start\":12.57599925994873,\"text\":\"让我们开始。\"}],\"end\":12.96,\"language\":\"zh\",\"mime_type\":\"audio/mp4\",\"preview_resource_uri\":\"voxstudio://previews/6C07697A-60C2-474F-902A-A3DF45CC23E8\",\"session_id\":\"46E25F9D-393F-45AF-8739-8C0FF9BE6886\",\"start\":0}\n```\n\n**Reference name**: every cue carries `speaker: \"Ad测试\"`, matching the expected reference name. Caveat on precision: the status payload for a `dubbing` session exposes no explicit `reference_name` field, so `Ad测试` here is confirmed as the **speaker label attached to the cues**, not read from a dedicated metadata field. I did not re-call status to look for one, per the once-each instruction.\n\n**Script coverage**: six cues, contiguous in content, spanning `0.016 → 12.928`. The lines read as a complete script — greeting, thesis, prep-then-edit, closing line, call to action, sign-off:\n1. 欢迎来到 VoxStudio。\n2. 今天，我们把灵感变成清晰的表达。\n3. 先整理知识，再剪辑视频，\n4. 最后用熟悉的声音讲述故事。\n5. 准备好了吗？\n6. 让我们开始。\n\nNo missing segment in the sequence, and the last cue `12.576–12.928` runs to the end of the content (`end: 12.96`), so nothing is truncated at the tail. The 15 s window is longer than the dub (`12.96 s`); the inter-cue gaps (0.016–1.296 → 2.336–5.796 → …) are consistent with speech pauses rather than dropped text.\n\n**Not claimed**: audible voice quality — I only read cue text/timing and file paths, never listened. Content coverage and labeling are verified; naturalness, pronunciation, and reference-voice fidelity are not.",
+    "is_error": false,
+    "permission_denials": [],
+    "duration_ms": 15456,
+    "modelUsage": {
+      "deepseek-v4-flash": {
+        "inputTokens": 37527,
+        "outputTokens": 3258,
+        "cacheReadInputTokens": 72448,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.30530900000000005,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "canonicalModel": "deepseek-v4-flash",
+        "provider": "firstParty"
+      }
+    },
+    "total_cost_usd": 0.30530900000000005
+  }
+]

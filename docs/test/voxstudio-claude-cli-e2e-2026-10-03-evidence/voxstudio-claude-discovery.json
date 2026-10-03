@@ -1,0 +1,151 @@
+[
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:25:05.828Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_7GKpJEDXKpw1IlDM0AAf6534",
+        "name": "mcp__voxstudio__voice_list",
+        "input": {}
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:25:05.906Z",
+    "content": [
+      {
+        "tool_use_id": "call_00_7GKpJEDXKpw1IlDM0AAf6534",
+        "type": "tool_result",
+        "content": "{\"voices\":[{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/VoiceLibrary/DBD0BF99-E1AA-4D17-B3F7-9177A95D513C/reference.wav\",\"duration\":8.128,\"language\":\"zh\",\"name\":\"ABC\",\"transcript\":\"重新录制。两个独立 GPU 容器都已经通过正确的映射，完成推理。\",\"voice_id\":\"DBD0BF99-E1AA-4D17-B3F7-9177A95D513C\"},{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/VoiceLibrary/AED47901-EADD-489D-8BC4-27B319A50BEC/reference.wav\",\"duration\":11.24,\"language\":\"zh\",\"name\":\"Reference Voice\",\"transcript\":\"\",\"voice_id\":\"AED47901-EADD-489D-8BC4-27B319A50BEC\"},{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/VoiceLibrary/08BE5794-5712-480A-BC01-E723CCDECA9D/reference.wav\",\"duration\":9.68,\"language\":\"en\",\"name\":\"adam_en_2\",\"transcript\":\"Transcribe meetings, recordings, and online video. Dub them into new languages with lifelike voices.\",\"voice_id\":\"08BE5794-5712-480A-BC01-E723CCDECA9D\"},{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/VoiceLibrary/EF76B67A-F8D9-4F04-830B-03AAD4EED082/reference.wav\",\"duration\":9.38,\"language\":\"en\",\"name\":\"ad_english\",\"transcript\":\"Transcribe meetings, recordings, and online video. Dub them into new languages with lifelike voices.\",\"voice_id\":\"EF76B67A-F8D9-4F04-830B-03AAD4EED082\"},{\"audio_path\":\"/Users/adamwang/Library/Application Support/VoxStudio/VoiceLibrary/D0AA2E85-0D7C-4157-8424-47FE656D7750/reference.wav\",\"duration\":5,\"language\":\"zh\",\"name\":\"Ad测试\",\"transcript\":\"这时一个测试， 这个音色会被用作参考\",\"voice_id\":\"D0AA2E85-0D7C-4157-8424-47FE656D7750\"}]}"
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:25:05.934Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_01_8iAZErKb2XASC94q0quV8130",
+        "name": "mcp__voxstudio__session_list",
+        "input": {
+          "origin": "local",
+          "query": "AI State of the Art"
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:25:06.015Z",
+    "content": [
+      {
+        "tool_use_id": "call_01_8iAZErKb2XASC94q0quV8130",
+        "type": "tool_result",
+        "content": "{\"citations\":[{\"chunk_index\":-1,\"id\":\"9A7A9DD2-8D33-41D4-B30A-014434BDD170|-1.0|-1.0|-1\",\"snippet\":\"{\\\"created_at\\\":\\\"2026-09-14T14:18:27Z\\\",\\\"has_summary\\\":true,\\\"has_transcript\\\":true,\\\"last_spoken_end_sec\\\":15902.82421875,\\\"media_duration_provenance\\\":\\\"unknown; legacy index duration is not media duration\\\",\\\"media_duration_sec\\\":null,\\\"origin\\\":\\\"local\\\",\\\"transcript_character_count\\\":280382,\\\"transcript_segment_count\\\":743,\\\"type\\\":\\\"upload\\\"}\",\"source_id\":\"9A7A9DD2-8D33-41D4-B30A-014434BDD170\",\"source_type\":\"sessionCard\",\"title\":\"AI State of the Art & Future\"}],\"complete\":true,\"count\":1,\"date_field\":\"created\",\"next_cursor\":null,\"returned_count\":1,\"sessions\":[{\"created_at\":\"2026-09-14T14:18:27Z\",\"has_summary\":true,\"has_transcript\":true,\"last_spoken_end_sec\":15902.82421875,\"media_duration_provenance\":\"unknown; legacy index duration is not media duration\",\"media_duration_sec\":null,\"modified_at\":\"2026-09-21T08:12:35Z\",\"origin\":\"local\",\"session_id\":\"9A7A9DD2-8D33-41D4-B30A-014434BDD170\",\"title\":\"AI State of the Art & Future\",\"transcript_character_count\":280382,\"transcript_segment_count\":743,\"type\":\"upload\"}],\"total_count\":1}"
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:25:06.139Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_02_6Lop3lARXz4ng2IYLRha3204",
+        "name": "mcp__voxstudio__session_list",
+        "input": {
+          "origin": "local",
+          "query": "Origin of Writing"
+        }
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:25:06.203Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_03_Wx4cmDZWnfCCD5PcFWRQ7643",
+        "name": "mcp__voxstudio__session_list",
+        "input": {
+          "origin": "local",
+          "query": "When Life Gives You Lemons"
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:25:06.218Z",
+    "content": [
+      {
+        "tool_use_id": "call_02_6Lop3lARXz4ng2IYLRha3204",
+        "type": "tool_result",
+        "content": "{\"citations\":[{\"chunk_index\":-1,\"id\":\"087E7676-38F9-46EB-87BE-069506457388|-1.0|-1.0|-1\",\"snippet\":\"{\\\"created_at\\\":\\\"2026-09-14T10:58:11Z\\\",\\\"has_summary\\\":true,\\\"has_transcript\\\":true,\\\"last_spoken_end_sec\\\":3604.671875,\\\"media_duration_provenance\\\":\\\"unknown; legacy index duration is not media duration\\\",\\\"media_duration_sec\\\":null,\\\"origin\\\":\\\"local\\\",\\\"transcript_character_count\\\":55130,\\\"transcript_segment_count\\\":77,\\\"type\\\":\\\"upload\\\"}\",\"source_id\":\"087E7676-38F9-46EB-87BE-069506457388\",\"source_type\":\"sessionCard\",\"title\":\"Origin of Writing\"}],\"complete\":true,\"count\":1,\"date_field\":\"created\",\"next_cursor\":null,\"returned_count\":1,\"sessions\":[{\"created_at\":\"2026-09-14T10:58:11Z\",\"has_summary\":true,\"has_transcript\":true,\"last_spoken_end_sec\":3604.671875,\"media_duration_provenance\":\"unknown; legacy index duration is not media duration\",\"media_duration_sec\":null,\"modified_at\":\"2026-09-14T12:32:37Z\",\"origin\":\"local\",\"session_id\":\"087E7676-38F9-46EB-87BE-069506457388\",\"title\":\"Origin of Writing\",\"transcript_character_count\":55130,\"transcript_segment_count\":77,\"type\":\"upload\"}],\"total_count\":1}"
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:25:06.262Z",
+    "content": [
+      {
+        "tool_use_id": "call_03_Wx4cmDZWnfCCD5PcFWRQ7643",
+        "type": "tool_result",
+        "content": "{\"citations\":[{\"chunk_index\":-1,\"id\":\"78EA1AC3-B5C0-496E-9E20-8670D0991442|-1.0|-1.0|-1\",\"snippet\":\"{\\\"created_at\\\":\\\"2026-08-24T04:51:23Z\\\",\\\"has_summary\\\":true,\\\"has_transcript\\\":true,\\\"last_spoken_end_sec\\\":103.90400695800781,\\\"media_duration_provenance\\\":\\\"unknown; legacy index duration is not media duration\\\",\\\"media_duration_sec\\\":null,\\\"origin\\\":\\\"local\\\",\\\"transcript_character_count\\\":1840,\\\"transcript_segment_count\\\":2,\\\"type\\\":\\\"upload\\\"}\",\"source_id\":\"78EA1AC3-B5C0-496E-9E20-8670D0991442\",\"source_type\":\"sessionCard\",\"title\":\"When Life Gives You Lemons: 3 Ways to Turn Setbacks Into Action\"}],\"complete\":true,\"count\":1,\"date_field\":\"created\",\"next_cursor\":null,\"returned_count\":1,\"sessions\":[{\"created_at\":\"2026-08-24T04:51:23Z\",\"has_summary\":true,\"has_transcript\":true,\"last_spoken_end_sec\":103.90400695800781,\"media_duration_provenance\":\"unknown; legacy index duration is not media duration\",\"media_duration_sec\":null,\"modified_at\":\"2026-08-24T04:52:49Z\",\"origin\":\"local\",\"session_id\":\"78EA1AC3-B5C0-496E-9E20-8670D0991442\",\"title\":\"When Life Gives You Lemons: 3 Ways to Turn Setbacks Into Action\",\"transcript_character_count\":1840,\"transcript_segment_count\":2,\"type\":\"upload\"}],\"total_count\":1}"
+      }
+    ]
+  },
+  {
+    "type": "assistant",
+    "timestamp": "2026-10-03T10:25:06.678Z",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_04_9mFHlzHQPsu0JEekr0uT7089",
+        "name": "mcp__voxstudio__session_list",
+        "input": {
+          "origin": "local",
+          "query": "Make Your Own Lemonade"
+        }
+      }
+    ]
+  },
+  {
+    "type": "user",
+    "timestamp": "2026-10-03T10:25:06.750Z",
+    "content": [
+      {
+        "tool_use_id": "call_04_9mFHlzHQPsu0JEekr0uT7089",
+        "type": "tool_result",
+        "content": "{\"citations\":[{\"chunk_index\":-1,\"id\":\"F18F0A30-AFBE-4C80-AB1D-2143132A03DA|-1.0|-1.0|-1\",\"snippet\":\"{\\\"created_at\\\":\\\"2026-07-31T10:50:37Z\\\",\\\"has_summary\\\":true,\\\"has_transcript\\\":true,\\\"last_spoken_end_sec\\\":103.90400695800781,\\\"media_duration_provenance\\\":\\\"unknown; legacy index duration is not media duration\\\",\\\"media_duration_sec\\\":null,\\\"origin\\\":\\\"local\\\",\\\"transcript_character_count\\\":1819,\\\"transcript_segment_count\\\":2,\\\"type\\\":\\\"upload\\\"}\",\"source_id\":\"F18F0A30-AFBE-4C80-AB1D-2143132A03DA\",\"source_type\":\"sessionCard\",\"title\":\"Make Your Own Lemonade\"}],\"complete\":true,\"count\":1,\"date_field\":\"created\",\"next_cursor\":null,\"returned_count\":1,\"sessions\":[{\"created_at\":\"2026-07-31T10:50:37Z\",\"has_summary\":true,\"has_transcript\":true,\"last_spoken_end_sec\":103.90400695800781,\"media_duration_provenance\":\"unknown; legacy index duration is not media duration\",\"media_duration_sec\":null,\"modified_at\":\"2026-08-02T06:36:03Z\",\"origin\":\"local\",\"session_id\":\"F18F0A30-AFBE-4C80-AB1D-2143132A03DA\",\"title\":\"Make Your Own Lemonade\",\"transcript_character_count\":1819,\"transcript_segment_count\":2,\"type\":\"upload\"}],\"total_count\":1}"
+      }
+    ]
+  },
+  {
+    "type": "result",
+    "result": "All calls succeeded — no permission denials.\n\n## Reference voices (5)\n\n| voice_id | name | language | duration |\n|---|---|---|---|\n| `DBD0BF99-E1AA-4D17-B3F7-9177A95D513C` | ABC | zh | 8.128 s |\n| `AED47901-EADD-489D-8BC4-27B319A50BEC` | Reference Voice | zh | 11.24 s |\n| `08BE5794-5712-480A-BC01-E723CCDECA9D` | adam_en_2 | en | 9.68 s |\n| `EF76B67A-F8D9-4F04-830B-03AAD4EED082` | ad_english | en | 9.38 s |\n| `D0AA2E85-0D7C-4157-8424-47FE656D7750` | Ad测试 | zh | 5 s |\n\n## Sessions (local origin)\n\n| Requested | Actual title | session_id |\n|---|---|---|\n| AI State of the Art & Future | AI State of the Art & Future | `9A7A9DD2-8D33-41D4-B30A-014434BDD170` |\n| Origin of Writing | Origin of Writing | `087E7676-38F9-46EB-87BE-069506457388` |\n| When Life Gives You Lemons | When Life Gives You Lemons: 3 Ways to Turn Setbacks Into Action | `78EA1AC3-B5C0-496E-9E20-8670D0991442` |\n| Make Your Own Lemonade | Make Your Own Lemonade | `F18F0A30-AFBE-4C80-AB1D-2143132A03DA` |\n\nEach query returned exactly one match (`total_count: 1`), so these are unambiguous. Note the third one's full title includes the subtitle suffix.\n\nOne caveat on session durations: `media_duration_sec` is `null` for all four (the index marks it as unknown/legacy and not media duration), so I did not compute durations for them. I made no writes and read no transcript or summary bodies.",
+    "is_error": false,
+    "permission_denials": [],
+    "duration_ms": 8424,
+    "modelUsage": {
+      "deepseek-v4-flash": {
+        "inputTokens": 38396,
+        "outputTokens": 1132,
+        "cacheReadInputTokens": 73856,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.257208,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "canonicalModel": "deepseek-v4-flash",
+        "provider": "firstParty"
+      }
+    },
+    "total_cost_usd": 0.257208
+  }
+]
