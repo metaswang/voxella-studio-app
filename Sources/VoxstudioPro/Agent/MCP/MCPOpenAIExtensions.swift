@@ -13,21 +13,33 @@ enum OpenAICreateElicitation: MCP.Method {
 /// One instance per MCP connection. Host metadata and grants never leak to another client.
 @MainActor
 final class MCPOpenAIExtensions {
-    // Each focused task has its own document and lifecycle. The v1 URI remains a compatibility alias.
-    nonisolated static let uiURI = "ui://voxstudio/library/v2"
+    // Hosts cache panel HTML and CSP by URI. Bump these when shipping panel changes;
+    // legacy URIs remain readable for clients with older tool metadata.
+    nonisolated static let uiURI = "ui://voxstudio/library/v3"
+    nonisolated static let transcriptionUIURI = "ui://voxstudio/transcription/v2"
+    nonisolated static let sessionUIURI = "ui://voxstudio/session/v3"
+    nonisolated static let dubbingUIURI = "ui://voxstudio/dubbing/v2"
     nonisolated static let uiResources: [(name: String, uri: String, file: String)] = [
         ("VoxStudio · Sessions", uiURI, "library"),
-        ("VoxStudio · Transcribe", "ui://voxstudio/transcription/v1", "transcription"),
-        ("VoxStudio · Session", "ui://voxstudio/session/v1", "session"),
-        ("VoxStudio · Voiceover", "ui://voxstudio/dubbing/v1", "dubbing"),
+        ("VoxStudio · Transcribe", transcriptionUIURI, "transcription"),
+        ("VoxStudio · Session", sessionUIURI, "session"),
+        ("VoxStudio · Voiceover", dubbingUIURI, "dubbing"),
+    ]
+    nonisolated static let legacyUIURIs: [String: String] = [
+        "ui://voxstudio/workbench/v1": uiURI,
+        "ui://voxstudio/library/v2": uiURI,
+        "ui://voxstudio/transcription/v1": transcriptionUIURI,
+        "ui://voxstudio/session/v1": sessionUIURI,
+        "ui://voxstudio/session/v2": sessionUIURI,
+        "ui://voxstudio/dubbing/v1": dubbingUIURI,
     ]
     nonisolated static func panelURI(for tool: String) -> String? {
         switch tool {
         case "app_workbench", "voxstudio.library": return uiURI
-        case "app_transcription": return "ui://voxstudio/transcription/v1"
-        case "app_session", "voxstudio.session_panel": return "ui://voxstudio/session/v1"
-        case "app_dubbing": return "ui://voxstudio/dubbing/v1"
-        case "voxstudio.file_panel": return "ui://voxstudio/transcription/v1"
+        case "app_transcription": return transcriptionUIURI
+        case "app_session", "voxstudio.session_panel": return sessionUIURI
+        case "app_dubbing": return dubbingUIURI
+        case "voxstudio.file_panel": return transcriptionUIURI
         default: return nil
         }
     }
@@ -62,6 +74,7 @@ final class MCPOpenAIExtensions {
             ("app_transcription", "Transcribe audio or video", schema(), true),
             ("app_dubbing", "Create a voiceover", schema(), true),
             ("app_session", "View a VoxStudio session", schema(["session_id": string], required: ["session_id"]), true),
+            ("session.open", "Open a session in the VoxStudio Mac app", schema(["session_id": string], required: ["session_id"]), false),
             ("voxstudio.sessions", "Read visible sessions for the library", schema(), true),
             ("media.save_result", "Save a completed voiceover audio file", schema(["session_id": string], required: ["session_id"]), false),
             ("voxstudio.library", "VoxStudio sessions", schema(), true),
@@ -102,7 +115,7 @@ final class MCPOpenAIExtensions {
                     meta["openai/ui"] = .object(["entrypoints": [.object(["type": "file", "extensions": .array(mediaExtensions.map { .string("." + $0) })])]])
                 }
             }
-            if name == "voxstudio.sessions" || name == "media.save_result" {
+            if name == "voxstudio.sessions" || name == "media.save_result" || name == "session.open" {
                 meta["ui"] = .object(["visibility": ["app"]])
             }
             if name == "search_mentions" {
@@ -194,6 +207,13 @@ final class MCPOpenAIExtensions {
                 return try Self.result(value)
             case "app_transcription":
                 return try Self.result(["view": "transcription", "native_forms": supportsForm])
+            case "session.open":
+                let id = try sessionID(string(args, "session_id"))
+                WorkbenchStore.shared.openSession(id)
+                AppState.shared.showHome()
+                HomeWindowController.shared.window?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                return try Self.result(["outcome": "opened", "session_id": id.uuidString])
             case "app_dubbing":
                 let voices = Self.adapted(await MCPMediaTools.execute(name: "voice.list", args: [:]))
                 if voices.isError == true { return voices }
@@ -573,11 +593,13 @@ final class MCPOpenAIExtensions {
         return try Self.result(["preview_resource_uri": uri, "mime_type": mime, "start": start, "end": end, "cues": (subtitles?.cues.filter { $0.end > start && $0.start < end } ?? []).map { ["id": $0.id, "start": $0.start, "end": $0.end, "text": $0.text] as [String: Any] }])
     }
     func readResource(_ uri: String) async throws -> ReadResource.Result {
-        let resourceURI = uri == "ui://voxstudio/workbench/v1" ? Self.uiURI : uri
+        let resourceURI = Self.legacyUIURIs[uri] ?? uri
         if let panel = Self.uiResources.first(where: { $0.uri == resourceURI }) {
             guard let url = Bundle.module.url(forResource: panel.file, withExtension: "html", subdirectory: "MCPApps") else { throw MCPDocumentError("missing_ui", "MCP panel is missing from this build") }
             return .init(contents: [.text(try String(contentsOf: url, encoding: .utf8), uri: uri, mimeType: "text/html;profile=mcp-app", _meta: .init(additionalFields: [
-                "ui": .object(["csp": .object(["connectDomains": .array([]), "resourceDomains": .array([])]), "prefersBorder": false]),
+                // Embedded branding uses data: and MCP preview bytes use blob:.
+                // Declare both for the host's image/media CSP; no remote origin is needed.
+                "ui": .object(["csp": .object(["connectDomains": .array([]), "resourceDomains": ["data:", "blob:"]]), "prefersBorder": false]),
                 "openai/ui": .object(["availableDisplayModes": ["inline", "fullscreen"], "preferredDisplayMode": "fullscreen"])
             ]))])
         }

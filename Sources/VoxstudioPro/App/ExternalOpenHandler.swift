@@ -2,6 +2,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct ExternalOpenPartition: Equatable, Sendable {
+    var sessions: [UUID] = []
     var projects: [URL] = []
     var media: [URL] = []
     var unsupported: [URL] = []
@@ -64,6 +65,10 @@ enum ExternalOpenClassifier {
         switch url.host?.lowercased() {
         case "oauth":
             return
+        case "sessions":
+            if let id = sessionID(from: url), seen.insert("session:\(id.uuidString)").inserted {
+                partition.sessions.append(id)
+            }
         case "transcribe":
             for fileURL in mediaFileURLs(fromTranscribeURL: url) {
                 append(fileURL, into: &partition, seen: &seen, expandDirectories: true)
@@ -71,6 +76,18 @@ enum ExternalOpenClassifier {
         default:
             return
         }
+    }
+
+    nonisolated static func sessionID(from url: URL) -> UUID? {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "voxstudio" || scheme == "voxella-studio",
+              components.host?.lowercased() == "sessions",
+              components.user == nil, components.password == nil, components.port == nil,
+              components.query == nil, components.fragment == nil else { return nil }
+        let parts = components.path.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts[0].isEmpty else { return nil }
+        return UUID(uuidString: String(parts[1]))
     }
 
     nonisolated static func mediaFileURLs(fromTranscribeURL url: URL) -> [URL] {
@@ -175,13 +192,17 @@ enum ExternalOpenHandler {
         let partition = await Task.detached(priority: .userInitiated) {
             ExternalOpenClassifier.partition(snapshot)
         }.value
-        apply(partition)
+        await apply(partition)
     }
 
-    private static func apply(_ partition: ExternalOpenPartition) {
+    private static func apply(_ partition: ExternalOpenPartition) async {
         Log.app.notice(
-            "external open media=\(partition.media.count) projects=\(partition.projects.count) unsupported=\(partition.unsupported.count)"
+            "external open sessions=\(partition.sessions.count) media=\(partition.media.count) projects=\(partition.projects.count) unsupported=\(partition.unsupported.count)"
         )
+        if let sessionID = partition.sessions.first {
+            await presentSession(sessionID)
+            return
+        }
         if !partition.media.isEmpty {
             presentTranscription(for: partition.media)
             if !partition.unsupported.isEmpty {
@@ -205,6 +226,38 @@ enum ExternalOpenHandler {
                 "VoxStudio opens audio and video files for transcription.",
                 kind: .error,
                 id: "external-open.unsupported"
+            )
+        }
+    }
+
+    private static func presentSession(_ id: UUID) async {
+        let store = WorkbenchStore.shared
+        // A session link can be the LaunchServices request that starts the app.
+        // Wait for the saved library before deciding whether its target exists.
+        for _ in 0..<100 {
+            if !store.isHydrating { break }
+            do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
+        }
+        let allowed = KnowledgeSourceOrigin.effectiveOrigins(isSignedIn: AccountService.shared.isSignedIn)
+        let visible = store.sessions.contains { session in
+            session.id == id && allowed.contains(KnowledgeSourceOrigin.resolve(
+                isCloudStorage: session.storage == .cloud,
+                hasRemoteSessionID: session.remoteSessionID != nil || session.isRemoteOnly
+            ))
+        }
+        if !store.isHydrating && visible {
+            store.openSession(id)
+        }
+        AppState.shared.showHome()
+        HomeWindowController.shared.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        if store.isHydrating || !visible {
+            WorkbenchTipCenter.shared.show(
+                store.isHydrating
+                    ? "The session library is still loading. Open the session link again shortly."
+                    : "This session is no longer available in VoxStudio.",
+                kind: .error,
+                id: "external-open.session-unavailable"
             )
         }
     }

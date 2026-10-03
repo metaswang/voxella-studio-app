@@ -17,6 +17,9 @@ struct MCPPanelRoutingTests {
         let dataTool = try #require(tools.first { $0.name == "voxstudio.sessions" })
         #expect(dataTool._meta?["ui"]?.objectValue?["resourceUri"] == nil)
         #expect(dataTool._meta?["ui"]?.objectValue?["visibility"] == ["app"])
+        let openTool = try #require(tools.first { $0.name == "session.open" })
+        #expect(openTool._meta?["ui"]?.objectValue?["visibility"] == ["app"])
+        #expect(openTool.inputSchema.objectValue?["properties"]?.objectValue?.keys.sorted() == ["session_id"])
     }
     @Test func videoEditingUsesNativeToolsWithoutHTML() {
         #expect(MCPOpenAIExtensions.panelURI(for: "app_video_editor") == nil)
@@ -50,8 +53,34 @@ struct MCPPanelRoutingTests {
         #expect(missing.isError == true)
         let unknown = await extensions.execute(.init(name: "app_session", arguments: ["session_id": .string(UUID().uuidString)]))
         #expect(unknown.isError == true)
+        let unknownOpen = await extensions.execute(.init(name: "session.open", arguments: ["session_id": .string(UUID().uuidString)]))
+        #expect(unknownOpen.isError == true)
         let cancelFreeEntry = await extensions.execute(.init(name: "app_transcription", arguments: [:]))
         #expect(cancelFreeEntry.isError != true)
         #expect(cancelFreeEntry.structuredContent?.objectValue?["view"] == "transcription")
+    }
+    @Test @MainActor func panelResourcesPermitEmbeddedBrandingAndLocalMediaWithoutNetworkAccess() async throws {
+        let extensions = MCPOpenAIExtensions(server: Server(name: "test", version: "1"))
+        for panel in MCPOpenAIExtensions.uiResources {
+            let resource = try await extensions.readResource(panel.uri)
+            let content = try #require(resource.contents.first)
+            let csp = try #require(content._meta?["ui"]?.objectValue?["csp"]?.objectValue)
+            #expect(csp["connectDomains"]?.arrayValue == [])
+            #expect(csp["resourceDomains"]?.arrayValue == ["data:", "blob:"])
+        }
+    }
+    @Test @MainActor func revisedPanelsUseFreshURIsAndKeepLegacyResourcesReadable() async throws {
+        let extensions = MCPOpenAIExtensions(server: Server(name: "test", version: "1"))
+        let published = Set(MCPOpenAIExtensions.uiResources.map(\.uri))
+        #expect(published.isDisjoint(with: Set(MCPOpenAIExtensions.legacyUIURIs.keys)))
+        for (legacyURI, currentURI) in MCPOpenAIExtensions.legacyUIURIs {
+            #expect(published.contains(currentURI))
+            let old = try await extensions.readResource(legacyURI)
+            let current = try await extensions.readResource(currentURI)
+            let oldContent = try #require(old.contents.first)
+            let currentContent = try #require(current.contents.first)
+            #expect(oldContent.text == currentContent.text)
+            #expect(oldContent._meta?["ui"] == currentContent._meta?["ui"])
+        }
     }
 }

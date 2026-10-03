@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-03",
+  "build": {
+    "command": "./scripts/bundle.sh debug --sign",
+    "path": ".build/VoxStudio.app",
+    "compiled": true,
+    "signature_verified": true,
+    "launched": true,
+    "snapshot_workspace": "/private/tmp/voxstudio-mcp-fixed-build-20261003",
+    "snapshot_reason": "Freeze source during concurrent edits in the shared workspace."
+  },
+  "tests": {
+    "command": "swift test --filter 'MCPPanelRoutingTests|MCPMediaToolsTests|externalOpenClassifier'",
+    "passed": 19,
+    "suites": 3,
+    "typescript_check": true,
+    "generated_panel_script_syntax": true
+  },
+  "ui_verification": {
+    "host": "Codex in-app browser with real running VoxStudio MCP data",
+    "session_id": "1ADE9656-ED0B-4A72-ABD1-EFEFEFBF0085",
+    "logo_matches_supplied_png_bytes": true,
+    "logo_visible": true,
+    "csp_loaded_from_running_app_resource_metadata": true,
+    "csp_enforced_during_playback": {
+      "connectDomains": [],
+      "resourceDomains": [
+        "data:",
+        "blob:"
+      ]
+    },
+    "audio": {
+      "real_generated_voiceover": true,
+      "preview_seconds": 15.104,
+      "current_time_after_play": 0.190544,
+      "paused_after_play": false,
+      "error_code": null,
+      "source_scheme": "blob"
+    },
+    "video": {
+      "real_session": "Donald Hoffman on Reality",
+      "preview_seconds": 15,
+      "width": 568,
+      "height": 320,
+      "paused_after_play": false,
+      "error_code": null,
+      "source_scheme": "blob"
+    },
+    "warm_native_open": true,
+    "offline_native_open_in_host_without_custom_link_support": "VoxStudio is closed. This host could not launch it. Open the Mac app, then reopen this panel and retry.",
+    "reconnect_after_restart": true,
+    "native_cold_launch_session_link": true,
+    "cold_launch_session_title": "频道订阅提醒与霍夫曼教授访谈开场",
+    "existing_codex_mcp_app_tabs_are_old_documents": true,
+    "fresh_codex_mcp_app_host_verification": "Refreshed session/v2 displayed the supplied PNG and played the real generated voiceover. Final session/v3 displayed the PNG and loaded the real 15.104-second audio with no media decoding error; a synthetic play click in the new document was blocked by browser user-activation policy.",
+    "panel_resource_uris": {
+      "library": "ui://voxstudio/library/v3",
+      "transcription": "ui://voxstudio/transcription/v2",
+      "session": "ui://voxstudio/session/v3",
+      "dubbing": "ui://voxstudio/dubbing/v2"
+    },
+    "previous_resource_uris_remain_readable": true,
+    "cache_invalidation_reason": "A newly opened native Codex MCP App still rendered the cached SVG header under the original resource URI, while the running app resource contained the new PNG, Blob preview, native session action, and CSP.",
+    "codex_native_audio": {
+      "logo_natural_width": 57,
+      "preview_seconds": 15.104,
+      "current_time_after_play": 1.030181,
+      "paused_after_play": false,
+      "error_code": null,
+      "source_scheme": "blob",
+      "notice": "",
+      "resource_uri": "ui://voxstudio/session/v2"
+    },
+    "codex_native_warm_session_open": true,
+    "final_running_resource_check": {
+      "current_uri": "ui://voxstudio/session/v3",
+      "legacy_html_matches_current": true,
+      "logo_present": true,
+      "blob_preview_present": true,
+      "accurate_recovery_notice_present": true,
+      "sha256": "f89ccdd40e2bdbd419172230d9b3715c63591bf3b783367676fa4751ff739885"
+    },
+    "final_codex_native_preview": {
+      "resource_uri": "ui://voxstudio/session/v3",
+      "logo_natural_width": 57,
+      "preview_seconds": 15.104,
+      "source_scheme": "blob",
+      "media_error_code": null,
+      "synthetic_play_requires_user_activation": true
+    },
+    "codex_native_offline_open": {
+      "server_closed_confirmed": true,
+      "raw_transport_error_hidden": true,
+      "launch_request_accepted_by_host": true,
+      "automatic_launch_observed": false,
+      "human_confirmed_no_automatic_launch": true,
+      "recovery": "Open the Mac app manually, then reopen the panel.",
+      "final_notice": "VoxStudio launch requested. If it stays closed, open the Mac app. Then reopen this panel to reconnect."
+    },
+    "final_native_cold_launch_session_link": true
+  }
+}

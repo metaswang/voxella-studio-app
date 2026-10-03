@@ -16,10 +16,12 @@ Rechecked the official repository HEAD: `900032d8bd7c1566202d0cb1666986584f93204
 
 | Tool | Resource | Responsibility |
 | --- | --- | --- |
-| `app_workbench`, `voxstudio.library` | `ui://voxstudio/library/v2` | Two task entry cards, search/filter/recent sessions |
-| `app_transcription` | `ui://voxstudio/transcription/v1` | Media selection, options, explicit start, job progress |
-| `app_session`, `voxstudio.session_panel` | `ui://voxstudio/session/v1` | One result: reading, timed preview, opt-in text/timing edit, export |
-| `app_dubbing` | `ui://voxstudio/dubbing/v1` | Script, saved voice, language, generation, preview and audio saving |
+| `app_workbench`, `voxstudio.library` | `ui://voxstudio/library/v3` | Two task entry cards, search/filter/recent sessions |
+| `app_transcription` | `ui://voxstudio/transcription/v2` | Media selection, options, explicit start, job progress |
+| `app_session`, `voxstudio.session_panel` | `ui://voxstudio/session/v3` | One result: reading, timed preview, opt-in text/timing edit, export |
+| `app_dubbing` | `ui://voxstudio/dubbing/v2` | Script, saved voice, language, generation, preview and audio saving |
+
+Panel resource versions change when shared HTML, branding, playback, or CSP changes, so hosts invalidate cached documents. Previous panel URIs remain readable aliases.
 
 Each document has its own JS entry, initial tool result, state and teardown. Shared code is restricted to tokens, primitives and the MCP bridge. There is no mega-page with hidden feature sections. Every document is bundled without external fonts/CDNs. The old workbench URI resolves to the new library for compatibility. Existing document APIs remain available for exports and old clients, but generic document editing is removed from the primary UI/file registrations. Media attachments open the transcription document.
 

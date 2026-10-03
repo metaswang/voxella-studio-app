@@ -876,6 +876,39 @@ struct LocalFirstWorkbenchTests {
         #expect(partition.unsupported.isEmpty)
     }
 
+    @Test func externalOpenClassifierReadsAndDeduplicatesSessionLinks() throws {
+        let id = UUID()
+        let secondID = UUID()
+        let links = try [
+            "voxstudio://sessions/\(id.uuidString)",
+            "voxella-studio://sessions/\(id.uuidString.lowercased())",
+            "voxstudio://sessions/\(secondID.uuidString)"
+        ].map { try #require(URL(string: $0)) }
+
+        let partition = ExternalOpenClassifier.partition(links)
+        #expect(partition.sessions == [id, secondID])
+        #expect(partition.media.isEmpty)
+        #expect(partition.projects.isEmpty)
+        #expect(partition.unsupported.isEmpty)
+    }
+
+    @Test(arguments: [
+        "voxstudio://sessions/not-a-uuid",
+        "voxstudio://sessions/",
+        "voxstudio://sessions/11111111-1111-4111-8111-111111111111/extra",
+        "voxstudio://sessions/11111111-1111-4111-8111-111111111111/",
+        "voxstudio://sessions/11111111-1111-4111-8111-111111111111?file=/tmp/audio.wav",
+        "voxstudio://sessions/11111111-1111-4111-8111-111111111111#extra",
+        "voxstudio://user@sessions/11111111-1111-4111-8111-111111111111",
+        "voxstudio://sessions:19789/11111111-1111-4111-8111-111111111111",
+        "https://sessions/11111111-1111-4111-8111-111111111111"
+    ])
+    func externalOpenClassifierRejectsInvalidSessionLinks(_ raw: String) throws {
+        let url = try #require(URL(string: raw))
+        #expect(ExternalOpenClassifier.sessionID(from: url) == nil)
+        #expect(ExternalOpenClassifier.partition([url]) == ExternalOpenPartition())
+    }
+
     @Test func externalOpenClassifierIgnoresOAuthCallbacks() throws {
         let url = try #require(URL(string: "voxella-studio://oauth/callback?code=abc"))
         let partition = ExternalOpenClassifier.partition([url])

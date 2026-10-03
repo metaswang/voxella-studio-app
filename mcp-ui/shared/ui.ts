@@ -1,4 +1,5 @@
 import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
+import { voxStudioLogo } from './logo';
 export type Obj = Record<string, any>;
 export const app = new App({name: 'VoxStudio', version: '0.1.0'}, {availableDisplayModes: ['inline', 'fullscreen']});
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -32,7 +33,7 @@ export const icons: Record<string, string> = {
 export function icon(name: string, cls = '') { return `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] ?? icons.wave}</svg>`; }
 export function shell(section: string, body: string) {
  document.documentElement.lang = chinese ? 'zh-CN' : 'en';
- document.body.innerHTML = `<div class="app-shell"><header class="topbar"><div class="brand"><span class="brand-mark">${icon('wave')}</span><span>VoxStudio</span></div><span class="top-section">${esc(section)}</span><span id="connection" class="connection"><i></i>${t('正在连接','Connecting')}</span></header><main id="main">${body}</main><footer class="app-footer"><span>${t('由 Mac 上的 VoxStudio 处理','Processed by VoxStudio on your Mac')}</span><span>VoxStudio</span></footer></div><div id="notice" class="notice" hidden role="status" aria-live="polite"><span id="notice-message"></span><button id="dismiss-notice" class="icon-button" aria-label="${t('关闭提示','Dismiss notification')}">${icon('close')}</button></div>`;
+ document.body.innerHTML = `<div class="app-shell"><header class="topbar"><div class="brand"><span class="brand-mark"><img src="${voxStudioLogo}" width="30" height="30" alt="" aria-hidden="true"></span><span>VoxStudio</span></div><span class="top-section">${esc(section)}</span><span id="connection" class="connection"><i></i>${t('正在连接','Connecting')}</span></header><main id="main">${body}</main><footer class="app-footer"><span>${t('由 Mac 上的 VoxStudio 处理','Processed by VoxStudio on your Mac')}</span><span>VoxStudio</span></footer></div><div id="notice" class="notice" hidden role="status" aria-live="polite"><span id="notice-message"></span><button id="dismiss-notice" class="icon-button" aria-label="${t('关闭提示','Dismiss notification')}">${icon('close')}</button></div>`;
  $('dismiss-notice').onclick = () => $('notice').hidden = true;
 }
 export function notice(message: string, error = false) { $('notice-message').textContent=message; $('notice').hidden=false; $('notice').classList.toggle('error',error); }
@@ -48,13 +49,36 @@ let connected = false, disposed = false;
 const cleanups: Array<()=>void> = [];
 export const onDispose = (fn:()=>void) => cleanups.push(fn);
 export const isDisposed = () => disposed;
+class VoxStudioUnavailableError extends Error {}
 export async function rawCall(name: string, args: Obj = {}) {
  if (!connected) throw new Error(t('尚未连接到 VoxStudio，请稍候','Waiting for VoxStudio to connect.'));
- const result = await app.callServerTool({name, arguments:args});
- if (result.isError) decode(result);
- return result;
+ try {
+  const result = await app.callServerTool({name, arguments:args});
+  if (result.isError) decode(result);
+  $('connection').innerHTML='<i></i>Connected';$('connection').classList.add('online');
+  return result;
+ } catch(error) {
+  const message=error instanceof Error?error.message:String(error);
+  if(/Transport.*error|HTTP request failed|error sending request|connection (?:closed|refused)|fetch failed/i.test(message)) {
+   $('connection').textContent='Disconnected';$('connection').classList.remove('online');
+   throw new VoxStudioUnavailableError('VoxStudio is not reachable. Open the Mac app, then retry. If it was restarted, reopen this panel.');
+  }
+  throw error;
+ }
 }
 export async function call(name: string, args: Obj = {}) { return decode(await rawCall(name,args)); }
+export async function openNativeSession(sessionId:string) {
+ try { return await call('session.open',{session_id:sessionId}); }
+ catch(error) {
+  if(!(error instanceof VoxStudioUnavailableError))throw error;
+  // The host can launch a registered Mac URL scheme even while MCP is offline.
+  try {
+   const result=await app.openLink({url:`voxstudio://sessions/${encodeURIComponent(sessionId)}`});
+   if(!result.isError){notice('VoxStudio launch requested. If it stays closed, open the Mac app. Then reopen this panel to reconnect.');return result;}
+  } catch {}
+  throw new Error('VoxStudio is closed. This host could not launch it. Open the Mac app, then reopen this panel and retry.');
+ }
+}
 export function action(id: string, handler:()=>Promise<unknown>) {
  const button=$(id) as HTMLButtonElement;
  button.onclick=async()=>{if(button.disabled)return; button.disabled=true;button.setAttribute('aria-busy','true');clearNotice();try{await handler()}catch(e){notice(e instanceof Error?e.message:String(e),true)}finally{if(button.isConnected){button.disabled=false;button.removeAttribute('aria-busy')}}};
@@ -126,8 +150,13 @@ export async function mountPlayer(container:HTMLElement,preview:Obj,onTime?:(tim
  if(!['audio/mp4','audio/mpeg','audio/wav','video/mp4'].includes(mime))throw new Error('This preview format is not supported. Open the result in VoxStudio.');
  const media=document.createElement(mime.startsWith('video/')?'video':'audio');media.controls=true;media.preload='metadata';media.setAttribute('aria-label',mime.startsWith('video/')?'Session video preview':'Session audio preview');
  if(media instanceof HTMLVideoElement)media.playsInline=true;
- const dispose=()=>{media.onerror=null;media.ontimeupdate=null;media.onplay=null;media.onpause=null;media.onended=null;media.pause();media.removeAttribute('src');media.load()};
- media.src=`data:${mime};base64,${content.blob}`;
+ // Keep the MCP-delivered bytes local. Blob URLs support normal media loading
+ // in sandboxed host webviews without navigating to a base64 data URL.
+ const binary=atob(content.blob),bytes=new Uint8Array(binary.length);
+ for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+ const source=URL.createObjectURL(new Blob([bytes],{type:mime}));
+ const dispose=()=>{media.onerror=null;media.ontimeupdate=null;media.onplay=null;media.onpause=null;media.onended=null;media.pause();media.removeAttribute('src');media.load();URL.revokeObjectURL(source)};
+ media.src=source;
  try{await waitForMetadata(media)}catch(error){dispose();if(isCurrent()&&!isDisposed())throw error;return;}
  if(isDisposed()||!container.isConnected||!isCurrent()){dispose();return;}
  clearPlayer();
