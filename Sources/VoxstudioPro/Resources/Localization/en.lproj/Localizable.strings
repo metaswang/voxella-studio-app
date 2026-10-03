@@ -2846,7 +2846,7 @@
 "Disable any old direct MCP connection named voxstudio before enabling this plugin. A same-name connection can hide the plugin tools." = "Disable any old direct MCP connection named voxstudio before enabling this plugin. A same-name connection can hide the plugin tools.";
 "Panels use English. Video edits run in the native VoxStudio timeline; there is no HTML video editor." = "Panels use English. Video edits run in the native VoxStudio timeline; there is no HTML video editor.";
 "Official plugin guide" = "Official plugin guide";
-"Recommended for ChatGPT Work and Codex on this Mac. Keep VoxStudio running and MCP enabled." = "Recommended for ChatGPT Work and Codex on this Mac. Keep VoxStudio running and MCP enabled.";
+"Recommended for ChatGPT on this Mac. Keep VoxStudio running and MCP enabled." = "Recommended for ChatGPT on this Mac. Keep VoxStudio running and MCP enabled.";
 "Download and extract" = "Download and extract";
 "Download the ZIP and extract it in Downloads. Keep the extracted folder in place after installation." = "Download the ZIP and extract it in Downloads. Keep the extracted folder in place after installation.";
 "Download plugin" = "Download plugin";
@@ -2868,7 +2868,7 @@
 "Open the VoxStudio voiceover panel so I can choose a voice and enter my script." = "Open the VoxStudio voiceover panel so I can choose a voice and enter my script.";
 "Edit the Mac timeline" = "Edit the Mac timeline";
 "Inspect the active project in the VoxStudio Mac app. Tell me what is on its timeline, then help me edit it from this chat." = "Inspect the active project in the VoxStudio Mac app. Tell me what is on its timeline, then help me edit it from this chat.";
-"Connect ChatGPT Work, Codex, Claude and Cursor to the VoxStudio workspace on this Mac." = "Connect ChatGPT Work, Codex, Claude and Cursor to the VoxStudio workspace on this Mac.";
+"Connect ChatGPT, Claude and Cursor to the VoxStudio workspace on this Mac." = "Connect ChatGPT, Claude and Cursor to the VoxStudio workspace on this Mac.";
 
 "Your saved result is available to view, edit, and export." = "Your saved result is available to view, edit, and export.";
 

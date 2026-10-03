@@ -2846,7 +2846,7 @@
 "Disable any old direct MCP connection named voxstudio before enabling this plugin. A same-name connection can hide the plugin tools." = "启用插件前，请停用旧的、名为 voxstudio 的直接 MCP 连接。同名连接可能遮蔽插件工具。";
 "Panels use English. Video edits run in the native VoxStudio timeline; there is no HTML video editor." = "交互面板固定使用英文。视频编辑在 VoxStudio 原生时间线中执行，插件不提供 HTML 视频编辑器。";
 "Official plugin guide" = "官方插件指南";
-"Recommended for ChatGPT Work and Codex on this Mac. Keep VoxStudio running and MCP enabled." = "推荐用于本机的 ChatGPT Work 和 Codex。请保持 VoxStudio 运行并启用 MCP。";
+"Recommended for ChatGPT on this Mac. Keep VoxStudio running and MCP enabled." = "推荐用于本机的 ChatGPT。请保持 VoxStudio 运行并启用 MCP。";
 "Download and extract" = "下载并解压";
 "Download the ZIP and extract it in Downloads. Keep the extracted folder in place after installation." = "下载 ZIP 后，在“下载”目录解压。安装后请保留解压目录，不要移动或删除。";
 "Download plugin" = "下载插件";
@@ -2868,7 +2868,7 @@
 "Open the VoxStudio voiceover panel so I can choose a voice and enter my script." = "打开 VoxStudio 配音面板，让我选择声音并输入文稿。";
 "Edit the Mac timeline" = "编辑 Mac 时间线";
 "Inspect the active project in the VoxStudio Mac app. Tell me what is on its timeline, then help me edit it from this chat." = "查看 VoxStudio Mac app 中的当前项目，告诉我时间线上的内容，然后帮我通过聊天编辑它。";
-"Connect ChatGPT Work, Codex, Claude and Cursor to the VoxStudio workspace on this Mac." = "将 ChatGPT Work、Codex、Claude 和 Cursor 连接到本机的 VoxStudio 工作区。";
+"Connect ChatGPT, Claude and Cursor to the VoxStudio workspace on this Mac." = "将 ChatGPT、Claude 和 Cursor 连接到本机的 VoxStudio 工作区。";
 
 "Your saved result is available to view, edit, and export." = "已保存的结果可供查看、编辑和导出。";
 

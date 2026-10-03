@@ -14,15 +14,11 @@ struct MCPInstructionsPane: View {
         "claude mcp add --transport http voxstudio \(mcpEndpoint)"
     }
 
-    private var codexCommand: String {
-        "codex mcp add \(openAIPlugin == .knowledge ? "voxstudio-knowledge-direct" : "voxstudio-direct") --url \(connectionEndpoint)"
-    }
-
     private let pluginDownloadURL = URL(string: "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.1.1/edbe20b7921d0e69200356ea5804417e9ce430a59a9d94ebe5f56833e78eed93/VoxStudio-OpenAI-Plugin.zip")!
     private var pluginInstallCommand: String {
         "bash \"$HOME/Downloads/VoxStudio-OpenAI-Plugin/install.sh\" --plugin \(openAIPlugin.rawValue)"
     }
-    private var usesOpenAIPlugin: Bool { client == .chatgpt || client == .codex }
+    private var usesOpenAIPlugin: Bool { client == .chatgpt }
 
     private var cursorJSONConfig: String {
         """
@@ -47,18 +43,18 @@ struct MCPInstructionsPane: View {
     }
 
     private enum Client: String, CaseIterable {
-        case chatgpt = "ChatGPT Work", claudeDesktop = "Claude Desktop", claudeCode = "Claude Code", codex = "Codex", cursor = "Cursor"
+        case chatgpt = "ChatGPT", claudeDesktop = "Claude Desktop", claudeCode = "Claude Code", cursor = "Cursor"
 
         var agent: SkillExternalAgent {
             switch self {
             case .claudeDesktop, .claudeCode: .claude
-            case .chatgpt, .codex: .codex
+            case .chatgpt: .codex
             case .cursor: .cursor
             }
         }
     }
 
-    @State private var client: Client = .codex
+    @State private var client: Client = .chatgpt
     @State private var openAIPlugin: OpenAIPlugin = .knowledge
     @State private var presentedSkill: SkillLink?
     @State private var installing: Set<String> = []
@@ -256,7 +252,7 @@ struct MCPInstructionsPane: View {
         case .claudeCode:
             setupDescription("Run this command in Terminal, then start a new Claude Code session.")
             CodeBlockView(content: claudeCodeCommand)
-        case .chatgpt, .codex:
+        case .chatgpt:
             openAIPluginInstructions
         case .cursor:
             setupDescription("Add the server to Cursor, then enable it in MCP settings.")
@@ -301,7 +297,7 @@ struct MCPInstructionsPane: View {
                     .frame(width: AppTheme.zoomed(360))
                 }
             }
-            setupDescription("Recommended for ChatGPT Work and Codex on this Mac. Keep VoxStudio running and MCP enabled.")
+            setupDescription("Recommended for ChatGPT on this Mac. Keep VoxStudio running and MCP enabled.")
             pluginSelection
             if openAIPlugin == .knowledge {
                 setupDescription("Answers use Transcript first, or subtitles when no Transcript is available. You can also explicitly search subtitles and media clips. Video frame search, previews and editing remain available in the VoxStudio media plugin.")
@@ -326,17 +322,6 @@ struct MCPInstructionsPane: View {
                     Spacer()
                     CopyButton(value: L10n.string(openAIPlugin == .knowledge ? "Find evidence in my VoxStudio sessions and cite the original text." : "Open my VoxStudio sessions."), label: "Copy prompt")
                 }
-            }
-            if client == .codex {
-                DisclosureGroup(L10n.string("Advanced: MCP tools only")) {
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                        setupDescription("Use this instead of the plugin for a direct tool connection. This does not install plugin skills or panel entry points. Do not enable both setups.")
-                        CodeBlockView(content: codexCommand)
-                    }
-                    .padding(.top, AppTheme.Spacing.sm)
-                }
-                .font(.system(size: AppTheme.FontSize.xs))
-                .foregroundStyle(AppTheme.Text.secondaryColor)
             }
         }
     }

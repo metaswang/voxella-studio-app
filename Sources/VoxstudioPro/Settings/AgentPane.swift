@@ -28,7 +28,7 @@ struct AgentPane: View {
                 .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.medium))
                 .foregroundStyle(AppTheme.Text.primaryColor)
 
-            Text(L10n.string("Connect ChatGPT Work, Codex, Claude and Cursor to the VoxStudio workspace on this Mac."))
+            Text(L10n.string("Connect ChatGPT, Claude and Cursor to the VoxStudio workspace on this Mac."))
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
                 .fixedSize(horizontal: false, vertical: true)
