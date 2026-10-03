@@ -2891,3 +2891,20 @@
 "Check your internet connection and account, then reopen this cloud session." = "Check your internet connection and account, then reopen this cloud session.";
 
 "Cloud sync" = "Cloud sync";
+
+// Workbench operating mode and account entry
+"Local mode" = "Local mode";
+"Not signed in" = "Not signed in";
+"Hybrid" = "Hybrid";
+"Offline" = "Offline";
+"Local + Cloud" = "Local + Cloud";
+"Local mode · Offline" = "Local mode · Offline";
+"Restoring account…" = "Restoring account…";
+"View account and mode" = "View account and mode";
+"View local mode details" = "View local mode details";
+"Cloud is temporarily unavailable. You’re currently using local mode." = "Cloud is temporarily unavailable. You’re currently using local mode.";
+"Local features run on this Mac. Use cloud features as needed." = "Local features run on this Mac. Use cloud features as needed.";
+"Local features run on this Mac. Downloading models for the first time requires an internet connection. Sign in to use cloud features as needed." = "Local features run on this Mac. Downloading models for the first time requires an internet connection. Sign in to use cloud features as needed.";
+"Sign in to use cloud" = "Sign in to use cloud";
+"Local feature settings" = "Local feature settings";
+"Loading" = "Loading";

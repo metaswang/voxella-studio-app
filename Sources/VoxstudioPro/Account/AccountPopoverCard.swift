@@ -11,6 +11,10 @@ struct AccountPopoverCard: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             identityBlock
 
+            if account.isSignedIn {
+                modeBlock
+            }
+
             // Signed-in plan, Lifetime device credential, or active trial countdown (signed-out OK).
             if account.isSignedIn
                 || account.featureAccessSnapshot.license == .lifetime
@@ -24,8 +28,26 @@ struct AccountPopoverCard: View {
             footerRow
         }
         .padding(AppTheme.Spacing.md)
-        .frame(width: Self.cardWidth)
+        .frame(width: AppTheme.zoomed(Self.cardWidth))
         .focusEffectDisabled()
+    }
+
+    private var modeBlock: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            Label(
+                L10n.string(account.isOfflineAccount ? "Local mode · Offline" : "Local + Cloud"),
+                systemImage: account.isOfflineAccount ? "laptopcomputer" : "cloud"
+            )
+            .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
+            .foregroundStyle(AppTheme.Text.secondaryColor)
+
+            Text(L10n.string(account.isOfflineAccount
+                ? "Cloud is temporarily unavailable. You’re currently using local mode."
+                : "Local features run on this Mac. Use cloud features as needed."))
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     // MARK: - Identity (mirrors IdentityStrip layout)
@@ -296,5 +318,57 @@ struct AccountPopoverCard: View {
         guard let endMs = account.account?.user.currentPeriodEnd else { return nil }
         let end = Date(timeIntervalSince1970: endMs / 1000)
         return end.formatted(date: .abbreviated, time: .omitted)
+    }
+}
+
+/// Explains the signed-out mode and routes to the existing settings panes.
+struct LocalModePopoverCard: View {
+    @Bindable private var account = AccountService.shared
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            HStack(spacing: AppTheme.Spacing.md) {
+                LocalModeIcon(diameter: AppTheme.IconSize.xl)
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                    Text(L10n.string("Local mode"))
+                        .font(.system(size: AppTheme.FontSize.md, weight: .medium))
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+                    Text(L10n.string("Not signed in"))
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                }
+            }
+
+            Text(L10n.string("Local features run on this Mac. Downloading models for the first time requires an internet connection. Sign in to use cloud features as needed."))
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider().overlay(AppTheme.Border.subtleColor)
+
+            Button(L10n.string(account.isSigningIn ? "Signing in…" : "Sign in to use cloud")) {
+                dismiss()
+                SettingsWindowController.shared.show(tab: .account)
+            }
+            .buttonStyle(.capsule(.prominent, size: .regular))
+            .disabled(account.isSigningIn)
+
+            Button {
+                dismiss()
+                SettingsWindowController.shared.show(tab: .models)
+            } label: {
+                Label(L10n.string("Local feature settings"), systemImage: "slider.horizontal.3")
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                    .padding(.vertical, AppTheme.Spacing.xs)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .hoverHighlight()
+        }
+        .padding(AppTheme.Spacing.md)
+        .frame(width: AppTheme.zoomed(280))
     }
 }

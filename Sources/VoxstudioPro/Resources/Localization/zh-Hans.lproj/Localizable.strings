@@ -2891,3 +2891,20 @@
 "Check your internet connection and account, then reopen this cloud session." = "检查网络连接及登录账号，然后重新打开此云端会话。";
 
 "Cloud sync" = "云同步";
+
+// Workbench operating mode and account entry
+"Local mode" = "本地模式";
+"Not signed in" = "未登录";
+"Hybrid" = "混合";
+"Offline" = "离线";
+"Local + Cloud" = "本地 + 云端";
+"Local mode · Offline" = "本地模式 · 离线";
+"Restoring account…" = "正在恢复账户…";
+"View account and mode" = "查看账户与运行模式";
+"View local mode details" = "查看本地模式说明";
+"Cloud is temporarily unavailable. You’re currently using local mode." = "云端暂不可用，当前使用本地模式。";
+"Local features run on this Mac. Use cloud features as needed." = "本地功能在这台 Mac 上运行，云端功能按需使用。";
+"Local features run on this Mac. Downloading models for the first time requires an internet connection. Sign in to use cloud features as needed." = "本地功能在这台 Mac 上运行。首次下载模型需要联网；登录后可按需使用云端功能。";
+"Sign in to use cloud" = "登录以使用云端";
+"Local feature settings" = "本地功能设置";
+"Loading" = "载入中";

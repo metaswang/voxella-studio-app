@@ -281,19 +281,8 @@ private struct WorkbenchSidebar: View {
 
     var body: some View {
         VStack(spacing: AppTheme.Spacing.sm) {
-            HStack(spacing: AppTheme.Spacing.sm) {
-                WorkbenchBrandIcon.image(size: AppTheme.IconSize.smMd)
-
-                if isExpanded {
-                    Text(AppIdentity.productName)
-                        .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: isExpanded ? .leading : .center)
-            .frame(height: AppTheme.Workbench.toolbarHeight)
-            .padding(.horizontal, isExpanded ? AppTheme.Spacing.md : 0)
-            .padding(.top, AppTheme.Workbench.windowControlsInset)
+            WorkbenchIdentityButton(isExpanded: isExpanded)
+                .padding(.top, AppTheme.Workbench.windowControlsInset)
 
             Button(action: onOpenSearch) {
                 HStack(spacing: AppTheme.Spacing.md) {
