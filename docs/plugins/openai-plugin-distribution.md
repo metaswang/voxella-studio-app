@@ -1,18 +1,20 @@
 # OpenAI plugin ZIP distribution
 
 The app's Settings → MCP screen links to an immutable package for
-`voxstudio@voxstudio-local` version `0.1.0`. The package is a local marketplace
+`voxstudio@voxstudio-local` version `0.1.1` and
+`voxstudio-knowledge@voxstudio-local` version `0.1.0`. Both plugins are
+independently installable from one download. The package is a local marketplace
 directory inside a ZIP, not a ZIP-import connector. Users extract it and run its
 installer; the same instructions appear in `openai-plugin-install.md`, shipped
 as `README.md` at the marketplace root.
 
-The verified package is 11,016 bytes and contains 14 files. SHA-256:
+The verified package is 15,368 bytes and contains 20 files. SHA-256:
 
 ```text
-f116e011f1e6abe2550901c1fa345733a805f3633c2b7f18f7098120db29a539
+edbe20b7921d0e69200356ea5804417e9ce430a59a9d94ebe5f56833e78eed93
 ```
 
-[Download the verified ZIP](https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.1.0/f116e011f1e6abe2550901c1fa345733a805f3633c2b7f18f7098120db29a539/VoxStudio-OpenAI-Plugin.zip).
+[Download the verified ZIP](https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.1.1/edbe20b7921d0e69200356ea5804417e9ce430a59a9d94ebe5f56833e78eed93/VoxStudio-OpenAI-Plugin.zip).
 
 ## Build and publish an update
 
@@ -65,5 +67,16 @@ restoring the previous app package URL for a plugin content regression: do not
 overwrite or delete an immutable ZIP to replace it with different bytes.
 
 Machine-readable evidence is in
+`docs/testing/knowledge-purpose-qa-2026-10-03/plugin-cdn-verification.json`
+for this update; the original publication record remains in
 `docs/testing/openai-mcp/plugin-cdn-verification.json`. This package/download
 verification does not imply complete ChatGPT Work/Codex business-flow acceptance.
+
+## Knowledge plugin update
+
+Settings → MCP → ChatGPT Work / Codex defaults to Knowledge QA. Users can
+choose Media workflows, copy the corresponding `--plugin` install command,
+and enable either or both plugins. The endpoint and example prompts follow
+the selection. The QA option does not remove media/frame indexes or change
+the existing media tool profile. This publication reused the existing CDN
+route and R2 publisher without changing the Worker, DMG channels or appcast.

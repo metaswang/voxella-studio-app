@@ -38,6 +38,7 @@ final class KnowledgeBaseController {
     var transcriptTarget: KnowledgeTranscriptTarget?
     var isClearingHistory = false
     var isLoadingSummaryForSessionID: UUID?
+    private var indexStates: [UUID: SessionIndexFreshness] = [:]
 
     @ObservationIgnored private var answerTask: Task<Void, Never>?
     @ObservationIgnored private var prepareTask: Task<Void, Never>?
@@ -80,7 +81,12 @@ final class KnowledgeBaseController {
         let sessions = WorkbenchStore.shared.sessions
             .filter { showAllSessions || Self.isP0Searchable($0) }
             .sorted { $0.modifiedAt > $1.modifiedAt }
-        let mapped = sessions.map(Self.makeRow(from:))
+        let mapped = sessions.map { session in
+            var row = Self.makeRow(from: session)
+            row.lexicalReady = indexStates[session.id]?.lexicalReady ?? false
+            row.embeddingReady = indexStates[session.id]?.embeddingReady ?? false
+            return row
+        }
         return KnowledgeListQuery.filterRows(
             mapped,
             typeFilter: typeFilter,
@@ -91,18 +97,13 @@ final class KnowledgeBaseController {
         )
     }
 
-    /// P0: searchable ≈ has transcript or other usable result. SessionIndex flags are P1.
+    /// Readability is independent of whether background indexing has completed.
     static func isP0Searchable(_ session: WorkbenchSession) -> Bool {
-        KnowledgeListRow.p0IsSearchable(
-            hasTranscript: session.transcript != nil,
-            hasUsableResult: session.hasUsableResult
-        )
+        KnowledgeTranscriptMaterial.from(session) != nil || session.summaryMarkdown?.isEmpty == false
     }
 
     static func makeRow(from session: WorkbenchSession) -> KnowledgeListRow {
-        // P0 "indexed" approximation: transcript / searchable result present.
-        // Do not read SessionIndexStore.lexicalReady / embeddingReady here (P1).
-        let searchable = isP0Searchable(session)
+        let readable = KnowledgeTranscriptMaterial.from(session) != nil
         let origin = KnowledgeSourceOrigin.resolve(
             isCloudStorage: session.storage == .cloud,
             hasRemoteSessionID: session.remoteSessionID != nil || session.isRemoteOnly
@@ -115,14 +116,29 @@ final class KnowledgeBaseController {
             sourceOrigin: origin,
             modifiedAt: session.modifiedAt,
             duration: session.duration,
-            lexicalReady: searchable,
+            lexicalReady: false,
             embeddingReady: false,
-            hasTranscript: searchable
+            hasTranscript: readable
         )
     }
 
     var indexedSessionCount: Int {
         rows.filter(\.isIndexed).count
+    }
+
+    func refreshIndexStates() async {
+        let store = SessionIndexCoordinator.shared.searchService.store
+        var states: [UUID: SessionIndexFreshness] = [:]
+        for session in WorkbenchStore.shared.sessions {
+            guard let snapshot = SessionIndexSnapshot.from(session: session, sourceOrigin: KnowledgeScopeSnapshot.origin(session),
+                                                          ownerUserID: AccountService.shared.userID?.uuidString) else { continue }
+            if let state = try? await store.freshness(sessionID: session.id, knowledgeManifest: snapshot.knowledgeManifest) {
+                let lane = try? await store.laneStatus(sessionID: session.id).first { $0["lane"] == "knowledge" }
+                states[session.id] = .init(generation: state.generation, lexicalReady: lane?["lexical_ready"] == "true",
+                                          embeddingReady: lane?["embedding_ready"] == "true")
+            }
+        }
+        indexStates = states
     }
 
     var scopeTitle: String {

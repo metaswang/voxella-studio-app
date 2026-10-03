@@ -21,6 +21,7 @@ struct KnowledgeTranscriptView: View {
     @State private var lastCitationTarget: KnowledgeTranscriptTarget?
 
     private let scrollCoordinateSpace = "knowledge-transcript-scroll"
+    private let canonicalMaterial: KnowledgeTranscriptMaterial?
     private let playbackID: String
 
     init(
@@ -29,16 +30,20 @@ struct KnowledgeTranscriptView: View {
         onBack: @escaping () -> Void
     ) {
         self.session = session
+        self.canonicalMaterial = KnowledgeTranscriptMaterial.from(session)
         self.target = target
         self.onBack = onBack
         self.playbackID = "knowledge-transcript-\(session.id.uuidString)"
     }
 
     private var lines: [KnowledgeTranscriptLine] {
-        guard let transcript = KnowledgeTranscriptMaterial.displayTranscript(for: session) else { return [] }
+        guard let material = canonicalMaterial else { return [] }
+        let transcript = TranscriptionResult(text: material.text, language: material.language, words: [], segments: material.segments)
         if !transcript.segments.isEmpty {
             return transcript.segments.enumerated().map { index, segment in
-                KnowledgeTranscriptLine(index: index, segment: segment)
+                KnowledgeTranscriptLine(id: "segment-\(index)", index: index, text: segment.text,
+                    start: material.spans.filter { $0.parentIndex == index }.compactMap(\.start).min(),
+                    end: material.spans.filter { $0.parentIndex == index }.compactMap(\.end).max(), speaker: segment.speaker)
             }
         }
         guard !transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
@@ -66,7 +71,7 @@ struct KnowledgeTranscriptView: View {
 
     private var citationLineID: String? {
         guard let target,
-              let transcript = KnowledgeTranscriptMaterial.displayTranscript(for: session),
+              let transcript = canonicalMaterial,
               let index = KnowledgeTranscriptNavigation.segmentIndex(
                   for: target,
                   in: transcript.segments
@@ -176,7 +181,8 @@ struct KnowledgeTranscriptView: View {
                     .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.semibold))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                     .lineLimit(1)
-                Text(L10n.string("Transcript"))
+                Text(L10n.string(target?.materialGeneration != nil && target?.materialGeneration != canonicalMaterial?.generation
+                    ? "Historical quote: source text has changed" : canonicalMaterial?.provenance == "subtitle_fallback" ? "Subtitle fallback" : "Transcript"))
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
@@ -519,7 +525,7 @@ private struct KnowledgeTranscriptLine: Identifiable {
         self.init(id: id, index: nil, text: text, start: start, end: end, speaker: speaker)
     }
 
-    private init(id: String, index: Int?, text: String, start: Double?, end: Double?, speaker: String?) {
+    init(id: String, index: Int?, text: String, start: Double?, end: Double?, speaker: String?) {
         self.id = id
         self.index = index
         self.text = text

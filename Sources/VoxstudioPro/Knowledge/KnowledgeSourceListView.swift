@@ -109,7 +109,7 @@ struct KnowledgeSourceListView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .help(L10n.string("Index status is approximate (has transcript). Real SessionIndex flags land in P1."))
+                .help(L10n.string("Index status reflects the canonical knowledge body."))
 
                 Picker(L10n.string("Origin"), selection: Binding(
                     get: { controller.originFilter },
@@ -241,10 +241,10 @@ struct KnowledgeSourceListView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(AppTheme.Text.secondaryColor)
-            .disabled(controller.session(for: row.id)?.transcript == nil)
+            .disabled(controller.session(for: row.id).flatMap(KnowledgeTranscriptMaterial.from) == nil)
             .help(
                 L10n.string(
-                    controller.session(for: row.id)?.transcript == nil
+                    controller.session(for: row.id).flatMap(KnowledgeTranscriptMaterial.from) == nil
                         ? "Transcript unavailable"
                         : "Open transcript"
                 )

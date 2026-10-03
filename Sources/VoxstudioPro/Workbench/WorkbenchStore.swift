@@ -1126,6 +1126,7 @@ struct WorkbenchSession: Identifiable, Sendable {
     /// can keep the original picture and swap only its audio track.
     var remoteEnhancedSourcePlaybackURL: URL? = nil
 
+    var knowledgeRevisionID: UUID? = nil
     var taskDetails: [SessionTaskDetail] = []
 
     var hasUsableResult: Bool {
@@ -1759,6 +1760,7 @@ final class WorkbenchStore {
                 cloudSyncState: job.resolvedCloudSyncState,
                 cloudSyncError: job.pendingCloudSyncError,
                 remoteEnhancedSourcePlaybackURL: enhancedAudioURLs[job.remoteSessionID ?? job.id],
+                knowledgeRevisionID: job.activeRevisionID,
                 taskDetails: [SessionTaskDetail(job: job)]
             )
         }
@@ -3331,6 +3333,9 @@ final class WorkbenchStore {
             dubs[index].cloudSyncRevision = Self.nextCloudSyncRevision(dubs[index].cloudSyncRevision)
         }
         save()
+        if let session = sessions.first(where: { $0.id == id }) {
+            SessionIndexCoordinator.shared.syncCloudSessions([session], ownerUserID: AccountService.shared.userID?.uuidString)
+        }
         if changed {
             scheduleCloudSync(forDub: id)
         }
@@ -6458,7 +6463,7 @@ final class WorkbenchStore {
         if WorkbenchPersistenceGuard.denyOverwrite(after: loadOutcome) {
             saveRequestedBeforeHydration = false
             Log.project.error("workbench hydrate: decode failed; skipping save to preserve on-disk file")
-            SessionIndexCoordinator.shared.reconcile(transcriptions)
+            SessionIndexCoordinator.shared.reconcile(transcriptions, sessions: sessions)
             return
         }
         if saveRequestedBeforeHydration
@@ -6470,7 +6475,7 @@ final class WorkbenchStore {
         for job in resumableCloudDubs {
             resumePersistedCloudDub(job)
         }
-        SessionIndexCoordinator.shared.reconcile(transcriptions)
+        SessionIndexCoordinator.shared.reconcile(transcriptions, sessions: sessions)
     }
 
     private func schedulePersistedCloudSyncs() {

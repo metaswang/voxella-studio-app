@@ -28,7 +28,7 @@ struct SearchService: Sendable {
         )
         var vectorHits: [SessionSearchHit] = []
         if let embeddings, let vector = try? await embeddings.encodeText(query) {
-            vectorHits = (try? await store.searchVector(vector: vector, modality: .text, filter: filter)) ?? []
+            vectorHits = (try? await store.searchVector(vector: vector, modality: .text, filter: filter, allowedKinds: [.sessionCard, .transcriptChunk])) ?? []
         }
         return try await sessionCards(lexical: lexical, vectorHits: vectorHits, filter: filter)
     }
@@ -135,7 +135,7 @@ struct SearchService: Sendable {
         filter: SessionSearchFilter = .init(),
         words: [TranscriptionWord] = []
     ) async throws -> [SessionSearchHit] {
-        var modalities: [SessionIndexModality] = [.mixed]
+        var modalities: [SessionIndexModality] = SessionIndexModality.allCases
         if let modality = filter.modality {
             modalities = [modality]
         }
@@ -184,6 +184,7 @@ struct SearchService: Sendable {
     ) async throws -> [SessionSearchHit] {
         let lexical = try await lexicalSearch(query: query, kinds: kinds, filter: filter, words: words)
         var vectorHits: [SessionSearchHit] = []
+        var vectorRankings: [[Int]] = []
         if let embeddings {
             do {
                 let vector = try await embeddings.encodeText(query)
@@ -192,9 +193,11 @@ struct SearchService: Sendable {
                         let hits = try await store.searchVector(
                             vector: vector,
                             modality: modality,
-                            filter: filter
+                            filter: filter,
+                            allowedKinds: kinds
                         )
-                        vectorHits.append(contentsOf: hits.filter { kinds.contains($0.kind) || $0.kind == .mediaClip })
+                        vectorHits.append(contentsOf: hits.filter { kinds.contains($0.kind) })
+                        vectorRankings.append(hits.map(\.unitID))
                     } catch {
                         Log.search.warning(
                             "text embedding search failed modality=\(modality.rawValue) query_chars=\(query.count) error=\(error.localizedDescription)"
@@ -208,14 +211,18 @@ struct SearchService: Sendable {
             }
         }
         let fused = ReciprocalRankFusion.fuse(
-            rankings: [lexical.map(\.unitID), vectorHits.map(\.unitID)]
+            rankings: [lexical.map(\.unitID)] + vectorRankings
         )
         var byID: [Int: SessionSearchHit] = [:]
         for hit in lexical + vectorHits {
-            byID[hit.unitID] = hit
+            var merged = byID[hit.unitID] ?? hit
+            merged.matchedModalities = Array(Set(merged.matchedModalities + hit.matchedModalities)).sorted()
+            byID[hit.unitID] = merged
         }
-        return fused.prefix(filter.limit).compactMap { id in
-            byID[id]
+        return fused.prefix(filter.limit).enumerated().compactMap { rank, id in
+            guard var hit = byID[id] else { return nil }
+            hit.score = 1 / Double(ReciprocalRankFusion.defaultK + rank + 1)
+            return hit
         }
     }
 

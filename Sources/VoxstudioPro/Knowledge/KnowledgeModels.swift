@@ -193,7 +193,7 @@ enum KnowledgeSourceType: String, Codable, CaseIterable, Identifiable, Sendable 
 enum KnowledgeIndexFilter: String, Codable, CaseIterable, Identifiable, Sendable {
     case all
     case indexed
-    /// P0: Indexing filter is placeholder. Real indexing progress flags (lexical/embedding ready) land in P1.
+    /// Canonical body indexing readiness, independent of the media lane.
     case indexing
 
     var id: String { rawValue }
@@ -201,7 +201,7 @@ enum KnowledgeIndexFilter: String, Codable, CaseIterable, Identifiable, Sendable
     var label: String {
         switch self {
         case .all: "All status"
-        case .indexed: "Indexed (approx.)"
+        case .indexed: "Indexed"
         case .indexing: "Indexing"
         }
     }
@@ -266,7 +266,7 @@ enum KnowledgeListQuery {
 }
 
 struct KnowledgeSourceRef: Equatable, Hashable, Codable, Identifiable, Sendable {
-    var id: String { "\(sourceID)|\(startTime ?? -1)|\(endTime ?? -1)|\(chunkIndex ?? -1)" }
+    var id: String { evidenceID ?? "\(sourceID)|\(startTime ?? -1)|\(endTime ?? -1)|\(chunkIndex ?? -1)" }
 
     var sourceID: String
     var sourceType: String
@@ -282,6 +282,13 @@ struct KnowledgeSourceRef: Equatable, Hashable, Codable, Identifiable, Sendable 
     var snippet: String?
     /// The retrieved text to highlight in the transcript.
     var matchText: String?
+
+    var evidenceID: String? = nil
+    var materialGeneration: String? = nil
+    var characterStart: Int? = nil
+    var characterEnd: Int? = nil
+    var timingPrecision: String? = nil
+    var provenance: String? = nil
 
     var sessionUUID: UUID? { UUID(uuidString: sourceID) }
 
@@ -310,6 +317,7 @@ struct KnowledgeTranscriptTarget: Equatable, Sendable {
     let startTime: Double?
     let endTime: Double?
     let matchText: String?
+    var materialGeneration: String? = nil
 
     init(startTime: Double?, endTime: Double?, matchText: String?) {
         self.startTime = startTime
@@ -323,6 +331,7 @@ struct KnowledgeTranscriptTarget: Equatable, Sendable {
             endTime: source.endTime,
             matchText: source.matchText ?? source.snippet
         )
+        materialGeneration = source.materialGeneration
     }
 }
 
@@ -332,6 +341,13 @@ enum KnowledgeTranscriptNavigation {
         in segments: [TranscriptionSegment]
     ) -> Int? {
         guard !segments.isEmpty else { return nil }
+
+        if let text = target.matchText, !text.isEmpty {
+            let normalized = text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            if let match = segments.firstIndex(where: {
+                $0.text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ").contains(normalized)
+            }) { return match }
+        }
 
         if let start = target.startTime, start.isFinite {
             let end = if let candidate = target.endTime, candidate.isFinite {
@@ -558,22 +574,21 @@ struct KnowledgeListRow: Identifiable, Equatable, Sendable {
     var isIndexed: Bool { lexicalReady }
     var isIndexing: Bool { hasTranscript && !lexicalReady }
     /// Content availability affects styling; metadata remains available for QA.
-    var hasSearchableContent: Bool { isIndexed }
+    var hasSearchableContent: Bool { hasTranscript || isIndexed }
 
     var statusLabel: String {
-        if isIndexed { return "Indexed (approx.)" }
+        if isIndexed { return "Indexed" }
         if isIndexing { return "Indexing" }
-        return "No transcript"
+        return hasTranscript ? "Readable" : "No transcript"
     }
 
     var indexStatusHelp: String {
-        if hasSearchableContent {
-            return "Approximate: based on transcript presence. Real SessionIndex lexical/embedding flags land in P1."
-        }
+        if isIndexed { return "Current canonical body is indexed for search." }
+        if hasTranscript { return "Current canonical body can be read while its search index is prepared." }
         return "Metadata and summaries can be used for QA; transcript content is unavailable."
     }
 
-    /// P0 searchable / indexed approximation. Real SessionIndex flags are P1.
+    /// Legacy source-readability helper; current index status comes from lane readiness.
     static func p0IsSearchable(hasTranscript: Bool, hasUsableResult: Bool) -> Bool {
         hasTranscript || hasUsableResult
     }

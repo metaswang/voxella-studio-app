@@ -36,7 +36,9 @@ final class MCPService {
     }
 
     func start() {
-        let httpServer = MCPHTTPServer(port: Self.port) { [self] in
+        let httpServer = MCPHTTPServer(port: Self.port, makeKnowledgeServer: {
+            await MCPKnowledgeBaseTools.makeServer()
+        }) { [self] in
             let toolExecutor = await makeSessionToolExecutor()
             let server = Server(
                 name: "voxstudio",
@@ -97,7 +99,7 @@ final class MCPService {
     }
 
     nonisolated private static func annotate(_ tool: Tool) -> Tool {
-        let readOnly = Set(["get_project", "get_clip", "list_media", "voice.list", "media.status", "session.list", "session.get", "session.transcript", "session.search", "knowledge.search", "knowledge.find_text", "knowledge.ask"])
+        let readOnly = Set(MCPKnowledgeTools.definitions.map(\.name) + ["get_project", "get_clip", "list_media", "voice.list", "media.status", "session.list", "session.get", "session.transcript", "session.search", "knowledge.search", "knowledge.find_text", "knowledge.ask"])
         return Tool(name: tool.name, title: tool.title, description: tool.description, inputSchema: tool.inputSchema, annotations: .init(readOnlyHint: readOnly.contains(tool.name), destructiveHint: !readOnly.contains(tool.name), idempotentHint: readOnly.contains(tool.name), openWorldHint: true), outputSchema: tool.outputSchema, _meta: tool._meta)
     }
 

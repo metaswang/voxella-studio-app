@@ -13,29 +13,34 @@ ORIGIN = "https://assets.voxstudio.me/downloads/voxstudio"
 
 
 def package(root: Path, output: Path) -> dict:
-    plugin = root / "Plugins/voxstudio"
-    manifest = json.loads((plugin / "plugin.json").read_text())
-    config = json.loads((plugin / "mcp.json").read_text())
-    assert manifest["name"] == "voxstudio"
-    assert config["mcpServers"]["voxstudio"]["url"] == "http://127.0.0.1:19789/mcp"
     files = {}
-    for name in ["plugin.json", "mcp.json", "assets/icon.svg"]:
-        files["plugins/voxstudio/" + name] = (plugin / name).read_bytes()
-    # Only reviewed skill sources are published; never glob the repository.
-    for skill in ["onboarding", "media-workflow", "session-retrieval", "file-editing", "video-editing"]:
-        name = f"skills/{skill}/SKILL.md"
-        files["plugins/voxstudio/" + name] = (plugin / name).read_bytes()
-    legacy = {k: v for k, v in manifest.items() if k != "$schema"}
-    legacy.update(skills="./skills/", mcpServers="./.mcp.json",
-                  interface=manifest["extensions"]["com.openai"]["interface"])
-    files["plugins/voxstudio/.codex-plugin/plugin.json"] = encode(legacy)
-    files["plugins/voxstudio/.mcp.json"] = encode({"mcpServers": {
-        k: {**v, "type": "http"} for k, v in config["mcpServers"].items()}})
-    files[".agents/plugins/marketplace.json"] = encode({
-        "name": "voxstudio-local", "interface": {"displayName": "VoxStudio Local"},
-        "plugins": [{"name": "voxstudio", "source": {"source": "local", "path": "./plugins/voxstudio"},
-                     "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
-                     "category": "Productivity"}]})
+    plugins = []
+    plugin_versions = {}
+    for plugin_name, skills in [("voxstudio", ["onboarding", "media-workflow", "session-retrieval", "file-editing", "video-editing"]),
+                                ("voxstudio-knowledge", ["knowledge-qa"])]:
+        plugin = root / "Plugins" / plugin_name
+        manifest = json.loads((plugin / "plugin.json").read_text())
+        plugin_versions[plugin_name] = manifest["version"]
+        config = json.loads((plugin / "mcp.json").read_text())
+        expected_key = "voxstudio" if plugin_name == "voxstudio" else "voxstudio_knowledge"
+        expected_path = "/mcp" if plugin_name == "voxstudio" else "/knowledge/mcp"
+        assert manifest["name"] == plugin_name
+        assert config["mcpServers"][expected_key]["url"] == "http://127.0.0.1:19789" + expected_path
+        prefix = "plugins/" + plugin_name + "/"
+        for name in ["plugin.json", "mcp.json", "assets/icon.svg"]:
+            files[prefix + name] = (plugin / name).read_bytes()
+        # Explicit reviewed whitelist; no arbitrary skills or repo files enter the archive.
+        for skill in skills:
+            name = f"skills/{skill}/SKILL.md"
+            files[prefix + name] = (plugin / name).read_bytes()
+        legacy = {k: v for k, v in manifest.items() if k != "$schema"}
+        legacy.update(skills="./skills/", mcpServers="./.mcp.json", interface=manifest["extensions"]["com.openai"]["interface"])
+        files[prefix + ".codex-plugin/plugin.json"] = encode(legacy)
+        files[prefix + ".mcp.json"] = encode({"mcpServers": {k: {**v, "type": "http"} for k, v in config["mcpServers"].items()}})
+        plugins.append({"name": plugin_name, "source": {"source": "local", "path": "./plugins/" + plugin_name},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}, "category": "Productivity"})
+    manifest = json.loads((root / "Plugins/voxstudio/plugin.json").read_text())
+    files[".agents/plugins/marketplace.json"] = encode({"name": "voxstudio-local", "interface": {"displayName": "VoxStudio Local"}, "plugins": plugins})
     files["README.md"] = (root / "docs/plugins/openai-plugin-install.md").read_bytes()
     files["install.sh"] = (root / "scripts/openai-plugin-install.sh").read_bytes()
     files["FILES.sha256"] = "".join(
@@ -55,7 +60,8 @@ def package(root: Path, output: Path) -> dict:
     key = f"plugins/voxstudio/{version}/{sha}/{FILENAME}"
     result = {"name": manifest["name"], "version": version, "filename": FILENAME,
               "size": artifact.stat().st_size, "sha256": sha, "file_count": len(files),
-              "object_key": "app-releases/voxstudio/" + key, "url": ORIGIN + "/" + key}
+              "object_key": "app-releases/voxstudio/" + key, "url": ORIGIN + "/" + key,
+              "plugins": plugin_versions}
     (output / "release.json").write_bytes(encode(result))
     return result
 

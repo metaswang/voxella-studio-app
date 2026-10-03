@@ -132,6 +132,8 @@ struct KnowledgeToolExecutor: Sendable {
             "transcribed_range": ["start": facts.transcribedStart as Any? ?? NSNull(),
                                   "end": facts.transcribedEnd as Any? ?? NSNull(), "coordinate": "source_seconds"],
             "has_transcript": material != nil,
+            "content_provenance": material?.provenance as Any? ?? NSNull(),
+            "body_generation": material?.generation as Any? ?? NSNull(),
             "transcript_segment_count": material?.segments.count ?? 0,
             "transcript_character_count": material?.segments.reduce(0, { $0 + $1.text.count }) ?? 0,
             "has_summary": session.summaryMarkdown?.isEmpty == false,
@@ -160,6 +162,7 @@ struct KnowledgeToolExecutor: Sendable {
                 "transcript_character_count": material?.segments.reduce(0, { $0 + $1.text.count }) ?? 0,
                 "has_summary": source.summaryMarkdown?.isEmpty == false,
                 "media_duration_sec": facts.mediaDuration as Any? ?? NSNull(),
+                "last_spoken_end_sec": facts.lastSpokenEnd as Any? ?? NSNull(),
                 "media_duration_provenance": facts.provenance]
     }
 
@@ -333,21 +336,19 @@ struct KnowledgeToolExecutor: Sendable {
         let hits: [SessionSearchHit]
         let total: Int
         let pageOffset: Int
-        if let segments {
-            let parts = segments.flatMap { segment -> [TranscriptionSegment] in
-                Self.textPages(segment.text, limit: 8_000).map { text in
-                    .init(text: text, start: segment.start, end: segment.end, speaker: segment.speaker)
-                }
-            }
-            let allHits: [SessionSearchHit] = parts.enumerated().map { index, segment in
-                return SessionSearchHit(sessionID: source.id, title: source.title, unitID: index, kind: .transcriptChunk,
-                                 start: segment.start, end: segment.end, speakerLabels: segment.speaker.map { [$0] } ?? [],
-                                 text: segment.text, score: 1, matchSource: "direct_read", snippet: segment.text,
-                                 cueIDs: [], hasVideo: false, language: material?.language, quoteSpan: nil)
+        if material != nil {
+            let chunks = KnowledgeBodyReader.nativeParts(material!)
+            let allHits: [SessionSearchHit] = chunks.enumerated().map { index, chunk in
+                SessionSearchHit(sessionID: source.id, title: source.title, unitID: index, kind: .transcriptChunk,
+                    start: chunk.start, end: chunk.end, speakerLabels: chunk.speakers, text: chunk.text, score: 1,
+                    matchSource: "direct_read", snippet: chunk.text, cueIDs: chunk.spans.compactMap(\.cueID), hasVideo: false,
+                    language: material?.language, quoteSpan: nil, materialGeneration: material?.generation,
+                    provenance: material?.provenance, materialRole: material?.role, revision: material?.revision,
+                    characterStart: chunk.lower, characterEnd: chunk.upper, timingPrecision: chunk.timingPrecision, context: chunk.context)
             }
             let speaker = args["speaker"] as? String
             let filtered = allHits.filter {
-                (start == nil || ($0.end ?? 0) >= start!) && (end == nil || ($0.start ?? 0) <= end!) &&
+                (start == nil || $0.end == nil || $0.end! >= start!) && (end == nil || $0.start == nil || $0.start! <= end!) &&
                 (speaker == nil || $0.speakerLabels.contains(speaker!))
             }
             let all = filtered.sorted {
@@ -358,15 +359,8 @@ struct KnowledgeToolExecutor: Sendable {
             total = all.count
             pageOffset = offset
         } else {
-            var filter = await retrievalService.makeVisibleFilter(scope: .session(source.id), originFilter: originFilter)
-            filter.limit = limit
-            filter.start = start
-            filter.end = end
-            filter.speakerLabel = args["speaker"] as? String
-            let indexed = try await service.store.transcriptPage(filter: filter, offset: offset)
-            hits = indexed.hits
-            total = indexed.total
-            pageOffset = 0
+            // An unreadable current source must not revive an older indexed body.
+            hits = []; total = 0; pageOffset = 0
         }
         guard offset <= total else { throw KnowledgeToolError.invalidParameter("Invalid transcript cursor") }
         if material == nil, total == 0 {
@@ -387,7 +381,9 @@ struct KnowledgeToolExecutor: Sendable {
             "complete": offset + page.count == total,
             "next_cursor": offset + page.count < total ? offset + page.count : NSNull(),
             "read_provenance": material?.provenance ?? "indexed_transcript_chunks",
-            "pagination_unit": "text parts with original segment timestamps; no inferred sub-segment timing",
+            "pagination_unit": "bounded body units with original character spans and verified timing",
+            "original_segment_count": segments?.count ?? 0,
+            "body_generation": material?.generation as Any? ?? NSNull(),
             "completeness_semantics": "available transcript, not necessarily entire media",
             "returned_range": ["start": page.compactMap(\.start).min() as Any? ?? NSNull(), "end": page.compactMap(\.end).max() as Any? ?? NSNull()], "coverage": ["start": start as Any? ?? NSNull(), "end": end as Any? ?? NSNull(), "coordinate": "source_seconds"],
             "citations": page.map { hit in
@@ -412,7 +408,7 @@ struct KnowledgeToolExecutor: Sendable {
         let result = try await retrievalService.search(KnowledgeRetrievalRequest(query: query,
             scope: ids.map(KnowledgeQAScope.fromSelection) ?? scope, originFilter: originFilter, resultLimit: limit,
             requestID: requestID, includeCatalog: false, retrievalPath: .agent,
-            useGraph: args["use_graph"] as? Bool ?? (workspace == nil)))
+            useGraph: args["use_graph"] as? Bool ?? false))
         let visible = Set(await visibleSessions().map(\.id))
         let hits = result.hits.filter { workspace == nil || visible.contains($0.sessionID) }
         return .success(["hits": hits.count, "hit_count": hits.count,
@@ -466,7 +462,7 @@ struct KnowledgeToolExecutor: Sendable {
         let pattern = text.split(whereSeparator: \.isWhitespace).map { NSRegularExpression.escapedPattern(for: String($0)) }.joined(separator: #"\s+"#)
         let expression = try NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
         var matches: [(SessionSearchHit, Int, String)] = [], unavailable: [String] = []
-        var checked = 0
+        var checked = 0, occurrences = 0
         for source in sources {
             try Task.checkCancellation()
             guard let material = KnowledgeTranscriptMaterial.from(source) else {
@@ -474,28 +470,24 @@ struct KnowledgeToolExecutor: Sendable {
                 continue
             }
             checked += 1
-            // Joining original segments also finds a phrase split at an ASR
-            // boundary. Offsets map back to actual times; no fabricated timing.
-            let segments = material.segments
-            let joined = segments.map(\.text).joined(separator: " ") as NSString
-            let ranges = expression.matches(in: joined as String, range: NSRange(location: 0, length: joined.length))
-            var offset = 0
-            for (index, segment) in segments.enumerated() {
-                let length = (segment.text as NSString).length
-                let interval = NSRange(location: offset, length: length)
-                let found = ranges.filter { NSIntersectionRange(interval, $0.range).length > 0 }
-                if !found.isEmpty {
-                    let local = max(0, found[0].range.location - offset)
-                    let snippetStart = max(0, local - 160)
-                    let snippetLength = min(length - snippetStart, 700)
-                    let snippet = (segment.text as NSString).substring(with: NSRange(location: snippetStart, length: snippetLength))
-                    let hit = SessionSearchHit(sessionID: source.id, title: source.title, unitID: index, kind: .transcriptChunk,
-                        start: segment.start, end: segment.end, speakerLabels: segment.speaker.map { [$0] } ?? [],
-                        text: snippet, score: 1, matchSource: "literal_scan", snippet: snippet, cueIDs: [],
-                        hasVideo: false, language: material.language, quoteSpan: nil)
-                    matches.append((hit, material.citationChunkBase, material.provenance))
-                }
-                offset += length + 1
+            let original = material.text as NSString
+            let ranges = expression.matches(in: material.text, range: NSRange(location: 0, length: original.length))
+            occurrences += ranges.count
+            for index in material.segments.indices {
+                let parentSpans = material.spans.filter { $0.parentIndex == index }
+                guard let lower = parentSpans.map(\.lower).min(), let upper = parentSpans.map(\.upper).max(),
+                      let found = ranges.first(where: { $0.range.location < upper && NSMaxRange($0.range) > lower }) else { continue }
+                let excerptRange = original.rangeOfComposedCharacterSequences(for: NSRange(location: max(lower, found.range.location - 160),
+                    length: min(upper, NSMaxRange(found.range) + 540) - max(lower, found.range.location - 160)))
+                let snippet = original.substring(with: excerptRange)
+                let hit = SessionSearchHit(sessionID: source.id, title: source.title, unitID: index, kind: .transcriptChunk,
+                    start: parentSpans.compactMap(\.start).min(), end: parentSpans.compactMap(\.end).max(),
+                    speakerLabels: Array(Set(parentSpans.compactMap(\.speaker))).sorted(), text: snippet, score: 1,
+                    matchSource: "literal_scan", snippet: snippet, cueIDs: parentSpans.compactMap(\.cueID),
+                    hasVideo: false, language: material.language, quoteSpan: nil, materialGeneration: material.generation,
+                    provenance: material.provenance, characterStart: excerptRange.location, characterEnd: NSMaxRange(excerptRange),
+                    timingPrecision: parentSpans.allSatisfy { $0.start != nil && $0.end != nil } ? "coarse" : "unknown")
+                matches.append((hit, material.citationChunkBase, material.provenance))
             }
         }
         let cursor = args["cursor"] as? Int ?? 0, limit = args["limit"] as? Int ?? 32
@@ -505,11 +497,13 @@ struct KnowledgeToolExecutor: Sendable {
                 var row = Self.hitToDict(hit); row["read_provenance"] = provenance; return row
             },
             "returned_count": page.count, "total_count": matches.count,
+            "occurrence_count": occurrences,
+            "matched_segment_count": matches.count,
             "matched_source_count": Set(matches.map { $0.0.sessionID }).count,
             "checked_source_count": checked, "scope_source_count": sources.count, "unavailable_source_ids": unavailable,
             "complete": cursor + page.count == matches.count, "all_sources_readable": unavailable.isEmpty,
             "next_cursor": cursor + page.count < matches.count ? cursor + page.count : NSNull(),
-            "match_semantics": "case-insensitive literal phrase with normalized whitespace; snippets are bounded excerpts of timed material, original preferred with marked dub fallback",
+            "match_semantics": "case-insensitive literal phrase with normalized whitespace; snippets retain canonical character ranges and trusted timing; transcript preferred with marked subtitle fallback",
             "citations": page.map { hit, base, _ in
                 var ref = KnowledgeQAService.citation(from: hit)
                 // Literal excerpts differ from full segment observations.
@@ -547,16 +541,26 @@ struct KnowledgeToolExecutor: Sendable {
 
     static func hitToDict(_ hit: SessionSearchHit) -> [String: Any] {
         ["session_id": hit.sessionID.uuidString, "text": hit.text, "start": hit.start as Any? ?? NSNull(),
-         "end": hit.end as Any? ?? NSNull(), "speakers": hit.speakerLabels]
+         "end": hit.end as Any? ?? NSNull(), "speakers": hit.speakerLabels, "kind": hit.kind.rawValue,
+         "provenance": hit.provenance as Any? ?? NSNull(), "body_generation": hit.materialGeneration as Any? ?? NSNull(),
+         "character_start": hit.characterStart as Any? ?? NSNull(), "character_end": hit.characterEnd as Any? ?? NSNull(),
+         "timing_precision": hit.timingPrecision, "matched_modalities": hit.matchedModalities]
     }
 
     static func bucketTimeline(hits: [SessionSearchHit], bucketSeconds: Double) -> [[String: Any]] {
         guard bucketSeconds > 0 else { return [] }
-        let grouped = Dictionary(grouping: hits) { floor(($0.start ?? 0) / bucketSeconds) * bucketSeconds }
-        return grouped.keys.sorted().map { start in
+        let fine = hits.filter { $0.start != nil && $0.end != nil && $0.end! - $0.start! <= bucketSeconds }
+        let grouped = Dictionary(grouping: fine) { floor($0.start! / bucketSeconds) * bucketSeconds }
+        var rows: [[String: Any]] = grouped.keys.sorted().map { start in
             ["start": start, "end": start + bucketSeconds, "segment_count": grouped[start]!.count,
              "segments": grouped[start]!.map(hitToDict)]
         }
+        for hit in hits where hit.start == nil || hit.end == nil || hit.end! - hit.start! > bucketSeconds {
+            rows.append(["start": hit.start as Any? ?? NSNull(), "end": hit.end as Any? ?? NSNull(),
+                         "timing_precision": hit.timingPrecision, "spans_multiple_buckets": hit.start != nil && hit.end != nil,
+                         "segment_count": 1, "segments": [hitToDict(hit)]])
+        }
+        return rows
     }
 }
 

@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 
 @MainActor
 final class SessionIndexCoordinator {
@@ -17,6 +18,7 @@ final class SessionIndexCoordinator {
     private var pendingRetainIDs: Set<UUID>?
     private var embeddingQueue: [UUID] = []
     private var graphQueue: Set<UUID> = []
+    private var indexingSuspended = false
 
     private init() {
         let url = Self.indexURL
@@ -80,7 +82,7 @@ final class SessionIndexCoordinator {
         for session in sessions {
             guard let snapshot = SessionIndexSnapshot.from(
                 session: session,
-                sourceOrigin: .cloud,
+                sourceOrigin: KnowledgeScopeSnapshot.origin(session),
                 ownerUserID: ownerUserID
             ) else { continue }
             pending[snapshot.sessionID] = snapshot
@@ -102,11 +104,14 @@ final class SessionIndexCoordinator {
         }
     }
 
-    func reconcile(_ jobs: [WorkbenchTranscriptionJob]) {
+    func reconcile(_ jobs: [WorkbenchTranscriptionJob], sessions: [WorkbenchSession] = []) {
         var snapshots: [UUID: SessionIndexSnapshot] = [:]
         for job in jobs {
             guard let snapshot = SessionIndexSnapshot.from(job) else { continue }
             snapshots[snapshot.sessionID] = snapshot
+        }
+        for session in sessions where session.source == .standaloneDub {
+            if let snapshot = SessionIndexSnapshot.from(session: session, sourceOrigin: KnowledgeScopeSnapshot.origin(session), ownerUserID: AccountService.shared.userID?.uuidString) { snapshots[session.id] = snapshot }
         }
         pendingRetainIDs = Set(snapshots.keys)
         for (id, snapshot) in snapshots {
@@ -125,6 +130,20 @@ final class SessionIndexCoordinator {
             for id in ids { self.enqueueEmbedding(id) }
             self.pump()
         }
+    }
+
+    func pauseIndexing() {
+        indexingSuspended = true
+        ingestTask?.cancel()
+    }
+
+    func resumeIndexing() {
+        indexingSuspended = false
+        reconcile(WorkbenchStore.shared.transcriptions, sessions: WorkbenchStore.shared.sessions)
+        syncCloudSessions(WorkbenchStore.shared.sessions.filter { KnowledgeScopeSnapshot.origin($0) == .cloud },
+                          ownerUserID: AccountService.shared.userID?.uuidString)
+        resumeEmbeddings()
+        backfillKnowledgeGraph()
     }
 
     func backfillKnowledgeGraph() {
@@ -173,7 +192,7 @@ final class SessionIndexCoordinator {
     }
 
     private func pump() {
-        guard ingestTask == nil, hasWork else { return }
+        guard !indexingSuspended, ingestTask == nil, hasWork else { return }
         ingestTask = Task(priority: .utility) { [weak self] in
             await self?.drain()
             await MainActor.run { self?.ingestTask = nil; self?.pump() }
@@ -211,10 +230,12 @@ final class SessionIndexCoordinator {
 
         let snapshots = Array(pending.values)
         pending.removeAll()
-        for snapshot in snapshots {
+        for var snapshot in snapshots {
             do {
+                await snapshot.resolveVideoDurationIfNeeded()
+                try Task.checkCancellation()
                 let force = forceReindexIDs.remove(snapshot.sessionID) != nil
-                let freshness = force ? nil : try await store.freshness(sessionID: snapshot.sessionID)
+                let freshness = force ? nil : try await store.freshness(sessionID: snapshot.sessionID, knowledgeManifest: snapshot.knowledgeManifest, mediaManifest: snapshot.mediaManifest)
                 switch SessionIndexIngestAction.resolve(
                     freshness: freshness,
                     generation: snapshot.generation
@@ -228,10 +249,15 @@ final class SessionIndexCoordinator {
                     try await store.patchSessionMetadata(snapshot: snapshot)
                     enqueueEmbedding(snapshot.sessionID)
                 case .replace:
+                    let oldManifest = try await store.laneManifest(sessionID: snapshot.sessionID, lane: "knowledge")
+                    if (force || oldManifest != snapshot.knowledgeManifest), let body = snapshot.selectedBody {
+                        snapshot.preparedChunks = await KnowledgeTextTokenizer.shared.chunks(for: body)
+                    }
+                    try Task.checkCancellation()
                     let clips = clipWindows(for: snapshot)
-                    try await store.replaceLexical(snapshot: snapshot, clips: clips)
+                    let knowledgeChanged = try await store.replaceLexical(snapshot: snapshot, clips: clips, force: force)
                     enqueueEmbedding(snapshot.sessionID)
-                    if KnowledgeGraphSettings.shared.isEnabled {
+                    if knowledgeChanged && KnowledgeGraphSettings.shared.isEnabled {
                         graphQueue.insert(snapshot.sessionID)
                     }
                 }
@@ -269,41 +295,28 @@ final class SessionIndexCoordinator {
             do {
                 let units = try await store.unitsNeedingEmbedding(sessionID: sessionID)
                 let mediaPath = (try await store.sessionCard(id: sessionID))?.mediaPath ?? ""
-                let mediaURL = URL(fileURLWithPath: mediaPath)
-                let hasMedia = !mediaPath.isEmpty
+                let mediaURL = URL(string: mediaPath).flatMap { ["https", "http"].contains($0.scheme ?? "") ? $0 : nil } ?? URL(fileURLWithPath: mediaPath)
+                let hasMedia = !mediaPath.isEmpty && !mediaPath.hasPrefix("cloud://")
                 for unit in units {
                     try Task.checkCancellation()
-                    switch unit.kind {
-                    case .sessionCard, .transcriptChunk:
-                        let vector = try await embeddingProvider.encodeText(unit.text)
-                        try await store.upsertEmbedding(unitID: unit.id, modality: .text, vector: vector)
-                    case .mediaClip:
-                        guard let start = unit.start, let end = unit.end, hasMedia else {
-                            if !unit.text.isEmpty {
-                                let vector = try await embeddingProvider.encodeText(unit.text)
-                                try await store.upsertEmbedding(unitID: unit.id, modality: .text, vector: vector)
-                            }
-                            continue
-                        }
-                        if unit.modality == .video || unit.modality == .mixed {
-                            let video = try await embeddingProvider.encodeVideo(
-                                url: mediaURL,
-                                range: start ... end,
-                                text: nil
-                            )
-                            try await store.upsertEmbedding(unitID: unit.id, modality: .video, vector: video)
-                        }
-                        if unit.modality == .mixed, !unit.text.isEmpty {
-                            let mixed = try await embeddingProvider.encodeVideo(
-                                url: mediaURL,
-                                range: start ... end,
-                                text: unit.text
-                            )
-                            try await store.upsertEmbedding(unitID: unit.id, modality: .mixed, vector: mixed)
+                    // A new edit may have removed/replaced this unit while inference yielded.
+                    guard try await store.unitExists(id: unit.id, sessionID: sessionID, text: unit.text) else { continue }
+                    for modality in try await store.missingEmbeddingModalities(for: unit) {
+                        switch modality {
+                        case .text:
+                            guard !unit.text.isEmpty else { continue }
+                            let vector = try await embeddingProvider.encodeText(unit.text)
+                            try await store.upsertEmbedding(unitID: unit.id, modality: .text, vector: vector)
+                        case .video, .mixed:
+                            guard let start = unit.start, let end = unit.end, hasMedia else { continue }
+                            let vector = try await embeddingProvider.encodeVideo(url: mediaURL, range: start ... end,
+                                                                                 text: modality == .mixed ? unit.text : nil)
+                            try await store.upsertEmbedding(unitID: unit.id, modality: modality, vector: vector)
                         }
                     }
                 }
-                try await store.markEmbeddingReady(sessionID, ready: true)
+                let remaining = try await store.unitsNeedingEmbedding(sessionID: sessionID)
+                try await store.markEmbeddingReady(sessionID, ready: remaining.isEmpty)
             } catch is CancellationError {
                 return
             } catch {
@@ -354,12 +367,23 @@ final class SessionIndexCoordinator {
 }
 
 extension SessionIndexSnapshot {
+    mutating func resolveVideoDurationIfNeeded() async {
+        guard hasVideo, cues.isEmpty, mediaDurationSec == nil,
+              !mediaPath.isEmpty, !mediaPath.hasPrefix("cloud://") else { return }
+        let url = URL(string: mediaPath).flatMap { ["https", "http"].contains($0.scheme ?? "") ? $0 : nil }
+            ?? URL(fileURLWithPath: mediaPath)
+        guard let measured = try? await KnowledgeQATimeout.run(.seconds(5), operation: {
+            try await AVURLAsset(url: url).load(.duration).seconds
+        }), measured.isFinite, measured > 0 else { return }
+        duration = measured; mediaDurationSec = measured; durationProvenance = "media_metadata"
+    }
+
     static func from(_ job: WorkbenchTranscriptionJob) -> SessionIndexSnapshot? {
         guard job.state == .completed else { return nil }
         let transcript = job.result
         let cues = job.subtitleTrack?.cues ?? []
         let segments = transcript?.segments ?? []
-        guard transcript != nil || !cues.isEmpty else { return nil }
+
         let duration = max(
             segments.map(\.end).max() ?? 0,
             cues.map(\.end).max() ?? 0
@@ -368,7 +392,7 @@ extension SessionIndexSnapshot {
             isCloudStorage: job.storage == .cloud,
             hasRemoteSessionID: job.remoteSessionID != nil
         )
-        return SessionIndexSnapshot(
+        var snapshot = SessionIndexSnapshot(
             sessionID: job.id,
             title: job.sessionTitle,
             tag: job.sessionTag,
@@ -396,6 +420,11 @@ extension SessionIndexSnapshot {
                 ? .record
                 : (job.netVideoSourceURL == nil ? .upload : .netVideo)
         )
+        snapshot.body = KnowledgeTranscriptMaterial.from(transcript: transcript) ?? KnowledgeTranscriptMaterial.from(subtitles: job.subtitleTrack)
+        snapshot.lastSpokenEndSec = snapshot.body?.spans.compactMap(\.end).max()
+        snapshot.transcribedStartSec = snapshot.body?.spans.compactMap(\.start).min()
+        snapshot.transcribedEndSec = snapshot.body?.spans.compactMap(\.end).max()
+        return snapshot
     }
 
     /// Cloud Recent / opened remote session → local index with `source_origin=cloud`.
@@ -404,9 +433,10 @@ extension SessionIndexSnapshot {
         sourceOrigin: KnowledgeSourceOrigin = .cloud,
         ownerUserID: String?
     ) -> SessionIndexSnapshot? {
-        let transcript = session.transcript ?? session.dubTranscript
-        let cues = session.subtitleTrack?.cues ?? []
-        let segments = transcript?.segments ?? []
+        let material = KnowledgeTranscriptMaterial.from(session)
+        let transcript = KnowledgeTranscriptMaterial.displayTranscript(for: session)
+        let cues = (session.source == .standaloneDub ? (session.subtitleTrack ?? session.dubSubtitleTrack) : session.subtitleTrack)?.cues ?? []
+        let segments = material?.segments ?? []
         let summary = session.summaryMarkdown
         // List metadata may only have title/summary; still index a session card for Recent sync.
         let hasBody = transcript != nil || !cues.isEmpty || (summary?.isEmpty == false)
@@ -417,7 +447,8 @@ extension SessionIndexSnapshot {
             segments.map(\.end).max() ?? 0,
             cues.map(\.end).max() ?? 0
         )
-        let mediaPath = session.sourceURL?.path
+        let mediaPath = session.sourceURL.map { $0.isFileURL ? $0.path : $0.absoluteString }
+            ?? session.outputURL.map { $0.isFileURL ? $0.path : $0.absoluteString }
             ?? session.remoteSourcePlaybackURL?.absoluteString
             ?? "cloud://\(session.remoteSessionID?.uuidString ?? session.id.uuidString)"
         var labels: [String] = []
@@ -426,7 +457,7 @@ extension SessionIndexSnapshot {
         where seen.insert(label).inserted {
             labels.append(label)
         }
-        return SessionIndexSnapshot(
+        var snapshot = SessionIndexSnapshot(
             sessionID: session.id,
             title: session.title.isEmpty ? "Untitled session" : session.title,
             tag: session.sessionTag,
@@ -449,10 +480,15 @@ extension SessionIndexSnapshot {
             cues: cues,
             shotBounds: [],
             sourceOrigin: sourceOrigin,
-            remoteSessionID: session.remoteSessionID ?? session.id,
+            remoteSessionID: sourceOrigin == .cloud ? (session.remoteSessionID ?? session.id) : session.remoteSessionID,
             ownerUserID: ownerUserID,
             sessionType: session.sessionType
         )
+        snapshot.body = material
+        snapshot.lastSpokenEndSec = material?.spans.compactMap(\.end).max()
+        snapshot.transcribedStartSec = material?.spans.compactMap(\.start).min()
+        snapshot.transcribedEndSec = material?.spans.compactMap(\.end).max()
+        return snapshot
     }
 
     static func speakers(in job: WorkbenchTranscriptionJob) -> [SessionSpeaker] {

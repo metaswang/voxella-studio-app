@@ -6,7 +6,7 @@ enum MCPKnowledgeTools {
     static let instructions = """
 
     Knowledge base tools work without an open video project. Use knowledge.ask for a complete
-    grounded answer, or knowledge.search and session.* to inspect evidence yourself. Pass history
+    grounded answer when explicitly desired, or knowledge.search and session.* to inspect evidence yourself. Pass history
     to knowledge.ask for follow-up questions. These calls do not modify the app's chat history.
     Source visibility follows the current account; origin optionally restricts local/cloud sources.
     """
@@ -119,7 +119,9 @@ enum MCPKnowledgeTools {
                 return try jsonResult(response)
             }
             let executor = KnowledgeToolExecutor(scope: scope, originFilter: origins, retrievalService: qaService.makeRetrievalService())
-            let argumentsData = try JSONSerialization.data(withJSONObject: args)
+            var nativeArgs = args
+            nativeArgs.removeValue(forKey: "origin")
+            let argumentsData = try JSONSerialization.data(withJSONObject: nativeArgs)
             switch try await executeKnowledgeTool(executor, name: name, argumentsData: argumentsData) {
             case let .success(value): return try jsonResult(value)
             case let .error(message): return .error(message)

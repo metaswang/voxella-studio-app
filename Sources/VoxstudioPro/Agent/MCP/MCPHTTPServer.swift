@@ -13,14 +13,22 @@ struct MCPServerInstance: Sendable {
     }
 }
 
+enum MCPServerProfile: String, Sendable {
+    case legacy, knowledge
+    static func resolve(path: String) -> Self? {
+        switch path { case "/", "/mcp": .legacy; case "/knowledge/mcp": .knowledge; default: nil }
+    }
+}
+
 /// HTTP server for MCP. Each client session gets its own `Server` + stateful transport
 actor MCPHTTPServer {
 
     private let port: UInt16
-    private let makeServer: @Sendable () async -> MCPServerInstance
+    private let makeServer: @Sendable (MCPServerProfile) async -> MCPServerInstance
     private nonisolated(unsafe) var listener: NWListener?
 
     private struct Session {
+        let profile: MCPServerProfile
         let server: Server
         let transport: StatefulHTTPServerTransport
         var lastUsed: ContinuousClock.Instant
@@ -28,16 +36,22 @@ actor MCPHTTPServer {
     }
 
     private var sessions: [String: Session] = [:]
-    private var fallback: (server: Server, transport: StatelessHTTPServerTransport)?
+    private typealias FallbackPair = (server: Server, transport: StatelessHTTPServerTransport)
+    private var fallbacks: [MCPServerProfile: FallbackPair] = [:]
+    private var fallbackTasks: [MCPServerProfile: Task<FallbackPair, Never>] = [:]
     private static let sessionIdleLimit: Duration = .seconds(3600)
     private static let sessionCountLimit = 32
 
     init(
         port: UInt16,
+        makeKnowledgeServer: (@Sendable () async -> MCPServerInstance)? = nil,
         makeServer: @escaping @Sendable () async -> MCPServerInstance
     ) {
         self.port = port
-        self.makeServer = makeServer
+        self.makeServer = { profile in
+            if profile == .knowledge, let makeKnowledgeServer { return await makeKnowledgeServer() }
+            return await makeServer()
+        }
     }
 
     func start() throws {
@@ -66,11 +80,13 @@ actor MCPHTTPServer {
         listener = nil
         let closing = sessions.values.map(\.server)
         sessions.removeAll()
-        let fallbackServer = fallback?.server
-        fallback = nil
+        let fallbackServers = fallbacks.values.map(\.server)
+        fallbacks.removeAll()
+        for task in fallbackTasks.values { task.cancel() }
+        fallbackTasks.removeAll()
         Task {
             for server in closing { await server.stop() }
-            await fallbackServer?.stop()
+            for server in fallbackServers { await server.stop() }
         }
     }
 
@@ -133,14 +149,14 @@ actor MCPHTTPServer {
             return
         }
 
-        guard request.path == "/mcp" || request.path == "/" else {
+        guard let profile = MCPServerProfile.resolve(path: request.path ?? "") else {
             sendRaw("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n", on: connection, keepAlive: false)
             return
         }
 
         let response: HTTPResponse
         if let claimed = request.header(HTTPHeaderName.sessionID) {
-            guard var session = sessions[claimed] else {
+            guard var session = sessions[claimed], session.profile == profile else {
                 // Unknown/expired session → 404 per spec; the client re-initializes
                 // and refreshes its tool inventory.
                 sendRaw("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n", on: connection, keepAlive: true)
@@ -160,21 +176,21 @@ actor MCPHTTPServer {
             let transport = StatefulHTTPServerTransport(
                 validationPipeline: StandardValidationPipeline(validators: baseValidators() + [SessionValidator()])
             )
-            let instance = await makeServer()
+            let instance = await makeServer(profile)
             try? await instance.server.start(transport: transport) { clientInfo, capabilities in
                 await instance.onInitialize(clientInfo, capabilities)
             }
             response = await transport.handleRequest(request)
             if let assigned = response.headers[HTTPHeaderName.sessionID] {
                 pruneIdleSessions()
-                sessions[assigned] = Session(server: instance.server, transport: transport, lastUsed: .now)
+                sessions[assigned] = Session(profile: profile, server: instance.server, transport: transport, lastUsed: .now)
                 Log.mcp.notice("session started id=\(assigned) total=\(self.sessions.count)")
             } else {
                 await instance.server.stop()
             }
         } else {
             // Sessionless clients (and plain curl) get simple request/response semantics.
-            response = await fallbackPair().transport.handleRequest(request)
+            response = await fallbackPair(profile: profile).transport.handleRequest(request)
         }
         writeResponse(response, on: connection)
     }
@@ -211,15 +227,23 @@ actor MCPHTTPServer {
         [OriginValidator.localhost(port: Int(port)), ContentTypeValidator(), ProtocolVersionValidator()]
     }
 
-    private func fallbackPair() async -> (server: Server, transport: StatelessHTTPServerTransport) {
-        if let fallback { return fallback }
+    private func fallbackPair(profile: MCPServerProfile) async -> FallbackPair {
+        if let pair = fallbacks[profile] { return pair }
+        if let task = fallbackTasks[profile] { return await task.value }
         let pipeline = StandardValidationPipeline(validators: baseValidators())
-        let instance = await makeServer()
-        let pair = (server: instance.server, transport: StatelessHTTPServerTransport(validationPipeline: pipeline))
-        try? await pair.server.start(transport: pair.transport) { clientInfo, capabilities in
-            await instance.onInitialize(clientInfo, capabilities)
+        let factory = makeServer
+        let task = Task {
+            let instance = await factory(profile)
+            let pair = (server: instance.server, transport: StatelessHTTPServerTransport(validationPipeline: pipeline))
+            try? await pair.server.start(transport: pair.transport) { clientInfo, capabilities in
+                await instance.onInitialize(clientInfo, capabilities)
+            }
+            return pair
         }
-        fallback = pair
+        fallbackTasks[profile] = task
+        let pair = await task.value
+        fallbacks[profile] = pair
+        fallbackTasks[profile] = nil
         return pair
     }
 

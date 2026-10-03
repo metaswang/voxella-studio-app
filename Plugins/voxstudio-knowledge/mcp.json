@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "voxstudio_knowledge": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:19789/knowledge/mcp"
+    }
+  }
+}

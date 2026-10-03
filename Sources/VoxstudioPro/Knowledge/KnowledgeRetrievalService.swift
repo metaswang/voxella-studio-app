@@ -40,7 +40,7 @@ struct KnowledgeRetrievalRequest: Sendable {
         requestID: UUID,
         includeCatalog: Bool,
         retrievalPath: KnowledgeRetrievalPath,
-        useGraph: Bool = true
+        useGraph: Bool = false
     ) {
         self.query = query
         self.originalQuery = originalQuery ?? query
@@ -90,10 +90,16 @@ struct KnowledgeRetrievalService: Sendable {
         policy: KnowledgeQAExecutionPolicy
     ) async throws -> KnowledgeRetrievalResult {
         var diagnostics = KnowledgeRetrievalDiagnostics()
-        let filter = await makeVisibleFilter(
+        var visibleFilter = await makeVisibleFilter(
             scope: request.scope,
             originFilter: request.originFilter
         )
+        visibleFilter.canonicalGenerations = await MainActor.run {
+            Dictionary(uniqueKeysWithValues: WorkbenchStore.shared.sessions.compactMap { source in
+                KnowledgeTranscriptMaterial.from(source).map { (source.id, $0.generation) }
+            })
+        }
+        let filter = visibleFilter
         if filter.sourceOrigins?.isEmpty == true || filter.sessionIDs?.isEmpty == true {
             log(request: request, diagnostics: diagnostics)
             return KnowledgeRetrievalResult(hits: [], diagnostics: diagnostics)
@@ -254,10 +260,7 @@ struct KnowledgeRetrievalService: Sendable {
         if let hybridRecall = dependencies.hybridRecall {
             return Array((try await hybridRecall(query, filter)).prefix(topK))
         }
-        var hits = try await service.transcriptSearch(query: query, filter: filter)
-        if hits.isEmpty {
-            hits = try await service.search(query: query, filter: filter)
-        }
+        let hits = try await service.transcriptSearch(query: query, filter: filter)
         return Array(hits.prefix(topK))
     }
 
@@ -333,23 +336,30 @@ struct KnowledgeRetrievalService: Sendable {
             guard !admitted.isEmpty else {
                 return ([], .used)
             }
-            let vectors = (try? await service.store.textEmbeddings(unitIDs: admitted.map(\.hit.unitID))) ?? [:]
+            let vectors = await vectors(for: admitted.map(\.hit.unitID), service: service)
             return (KnowledgeMMR.select(admitted, vectors: vectors, limit: limit, coverSources: coverSources).map(\.hit), .used)
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as KnowledgeQAError {
             if case .timeout = error {
                 Log.search.warning("knowledge rerank timed out request_id=\(requestID.uuidString)")
-                return (candidates, .timeout)
+                let vectors = await vectors(for: candidates.map(\.unitID), service: service)
+                return (KnowledgeMMR.select(candidates.map { .init(hit: $0, score: $0.score) }, vectors: vectors,
+                                            limit: limit, coverSources: coverSources).map(\.hit), .timeout)
             }
             Log.search.warning("knowledge rerank unavailable request_id=\(requestID.uuidString): \(error.localizedDescription)")
         } catch {
             Log.search.warning("knowledge rerank unavailable request_id=\(requestID.uuidString): \(error.localizedDescription)")
         }
         let fallback = candidates.map { KnowledgeRerankedHit(hit: $0, score: $0.score) }
-        let vectors = (try? await service.store.textEmbeddings(unitIDs: candidates.map(\.unitID))) ?? [:]
+        let vectors = await vectors(for: candidates.map(\.unitID), service: service)
         try Task.checkCancellation()
         return (KnowledgeMMR.select(fallback, vectors: vectors, limit: limit, coverSources: coverSources).map(\.hit), .failed)
+    }
+
+    private func vectors(for ids: [Int], service: SearchService) async -> [Int: [Float]] {
+        if let read = dependencies.textEmbeddings { return (try? await read(ids)) ?? [:] }
+        return (try? await service.store.textEmbeddings(unitIDs: ids)) ?? [:]
     }
 
     private func catalogHits(filter: SessionSearchFilter) async throws -> [SessionSearchHit] {

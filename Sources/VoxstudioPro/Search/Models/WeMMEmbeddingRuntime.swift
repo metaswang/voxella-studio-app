@@ -123,7 +123,11 @@ actor WeMMEmbeddingRuntime {
     }
 
     func encode(text: String, dimension: Int) throws -> [Float] {
-        try encode(input: processor.textInput(text), dimension: dimension)
+        let vectors = try processor.textWindows(text).map { window in
+            try Task.checkCancellation()
+            return try encode(input: processor.textInput(window), dimension: dimension)
+        }
+        return try pooled(vectors, dimension: dimension)
     }
 
     func encode(image: CIImage, text: String? = nil, dimension: Int) throws -> [Float] {
@@ -141,11 +145,20 @@ actor WeMMEmbeddingRuntime {
         text: String? = nil,
         dimension: Int
     ) async throws -> [Float] {
-        let input = try await processor.videoInput(
-            videoURL,
-            timeRange: timeRange,
-            text: text)
-        return try encode(input: input, dimension: dimension)
+        var vectors: [[Float]] = []
+        for window in text.map({ processor.textWindows($0).map(Optional.some) }) ?? [nil] {
+            try Task.checkCancellation()
+            let input = try await processor.videoInput(videoURL, timeRange: timeRange, text: window)
+            vectors.append(try encode(input: input, dimension: dimension))
+        }
+        return try pooled(vectors, dimension: dimension)
+    }
+
+    private func pooled(_ vectors: [[Float]], dimension: Int) throws -> [Float] {
+        if vectors.count == 1 { return vectors[0] }
+        var sum = [Float](repeating: 0, count: dimension)
+        for vector in vectors { for index in sum.indices { sum[index] += vector[index] } }
+        return try WeMMEmbeddingMath.normalizeAndTruncate(sum, dimension: dimension)
     }
 
     private func encode(input: LMInput, dimension: Int) throws -> [Float] {

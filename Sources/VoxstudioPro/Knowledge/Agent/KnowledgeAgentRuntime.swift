@@ -45,21 +45,15 @@ struct KnowledgeAgentRuntime: Sendable {
         let skills = await skillsProvider().filter(KnowledgeToolRegistry.validateSkill)
         let executor = KnowledgeToolExecutor(scope: scope, originFilter: originFilter, retrievalService: retrievalService,
                                              requestID: request.requestID, workspace: workspace, skills: skills)
-        continuation.yield(.status("Reading source metadata…"))
+        continuation.yield(.status("Preparing authorized sources…"))
         var cards: [[String: Any]] = []
         var cardCitations: [[String: Any]] = []
-        // Probe only the focused source; large inventories use cheap trustworthy
-        // hints and can request individual metadata probes on demand.
+        // Cheap source hints seed scope resolution. Media probing and detailed
+        // metadata are available on demand rather than required before each QA.
         for source in snapshot.sessions.prefix(4) {
-            if snapshot.sessions.count == 1 {
-                var card = await executor.metadata(source)
-                cardCitations += card.removeValue(forKey: "citations") as? [[String: Any]] ?? []
-                cards.append(card)
-            } else {
-                let card = await executor.catalogCard(source)
-                cards.append(card)
-                cardCitations.append(executor.catalogCitation(source, card: card))
-            }
+            let card = await executor.catalogCard(source)
+            cards.append(card)
+            cardCitations.append(executor.catalogCitation(source, card: card))
         }
         let facts = await workspace.record(KnowledgeJSON.encode([
             "scope": scope.storageKey, "focus_session_id": scope.sessionID?.uuidString as Any? ?? NSNull(),

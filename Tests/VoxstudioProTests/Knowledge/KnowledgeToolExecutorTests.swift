@@ -135,7 +135,7 @@ struct KnowledgeToolExecutorTests {
         )
         let result = try await executor.execute(
             toolName: "knowledge.search",
-            arguments: ["query": "张三 方案 原因", "limit": 8]
+            arguments: ["query": "张三 方案 原因", "limit": 8, "use_graph": true]
         )
         guard case let .success(data) = result else {
             Issue.record("expected search success")
@@ -171,7 +171,7 @@ struct KnowledgeToolExecutorTests {
         )
         let result = try await executor.execute(
             toolName: "session.search_segments",
-            arguments: ["session_ids": [sessionID.uuidString], "query": "budget"]
+            arguments: ["session_ids": [sessionID.uuidString], "query": "budget", "use_graph": true]
         )
         guard case let .success(data) = result else {
             Issue.record("expected segment search success")
@@ -205,7 +205,7 @@ struct KnowledgeToolExecutorTests {
                 resultLimit: 3,
                 requestID: UUID(),
                 includeCatalog: false,
-                retrievalPath: .agent
+                retrievalPath: .agent, useGraph: true
             )
         )
         #expect(graphCalls.count == 1)

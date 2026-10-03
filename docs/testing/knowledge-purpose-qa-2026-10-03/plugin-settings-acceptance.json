@@ -1,0 +1,32 @@
+{
+  "package_version": "0.1.1",
+  "plugins": {
+    "voxstudio": "0.1.1",
+    "voxstudio-knowledge": "0.1.0"
+  },
+  "download_url": "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.1.1/edbe20b7921d0e69200356ea5804417e9ce430a59a9d94ebe5f56833e78eed93/VoxStudio-OpenAI-Plugin.zip",
+  "sha256": "edbe20b7921d0e69200356ea5804417e9ce430a59a9d94ebe5f56833e78eed93",
+  "signed_debug_build": true,
+  "notarized_debug_build": false,
+  "settings_ui": {
+    "codex_knowledge_default": true,
+    "chatgpt_work_knowledge": true,
+    "media_plugin_selection": true,
+    "selected_install_command": true,
+    "selected_server_endpoint": true,
+    "info_popover_two_plugins": true,
+    "download_button_visible": true,
+    "layout_inspected": true
+  },
+  "localization_syntax_valid": [
+    "en",
+    "zh-Hans"
+  ],
+  "package_tests_passed": 4,
+  "swift_regression_tests_passed": 276,
+  "swift_regression_suites_passed": 65,
+  "published_zip_reproducible": true,
+  "http_profile_and_preview_acceptance": "http-acceptance.json",
+  "staged_swift_module_typecheck": true,
+  "staged_check_excludes_other_uncommitted_sources": true
+}

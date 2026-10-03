@@ -10,31 +10,6 @@ supports_evidence_goals: metadata_summary
 analysis_modes: classify, summarize
 ---
 
-# Session Inventory Skill
+Use the complete authorized catalog for counts, grouping, sorting and duration totals. session.aggregate computes metadata aggregates; semantic hits are candidates, not an exhaustive population. Follow next_cursor for an exhaustive listing.
 
-This skill answers questions about session metadata: counts, lists, types, dates, durations, and origins.
-
-## Tool Guidance
-
-- Use `session.list` to filter sessions by query, type, origin, or date range
-- Use `knowledge.get_session_metadata` to retrieve detailed metadata for specific sessions
-- Return structured lists or counts as evidence
-
-## Evidence Guidance
-
-- Session cards (title, type, date, duration, origin) are the primary evidence
-- Counts and filtered lists are acceptable evidence
-- No transcript content is needed for metadata queries
-
-## Answer Guidance
-
-- Provide clear counts and lists
-- Include relevant metadata (e.g., "3 meetings from last week, total 2h 15m")
-- Use bullet points or tables for readability
-
-
-## Adaptive evidence method
-
-Read available metadata first. Use summaries to navigate long sources; read short transcripts directly. Follow every next_cursor before describing a read as complete. Verify exact decisions, negations and corrections in continuous original context. Stop when supported and answer naturally with the workspace citation numbers. Empty search means not found, never absence.
-
-Use `session.aggregate` for exact metadata counts, grouping, duration sums and sorting. Unknown duration remains unknown. Dates default to source creation/import, not recording dates. Semantic search hits are not an exhaustive population.
+Dates describe source creation/import or modification unless recording time is actually known. Media duration and last spoken time are separate facts. Unknown values remain unknown. Read detailed metadata only when its fields are needed for the answer; transcript reading is unnecessary for catalog facts.

@@ -1,0 +1,13 @@
+{
+  "status": "completed",
+  "public_source_smoke": true,
+  "answer_fact_supported": true,
+  "citation_count": 1,
+  "citation_material": "transcript",
+  "citation_provenance": "original_segments",
+  "citation_current_generation": true,
+  "original_quote_occurrence_count": 1,
+  "timing_precision": "coarse",
+  "latency_ms": 3940.791667002486,
+  "formal_answer_quality_evaluation": false
+}

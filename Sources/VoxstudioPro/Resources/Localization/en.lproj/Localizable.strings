@@ -2908,3 +2908,33 @@
 "Sign in to use cloud" = "Sign in to use cloud";
 "Local feature settings" = "Local feature settings";
 "Loading" = "Loading";
+
+"Historical quote: source text has changed" = "Historical quote: source text has changed";
+
+"Subtitle fallback" = "Subtitle fallback";
+
+"Readable" = "Readable";
+
+"Current canonical body is indexed for search." = "Current canonical body is indexed for search.";
+
+"Current canonical body can be read while its search index is prepared." = "Current canonical body can be read while its search index is prepared.";
+
+/* OpenAI knowledge and media plugins */
+"VoxStudio plugins" = "VoxStudio plugins";
+"Knowledge QA" = "Knowledge QA";
+"Media workflows" = "Media workflows";
+"Choose a plugin" = "Choose a plugin";
+"VoxStudio Knowledge: read-only answers from your sessions, with original quotes and source references." = "VoxStudio Knowledge: read-only answers from your sessions, with original quotes and source references.";
+"VoxStudio: transcribe, create voiceovers, search video frames, preview media and edit the Mac timeline." = "VoxStudio: transcribe, create voiceovers, search video frames, preview media and edit the Mac timeline.";
+"One download includes two independent plugins. Enable VoxStudio Knowledge for evidence QA; add VoxStudio for media creation, previews and editing. Both use the same app and session library." = "One download includes two independent plugins. Enable VoxStudio Knowledge for evidence QA; add VoxStudio for media creation, previews and editing. Both use the same app and session library.";
+"Answers use Transcript first, or subtitles when no Transcript is available. You can also explicitly search subtitles and media clips. Video frame search, previews and editing remain available in the VoxStudio media plugin." = "Answers use Transcript first, or subtitles when no Transcript is available. You can also explicitly search subtitles and media clips. Video frame search, previews and editing remain available in the VoxStudio media plugin.";
+"Run the command for the selected plugin after extracting the ZIP. To install both, choose each plugin and run its command. Use the actual install.sh path if you extracted elsewhere." = "Run the command for the selected plugin after extracting the ZIP. To install both, choose each plugin and run its command. Use the actual install.sh path if you extracted elsewhere.";
+"In your desktop client's Plugins page, enable the selected plugin under VoxStudio Local. Restart the client if it is missing, then open a new chat." = "In your desktop client's Plugins page, enable the selected plugin under VoxStudio Local. Restart the client if it is missing, then open a new chat.";
+"Find evidence in my VoxStudio sessions and cite the original text." = "Find evidence in my VoxStudio sessions and cite the original text.";
+"Ask about your sessions, compare sources, or request original quotes. Enable the media plugin as well when you need previews or editing." = "Ask about your sessions, compare sources, or request original quotes. Enable the media plugin as well when you need previews or editing.";
+"Answer with evidence" = "Answer with evidence";
+"Compare sessions" = "Compare sessions";
+"Find media clips" = "Find media clips";
+"Compare the decisions in my selected VoxStudio sessions. Cite each source and explain any gaps in the evidence." = "Compare the decisions in my selected VoxStudio sessions. Cite each source and explain any gaps in the evidence.";
+"Find media clips in VoxStudio related to the topic I give you, and return their source references and time ranges." = "Find media clips in VoxStudio related to the topic I give you, and return their source references and time ranges.";
+"Index status reflects the canonical knowledge body." = "Index status reflects the canonical knowledge body.";

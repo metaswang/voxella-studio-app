@@ -1,0 +1,27 @@
+{
+  "knowledge_tools": [
+    "aggregate",
+    "fetch",
+    "find_text",
+    "list_sources",
+    "methods",
+    "search"
+  ],
+  "legacy_tool_count": 100,
+  "profile_isolation": true,
+  "stateless_inventory_isolation": true,
+  "structured_content_matches_json": true,
+  "local_source_count": 31,
+  "methods_enabled": 5,
+  "canonical_search": true,
+  "canonical_fetch": true,
+  "literal_find": true,
+  "evidence_fetch": true,
+  "legacy_body_read": true,
+  "explicit_subtitle_search": true,
+  "media_search_returned_count": 8,
+  "media_fetch": true,
+  "media_locator_available": true,
+  "legacy_media_preview_status": "ok",
+  "authorization_and_schema_errors": true
+}

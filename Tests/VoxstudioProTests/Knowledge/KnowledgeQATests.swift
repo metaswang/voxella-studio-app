@@ -491,27 +491,28 @@ struct KnowledgeQAExecutionTests {
 
 struct KnowledgeRerankAndContextTests {
     @Test
-    func rerankThresholdUsesPrimaryRelaxedAndSingleEvidenceFallback() {
+    func rerankScoresOnlyOrderFiniteEvidence() {
         let hits = [
             reranked(unitID: 1, score: 0.26),
             reranked(unitID: 2, score: 0.24),
         ]
-        #expect(KnowledgeRerankPolicy.thresholded(hits).map(\.hit.unitID) == [1])
+        #expect(KnowledgeRerankPolicy.thresholded(hits).map(\.hit.unitID) == [1, 2])
 
         let relaxed = [reranked(unitID: 1, score: 0.20), reranked(unitID: 2, score: 0.18)]
         #expect(KnowledgeRerankPolicy.thresholded(relaxed).map(\.hit.unitID) == [1, 2])
 
         let single = [reranked(unitID: 1, score: 0.16), reranked(unitID: 2, score: 0.14)]
-        #expect(KnowledgeRerankPolicy.thresholded(single).map(\.hit.unitID) == [1])
-        #expect(KnowledgeRerankPolicy.thresholded([reranked(unitID: 1, score: 0.14)]).isEmpty)
+        #expect(KnowledgeRerankPolicy.thresholded(single).map(\.hit.unitID) == [1, 2])
+        #expect(KnowledgeRerankPolicy.thresholded([reranked(unitID: 1, score: 0.14)]).count == 1)
+        #expect(KnowledgeRerankPolicy.thresholded([reranked(unitID: 1, score: .nan)]).isEmpty)
     }
 
-    @Test
-    func mmrUsesStoredVectorsToAvoidNearDuplicateEvidence() {
+    @Test(arguments: [1.0, 0.000001])
+    func mmrUsesStoredVectorsToAvoidNearDuplicateEvidence(scale: Double) {
         let candidates = [
-            reranked(unitID: 1, score: 0.9, text: "first evidence"),
-            reranked(unitID: 2, score: 0.88, text: "duplicate evidence"),
-            reranked(unitID: 3, score: 0.7, text: "independent evidence"),
+            reranked(unitID: 1, score: 0.9 * scale, text: "first evidence"),
+            reranked(unitID: 2, score: 0.88 * scale, text: "duplicate evidence"),
+            reranked(unitID: 3, score: 0.7 * scale, text: "independent evidence"),
         ]
         let selected = KnowledgeMMR.select(
             candidates,
@@ -628,12 +629,12 @@ struct KnowledgeListRowP0Tests {
     }
 
     @Test
-    func indexedStatusIsApproximateAndHasContent() {
+    func indexedStatusReportsReadyCanonicalBodyAndHasContent() {
         let indexed = row(indexed: true)
         #expect(indexed.isIndexed)
         #expect(indexed.hasSearchableContent)
-        #expect(indexed.statusLabel == "Indexed (approx.)")
-        #expect(indexed.indexStatusHelp.contains("Approximate"))
+        #expect(indexed.statusLabel == "Indexed")
+        #expect(indexed.indexStatusHelp.contains("canonical body"))
         #expect(KnowledgeListRow.p0IsSearchable(hasTranscript: true, hasUsableResult: false))
         #expect(KnowledgeListRow.p0IsSearchable(hasTranscript: false, hasUsableResult: true))
         #expect(!KnowledgeListRow.p0IsSearchable(hasTranscript: false, hasUsableResult: false))
@@ -1072,7 +1073,7 @@ struct KnowledgeRetrievalServiceTests {
             resultLimit: 8,
             requestID: UUID(),
             includeCatalog: false,
-            retrievalPath: .agent
+            retrievalPath: .agent, useGraph: true
         )
     }
 

@@ -153,8 +153,10 @@ struct KnowledgeEvidenceWorkspaceTests {
         #expect(versions.count == 1)
     }
 
-    @Test func dubFallbackContentChangesInvalidateTheEvidenceVersion() {
+    @Test func voiceoverTranscriptChangesInvalidateBodyButIndependentSubtitlesDoNot() {
         var source = fixture(segments: [])
+        source.source = .standaloneDub
+        source.sessionType = .dub
         source.dubTranscript = .init(text: "旧内容", language: "zh", words: [], segments: [
             .init(text: "旧内容", start: 0, end: 3)])
         let before = KnowledgeScopeSnapshot.generation(source)
@@ -165,7 +167,7 @@ struct KnowledgeEvidenceWorkspaceTests {
             .init(id: 0, sourceIDs: [0], text: "字幕内容", start: 0, end: 3, speaker: nil)])
         let beforeSubtitleChange = KnowledgeScopeSnapshot.generation(source)
         source.dubSubtitleTrack?.cues[0].text = "修正字幕"
-        #expect(KnowledgeScopeSnapshot.generation(source) != beforeSubtitleChange)
+        #expect(KnowledgeScopeSnapshot.generation(source) == beforeSubtitleChange)
     }
 
     @Test func sourceChangesInvalidateCacheNamespaceAndEvidenceIDs() async throws {
@@ -320,7 +322,7 @@ struct KnowledgeEvidenceWorkspaceTests {
             hybridRecall: { _, _ in [hybridHit] }, graphRecall: { _, _ in [graphHit, hybridHit] },
             reranker: { _, _ in throw KnowledgeQAError.invalidRerankerOutput }))
         let result = try await retrieval.search(.init(query: "decision", scope: .all, originFilter: nil, resultLimit: 1,
-            requestID: UUID(), includeCatalog: false, retrievalPath: .agent))
+            requestID: UUID(), includeCatalog: false, retrievalPath: .agent, useGraph: true))
         #expect(result.diagnostics.rerankerStatus == .failed)
         #expect(result.hits.first?.unitID == 101)
     }
@@ -336,7 +338,7 @@ struct KnowledgeEvidenceWorkspaceTests {
         .init(id: UUID(), title: title, createdAt: Date(timeIntervalSince1970: 1_700_000_000),
               modifiedAt: Date(timeIntervalSince1970: 1_700_000_100), state: .completed, source: .media, sessionType: .upload,
               transcriptionID: nil, dubID: nil, sourceURL: nil, outputURL: nil, durationHint: duration,
-              transcript: segments.map { .init(text: $0.map(\.text).joined(), language: "zh", words: [], segments: $0) },
+              transcript: segments.map { .init(text: $0.map(\.text).joined(separator: " "), language: "zh", words: [], segments: $0) },
               subtitleTrack: nil, translationTracks: [], selectedTranslationLanguageCode: nil,
               summaryMarkdown: summary, summaryTemplateID: nil, summaryTemplateName: nil, summaryState: nil,
               summaryErrorMessage: nil, sessionTag: nil, dubTranscript: nil, dubSubtitleTrack: nil, dubSegments: [])

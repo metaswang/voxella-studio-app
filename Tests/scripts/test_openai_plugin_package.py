@@ -37,6 +37,14 @@ class PluginPackageTests(unittest.TestCase):
             self.assertEqual(json.loads((plugin_path / "plugin.json").read_text())["version"], first["version"])
             self.assertTrue((plugin_path / ".codex-plugin/plugin.json").is_file())
             self.assertEqual(json.loads((plugin_path / "mcp.json").read_text())["mcpServers"]["voxstudio"]["url"], "http://127.0.0.1:19789/mcp")
+            self.assertEqual({p["name"] for p in marketplace["plugins"]}, {"voxstudio", "voxstudio-knowledge"})
+            knowledge = folder / "plugins/voxstudio-knowledge"
+            self.assertEqual(json.loads((knowledge / "mcp.json").read_text())["mcpServers"]["voxstudio_knowledge"]["url"], "http://127.0.0.1:19789/knowledge/mcp")
+            self.assertTrue((knowledge / "skills/knowledge-qa/SKILL.md").is_file())
+            for name, version in first["plugins"].items():
+                plugin = folder / "plugins" / name
+                self.assertEqual(json.loads((plugin / "plugin.json").read_text())["version"], version)
+                self.assertEqual(json.loads((plugin / ".codex-plugin/plugin.json").read_text())["version"], version)
             for line in (folder / "FILES.sha256").read_text().splitlines():
                 sha, name = line.split("  ", 1)
                 self.assertEqual(hashlib.sha256((folder / name).read_bytes()).hexdigest(), sha)
@@ -57,6 +65,24 @@ class PluginPackageTests(unittest.TestCase):
             calls = [json.loads(line) for line in log.read_text().splitlines()]
             self.assertEqual(calls, [["plugin", "marketplace", "add", str(folder), "--json"],
                                      ["plugin", "add", "voxstudio@voxstudio-local", "--json"]])
+
+    def test_knowledge_installs_independently_and_missing_option_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            packager.package(ROOT, base)
+            with zipfile.ZipFile(base / packager.FILENAME) as archive:
+                archive.extractall(base)
+            cli = base / "fake-cli"
+            log = base / "calls.jsonl"
+            cli.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['PLUGIN_TEST_LOG'],'a') as f:f.write(json.dumps(sys.argv[1:])+'\\n')\n")
+            cli.chmod(0o755)
+            folder = base / packager.FOLDER
+            subprocess.run(["bash", str(folder / "install.sh"), "--cli", str(cli), "--plugin", "voxstudio-knowledge"],
+                           check=True, capture_output=True, env={**os.environ, "PLUGIN_TEST_LOG": str(log)})
+            calls = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertEqual(calls[-1], ["plugin", "add", "voxstudio-knowledge@voxstudio-local", "--json"])
+            result = subprocess.run(["bash", str(folder / "install.sh"), "--plugin"], capture_output=True)
+            self.assertEqual(result.returncode, 2)
 
     def test_publisher_rejects_tampered_bytes_and_arbitrary_object_keys(self):
         with tempfile.TemporaryDirectory() as tmp:

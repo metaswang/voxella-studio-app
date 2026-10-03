@@ -1,0 +1,29 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "voxstudio-knowledge",
+  "version": "0.1.0",
+  "description": "Read-only session evidence for host-model knowledge QA.",
+  "author": {
+    "name": "VoxStudio"
+  },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "VoxStudio Knowledge",
+        "shortDescription": "Answer from sessions with traceable evidence",
+        "longDescription": "Read-only knowledge, subtitles and media candidate retrieval from the local VoxStudio app. The host model owns reasoning and citations.",
+        "developerName": "VoxStudio",
+        "category": "Productivity",
+        "capabilities": [
+          "Read"
+        ],
+        "composerIcon": "./assets/icon.svg",
+        "logo": "./assets/icon.svg",
+        "defaultPrompt": [
+          "Find evidence in my VoxStudio sessions",
+          "Compare the decisions in selected sessions"
+        ]
+      }
+    }
+  }
+}

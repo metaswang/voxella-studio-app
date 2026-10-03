@@ -49,11 +49,25 @@ actor SessionIndexStore {
         try sqlite.execute(
             "UPDATE sessions SET source_created_at = COALESCE(source_created_at, source_mtime, created_at) WHERE source_created_at IS NULL"
         )
+        let unitColumns = try sqlite.query("PRAGMA table_info(units)").compactMap { $0.text("name") }
+        let graphColumns = try sqlite.query("PRAGMA table_info(graph_source_state)").compactMap { $0.text("name") }
+        if !graphColumns.contains("source_manifest") { try sqlite.execute("ALTER TABLE graph_source_state ADD COLUMN source_manifest TEXT") }
+        for (name, type) in [("body_generation", "TEXT"), ("provenance", "TEXT"), ("material_role", "TEXT"), ("revision", "TEXT"),
+                             ("char_start", "INTEGER"), ("char_end", "INTEGER"), ("timing_precision", "TEXT"), ("context", "TEXT"), ("spans_json", "TEXT")] where !unitColumns.contains(name) {
+            try sqlite.execute("ALTER TABLE units ADD COLUMN \(name) \(type)")
+        }
     }
 
-    func replaceLexical(snapshot: SessionIndexSnapshot, clips: [CuePacker.Clip]) throws {
+    @discardableResult
+    func replaceLexical(snapshot: SessionIndexSnapshot, clips: [CuePacker.Clip], force: Bool = false) throws -> Bool {
         try sqlite.transaction {
-            try deleteSessionRows(snapshot.sessionID)
+            let oldKnowledge = try laneManifest(sessionID: snapshot.sessionID, lane: "knowledge")
+            let oldMedia = try laneManifest(sessionID: snapshot.sessionID, lane: "media")
+            let knowledgeChanged = force || oldKnowledge != snapshot.knowledgeManifest
+            let adoptLegacyMedia: Bool
+            if oldMedia == nil { adoptLegacyMedia = try legacyMediaMatches(snapshot: snapshot, clips: clips) }
+            else { adoptLegacyMedia = false }
+            let mediaChanged = !adoptLegacyMedia && oldMedia != snapshot.mediaManifest
             let now = Date().timeIntervalSince1970
             try sqlite.run(
                 """
@@ -63,6 +77,12 @@ actor SessionIndexStore {
                     created_at, modified_at, source_origin, remote_session_id, owner_user_id, indexed_at,
                     session_type, source_created_at, source_modified_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET title=excluded.title, tag=excluded.tag, summary_markdown=excluded.summary_markdown,
+                    language=excluded.language, duration_sec=excluded.duration_sec, has_video=excluded.has_video, media_path=excluded.media_path,
+                    source_mtime=excluded.source_mtime, ingest_generation=excluded.ingest_generation, lexical_ready=1,
+                    source_origin=excluded.source_origin, remote_session_id=excluded.remote_session_id, owner_user_id=excluded.owner_user_id,
+                    indexed_at=excluded.indexed_at, session_type=excluded.session_type, source_created_at=excluded.source_created_at,
+                    source_modified_at=excluded.source_modified_at, modified_at=excluded.modified_at
                 """,
                 binds: [
                     .text(snapshot.sessionID.uuidString),
@@ -87,6 +107,7 @@ actor SessionIndexStore {
                 ]
             )
             try patchDurationFacts(snapshot: snapshot)
+            try sqlite.run("DELETE FROM speakers WHERE session_id = ?", binds: [.text(snapshot.sessionID.uuidString)])
             for speaker in snapshot.speakers {
                 try sqlite.run(
                     "INSERT INTO speakers(session_id, label, display_name) VALUES (?, ?, ?)",
@@ -99,39 +120,48 @@ actor SessionIndexStore {
             }
 
             let cardText = sessionCardText(snapshot)
-            let cardID = try insertUnit(
-                snapshot: snapshot,
-                kind: .sessionCard,
-                start: nil,
-                end: nil,
-                speaker: nil,
-                speakers: snapshot.speakers.map(\.label),
-                text: cardText,
-                cueIDs: [],
-                parentID: nil,
-                modality: .text,
-                title: snapshot.title,
-                summary: snapshot.summaryMarkdown
-            )
-
-            for chunk in TranscriptChunkPacker.pack(segments: snapshot.segments) {
-                try insertUnit(
-                    snapshot: snapshot,
-                    kind: .transcriptChunk,
-                    start: chunk.start,
-                    end: chunk.end,
-                    speaker: chunk.speakerLabels.first,
-                    speakers: chunk.speakerLabels,
-                    text: chunk.text,
-                    cueIDs: [],
-                    parentID: cardID,
-                    modality: .text,
-                    title: snapshot.title,
-                    summary: nil
-                )
+            let previousCard = try sqlite.query("SELECT id, text FROM units WHERE session_id = ? AND kind = 'session_card'", binds: [.text(snapshot.sessionID.uuidString)]).first
+            let cardID: Int
+            if let id = previousCard?.int("id") {
+                cardID = id
+                if previousCard?.text("text") != cardText {
+                    try sqlite.run("UPDATE units SET text = ? WHERE id = ?", binds: [.text(cardText), .int(id)])
+                    try sqlite.run("DELETE FROM vec_text WHERE unit_id = ?", binds: [.int(id)])
+                    try sqlite.run("DELETE FROM units_fts WHERE rowid = ?", binds: [.int(id)])
+                    try sqlite.run("INSERT INTO units_fts(rowid, text, translation_text, title, summary) VALUES (?, ?, NULL, ?, ?)",
+                                   binds: [.int(id), .text(KnowledgeLexicalTerms.indexText(cardText)), .text(KnowledgeLexicalTerms.indexText(snapshot.title)), .optional(snapshot.summaryMarkdown.map(KnowledgeLexicalTerms.indexText))])
+                }
+            } else {
+                cardID = try insertUnit(snapshot: snapshot, kind: .sessionCard, start: nil, end: nil, speaker: nil,
+                    speakers: snapshot.speakers.map(\.label), text: cardText, cueIDs: [], parentID: nil, modality: .text, title: snapshot.title, summary: snapshot.summaryMarkdown)
             }
-
-            for clip in clips {
+            if knowledgeChanged {
+                try deleteGraphSource(sessionID: snapshot.sessionID)
+                try deleteUnits(sessionID: snapshot.sessionID, kind: .transcriptChunk)
+            }
+            if mediaChanged { try deleteUnits(sessionID: snapshot.sessionID, kind: .mediaClip) }
+            if adoptLegacyMedia {
+                // Upgrade lexical tokenization without replacing media IDs or vectors.
+                let rows = try sqlite.query("SELECT id,text FROM units WHERE session_id=? AND kind='media_clip'",
+                                            binds: [.text(snapshot.sessionID.uuidString)])
+                for row in rows {
+                    guard let id = row.int("id"), let text = row.text("text") else { continue }
+                    try sqlite.run("DELETE FROM units_fts WHERE rowid=?", binds: [.int(id)])
+                    try sqlite.run("INSERT INTO units_fts(rowid,text,translation_text,title,summary) VALUES (?,?,NULL,?,NULL)",
+                                   binds: [.int(id), .text(KnowledgeLexicalTerms.indexText(text)), .text(KnowledgeLexicalTerms.indexText(snapshot.title))])
+                }
+            }
+            if knowledgeChanged, let body = snapshot.selectedBody {
+                for chunk in snapshot.preparedChunks ?? KnowledgeBodyChunker.pack(body) {
+                    let id = try insertUnit(snapshot: snapshot, kind: .transcriptChunk, start: chunk.start, end: chunk.end,
+                        speaker: chunk.speakers.first, speakers: chunk.speakers, text: chunk.text,
+                        cueIDs: chunk.spans.compactMap(\.cueID), parentID: cardID, modality: .text, title: snapshot.title, summary: nil)
+                    let spansJSON = String(decoding: try JSONEncoder().encode(chunk.spans), as: UTF8.self)
+                    try sqlite.run("UPDATE units SET body_generation=?, provenance=?, material_role=?, revision=?, char_start=?, char_end=?, timing_precision=?, context=?, spans_json=? WHERE id=?",
+                        binds: [.text(body.generation), .text(body.provenance), .text(body.role), .optional(body.revision), .int(chunk.lower), .int(chunk.upper), .text(chunk.timingPrecision), .text(chunk.context), .text(spansJSON), .int(id)])
+                }
+            }
+            for clip in mediaChanged ? clips : [] {
                 let modality: SessionIndexModality = snapshot.hasVideo
                     ? (clip.text.isEmpty ? .video : .mixed)
                     : .text
@@ -150,6 +180,14 @@ actor SessionIndexStore {
                     summary: nil
                 )
             }
+            for (lane, manifest, changed) in [("knowledge", snapshot.knowledgeManifest, knowledgeChanged), ("media", snapshot.mediaManifest, mediaChanged)] {
+                try sqlite.run("INSERT INTO index_lane_state(session_id,lane,manifest,lexical_ready,embedding_ready) VALUES (?,?,?,1,0) ON CONFLICT(session_id,lane) DO UPDATE SET manifest=excluded.manifest, lexical_ready=1, embedding_ready=CASE WHEN ? THEN 0 ELSE index_lane_state.embedding_ready END",
+                    binds: [.text(snapshot.sessionID.uuidString), .text(lane), .text(manifest), .bool(changed)])
+            }
+            if knowledgeChanged || mediaChanged || previousCard?.text("text") != cardText {
+                try sqlite.run("UPDATE sessions SET embedding_ready=0 WHERE id=?", binds: [.text(snapshot.sessionID.uuidString)])
+            }
+            return knowledgeChanged
         }
     }
 
@@ -197,10 +235,10 @@ actor SessionIndexStore {
                 "INSERT INTO units_fts(rowid, text, translation_text, title, summary) VALUES (?, ?, ?, ?, ?)",
                 binds: [
                     .int(unitID),
-                    .text(text),
+                    .text(KnowledgeLexicalTerms.indexText(text)),
                     .null,
-                    .text(snapshot.title),
-                    .optional(snapshot.summaryMarkdown),
+                    .text(KnowledgeLexicalTerms.indexText(snapshot.title)),
+                    .optional(snapshot.summaryMarkdown.map(KnowledgeLexicalTerms.indexText)),
                 ]
             )
         }
@@ -226,6 +264,10 @@ actor SessionIndexStore {
     }
 
     func markEmbeddingReady(_ sessionID: UUID, ready: Bool) throws {
+        for (lane, kind) in [("knowledge", SessionIndexUnitKind.transcriptChunk), ("media", .mediaClip)] {
+            let remaining = try unitsNeedingEmbedding(sessionID: sessionID).contains { $0.kind == kind }
+            try sqlite.run("UPDATE index_lane_state SET embedding_ready=? WHERE session_id=? AND lane=?", binds: [.bool(!remaining), .text(sessionID.uuidString), .text(lane)])
+        }
         try sqlite.run(
             "UPDATE sessions SET embedding_ready = ?, indexed_at = ? WHERE id = ?",
             binds: [
@@ -242,12 +284,14 @@ actor SessionIndexStore {
         }
     }
 
-    func freshness(sessionID: UUID) throws -> SessionIndexFreshness? {
+    func freshness(sessionID: UUID, knowledgeManifest: String? = nil, mediaManifest: String? = nil) throws -> SessionIndexFreshness? {
         let rows = try sqlite.query(
             "SELECT ingest_generation, lexical_ready, embedding_ready FROM sessions WHERE id = ?",
             binds: [.text(sessionID.uuidString)]
         )
         guard let row = rows.first, let generation = row.int("ingest_generation") else { return nil }
+        if let knowledgeManifest, try laneManifest(sessionID: sessionID, lane: "knowledge") != knowledgeManifest { return nil }
+        if let mediaManifest, try laneManifest(sessionID: sessionID, lane: "media") != mediaManifest { return nil }
         return SessionIndexFreshness(
             generation: generation,
             lexicalReady: row.bool("lexical_ready"),
@@ -285,7 +329,12 @@ actor SessionIndexStore {
         return needed
     }
 
+    func unitExists(id: Int, sessionID: UUID, text: String) throws -> Bool {
+        try sqlite.query("SELECT id FROM units WHERE id=? AND session_id=? AND text=?", binds: [.int(id), .text(sessionID.uuidString), .text(text)]).first != nil
+    }
+
     func upsertEmbedding(unitID: Int, modality: SessionIndexModality, vector: [Float]) throws {
+        guard try sqlite.query("SELECT id FROM units WHERE id=?", binds: [.int(unitID)]).first != nil else { return }
         let table = vecTable(modality)
         try sqlite.run("DELETE FROM \(table) WHERE unit_id = ?", binds: [.int(unitID)])
         try sqlite.run(
@@ -428,7 +477,7 @@ actor SessionIndexStore {
         guard !fts.isEmpty else { return [] }
         let kindList = kinds.map { "'\($0.rawValue)'" }.joined(separator: ",")
         var sql = """
-        SELECT u.id, u.session_id, u.kind, u.start_s, u.end_s, u.speaker_label, u.text,
+        SELECT u.*,
                u.cue_ids, s.title, s.has_video, s.language, s.duration_sec, s.source_origin,
                s.session_type, s.source_created_at, s.source_modified_at, s.source_mtime,
                bm25(units_fts) AS rank
@@ -452,11 +501,13 @@ actor SessionIndexStore {
     func searchVector(
         vector: [Float],
         modality: SessionIndexModality,
-        filter: SessionSearchFilter
+        filter: SessionSearchFilter,
+        allowedKinds: [SessionIndexUnitKind]? = nil
     ) throws -> [SessionSearchHit] {
+        guard filter.sessionIDs?.isEmpty != true, filter.sourceOrigins?.isEmpty != true, allowedKinds?.isEmpty != true else { return [] }
         let table = vecTable(modality)
         var sql = """
-        SELECT u.id, u.session_id, u.kind, u.start_s, u.end_s, u.speaker_label, u.text,
+        SELECT u.*,
                u.cue_ids, s.title, s.has_video, s.language, s.duration_sec, s.source_origin,
                s.session_type, s.source_created_at, s.source_modified_at, s.source_mtime,
                v.distance AS rank
@@ -466,7 +517,12 @@ actor SessionIndexStore {
         WHERE v.embedding MATCH ? AND k = ?
         """
         var binds: [SessionSQLiteValue] = [.blob(Self.packed(vector)), .int(Self.vectorLimit)]
-        sql += Self.filterSQL(filter, binds: &binds)
+        var eligible = "SELECT u.id FROM units u JOIN sessions s ON s.id=u.session_id WHERE 1"
+        if let allowedKinds {
+            eligible += " AND u.kind IN (" + allowedKinds.map { "'" + $0.rawValue + "'" }.joined(separator: ",") + ")"
+        }
+        eligible += Self.filterSQL(filter, binds: &binds)
+        sql += " AND v.unit_id IN (" + eligible + ")"
         sql += " ORDER BY rank LIMIT ?"
         binds.append(.int(Self.vectorLimit))
         return try decorateSpeakers(
@@ -585,10 +641,10 @@ actor SessionIndexStore {
             "INSERT INTO units_fts(rowid, text, translation_text, title, summary) VALUES (?, ?, ?, ?, ?)",
             binds: [
                 .int(unitID),
-                .text(text),
+                .text(KnowledgeLexicalTerms.indexText(text)),
                 .null,
-                .text(title),
-                .optional(summary),
+                .text(KnowledgeLexicalTerms.indexText(title)),
+                .optional(summary.map(KnowledgeLexicalTerms.indexText)),
             ]
         )
         for label in speakers {
@@ -600,8 +656,66 @@ actor SessionIndexStore {
         return unitID
     }
 
+    func laneManifest(sessionID: UUID, lane: String) throws -> String? {
+        try sqlite.query("SELECT manifest FROM index_lane_state WHERE session_id=? AND lane=?", binds: [.text(sessionID.uuidString), .text(lane)]).first?.text("manifest")
+    }
+
+    func mediaClip(id: Int, sessionID: UUID) throws -> SessionSearchHit? {
+        try sqlite.query("SELECT u.*, s.title, s.has_video, s.language FROM units u JOIN sessions s ON s.id=u.session_id WHERE u.id=? AND u.session_id=? AND u.kind='media_clip'",
+                         binds: [.int(id), .text(sessionID.uuidString)]).first.flatMap { hit(from: $0, matchSource: "media_locator", invertRank: false) }
+    }
+
+    func laneStatus(sessionID: UUID) throws -> [[String: String]] {
+        try sqlite.query("SELECT * FROM index_lane_state WHERE session_id=?", binds: [.text(sessionID.uuidString)]).map {
+            ["lane": $0.text("lane") ?? "", "manifest": $0.text("manifest") ?? "", "lexical_ready": String($0.bool("lexical_ready")), "embedding_ready": String($0.bool("embedding_ready"))]
+        }
+    }
+
+    func embeddingChannels(sessionID: UUID) throws -> [String: Int] {
+        var result: [String: Int] = [:]
+        for (name, table) in [("text", "vec_text"), ("video", "vec_video"), ("mixed", "vec_mixed")] {
+            result[name] = try sqlite.query("SELECT COUNT(*) AS count FROM \(table) v JOIN units u ON u.id=v.unit_id WHERE u.session_id=?",
+                                           binds: [.text(sessionID.uuidString)]).first?.int("count") ?? 0
+        }
+        return result
+    }
+
+    private func legacyMediaMatches(snapshot: SessionIndexSnapshot, clips: [CuePacker.Clip]) throws -> Bool {
+        guard let source = try sqlite.query("SELECT media_path,has_video,indexed_at FROM sessions WHERE id=?",
+                                            binds: [.text(snapshot.sessionID.uuidString)]).first,
+              source.text("media_path") == snapshot.mediaPath, source.bool("has_video") == snapshot.hasVideo,
+              let indexedAt = source.double("indexed_at") else { return false }
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: snapshot.mediaPath),
+           let modified = attributes[.modificationDate] as? Date, modified.timeIntervalSince1970 > indexedAt { return false }
+        let rows = try sqlite.query("SELECT * FROM units WHERE session_id=? AND kind='media_clip' ORDER BY start_s,end_s,id",
+                                    binds: [.text(snapshot.sessionID.uuidString)])
+        let expected = clips.sorted { $0.start == $1.start ? $0.end < $1.end : $0.start < $1.start }
+        guard rows.count == expected.count else { return false }
+        for (row, clip) in zip(rows, expected) {
+            guard row.double("start_s") == clip.start, row.double("end_s") == clip.end,
+                  row.text("text") == clip.text, Self.decodeCueIDs(row.text("cue_ids")) == clip.cueIDs,
+                  row.text("modality") == (snapshot.hasVideo ? (clip.text.isEmpty ? "video" : "mixed") : "text") else { return false }
+            let speakers = try sqlite.query("SELECT speaker_label FROM unit_speakers WHERE unit_id=?", binds: [.int(row.int("id")!)])
+                .compactMap { $0.text("speaker_label") }.sorted()
+            guard speakers == clip.speakerLabels.sorted() else { return false }
+        }
+        return true
+    }
+
+    private func deleteUnits(sessionID: UUID, kind: SessionIndexUnitKind) throws {
+        let rows = try sqlite.query("SELECT id FROM units WHERE session_id=? AND kind=?", binds: [.text(sessionID.uuidString), .text(kind.rawValue)])
+        for row in rows {
+            guard let id = row.int("id") else { continue }
+            for table in ["vec_text", "vec_video", "vec_mixed"] { try sqlite.run("DELETE FROM \(table) WHERE unit_id=?", binds: [.int(id)]) }
+            try sqlite.run("DELETE FROM units_fts WHERE rowid=?", binds: [.int(id)])
+            try sqlite.run("DELETE FROM unit_speakers WHERE unit_id=?", binds: [.int(id)])
+            try sqlite.run("DELETE FROM units WHERE id=?", binds: [.int(id)])
+        }
+    }
+
     private func deleteSessionRows(_ sessionID: UUID) throws {
         try deleteGraphSource(sessionID: sessionID)
+        try sqlite.run("DELETE FROM index_lane_state WHERE session_id=?", binds: [.text(sessionID.uuidString)])
         let unitRows = try sqlite.query(
             "SELECT id FROM units WHERE session_id = ?",
             binds: [.text(sessionID.uuidString)]
@@ -710,7 +824,10 @@ actor SessionIndexStore {
             sourceOrigin: row.text("source_origin").flatMap(KnowledgeSourceOrigin.init(rawValue:)) ?? .local,
             sessionType: WorkbenchSessionType(rawValue: row.text("session_type") ?? "upload") ?? .upload,
             sourceCreatedAt: row.double("source_created_at"),
-            sourceModifiedAt: row.double("source_modified_at") ?? row.double("source_mtime")
+            sourceModifiedAt: row.double("source_modified_at") ?? row.double("source_mtime"),
+            materialGeneration: row.text("body_generation"), provenance: row.text("provenance"), materialRole: row.text("material_role"),
+            revision: row.text("revision"), characterStart: row.int("char_start"), characterEnd: row.int("char_end"),
+            timingPrecision: row.text("timing_precision") ?? "unknown", matchedModalities: matchSource.hasPrefix("vector-") ? [String(matchSource.dropFirst(7))] : [], context: row.text("context") ?? ""
         )
     }
 
@@ -761,22 +878,21 @@ actor SessionIndexStore {
         }
     }
 
-    private func needsEmbedding(_ unit: SessionIndexUnitRecord) throws -> Bool {
+    func missingEmbeddingModalities(for unit: SessionIndexUnitRecord) throws -> [SessionIndexModality] {
+        var required: [SessionIndexModality] = []
         switch unit.kind {
         case .sessionCard, .transcriptChunk:
-            return try !hasEmbedding(unitID: unit.id, modality: .text)
+            required = [.text]
         case .mediaClip:
-            switch unit.modality {
-            case .text:
-                return try !hasEmbedding(unitID: unit.id, modality: .text)
-            case .video:
-                return try !hasEmbedding(unitID: unit.id, modality: .video)
-            case .mixed:
-                if try !hasEmbedding(unitID: unit.id, modality: .video) { return true }
-                guard !unit.text.isEmpty else { return false }
-                return try !hasEmbedding(unitID: unit.id, modality: .mixed)
-            }
+            if !unit.text.isEmpty { required.append(.text) }
+            if unit.modality != .text { required.append(.video) }
+            if unit.modality == .mixed && !unit.text.isEmpty { required.append(.mixed) }
         }
+        return try required.filter { try !hasEmbedding(unitID: unit.id, modality: $0) }
+    }
+
+    private func needsEmbedding(_ unit: SessionIndexUnitRecord) throws -> Bool {
+        try !missingEmbeddingModalities(for: unit).isEmpty
     }
 
     private func hasEmbedding(unitID: Int, modality: SessionIndexModality) throws -> Bool {
@@ -800,7 +916,9 @@ actor SessionIndexStore {
         return ids
     }
 
-    static func ftsQuery(_ raw: String) -> String {
+    static func ftsQuery(_ raw: String) -> String { KnowledgeLexicalTerms.query(raw) }
+
+    private static func legacyFTSQuery(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
         let tokens = trimmed.split(whereSeparator: \.isWhitespace)
@@ -855,6 +973,14 @@ actor SessionIndexStore {
 
     private static func filterSQL(_ filter: SessionSearchFilter, binds: inout [SessionSQLiteValue]) -> String {
         var sql = ""
+        if let generations = filter.canonicalGenerations {
+            let clauses = generations.sorted { $0.key.uuidString < $1.key.uuidString }.map { id, generation in
+                binds.append(.text(id.uuidString)); binds.append(.text(generation))
+                return "(u.session_id=? AND u.body_generation=?)"
+            }
+            sql += clauses.isEmpty ? " AND u.kind <> 'transcript_chunk'" :
+                " AND (u.kind <> 'transcript_chunk' OR (" + clauses.joined(separator: " OR ") + "))"
+        }
         if let sessionIDs = filter.sessionIDs, !sessionIDs.isEmpty {
             let sorted = sessionIDs.map(\.uuidString).sorted()
             let placeholders = Array(repeating: "?", count: sorted.count).joined(separator: ",")
@@ -877,11 +1003,8 @@ actor SessionIndexStore {
             binds.append(.text(speaker))
             binds.append(.text(speaker))
         }
-        if let start = filter.start, let end = filter.end {
-            sql += " AND u.start_s < ? AND u.end_s > ?"
-            binds.append(.double(end))
-            binds.append(.double(start))
-        }
+        if let start = filter.start { sql += " AND (u.end_s IS NULL OR u.end_s >= ?)"; binds.append(.double(start)) }
+        if let end = filter.end { sql += " AND (u.start_s IS NULL OR u.start_s <= ?)"; binds.append(.double(end)) }
         if let hasVideo = filter.hasVideo {
             sql += " AND s.has_video = ?"
             binds.append(.bool(hasVideo))
@@ -969,6 +1092,14 @@ actor SessionIndexStore {
         cue_ids TEXT,
         parent_id INTEGER,
         modality TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS index_lane_state (
+        session_id TEXT NOT NULL,
+        lane TEXT NOT NULL,
+        manifest TEXT NOT NULL,
+        lexical_ready INTEGER NOT NULL,
+        embedding_ready INTEGER NOT NULL,
+        PRIMARY KEY(session_id,lane)
     );
     CREATE TABLE IF NOT EXISTS unit_speakers (
         unit_id INTEGER NOT NULL,

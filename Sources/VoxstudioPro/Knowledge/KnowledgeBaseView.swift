@@ -26,6 +26,12 @@ struct KnowledgeBaseView: View {
             }
         }
         .background(AppTheme.Background.baseColor)
+        .task {
+            while !Task.isCancelled {
+                await controller.refreshIndexStates()
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            }
+        }
         .onAppear {
             splitRatio = Self.loadPersistedRatio()
             controller.onAppear()

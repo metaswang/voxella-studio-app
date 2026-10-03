@@ -88,6 +88,7 @@ struct KnowledgeGraphSource: Sendable {
     var sourceOrigin: KnowledgeSourceOrigin
     var ownerUserID: String?
     var chunks: [SessionSearchHit]
+    var manifest: String? = nil
 }
 
 struct KnowledgeGraphEntityRecord: Hashable, Sendable {
@@ -112,7 +113,7 @@ extension SessionIndexStore {
         }
         let unitRows = try sqlite.query(
             """
-            SELECT u.id, u.session_id, u.kind, u.start_s, u.end_s, u.speaker_label, u.text,
+            SELECT u.*,
                    u.cue_ids, s.title, s.has_video, s.language
             FROM units u JOIN sessions s ON s.id = u.session_id
             WHERE u.session_id = ? AND u.kind = ? ORDER BY u.start_s, u.id
@@ -126,7 +127,8 @@ extension SessionIndexStore {
             generation: generation,
             sourceOrigin: source.text("source_origin").flatMap(KnowledgeSourceOrigin.init(rawValue:)) ?? .local,
             ownerUserID: source.text("owner_user_id"),
-            chunks: chunks
+            chunks: chunks,
+            manifest: try laneManifest(sessionID: sessionID, lane: "knowledge")
         )
     }
 
@@ -143,9 +145,10 @@ extension SessionIndexStore {
         var sql = """
         SELECT s.id FROM sessions s
         LEFT JOIN graph_source_state gs ON gs.session_id = s.id
+        LEFT JOIN index_lane_state ks ON ks.session_id = s.id AND ks.lane = 'knowledge'
         WHERE s.lexical_ready = 1
           AND s.source_origin IN (\(placeholders))
-          AND (gs.session_id IS NULL OR gs.source_generation != s.ingest_generation
+          AND (gs.session_id IS NULL OR COALESCE(gs.source_manifest, '') != COALESCE(ks.manifest, '')
                OR gs.schema_version != \(KnowledgeGraphSchema.version))
         """
         if sourceOrigins.contains(.cloud) {
@@ -178,7 +181,9 @@ extension SessionIndexStore {
                 "SELECT ingest_generation FROM sessions WHERE id = ?",
                 binds: [.text(source.sessionID.uuidString)]
             ).first?.int("ingest_generation")
-            guard current == source.generation else { return false }
+            if let manifest = source.manifest {
+                guard try laneManifest(sessionID: source.sessionID, lane: "knowledge") == manifest else { return false }
+            } else { guard current == source.generation else { return false } }
 
             try deleteGraphSource(sessionID: source.sessionID)
             let scope = KnowledgeGraphSchema.scopeKey(
@@ -247,11 +252,12 @@ extension SessionIndexStore {
                 }
             }
             try sqlite.run(
-                "INSERT INTO graph_source_state(session_id, source_generation, schema_version, source_origin, owner_user_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO graph_source_state(session_id, source_generation, schema_version, source_origin, owner_user_id, updated_at, source_manifest) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 binds: [
                     .text(source.sessionID.uuidString), .int(source.generation),
                     .int(KnowledgeGraphSchema.version), .text(source.sourceOrigin.rawValue),
                     .optional(source.ownerUserID), .double(Date().timeIntervalSince1970),
+                    .optional(source.manifest),
                 ]
             )
             try removeGraphOrphans()
@@ -311,7 +317,7 @@ extension SessionIndexStore {
         let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
         var binds = ids.map(SessionSQLiteValue.int)
         var sql = """
-        SELECT DISTINCT u.id, u.session_id, u.kind, u.start_s, u.end_s, u.speaker_label, u.text,
+        SELECT DISTINCT u.*,
                u.cue_ids, s.title, s.has_video, s.language
         FROM graph_entity_chunks gec
         JOIN units u ON u.id = gec.unit_id
@@ -344,7 +350,7 @@ extension SessionIndexStore {
         guard anchor.kind == .transcriptChunk else { return [] }
         let rows = try sqlite.query(
             """
-            SELECT u.id, u.session_id, u.kind, u.start_s, u.end_s, u.speaker_label, u.text,
+            SELECT u.*,
                    u.cue_ids, s.title, s.has_video, s.language
             FROM units u JOIN sessions s ON s.id = u.session_id
             WHERE u.session_id = ? AND u.kind = ? ORDER BY u.start_s, u.id
@@ -393,12 +399,21 @@ extension SessionIndexStore {
             cueIDs: [],
             hasVideo: row.bool("has_video"),
             language: row.text("language"),
-            quoteSpan: nil
+            quoteSpan: nil, materialGeneration: row.text("body_generation"), provenance: row.text("provenance"),
+            materialRole: row.text("material_role"), revision: row.text("revision"), characterStart: row.int("char_start"),
+            characterEnd: row.int("char_end"), timingPrecision: row.text("timing_precision") ?? "unknown"
         )
     }
 
     private func graphFilterSQL(_ filter: SessionSearchFilter, binds: inout [SessionSQLiteValue]) -> String {
         var sql = ""
+        if let generations = filter.canonicalGenerations {
+            let clauses = generations.sorted { $0.key.uuidString < $1.key.uuidString }.map { id, generation in
+                binds.append(.text(id.uuidString)); binds.append(.text(generation))
+                return "(u.session_id=? AND u.body_generation=?)"
+            }
+            sql += clauses.isEmpty ? " AND 0" : " AND (" + clauses.joined(separator: " OR ") + ")"
+        }
         if let sessionIDs = filter.sessionIDs, !sessionIDs.isEmpty {
             let sorted = sessionIDs.map(\.uuidString).sorted()
             sql += " AND u.session_id IN (\(Array(repeating: "?", count: sorted.count).joined(separator: ",")))"

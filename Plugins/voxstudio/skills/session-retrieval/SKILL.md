@@ -1,6 +1,6 @@
 ---
-name: voxstudio-session-retrieval
-description: Find, reference and answer questions about visible VoxStudio sessions.
+name: session-retrieval
+description: Find and answer questions about VoxStudio sessions using the local app's knowledge tools.
 ---
 
-Use search_mentions for composer resource links and voxstudio.library for browsing. Read the selected voxstudio://sessions resource or existing session tools; use knowledge.ask for grounded answers and citations. Preserve selected session scope on follow-up questions. A URI is not a filesystem path. Do not expose invisible sessions or invent citations.
+Use knowledge.search and session tools to obtain source evidence for your own answer. knowledge.ask is available when the user wants the app chatbot's answer. Sources follow current account visibility. Transcript is the authority for spoken content; current same-source subtitles are fallback when Transcript is unavailable. Explicit subtitle and media requests retain their own material semantics. Cite available source anchors and distinguish search candidates from full coverage.

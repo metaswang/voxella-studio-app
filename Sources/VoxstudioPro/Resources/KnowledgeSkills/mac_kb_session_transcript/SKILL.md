@@ -10,30 +10,6 @@ supports_evidence_goals: semantic_qa, timeline_analysis
 analysis_modes: extract, timeline
 ---
 
-# Session Transcript QA Skill
+Keep reads and searches within the selected source. Choose search, continuous time-range reads or a full short read to fit the question. Follow next_cursor only when claiming a complete read.
 
-This skill provides detailed answers by reading and searching within a single session's full transcript.
-
-## Tool Guidance
-
-- Use `session.search_segments` to find relevant transcript segments matching the query
-- Use `session.get_segments` to retrieve consecutive segments for context (e.g., start/end time ranges)
-- Use `session.get_timeline` when the user asks "around X minutes" or needs temporal context
-- Always scope all tool calls to the single target session
-
-## Evidence Guidance
-
-- Prefer exact transcript excerpts with speaker labels and timestamps
-- Include surrounding context when a single segment is too short
-- Timeline bucketing helps answer "when did X happen" questions
-
-## Answer Guidance
-
-- Provide precise timestamps (mm:ss format) for all quotes
-- Include speaker names when known
-- Quote verbatim when accuracy matters; paraphrase for summaries
-
-
-## Adaptive evidence method
-
-Read available metadata first. Use summaries to navigate long sources; read short transcripts directly. Follow every next_cursor before describing a read as complete. Verify exact decisions, negations and corrections in continuous original context. Stop when supported and answer naturally with the workspace citation numbers. Empty search means not found, never absence.
+The readable body is current Transcript, with marked same-source subtitle fallback when Transcript is unavailable. Quote the selected original text and known speaker labels. Coarse parent times are ranges, not exact phrase timestamps; missing timing stays unknown. Report coverage limits rather than filling transcript gaps from subtitles, translations or linked voiceovers.

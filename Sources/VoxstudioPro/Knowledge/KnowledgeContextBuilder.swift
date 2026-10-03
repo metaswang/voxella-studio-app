@@ -107,7 +107,11 @@ enum KnowledgeContextBuilder {
         anchorIDs: Set<Int>,
         consumedNeighbors: inout Set<Int>
     ) -> String {
-        let anchorText = clipped(anchor.text.trimmingCharacters(in: .whitespacesAndNewlines), limit: mergedAnchorLimit)
+        // Canonical retrieval units are tokenizer bounded. Keep their complete
+        // local evidence, including long-segment tails, in the legacy context.
+        let anchorText = anchor.materialGeneration == nil
+            ? clipped((anchor.snippet ?? anchor.text).trimmingCharacters(in: .whitespacesAndNewlines), limit: mergedAnchorLimit)
+            : anchor.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard anchorText.count < shortAnchorLimit else { return anchorText }
         let ordered = neighbors.sorted {
             let lhsStart = $0.start ?? -Double.infinity

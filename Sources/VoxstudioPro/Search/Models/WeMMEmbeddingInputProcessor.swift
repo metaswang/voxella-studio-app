@@ -16,6 +16,7 @@ struct WeMMEmbeddingInputProcessor {
         case placeholderCount(expected: Int, actual: Int)
         case emptyVideo
         case unsupportedImageSize
+        case textBudgetExceeded
 
         var errorDescription: String? {
             switch self {
@@ -24,6 +25,7 @@ struct WeMMEmbeddingInputProcessor {
                 "Expected \(expected) visual placeholder(s), found \(actual)."
             case .emptyVideo: "Video did not produce any decodable frames."
             case .unsupportedImageSize: "Image dimensions must be positive and divisible by 16."
+            case .textBudgetExceeded: "Embedding text exceeds its bounded input budget."
             }
         }
     }
@@ -65,6 +67,11 @@ struct WeMMEmbeddingInputProcessor {
         self.chatTemplate = chatTemplate
         self.maxFrames = maxFrames
         self.resizeEdge = resizeEdge
+    }
+
+    func textWindows(_ text: String) -> [String] {
+        guard let body = KnowledgeTranscriptMaterial.from(transcript: .init(text: text, language: nil, words: [], segments: [])) else { return [text] }
+        return KnowledgeBodyChunker.pack(body) { tokenizer.encode(text: $0, addSpecialTokens: false).count }.map(\.text)
     }
 
     func textInput(_ text: String) throws -> LMInput {
@@ -168,6 +175,7 @@ struct WeMMEmbeddingInputProcessor {
             maxLength: nil,
             tools: nil)
 
+        if promptTokens.count > KnowledgeBodyChunker.maximumInputTokens { throw Error.textBudgetExceeded }
         guard let kind else {
             let array = MLXArray(promptTokens).expandedDimensions(axis: 0)
             return array

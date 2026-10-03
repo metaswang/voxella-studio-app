@@ -6,7 +6,7 @@ enum SessionIndexUnitKind: String, Codable, Sendable {
     case mediaClip = "media_clip"
 }
 
-enum SessionIndexModality: String, Codable, Sendable {
+enum SessionIndexModality: String, Codable, CaseIterable, Sendable {
     case text
     case video
     case mixed
@@ -56,6 +56,8 @@ struct SessionSearchFilter: Equatable, Sendable {
     var sourceOrigins: Set<KnowledgeSourceOrigin>?
     /// Cloud rows are private to the signed-in owner. Local rows are device scoped.
     var cloudOwnerUserID: String?
+    /// QA-only canonical generation constraint. nil preserves media/Workbench search.
+    var canonicalGenerations: [UUID: String]? = nil
     var limit: Int
 
     init(
@@ -124,6 +126,15 @@ struct SessionSearchHit: Equatable, Sendable {
     var sessionType: WorkbenchSessionType = .upload
     var sourceCreatedAt: Double? = nil
     var sourceModifiedAt: Double? = nil
+    var materialGeneration: String? = nil
+    var provenance: String? = nil
+    var materialRole: String? = nil
+    var revision: String? = nil
+    var characterStart: Int? = nil
+    var characterEnd: Int? = nil
+    var timingPrecision: String = "unknown"
+    var matchedModalities: [String] = []
+    var context: String = ""
 }
 
 struct SessionCard: Equatable, Sendable {
@@ -208,7 +219,7 @@ enum SessionIndexIngestAction: Equatable, Sendable {
 
 struct SessionIndexSnapshot: Sendable {
     /// Bump when lexical unit shape changes so historical rows rebuild.
-    static let ingestFormat = 4
+    static let ingestFormat = 5
 
     var sessionID: UUID
     var title: String
@@ -237,6 +248,29 @@ struct SessionIndexSnapshot: Sendable {
     var remoteSessionID: UUID? = nil
     var ownerUserID: String? = nil
     var sessionType: WorkbenchSessionType = .upload
+
+    var body: KnowledgeTranscriptMaterial? = nil
+    var preparedChunks: [KnowledgeBodyChunker.Chunk]? = nil
+
+    var selectedBody: KnowledgeTranscriptMaterial? {
+        body ?? KnowledgeTranscriptMaterial.from(transcript: .init(text: segments.map(\.text).joined(separator: " "), language: language, words: words, segments: segments), role: sessionType == .dub ? "voiceover" : "original")
+            ?? KnowledgeTranscriptMaterial.from(subtitles: .init(sourceLanguage: language, language: language, cues: cues), role: sessionType == .dub ? "voiceover" : "original")
+    }
+
+    var knowledgeManifest: String {
+        KnowledgeScopeSnapshot.digest(Data(([selectedBody?.generation ?? "empty", KnowledgeBodyChunker.version,
+            KnowledgeTextTokenizer.version, SearchIndexConfig.visualSpec.model, String(SearchIndexConfig.embeddingDimension)]).joined(separator: "|").utf8))
+    }
+
+    var mediaManifest: String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let attributes = try? FileManager.default.attributesOfItem(atPath: mediaPath)
+        let fileVersion = "\(attributes?[.size] ?? 0):\((attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)"
+        let parts = [mediaPath, String(hasVideo), String(cues.isEmpty && hasVideo ? duration : 0),
+                     shotBounds.map { String($0) }.joined(separator: ","), fileVersion, SearchIndexConfig.visualSpec.model]
+        let content = ((try? encoder.encode(cues)) ?? Data()) + Data(parts.joined(separator: "|").utf8)
+        return KnowledgeScopeSnapshot.digest(content)
+    }
 
     static func generation(modifiedAt: Date) -> Int {
         ingestFormat &* 1_000_000_000_000 + Int(modifiedAt.timeIntervalSince1970)

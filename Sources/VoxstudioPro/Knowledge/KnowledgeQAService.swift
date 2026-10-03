@@ -173,6 +173,7 @@ struct KnowledgeQAExecutionDependencies: Sendable {
     var graphRecall: Recall?
     var reranker: Reranker?
     var answer: Answer?
+    var textEmbeddings: (@Sendable ([Int]) async throws -> [Int: [Float]])?
     var clock: KnowledgeQAMonotonicClock
 
     init(
@@ -181,6 +182,7 @@ struct KnowledgeQAExecutionDependencies: Sendable {
         graphRecall: Recall? = nil,
         reranker: Reranker? = nil,
         answer: Answer? = nil,
+        textEmbeddings: (@Sendable ([Int]) async throws -> [Int: [Float]])? = nil,
         clock: KnowledgeQAMonotonicClock = .continuous
     ) {
         self.planner = planner
@@ -188,6 +190,7 @@ struct KnowledgeQAExecutionDependencies: Sendable {
         self.graphRecall = graphRecall
         self.reranker = reranker
         self.answer = answer
+        self.textEmbeddings = textEmbeddings
         self.clock = clock
     }
 
@@ -1176,7 +1179,10 @@ struct KnowledgeQAService: Sendable {
             language: hit.language,
             speaker: hit.speakerLabels.first,
             snippet: hit.snippet ?? String(hit.text.prefix(180)),
-            matchText: matchText ?? hit.snippet ?? hit.text
+            matchText: matchText ?? hit.snippet ?? hit.text,
+            evidenceID: hit.materialGeneration.map { hit.sessionID.uuidString + ":" + $0 + ":" + String(hit.characterStart ?? 0) + ":" + String(hit.characterEnd ?? 0) },
+            materialGeneration: hit.materialGeneration, characterStart: hit.characterStart, characterEnd: hit.characterEnd,
+            timingPrecision: hit.timingPrecision, provenance: hit.provenance
         )
     }
 

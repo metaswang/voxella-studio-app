@@ -20,6 +20,22 @@ enum SpeakerBoundary: String, Sendable, Codable, Equatable {
     case hard
 }
 
+enum WordTimingQuality: String, Sendable, Codable, Equatable {
+    case aligned, estimated, unknown
+}
+
+enum SubtitleTimingQuality: String, Sendable, Codable, Equatable {
+    case aligned, mixed, estimated, unknown
+
+    static func aggregate(_ qualities: [WordTimingQuality]) -> Self {
+        guard !qualities.isEmpty else { return .unknown }
+        if qualities.allSatisfy({ $0 == .aligned }) { return .aligned }
+        if qualities.allSatisfy({ $0 == .estimated }) { return .estimated }
+        if qualities.contains(.aligned) || qualities.contains(.estimated) { return .mixed }
+        return .unknown
+    }
+}
+
 struct TranscriptionWord: Sendable, Codable, Equatable {
     let text: String
     let start: Double?
@@ -27,6 +43,7 @@ struct TranscriptionWord: Sendable, Codable, Equatable {
     let speaker: String?
     let speakerConfidence: Double?
     let speakerBoundary: SpeakerBoundary
+    let timingQuality: WordTimingQuality
 
     init(
         text: String,
@@ -34,7 +51,8 @@ struct TranscriptionWord: Sendable, Codable, Equatable {
         end: Double?,
         speaker: String? = nil,
         speakerConfidence: Double? = nil,
-        speakerBoundary: SpeakerBoundary = .none
+        speakerBoundary: SpeakerBoundary = .none,
+        timingQuality: WordTimingQuality = .unknown
     ) {
         self.text = text
         self.start = start
@@ -42,6 +60,7 @@ struct TranscriptionWord: Sendable, Codable, Equatable {
         self.speaker = speaker
         self.speakerConfidence = speakerConfidence
         self.speakerBoundary = speakerBoundary
+        self.timingQuality = timingQuality
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -51,6 +70,7 @@ struct TranscriptionWord: Sendable, Codable, Equatable {
         case speaker
         case speakerConfidence
         case speakerBoundary
+        case timingQuality
     }
 
     init(from decoder: Decoder) throws {
@@ -61,6 +81,7 @@ struct TranscriptionWord: Sendable, Codable, Equatable {
         speaker = try container.decodeIfPresent(String.self, forKey: .speaker)
         speakerConfidence = try container.decodeIfPresent(Double.self, forKey: .speakerConfidence)
         speakerBoundary = try container.decodeIfPresent(SpeakerBoundary.self, forKey: .speakerBoundary) ?? .none
+        timingQuality = try container.decodeIfPresent(WordTimingQuality.self, forKey: .timingQuality) ?? .unknown
     }
 
     func encode(to encoder: Encoder) throws {
@@ -71,6 +92,12 @@ struct TranscriptionWord: Sendable, Codable, Equatable {
         try container.encodeIfPresent(speaker, forKey: .speaker)
         try container.encodeIfPresent(speakerConfidence, forKey: .speakerConfidence)
         try container.encode(speakerBoundary, forKey: .speakerBoundary)
+        try container.encode(timingQuality, forKey: .timingQuality)
+    }
+
+    func withTimingQuality(_ quality: WordTimingQuality) -> Self {
+        Self(text: text, start: start, end: end, speaker: speaker,
+             speakerConfidence: speakerConfidence, speakerBoundary: speakerBoundary, timingQuality: quality)
     }
 }
 
@@ -156,7 +183,8 @@ struct TranscriptionResult: Sendable, Codable, Equatable {
                     end: $0.end.map { $0 + offset },
                     speaker: $0.speaker,
                     speakerConfidence: $0.speakerConfidence,
-                    speakerBoundary: $0.speakerBoundary
+                    speakerBoundary: $0.speakerBoundary,
+                    timingQuality: $0.timingQuality
                 )
             },
             segments: segments.map {
@@ -211,7 +239,8 @@ struct TranscriptionResult: Sendable, Codable, Equatable {
                 end: fitted.1,
                 speaker: word.speaker,
                 speakerConfidence: word.speakerConfidence,
-                speakerBoundary: word.speakerBoundary
+                speakerBoundary: word.speakerBoundary,
+                timingQuality: word.timingQuality
             )
         }
 
@@ -245,7 +274,7 @@ enum TranscriptSegmenter {
     static let maximumDuration = 60.0
     static let minimumDuration = 45.0
 
-    private static var tailMergeGrace: Double {
+    static var tailMergeGrace: Double {
         max(5, maximumDuration * 0.1)
     }
 
@@ -410,7 +439,7 @@ enum TranscriptSegmenter {
         return left == right
     }
 
-    private static func isKnownSpeakerChange(
+    static func isKnownSpeakerChange(
         from lhs: String?,
         to rhs: String?,
         boundary: SpeakerBoundary
@@ -445,7 +474,7 @@ enum TranscriptSegmenter {
         return bestSpeaker
     }
 
-    private static func endPunctuationRank(_ text: String) -> Int {
+    static func endPunctuationRank(_ text: String) -> Int {
         guard let last = text.trimmingCharacters(in: .whitespacesAndNewlines).last else { return 0 }
         if ".?!。？！".contains(last) { return 3 }
         if ",;:，；：".contains(last) { return 2 }
@@ -652,7 +681,8 @@ extension TranscriptionResult {
                 end: word.end,
                 speaker: normalized,
                 speakerConfidence: 1,
-                speakerBoundary: .none
+                speakerBoundary: .none,
+                timingQuality: word.timingQuality
             )
         }
         let updatedSegments = segments.map { segment in
@@ -694,7 +724,8 @@ extension TranscriptionResult {
                 end: word.end,
                 speaker: destination,
                 speakerConfidence: word.speakerConfidence,
-                speakerBoundary: word.speakerBoundary
+                speakerBoundary: word.speakerBoundary,
+                timingQuality: word.timingQuality
             )
         }
         let updatedSegments = segments.map { segment in

@@ -536,7 +536,7 @@ final class MCPOpenAIExtensions {
             }
         }
         try await WorkbenchStore.shared.saveMCPChanges()
-        if let job = WorkbenchStore.shared.transcriptions.first(where: { $0.id == id }) { SessionIndexCoordinator.shared.ingest(job, force: true) }
+        if let job = WorkbenchStore.shared.transcriptions.first(where: { $0.id == id }) { SessionIndexCoordinator.shared.ingest(job) }
         let base = try editorResult(args)
         var structured = base.structuredContent?.objectValue ?? [:]
         structured["outcome"] = "local_committed"

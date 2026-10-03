@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "voxstudio_knowledge": {
+      "type": "http",
+      "url": "http://127.0.0.1:19789/knowledge/mcp"
+    }
+  }
+}

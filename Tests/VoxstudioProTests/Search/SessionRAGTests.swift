@@ -222,7 +222,7 @@ struct SessionIndexStoreTests {
         #expect(try await store.freshness(sessionID: snapshot.sessionID)?.embeddingReady == true)
     }
 
-    @Test func graphEvidenceIsReplacedWhenTheSourceChanges() async throws {
+    @Test func graphEvidenceSurvivesMetadataChangesAndIsReplacedWithBody() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("session-graph-\(UUID().uuidString).sqlite")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -242,6 +242,10 @@ struct SessionIndexStoreTests {
         )
 
         snapshot.generation = 2
+        try await store.replaceLexical(snapshot: snapshot, clips: [])
+        #expect(try await store.graphEntities(matching: ["Alice"], scopes: ["local"]).count == 1)
+        let old = snapshot.segments[0]
+        snapshot.segments[0] = .init(text: old.text + " body revision", start: old.start, end: old.end, speaker: old.speaker)
         try await store.replaceLexical(snapshot: snapshot, clips: [])
         #expect(try await store.graphEntities(matching: ["Alice"], scopes: ["local"]).isEmpty)
     }
@@ -308,7 +312,7 @@ struct SessionIndexStoreTests {
         #expect(hidden.isEmpty)
     }
 
-    @Test func packsShortTurnsAndDoesNotIndexSubtitleCues() async throws {
+    @Test func speakerChangesSplitBodyAndSubtitleTextStaysInMediaLane() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("session-index-\(UUID().uuidString).sqlite")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -330,9 +334,9 @@ struct SessionIndexStoreTests {
 
         let needed = try await store.unitsNeedingEmbedding(sessionID: snapshot.sessionID)
         let chunks = needed.filter { $0.kind == .transcriptChunk }
-        #expect(chunks.count == 1)
-        #expect(chunks[0].speakers.contains("Speaker 1"))
-        #expect(chunks[0].speakers.contains("Speaker 2"))
+        #expect(chunks.count == 3)
+        #expect(chunks[0].speakers == ["Speaker 1"])
+        #expect(chunks[1].speakers == ["Speaker 2"])
 
         let cueHits = try await store.searchLexical(
             query: "字幕独有句",
@@ -433,8 +437,9 @@ struct SessionIndexEligibilityTests {
         #expect(SessionIndexSnapshot.from(indexJob(state: .completed, result: result)) != nil)
     }
 
-    @Test func snapshotRejectsCompletedJobsWithoutTranscriptOrCues() {
-        #expect(SessionIndexSnapshot.from(indexJob(state: .completed, result: nil)) == nil)
+    @Test func metadataOnlySnapshotsCanClearStaleBodyAndRetainMedia() {
+        #expect(SessionIndexSnapshot.from(indexJob(state: .completed, result: nil))?.selectedBody == nil)
+        #expect(SessionIndexSnapshot.from(indexJob(state: .completed, result: nil)) != nil)
     }
 }
 

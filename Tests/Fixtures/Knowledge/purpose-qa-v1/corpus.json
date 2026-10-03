@@ -1,0 +1,310 @@
+{
+  "version": "purpose-qa-v1",
+  "reference_now": "2026-10-03T04:00:00Z",
+  "timezone": "Asia/Singapore",
+  "owner_id": "10000000-0000-0000-0000-000000000001",
+  "sources": [
+    {
+      "key": "A",
+      "id": "00000000-0000-0000-0000-000000000001",
+      "title": "发布会议",
+      "segments": [
+        {
+          "text": "我提议本周五发布 Vox 2.4。",
+          "start": 5,
+          "end": 18,
+          "speaker": "张三"
+        },
+        {
+          "text": "如果安全测试全部通过，就按原计划发布。",
+          "start": 300,
+          "end": 340,
+          "speaker": "张三"
+        },
+        {
+          "text": "我反对现在发布，安全测试还没通过。",
+          "start": 350,
+          "end": 410,
+          "speaker": "李四"
+        },
+        {
+          "text": "预算可以不变，但安全风险必须先处理。",
+          "start": 620,
+          "end": 650,
+          "speaker": "李四"
+        },
+        {
+          "text": "先别上。安全测试尚未通过，暂时不要发布。",
+          "start": 930,
+          "end": 960,
+          "speaker": "张三"
+        },
+        {
+          "text": "延期的直接原因是安全测试未通过，不是预算。",
+          "start": 1100,
+          "end": 1140,
+          "speaker": "李四"
+        },
+        {
+          "text": "最终确认延期到下周二，条件是安全测试全部通过。",
+          "start": 1420,
+          "end": 1440,
+          "speaker": "张三"
+        }
+      ],
+      "text": "我提议本周五发布 Vox 2.4。\n如果安全测试全部通过，就按原计划发布。\n我反对现在发布，安全测试还没通过。\n预算可以不变，但安全风险必须先处理。\n先别上。安全测试尚未通过，暂时不要发布。\n延期的直接原因是安全测试未通过，不是预算。\n最终确认延期到下周二，条件是安全测试全部通过。",
+      "media_duration": 1800,
+      "kind": "meeting",
+      "origin": "local",
+      "video": true,
+      "summary": "会上同意本周五发布，预算不变。",
+      "created": "2026-09-23T02:00:00Z",
+      "modified": "2026-10-02T03:00:00Z",
+      "subtitle": "同意立即发布。",
+      "translation": "The final decision is to postpone until next Tuesday, provided all security tests pass.",
+      "readable": true
+    },
+    {
+      "key": "B",
+      "id": "00000000-0000-0000-0000-000000000002",
+      "title": "发布会议",
+      "segments": [
+        {
+          "text": "我复述上次会议的延期结论，今天不是新的提议。",
+          "start": 10,
+          "end": 30,
+          "speaker": "张三"
+        },
+        {
+          "text": "我提议继续延期。用户隐私审查仍未完成。",
+          "start": 600,
+          "end": 650,
+          "speaker": "李四"
+        },
+        {
+          "text": "同意先完成隐私审查，新的日期待定。",
+          "start": 1480,
+          "end": 1500,
+          "speaker": "张三"
+        }
+      ],
+      "text": "我复述上次会议的延期结论，今天不是新的提议。\n我提议继续延期。用户隐私审查仍未完成。\n同意先完成隐私审查，新的日期待定。",
+      "media_duration": null,
+      "kind": "meeting",
+      "origin": "cloud",
+      "video": true,
+      "summary": null,
+      "created": "2026-09-26T02:00:00Z",
+      "modified": "2026-10-02T03:00:00Z",
+      "subtitle": null,
+      "translation": null,
+      "readable": true
+    },
+    {
+      "key": "C",
+      "id": "00000000-0000-0000-0000-000000000003",
+      "title": "发布会议",
+      "segments": [
+        {
+          "text": "最初计划下周二发布。",
+          "start": 5,
+          "end": 20,
+          "speaker": "张三"
+        },
+        {
+          "text": "我不同意继续延期，测试已经通过。",
+          "start": 600,
+          "end": 620,
+          "speaker": "王五"
+        },
+        {
+          "text": "安全测试已经通过，但隐私审查还没有完成。",
+          "start": 900,
+          "end": 930,
+          "speaker": "张三"
+        },
+        {
+          "text": "最终决定暂缓发布，等待隐私审查；没有确认新的发布日期。",
+          "start": 1780,
+          "end": 1800,
+          "speaker": "张三"
+        }
+      ],
+      "text": "最初计划下周二发布。\n我不同意继续延期，测试已经通过。\n安全测试已经通过，但隐私审查还没有完成。\n最终决定暂缓发布，等待隐私审查；没有确认新的发布日期。",
+      "media_duration": 1860,
+      "kind": "meeting",
+      "origin": "local",
+      "video": true,
+      "summary": null,
+      "created": "2026-09-29T02:00:00Z",
+      "modified": "2026-10-02T03:00:00Z",
+      "subtitle": null,
+      "translation": null,
+      "readable": true
+    },
+    {
+      "key": "short",
+      "id": "00000000-0000-0000-0000-000000000004",
+      "title": "short",
+      "segments": [
+        {
+          "text": "今天说明发布计划、预算与安全测试。",
+          "start": 0,
+          "end": 10,
+          "speaker": "张三"
+        },
+        {
+          "text": "测试未通过，发布延期。",
+          "start": 60,
+          "end": 80,
+          "speaker": "李四"
+        },
+        {
+          "text": "预算保持不变，下周重新确认。",
+          "start": 90,
+          "end": 100,
+          "speaker": "张三"
+        }
+      ],
+      "text": "今天说明发布计划、预算与安全测试。\n测试未通过，发布延期。\n预算保持不变，下周重新确认。",
+      "media_duration": 120,
+      "kind": "upload",
+      "origin": "local",
+      "video": true,
+      "summary": null,
+      "created": "2026-09-29T02:00:00Z",
+      "modified": "2026-10-02T03:00:00Z",
+      "subtitle": null,
+      "translation": null,
+      "readable": true
+    },
+    {
+      "key": "long",
+      "id": "00000000-0000-0000-0000-000000000005",
+      "title": "long",
+      "segments": [
+        {
+          "text": "会议讨论发布计划、预算、安全测试和隐私审查。",
+          "start": 0,
+          "end": 20,
+          "speaker": "张三"
+        },
+        {
+          "text": "预算维持原方案。",
+          "start": 850,
+          "end": 880,
+          "speaker": "李四"
+        },
+        {
+          "text": "安全风险需要先排查。",
+          "start": 2000,
+          "end": 2020,
+          "speaker": "张三"
+        },
+        {
+          "text": "隐私审查仍然需要确认。",
+          "start": 4000,
+          "end": 4020,
+          "speaker": "李四"
+        },
+        {
+          "text": "最终发布延期，完成审查后再确认。",
+          "start": 7190,
+          "end": 7198,
+          "speaker": "张三"
+        }
+      ],
+      "text": "会议讨论发布计划、预算、安全测试和隐私审查。\n预算维持原方案。\n安全风险需要先排查。\n隐私审查仍然需要确认。\n最终发布延期，完成审查后再确认。",
+      "media_duration": 7200,
+      "kind": "meeting",
+      "origin": "cloud",
+      "video": true,
+      "summary": null,
+      "created": "2026-09-29T02:00:00Z",
+      "modified": "2026-10-02T03:00:00Z",
+      "subtitle": null,
+      "translation": null,
+      "readable": true
+    },
+    {
+      "key": "unreadable",
+      "id": "00000000-0000-0000-0000-000000000006",
+      "title": "unreadable",
+      "segments": [],
+      "text": "",
+      "media_duration": 40,
+      "kind": "upload",
+      "origin": "local",
+      "video": false,
+      "summary": null,
+      "created": "2026-09-29T02:00:00Z",
+      "modified": "2026-10-02T03:00:00Z",
+      "subtitle": null,
+      "translation": null,
+      "readable": false
+    },
+    {
+      "key": "fallback",
+      "id": "00000000-0000-0000-0000-000000000007",
+      "title": "fallback",
+      "segments": [],
+      "text": "",
+      "media_duration": 90,
+      "kind": "upload",
+      "origin": "local",
+      "video": true,
+      "summary": null,
+      "created": "2026-09-29T02:00:00Z",
+      "modified": "2026-10-02T03:00:00Z",
+      "subtitle": "字幕-only 来源仍可回答，但必须标记 fallback。",
+      "translation": null,
+      "readable": true
+    },
+    {
+      "key": "voiceover",
+      "id": "00000000-0000-0000-0000-000000000008",
+      "title": "voiceover",
+      "segments": [
+        {
+          "text": "当前配音版本的发布说明。",
+          "start": 0,
+          "end": 10,
+          "speaker": null
+        }
+      ],
+      "text": "当前配音版本的发布说明。",
+      "media_duration": 12,
+      "kind": "dub",
+      "origin": "local",
+      "video": false,
+      "summary": null,
+      "created": "2026-09-29T02:00:00Z",
+      "modified": "2026-10-02T03:00:00Z",
+      "subtitle": null,
+      "translation": null,
+      "readable": true
+    },
+    {
+      "key": "textonly",
+      "id": "00000000-0000-0000-0000-000000000009",
+      "title": "textonly",
+      "segments": [],
+      "text": "This is an English product note. VoxStudio 2.4 releases after review.",
+      "media_duration": null,
+      "kind": "upload",
+      "origin": "local",
+      "video": false,
+      "summary": null,
+      "created": "2026-09-29T02:00:00Z",
+      "modified": "2026-10-02T03:00:00Z",
+      "subtitle": null,
+      "translation": null,
+      "readable": true
+    }
+  ],
+  "hidden_other_owner_source": {
+    "id": "00000000-0000-0000-0000-000000000099",
+    "owner_id": "10000000-0000-0000-0000-000000000002"
+  },
+  "coverage": "Sparse known text; does not assert complete media transcription."
+}
