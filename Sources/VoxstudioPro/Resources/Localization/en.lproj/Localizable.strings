@@ -2869,3 +2869,25 @@
 "Edit the Mac timeline" = "Edit the Mac timeline";
 "Inspect the active project in the VoxStudio Mac app. Tell me what is on its timeline, then help me edit it from this chat." = "Inspect the active project in the VoxStudio Mac app. Tell me what is on its timeline, then help me edit it from this chat.";
 "Connect ChatGPT Work, Codex, Claude and Cursor to the VoxStudio workspace on this Mac." = "Connect ChatGPT Work, Codex, Claude and Cursor to the VoxStudio workspace on this Mac.";
+
+"Your saved result is available to view, edit, and export." = "Your saved result is available to view, edit, and export.";
+
+"Shows task details, error reasons, and next steps." = "Shows task details, error reasons, and next steps.";
+
+"This task stopped before it finished." = "This task stopped before it finished.";
+
+"The task status could not be verified." = "The task status could not be verified.";
+
+"This task failed, but no error details were saved." = "This task failed, but no error details were saved.";
+
+"Open Transcribe, review the source and processing settings, then try again." = "Open Transcribe, review the source and processing settings, then try again.";
+
+"Open Voiceover, review the voice and model settings, then generate again." = "Open Voiceover, review the voice and model settings, then generate again.";
+
+"Open Summary, check your AI service settings, then generate the summary again." = "Open Summary, check your AI service settings, then generate the summary again.";
+
+"Check your internet connection and account, then retry cloud sync from this session." = "Check your internet connection and account, then retry cloud sync from this session.";
+
+"Check your internet connection and account, then reopen this cloud session." = "Check your internet connection and account, then reopen this cloud session.";
+
+"Cloud sync" = "Cloud sync";

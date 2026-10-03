@@ -76,4 +76,44 @@ struct WorkbenchSessionStatusTests {
         #expect(snapshot.message == "Processing media…")
         #expect(snapshot.progressDetail == nil)
     }
+    @Test func taskDetailsKeepTheFailedStageAndSavedReason() {
+        let job = WorkbenchTranscriptionJob(
+            sourcePath: "/tmp/audio.wav", state: .failed,
+            flowProgressStage: .translation, errorMessage: "  API quota exceeded  "
+        )
+        let task = SessionTaskDetail(job: job)
+        #expect(task.title == "Translation")
+        #expect(task.statusLabel == "Failed")
+        #expect(task.diagnostic == "API quota exceeded")
+        #expect(!task.nextStep.isEmpty)
+    }
+
+    @Test func missingDiagnosticsAndInterruptedTasksExplainWhatIsKnown() {
+        let failed = SessionTaskDetail(title: "Summary", state: .failed, errorMessage: " ", nextStep: "Retry")
+        let interrupted = SessionTaskDetail(title: "Voiceover", state: .interrupted, errorMessage: nil, nextStep: "Retry")
+        #expect(failed.diagnostic == "This task failed, but no error details were saved.")
+        #expect(interrupted.diagnostic == "This task stopped before it finished.")
+        let succeeded = SessionTaskDetail(title: "Summary", state: .completed, errorMessage: "Stale error", nextStep: "Retry")
+        #expect(succeeded.diagnostic == nil)
+    }
+
+    @Test func readySessionKeepsDistinctSummaryAndSyncFailureReasons() {
+        let session = WorkbenchSession(
+            id: UUID(), title: "Saved session", createdAt: Date(), modifiedAt: Date(),
+            state: .completed, source: .media, sessionType: .upload,
+            transcriptionID: UUID(), dubID: nil, sourceURL: nil, outputURL: nil,
+            transcript: TranscriptionResult(text: "Saved result", language: nil, words: [], segments: []),
+            subtitleTrack: nil, translationTracks: [], selectedTranslationLanguageCode: nil,
+            summaryMarkdown: nil, summaryTemplateID: nil, summaryTemplateName: nil,
+            summaryState: .failed, summaryErrorMessage: "AI service is not configured",
+            sessionTag: nil, dubTranscript: nil, dubSubtitleTrack: nil, dubSegments: [],
+            cloudSyncState: .failed, cloudSyncError: "Network unavailable"
+        )
+        let status = session.status
+        #expect(status.hasUsableResult)
+        #expect(status.needsAttention)
+        let issues = status.tasks.filter { $0.state.needsAttention }
+        #expect(issues.map(\.title) == ["Summary", "Cloud sync"])
+        #expect(issues.map(\.diagnostic) == ["AI service is not configured", "Network unavailable"])
+    }
 }

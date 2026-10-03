@@ -124,7 +124,6 @@ struct VoiceLibraryView: View {
             Divider()
 
             VStack(spacing: AppTheme.Spacing.mdLg) {
-                modelDefaultRow
                 if store.isLoading {
                     ProgressView("Loading local voices…")
                         .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.voiceRowMinHeight)
@@ -146,35 +145,6 @@ struct VoiceLibraryView: View {
         .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-        }
-    }
-
-    private var modelDefaultRow: some View {
-        HStack(spacing: AppTheme.Spacing.mdLg) {
-            VoiceAvatarView(URL: nil, fallback: "V")
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                HStack(spacing: AppTheme.Spacing.sm) {
-                    Text("Built-in")
-                        .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
-                        .foregroundStyle(AppTheme.Status.successColor)
-                    Text("Default voice")
-                        .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
-                }
-                Text("Used when no custom language default or session voice is selected.")
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
-            }
-            Spacer()
-            Text("Local")
-                .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
-        }
-        .padding(AppTheme.Spacing.lgXl)
-        .frame(minHeight: AppTheme.Workbench.voiceRowMinHeight)
-        .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
                 .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
         }
     }

@@ -1126,6 +1126,8 @@ struct WorkbenchSession: Identifiable, Sendable {
     /// can keep the original picture and swap only its audio track.
     var remoteEnhancedSourcePlaybackURL: URL? = nil
 
+    var taskDetails: [SessionTaskDetail] = []
+
     var hasUsableResult: Bool {
         transcript != nil || outputURL != nil || (isRemoteOnly && state == .completed)
     }
@@ -1134,12 +1136,43 @@ struct WorkbenchSession: Identifiable, Sendable {
         WorkbenchSessionStatus(
             hasUsableResult: hasUsableResult,
             taskState: state,
-            hasAdditionalFailure: summaryState?.needsAttention == true
+            hasAdditionalFailure: statusTasks.contains { $0.state.needsAttention }
+                || summaryState?.needsAttention == true
                 || cloudSyncState == .failed
                 || cloudSyncError != nil,
             hasAdditionalActivity: summaryState?.isActive == true
-                || cloudSyncState == .pending
+                || cloudSyncState == .pending,
+            tasks: statusTasks
         )
+    }
+
+    private var statusTasks: [SessionTaskDetail] {
+        var tasks = taskDetails
+        if tasks.isEmpty {
+            tasks.append(SessionTaskDetail(
+                title: source == .standaloneDub ? "Voiceover" : "Transcription",
+                state: !hasUsableResult && state == .completed ? .unknown : state,
+                errorMessage: nil,
+                nextStep: source == .standaloneDub
+                    ? "Open Voiceover, review the voice and model settings, then generate again."
+                    : "Open Transcribe, review the source and processing settings, then try again."
+            ))
+        }
+        if let summaryState {
+            tasks.append(SessionTaskDetail(
+                title: "Summary", state: summaryState, errorMessage: summaryErrorMessage,
+                nextStep: "Open Summary, check your AI service settings, then generate the summary again."
+            ))
+        }
+        if cloudSyncState == .failed || cloudSyncError != nil || cloudSyncState == .pending {
+            tasks.append(SessionTaskDetail(
+                title: "Cloud sync",
+                state: cloudSyncState == .failed || cloudSyncError != nil ? .failed : .running,
+                errorMessage: cloudSyncError,
+                nextStep: "Check your internet connection and account, then retry cloud sync from this session."
+            ))
+        }
+        return tasks
     }
 
     var showsFloatingNetVideoPreview: Bool {
@@ -1250,6 +1283,7 @@ struct WorkbenchSessionStatus: Equatable, Sendable {
     let taskState: WorkbenchJobState
     let hasAdditionalFailure: Bool
     var hasAdditionalActivity = false
+    var tasks: [SessionTaskDetail] = []
 
     var displayTaskState: WorkbenchJobState {
         !hasUsableResult && taskState == .completed ? .unknown : taskState
@@ -1685,7 +1719,8 @@ final class WorkbenchStore {
                 netVideoSource: Self.localNetVideoSource(from: job),
                 listenAudioURL: job.listenAudioURL,
                 listenEnhanceState: job.listenEnhanceState,
-                remoteEnhancedSourcePlaybackURL: enhancedAudioURLs[dub?.remoteSessionID ?? job.remoteSessionID ?? job.id]
+                remoteEnhancedSourcePlaybackURL: enhancedAudioURLs[dub?.remoteSessionID ?? job.remoteSessionID ?? job.id],
+                taskDetails: [SessionTaskDetail(job: job)] + (dub.map { [SessionTaskDetail(job: $0)] } ?? [])
             )
         }
         let standaloneDubs = dubs.filter { job in
@@ -1723,7 +1758,8 @@ final class WorkbenchStore {
                 remoteSessionID: job.remoteSessionID,
                 cloudSyncState: job.resolvedCloudSyncState,
                 cloudSyncError: job.pendingCloudSyncError,
-                remoteEnhancedSourcePlaybackURL: enhancedAudioURLs[job.remoteSessionID ?? job.id]
+                remoteEnhancedSourcePlaybackURL: enhancedAudioURLs[job.remoteSessionID ?? job.id],
+                taskDetails: [SessionTaskDetail(job: job)]
             )
         }
         let localSessions = transcriptSessions + standaloneDubs
@@ -6737,7 +6773,13 @@ final class WorkbenchStore {
             remoteSourceHasVideo: resolvedMediaHasVideo,
             remoteSourcePosterURL: remotePosterURL(for: detail),
             netVideoSource: netVideoSource,
-            remoteEnhancedSourcePlaybackURL: enhancedMediaPlaybackURL
+            remoteEnhancedSourcePlaybackURL: enhancedMediaPlaybackURL,
+            taskDetails: [SessionTaskDetail(
+                title: isDub ? "Voiceover" : "Transcription",
+                state: Self.remoteState(status: detail.status, resultReady: detail.resultReady),
+                errorMessage: detail.message,
+                nextStep: "Check your internet connection and account, then reopen this cloud session."
+            )]
         )
     }
 

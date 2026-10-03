@@ -2869,3 +2869,25 @@
 "Edit the Mac timeline" = "编辑 Mac 时间线";
 "Inspect the active project in the VoxStudio Mac app. Tell me what is on its timeline, then help me edit it from this chat." = "查看 VoxStudio Mac app 中的当前项目，告诉我时间线上的内容，然后帮我通过聊天编辑它。";
 "Connect ChatGPT Work, Codex, Claude and Cursor to the VoxStudio workspace on this Mac." = "将 ChatGPT Work、Codex、Claude 和 Cursor 连接到本机的 VoxStudio 工作区。";
+
+"Your saved result is available to view, edit, and export." = "已保存的结果可供查看、编辑和导出。";
+
+"Shows task details, error reasons, and next steps." = "显示具体任务、错误原因和下一步操作。";
+
+"This task stopped before it finished." = "此任务在完成前已中断。";
+
+"The task status could not be verified." = "无法确认此任务的状态。";
+
+"This task failed, but no error details were saved." = "此任务失败，但未保存具体错误原因。";
+
+"Open Transcribe, review the source and processing settings, then try again." = "打开转写页面，检查源文件及处理设置，然后重试。";
+
+"Open Voiceover, review the voice and model settings, then generate again." = "打开配音页面，检查参考音及模型设置，然后重新生成。";
+
+"Open Summary, check your AI service settings, then generate the summary again." = "打开摘要页，检查 AI 服务设置，然后重新生成摘要。";
+
+"Check your internet connection and account, then retry cloud sync from this session." = "检查网络连接及登录账号，然后在此会话中重试云同步。";
+
+"Check your internet connection and account, then reopen this cloud session." = "检查网络连接及登录账号，然后重新打开此云端会话。";
+
+"Cloud sync" = "云同步";

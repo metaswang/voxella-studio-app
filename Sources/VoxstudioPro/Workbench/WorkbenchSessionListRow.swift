@@ -152,7 +152,7 @@ struct SessionListRow: View {
                     .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             } else {
-                SessionStatusBadge(status: session.status)
+                SessionStatusBadge(status: session.status, iconOnlyAttention: true)
             }
         }
     }
