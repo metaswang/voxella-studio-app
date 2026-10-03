@@ -1110,7 +1110,10 @@ struct WorkbenchSessionDetailView: View {
     }
 
     private func speakerLabels(for session: WorkbenchSession, cues: [SubtitleCue]) -> [String] {
-        if let transcriptionID = session.transcriptionID,
+        // Generated audio uses its assigned reference voice names. Source ASR
+        // speaker identities belong to the original/translated tracks only.
+        if selectedTrack != .dub,
+           let transcriptionID = session.transcriptionID,
            let job = store.transcriptions.first(where: { $0.id == transcriptionID }) {
             let labels = job.speakerLabels
             if !labels.isEmpty { return labels }

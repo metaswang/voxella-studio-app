@@ -3551,7 +3551,7 @@ final class WorkbenchStore {
             result: result,
             subtitleTrack: job.subtitleTrack ?? job.renderedSubtitleTrack,
             translationTracks: [],
-            dubSegments: cloudDubSegments(for: job),
+            dubSegments: Self.cloudDubSegments(for: job),
             title: SessionTitlePolicy.normalizedUserTitle(job.title),
             summary: job.summaryMarkdown,
             summaryTemplateID: job.summaryTemplateID,
@@ -3562,7 +3562,10 @@ final class WorkbenchStore {
     }
 
     private func dubTranscriptForCloudSync(_ job: WorkbenchDubJob) -> TranscriptionResult? {
-        let editableSegments = cloudDubSegments(for: job).compactMap { segment -> TranscriptionSegment? in
+        if let aligned = job.alignedTranscript {
+            return aligned.aggregatingSegments()
+        }
+        let editableSegments = Self.cloudDubSegments(for: job).compactMap { segment -> TranscriptionSegment? in
             guard let start = segment.start, let end = segment.end,
                   start.isFinite, end.isFinite, end > start else { return nil }
             return TranscriptionSegment(
@@ -3574,19 +3577,16 @@ final class WorkbenchStore {
         }
         if !editableSegments.isEmpty {
             return TranscriptionResult(
-                text: job.script,
+                text: TranscriptSegmenter.joinedText(editableSegments.map(\.text), language: job.language),
                 language: job.language == "auto" ? nil : job.language,
                 words: job.alignedTranscript?.words ?? [],
                 segments: editableSegments
             ).aggregatingSegments()
         }
-        if let aligned = job.alignedTranscript {
-            return aligned.aggregatingSegments()
-        }
         if let track = job.subtitleTrack ?? job.renderedSubtitleTrack {
             return track.asTranscriptionResult().aggregatingSegments()
         }
-        let segments = cloudDubSegments(for: job).compactMap { segment -> TranscriptionSegment? in
+        let segments = Self.cloudDubSegments(for: job).compactMap { segment -> TranscriptionSegment? in
             guard let start = segment.start, let end = segment.end,
                   start.isFinite, end.isFinite, end > start else { return nil }
             return TranscriptionSegment(
@@ -3607,24 +3607,9 @@ final class WorkbenchStore {
         ).aggregatingSegments()
     }
 
-    private func cloudDubSegments(for job: WorkbenchDubJob) -> [DubSegmentPayload] {
-        if let segments = job.segments {
-            guard !segments.isEmpty else { return [] }
-            if let renderedSegments = job.renderedSegments, !renderedSegments.isEmpty {
-                let renderedByIndex = Dictionary(
-                    renderedSegments.map { ($0.index, $0) },
-                    uniquingKeysWith: { current, _ in current }
-                )
-                return segments.map { segment in
-                    guard let rendered = renderedByIndex[segment.index] else { return segment }
-                    var enriched = segment
-                    enriched.start = segment.start ?? rendered.start
-                    enriched.end = segment.end ?? rendered.end
-                    return enriched
-                }
-            }
-            return segments
-        }
+    nonisolated static func cloudDubSegments(for job: WorkbenchDubJob) -> [DubSegmentPayload] {
+        // Generated segments carry the actual voice labels and indexes after
+        // semantic grouping; the draft can have different speakers and cuts.
         if let renderedSegments = job.renderedSegments, !renderedSegments.isEmpty {
             return renderedSegments.map {
                 DubSegmentPayload(
@@ -3636,6 +3621,10 @@ final class WorkbenchStore {
                     sourceSubtitleID: $0.sourceSubtitleID
                 )
             }
+        }
+        if let segments = job.segments {
+            guard !segments.isEmpty else { return [] }
+            return segments
         }
         let text = job.script.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? [] : [DubSegmentPayload(index: 0, text: text)]

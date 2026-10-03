@@ -432,7 +432,13 @@ struct TranslationFlowPayload: Sendable {
 struct DubVoiceReference: Codable, Equatable, Sendable {
     var audioURL: URL
     var transcript: String
+    var name: String? = nil
     var overrideSourceVoice = true
+
+    func speakerLabel(fallback: String?) -> String? {
+        let label = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return label?.isEmpty == false ? label : fallback
+    }
 }
 
 enum DubTimelineMode: Equatable, Sendable {
@@ -482,6 +488,12 @@ struct DubFlowPayload: Sendable {
     var seed: UInt64?
     var xvecOnly = false
     var repairSilence = true
+
+    func reference(for segment: DubSegmentPayload) -> DubVoiceReference? {
+        segmentReferences[segment.index]
+            ?? segment.speaker.flatMap { speakerReferences[$0] }
+            ?? reference
+    }
 
     var fixedSeed: UInt64 {
         seed ?? DubSeed.deterministic(

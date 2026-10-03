@@ -192,7 +192,7 @@ struct CloudDubTaskAccess: DubTaskAccessing {
                 regenerate: request.remoteSessionID != nil,
                 language: request.language,
                 script: request.script,
-                segments: request.segments,
+                segments: labeledSegments(for: request),
                 referenceAudioID: request.referenceAudioID,
                 referenceAudioR2Key: referenceKey,
                 referenceText: request.referenceText,
@@ -292,7 +292,7 @@ struct CloudDubTaskAccess: DubTaskAccessing {
                 regenerate: request.remoteSessionID != nil,
                 language: request.language,
                 script: request.script,
-                segments: request.segments,
+                segments: labeledSegments(for: request),
                 referenceAudioID: request.referenceAudioID,
                 referenceAudioR2Key: referenceKey,
                 referenceText: request.referenceText,
@@ -819,7 +819,7 @@ struct CloudDubTaskAccess: DubTaskAccessing {
             throw VoxellaAPIError.http((response as? HTTPURLResponse)?.statusCode ?? 0, "The cloud dub result could not be downloaded.")
         }
         try Task.checkCancellation()
-        let segments = renderedSegments(from: detail.dubSegments, fallback: request.segments)
+        let segments = renderedSegments(from: detail.dubSegments, request: request)
         try await Task.detached(priority: .utility) {
             _ = try FileIO.moveReplacingDestination(from: downloadedURL, to: request.cacheURL)
         }.value
@@ -929,27 +929,75 @@ struct CloudDubTaskAccess: DubTaskAccessing {
         try await client.completeResumableUpload(uploadID: uploadID)
     }
 
-    private static func renderedSegments(
+    /// Label cloud generation inputs with the voice actually selected for each
+    /// segment. Keep the request's source labels intact for speaker assignments.
+    static func labeledSegments(for request: DubTaskRequest) -> [DubSegmentPayload] {
+        let segments: [DubSegmentPayload]
+        if request.segments.isEmpty {
+            let script = request.script.trimmingCharacters(in: .whitespacesAndNewlines)
+            segments = script.isEmpty ? [] : [DubSegmentPayload(index: 0, text: script)]
+        } else {
+            segments = request.segments
+        }
+        let payload = voicePayload(for: request)
+        return segments.map { segment in
+            var labeled = segment
+            labeled.speaker = payload.reference(for: segment)?
+                .speakerLabel(fallback: segment.speaker) ?? segment.speaker
+            return labeled
+        }
+    }
+
+    static func renderedSegments(
         from remote: [VoxellaDubSegment],
-        fallback: [DubSegmentPayload]
+        request: DubTaskRequest
     ) -> [DubRenderedSegment] {
+        let payload = voicePayload(for: request)
+        let voiceNames = Set(labeledSegments(for: request).compactMap { segment in
+            let source = request.segments.first { $0.index == segment.index } ?? segment
+            return SpeakerLabelResolver.normalized(payload.reference(for: source)?.name)
+        })
         if !remote.isEmpty {
-            return remote.enumerated().compactMap { offset, segment in
-                guard segment.endS > segment.startS else { return nil }
+            return remote.compactMap { segment in
+                guard segment.startS.isFinite, segment.endS.isFinite,
+                      segment.endS > segment.startS else { return nil }
+                let sourceBySubtitleID = segment.sourceSubtitleID.flatMap { sourceID -> DubSegmentPayload? in
+                    let matches = request.segments.filter { $0.sourceSubtitleID == sourceID }
+                    return matches.count == 1 ? matches.first : nil
+                }
+                let source = sourceBySubtitleID
+                    ?? request.segments.first { $0.index == segment.index }
+                let sourceForReference = source ?? DubSegmentPayload(
+                    index: segment.index,
+                    text: segment.text,
+                    speaker: segment.speakerLabel
+                )
+                let resolvedSpeaker = payload.reference(for: sourceForReference)?
+                    .speakerLabel(fallback: segment.speakerLabel ?? source?.speaker)
+                    ?? segment.speakerLabel ?? source?.speaker
+                // Cloud semantic splitting can renumber segments. A name that
+                // already identifies a selected voice remains authoritative
+                // when a new index collides with another source segment. A
+                // unique source subtitle ID still establishes the actual voice.
+                let remoteSpeaker = SpeakerLabelResolver.normalized(segment.speakerLabel)
+                let speaker = sourceBySubtitleID == nil && remoteSpeaker.map(voiceNames.contains) == true
+                    ? remoteSpeaker
+                    : resolvedSpeaker
                 return DubRenderedSegment(
                     index: segment.index,
                     text: segment.text,
                     start: segment.startS,
                     end: segment.endS,
-                    speaker: segment.speakerLabel,
+                    speaker: speaker,
                     sourceSubtitleID: segment.sourceSubtitleID
                 )
             }
         }
-        return fallback.enumerated().compactMap { offset, segment in
-            guard let start = segment.start, let end = segment.end, end > start else { return nil }
+        return labeledSegments(for: request).compactMap { segment in
+            guard let start = segment.start, let end = segment.end,
+                  start.isFinite, end.isFinite, end > start else { return nil }
             return DubRenderedSegment(
-                index: offset,
+                index: segment.index,
                 text: segment.text,
                 start: start,
                 end: end,
@@ -957,6 +1005,17 @@ struct CloudDubTaskAccess: DubTaskAccessing {
                 sourceSubtitleID: segment.sourceSubtitleID
             )
         }
+    }
+
+    private static func voicePayload(for request: DubTaskRequest) -> DubFlowPayload {
+        DubFlowPayload(
+            segments: request.segments,
+            language: request.language,
+            model: request.model,
+            reference: request.reference,
+            speakerReferences: request.speakerReferences,
+            segmentReferences: request.segmentReferences
+        )
     }
 
     private static func progress(

@@ -642,7 +642,8 @@ final class VoiceLibraryStore {
         guard let reference = reference(id: id) else { return nil }
         return DubVoiceReference(
             audioURL: audioURL(for: reference),
-            transcript: reference.transcript
+            transcript: reference.transcript,
+            name: reference.name
         )
     }
 

@@ -1,6 +1,11 @@
 import Foundation
 
 enum SemanticDubPreprocessor {
+    struct PreparedSegment: Sendable {
+        var segment: DubSegmentPayload
+        var reference: DubVoiceReference?
+    }
+
     struct Configuration: Sendable {
         var minimumSequenceCharacters = 40
         var maximumSequenceCharacters = 220
@@ -24,6 +29,13 @@ enum SemanticDubPreprocessor {
         _ payload: DubFlowPayload,
         configuration: Configuration = Configuration()
     ) throws -> [DubSegmentPayload] {
+        try prepare(payload, configuration: configuration).map(\.segment)
+    }
+
+    static func prepare(
+        _ payload: DubFlowPayload,
+        configuration: Configuration = Configuration()
+    ) throws -> [PreparedSegment] {
         let normalized = payload.segments
             .sorted { $0.index < $1.index }
             .compactMap { segment -> DubSegmentPayload? in
@@ -86,7 +98,7 @@ enum SemanticDubPreprocessor {
         }
         flush()
 
-        var output: [DubSegmentPayload] = []
+        var output: [PreparedSegment] = []
         var usedIndexes = Set<Int>()
         for group in groups {
             let chunks = splitOverlongText(
@@ -126,7 +138,7 @@ enum SemanticDubPreprocessor {
                     : output.count
                 let index = nextAvailableIndex(preferredIndex, used: &usedIndexes)
                 output.append(
-                    DubSegmentPayload(
+                    PreparedSegment(segment: DubSegmentPayload(
                         index: index,
                         text: chunk,
                         start: chunkStart,
@@ -134,7 +146,7 @@ enum SemanticDubPreprocessor {
                         speaker: group.segments.first?.speaker,
                         sourceSubtitleID: group.segments.first?.sourceSubtitleID,
                         options: group.segments.first?.options ?? [:]
-                    )
+                    ), reference: payload.reference(for: group.segments[0]))
                 )
             }
         }
@@ -147,9 +159,7 @@ enum SemanticDubPreprocessor {
         for segment: DubSegmentPayload,
         payload: DubFlowPayload
     ) -> Context {
-        let reference = payload.segmentReferences[segment.index]
-            ?? segment.speaker.flatMap { payload.speakerReferences[$0] }
-            ?? payload.reference
+        let reference = payload.reference(for: segment)
         return Context(
             speaker: segment.speaker?
                 .trimmingCharacters(in: .whitespacesAndNewlines)

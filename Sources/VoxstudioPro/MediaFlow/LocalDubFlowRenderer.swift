@@ -12,8 +12,9 @@ struct DubFlowProgress: Sendable {
 actor LocalDubFlowRenderer {
     static let shared = LocalDubFlowRenderer()
 
-    private struct PreparedSegment: Sendable {
+    struct PreparedSegment: Sendable {
         var source: DubSegmentPayload
+        var reference: DubVoiceReference?
         var chunks: [String]
     }
 
@@ -47,22 +48,9 @@ actor LocalDubFlowRenderer {
 
         var generated: [GeneratedSegment] = []
         var completedChunks = 0
-        var fixedSpeakerReferences: [String: DubVoiceReference] = [:]
         for preparedSegment in prepared {
             try Task.checkCancellation()
-            let reference: DubVoiceReference?
-            if payload.segmentReferences[preparedSegment.source.index] != nil {
-                reference = Self.reference(for: preparedSegment.source, payload: payload)
-            } else if let speaker = preparedSegment.source.speaker,
-                      let fixed = fixedSpeakerReferences[Self.speakerKey(speaker)] {
-                reference = fixed
-            } else {
-                reference = Self.reference(for: preparedSegment.source, payload: payload)
-                if let speaker = preparedSegment.source.speaker,
-                   let reference {
-                    fixedSpeakerReferences[Self.speakerKey(speaker)] = reference
-                }
-            }
+            let reference = preparedSegment.reference
             if reference != nil {
                 progress(.init(
                     stage: .dubReference,
@@ -175,16 +163,23 @@ actor LocalDubFlowRenderer {
         return DubFlowResult(outputURL: outputURL, segments: assembly.segments)
     }
 
-    private static func prepare(_ payload: DubFlowPayload) throws -> [PreparedSegment] {
-        let semanticSegments = try SemanticDubPreprocessor.preprocess(payload)
-        let prepared = semanticSegments.compactMap { segment -> PreparedSegment? in
+    static func prepare(_ payload: DubFlowPayload) throws -> [PreparedSegment] {
+        let semanticSegments = try SemanticDubPreprocessor.prepare(payload)
+        let prepared = semanticSegments.compactMap { prepared -> PreparedSegment? in
+            var segment = prepared.segment
+            // Resolve the voice using the original segment before assigning its
+            // output label; grouping can change both speaker keys and indexes.
+            segment.speaker = prepared.reference?.speakerLabel(fallback: segment.speaker)
+                ?? segment.speaker
             let normalized = normalizeTTSText(segment.text)
             guard !normalized.isEmpty else { return nil }
             let chunks = DubTextChunker.chunks(
                 normalized,
                 maximumCharacters: max(1, payload.maximumChunkCharacters)
             )
-            return chunks.isEmpty ? nil : PreparedSegment(source: segment, chunks: chunks)
+            return chunks.isEmpty ? nil : PreparedSegment(
+                source: segment, reference: prepared.reference, chunks: chunks
+            )
         }
         guard !prepared.isEmpty else { throw MediaFlowError.emptyDubScript }
         return prepared
@@ -197,22 +192,11 @@ actor LocalDubFlowRenderer {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func speakerKey(_ speaker: String) -> String {
-        speaker.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
     static func reference(
         for segment: DubSegmentPayload,
         payload: DubFlowPayload
     ) -> DubVoiceReference? {
-        if let segmentReference = payload.segmentReferences[segment.index] {
-            return segmentReference
-        }
-        if let speaker = segment.speaker,
-           let speakerReference = payload.speakerReferences[speaker] {
-            return speakerReference
-        }
-        return payload.reference
+        payload.reference(for: segment)
     }
 
     private static func readMonoSamples(from URL: URL) throws -> [Float] {
