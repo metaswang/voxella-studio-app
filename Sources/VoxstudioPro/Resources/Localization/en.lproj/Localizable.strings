@@ -2816,11 +2816,15 @@
 "Cancel recording setup" = "Cancel recording setup";
 "Couldn't start screen capture. Check the source and try again." = "Couldn't start screen capture. Check the source and try again.";
 
-"Speaker color" = "Speaker color";
-
-"Custom color…" = "Custom color…";
-
+// Transcript speaker colors
 "Change color…" = "Change color…";
+"Speaker color" = "Speaker color";
+"Speaker color %d" = "Speaker color %d";
+"Custom color…" = "Custom color…";
+"Color stays with the speaker after renaming." = "Color stays with the speaker after renaming.";
+"Assigned automatically" = "Assigned automatically";
+"New speakers receive a clearly distinct color." = "New speakers receive a clearly distinct color.";
+"This speaker already exists. Choose it from the speaker menu." = "This speaker already exists. Choose it from the speaker menu.";
 
 /* Recent session selection */
 "Deselect All" = "Deselect All";

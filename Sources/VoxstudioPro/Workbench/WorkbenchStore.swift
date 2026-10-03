@@ -3193,6 +3193,17 @@ final class WorkbenchStore {
         }
     }
 
+    func assignSessionCueSpeakers(sessionID: UUID, scope: SessionCueScope, cueIDs: [Int], speaker: String) {
+        let ids = Set(cueIDs)
+        mutateSessionCueTrack(sessionID: sessionID, scope: scope) { track in
+            var updated = track
+            for index in updated.cues.indices where ids.contains(updated.cues[index].id) {
+                updated.cues[index].speaker = speaker
+            }
+            return updated
+        }
+    }
+
     func renameSessionSpeaker(
         sessionID: UUID,
         scope: SessionCueScope,

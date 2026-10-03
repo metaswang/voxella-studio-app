@@ -176,17 +176,78 @@ struct SessionSpeakerColorPicker: View {
             ), supportsOpacity: false)
             .font(.system(size: AppTheme.FontSize.smMd))
         }
+        .font(.system(size: AppTheme.FontSize.md))
         .padding(AppTheme.Spacing.xl)
+        .frame(width: AppTheme.zoomed(320))
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
+struct SessionAddSpeakerSheet: View {
+    let existingLabels: [String]
+    let onAdd: (String, SessionSpeakerColor) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var color: SessionSpeakerColor
+    @State private var showsColorPicker = false
 
-enum SessionTranscriptCanvas {
-    static var color: Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                ? NSColor(srgbRed: 0.086, green: 0.09, blue: 0.102, alpha: 1)
-                : NSColor(srgbRed: 0.988, green: 0.988, blue: 0.98, alpha: 1)
-        })
+    init(existingLabels: [String], color: SessionSpeakerColor,
+         onAdd: @escaping (String, SessionSpeakerColor) -> Void) {
+        self.existingLabels = existingLabels
+        self.onAdd = onAdd
+        _color = State(initialValue: color)
+    }
+
+    private var label: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var alreadyExists: Bool { existingLabels.contains(label) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.lgXl) {
+            Text(L10n.string("Add speaker"))
+                .font(.system(size: AppTheme.FontSize.xl, weight: .semibold))
+            TextField(L10n.string("Speaker name"), text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { add() }
+            HStack {
+                Text(L10n.string("Color"))
+                Spacer()
+                Button { showsColorPicker = true } label: {
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.xs)
+                            .fill(color.color)
+                            .frame(width: AppTheme.zoomed(28), height: AppTheme.zoomed(20))
+                        Image(systemName: "chevron.down")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(L10n.string("Change color…"))
+                .popover(isPresented: $showsColorPicker) {
+                    SessionSpeakerColorPicker(label: label.isEmpty ? L10n.string("Speaker") : label, selection: $color)
+                }
+            }
+            Text(L10n.string(alreadyExists
+                ? "This speaker already exists. Choose it from the speaker menu."
+                : "New speakers receive a clearly distinct color."))
+                .font(.system(size: AppTheme.FontSize.smMd))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button(L10n.string("Cancel"), role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(L10n.string("Add"), action: add)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(label.isEmpty || alreadyExists)
+            }
+        }
+        .padding(AppTheme.Spacing.xlXxl)
+        .frame(width: AppTheme.zoomed(340))
+    }
+
+    private func add() {
+        guard !label.isEmpty, !alreadyExists else { return }
+        onAdd(label, color)
+        dismiss()
     }
 }

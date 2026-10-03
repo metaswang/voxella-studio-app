@@ -23,6 +23,7 @@ final class SessionPlaybackController {
     var isPlaying = false
     var currentTime = 0.0
     var activeCueID: Int?
+    var activeHighlightSubtitleID: Int?
     var duration = 0.0
     var playbackRate = 1.0
     private(set) var subtitleMode: SessionSubtitleDisplayMode = .original
@@ -34,6 +35,7 @@ final class SessionPlaybackController {
     private var endObserver: NSObjectProtocol?
     private var timeObserver: Any?
     private var highlightedCues: [SubtitleCue] = []
+    private var highlightedSubtitleCues: [SubtitleCue] = []
     private var loadGeneration = UUID()
     private var seekGeneration = UUID()
     private var lastEnabledSubtitleMode: SessionSubtitleDisplayMode = .original
@@ -48,8 +50,9 @@ final class SessionPlaybackController {
         resolveSubtitleMode()
     }
 
-    func configureHighlightCues(_ cues: [SubtitleCue]) {
+    func configureHighlightCues(_ cues: [SubtitleCue], subtitleCues: [SubtitleCue] = []) {
         highlightedCues = cues
+        highlightedSubtitleCues = subtitleCues
         updateActiveCueID()
     }
 
@@ -282,6 +285,7 @@ final class SessionPlaybackController {
         isPlaying = false
         currentTime = preservedTime > 0 ? preservedTime : 0
         activeCueID = nil
+        activeHighlightSubtitleID = nil
         posterImage = nil
         peaks = []
         duration = 0
@@ -397,15 +401,20 @@ final class SessionPlaybackController {
     private func updateActiveCueID() {
         guard isPlaying, currentTime.isFinite else {
             activeCueID = nil
+            activeHighlightSubtitleID = nil
             return
         }
-        activeCueID = highlightedCues.first(where: { cue in
-            cue.start.isFinite
-                && cue.end.isFinite
-                && cue.end > cue.start
-                && currentTime >= cue.start
-                && currentTime < cue.end
-        })?.id
+        func activeID(in cues: [SubtitleCue]) -> Int? {
+            cues.first(where: { cue in
+                cue.start.isFinite
+                    && cue.end.isFinite
+                    && cue.end > cue.start
+                    && currentTime >= cue.start
+                    && currentTime < cue.end
+            })?.id
+        }
+        activeCueID = activeID(in: highlightedCues)
+        activeHighlightSubtitleID = activeID(in: highlightedSubtitleCues)
     }
 }
 

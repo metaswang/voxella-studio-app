@@ -2816,11 +2816,15 @@
 "Cancel recording setup" = "取消录制准备";
 "Couldn't start screen capture. Check the source and try again." = "无法启动屏幕录制。请检查所选来源，然后重试。";
 
-"Speaker color" = "说话人颜色";
-
-"Custom color…" = "自定义颜色…";
-
+// Transcript speaker colors
 "Change color…" = "修改颜色…";
+"Speaker color" = "说话人颜色";
+"Speaker color %d" = "说话人颜色 %d";
+"Custom color…" = "自定义颜色…";
+"Color stays with the speaker after renaming." = "重命名后保留此说话人的颜色。";
+"Assigned automatically" = "自动分配";
+"New speakers receive a clearly distinct color." = "新说话人会自动分配明显不同的颜色。";
+"This speaker already exists. Choose it from the speaker menu." = "此说话人已存在，请从说话人菜单中选择。";
 
 /* Recent session selection */
 "Deselect All" = "取消全选";

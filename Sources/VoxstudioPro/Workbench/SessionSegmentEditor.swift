@@ -9,12 +9,14 @@ struct SessionSegmentEditor: View {
     let scope: WorkbenchStore.SessionCueScope
     let cues: [SubtitleCue]
     let activeCueID: Int?
+    var highlightSubtitleCues: [SubtitleCue] = []
+    var activeHighlightSubtitleID: Int? = nil
     let speakerLabels: [String]
-    var speakerDisplayNames: [String: String] = [:]
     var allowsEditing = true
     var showsSubtitleDisplayText = false
-    var aggregatesSpeakers = false
-    @Binding var expandedParagraphID: Int?
+    var showsTranscriptCanvas = false
+    var languageCode: String? = nil
+    var sourceText: String? = nil
     let emptyText: String
     let onSeek: (Double, Double) -> Void
 
@@ -23,10 +25,10 @@ struct SessionSegmentEditor: View {
     @State private var editingText = ""
     @State private var cursorOffset: Int?
     @State private var renameTarget: RenameSpeakerTarget?
-    @State private var addSpeakerCueIDs: [Int]?
-    @State private var addSpeakerName = ""
-    @State private var colorTarget: RenameSpeakerTarget?
+    @State private var addSpeakerTarget: AddSpeakerTarget?
+    @State private var colorTarget: SpeakerColorTarget?
     @State private var autosaveTask: Task<Void, Never>?
+    @State private var subtitleHighlightRanges: [Int: [Int: NSRange]] = [:]
 
     var body: some View {
         if cues.isEmpty {
@@ -37,27 +39,21 @@ struct SessionSegmentEditor: View {
             )
             .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.emptyStateMinHeight)
         } else {
-            LazyVStack(alignment: .leading, spacing: showsSubtitleDisplayText ? 0 : AppTheme.Spacing.lg) {
-                ForEach(displayRows) { row in
-                    switch row {
-                    case .paragraph(let paragraph):
-                        cueRow(paragraph.cues[0], paragraph: paragraph).id(row.id)
-                    case .cue(let cue):
-                        cueRow(cue).id(row.id)
-                    case .divider(let cueID):
-                        SessionMergeDivider {
-                            store.mergeSessionCueDown(sessionID: sessionID, scope: scope, cueID: cueID)
-                            if editingCueID == cueID { cancelEdit() }
+            let highlights = highlightSubtitleCues.isEmpty ? nil :
+                activeHighlightSubtitleID.flatMap { subtitleHighlightRanges[$0] } ?? [:]
+            LazyVStack(alignment: .leading, spacing: showsTranscriptCanvas ? AppTheme.Spacing.xlXxl : 0) {
+                if showsTranscriptCanvas {
+                    ForEach(SessionTranscriptParagraph.group(cues)) { paragraph in
+                        transcriptParagraph(paragraph, highlights: highlights)
+                            .id(paragraph.id)
+                    }
+                } else {
+                    ForEach(Array(cues.enumerated()), id: \.element.id) { index, cue in
+                        cueRow(cue)
+                            .id(cue.id)
+                        if allowsEditing, index < cues.count - 1 {
+                            SessionMergeDivider { mergeCue(cue.id) }
                         }
-                    case .done:
-                        Button(L10n.string("Done")) {
-                            commitEditAndClose()
-                            expandedParagraphID = nil
-                        }
-                        .buttonStyle(.plain)
-                        .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
-                        .foregroundStyle(AppTheme.Text.secondaryColor)
-                        .padding(.leading, AppTheme.Spacing.xl)
                     }
                 }
             }
@@ -65,16 +61,16 @@ struct SessionSegmentEditor: View {
             // different heights. Discard the lazy layout cache when switching
             // tracks, languages or presentation modes.
             .id(contentKey)
-            .padding(.vertical, AppTheme.Spacing.lg)
-            .onAppear { store.ensureSessionSpeakerColors(sessionID: sessionID, labels: speakerLabels) }
-            .onChange(of: speakerLabels) { _, labels in
-                store.ensureSessionSpeakerColors(sessionID: sessionID, labels: labels)
+            .padding(.horizontal, showsTranscriptCanvas ? AppTheme.Spacing.sm : 0)
+            .padding(.top, showsTranscriptCanvas ? AppTheme.Spacing.sm : 0)
+            .task(id: allSpeakerLabels) {
+                store.ensureSessionSpeakerColors(sessionID: sessionID, labels: allSpeakerLabels)
+            }
+            .task(id: [cues, highlightSubtitleCues]) {
+                subtitleHighlightRanges = SessionTranscriptSubtitleHighlights.ranges(in: cues, subtitles: highlightSubtitleCues)
             }
             .popover(item: $colorTarget) { target in
-                SessionSpeakerColorPicker(label: target.label, selection: Binding(
-                    get: { colors.values[target.label] ?? SessionSpeakerColor.presets[0] },
-                    set: { store.setSessionSpeakerColor(sessionID: sessionID, speaker: target.label, color: $0) }
-                ))
+                SessionSpeakerColorPicker(label: target.label, selection: colorBinding(for: target.label))
             }
             .alert(
                 L10n.string("Rename speaker"),
@@ -99,28 +95,15 @@ struct SessionSegmentEditor: View {
             } message: {
                 Text(L10n.string("Updates this label across the selected track."))
             }
-            .alert(
-                L10n.string("Add speaker"),
-                isPresented: Binding(
-                    get: { addSpeakerCueIDs != nil },
-                    set: { if !$0 { addSpeakerCueIDs = nil } }
-                )
-            ) {
-                TextField(L10n.string("Speaker name"), text: $addSpeakerName)
-                Button(L10n.string("Cancel"), role: .cancel) { addSpeakerCueIDs = nil }
-                Button(L10n.string("Add")) {
-                    if let cueIDs = addSpeakerCueIDs {
-                        store.assignSessionCuesSpeaker(
-                            sessionID: sessionID,
-                            scope: scope,
-                            cueIDs: cueIDs,
-                            speaker: addSpeakerName
-                        )
-                    }
-                    addSpeakerCueIDs = nil
+            .sheet(item: $addSpeakerTarget) { target in
+                SessionAddSpeakerSheet(
+                    existingLabels: allSpeakerLabels,
+                    color: .next(excluding: Array(colors.values.values))
+                ) { name, color in
+                    assignSpeaker(name, cueIDs: target.cueIDs)
+                    store.setSessionSpeakerColor(sessionID: sessionID, speaker: name, color: color)
                 }
-            } message: {
-                Text(L10n.string("Assign a new speaker label to this segment."))
+                .appZoomEnvironment(presentationBoundary: true)
             }
             .onChange(of: contentKey) { _, _ in
                 resetEditingState()
@@ -128,58 +111,87 @@ struct SessionSegmentEditor: View {
         }
     }
 
-    private var displayRows: [SessionTranscriptDisplayRow] {
-        SessionTranscriptDisplayRow.rows(cues, aggregate: aggregatesSpeakers, expandedID: expandedParagraphID, allowsEditing: allowsEditing)
+    private var allSpeakerLabels: [String] {
+        var seen = Set<String>()
+        return (speakerLabels + cues.compactMap(\.speaker)).compactMap {
+            guard let label = SessionTranscriptParagraph.normalizedSpeaker($0), seen.insert(label).inserted else { return nil }
+            return label
+        }
     }
 
     private var colors: SessionSpeakerColors {
-        store.sessionSpeakerColors(sessionID: sessionID, labels: speakerLabels)
+        store.sessionSpeakerColors(sessionID: sessionID, labels: allSpeakerLabels)
     }
 
-    private func cueRow(_ cue: SubtitleCue, paragraph: SessionTranscriptParagraph? = nil) -> some View {
-        let members = paragraph?.cues ?? [cue]
-        return SessionCueRow(
-            cue: cue,
-            isActive: members.contains { $0.id == activeCueID },
-            speakerLabels: speakerLabels,
+    private func colorBinding(for label: String) -> Binding<SessionSpeakerColor> {
+        Binding(
+            get: { colors.values[label] ?? SessionSpeakerColor.presets[0] },
+            set: { store.setSessionSpeakerColor(sessionID: sessionID, speaker: label, color: $0) }
+        )
+    }
+
+    private func assignSpeaker(_ speaker: String, cueIDs: [Int]) {
+        guard let label = SessionTranscriptParagraph.normalizedSpeaker(speaker) else { return }
+        store.ensureSessionSpeakerColors(sessionID: sessionID, labels: allSpeakerLabels + [label])
+        store.assignSessionCueSpeakers(sessionID: sessionID, scope: scope, cueIDs: cueIDs, speaker: label)
+    }
+
+    private func prepareAddSpeaker(cueIDs: [Int]) {
+        addSpeakerTarget = AddSpeakerTarget(cueIDs: cueIDs)
+    }
+
+    private func mergeCue(_ id: Int) {
+        if editingCueID == id { commitEditAndClose() }
+        store.mergeSessionCueDown(sessionID: sessionID, scope: scope, cueID: id)
+    }
+
+    private func transcriptParagraph(_ paragraph: SessionTranscriptParagraph, highlights: [Int: NSRange]?) -> some View {
+        let editedCue = paragraph.cues.first { $0.id == editingCueID }
+        return SessionTranscriptParagraphView(
+            paragraph: paragraph, activeCueID: activeCueID, highlightRanges: highlights, colors: colors,
+            speakerLabels: allSpeakerLabels, allowsEditing: allowsEditing,
+            languageCode: languageCode, sourceText: sourceText,
+            editingCueID: editingCueID, editingText: editingBinding(for: editedCue ?? paragraph.cues[0]),
+            cursorOffset: $cursorOffset, canSplit: canSplit,
+            canMerge: { id in cues.last?.id != id }, onPlay: onSeek,
+            onBeginEdit: beginEdit,
+            onCommit: { if editingCueID == editedCue?.id { commitEditAndClose() } },
+            onCancel: { if editingCueID == editedCue?.id { cancelEdit() } },
+            onSplit: splitEditingCue, onMerge: mergeCue,
+            onSelectSpeaker: { assignSpeaker($0, cueIDs: paragraph.cues.map(\.id)) },
+            onSelectCueSpeaker: { id, label in assignSpeaker(label, cueIDs: [id]) },
+            onRenameSpeaker: { renameTarget = RenameSpeakerTarget(label: $0) },
+            onAddSpeaker: { prepareAddSpeaker(cueIDs: paragraph.cues.map(\.id)) },
+            onAddCueSpeaker: { prepareAddSpeaker(cueIDs: [$0]) },
+            onChangeColor: showColorPicker
+        )
+    }
+
+    private func cueRow(_ cue: SubtitleCue) -> some View {
+        SessionCueRow(
+            cue: cue, isActive: activeCueID == cue.id, speakerLabels: allSpeakerLabels,
             isEditing: allowsEditing && editingCueID == cue.id,
             editingText: editingBinding(for: cue),
             cursorOffset: allowsEditing && editingCueID == cue.id ? $cursorOffset : .constant(nil),
-            canSplit: allowsEditing && canSplit,
-            allowsEditing: allowsEditing,
+            canSplit: allowsEditing && canSplit, allowsEditing: allowsEditing,
             showsSubtitleDisplayText: showsSubtitleDisplayText,
-            onPlay: {
-                let target = members.first { $0.id == activeCueID } ?? cue
-                onSeek(target.start, paragraph?.end ?? target.end)
-            },
-            onBeginEdit: {
-                if let paragraph { expandedParagraphID = paragraph.id }
-                beginEdit(cue)
-            },
-            onCommitEdit: { commitEditAndClose() },
-            onCancelEdit: { cancelEdit() },
-            onSplit: { splitEditingCue() },
-            onSelectSpeaker: { speaker in
-                store.assignSessionCuesSpeaker(sessionID: sessionID, scope: scope, cueIDs: members.map(\.id), speaker: speaker)
-            },
+            onPlay: { onSeek(cue.start, cue.end) }, onBeginEdit: { beginEdit(cue) },
+            onCommitEdit: commitEditAndClose, onCancelEdit: cancelEdit, onSplit: splitEditingCue,
+            onSelectSpeaker: { assignSpeaker($0, cueIDs: [cue.id]) },
             onRenameSpeaker: { renameTarget = RenameSpeakerTarget(label: $0) },
-            onAddSpeaker: { addSpeakerCueIDs = members.map(\.id); addSpeakerName = "" },
-            speakerColor: colors.values[cue.speaker?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""]?.labelColor ?? AppTheme.Text.secondaryColor,
-            displayCues: paragraph?.cues ?? [],
-            activeDisplayCueID: activeCueID,
-            onChangeSpeakerColor: { colorTarget = RenameSpeakerTarget(label: $0) },
-            onBeginEditCue: { id in
-                if let paragraph { expandedParagraphID = paragraph.id }
-                if let member = members.first(where: { $0.id == id }) { beginEdit(member) }
-            },
-            speakerDisplayNames: speakerDisplayNames
+            onAddSpeaker: { prepareAddSpeaker(cueIDs: [cue.id]) },
+            speakerColor: cue.speaker.flatMap { colors.values[$0]?.labelColor } ?? AppTheme.Text.tertiaryColor,
+            onChangeSpeakerColor: showColorPicker
         )
+    }
+
+    private func showColorPicker(_ label: String) {
+        // Let AppKit finish closing the speaker menu before presenting a popover.
+        DispatchQueue.main.async { colorTarget = SpeakerColorTarget(label: label) }
     }
 
     private func resetEditingState() {
         autosaveTask?.cancel()
-        expandedParagraphID = nil
-        colorTarget = nil
         editingCueID = nil
         editingText = ""
         cursorOffset = nil
@@ -213,6 +225,7 @@ struct SessionSegmentEditor: View {
 
     private func beginEdit(_ cue: SubtitleCue) {
         guard allowsEditing else { return }
+        if editingCueID != nil, editingCueID != cue.id { commitEditAndClose() }
         autosaveTask?.cancel()
         editingCueID = cue.id
         editingText = cue.text
@@ -358,12 +371,8 @@ struct SessionCueRow: View {
     let onSelectSpeaker: (String) -> Void
     let onRenameSpeaker: (String) -> Void
     let onAddSpeaker: () -> Void
-    var speakerColor: Color = AppTheme.Text.secondaryColor
-    var displayCues: [SubtitleCue] = []
-    var activeDisplayCueID: Int?
-    var onChangeSpeakerColor: (String) -> Void = { _ in }
-    var onBeginEditCue: (Int) -> Void = { _ in }
-    var speakerDisplayNames: [String: String] = [:]
+    var speakerColor: Color = AppTheme.Text.tertiaryColor
+    var onChangeSpeakerColor: ((String) -> Void)? = nil
 
     @State private var isHovered = false
 
@@ -372,29 +381,29 @@ struct SessionCueRow: View {
             Button(action: onPlay) {
                 Image(systemName: isActive ? "pause.fill" : "play.fill")
                     .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(isActive ? speakerColor : AppTheme.Text.tertiaryColor)
+                    .foregroundStyle(AppTheme.Accent.link)
                     .frame(width: AppTheme.IconSize.lg, height: AppTheme.IconSize.lg)
-                    .background(AppTheme.Background.raisedColor, in: Circle())
+                    .background(AppTheme.Accent.link.opacity(AppTheme.Opacity.soft), in: Circle())
             }
             .buttonStyle(.plain)
             .help(L10n.string(isActive ? "Pause" : "Play from this segment"))
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
                 HStack(spacing: AppTheme.Spacing.sm) {
+                    Text("\(Self.formatTime(cue.start)) — \(Self.formatTime(cue.end))")
+                        .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+
                     if allowsEditing {
                         speakerMenu
                     } else if let speaker = cue.speaker?.trimmingCharacters(in: .whitespacesAndNewlines),
                               !speaker.isEmpty {
-                        Text(displayName(speaker))
-                            .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
-                            .foregroundStyle(speakerColor)
+                        Text(speaker)
+                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                            .foregroundStyle(AppTheme.Text.tertiaryColor)
                     }
 
                     Spacer(minLength: 0)
-
-                    Text("\(Self.formatTime(displayCues.map(\.start).min() ?? cue.start)) — \(Self.formatTime(displayCues.map(\.end).max() ?? cue.end))")
-                        .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
 
                     if allowsEditing, isHovered || isEditing {
                         Button(action: onBeginEdit) {
@@ -440,27 +449,17 @@ struct SessionCueRow: View {
                             .padding(.top, AppTheme.Spacing.xxs)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                         }
-                    } else if !displayCues.isEmpty {
-                        Text(paragraphText)
-                            .font(.system(size: AppTheme.FontSize.mdLg))
-                            .lineSpacing(AppTheme.Spacing.xs)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                            .environment(\.openURL, OpenURLAction { url in
-                                guard allowsEditing, url.scheme == "voxstudio-cue",
-                                      let id = Int(url.path) else { return .discarded }
-                                onBeginEditCue(id)
-                                return .handled
-                            })
                     } else {
-                        Text(showsSubtitleDisplayText ? TranscriptSegmenter.renderedSubtitleText(cue.text) : cue.text)
+                        Text(
+                            showsSubtitleDisplayText
+                                ? TranscriptSegmenter.renderedSubtitleText(cue.text)
+                                : cue.text
+                        )
                             .font(.system(size: AppTheme.FontSize.mdLg))
-                            .lineSpacing(AppTheme.Spacing.xs)
                             .foregroundStyle(AppTheme.Text.primaryColor)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
+                            .contentShape(Rectangle())
                             .onTapGesture {
                                 guard allowsEditing else { return }
                                 onBeginEdit()
@@ -470,67 +469,34 @@ struct SessionCueRow: View {
             }
         }
         .padding(.horizontal, AppTheme.Spacing.lgXl)
-        .padding(.vertical, showsSubtitleDisplayText ? AppTheme.Spacing.sm : AppTheme.Spacing.lgXl)
-        .frame(minHeight: showsSubtitleDisplayText ? 0 : AppTheme.Workbench.transcriptCardMinHeight, alignment: .topLeading)
-        .background(isEditing ? AppTheme.Background.raisedColor : Color.clear, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+        .padding(.vertical, AppTheme.Spacing.sm)
+        .background(
+            isActive
+                ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.soft)
+                : AppTheme.Background.surfaceColor,
+            in: RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+                .strokeBorder(
+                    isActive
+                        ? AppTheme.Accent.primary
+                        : isEditing
+                            ? AppTheme.Accent.primary.opacity(AppTheme.Opacity.muted)
+                            : AppTheme.Border.subtleColor,
+                    lineWidth: isActive ? AppTheme.BorderWidth.medium : AppTheme.BorderWidth.thin
+                )
+        }
         .onHover { isHovered = $0 }
     }
 
-    private var paragraphText: AttributedString {
-        var result = AttributedString()
-        for (index, item) in displayCues.enumerated() {
-            if index > 0 {
-                result.append(AttributedString(SessionTranscriptParagraph.separator(displayCues[index - 1].text, item.text)))
-            }
-            var text = AttributedString(item.text)
-            text.foregroundColor = AppTheme.Text.primaryColor
-            if allowsEditing { text.link = URL(string: "voxstudio-cue:\(item.id)") }
-            if item.id == activeDisplayCueID { text.backgroundColor = speakerColor.opacity(AppTheme.Opacity.soft) }
-            result.append(text)
-        }
-        return result
-    }
-
     private var speakerMenu: some View {
-        Menu {
-            ForEach(speakerLabels, id: \.self) { label in
-                Button {
-                    onSelectSpeaker(label)
-                } label: {
-                    if cue.speaker == label {
-                        Label(displayName(label), systemImage: "checkmark")
-                    } else {
-                        Text(displayName(label))
-                    }
-                }
-            }
-            if !speakerLabels.isEmpty {
-                Divider()
-            }
-            Button(L10n.string("Add speaker…"), action: onAddSpeaker)
-            if let speaker = cue.speaker, !speaker.isEmpty {
-                Button(L10n.format("Rename %@…", displayName(speaker))) {
-                    onRenameSpeaker(speaker)
-                }
-                Button(L10n.string("Change color…")) { onChangeSpeakerColor(speaker) }
-            }
-        } label: {
-            HStack(spacing: AppTheme.Spacing.xxs) {
-                Text({
-                    let trimmed = cue.speaker?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    return trimmed.isEmpty ? L10n.string("Speaker") : displayName(trimmed)
-                }())
-                    .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
-                    .foregroundColor(speakerColor)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.semibold))
-            }
-            .foregroundStyle(speakerColor)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .tint(speakerColor)
-        .help(L10n.string("Assign speaker"))
+        SessionSpeakerMenu(
+            speaker: SessionTranscriptParagraph.normalizedSpeaker(cue.speaker),
+            labels: speakerLabels, color: speakerColor,
+            onSelect: onSelectSpeaker, onRename: onRenameSpeaker, onAdd: onAddSpeaker,
+            onChangeColor: onChangeSpeakerColor
+        )
     }
 
     private static func formatTime(_ seconds: Double) -> String {
@@ -542,21 +508,11 @@ struct SessionCueRow: View {
         }
         return String(format: "%.1fs", secs)
     }
-
-    private func displayName(_ key: String) -> String {
-        let name = speakerDisplayNames[key]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name.isEmpty ? key : name
-    }
 }
 
 private enum SessionCueEditorMetrics {
     static var font: NSFont { .systemFont(ofSize: AppTheme.FontSize.mdLg) }
     static var verticalInset: CGFloat { AppTheme.Spacing.xxs }
-    static var paragraphStyle: NSParagraphStyle {
-        let style = NSMutableParagraphStyle()
-        style.lineSpacing = AppTheme.Spacing.xs
-        return style
-    }
 
     static func height(for text: String, width: CGFloat) -> CGFloat {
         let font = font
@@ -566,7 +522,7 @@ private enum SessionCueEditorMetrics {
         guard width > 1 else { return minHeight }
 
         let sample = text.isEmpty ? " " : text
-        let storage = NSTextStorage(string: sample, attributes: [.font: font, .paragraphStyle: paragraphStyle])
+        let storage = NSTextStorage(string: sample, attributes: [.font: font])
         let manager = NSLayoutManager()
         let container = NSTextContainer(size: NSSize(
             width: width,
@@ -586,7 +542,7 @@ private enum SessionCueEditorMetrics {
     }
 }
 
-private struct SessionCueTextEditor: NSViewRepresentable {
+struct SessionCueTextEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var cursorOffset: Int?
     let onCommit: () -> Void
@@ -627,7 +583,6 @@ private struct SessionCueTextEditor: NSViewRepresentable {
         textView.importsGraphics = false
         textView.allowsUndo = true
         textView.font = SessionCueEditorMetrics.font
-        textView.defaultParagraphStyle = SessionCueEditorMetrics.paragraphStyle
         textView.textColor = NSColor(AppTheme.Text.primaryColor)
         textView.insertionPointColor = NSColor(AppTheme.Text.primaryColor)
         textView.backgroundColor = .clear
@@ -732,4 +687,14 @@ private struct SessionCueTextEditor: NSViewRepresentable {
             return false
         }
     }
+}
+
+private struct SpeakerColorTarget: Identifiable {
+    let label: String
+    var id: String { label }
+}
+
+private struct AddSpeakerTarget: Identifiable {
+    let id = UUID()
+    let cueIDs: [Int]
 }

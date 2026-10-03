@@ -57,6 +57,11 @@ enum AppTheme {
         static var previewCanvasColor: Color { .black }
         static var placeholderColor: Color { Color(placeholder) }
         static var clearColor: Color { .clear }
+        static let transcriptCanvas = AppTheme.adaptive(
+            light: NSColor(red: 0.988, green: 0.988, blue: 0.980, alpha: 1),
+            dark: NSColor(red: 0.075, green: 0.075, blue: 0.085, alpha: 1)
+        )
+        static var transcriptCanvasColor: Color { Color(transcriptCanvas) }
     }
 
     // MARK: - Borders

@@ -9,7 +9,6 @@ struct WorkbenchSessionDetailView: View {
     @Bindable private var account = AccountService.shared
     @State private var selectedTrack = SessionPlaybackTrack.original
     @State private var selectedTab = SessionDetailTab.transcript
-    @State private var expandedTranscriptParagraphID: Int?
     /// `nil` means Original; otherwise a translation language code.
     @State private var transcriptLanguageCode: String?
     @State private var subtitleLanguageCode: String?
@@ -26,6 +25,7 @@ struct WorkbenchSessionDetailView: View {
     @State private var isOpeningClip = false
     @State private var cuePlaybackRequest: SessionCuePlaybackRequest?
     @State private var activePlaybackCueID: Int?
+    @State private var activeHighlightSubtitleID: Int?
     @State private var probedMediaURL: URL?
     @State private var probedMediaHasVideo = false
 
@@ -66,6 +66,7 @@ struct WorkbenchSessionDetailView: View {
         .onChange(of: store.selectedSessionID) { _, _ in
             isRenamingTitle = false
             activePlaybackCueID = nil
+            activeHighlightSubtitleID = nil
         }
         .sheet(isPresented: $showTranslateSheet) {
             if let session = store.selectedSession,
@@ -328,7 +329,7 @@ struct WorkbenchSessionDetailView: View {
                         maxHeight: .infinity,
                         alignment: .top
                     )
-                    .background(SessionTranscriptCanvas.color)
+                    .background(selectedTab == .transcript ? AppTheme.Background.transcriptCanvasColor : AppTheme.Background.baseColor)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -494,6 +495,8 @@ struct WorkbenchSessionDetailView: View {
                 : session.subtitleTrack,
             translationTracks: session.translationTracks,
             highlightCues: playbackCues,
+            highlightSubtitleCues: transcriptHighlightSubtitles(for: session),
+            activeHighlightSubtitleID: $activeHighlightSubtitleID,
             activeCueID: $activePlaybackCueID,
             cuePlaybackRequest: $cuePlaybackRequest,
             onSelectTrack: { selectedTrack = $0 }
@@ -932,6 +935,7 @@ struct WorkbenchSessionDetailView: View {
     private func sessionContent(_ session: WorkbenchSession, activeCueID: Int?) -> some View {
         let scope = cueScope(for: session)
         let cues = editableCues(for: session, scope: scope)
+        let textContext = transcriptTextContext(for: session, scope: scope)
         let allowsEditing = !session.isRemoteOnly && (selectedTab == .subtitles
             || scope == .transcript
             || !hasFineGrainedSubtitleTrack(session, scope: scope))
@@ -941,12 +945,14 @@ struct WorkbenchSessionDetailView: View {
             scope: scope,
             cues: cues,
             activeCueID: activeCueID,
+            highlightSubtitleCues: transcriptHighlightSubtitles(for: session),
+            activeHighlightSubtitleID: activeHighlightSubtitleID,
             speakerLabels: speakerLabels(for: session, cues: cues),
-            speakerDisplayNames: session.isRemoteOnly ? store.remoteSpeakerNames[session.id] ?? [:] : [:],
             allowsEditing: allowsEditing,
             showsSubtitleDisplayText: selectedTab == .subtitles,
-            aggregatesSpeakers: selectedTab == .transcript,
-            expandedParagraphID: $expandedTranscriptParagraphID,
+            showsTranscriptCanvas: selectedTab == .transcript,
+            languageCode: textContext.language,
+            sourceText: textContext.text,
             emptyText: selectedTab == .transcript
                 ? L10n.string("No timed transcript is available for this track.")
                 : L10n.string("No subtitle track is available."),
@@ -956,6 +962,40 @@ struct WorkbenchSessionDetailView: View {
         )
     }
 
+    /// Highlight against the displayed transcript language/track, independently of CC visibility.
+    private func transcriptHighlightSubtitles(for session: WorkbenchSession) -> [SubtitleCue] {
+        guard selectedTab == .transcript else { return [] }
+        switch cueScope(for: session) {
+        case .transcript, .source:
+            return session.subtitleTrack?.cues ?? []
+        case .translation(let code):
+            return session.translationTracks.first {
+                $0.languageCode.caseInsensitiveCompare(code) == .orderedSame
+            }?.track.cues ?? []
+        case .dub:
+            return session.dubSubtitleTrack?.cues ?? []
+        }
+    }
+
+    private func transcriptTextContext(
+        for session: WorkbenchSession,
+        scope: WorkbenchStore.SessionCueScope
+    ) -> (language: String?, text: String?) {
+        switch scope {
+        case .transcript, .source:
+            return (session.transcript?.language ?? session.subtitleTrack?.language,
+                    session.transcript?.text ?? session.subtitleTrack?.text)
+        case .translation(let code):
+            let track = session.translationTracks.first {
+                $0.languageCode.caseInsensitiveCompare(code) == .orderedSame
+            }?.track
+            return (track?.language ?? code, track?.text)
+        case .dub:
+            return (session.dubTranscript?.language ?? session.dubSubtitleTrack?.language,
+                    session.dubTranscript?.text ?? session.dubSubtitleTrack?.text)
+        }
+    }
+
     private func scrollToActiveCue(
         _ cueID: Int?,
         in cues: [SubtitleCue],
@@ -963,10 +1003,9 @@ struct WorkbenchSessionDetailView: View {
     ) {
         guard let cueID, cues.contains(where: { $0.id == cueID }) else { return }
         withAnimation(.easeInOut(duration: AppTheme.Anim.transition)) {
-            let target = SessionTranscriptDisplayRow.scrollID(
-                cueID: cueID, in: cues, aggregate: selectedTab == .transcript,
-                expandedID: expandedTranscriptParagraphID
-            )
+            let target = selectedTab == .transcript
+                ? SessionTranscriptParagraph.scrollID(for: cueID, in: cues) ?? cueID
+                : cueID
             proxy.scrollTo(target, anchor: .center)
         }
     }
@@ -1001,14 +1040,7 @@ struct WorkbenchSessionDetailView: View {
         for session: WorkbenchSession,
         scope: WorkbenchStore.SessionCueScope
     ) -> [SubtitleCue] {
-        let rawCues = rawCues(for: session, scope: scope)
-        guard selectedTab == .transcript else { return rawCues }
-        switch scope {
-        case .transcript:
-            return rawCues
-        case .source, .translation, .dub:
-            return aggregatedTranscriptCues(for: session, scope: scope, rawCues: rawCues)
-        }
+        rawCues(for: session, scope: scope)
     }
 
     private func rawCues(
@@ -1056,57 +1088,6 @@ struct WorkbenchSessionDetailView: View {
             }
             return []
         }
-    }
-
-    private func aggregatedTranscriptCues(
-        for session: WorkbenchSession,
-        scope: WorkbenchStore.SessionCueScope,
-        rawCues: [SubtitleCue]
-    ) -> [SubtitleCue] {
-        switch scope {
-        case .transcript:
-            return rawCues
-        case .source:
-            if let track = session.subtitleTrack, !track.cues.isEmpty {
-                let timed = track.asTranscriptionResult(preservingWords: session.transcript?.words ?? [])
-                    .aggregatingSegments()
-                return SubtitleTrack.fromTranscript(timed).cues
-            }
-            if let transcript = session.transcript {
-                return SubtitleTrack.fromTranscript(transcript.aggregatingSegments()).cues
-            }
-        case .dub:
-            if let transcript = session.dubTranscript {
-                return SubtitleTrack.fromTranscript(transcript.aggregatingSegments()).cues
-            }
-        case .translation:
-            break
-        }
-        guard !rawCues.isEmpty else { return [] }
-        let language: String?
-        switch scope {
-        case .transcript, .source:
-            language = session.transcript?.language ?? session.subtitleTrack?.language
-        case .dub:
-            language = session.dubTranscript?.language ?? session.dubSubtitleTrack?.language
-        case .translation(let languageCode):
-            language = languageCode
-        }
-        let words: [TranscriptionWord]
-        switch scope {
-        case .transcript, .source:
-            words = session.transcript?.words ?? []
-        case .dub:
-            words = session.dubTranscript?.words ?? []
-        case .translation:
-            words = []
-        }
-        let timed = SubtitleTrack(
-            sourceLanguage: language,
-            language: language,
-            cues: rawCues
-        ).asTranscriptionResult(preservingWords: words).aggregatingSegments()
-        return SubtitleTrack.fromTranscript(timed).cues
     }
 
     private func speakerLabels(for session: WorkbenchSession, cues: [SubtitleCue]) -> [String] {
@@ -1462,6 +1443,8 @@ private struct SessionMediaPlayer: View {
     var subtitleTrack: SubtitleTrack? = nil
     var translationTracks: [WorkbenchTranslationTrack] = []
     let highlightCues: [SubtitleCue]
+    let highlightSubtitleCues: [SubtitleCue]
+    @Binding var activeHighlightSubtitleID: Int?
     @Binding var activeCueID: Int?
     @Binding var cuePlaybackRequest: SessionCuePlaybackRequest?
     let onSelectTrack: (SessionPlaybackTrack) -> Void
@@ -1529,7 +1512,7 @@ private struct SessionMediaPlayer: View {
                 subtitleTrack: subtitleTrack,
                 translationTracks: translationTracks
             )
-            playback.configureHighlightCues(highlightCues)
+            playback.configureHighlightCues(highlightCues, subtitleCues: highlightSubtitleCues)
             let wasPlaying = !hasLoadedPlayback && URL != nil ? true : playback.isPlaying
             // Preserve playhead when master → listen swap completes mid-session.
             await playback.load(
@@ -1544,7 +1527,10 @@ private struct SessionMediaPlayer: View {
             }
         }
         .onChange(of: highlightCues) { _, cues in
-            playback.configureHighlightCues(cues)
+            playback.configureHighlightCues(cues, subtitleCues: highlightSubtitleCues)
+        }
+        .onChange(of: highlightSubtitleCues) { _, cues in
+            playback.configureHighlightCues(highlightCues, subtitleCues: cues)
         }
         .onChange(of: translationTracks) { _, _ in
             playback.configureSubtitles(
@@ -1564,6 +1550,9 @@ private struct SessionMediaPlayer: View {
         .onChange(of: playback.activeCueID) { _, cueID in
             activeCueID = cueID
         }
+        .onChange(of: playback.activeHighlightSubtitleID) { _, cueID in
+            activeHighlightSubtitleID = cueID
+        }
         .onChange(of: cuePlaybackRequest) { _, request in
             guard let request else { return }
             playback.toggleCuePlayback(start: request.start, end: request.end)
@@ -1572,6 +1561,7 @@ private struct SessionMediaPlayer: View {
         .onDisappear {
             playback.tearDown()
             activeCueID = nil
+            activeHighlightSubtitleID = nil
         }
     }
 

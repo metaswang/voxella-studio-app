@@ -5,6 +5,38 @@ import Testing
 @Suite("Session media playback subtitles")
 @MainActor
 struct SessionMediaPlaybackTests {
+    @Test func transcriptAndSubtitleHighlightUseIndependentTimingAndIDs() {
+        let playback = SessionPlaybackController()
+        let transcript = [Self.cue(id: 40, text: "First. Second.", start: 0, end: 10)]
+        let subtitles = [Self.cue(id: 1, text: "First.", start: 0, end: 3),
+                         Self.cue(id: 2, text: "Second.", start: 4, end: 10)]
+        playback.isPlaying = true
+        for (time, expected) in [(0.0, 1 as Int?), (2.99, 1), (3, nil), (4, 2), (9.99, 2)] {
+            playback.currentTime = time
+            playback.configureHighlightCues(transcript, subtitleCues: subtitles)
+            #expect(playback.activeCueID == 40)
+            #expect(playback.activeHighlightSubtitleID == expected)
+        }
+        playback.currentTime = 10
+        playback.configureHighlightCues(transcript, subtitleCues: subtitles)
+        #expect(playback.activeCueID == nil)
+        #expect(playback.activeHighlightSubtitleID == nil)
+        playback.currentTime = 5
+        playback.configureHighlightCues(transcript, subtitleCues: subtitles)
+        playback.stop()
+        #expect(playback.activeCueID == nil)
+        #expect(playback.activeHighlightSubtitleID == nil)
+    }
+
+    @Test func unsplitTranscriptRetainsItsSegmentHighlight() {
+        let playback = SessionPlaybackController()
+        playback.isPlaying = true
+        playback.currentTime = 5
+        playback.configureHighlightCues([Self.cue(id: 7, text: "Whole segment.", start: 0, end: 10)])
+        #expect(playback.activeCueID == 7)
+        #expect(playback.activeHighlightSubtitleID == nil)
+    }
+
     @Test func seekBarKeepsEndpointThumbsInsideTheHitTarget() {
         let width: CGFloat = 100
         let thumbSize: CGFloat = 12
