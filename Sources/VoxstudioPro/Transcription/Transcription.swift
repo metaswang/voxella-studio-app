@@ -502,7 +502,9 @@ enum TranscriptSegmenter {
             suffixStart -= 1
         }
         guard suffixStart < characters.count else { return trimmed }
-        let preserved = characters[suffixStart...].filter { "?!？！".contains($0) }
+        // Keep quotation delimiters in their original order, including those
+        // following sentence punctuation that is hidden in subtitle display.
+        let preserved = characters[suffixStart...].filter { "?!？！\"'`“”‘’«»‹›「」『』〝〞〟＂＇".contains($0) }
         return String(characters[..<suffixStart]) + String(preserved)
     }
 

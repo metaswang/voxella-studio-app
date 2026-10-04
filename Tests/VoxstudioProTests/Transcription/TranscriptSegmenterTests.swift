@@ -3,6 +3,28 @@ import Testing
 
 @Suite("Transcript segment aggregation")
 struct TranscriptSegmenterTests {
+    @Test func subtitleDisplayPreservesClosingQuotes() {
+        let cases: [(String, String)] = [
+            ("“Are you looking for this?”", "“Are you looking for this?”"),
+            ("“Yes!", "“Yes!"),
+            ("My husband gave it to me many years ago.”", "My husband gave it to me many years ago”"),
+            ("\"Hello.\"", "\"Hello\""),
+            ("'Hello.'", "'Hello'"),
+            ("`Hello.`", "`Hello`"),
+            ("「你好。」", "「你好」"),
+            ("『你好！』", "『你好！』"),
+            ("«Hello.»", "«Hello»"),
+            ("＂你好？＂", "＂你好？＂"),
+            ("‘Hello.’", "‘Hello’"),
+            ("He said “'Hello.'”", "He said “'Hello'”"),
+            (" Hello.,;:… ", "Hello"),
+            ("Really?!？！", "Really?!？！"),
+        ]
+        for (source, expected) in cases {
+            #expect(TranscriptSegmenter.renderedSubtitleText(source) == expected)
+        }
+    }
+
     @Test func aggregatesSpeakerRunsUsingThePostprocessWindow() {
         var words = (0..<14).map { index in
             Self.word("word\(index)", Double(index * 5), Double((index + 1) * 5), "Speaker 1")
