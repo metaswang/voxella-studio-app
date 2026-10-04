@@ -18,13 +18,6 @@ struct SessionSpeakerColor: Codable, Equatable, Sendable {
         self.init(Double(rgb.redComponent), Double(rgb.greenComponent), Double(rgb.blueComponent))
     }
 
-    init?(hex: String) {
-        guard hex.count == 7, hex.first == "#",
-              hex.dropFirst().allSatisfy({ $0.isASCII && $0.isHexDigit }),
-              let rgb = UInt32(hex.dropFirst(), radix: 16) else { return nil }
-        self.init(Double((rgb >> 16) & 255) / 255, Double((rgb >> 8) & 255) / 255, Double(rgb & 255) / 255)
-    }
-
     var color: Color { Color(red: red, green: green, blue: blue) }
 
     /// Keep a custom hue recognizable while maintaining readable labels in either appearance.

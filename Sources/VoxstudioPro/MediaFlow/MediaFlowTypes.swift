@@ -69,6 +69,18 @@ struct SubtitleCue: Codable, Equatable, Identifiable, Sendable {
         boundaryBefore = try values.decodeIfPresent(SpeakerBoundary.self, forKey: .boundaryBefore)
     }
 
+    var displayText: String {
+        guard let breaks = displayLineBreaks, !breaks.isEmpty else { return text }
+        let source = text as NSString
+        var offsets = [0] + breaks + [source.length]
+        offsets = Array(Set(offsets)).sorted()
+        let boundaries = Set(text.indices.map { $0.utf16Offset(in: text) } + [source.length])
+        guard offsets.first == 0, offsets.last == source.length,
+              offsets.allSatisfy({ boundaries.contains($0) }) else { return text }
+        return zip(offsets, offsets.dropFirst()).map {
+            source.substring(with: NSRange(location: $0, length: $1 - $0)).trimmingCharacters(in: .whitespaces)
+        }.joined(separator: "\n")
+    }
 }
 
 struct SubtitleTrack: Codable, Equatable, Sendable {
@@ -95,10 +107,12 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
         // introduced by an LLM from appearing between Han/Kana characters.
         self.cues = cues.map { cue in
             var normalized = cue
+            guard processingVersion != ElasticSubtitleSegmenter.processingVersion else { return cue }
             normalized.text = TranscriptSegmenter.normalizeDisplayText(
                 cue.text,
                 language: language ?? sourceLanguage
             )
+            if normalized.text != cue.text { normalized.displayLineBreaks = nil }
             return normalized
         }
         self.usesWordTimestamps = usesWordTimestamps
@@ -116,19 +130,22 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sourceLanguage = try container.decodeIfPresent(String.self, forKey: .sourceLanguage)
-        processingVersion = try container.decodeIfPresent(String.self, forKey: .processingVersion)
         language = try container.decodeIfPresent(String.self, forKey: .language)
+        processingVersion = try container.decodeIfPresent(String.self, forKey: .processingVersion)
         let decodedCues = try container.decode([SubtitleCue].self, forKey: .cues)
         let resolvedLanguage = language ?? sourceLanguage
         // Codable decoding bypasses the designated initializer. Normalize here
         // as well so tracks persisted by older builds receive the same CJK
         // joining and punctuation spacing rules as newly-created tracks.
+        let version = processingVersion
         cues = decodedCues.map { cue in
+            guard version != ElasticSubtitleSegmenter.processingVersion else { return cue }
             var normalized = cue
             normalized.text = TranscriptSegmenter.normalizeDisplayText(
                 cue.text,
                 language: resolvedLanguage
             )
+            if normalized.text != cue.text { normalized.displayLineBreaks = nil }
             return normalized
         }
         usesWordTimestamps = try container.decodeIfPresent(Bool.self, forKey: .usesWordTimestamps) ?? false
@@ -144,10 +161,9 @@ struct SubtitleTrack: Codable, Equatable, Sendable {
     }
 
     var text: String {
-        TranscriptSegmenter.joinedText(
-            cues.map(\.text),
-            language: language ?? sourceLanguage
-        )
+        processingVersion == ElasticSubtitleSegmenter.processingVersion
+            ? ElasticSubtitleSegmenter.joinChunks(cues.map(\.text), languageCode: language ?? sourceLanguage)
+            : TranscriptSegmenter.joinedText(cues.map(\.text), language: language ?? sourceLanguage)
     }
 
     /// Detect a persisted timed-segment fallback that must be rebuilt from word timestamps.

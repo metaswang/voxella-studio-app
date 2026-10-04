@@ -1,8 +1,5 @@
-import AVFoundation
 import AppKit
-import ImageIO
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct WorkbenchSessionThumbnail: View {
     let session: WorkbenchSession
@@ -32,9 +29,20 @@ struct WorkbenchSessionThumbnail: View {
                 .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
         }
         .clipped()
-        .task(id: session.id) {
+        .task(id: thumbnailSourceID) {
             await loadThumbnail()
         }
+    }
+
+    private var thumbnailSourceID: [String] {
+        [
+            session.id.uuidString,
+            session.sourceURL?.absoluteString ?? "",
+            session.outputURL?.absoluteString ?? "",
+            session.remoteSourcePosterURL?.absoluteString ?? "",
+            session.netVideoSource?.sourceURL.absoluteString ?? "",
+            String(describing: session.remoteSourceHasVideo),
+        ]
     }
 
     @ViewBuilder
@@ -95,38 +103,22 @@ struct WorkbenchSessionThumbnail: View {
         localThumbnailData = nil
         remoteImageLoaded = false
         if let netVideo = session.netVideoSource, netVideo.platform == .youtube {
-            oEmbedThumbnailURL = await YouTubeOEmbedClient.shared.metadata(for: netVideo.sourceURL)?.thumbnailURL
-            return
+            let url = await YouTubeOEmbedClient.shared.metadata(for: netVideo.sourceURL)?.thumbnailURL
+            guard !Task.isCancelled else { return }
+            oEmbedThumbnailURL = url
+            if url != nil { return }
         }
         guard session.remoteSourceHasVideo != true,
               let sourceURL = session.sourceURL ?? session.outputURL,
               Self.isVideoFile(sourceURL) else {
             return
         }
-        localThumbnailData = await Self.firstFrameData(for: sourceURL)
+        let data = await SessionPosterFrameLoader.load(url: sourceURL, enabled: true)
+        guard !Task.isCancelled else { return }
+        localThumbnailData = data
     }
 
     private static func isVideoFile(_ url: URL) -> Bool {
         ["mp4", "mov", "m4v", "webm", "mkv", "avi"].contains(url.pathExtension.lowercased())
-    }
-
-    private static func firstFrameData(for url: URL) async -> Data? {
-        await Task.detached(priority: .userInitiated) {
-            let asset = AVURLAsset(url: url)
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            generator.requestedTimeToleranceBefore = .zero
-            generator.requestedTimeToleranceAfter = .zero
-            guard let image = try? generator.copyCGImage(at: .zero, actualTime: nil) else { return nil }
-            let output = NSMutableData()
-            guard let destination = CGImageDestinationCreateWithData(
-                output,
-                UTType.png.identifier as CFString,
-                1,
-                nil
-            ) else { return nil }
-            CGImageDestinationAddImage(destination, image, nil)
-            return CGImageDestinationFinalize(destination) ? output as Data : nil
-        }.value
     }
 }

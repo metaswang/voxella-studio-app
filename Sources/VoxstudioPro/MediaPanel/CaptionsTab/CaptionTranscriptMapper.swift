@@ -110,49 +110,15 @@ enum CaptionTranscriptMapper {
         minDuration: Double,
         fits: @escaping (String) -> Bool
     ) -> [CaptionBuilder.Phrase] {
-        let segments = result.segments.isEmpty ? [fallbackSegment(for: result)] : result.segments
-        var phrases: [CaptionBuilder.Phrase] = []
-        var wordIndex = 0
-
-        for segment in segments {
-            while wordIndex < result.words.count {
-                guard let start = result.words[wordIndex].start, let end = result.words[wordIndex].end else {
-                    wordIndex += 1
-                    continue
-                }
-                if (start + end) / 2 < segment.start {
-                    wordIndex += 1
-                    continue
-                }
-                break
-            }
-
-            var i = wordIndex
-            var segmentWords: [TranscriptionWord] = []
-            while i < result.words.count {
-                let word = result.words[i]
-                guard let start = word.start, let end = word.end else {
-                    i += 1
-                    continue
-                }
-                let mid = (start + end) / 2
-                if mid >= segment.end { break }
-                if mid >= segment.start, mid >= visibleStart, mid < visibleEnd {
-                    segmentWords.append(word)
-                }
-                i += 1
-            }
-
-            guard !segmentWords.isEmpty else { continue }
-            phrases.append(contentsOf: CaptionBuilder.phrases(
-                fromTimedWords: segmentWords,
-                fits: fits,
-                maxWords: maxWords,
-                minDuration: minDuration,
-                language: result.language
-            ))
+        let visible = result.words.compactMap { word -> TranscriptionWord? in
+            guard let start = word.start, let end = word.end, start.isFinite, end.isFinite,
+                  end >= start, (start + end) / 2 >= visibleStart, (start + end) / 2 < visibleEnd else { return nil }
+            return TranscriptionWord(text: word.text, start: max(start, visibleStart), end: min(end, visibleEnd),
+                speaker: word.speaker, speakerConfidence: word.speakerConfidence,
+                speakerBoundary: word.speakerBoundary, timingQuality: word.timingQuality)
         }
-        return phrases
+        return CaptionBuilder.phrases(fromTimedWords: visible, fits: fits, maxWords: maxWords,
+                                      minDuration: minDuration, language: result.language)
     }
 
     private static func fallbackSegment(for result: TranscriptionResult) -> TranscriptionSegment {

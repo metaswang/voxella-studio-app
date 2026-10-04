@@ -720,7 +720,7 @@ actor LocalSpeechPipeline {
         )
         let ownership = ASROwnershipResolver.resolve(
             spans: quality.spans,
-            languageCode: qualityLanguageCode
+            languageCode: qualityLanguageCode, requireAudioEvidence: true
         )
         let recognizedSpans = ownership.spans
         let text = recognizedSpans.map(\.text).joined(separator: " ")
@@ -881,7 +881,8 @@ actor LocalSpeechPipeline {
                         )
                         let retryOwnership = ASROwnershipResolver.resolve(
                             spans: retryQuality.spans,
-                            languageCode: qualityLanguageCode ?? resolvedLanguageCode
+                            languageCode: qualityLanguageCode ?? resolvedLanguageCode,
+                            requireAudioEvidence: true
                         )
                         if retryOwnership.spans.isEmpty {
                             retriedUncoveredKeptFirstPassCount = cores.count

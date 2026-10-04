@@ -1627,7 +1627,6 @@ final class WorkbenchStore {
     private var saveRequestedBeforeHydration = false
     private var saveRevision = 0
     private(set) var remoteSessions: [UUID: WorkbenchSession] = [:]
-    private(set) var remoteSpeakerNames: [UUID: [String: String]] = [:]
     private(set) var isLoadingRemoteSessions = false
     private(set) var remoteSessionsError: String?
     private(set) var remoteSessionLoadingID: UUID?
@@ -1672,6 +1671,21 @@ final class WorkbenchStore {
     }
 
     var sessions: [WorkbenchSession] {
+        let localSessions = Self.localSessions(
+            transcriptions: transcriptions, dubs: dubs, enhancedAudioURLs: enhancedAudioURLs
+        )
+        let localRemoteIDs = Set(localSessions.compactMap(\.remoteSessionID))
+        let cloudSessions = AccountService.shared.isSignedIn
+            ? remoteSessions.values.filter { !localRemoteIDs.contains($0.id) }
+            : []
+        return (localSessions + cloudSessions).sorted { $0.modifiedAt > $1.modifiedAt }
+    }
+
+    static func localSessions(
+        transcriptions: [WorkbenchTranscriptionJob],
+        dubs: [WorkbenchDubJob],
+        enhancedAudioURLs: [UUID: URL] = [:]
+    ) -> [WorkbenchSession] {
         let linkedDubs = Dictionary(
             dubs.compactMap { job in job.sourceTranscriptionID.map { ($0, job) } },
             uniquingKeysWith: { current, candidate in
@@ -1725,11 +1739,9 @@ final class WorkbenchStore {
                 taskDetails: [SessionTaskDetail(job: job)] + (dub.map { [SessionTaskDetail(job: $0)] } ?? [])
             )
         }
-        let standaloneDubs = dubs.filter { job in
-            guard Self.shouldIncludeStandaloneDubInSessions(job) else { return false }
-            guard let sourceID = job.sourceTranscriptionID else { return true }
-            return !transcriptions.contains { $0.id == sourceID }
-        }.map { job in
+        // Every authored voiceover owns a session, including scripts imported
+        // from a transcript. The source association remains available above.
+        let dubSessions = dubs.filter(Self.shouldIncludeStandaloneDubInSessions).map { job in
             WorkbenchSession(
                 id: job.id,
                 title: job.displayTitle,
@@ -1765,12 +1777,7 @@ final class WorkbenchStore {
                 taskDetails: [SessionTaskDetail(job: job)]
             )
         }
-        let localSessions = transcriptSessions + standaloneDubs
-        let localRemoteIDs = Set(localSessions.compactMap(\.remoteSessionID))
-        let cloudSessions = AccountService.shared.isSignedIn
-            ? remoteSessions.values.filter { !localRemoteIDs.contains($0.id) }
-            : []
-        return (localSessions + cloudSessions).sorted { $0.modifiedAt > $1.modifiedAt }
+        return transcriptSessions + dubSessions
     }
 
     var selectedSession: WorkbenchSession? {
@@ -1931,7 +1938,6 @@ final class WorkbenchStore {
         remoteSessionLoadTask?.cancel()
         remoteSessionLoadTask = nil
         remoteSessions = [:]
-        remoteSpeakerNames = [:]
         enhancedAudioURLs = [:]
         remoteSessionsError = nil
         isLoadingRemoteSessions = false
@@ -1993,14 +1999,6 @@ final class WorkbenchStore {
                 let rendering = try await self.voxellaAPI.sessionRenderingData(id)
                 try Task.checkCancellation()
                 guard self.selectedSessionID == id else { return }
-                self.remoteSpeakerNames[id] = rendering.detail.options?.speakerNames ?? [:]
-                if let savedColors = rendering.detail.options?.speakerColors {
-                    var colors = SessionSpeakerColors()
-                    for (key, hex) in savedColors {
-                        if let color = SessionSpeakerColor(hex: hex) { colors.set(color, for: key) }
-                    }
-                    self.speakerColors[id.uuidString] = colors
-                }
                 let opened = Self.remoteSession(
                     from: rendering.detail,
                     transcriptSegments: rendering.transcriptSegments,
@@ -2703,9 +2701,19 @@ final class WorkbenchStore {
     }
 
     var recentDubSessions: [WorkbenchSession] {
+        Self.recentDubSessions(from: sessions, jobs: dubs)
+    }
+
+    static func recentDubSessions(
+        from sessions: [WorkbenchSession],
+        jobs: [WorkbenchDubJob]
+    ) -> [WorkbenchSession] {
         sessions.filter { session in
+            // The parent transcription can also expose the dub track. List
+            // the voiceover's own session so its title, date and result match.
+            guard session.source == .standaloneDub else { return false }
             guard let dubID = session.dubID,
-                  let job = dubs.first(where: { $0.id == dubID }) else {
+                  let job = jobs.first(where: { $0.id == dubID }) else {
                 return false
             }
             return !Self.isEmptyDubDraft(job)
@@ -3185,20 +3193,6 @@ final class WorkbenchStore {
         return didSplit
     }
 
-    func assignSessionCuesSpeaker(sessionID: UUID, scope: SessionCueScope, cueIDs: [Int], speaker: String) {
-        let label = speaker.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !label.isEmpty else { return }
-        ensureSessionSpeakerColors(sessionID: sessionID, labels: [label])
-        mutateSessionCueTrack(sessionID: sessionID, scope: scope) { track in
-            var updated = track
-            for id in cueIDs {
-                guard let next = updated.assigningSpeaker(toCue: id, speaker: label) else { return nil }
-                updated = next
-            }
-            return updated
-        }
-    }
-
     func assignSessionCueSpeaker(
         sessionID: UUID,
         scope: SessionCueScope,
@@ -3236,7 +3230,6 @@ final class WorkbenchStore {
             guard let transcriptionID = sessions.first(where: { $0.id == sessionID })?.transcriptionID
                     ?? (transcriptions.contains(where: { $0.id == sessionID }) ? sessionID : nil)
             else { return }
-            if sessionID != transcriptionID { renameSessionSpeakerColor(sessionID: sessionID, current: source, replacement: destination) }
             renameSpeaker(source, to: destination, inTranscription: transcriptionID)
         case .dub:
             guard let dubID = resolveDubID(forSession: sessionID) else { return }

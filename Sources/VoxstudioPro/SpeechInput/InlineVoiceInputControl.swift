@@ -11,6 +11,12 @@ struct InlineVoiceInputControl: View {
     @Binding var text: String
     var multiline = true
     var presentation: Presentation = .standard
+    var onActivityChanged: ((Bool) -> Void)? = nil
+    var canInsert: (() -> Bool)? = nil
+    var showsEmbeddedRecovery = false
+    private var voiceActive: Bool {
+        coordinator.map { $0.isBusy || $0.recorder.isRecording } ?? false
+    }
     @Environment(\.isEnabled) private var isEnabled
     @State private var coordinator: VoiceInputCoordinator?
 
@@ -23,12 +29,14 @@ struct InlineVoiceInputControl: View {
                 embeddedContent
             }
         }
+        .onChange(of: voiceActive) { _, active in onActivityChanged?(active) }
         .onChange(of: isEnabled) { _, enabled in
             if !enabled { coordinator?.dismiss() }
         }
         .onDisappear {
             coordinator?.shutdown()
             coordinator = nil
+            onActivityChanged?(false)
         }
     }
 
@@ -90,40 +98,42 @@ struct InlineVoiceInputControl: View {
     }
 
     private var embeddedContent: some View {
-        HStack(spacing: AppTheme.Spacing.xs) {
-            if let coordinator {
-                if coordinator.recorder.isRecording {
-                    RecordingLiveWaveformView(
-                        store: coordinator.recorder.waveform,
-                        isPaused: coordinator.isBusy
-                    )
-                    .frame(width: AppTheme.SpeechInput.inlineRecordingWaveformWidth)
-
-                    Text(Duration.seconds(coordinator.recorder.duration).formatted(.time(pattern: .minuteSecond)))
-                        .font(.system(size: AppTheme.FontSize.xxs, design: .monospaced))
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
-                        .monospacedDigit()
-                } else if coordinator.isBusy {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .accessibilityLabel(embeddedStatus)
-                        .help(embeddedStatus)
-                    if case .recognizing(_, let message) = coordinator.recognition.state {
-                        Text(L10n.display(message))
-                            .lineLimit(1)
-                            .frame(maxWidth: 160, alignment: .leading)
-                            .help(L10n.display(message))
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            HStack(spacing: AppTheme.Spacing.xs) {
+                if let coordinator {
+                    if coordinator.recorder.isRecording {
+                        RecordingLiveWaveformView(store: coordinator.recorder.waveform, isPaused: coordinator.isBusy)
+                            .frame(maxWidth: AppTheme.SpeechInput.inlineRecordingWaveformWidth)
+                        Text(Duration.seconds(coordinator.recorder.duration).formatted(.time(pattern: .minuteSecond)))
+                            .monospacedDigit()
+                    } else if coordinator.isBusy {
+                        ProgressView().controlSize(.mini)
+                        Text(embeddedStatus).lineLimit(1).help(embeddedStatus)
                     }
-                    Button { coordinator.dismiss() } label: {
-                        Image(systemName: "xmark.circle")
+                    if coordinator.isBusy || coordinator.recorder.isRecording {
+                        Button { coordinator.dismiss() } label: { Image(systemName: "xmark.circle") }
+                            .buttonStyle(.borderless)
+                            .help(L10n.string("Cancel voice input"))
+                            .accessibilityLabel(L10n.string("Cancel voice input"))
                     }
-                    .buttonStyle(.borderless)
-                    .help(L10n.string("Cancel voice input"))
-                    .accessibilityLabel(L10n.string("Cancel voice input"))
+                }
+                voiceButton
+            }
+            if showsEmbeddedRecovery, let coordinator {
+                if let message = coordinator.recorder.errorMessage ?? coordinator.errorMessage {
+                    error(message)
+                    if coordinator.recorder.needsMicrophoneSettings {
+                        Button("Open System Settings", action: coordinator.recorder.openMicrophoneSettings).buttonStyle(.link)
+                    }
+                }
+                if case .failed(let message) = coordinator.recognition.state {
+                    error(message)
+                    Button("Retry", action: coordinator.retryRecognition).buttonStyle(.link)
+                }
+                if !coordinator.draft.isEmpty && !voiceActive {
+                    Text(coordinator.draft).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 }
             }
-
-            voiceButton
         }
         .font(.system(size: AppTheme.FontSize.xs))
         .frame(minHeight: AppTheme.IconSize.lg)
@@ -168,12 +178,12 @@ struct InlineVoiceInputControl: View {
             input.toggleRecording()
             return
         }
+        onActivityChanged?(true)
         let original = text
         input.beginInline { spoken in
-            guard text == original else { return false }
-            let insertion = multiline ? spoken : spoken.split(whereSeparator: \.isNewline).joined(separator: " ")
-            let separator = original.isEmpty || original.last?.isWhitespace == true ? "" : (multiline ? "\n" : " ")
-            text = original + separator + insertion
+            guard let updated = VoiceInputDraftInsertion.result(original: original, current: text,
+                spoken: spoken, multiline: multiline, contextIsCurrent: canInsert?() != false) else { return false }
+            text = updated
             return true
         }
     }

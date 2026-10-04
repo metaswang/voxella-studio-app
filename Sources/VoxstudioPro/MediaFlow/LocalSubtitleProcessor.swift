@@ -13,7 +13,7 @@ enum LocalSubtitleProcessor {
         )
         let timedWords = transcript.words.enumerated().compactMap { index, word -> (index: Int, word: TranscriptionWord, midpoint: Double)? in
             guard let start = word.start, let end = word.end,
-                  start.isFinite, end.isFinite, end > start else { return nil }
+                  start.isFinite, end.isFinite, end >= start else { return nil }
             return (index, word, (start + end) / 2)
         }
         var wordIndex = 0
@@ -45,7 +45,12 @@ enum LocalSubtitleProcessor {
                 text: phrase.text,
                 start: phrase.start,
                 end: end,
-                speaker: speaker ?? sourceSegment?.speaker
+                speaker: speaker ?? sourceSegment?.speaker,
+                timingQuality: timedWords.isEmpty ? .estimated : SubtitleTimingQuality.aggregate(sourceIDs.map { transcript.words[$0].timingQuality }),
+                displayLineBreaks: ElasticSubtitleSegmenter.LayoutProfile().measure(phrase.text).breaks,
+                boundaryBefore: sourceIDs.first.map { id in
+                    ElasticSubtitleSegmenter.hardBoundary(previous: id > 0 ? transcript.words[id - 1] : nil, current: transcript.words[id]) ? SpeakerBoundary.hard : SpeakerBoundary.none
+                }
             ))
         }
         guard !cues.isEmpty else { throw MediaFlowError.missingTranscript }
@@ -53,7 +58,8 @@ enum LocalSubtitleProcessor {
             sourceLanguage: transcript.language,
             language: transcript.language,
             cues: cues,
-            usesWordTimestamps: phrases.allSatisfy { !$0.words.isEmpty }
+            usesWordTimestamps: phrases.allSatisfy { !$0.words.isEmpty },
+            processingVersion: ElasticSubtitleSegmenter.processingVersion
         )
     }
 }

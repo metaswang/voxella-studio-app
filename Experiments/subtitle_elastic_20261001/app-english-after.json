@@ -1,0 +1,1855 @@
+{
+  "usesWordTimestamps": false,
+  "processingVersion": "elastic-v1",
+  "cues": [
+    {
+      "speaker": "Speaker 1",
+      "start": 0.1599999964237213,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "hard",
+      "sourceIDs": [
+        0
+      ],
+      "characterBudget": 11,
+      "text": "What's the therapy?",
+      "id": 0,
+      "displayLineBreaks": [],
+      "end": 0.9599999785423279
+    },
+    {
+      "speaker": "Speaker 1",
+      "start": 1.1200000047683716,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        1
+      ],
+      "characterBudget": 30,
+      "text": "Could you show us how to do it?",
+      "id": 1,
+      "displayLineBreaks": [],
+      "end": 3.5999999046325684
+    },
+    {
+      "speaker": "Speaker 1",
+      "start": 3.759999990463257,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        2
+      ],
+      "characterBudget": 4,
+      "text": "Okay?",
+      "id": 2,
+      "displayLineBreaks": [],
+      "end": 4.079999923706055
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 4.239999771118164,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        3
+      ],
+      "characterBudget": 29,
+      "text": "Let’s show you a move from Yiguan.",
+      "id": 3,
+      "displayLineBreaks": [],
+      "end": 6.559999942779541
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 6.799999713897705,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "characterBudget": 94,
+      "text": "The Yiguan move works the upper back, then down to just above the waist.",
+      "id": 4,
+      "displayLineBreaks": [],
+      "end": 13.947475065366348
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 14.003142742317024,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "characterBudget": 36,
+      "text": "We place one on each side...",
+      "id": 5,
+      "displayLineBreaks": [],
+      "end": 16.719999313354492
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 17.920000076293945,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "characterBudget": 58,
+      "text": "Five at each point, one on each side—twelve in all.",
+      "id": 6,
+      "displayLineBreaks": [],
+      "end": 22.115905611540068
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 22.164465974594172,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "characterBudget": 71,
+      "text": "As you move your right side over, move your butt the other way.",
+      "id": 7,
+      "displayLineBreaks": [],
+      "end": 27.51583505182539
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 27.5643954148795,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "characterBudget": 51,
+      "text": "Your upper and lower body should move apart.",
+      "id": 8,
+      "displayLineBreaks": [],
+      "end": 31.478070509668814
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 31.52663087272292,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "characterBudget": 58,
+      "text": "Move your butt over, then flow through the motion.",
+      "id": 9,
+      "displayLineBreaks": [],
+      "end": 35.76000213623047
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 38.103939056396484,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        15
+      ],
+      "characterBudget": 9,
+      "text": "Not about you.",
+      "id": 10,
+      "displayLineBreaks": [],
+      "end": 38.823936462402344
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 40.20800018310547,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        16,
+        17
+      ],
+      "characterBudget": 37,
+      "text": "Beginners often do it wrong and end up...",
+      "id": 11,
+      "displayLineBreaks": [],
+      "end": 42.928001403808594
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 43.64799880981445,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        18
+      ],
+      "characterBudget": 21,
+      "text": "Swaying side to side.",
+      "id": 12,
+      "displayLineBreaks": [],
+      "end": 45.14486215369897
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 45.185981993542086,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        18
+      ],
+      "characterBudget": 14,
+      "text": "That’s wrong.",
+      "id": 13,
+      "displayLineBreaks": [],
+      "end": 46.147998352050784
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 46.20800018310547,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        19
+      ],
+      "characterBudget": 7,
+      "text": "Why?",
+      "id": 14,
+      "displayLineBreaks": [],
+      "end": 46.847999572753906
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 46.847999572753906,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        20,
+        21,
+        22,
+        23,
+        24
+      ],
+      "characterBudget": 48,
+      "text": "Your spine curves in an S. When your upper body moves this way,",
+      "id": 15,
+      "displayLineBreaks": [],
+      "end": 50.62928202036746
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 50.662508534755645,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        20,
+        21,
+        22,
+        23,
+        24
+      ],
+      "characterBudget": 59,
+      "text": "move the other way; when your lower body moves this way, move the other way.",
+      "id": 16,
+      "displayLineBreaks": [
+        72
+      ],
+      "end": 55.24800109863281
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 55.24800109863281,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        25
+      ],
+      "characterBudget": 29,
+      "text": "So cross your movements like this.",
+      "id": 17,
+      "displayLineBreaks": [],
+      "end": 57.407997131347656
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 57.56800079345703,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        26,
+        27
+      ],
+      "characterBudget": 71,
+      "text": "With an S-shaped curve, you can do it this way; your body will adjust on its own.",
+      "id": 18,
+      "displayLineBreaks": [
+        77
+      ],
+      "end": 62.847999572753906
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 62.847999572753906,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        28
+      ],
+      "characterBudget": 18,
+      "text": "Just twist like this.",
+      "id": 19,
+      "displayLineBreaks": [],
+      "end": 63.96800231933594
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 68.08000183105469,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        29
+      ],
+      "characterBudget": 35,
+      "text": "Twisting is quite interesting.",
+      "id": 20,
+      "displayLineBreaks": [],
+      "end": 70.31999969482422
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 70.4800033569336,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        30,
+        31,
+        32
+      ],
+      "characterBudget": 73,
+      "text": "To care for your spine, you can do this at home—no cupping needed.",
+      "id": 21,
+      "displayLineBreaks": [],
+      "end": 76.08418150382745
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 76.13143805211848,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        30,
+        31,
+        32
+      ],
+      "characterBudget": 31,
+      "text": "Just sway from side to side.",
+      "id": 22,
+      "displayLineBreaks": [],
+      "end": 78.4000015258789
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 79.9520034790039,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        33,
+        34
+      ],
+      "characterBudget": 40,
+      "text": "As you sway, you can move your elbows up and down.",
+      "id": 23,
+      "displayLineBreaks": [],
+      "end": 83.23200225830078
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 83.39199829101562,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        35
+      ],
+      "characterBudget": 36,
+      "text": "This position targets this vertebra.",
+      "id": 24,
+      "displayLineBreaks": [],
+      "end": 85.71199798583984
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 85.87200164794922,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        36,
+        37
+      ],
+      "characterBudget": 53,
+      "text": "Raise your elbows a little to target this area of the spine.",
+      "id": 25,
+      "displayLineBreaks": [],
+      "end": 89.552001953125
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 89.71199798583984,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        38,
+        39
+      ],
+      "characterBudget": 51,
+      "text": "You can sway like this, and this side too.",
+      "id": 26,
+      "displayLineBreaks": [],
+      "end": 93.41199829101562
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 94.75199890136719,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        40,
+        41
+      ],
+      "characterBudget": 57,
+      "text": "A simple, comfortable move that’s great for your spine.",
+      "id": 27,
+      "displayLineBreaks": [],
+      "end": 98.75199890136719
+    },
+    {
+      "speaker": "Speaker 1",
+      "start": 98.75199890136719,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "hard",
+      "sourceIDs": [
+        42
+      ],
+      "characterBudget": 49,
+      "text": "Next, Dr. Wu, please show us the inchworm exercise.",
+      "id": 28,
+      "displayLineBreaks": [],
+      "end": 102.35199737548828
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 102.75199890136719,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        43
+      ],
+      "characterBudget": 49,
+      "text": "Let’s demonstrate the inchworm exercise.",
+      "id": 29,
+      "displayLineBreaks": [],
+      "end": 106.21200134277343
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 106.27200317382812,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        44,
+        45
+      ],
+      "characterBudget": 65,
+      "text": "For the inchworm, straighten your arms, then twist your body like this.",
+      "id": 30,
+      "displayLineBreaks": [],
+      "end": 110.83200073242188
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 110.91200256347656,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        46,
+        47
+      ],
+      "characterBudget": 73,
+      "text": "Okay, I’ll demonstrate the twist now so everyone can see it more clearly.",
+      "id": 31,
+      "displayLineBreaks": [],
+      "end": 116.11199951171875
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 116.11199951171875,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        48
+      ],
+      "characterBudget": 29,
+      "text": "Next, lie down and twist like this.",
+      "id": 32,
+      "displayLineBreaks": [],
+      "end": 118.11199951171875
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 118.27200317382812,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        49,
+        50
+      ],
+      "characterBudget": 52,
+      "text": "As you twist, move your hips up and down.",
+      "id": 33,
+      "displayLineBreaks": [],
+      "end": 122.35199737548828
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 122.51200103759766,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        51,
+        52,
+        53,
+        54
+      ],
+      "characterBudget": 52,
+      "text": "Keep both arms straight.",
+      "id": 34,
+      "displayLineBreaks": [],
+      "end": 126.16419525540452
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 126.25033405374367,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        51,
+        52,
+        53,
+        54
+      ],
+      "characterBudget": 79,
+      "text": "Then start by pressing both feet down.",
+      "id": 35,
+      "displayLineBreaks": [],
+      "end": 131.95199584960938
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 131.95199584960938,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        55,
+        56
+      ],
+      "characterBudget": 57,
+      "text": "Move your hips up and down like this.",
+      "id": 36,
+      "displayLineBreaks": [],
+      "end": 136.27200317382812
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 136.91200256347656,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        57
+      ],
+      "characterBudget": 44,
+      "text": "Twist your spine from side to side.",
+      "id": 37,
+      "displayLineBreaks": [],
+      "end": 140.03199768066406
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 140.7519989013672,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        58
+      ],
+      "characterBudget": 27,
+      "text": "Sway 20 times.",
+      "id": 38,
+      "displayLineBreaks": [],
+      "end": 142.77200317382812
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 144.94400024414062,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        59,
+        60
+      ],
+      "characterBudget": 63,
+      "text": "Then, when you’re done, lift both feet up... and sway again.",
+      "id": 39,
+      "displayLineBreaks": [],
+      "end": 149.4239959716797
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 150.2239990234375,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        61,
+        62
+      ],
+      "characterBudget": 80,
+      "text": "You’ll notice the stretch and muscle sensation when your feet are",
+      "id": 40,
+      "displayLineBreaks": [],
+      "end": 155.92114257461705
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 155.97191671011115,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        61,
+        62
+      ],
+      "characterBudget": 65,
+      "text": "flexed feels different from when you press them down.",
+      "id": 41,
+      "displayLineBreaks": [],
+      "end": 160.70399475097656
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 160.70399475097656,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        63,
+        64
+      ],
+      "characterBudget": 99,
+      "text": "This gives the whole spine......a full-body adjustment.",
+      "id": 42,
+      "displayLineBreaks": [],
+      "end": 167.10400390625
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 167.1840057373047,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        65,
+        66
+      ],
+      "characterBudget": 73,
+      "text": "If you don’t have scoliosis, this is a great way to maintain your spine.",
+      "id": 43,
+      "displayLineBreaks": [],
+      "end": 172.3040008544922
+    },
+    {
+      "speaker": "Speaker 1",
+      "start": 172.3040008544922,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        67,
+        68
+      ],
+      "characterBudget": 70,
+      "text": "Finally, how do you do the side-to-side hip sway with your hands on your hips?",
+      "id": 44,
+      "displayLineBreaks": [
+        73
+      ],
+      "end": 177.50399780273438
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 177.58399963378906,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "hard",
+      "sourceIDs": [
+        69
+      ],
+      "characterBudget": 50,
+      "text": "Let’s go over the hands-on-hips hip sway.",
+      "id": 45,
+      "displayLineBreaks": [],
+      "end": 181.18399047851562
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 181.18399047851562,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        70,
+        71,
+        72
+      ],
+      "characterBudget": 121,
+      "text": "The key is to rest your calves on a raised cushion, about 20 to 30 centimeters high.",
+      "id": 46,
+      "displayLineBreaks": [
+        67
+      ],
+      "end": 189.98399353027344
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 190.06399536132812,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        73,
+        74,
+        75
+      ],
+      "characterBudget": 85,
+      "text": "Put your hands on your hips, around the top of your hip bones.",
+      "id": 47,
+      "displayLineBreaks": [],
+      "end": 196.46400451660156
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 196.46400451660156,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        76,
+        77
+      ],
+      "characterBudget": 72,
+      "text": "Then sway your hips from side to side.",
+      "id": 48,
+      "displayLineBreaks": [],
+      "end": 201.82398986816406
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 202.06399536132812,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        78,
+        79,
+        80
+      ],
+      "characterBudget": 49,
+      "text": "After swaying side to side 10 times,",
+      "id": 49,
+      "displayLineBreaks": [],
+      "end": 205.53359832789334
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 205.59065624951114,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        78,
+        79,
+        80
+      ],
+      "characterBudget": 80,
+      "text": "move your hands up about two finger-widths and sway again.",
+      "id": 50,
+      "displayLineBreaks": [],
+      "end": 211.60399963378907
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 211.58399963378906,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        81,
+        82
+      ],
+      "characterBudget": 114,
+      "text": "Do three rounds, alternating between the middle, upper, and lower positions.",
+      "id": 51,
+      "displayLineBreaks": [
+        66
+      ],
+      "end": 219.50399780273438
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 219.58399963378906,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        83,
+        84
+      ],
+      "characterBudget": 33,
+      "text": "I’ll demonstrate lying down.",
+      "id": 52,
+      "displayLineBreaks": [],
+      "end": 221.81795038968332
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 221.86508469627276,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        83,
+        84
+      ],
+      "characterBudget": 57,
+      "text": "Put your hands on your hips and lift your buttocks.",
+      "id": 53,
+      "displayLineBreaks": [],
+      "end": 225.98399353027344
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 226.06399536132812,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        85
+      ],
+      "characterBudget": 52,
+      "text": "Then sway your hips from side to side.",
+      "id": 54,
+      "displayLineBreaks": [],
+      "end": 229.99993896484375
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 231.343994140625,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        86
+      ],
+      "characterBudget": 34,
+      "text": "Use your waist, where your hands rest, as the pivot.",
+      "id": 55,
+      "displayLineBreaks": [],
+      "end": 233.828807170017
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 233.85678664072316,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        86
+      ],
+      "characterBudget": 13,
+      "text": "Move back and forth.",
+      "id": 56,
+      "displayLineBreaks": [],
+      "end": 234.86399841308594
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 235.10400390625,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        87,
+        88
+      ],
+      "characterBudget": 107,
+      "text": "When arching your back, relax a little and rest your buttocks on the bed, then continue.",
+      "id": 57,
+      "displayLineBreaks": [
+        74
+      ],
+      "end": 242.70399475097656
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 242.70399475097656,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        89,
+        90
+      ],
+      "characterBudget": 85,
+      "text": "After the cross, move both hands up to this spot, where your fingertips are.",
+      "id": 58,
+      "displayLineBreaks": [],
+      "end": 248.80399658203126
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 249.58399963378906,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        91
+      ],
+      "characterBudget": 32,
+      "text": "Then rock side to side in the middle.",
+      "id": 59,
+      "displayLineBreaks": [],
+      "end": 251.92399169921876
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 253.10400390625,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        92
+      ],
+      "characterBudget": 22,
+      "text": "Then rock side to side below.",
+      "id": 60,
+      "displayLineBreaks": [],
+      "end": 254.72399475097657
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 255.82400512695312,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        93
+      ],
+      "characterBudget": 17,
+      "text": "Then rock side to side above.",
+      "id": 61,
+      "displayLineBreaks": [],
+      "end": 257.12400390625
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 257.5039978027344,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        94,
+        95,
+        96
+      ],
+      "characterBudget": 50,
+      "text": "The iliac crest sits around the waist,",
+      "id": 62,
+      "displayLineBreaks": [],
+      "end": 260.9028951955396
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 260.95788759250576,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        94,
+        95,
+        96
+      ],
+      "characterBudget": 93,
+      "text": "near the lumbar vertebrae that are prone to problems—roughly L2 to L5.",
+      "id": 63,
+      "displayLineBreaks": [],
+      "end": 267.7439880371094
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 267.90399169921875,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        97
+      ],
+      "characterBudget": 79,
+      "text": "Rocking side to side helps loosen the muscles and ligaments on either side of the spine.",
+      "id": 64,
+      "displayLineBreaks": [
+        70
+      ],
+      "end": 273.66400146484375
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 273.9840087890625,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        98,
+        99
+      ],
+      "characterBudget": 45,
+      "text": "Once loosened, the stuck joint surfaces can open up,",
+      "id": 65,
+      "displayLineBreaks": [],
+      "end": 277.24504775010143
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 277.28080392940603,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        98,
+        99
+      ],
+      "characterBudget": 38,
+      "text": "and the bones can gradually return to place.",
+      "id": 66,
+      "displayLineBreaks": [],
+      "end": 279.9840087890625
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 280.1440124511719,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        100,
+        101,
+        102,
+        103
+      ],
+      "characterBudget": 115,
+      "text": "But there’s something important to watch for: if this movement makes your back pain,",
+      "id": 67,
+      "displayLineBreaks": [
+        74
+      ],
+      "end": 288.5058073337307
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 288.56253768724065,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        100,
+        101,
+        102,
+        103
+      ],
+      "characterBudget": 98,
+      "text": "numbness, or tingling worse, it may not be right for you, so stop for now.",
+      "id": 68,
+      "displayLineBreaks": [],
+      "end": 295.66400146484375
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 295.66400146484375,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        104
+      ],
+      "characterBudget": 66,
+      "text": "After rocking for a while, your spine can gradually realign from side to side.",
+      "id": 69,
+      "displayLineBreaks": [],
+      "end": 300.22400587320965
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 300.2592989687979,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        104
+      ],
+      "characterBudget": 15,
+      "text": "It’s that simple.",
+      "id": 70,
+      "displayLineBreaks": [],
+      "end": 301.1839904785156
+    },
+    {
+      "speaker": "Speaker 1",
+      "start": 301.343994140625,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "hard",
+      "sourceIDs": [
+        105
+      ],
+      "characterBudget": 29,
+      "text": "Thank you, Dr. Wu, for that wonderful demonstration.",
+      "id": 71,
+      "displayLineBreaks": [],
+      "end": 303.42401123046875
+    },
+    {
+      "speaker": "Speaker 1",
+      "start": 303.66400146484375,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        106,
+        107,
+        108,
+        109,
+        110
+      ],
+      "characterBudget": 111,
+      "text": "To prevent scoliosis from worsening, what should patients pay attention to in daily life,",
+      "id": 72,
+      "displayLineBreaks": [
+        75
+      ],
+      "end": 311.249526017133
+    },
+    {
+      "speaker": "Speaker 1",
+      "start": 311.3004391810405,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        106,
+        107,
+        108,
+        109,
+        110
+      ],
+      "characterBudget": 46,
+      "text": "when lying down, sitting, or resting?",
+      "id": 73,
+      "displayLineBreaks": [],
+      "end": 314.48694110208
+    },
+    {
+      "speaker": "Speaker 1",
+      "start": 314.53785426598745,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        106,
+        107,
+        108,
+        109,
+        110
+      ],
+      "characterBudget": 41,
+      "text": "Could you share some tips, Dr. Wu?",
+      "id": 74,
+      "displayLineBreaks": [],
+      "end": 317.68400146484373
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 318.4639892578125,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "hard",
+      "sourceIDs": [
+        111,
+        112
+      ],
+      "characterBudget": 31,
+      "text": "First, maintain good posture.",
+      "id": 75,
+      "displayLineBreaks": [],
+      "end": 320.5358556778828
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 320.57763369166906,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        111,
+        112
+      ],
+      "characterBudget": 13,
+      "text": "Actually...",
+      "id": 76,
+      "displayLineBreaks": [],
+      "end": 321.2879333496094
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 321.2879333496094,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        113,
+        114
+      ],
+      "characterBudget": 84,
+      "text": "Scoliosis isn’t always caused by poor posture.",
+      "id": 77,
+      "displayLineBreaks": [],
+      "end": 327.14794921875
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 327.30792236328125,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        115
+      ],
+      "characterBudget": 1,
+      "text": "Mm.",
+      "id": 78,
+      "displayLineBreaks": [],
+      "end": 327.4679260253906
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 327.6279296875,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        116,
+        117
+      ],
+      "characterBudget": 64,
+      "text": "It’s strange—it can progress very quickly during puberty.",
+      "id": 79,
+      "displayLineBreaks": [],
+      "end": 332.0279235839844
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 332.0279235839844,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        118,
+        119
+      ],
+      "characterBudget": 122,
+      "text": "Even without poor posture, good posture can help prevent scoliosis from worsening.",
+      "id": 80,
+      "displayLineBreaks": [
+        72
+      ],
+      "end": 340.7479248046875
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 340.7479248046875,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        120
+      ],
+      "characterBudget": 35,
+      "text": "So that’s something to keep in mind.",
+      "id": 81,
+      "displayLineBreaks": [],
+      "end": 343.30792236328125
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 343.30792236328125,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        121,
+        122,
+        123,
+        124
+      ],
+      "characterBudget": 53,
+      "text": "Also, don’t stay in one position for a long time.",
+      "id": 82,
+      "displayLineBreaks": [],
+      "end": 347.0353122642742
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 347.08179639292155,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        121,
+        122,
+        123,
+        124
+      ],
+      "characterBudget": 100,
+      "text": "Even with good posture, people with scoliosis can get uncomfortable if they sit too long.",
+      "id": 83,
+      "displayLineBreaks": [
+        71
+      ],
+      "end": 354.1279406738281
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 354.1079406738281,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        125,
+        126,
+        127
+      ],
+      "characterBudget": 43,
+      "text": "Since their posture is already affected,",
+      "id": 84,
+      "displayLineBreaks": [],
+      "end": 356.9851287644229
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 357.028715559512,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        125,
+        126,
+        127
+      ],
+      "characterBudget": 85,
+      "text": "they should get up and move around or stretch regularly if they sit for a long time.",
+      "id": 85,
+      "displayLineBreaks": [
+        74
+      ],
+      "end": 363.14794921875
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 363.14794921875,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        128
+      ],
+      "characterBudget": 42,
+      "text": "Also, watch your sleep position; try not to sleep on your stomach.",
+      "id": 86,
+      "displayLineBreaks": [],
+      "end": 366.2012634277344
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 366.2012634277344,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        129
+      ],
+      "characterBudget": 47,
+      "text": "Sleeping on your stomach puts pressure on your neck.",
+      "id": 87,
+      "displayLineBreaks": [],
+      "end": 369.7506103515625
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 369.7506103515625,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        130,
+        131
+      ],
+      "characterBudget": 113,
+      "text": "Your chest may also cave downward, which can cause problems and affect your spine.",
+      "id": 88,
+      "displayLineBreaks": [
+        71
+      ],
+      "end": 378.28570556640625
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 378.28570556640625,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        132
+      ],
+      "characterBudget": 45,
+      "text": "Also, avoid carrying heavy loads.",
+      "id": 89,
+      "displayLineBreaks": [],
+      "end": 381.4079284667969
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 381.4079284667969,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        133,
+        134
+      ],
+      "characterBudget": 62,
+      "text": "Carrying heavy things puts strain on your body, so be careful.",
+      "id": 90,
+      "displayLineBreaks": [],
+      "end": 385.8679504394531
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 385.8679504394531,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        135,
+        136,
+        137
+      ],
+      "characterBudget": 71,
+      "text": "You may need to avoid certain activities, like long-distance running,",
+      "id": 91,
+      "displayLineBreaks": [],
+      "end": 390.6816525882223
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 390.72307721802645,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        135,
+        136,
+        137
+      ],
+      "characterBudget": 50,
+      "text": "ballet, rhythmic gymnastics, and even swimming.",
+      "id": 92,
+      "displayLineBreaks": [],
+      "end": 394.2279357910156
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 394.2279357910156,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        138,
+        139
+      ],
+      "characterBudget": 86,
+      "text": "But isn’t swimming symmetrical and therefore helpful for spinal balance?",
+      "id": 93,
+      "displayLineBreaks": [],
+      "end": 400.18792724609375
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 400.18792724609375,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        140,
+        141,
+        142
+      ],
+      "characterBudget": 126,
+      "text": "Although swimming is symmetrical, with strokes like freestyle and breaststroke,",
+      "id": 94,
+      "displayLineBreaks": [
+        66
+      ],
+      "end": 408.7883048208002
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 408.850981599365,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        140,
+        141,
+        142,
+        143,
+        144,
+        145,
+        146,
+        147,
+        148
+      ],
+      "characterBudget": 128,
+      "text": "people with scoliosis......may use one side more because their strength is uneven.",
+      "id": 95,
+      "displayLineBreaks": [
+        75
+      ],
+      "end": 417.63462962759553
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 417.69745945834825,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        143,
+        144,
+        145,
+        146,
+        147,
+        148
+      ],
+      "characterBudget": 137,
+      "text": "This can create muscle imbalances and may actually worsen their scoliosis, so be careful.",
+      "id": 96,
+      "displayLineBreaks": [
+        64
+      ],
+      "end": 427.387939453125
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 427.387939453125,
+      "overBudget": true,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        149
+      ],
+      "characterBudget": 53,
+      "text": "Lastly, change your diet and make sure you get enough nutrients.",
+      "id": 97,
+      "displayLineBreaks": [],
+      "end": 431.2679443359375
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 431.2679443359375,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        150,
+        151,
+        152,
+        153,
+        154,
+        155
+      ],
+      "characterBudget": 94,
+      "text": "Studies show that people who are underweight are more likely to have low bone density,",
+      "id": 98,
+      "displayLineBreaks": [
+        73
+      ],
+      "end": 438.1550850535649
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 438.20057454325496,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        150,
+        151,
+        152,
+        153,
+        154,
+        155
+      ],
+      "characterBudget": 40,
+      "text": "which is associated with scoliosis.",
+      "id": 99,
+      "displayLineBreaks": [],
+      "end": 440.9030019949127
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 440.94849148460276,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        150,
+        151,
+        152,
+        153,
+        154,
+        155
+      ],
+      "characterBudget": 95,
+      "text": "Among women with scoliosis, 27 to 38 percent have low bone density throughout the body.",
+      "id": 100,
+      "displayLineBreaks": [
+        67
+      ],
+      "end": 448.06244007964796
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 448.107929569338,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        150,
+        151,
+        152,
+        153,
+        154,
+        155
+      ],
+      "characterBudget": 81,
+      "text": "For those with more severe curves, that figure may be as high as 47 percent.",
+      "id": 101,
+      "displayLineBreaks": [
+        68
+      ],
+      "end": 454.06793212890625
+    },
+    {
+      "speaker": "Speaker 1",
+      "start": 454.06793212890625,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        156,
+        157
+      ],
+      "characterBudget": 70,
+      "text": "Dr. Wu, your advice on scoliosis today has been fascinating and very practical.",
+      "id": 102,
+      "displayLineBreaks": [
+        69
+      ],
+      "end": 459.0399938383483
+    },
+    {
+      "speaker": "Speaker 1",
+      "start": 459.07676552313814,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        156,
+        157
+      ],
+      "characterBudget": 29,
+      "text": "Could you briefly sum it up for us?",
+      "id": 103,
+      "displayLineBreaks": [],
+      "end": 461.2679443359375
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 462.59197998046875,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "hard",
+      "sourceIDs": [
+        158
+      ],
+      "characterBudget": 7,
+      "text": "Sure.",
+      "id": 104,
+      "displayLineBreaks": [],
+      "end": 463.0719909667969
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 463.23199462890625,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        159
+      ],
+      "characterBudget": 45,
+      "text": "Scoliosis can be quite difficult to treat.",
+      "id": 105,
+      "displayLineBreaks": [],
+      "end": 466.11199951171875
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 466.1919860839844,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        160,
+        161,
+        162,
+        163,
+        164
+      ],
+      "characterBudget": 96,
+      "text": "As we mentioned, if your curve is severe, see a specialist who treats scoliosis.",
+      "id": 106,
+      "displayLineBreaks": [
+        70
+      ],
+      "end": 472.94730114862193
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 472.9975524758601,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        160,
+        161,
+        162,
+        163,
+        164
+      ],
+      "characterBudget": 70,
+      "text": "The goal is to treat it without surgery whenever possible.",
+      "id": 107,
+      "displayLineBreaks": [],
+      "end": 477.8919787597656
+    },
+    {
+      "speaker": "Speaker 2",
+      "start": 478.031982421875,
+      "overBudget": false,
+      "timingQuality": "estimated",
+      "boundaryBefore": "none",
+      "sourceIDs": [
+        165,
+        166
+      ],
+      "characterBudget": 53,
+      "text": "If these three methods we discussed help you...",
+      "id": 108,
+      "displayLineBreaks": [],
+      "end": 481.7919921875
+    }
+  ],
+  "sourceLanguage": "zh-CN",
+  "language": "en"
+}

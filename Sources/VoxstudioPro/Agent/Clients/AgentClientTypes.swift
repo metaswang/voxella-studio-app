@@ -45,7 +45,7 @@ struct AgentModel: Hashable, Codable, Sendable {
     let rawValue: String
 
     init(rawValue: String) {
-        self.rawValue = rawValue
+        self.rawValue = LLMModelLifecycle.replacingRetiredModel(in: rawValue)
     }
 
     static let sonnet5 = AgentModel(rawValue: "claude-sonnet-5")
@@ -56,9 +56,8 @@ struct AgentModel: Hashable, Codable, Sendable {
     static let sol = AgentModel(rawValue: "gpt-5.6-sol")
     static let astra = AgentModel(rawValue: "gpt-6-astra")
     static let nano = AgentModel(rawValue: "gpt-5-nano")
-    static let nano54 = AgentModel(rawValue: "gpt-5.4-nano")
 
-    static let allCases = [sonnet5, opus5, fable5, nano, nano54, luna, terra, sol, astra]
+    static let allCases = [sonnet5, opus5, fable5, nano, luna, terra, sol, astra]
     static let anthropicModels = [sonnet5, opus5, fable5]
 
     static let defaultModel: AgentModel = .terra
@@ -87,7 +86,6 @@ struct AgentModel: Hashable, Codable, Sendable {
         case Self.sol.rawValue: "GPT-5.6 Sol"
         case Self.astra.rawValue: "GPT-6 Astra"
         case Self.nano.rawValue: "GPT-5 Nano"
-        case Self.nano54.rawValue: "GPT-5.4 Nano"
         default:
             rawValue
         }
@@ -104,6 +102,7 @@ struct AgentModel: Hashable, Codable, Sendable {
     }
 
     static func persisted(_ rawValue: String) -> AgentModel? {
+        let rawValue = LLMModelLifecycle.replacingRetiredModel(in: rawValue)
         if rawValue == "claude-opus-4-8" { return .opus5 }
         if let model = allCases.first(where: { $0.rawValue == rawValue }) { return model }
         return OpenAIChatModelID(rawValue).map { AgentModel(rawValue: $0.rawValue) }
@@ -144,6 +143,7 @@ struct OpenAIChatModelID: Hashable, Sendable {
     let isNano: Bool
 
     init?(_ rawValue: String) {
+        guard !LLMModelLifecycle.isRetired(rawValue) else { return nil }
         let components = rawValue.split(separator: "-", omittingEmptySubsequences: false)
         let version = components.count > 1
             ? components[1].split(separator: ".", omittingEmptySubsequences: false)

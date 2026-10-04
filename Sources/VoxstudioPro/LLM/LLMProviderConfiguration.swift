@@ -51,7 +51,7 @@ enum LLMProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var defaultModel: String {
         switch self {
-        case .openAI: "gpt-5.4-nano"
+        case .openAI: "gpt-5-nano"
         case .anthropic: "claude-sonnet-5"
         case .miniMax: "MiniMax-M3"
         case .deepInfra, .zAI, .openRouter, .openAICompatible: ""
@@ -106,7 +106,7 @@ struct LLMProviderPreset: Identifiable, Equatable, Sendable {
             id: "openai",
             name: "OpenAI",
             baseURL: "https://api.openai.com/v1",
-            defaultModel: "gpt-5.4-nano",
+            defaultModel: "gpt-5-nano",
             providerKind: .openAI,
             detail: "Official OpenAI API",
             isCustom: false
@@ -383,7 +383,7 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
         self.prefix = prefix ?? provider.defaultPrefix
         self.displayName = displayName ?? provider.label
         self.baseURL = baseURL
-        self.model = model
+        self.model = LLMModelLifecycle.replacingRetiredModel(in: model)
         self.extraBody = extraBody
         self.openRouterRouting = openRouterRouting
     }
@@ -513,7 +513,7 @@ struct LLMProviderProfile: Codable, Equatable, Identifiable, Sendable {
         copy.prefix = providerPrefix
         copy.displayName = normalizedDisplayName
         copy.baseURL = normalizedBaseURL
-        copy.model = normalizedModel
+        copy.model = LLMModelLifecycle.replacingRetiredModel(in: normalizedModel)
         return copy
     }
 
@@ -688,21 +688,15 @@ struct LLMRequestPolicy: Codable, Equatable, Sendable {
 
     static func `default`(for useCase: LLMUseCase) -> LLMRequestPolicy {
         switch useCase {
-        case .subtitleProcessing:
+        case .subtitleProcessing, .translation:
             LLMRequestPolicy(
-                timeoutSeconds: minimumTimeoutSeconds(for: useCase),
-                maximumAttemptsPerModel: 2,
-                initialBackoffSeconds: 0.75
-            )
-        case .translation:
-            LLMRequestPolicy(
-                timeoutSeconds: minimumTimeoutSeconds(for: useCase),
+                timeoutSeconds: 30,
                 maximumAttemptsPerModel: 2,
                 initialBackoffSeconds: 0.75
             )
         case .skillSelection:
             LLMRequestPolicy(
-                timeoutSeconds: 8,
+                timeoutSeconds: 15,
                 maximumAttemptsPerModel: 1,
                 initialBackoffSeconds: 0
             )
@@ -714,7 +708,7 @@ struct LLMRequestPolicy: Codable, Equatable, Sendable {
             )
         case .graphExtraction:
             LLMRequestPolicy(
-                timeoutSeconds: 90,
+                timeoutSeconds: 45,
                 maximumAttemptsPerModel: 2,
                 initialBackoffSeconds: 0.75
             )
@@ -727,13 +721,8 @@ struct LLMRequestPolicy: Codable, Equatable, Sendable {
         }
     }
 
-    static func minimumTimeoutSeconds(for useCase: LLMUseCase) -> Double {
-        switch useCase {
-        case .subtitleProcessing, .graphExtraction: 90
-        case .translation: 45
-        case .skillSelection: 3
-        case .chat, .graphQueryUnderstanding: 15
-        }
+    static func minimumTimeoutSeconds(for _: LLMUseCase) -> Double {
+        15
     }
 
     func validated() throws -> LLMRequestPolicy {
@@ -768,13 +757,13 @@ struct LLMModelRoute: Codable, Equatable, Sendable {
         switch useCase {
         case .translation:
             LLMModelRoute(
-                primaryModel: "openai/gpt-5.4-nano",
+                primaryModel: "openai/gpt-5-nano",
                 fallbackModels: [],
                 policy: .default(for: useCase)
             )
         case .skillSelection:
             LLMModelRoute(
-                primaryModel: "openai/gpt-5.4-nano",
+                primaryModel: "openai/gpt-5-nano",
                 fallbackModels: [],
                 policy: .default(for: useCase)
             )
@@ -787,19 +776,19 @@ struct LLMModelRoute: Codable, Equatable, Sendable {
         case .chat:
             LLMModelRoute(
                 primaryModel: "",
-                fallbackModels: ["openai/gpt-5.4-nano"],
+                fallbackModels: ["openai/gpt-5-nano"],
                 policy: .default(for: useCase)
             )
         case .graphExtraction:
             LLMModelRoute(
                 primaryModel: "",
-                fallbackModels: ["openai/gpt-5.4-nano"],
+                fallbackModels: ["openai/gpt-5-nano"],
                 policy: .default(for: useCase)
             )
         case .graphQueryUnderstanding:
             LLMModelRoute(
                 primaryModel: "",
-                fallbackModels: ["openai/gpt-5.4-nano"],
+                fallbackModels: ["openai/gpt-5-nano"],
                 policy: .default(for: useCase)
             )
         }
@@ -865,13 +854,15 @@ struct LLMRuntimeConfiguration: Sendable {
         chatCapability: ChatModelCapability? = nil
     ) {
         self.profile = profile
-        self.modelIdentifier = modelIdentifier
-        self.modelName = modelName
+        self.modelIdentifier = LLMModelLifecycle.replacingRetiredModel(in: modelIdentifier)
+        self.modelName = LLMModelLifecycle.replacingRetiredModel(in: modelName)
         self.endpoint = endpoint
         self.apiKey = apiKey
         self.useCase = useCase
         self.reasoningEffort = reasoningEffort
-        self.chatCapability = chatCapability ?? .known(modelName)
+        self.chatCapability = LLMModelLifecycle.isRetired(modelName)
+            ? .known(self.modelName)
+            : (chatCapability ?? .known(self.modelName))
     }
 
     var diagnosticDescription: String {
@@ -1106,7 +1097,7 @@ enum LLMConfigurationError: LocalizedError {
         case .noConfiguredModel(let useCase):
             "Configure an API key and an available AI service for \(useCase.title.lowercased())."
         case .invalidTimeout:
-            "Set timeout between 3 and 1,800 seconds."
+            "Set timeout between 15 and 1,800 seconds."
         case .invalidRetryCount:
             "Set retry attempts between 1 and 4."
         case .invalidBackoff:
@@ -1155,6 +1146,7 @@ final class LLMSettingsStore {
     private static let configurationDefaultsKey = "voxella.llm.configuration.v2"
     private static let legacyProfileDefaultsKey = "voxella.llm.provider-profile.v1"
     private static let subtitleRouteMigrationKey = "voxella.llm.migration.subtitle-route.v1"
+    private static let timeoutDefaultsMigrationKey = "voxella.llm.migration.timeout-defaults.v2"
     private static let useBYOKKey = "voxella.llm.use-byok.v1"
     private static let chatReasoningEffortKey = "voxella.llm.chat-reasoning-effort.v1"
     private static let useBYOKMigrationKey = "voxella.llm.migration.use-byok.v1"
@@ -1253,13 +1245,16 @@ final class LLMSettingsStore {
             routes[useCase] = .default(for: useCase)
             shouldPersist = true
         }
+        if migrateRetiredModels() {
+            shouldPersist = true
+        }
         if migrateLegacySubtitleRouteIfNeeded() {
             shouldPersist = true
         }
         if migratePerformanceRoutingIfNeeded() {
             shouldPersist = true
         }
-        if migrateSubtitleTimeoutIfNeeded() {
+        if migrateTimeoutsIfNeeded() {
             shouldPersist = true
         }
         if migrateDefaultMiniMaxProviderIfNeeded() {
@@ -1500,7 +1495,7 @@ final class LLMSettingsStore {
 
     func updateRoute(_ route: LLMModelRoute, for useCase: LLMUseCase) throws {
         let validatedPolicy = try route.policy.validated(for: useCase)
-        let references = route.modelChain.map(effectiveModelReference)
+        let references = Self.uniqueReferences(route.modelChain.map(effectiveModelReference))
         guard let primary = references.first else { throw LLMConfigurationError.missingModel }
         for reference in references {
             let parsed = try Self.parseModelReference(reference)
@@ -2078,7 +2073,7 @@ final class LLMSettingsStore {
     }
 
     private func migrateRoutesAfterPreviousDefaultMigration() -> Bool {
-        let openAIReference = "openai/gpt-5.4-nano"
+        let openAIReference = "openai/gpt-5-nano"
         let subtitleReference = "openai/gpt-5.6-luna"
         var changed = false
 
@@ -2137,11 +2132,40 @@ final class LLMSettingsStore {
     }
 
     @discardableResult
+    private func migrateRetiredModels() -> Bool {
+        var changed = false
+        for index in providers.indices {
+            let model = LLMModelLifecycle.replacingRetiredModel(in: providers[index].model)
+            if model != providers[index].model {
+                providers[index].model = model
+                changed = true
+            }
+        }
+        for useCase in LLMUseCase.allCases {
+            guard var route = routes[useCase] else { continue }
+            let previous = route
+            route.primaryModel = LLMModelLifecycle.replacingRetiredModel(in: route.primaryModel)
+            route.fallbackModels = Self.uniqueReferences(route.fallbackModels.map {
+                LLMModelLifecycle.replacingRetiredModel(in: $0)
+            }).filter { $0.caseInsensitiveCompare(route.primaryModel) != .orderedSame }
+            guard route != previous else { continue }
+            routes[useCase] = route
+            changed = true
+        }
+        return changed
+    }
+
+    private static func uniqueReferences(_ references: [String]) -> [String] {
+        var seen: Set<String> = []
+        return references.filter { seen.insert($0.lowercased()).inserted }
+    }
+
+    @discardableResult
     private func migrateLegacySubtitleRouteIfNeeded() -> Bool {
         guard !defaults.bool(forKey: Self.subtitleRouteMigrationKey) else { return false }
         defaults.set(true, forKey: Self.subtitleRouteMigrationKey)
         let legacyDefault = LLMModelRoute(
-            primaryModel: "openai/gpt-5.4-nano",
+            primaryModel: "openai/gpt-5-nano",
             fallbackModels: ["minimax/MiniMax-M3"],
             policy: .default(for: .subtitleProcessing)
         )
@@ -2151,16 +2175,34 @@ final class LLMSettingsStore {
     }
 
     @discardableResult
-    private func migrateSubtitleTimeoutIfNeeded() -> Bool {
+    private func migrateTimeoutsIfNeeded() -> Bool {
+        guard configurationError == nil else { return false }
+        let migrateDefaults = !defaults.bool(forKey: Self.timeoutDefaultsMigrationKey)
         var changed = false
-        for useCase in [LLMUseCase.subtitleProcessing, .translation] {
+        for useCase in LLMUseCase.allCases {
             guard var route = routes[useCase] else { continue }
+            let previousPolicy = route.policy
+            if migrateDefaults {
+                let oldTimeout: Double = switch useCase {
+                case .subtitleProcessing, .graphExtraction: 90
+                case .translation: 45
+                case .skillSelection: 8
+                case .chat: 60
+                case .graphQueryUnderstanding: 15
+                }
+                var oldDefault = LLMRequestPolicy.default(for: useCase)
+                oldDefault.timeoutSeconds = oldTimeout
+                if route.policy == oldDefault {
+                    route.policy = .default(for: useCase)
+                }
+            }
             let minimum = LLMRequestPolicy.minimumTimeoutSeconds(for: useCase)
-            guard route.policy.timeoutSeconds < minimum else { continue }
-            route.policy.timeoutSeconds = minimum
+            route.policy.timeoutSeconds = max(minimum, route.policy.timeoutSeconds)
+            guard route.policy != previousPolicy else { continue }
             routes[useCase] = route
             changed = true
         }
+        defaults.set(true, forKey: Self.timeoutDefaultsMigrationKey)
         return changed
     }
 
@@ -2231,6 +2273,7 @@ final class LLMSettingsStore {
     }
 
     private func effectiveModelReference(_ reference: String) -> String {
+        let reference = LLMModelLifecycle.replacingRetiredModel(in: reference)
         guard let parsed = try? Self.parseModelReference(reference),
               let profile = providers.first(where: {
                   $0.normalizedPrefix.caseInsensitiveCompare(parsed.prefix) == .orderedSame

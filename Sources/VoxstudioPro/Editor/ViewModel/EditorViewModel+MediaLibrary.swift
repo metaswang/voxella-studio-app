@@ -699,6 +699,8 @@ extension EditorViewModel {
         var sourceCueId: Int? = nil
         var sourceCueScope: ClipSourceScope? = nil
         var linkGroupId: String? = nil
+        var sourcePlacementId: String? = nil
+        var captionLayout: CaptionLayoutBinding? = nil
     }
 
     /// Batch variant of `addTextClip` for agent flows.
@@ -761,6 +763,8 @@ extension EditorViewModel {
             clip.sourceCueId = spec.sourceCueId
             clip.sourceCueScope = spec.sourceCueScope
             clip.linkGroupId = spec.linkGroupId
+            clip.sourcePlacementId = spec.sourcePlacementId
+            clip.captionLayout = spec.captionLayout
             if batchTimeline != nil {
                 batchTimeline!.tracks[spec.trackIndex].clips.append(clip)
             } else {

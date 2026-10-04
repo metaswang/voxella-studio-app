@@ -305,6 +305,7 @@ extension EditorViewModel {
     func withTimelineSwap(actionName: String, refreshVisuals: Bool = true, _ work: () -> Void) {
         let before = timeline
         undo.withoutRegistration(work)
+        _ = reflowCaptionLayouts()
         let after = timeline
         guard before != after else { return }
         guard undo.isRegistrationEnabled else { return }
@@ -351,6 +352,10 @@ extension EditorViewModel {
     /// Apply `modify` to every clip whose id is in `ids`. Captures a full-clip
     /// before snapshot for each and registers a bidirectional undo/redo swap
     func mutateClips(ids: Set<String>, actionName: String, _ modify: (inout Clip) -> Void) {
+        if timeline.tracks.flatMap(\.clips).contains(where: { ids.contains($0.id) && $0.captionLayout != nil }) {
+            commitClipProperties(clipIds: Array(ids), actionName: actionName, modify)
+            return
+        }
         var before: [(id: String, clip: Clip)] = []
         for ti in timeline.tracks.indices {
             for ci in timeline.tracks[ti].clips.indices where ids.contains(timeline.tracks[ti].clips[ci].id) {
@@ -394,9 +399,13 @@ extension EditorViewModel {
         if dragBefore[clipId] == nil {
             dragBefore[clipId] = clip
         }
+        let previous = clip
+        if clip.captionLayout != nil && captionEditBefore == nil { captionEditBefore = timeline }
         modify(&clip)
+        prepareCaptionEdit(before: previous, after: &clip)
         timeline.tracks[loc.trackIndex].clips[loc.clipIndex] = clip
         if clip.mediaType == .text {
+            _ = reflowCaptionLayouts()
             videoEngine?.refreshVisuals()
             return
         }
@@ -411,6 +420,7 @@ extension EditorViewModel {
         var touchedText = false
         var touchedVisual = false
         let locations = clipLocations(for: clipIds)
+        if captionEditBefore == nil, clipIds.contains(where: { clipFor(id: $0)?.captionLayout != nil }) { captionEditBefore = timeline }
         mutateActiveTimeline { timeline in
             for clipId in clipIds {
                 guard let loc = locations[clipId] else { continue }
@@ -418,7 +428,9 @@ extension EditorViewModel {
                 if dragBefore[clipId] == nil {
                     dragBefore[clipId] = clip
                 }
+                let previous = clip
                 modify(&clip)
+                prepareCaptionEdit(before: previous, after: &clip)
                 timeline.tracks[loc.trackIndex].clips[loc.clipIndex] = clip
                 if clip.mediaType == .text {
                     touchedText = true
@@ -427,7 +439,7 @@ extension EditorViewModel {
                 }
             }
         }
-        if touchedText { videoEngine?.refreshVisuals() }
+        if touchedText { _ = reflowCaptionLayouts(); videoEngine?.refreshVisuals() }
         if touchedVisual {
             if rebuild {
                 notifyTimelineChangedDebounced()
@@ -442,6 +454,13 @@ extension EditorViewModel {
     }
 
     func revertClipProperties(clipIds: [String]) {
+        if let before = captionEditBefore, clipIds.contains(where: { clipFor(id: $0)?.captionLayout != nil }) {
+            timeline = before
+            captionEditBefore = nil
+            for id in clipIds { dragBefore.removeValue(forKey: id) }
+            videoEngine?.refreshVisuals()
+            return
+        }
         var touchedText = false
         var touchedVisual = false
         let locations = clipLocations(for: clipIds)
@@ -632,6 +651,7 @@ extension EditorViewModel {
         actionName: String = "Change Clip Property",
         _ modify: (inout Clip) -> Void
     ) {
+        if commitCaptionEditIfNeeded(clipIds: [clipId], actionName: actionName, modify) { return }
         guard let loc = findClip(id: clipId) else { return }
         let current = timeline.tracks[loc.trackIndex].clips[loc.clipIndex]
         var clip = current
@@ -659,6 +679,7 @@ extension EditorViewModel {
         actionName: String = "Change Clip Property",
         _ modify: (inout Clip) -> Void
     ) {
+        if commitCaptionEditIfNeeded(clipIds: clipIds, actionName: actionName, modify) { return }
         var touchedText = false
         var touchedVisual = false
         var before: [(id: String, clip: Clip)] = []

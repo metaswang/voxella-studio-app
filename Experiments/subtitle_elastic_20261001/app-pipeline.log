@@ -1,0 +1,22 @@
+2026-10-01T15:14:30Z [transcription] NOTICE: alignment edge_retry chunk=3 outcome=unstable stable=1
+2026-10-01T15:14:33Z [transcription] NOTICE: alignment edge_retry chunk=6 outcome=recovered kept=298 estimated=3 context=1.5
+2026-10-01T15:14:36Z [transcription] NOTICE: alignment edge_retry chunk=7 outcome=recovered kept=378 estimated=23 context=1.5
+2026-10-01T15:14:39Z [transcription] NOTICE: alignment edge_retry chunk=8 outcome=recovered kept=451 estimated=9 context=1.5
+2026-10-01T15:14:42Z [transcription] NOTICE: alignment edge_retry chunk=9 outcome=recovered kept=301 estimated=181 context=1.5
+2026-10-01T15:14:44Z [transcription] NOTICE: alignment edge_retry chunk=10 outcome=recovered kept=139 estimated=136 context=1.5
+2026-10-01T15:14:54Z [llm] NOTICE: subtitle elastic batch mode=projected matched=6 skipped=0 cues=7
+2026-10-01T15:14:55Z [llm] NOTICE: subtitle elastic batch mode=projected matched=9 skipped=0 cues=9
+2026-10-01T15:14:57Z [llm] NOTICE: subtitle elastic batch mode=projected matched=21 skipped=0 cues=24
+2026-10-01T15:14:57Z [llm] NOTICE: subtitle elastic batch mode=projected matched=8 skipped=0 cues=8
+2026-10-01T15:14:57Z [llm] NOTICE: subtitle elastic batch mode=projected matched=20 skipped=0 cues=19
+2026-10-01T15:14:58Z [llm] NOTICE: subtitle elastic batch mode=projected matched=35 skipped=0 cues=35
+2026-10-01T15:32:14Z [llm] NOTICE: subtitle elastic batch mode=projected matched=7 skipped=0 cues=7
+2026-10-01T15:32:15Z [llm] NOTICE: subtitle elastic batch mode=projected matched=9 skipped=0 cues=9
+2026-10-01T15:32:15Z [llm] NOTICE: subtitle elastic batch mode=projected matched=29 skipped=0 cues=28
+2026-10-01T15:32:16Z [llm] NOTICE: subtitle elastic batch mode=projected matched=39 skipped=0 cues=42
+2026-10-01T15:32:16Z [llm] NOTICE: subtitle elastic batch mode=projected matched=37 skipped=0 cues=36
+2026-10-01T15:32:18Z [llm] NOTICE: subtitle elastic batch mode=projected matched=30 skipped=0 cues=30
+2026-10-01T15:32:19Z [llm] NOTICE: subtitle elastic batch mode=projected matched=17 skipped=0 cues=17
+2026-10-01T15:32:21Z [llm] NOTICE: subtitle elastic reflow input_cues=169 output_cues=167 long_cues=0
+2026-10-01T15:32:35Z [llm] NOTICE: translation units=83 source_cues=167
+2026-10-01T15:32:56Z [llm] NOTICE: translation elastic units=83 cues=109 long_cues=7 over_budget=13 timing=estimated

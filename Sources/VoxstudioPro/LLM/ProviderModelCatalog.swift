@@ -9,6 +9,9 @@ struct ChatModelCapability: Codable, Equatable, Sendable {
 
     static func known(_ model: String) -> Self {
         let name = LLMReasoningEffort.leafModelName(model)
+        if name == LLMModelLifecycle.replacementNano {
+            return .init(thinking: .effort, efforts: [.minimal, .low, .medium, .high])
+        }
         if name.hasPrefix("claude-") {
             let name = name.replacingOccurrences(of: ".", with: "-")
             if name.contains("claude-3-") && !name.contains("claude-3-7-sonnet") {
@@ -89,7 +92,7 @@ final class ProviderModelCatalog {
     }
 
     func models(for profile: LLMProviderProfile) -> [ProviderCatalogModel] {
-        records[profile.id]?.models ?? []
+        (records[profile.id]?.models ?? []).filter { !LLMModelLifecycle.isRetired($0.id) }
     }
 
     func capability(profile: LLMProviderProfile, model: String) -> ChatModelCapability {
@@ -166,7 +169,7 @@ final class ProviderModelCatalog {
         // its own three-series window; OpenAI shares a GPT series window.
         var groups: [String: [(String, String, ChatModelCapability)]] = [:]
         for row in rows {
-            guard let id = row["id"] as? String else { continue }
+            guard let id = row["id"] as? String, !LLMModelLifecycle.isRetired(id) else { continue }
             if router && !id.hasPrefix("openai/") && !id.hasPrefix("anthropic/") { continue }
             let name = LLMReasoningEffort.leafModelName(id)
             guard !name.contains(":") else { continue }

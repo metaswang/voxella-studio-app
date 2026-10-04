@@ -334,7 +334,9 @@ enum LongFormAlignmentEngine {
             let normalized = RecognizedSpan(
                 text: text,
                 startTime: span.startTime,
-                endTime: span.endTime
+                endTime: span.endTime,
+                inputStart: span.inputStart,
+                inputEnd: span.inputEnd
             )
             guard let first = pending.first else {
                 pending = [normalized]
@@ -503,6 +505,7 @@ enum LongFormAlignmentEngine {
         )
         try Task.checkCancellation()
 
+        var edgeRetryCount = 0
         do {
             guard local.count == units.count else {
                 throw LongFormAlignmentError.incompleteAlignment(expected: units.count, actual: local.count)
@@ -513,6 +516,10 @@ enum LongFormAlignmentEngine {
                 sliceDuration: sliceEndTime - sliceStartTime,
                 capabilities: capabilities
             )
+            let absolute = local.map { AlignedWord(text: $0.text,
+                startTime: Float(sliceStartTime) + $0.startTime,
+                endTime: Float(sliceStartTime) + $0.endTime) }
+            try validateNormalized(absolute, chunkIndex: chunkIndex, span: span, capabilities: capabilities)
             let normalized = local.map {
                 let absoluteStart = Float(sliceStartTime) + $0.startTime
                 let absoluteEnd = Float(sliceStartTime) + $0.endTime
@@ -538,6 +545,14 @@ enum LongFormAlignmentEngine {
                 longestRejectedUnitDuration: nil
             )
         } catch let error as LongFormAlignmentError {
+            if let recovered = try recoverStableInterior(
+                original: local, units: units, sliceStart: sliceStartTime,
+                sliceDuration: sliceEndTime - sliceStartTime, span: span,
+                audio: audio, sampleRate: sampleRate, language: language, aligner: aligner,
+                capabilities: capabilities, chunkIndex: chunkIndex, attempted: &edgeRetryCount
+            ) {
+                return recovered
+            }
             let rejectedDuration = rejectedUnitDuration(from: error)
             let rejectedAlignmentChunkCount = 1
             let shouldRetry = chunk.sourceSpans.count > 1 && canRetry(
@@ -567,7 +582,7 @@ enum LongFormAlignmentEngine {
                     words: fallback,
                     coarseTimedUnitCount: fallback.count,
                     rejectedAlignmentChunkCount: rejectedAlignmentChunkCount,
-                    retriedAlignmentChunkCount: 0,
+                    retriedAlignmentChunkCount: edgeRetryCount,
                     longestRejectedUnitDuration: rejectedDuration
                 )
             }
@@ -615,7 +630,7 @@ enum LongFormAlignmentEngine {
                 coarseTimedUnitCount: left.coarseTimedUnitCount + right.coarseTimedUnitCount,
                 rejectedAlignmentChunkCount: rejectedAlignmentChunkCount
                     + left.rejectedAlignmentChunkCount + right.rejectedAlignmentChunkCount,
-                retriedAlignmentChunkCount: 1 + left.retriedAlignmentChunkCount + right.retriedAlignmentChunkCount,
+                retriedAlignmentChunkCount: 1 + edgeRetryCount + left.retriedAlignmentChunkCount + right.retriedAlignmentChunkCount,
                 longestRejectedUnitDuration: maxRejectedDuration(
                     rejectedDuration,
                     left.longestRejectedUnitDuration,
@@ -624,6 +639,124 @@ enum LongFormAlignmentEngine {
                 timingQualities: left.resolvedQualities + right.resolvedQualities
             )
         }
+    }
+
+    /// Recover only an edge failure whose interior agrees across two independent
+    /// context windows. This does not invent text/audio split points within an ASR span.
+    private static func recoverStableInterior(
+        original: [AlignedWord], units: [String], sliceStart: Double, sliceDuration: Double,
+        span: RecognizedSpan, audio: [Float], sampleRate: Int, language: String,
+        aligner: any WordAlignmentProviding, capabilities: AlignmentModelCapabilities,
+        chunkIndex: Int, attempted: inout Int
+    ) throws -> SpanAlignmentResult? {
+        guard units.count >= capabilities.minimumRetryUnitCount, original.count == units.count,
+              zip(original, units).allSatisfy({ $0.text == $1 }) else {
+            Log.transcription.notice("alignment edge_retry chunk=\(chunkIndex + 1) outcome=ineligible_structure expected=\(units.count) actual=\(original.count)")
+            return nil
+        }
+        guard let firstRange = validInterior(original, offset: sliceStart, sliceDuration: sliceDuration,
+                                             span: span, capabilities: capabilities),
+              firstRange.count >= max(2, units.count / 2), firstRange.count < units.count else {
+            Log.transcription.notice("alignment edge_retry chunk=\(chunkIndex + 1) outcome=ineligible_geometry")
+            return nil
+        }
+        let audioDuration = Double(audio.count) / Double(sampleRate)
+        // Expand only the failed edge. Moving an already reliable leading
+        // window changes encoder frame positions and needlessly destabilizes words.
+        let start = firstRange.lowerBound > 0 ? max(0, span.startTime - max(1.5, capabilities.contextDuration)) : sliceStart
+        let end = firstRange.upperBound < units.count ? min(audioDuration, span.endTime + max(1.5, capabilities.contextDuration)) : sliceStart + sliceDuration
+        guard end > start, end - start <= capabilities.maximumChunkDuration else { return nil }
+        let lo = max(0, Int((start * Double(sampleRate)).rounded(.down)))
+        let hi = min(audio.count, Int((end * Double(sampleRate)).rounded(.up)))
+        attempted = 1
+        try Task.checkCancellation()
+        let retry = aligner.align(audio: Array(audio[lo..<hi]), text: span.text,
+                                  sampleRate: sampleRate, language: language)
+        try Task.checkCancellation()
+        guard retry.count == units.count, zip(retry, units).allSatisfy({ $0.text == $1 }),
+              let secondRange = validInterior(retry, offset: start, sliceDuration: end - start,
+                                               span: span, capabilities: capabilities) else {
+            Log.transcription.notice("alignment edge_retry chunk=\(chunkIndex + 1) outcome=invalid")
+            return nil
+        }
+        let lower = max(firstRange.lowerBound, secondRange.lowerBound)
+        let upper = min(firstRange.upperBound, secondRange.upperBound)
+        guard upper > lower else { return nil }
+        let range = lower..<upper
+        let stable = range.filter { index in
+            abs(sliceStart + Double(original[index].startTime) - start - Double(retry[index].startTime)) <= capabilities.timestampTolerance
+                && abs(sliceStart + Double(original[index].endTime) - start - Double(retry[index].endTime)) <= capabilities.timestampTolerance
+        }
+        guard stable.count >= 2 else {
+            Log.transcription.notice("alignment edge_retry chunk=\(chunkIndex + 1) outcome=unstable stable=\(stable.count)")
+            return nil
+        }
+        // Geometry is valid throughout the interior, but context can move a few
+        // individual words. Preserve only independently stable anchors; estimate
+        // each intervening range without discarding the rest of the real timing.
+        var recovered: [AlignedWord] = []
+        var qualities: [WordTimingQuality] = []
+        var cursor = 0
+        var anchorEnd = span.startTime
+        for index in stable {
+            let word = retry[index]
+            let a = max(span.startTime, start + Double(word.startTime))
+            let b = min(span.endTime, start + Double(word.endTime))
+            if cursor < index {
+                let gapEnd = max(anchorEnd, a)
+                if gapEnd > anchorEnd {
+                    recovered += evenlyTimed(units: Array(units[cursor..<index]),
+                        within: RecognizedSpan(text: "", startTime: anchorEnd, endTime: gapEnd))
+                } else {
+                    recovered += units[cursor..<index].map { AlignedWord(text: $0, startTime: Float(anchorEnd), endTime: Float(anchorEnd)) }
+                }
+                qualities += Array(repeating: .estimated, count: index - cursor)
+            }
+            recovered.append(AlignedWord(text: word.text, startTime: Float(a), endTime: Float(max(a, b))))
+            qualities.append(.aligned)
+            cursor = index + 1
+            anchorEnd = max(a, b)
+        }
+        if cursor < units.count {
+            let end = min(span.endTime, audioDuration)
+            if end > anchorEnd {
+                recovered += evenlyTimed(units: Array(units[cursor...]),
+                    within: RecognizedSpan(text: "", startTime: anchorEnd, endTime: end))
+            } else {
+                recovered += units[cursor...].map { AlignedWord(text: $0, startTime: Float(end), endTime: Float(end)) }
+            }
+            qualities += Array(repeating: .estimated, count: units.count - cursor)
+        }
+        guard recovered.count == units.count else { return nil }
+        let estimated = qualities.filter { $0 == .estimated }.count
+        Log.transcription.notice("alignment edge_retry chunk=\(chunkIndex + 1) outcome=recovered kept=\(stable.count) estimated=\(estimated) context=1.5")
+        return SpanAlignmentResult(words: recovered, coarseTimedUnitCount: estimated,
+            rejectedAlignmentChunkCount: 1, retriedAlignmentChunkCount: 1, longestRejectedUnitDuration: nil,
+            timingQualities: qualities)
+    }
+
+    private static func validInterior(
+        _ words: [AlignedWord], offset: Double, sliceDuration: Double,
+        span: RecognizedSpan, capabilities: AlignmentModelCapabilities
+    ) -> Range<Int>? {
+        let tolerance = capabilities.timestampTolerance
+        var valid = words.enumerated().map { index, word in
+            let a = Double(word.startTime), b = Double(word.endTime)
+            let previous = index > 0 ? Double(words[index - 1].startTime) : -.infinity
+            return a.isFinite && b.isFinite && b >= a && a + tolerance >= previous
+                && a >= -tolerance && b <= sliceDuration + tolerance
+                && offset + a >= span.startTime - tolerance && offset + a < span.endTime
+                && offset + b <= span.endTime + tolerance
+                && b - a <= capabilities.maximumWordDuration
+        }
+        let plateau = capabilities.plateauMinimumUnitCount
+        if plateau > 0, words.count / 2 >= plateau, let first = words.suffix(plateau).first,
+           words.suffix(plateau).allSatisfy({ abs($0.startTime - first.startTime) < 0.1 }) {
+            for index in (words.count - plateau)..<words.count { valid[index] = false }
+        }
+        guard let first = valid.firstIndex(of: true), let last = valid.lastIndex(of: true),
+              valid[first...last].allSatisfy({ $0 }) else { return nil }
+        return first..<(last + 1)
     }
 
     private static func coarseTiming(

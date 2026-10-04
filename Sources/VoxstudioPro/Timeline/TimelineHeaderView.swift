@@ -304,6 +304,44 @@ final class TimelineHeaderView: NSView {
         }
     }
 
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard editor.isPointerInputEnabled else { return nil }
+        let point = convert(event.locationInWindow, from: nil)
+        guard let ti = trackRowRects.first(where: { $0.value.contains(point) })?.key,
+              editor.timeline.tracks.indices.contains(ti) else { return nil }
+        let track = editor.timeline.tracks[ti]
+        let menu = NSMenu()
+        let item = NSMenuItem(title: L10n.string("Arrange related subtitles"), action: #selector(arrangeRelatedSubtitles(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = track.id
+        item.isEnabled = track.clips.contains { $0.captionLayout != nil } || editor.timeline.tracks.flatMap(\.clips).contains { $0.captionLayout?.source.audioTrackId == track.id }
+        menu.autoenablesItems = false
+        menu.addItem(item)
+        if !editor.selectedClipIds.isEmpty {
+            let submenu = NSMenu()
+            for audio in editor.timeline.tracks where audio.type.isAudio && !audio.clips.isEmpty {
+                let bind = NSMenuItem(title: editor.timelineTrackDisplayLabel(at: editor.timeline.tracks.firstIndex(where: { $0.id == audio.id })!), action: #selector(bindSelectedSubtitles(_:)), keyEquivalent: "")
+                bind.target = self
+                bind.representedObject = audio.id
+                submenu.addItem(bind)
+            }
+            let bind = NSMenuItem(title: L10n.string("Associate selected subtitles with audio track"), action: nil, keyEquivalent: "")
+            bind.submenu = submenu
+            menu.addItem(bind)
+        }
+        return menu
+    }
+
+    @objc private func arrangeRelatedSubtitles(_ item: NSMenuItem) {
+        guard let id = item.representedObject as? String else { return }
+        editor.arrangeCaptions(forTrackId: id)
+    }
+
+    @objc private func bindSelectedSubtitles(_ item: NSMenuItem) {
+        guard let id = item.representedObject as? String else { return }
+        editor.associateSelectedCaptions(withAudioTrack: id)
+    }
+
     override func mouseUp(with event: NSEvent) {
         guard editor.isPointerInputEnabled else { return }
         if let drag = reorderDrag {

@@ -58,9 +58,10 @@ enum SubtitleCascadePrompt {
         limits: SubtitleReadabilityPolicy.Limits
     ) -> String {
         var lines = [
-            "Suggest natural subtitle cue boundaries in the finalized transcript. Return JSON only: {\"lines\":[\"...\"]}.",
+            "Suggest natural subtitle cue boundaries in the finalized transcript. Return JSON only: {\"lines\":[\"...\"],\"protected_spans\":[\"...\"]}.",
             "This is segmentation-only.",
-            "Aim for \(limits.preferred) display characters per cue, maximum \(limits.maximum). The minimum \(limits.minimum) is advisory. A local constrained optimizer enforces the final length limits.",
+            "Prioritize complete spoken phrases over uniform lengths. A local optimizer uses actual rendered width (up to two lines), word timing and a broad 1–6 second comfort range; these are not fixed text-length targets.",
+            "Optionally list tightly bound phrases, names or grammatical attachments in protected_spans, copied verbatim. These may refer to neighboring context; the local optimizer verifies them against the finalized text. Do not list entire paragraphs.",
             "Choose coherent spoken phrases using the syntax and meaning of the actual language, including code-switching. Keep semantic dependencies together.",
             "Short complete phrases are acceptable. Do not balance lengths at the expense of meaning. A cue need not end at punctuation.",
             "Copy consecutive source spans exactly once and in order. Do not correct, normalize, translate, summarize, omit repetition, or change punctuation or internal whitespace.",
@@ -87,11 +88,7 @@ enum SubtitleCascadePrompt {
             languageCode: languageCode,
             speaker: speaker
         )
-        lines.append(
-            "cue_limits: {\"minimumCharactersPerCue\":\(limits.minimum),"
-                + "\"preferredCharactersPerCue\":\(limits.preferred),"
-                + "\"maximumCharactersPerCue\":\(limits.maximum)}"
-        )
+        lines.append("layout: maximum 2 lines; semantic completeness first; duration comfort 1–6 seconds with elastic exceptions")
         if let contextBefore, !contextBefore.isEmpty {
             lines.append("<context_before>\n\(contextBefore)\n</context_before>")
         }

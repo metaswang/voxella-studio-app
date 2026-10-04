@@ -1,0 +1,4 @@
+interface:
+  display_name: "VoxStudio 功能回归"
+  short_description: "按功能地图和测试集执行本地端测，准备录制权限并保存证据报告"
+  default_prompt: "使用 $voxstudio-feature-regression 对当前 VoxStudio app 执行功能回归并记录结果。"

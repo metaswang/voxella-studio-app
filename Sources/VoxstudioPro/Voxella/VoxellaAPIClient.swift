@@ -513,15 +513,11 @@ struct VoxellaSessionOptions: Decodable, Sendable {
     let clientCompute: RemoteClientCompute?
     let recordHasVideo: Bool?
     let uploadHasVideo: Bool?
-    let speakerNames: [String: String]?
-    let speakerColors: [String: String]?
 
     enum CodingKeys: String, CodingKey {
         case clientCompute = "client_compute"
         case recordHasVideo = "record_has_video"
         case uploadHasVideo = "upload_has_video"
-        case speakerNames = "speaker_names"
-        case speakerColors = "speaker_colors"
     }
 }
 

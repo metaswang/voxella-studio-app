@@ -18,7 +18,7 @@ actor LocalDubFlowRenderer {
         var chunks: [String]
     }
 
-    private struct GeneratedSegment: Sendable {
+    struct GeneratedSegment: Sendable {
         var source: DubSegmentPayload
         var samples: [Float]
     }
@@ -309,7 +309,7 @@ actor LocalDubFlowRenderer {
         return output.isEmpty ? samples : output
     }
 
-    private static func assemble(
+    static func assemble(
         _ generated: [GeneratedSegment],
         sampleRate: Int,
         gapSeconds: Double
@@ -317,8 +317,11 @@ actor LocalDubFlowRenderer {
         var output: [Float] = []
         var rendered: [DubRenderedSegment] = []
         var flowCursor = 0.0
+        // Measure after silence repair and timeline fitting, before inserting
+        // gaps. Different reference voices can produce very different levels.
+        let gains = DubLoudnessNormalizer.gains(for: generated.map(\.samples), sampleRate: sampleRate)
 
-        for item in generated {
+        for (itemIndex, item) in generated.enumerated() {
             let requestedStart = item.source.start.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
             let start: Double
             if requestedStart != nil {
@@ -333,7 +336,8 @@ actor LocalDubFlowRenderer {
             }
             for sampleIndex in item.samples.indices {
                 let destination = startSample + sampleIndex
-                output[destination] = max(-1, min(1, output[destination] + item.samples[sampleIndex]))
+                let sample = item.samples[sampleIndex]
+                output[destination] += (sample.isFinite ? sample : 0) * gains[itemIndex]
             }
             let end = start + Double(item.samples.count) / Double(sampleRate)
             rendered.append(DubRenderedSegment(
@@ -346,6 +350,7 @@ actor LocalDubFlowRenderer {
             ))
             flowCursor = max(flowCursor, end) + (requestedStart == nil ? gapSeconds : 0)
         }
+        DubLoudnessNormalizer.applyHeadroom(to: &output)
         return (output, rendered)
     }
 

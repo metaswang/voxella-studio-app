@@ -108,12 +108,12 @@ struct LLMResilienceTests {
 
         let settings = LLMSettingsStore(defaults: defaults)
 
-        #expect(settings.route(for: .translation).primaryModel == "openai/gpt-5.4-nano")
+        #expect(settings.route(for: .translation).primaryModel == "openai/gpt-5-nano")
         #expect(settings.route(for: .subtitleProcessing).primaryModel == "openai/gpt-5.6-luna")
         #expect(settings.route(for: .translation).fallbackModels.isEmpty)
         #expect(settings.route(for: .subtitleProcessing).fallbackModels.isEmpty)
         #expect(settings.route(for: .chat).primaryModel.isEmpty)
-        #expect(settings.route(for: .chat).fallbackModels == ["openai/gpt-5.4-nano"])
+        #expect(settings.route(for: .chat).fallbackModels == ["openai/gpt-5-nano"])
         #expect(settings.route(for: .graphExtraction).primaryModel.isEmpty)
         #expect(settings.route(for: .graphQueryUnderstanding).primaryModel.isEmpty)
         #expect(settings.routes.values.flatMap(\.modelChain).allSatisfy {
@@ -133,21 +133,21 @@ struct LLMResilienceTests {
             routes: [
                 .subtitleProcessing: LLMModelRoute(
                     primaryModel: "openai/gpt-5.6-luna",
-                    fallbackModels: ["openai/gpt-5.4-nano"],
+                    fallbackModels: ["openai/gpt-5-nano"],
                     policy: .default(for: .subtitleProcessing)
                 ),
                 .chat: LLMModelRoute(
-                    primaryModel: "openai/gpt-5.4-nano",
+                    primaryModel: "openai/gpt-5-nano",
                     fallbackModels: [],
                     policy: .default(for: .chat)
                 ),
                 .graphExtraction: LLMModelRoute(
-                    primaryModel: "openai/gpt-5.4-nano",
+                    primaryModel: "openai/gpt-5-nano",
                     fallbackModels: [],
                     policy: .default(for: .graphExtraction)
                 ),
                 .graphQueryUnderstanding: LLMModelRoute(
-                    primaryModel: "openai/gpt-5.4-nano",
+                    primaryModel: "openai/gpt-5-nano",
                     fallbackModels: [],
                     policy: .default(for: .graphQueryUnderstanding)
                 )
@@ -176,7 +176,7 @@ struct LLMResilienceTests {
             prefix: "openai",
             displayName: "OpenAI",
             baseURL: "https://api.openai.com/v1",
-            model: "gpt-5.4-nano"
+            model: "gpt-5-nano"
         )
         let openRouter = LLMProviderProfile(
             provider: .openRouter,
@@ -341,7 +341,7 @@ struct LLMResilienceTests {
         let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
         settings.addProvider(kind: .miniMax)
         let legacyRoute = LLMModelRoute(
-            primaryModel: "openai/gpt-5.4-nano",
+            primaryModel: "openai/gpt-5-nano",
             fallbackModels: ["minimax/MiniMax-M3"],
             policy: .default(for: .subtitleProcessing)
         )
@@ -721,7 +721,7 @@ struct LLMResilienceTests {
     @Test
     func timeoutTriesFallbackBeforeRepeatingPrimary() async throws {
         let state = RoutedStubState(outcomes: [
-            "openai/gpt-5.4-nano": [
+            "openai/gpt-5-nano": [
                 .failure(.timeout),
                 .failure(.timeout),
             ],
@@ -740,14 +740,14 @@ struct LLMResilienceTests {
         let result = try await client.complete(system: "system", user: "user")
 
         #expect(result == "fallback result")
-        #expect(await state.attemptCount(for: "openai/gpt-5.4-nano") == 1)
+        #expect(await state.attemptCount(for: "openai/gpt-5-nano") == 1)
         #expect(await state.attemptCount(for: "minimax/MiniMax-M3") == 1)
     }
 
     @Test
     func resilientClientCreatesOneTransportClientPerConfiguredModel() async throws {
         let state = RoutedStubState(outcomes: [
-            "openai/gpt-5.4-nano": [.success("first"), .success("second")],
+            "openai/gpt-5-nano": [.success("first"), .success("second")],
             "minimax/MiniMax-M3": [],
         ])
         let counter = ClientFactoryCounter()
@@ -762,7 +762,7 @@ struct LLMResilienceTests {
 
         #expect(try await client.complete(system: "system", user: "first") == "first")
         #expect(try await client.complete(system: "system", user: "second") == "second")
-        #expect(counter.count(for: "openai/gpt-5.4-nano") == 1)
+        #expect(counter.count(for: "openai/gpt-5-nano") == 1)
         #expect(counter.count(for: "minimax/MiniMax-M3") == 1)
     }
 
@@ -770,8 +770,8 @@ struct LLMResilienceTests {
     func defaultSessionFailsFastWhenConnectivityIsUnavailable() {
         let configuration = LLMRuntimeConfiguration(
             profile: .defaultOpenAI,
-            modelIdentifier: "openai/gpt-5.4-nano",
-            modelName: "gpt-5.4-nano",
+            modelIdentifier: "openai/gpt-5-nano",
+            modelName: "gpt-5-nano",
             endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
             apiKey: "test-openai"
         )
@@ -913,7 +913,7 @@ struct LLMResilienceTests {
     @Test
     func authenticationFailureSkipsSameModelRetryAndUsesFallback() async throws {
         let state = RoutedStubState(outcomes: [
-            "openai/gpt-5.4-nano": [
+            "openai/gpt-5-nano": [
                 .failure(.provider(
                     status: 401,
                     message: "invalid key",
@@ -935,14 +935,14 @@ struct LLMResilienceTests {
         let result = try await client.complete(system: "system", user: "user")
 
         #expect(result == "fallback result")
-        #expect(await state.attemptCount(for: "openai/gpt-5.4-nano") == 1)
+        #expect(await state.attemptCount(for: "openai/gpt-5-nano") == 1)
         #expect(await state.attemptCount(for: "minimax/MiniMax-M3") == 1)
     }
 
     @Test
     func cancellationNeverRetriesOrFallsBack() async {
         let state = RoutedStubState(outcomes: [
-            "openai/gpt-5.4-nano": [.cancelled],
+            "openai/gpt-5-nano": [.cancelled],
             "minimax/MiniMax-M3": [.success("must not run")],
         ])
         let client = ResilientLLMTextClient(
@@ -956,7 +956,7 @@ struct LLMResilienceTests {
         await #expect(throws: CancellationError.self) {
             try await client.complete(system: "system", user: "user")
         }
-        #expect(await state.attemptCount(for: "openai/gpt-5.4-nano") == 1)
+        #expect(await state.attemptCount(for: "openai/gpt-5-nano") == 1)
         #expect(await state.attemptCount(for: "minimax/MiniMax-M3") == 0)
     }
 
@@ -968,8 +968,8 @@ struct LLMResilienceTests {
             configurations: [
                 LLMRuntimeConfiguration(
                     profile: openAI,
-                    modelIdentifier: "openai/gpt-5.4-nano",
-                    modelName: "gpt-5.4-nano",
+                    modelIdentifier: "openai/gpt-5-nano",
+                    modelName: "gpt-5-nano",
                     endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
                     apiKey: "test-openai"
                 ),
@@ -996,7 +996,7 @@ struct LLMResilienceTests {
             initialBackoffSeconds: 0.75
         ).validated(for: .subtitleProcessing)
 
-        #expect(policy.timeoutSeconds == 90)
+        #expect(policy.timeoutSeconds == 15)
     }
 
     @Test func translationPolicyClampsLowTimeouts() throws {
@@ -1006,11 +1006,105 @@ struct LLMResilienceTests {
             initialBackoffSeconds: 0.75
         ).validated(for: .translation)
 
-        #expect(policy.timeoutSeconds == 45)
+        #expect(policy.timeoutSeconds == 15)
+    }
+
+    @Test(arguments: LLMUseCase.allCases)
+    func everyRouteAcceptsFifteenSecondsAndNormalizesLegacyTimeouts(useCase: LLMUseCase) throws {
+        var policy = LLMRequestPolicy.default(for: useCase)
+        #expect(policy.timeoutSeconds >= 15)
+        policy.timeoutSeconds = 15
+        #expect(try policy.validated(for: useCase).timeoutSeconds == 15)
+        policy.timeoutSeconds = 8
+        #expect(try policy.validated(for: useCase).timeoutSeconds == 15)
     }
 
     @Test @MainActor
-    func subtitleTimeoutMigrationRaisesPersistedLowTimeouts() throws {
+    func timeoutDefaultsMigrateOnceWithoutChangingConfiguredModels() throws {
+        let suiteName = "LLMTimeoutDefaultsTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var translation = LLMModelRoute(
+            primaryModel: "openai/gpt-6-luna",
+            fallbackModels: ["openai/gpt-5-nano"],
+            policy: .default(for: .translation)
+        )
+        translation.policy.timeoutSeconds = 45
+        var subtitle = translation
+        subtitle.policy.timeoutSeconds = 90
+        var customGraph = translation
+        customGraph.policy.timeoutSeconds = 75
+        let saved = LLMSettingsStore.PersistedConfiguration(
+            providers: [.defaultOpenAI],
+            routes: [.translation: translation, .subtitleProcessing: subtitle, .graphExtraction: customGraph]
+        )
+        defaults.set(try JSONEncoder().encode(saved), forKey: "voxella.llm.configuration.v2")
+
+        let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
+        #expect(settings.route(for: .translation).policy.timeoutSeconds == 30)
+        #expect(settings.route(for: .subtitleProcessing).policy.timeoutSeconds == 30)
+        #expect(settings.route(for: .graphExtraction).policy.timeoutSeconds == 75)
+        #expect(settings.route(for: .translation).modelChain == translation.modelChain)
+        #expect(settings.route(for: .subtitleProcessing).modelChain == subtitle.modelChain)
+
+        // Choosing the former default again after migration is a custom setting.
+        try settings.updateRoute(translation, for: .translation)
+        let reloaded = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
+        #expect(reloaded.route(for: .translation).policy.timeoutSeconds == 45)
+        #expect(reloaded.route(for: .translation).modelChain == translation.modelChain)
+    }
+
+    @Test @MainActor
+    func retiredNanoMigrationPreservesProviderIdentityAndOtherModelChoices() throws {
+        let suiteName = "LLMRetiredNanoTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var profile = LLMProviderProfile.defaultOpenAI
+        profile.model = "gpt-5.4-nano"
+        let saved = LLMSettingsStore.PersistedConfiguration(providers: [profile], routes: [
+            .translation: .init(primaryModel: "openai/gpt-5.4-nano", fallbackModels: ["openai/gpt-5-nano"], policy: .default(for: .translation)),
+            .subtitleProcessing: .init(primaryModel: "openai/gpt-6-luna", fallbackModels: ["openai/gpt-5.4-nano"], policy: .default(for: .subtitleProcessing)),
+        ])
+        defaults.set(try JSONEncoder().encode(saved), forKey: "voxella.llm.configuration.v2")
+        let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
+        #expect(settings.providers.first?.id == profile.id)
+        #expect(settings.providers.first?.credentialAccount == profile.credentialAccount)
+        #expect(settings.providers.first?.model == "gpt-5-nano")
+        #expect(settings.route(for: .translation).modelChain == ["openai/gpt-5-nano"])
+        #expect(settings.route(for: .subtitleProcessing).modelChain == ["openai/gpt-6-luna", "openai/gpt-5-nano"])
+        #expect(LLMSettingsStore(defaults: defaults, legacyDefaults: []).routes == settings.routes)
+        try settings.updateRoute(.init(primaryModel: "openai/gpt-5.4-nano", fallbackModels: ["openai/gpt-5-nano"], policy: .default(for: .translation)), for: .translation)
+        #expect(settings.route(for: .translation).modelChain == ["openai/gpt-5-nano"])
+    }
+
+    @Test func runtimeConfigurationCannotSendRetiredNanoIDs() {
+        let configuration = LLMRuntimeConfiguration(
+            profile: .defaultOpenAI,
+            modelIdentifier: "openrouter/openai/gpt-5.4-nano",
+            modelName: "openai/gpt-5.4-nano",
+            endpoint: URL(string: "https://openrouter.ai/api/v1/chat/completions")!,
+            apiKey: "test-key", useCase: .translation
+        )
+        #expect(configuration.modelIdentifier == "openrouter/openai/gpt-5-nano")
+        #expect(configuration.modelName == "openai/gpt-5-nano")
+        #expect(configuration.lowestReasoningEffort == .minimal)
+        #expect(AgentModel.persisted("gpt-5.4-nano") == .nano)
+        #expect(LLMModelLifecycle.replacingRetiredModel(in: "openrouter/openai/gpt-5.4-nano:floor") == "openrouter/openai/gpt-5-nano")
+    }
+
+    @Test(arguments: [false, true])
+    func modelCatalogExcludesRetiredNanoEvenWhenProviderStillAdvertisesIt(router: Bool) {
+        let prefix = router ? "openai/" : ""
+        let models = ProviderModelCatalog.select(rows: [
+            ["id": prefix + "gpt-5.4-nano"],
+            ["id": prefix + "gpt-5-nano"],
+        ], router: router)
+        #expect(models.map(\.id) == [prefix + "gpt-5-nano"])
+        #expect(models.first?.capability.efforts == [.minimal, .low, .medium, .high])
+    }
+
+    @Test @MainActor
+    func subtitleTimeoutMigrationPreservesPersistedFifteenSecondTimeouts() throws {
         let suiteName = "LLMSubtitleTimeoutMigrationTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -1050,8 +1144,8 @@ struct LLMResilienceTests {
 
         let settings = LLMSettingsStore(defaults: defaults, legacyDefaults: [])
 
-        #expect(settings.route(for: .subtitleProcessing).policy.timeoutSeconds == 90)
-        #expect(settings.route(for: .translation).policy.timeoutSeconds == 45)
+        #expect(settings.route(for: .subtitleProcessing).policy.timeoutSeconds == 15)
+        #expect(settings.route(for: .translation).policy.timeoutSeconds == 15)
     }
 
     @Test
@@ -1093,12 +1187,12 @@ struct LLMResilienceTests {
     func mixedProviderFailuresKeepTheGenericTechnicalSummary() throws {
         let error = LLMClientError.exhausted([
             .init(model: "openrouter/openai/gpt-5-nano", attempt: 1, reason: "http_401"),
-            .init(model: "openai/gpt-5.4-nano", attempt: 1, reason: "http_401"),
+            .init(model: "openai/gpt-5-nano", attempt: 1, reason: "http_401"),
         ])
 
         let message = try #require(error.errorDescription)
 
-        #expect(message == "All configured LLM models failed: openrouter/openai/gpt-5-nano (http_401); openai/gpt-5.4-nano (http_401)")
+        #expect(message == "All configured LLM models failed: openrouter/openai/gpt-5-nano (http_401); openai/gpt-5-nano (http_401)")
     }
 
     @Suite(.serialized)

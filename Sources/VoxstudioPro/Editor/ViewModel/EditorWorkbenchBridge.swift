@@ -151,12 +151,14 @@ extension EditorViewModel {
                 guard mediaType == .video || mediaType.isAudio else { continue }
                 self.timeline.tracks[loc.trackIndex].clips[loc.clipIndex].sourceSessionId = session.id
             }
+            let captionSource = self.captionSourceContext(for: clipId)
             if let sourceTrack = session.subtitleTrack {
                 self.insertSessionSubtitleTrack(
                     session,
                     track: sourceTrack,
                     scope: .source,
-                    startFrame: startFrame
+                    startFrame: startFrame,
+                    sourceContext: captionSource
                 )
             }
             for translation in session.translationTracks {
@@ -164,7 +166,8 @@ extension EditorViewModel {
                     session,
                     track: translation.track,
                     scope: .translation(languageCode: translation.languageCode),
-                    startFrame: startFrame
+                    startFrame: startFrame,
+                    sourceContext: captionSource
                 )
             }
             self.sessionProcessingStates[clipId] = .completed
@@ -219,7 +222,8 @@ extension EditorViewModel {
                         session,
                         track: translation.track,
                         scope: .translation(languageCode: translation.languageCode),
-                        startFrame: source.startFrame
+                        startFrame: source.startFrame,
+                        sourceContext: self.captionSourceContext(for: clipId)
                     )
                 }
                 self.sessionProcessingStates[clipId] = .completed
@@ -403,11 +407,13 @@ extension EditorViewModel {
     ) -> (sessionID: UUID, startFrame: Int)? {
         guard let location = findClip(id: clipID) else { return nil }
         let mediaClip = timeline.tracks[location.trackIndex].clips[location.clipIndex]
+        guard let source = captionSourceContext(for: clipID, create: false) else { return nil }
         let candidate = timeline.tracks
             .filter { $0.role == .sourceSubtitles }
             .flatMap(\.clips)
             .first {
                 $0.sourceSessionId != nil
+                    && $0.captionLayout?.source == source
                     && $0.mediaType == .text
                     && $0.startFrame < mediaClip.endFrame
                     && $0.endFrame > mediaClip.startFrame

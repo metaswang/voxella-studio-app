@@ -51,7 +51,8 @@ extension EditorViewModel {
         liveViewStates[activeTimelineId] = TimelineViewState(
             playheadFrame: currentFrame,
             zoomScale: zoomScale,
-            scrollOffsetX: timelineScrollOffsetX
+            scrollOffsetX: timelineScrollOffsetX,
+            autoFit: timelineAutoFit
         )
     }
 
@@ -61,7 +62,12 @@ extension EditorViewModel {
 
     func restoreActiveViewState() {
         let vs = viewState(for: activeTimelineId)
+        isApplyingTimelineFit = true
         zoomScale = vs.zoomScale
+        isApplyingTimelineFit = false
+        timelineAutoFit = vs.autoFit ?? (liveViewStates[activeTimelineId] == nil)
+        classifyLegacyTimelineZoom = vs.autoFit == nil && liveViewStates[activeTimelineId] != nil
+        if timelineVisibleWidth > 0 { updateTimelineViewport(width: timelineVisibleWidth) }
         currentFrame = min(max(0, vs.playheadFrame), max(0, timeline.totalFrames))
         timelineScrollRestoreX = vs.scrollOffsetX
     }
@@ -99,6 +105,7 @@ extension EditorViewModel {
         selectedTimelineRange = nil
         pendingSwapClipId = nil
         dragBefore = [:]
+        captionEditBefore = nil
         preDragTimeline = nil
     }
 
@@ -265,10 +272,14 @@ extension Timeline {
     /// Fresh track/clip/group ids for a duplicated timeline so ids stay unique project-wide.
     mutating func regenerateIds() {
         var groups: [String: String] = [:]
+        let trackIDs = Dictionary(uniqueKeysWithValues: tracks.map { ($0.id, UUID().uuidString) })
         for ti in tracks.indices {
-            tracks[ti].id = UUID().uuidString
+            tracks[ti].id = trackIDs[tracks[ti].id]!
             for ci in tracks[ti].clips.indices {
                 tracks[ti].clips[ci].freshenIds(groups: &groups)
+                if let old = tracks[ti].clips[ci].captionLayout?.source.audioTrackId, let new = trackIDs[old] {
+                    tracks[ti].clips[ci].captionLayout?.source.audioTrackId = new
+                }
             }
         }
     }

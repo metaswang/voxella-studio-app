@@ -1,9 +1,7 @@
 import AppKit
 import AVFoundation
-import ImageIO
 import Observation
 import SwiftUI
-import UniformTypeIdentifiers
 
 enum SessionSubtitleDisplayMode: Equatable, Sendable {
     case off
@@ -74,7 +72,7 @@ final class SessionPlaybackController {
         guard let cue = activeSubtitleCues.first(where: { time >= $0.start && time < $0.end }) else {
             return nil
         }
-        return TranscriptSegmenter.renderedSubtitleText(cue.text).nilIfEmpty
+        return TranscriptSegmenter.renderedSubtitleText(cue.displayText).nilIfEmpty
     }
 
     func selectSubtitleMode(_ mode: SessionSubtitleDisplayMode) {
@@ -1063,42 +1061,6 @@ final class SessionPlayerView: NSView {
     func stopPlayback() {
         player?.pause()
         player = nil
-    }
-}
-
-private enum SessionPosterFrameLoader {
-    static func load(url: URL, enabled: Bool) async -> Data? {
-        guard enabled else { return nil }
-
-        return await Task.detached(priority: .userInitiated) {
-            guard !Task.isCancelled else { return nil }
-
-            let asset = AVURLAsset(url: url)
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            generator.requestedTimeToleranceBefore = .zero
-            generator.requestedTimeToleranceAfter = .zero
-
-            do {
-                let image = try generator.copyCGImage(at: .zero, actualTime: nil)
-                guard !Task.isCancelled else { return nil }
-
-                let output = NSMutableData()
-                guard let destination = CGImageDestinationCreateWithData(
-                    output,
-                    UTType.png.identifier as CFString,
-                    1,
-                    nil
-                ) else {
-                    return nil
-                }
-                CGImageDestinationAddImage(destination, image, nil)
-                guard CGImageDestinationFinalize(destination) else { return nil }
-                return output as Data
-            } catch {
-                return nil
-            }
-        }.value
     }
 }
 

@@ -8,15 +8,42 @@ extension EditorViewModel {
         previewTabs.first { $0.id == activePreviewTabId } ?? .timeline
     }
 
-    /// Minimum zoom scale that fits the entire timeline with end padding.
+    /// The clip viewport already excludes the fixed track header.
+    var fitTimelineZoomScale: Double {
+        guard timeline.totalFrames > 0, timelineVisibleWidth > 0 else { return Defaults.pixelsPerFrame }
+        return min(Zoom.max, max(Zoom.floor, timelineVisibleWidth * 0.95 / Double(timeline.totalFrames)))
+    }
+
     var minZoomScale: Double {
-        let totalFrames = timeline.totalFrames
-        guard totalFrames > 0, timelineVisibleWidth > 0 else { return Zoom.min }
-        let headerWidth = Double(Layout.trackHeaderWidth)
-        let availableWidth = timelineVisibleWidth - headerWidth
-        guard availableWidth > 0 else { return Zoom.min }
-        let fitAll = availableWidth / (Double(totalFrames) * Zoom.fitAllBuffer)
-        return min(Zoom.max, max(Zoom.floor, fitAll))
+        guard timeline.totalFrames > 0, timelineVisibleWidth > 0 else { return Zoom.min }
+        return min(Zoom.max, max(Zoom.floor, fitTimelineZoomScale / Zoom.fitAllBuffer))
+    }
+
+    func fitTimelineToViewport() {
+        timelineAutoFit = true
+        classifyLegacyTimelineZoom = false
+        isApplyingTimelineFit = true
+        zoomScale = fitTimelineZoomScale
+        isApplyingTimelineFit = false
+        timelineScrollRestoreX = 0
+    }
+
+    func updateTimelineViewport(width: Double) {
+        guard width.isFinite, width > 0 else { return }
+        timelineVisibleWidth = width
+        if classifyLegacyTimelineZoom, timeline.totalFrames > 0 {
+            let oldMinimum = min(Zoom.max, max(Zoom.floor,
+                max(1, width - Double(Layout.trackHeaderWidth)) / (Double(timeline.totalFrames) * Zoom.fitAllBuffer)))
+            timelineAutoFit = abs(zoomScale - oldMinimum) <= max(0.000001, oldMinimum * 0.02)
+            classifyLegacyTimelineZoom = false
+        }
+        if timelineAutoFit {
+            fitTimelineToViewport()
+        } else if zoomScale < minZoomScale {
+            isApplyingTimelineFit = true
+            zoomScale = minZoomScale
+            isApplyingTimelineFit = false
+        }
     }
 
     var activePreviewDurationFrames: Int {

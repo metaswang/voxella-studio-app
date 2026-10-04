@@ -1,0 +1,650 @@
+◇ Test run started.
+◇ Suite "ToolExecutor — clip handlers" started.
+◇ Suite "Caption source layout" started.
+◇ Suite CaptionTargetTests started.
+◇ Suite "ToolExecutor — read-only handlers" started.
+◇ Suite "Transcription quality processing" started.
+◇ Suite "Voxella local model inference" started.
+◇ Suite "Voxella local-first workbench" started.
+◇ Suite "Independent session display languages" started.
+◇ Suite "Configured LLM structured output integration" started.
+◇ Suite "Flexible media flows" started.
+◇ Suite CaptionCaseTests started.
+◇ Suite CaptionPlacementTests started.
+◇ Suite "CaptionBuilder" started.
+◇ Suite "WeMM subtitle parsing" started.
+◇ Suite "Long-form alignment recovery" started.
+◇ Suite SubtitleSegmentationTests started.
+◇ Suite "CompositionBuilder.buildVisuals — instructions" started.
+◇ Suite TranscriptionAudioFormatTests started.
+◇ Suite ElasticSubtitleTests started.
+◇ Suite "LLM routing and resilience" started.
+◇ Suite "ToolExecutor — set_clip_properties" started.
+◇ Suite "Session index lexical search" started.
+◇ Suite InspectorClipSelectionTests started.
+◇ Suite CaptionProjectionTests started.
+◇ Suite ProductionSubtitleReplayTests started.
+◇ Suite CaptionSpecBuilderTests started.
+◇ Suite "Transcript segment aggregation" started.
+◇ Test mediaMetadataFiltersCaptionSources() started.
+◇ Suite "get_transcript — param tolerance" started.
+◇ Test manualSiblingIsPreservedAndAvoided() started.
+◇ Test visibleClipsListsTopDownAndCollapsesCaptionGroups() started.
+◇ Test explicitSelectionsCanChooseNonMasterMulticamMic() started.
+◇ Test sameSessionOnDifferentAudioTracksGetsIndependentCaptionGroups() started.
+◇ Test geometryIncludesDecorationAndAnimation() started.
+◇ Test eachLaneUsesItsTallestCueAndDoesNotCollapseWhenHidden() started.
+◇ Test linkedAndTrackTargetsChooseAudioSide() started.
+◇ Test largeCaptionSelectionResolvesWithinInteractionBudget() started.
+◇ Test preparationTracksTimelineValueInsteadOfRenderRevision() started.
+◇ Test overflowDoesNotPartiallyRepositionAnyTrack() started.
+◇ Test migrationWorksWithoutLoadedSessionAndPreservesCustomPlacement() started.
+◇ Test bindingsSurviveSaveAndTimelineDuplication() started.
+◇ Test sessionInsertionAddsLanguagesAboveTheSourceWithSharedAudioIdentity() started.
+◇ Test ownershipStripsOnlyProvenOverlapFromSharedRecognitionContext() started.
+◇ Test actualRenderedPixelsHaveSafeMarginsAndSeparateLanguages() started.
+◇ Test preservesShortNaturalCJKRepetition() started.
+◇ Test spatialEditingBecomesManualAndResetRestoresAutomatic() started.
+◇ Test trimsRepeatedSuffixBeforeAlignment() started.
+◇ Test ownershipIgnoresDuplicatePrefixAcrossWideGap() started.
+◇ Test textEditingReflowsSiblingsAndUndoRestoresTheEntireLayout() started.
+◇ Test qualityLeavesCrossSpanPrefixesForOwnership() started.
+◇ Test postprocessingConvertsTimedWordsWithoutChangingTimingOrSpeakers() started.
+◇ Test subtitlesFitSafelyWithStableLanguageOrder(width:height:) started.
+◇ Test ownershipKeepsNaturalRepetitionWhenRecognitionWindowsDoNotOverlap() started.
+◇ Test ownershipKeepsLaterSpanWhenCJKOverlapIsLong() started.
+◇ Test trimsDegenerateInteriorCJKRunBeforeAlignment() started.
+◇ Test processingOptionsClipAndTranslationMapIntoMediaFlow() started.
+◇ Test getTimelineCollapsesCaptionGroups() started.
+◇ Test ownershipStripsShortAdjacentDuplicatePrefixFromLaterSpan() started.
+◇ Test invalidSubtitleJSONUsesTimedTranscriptFallback() started.
+◇ Test cascadePromptStaysSimpleAndPassesNeighboringBatches() started.
+◇ Test getTimelineCapsCaptionRowsAndNotesPaging() started.
+◇ Test ambiguousLegacySessionNeverMergesDifferentAudioTracks() started.
+◇ Test workbenchTrackSelectionFallsBackSafely() started.
+◇ Test punctuatingASREnginesSkipCorrectionAndOnlySegment(_:) started.
+◇ Test knownTextAlignmentPreservesProvidedSpeakerBoundaries() started.
+◇ Test generalSummaryTemplateRequiresDetailsWhenSpecificsRemain() started.
+◇ Test subtitleProcessorAcceptsNaturalTextWithoutForcedPunctuation() started.
+◇ Test normalizesChineseAndCantoneseHintsForASRAndOutput() started.
+◇ Test transcriptionAIAccessPromptOnlyPrecedesBasicLocalTranscription() started.
+◇ Test templateSummarySanitizeMarkdownDropsEmptyHeadings() started.
+◇ Test getTimelineListsDeviantCaptionClipsIndividually() started.
+◇ Test unrelatedAudioTracksAreNotMovedEvenWhenTheyOverlap() started.
+◇ Test dubChunkingIsLanguageNeutralAndBounded() started.
+◇ Test transformsText() started.
+◇ Test translationBindsOutputToSourceUnitTimeAndDropsLeakedIDs() started.
+◇ Test textClipsStayOnInsertedTrackWhenAClipIsOverwritten() started.
+◇ Test translationRepairsOnlyMissingCuesAndKeepsFullContext() started.
+◇ Test ownershipDoesNotEraseTrueRepeatsInSharedContext() started.
+◇ Test textClipPlacementNeverPrunesOtherEmptyTracks() started.
+◇ Test subtitleReadabilityLimitsMatchPostprocessDefaults() started.
+◇ Test changingSubtitlesPreservesTheUnchosenTranscriptAfterReload() started.
+◇ Test smallBoundaryDriftRemainsRecoverable() started.
+◇ Test transcriptionAlignmentDiagnosticsPersistWithoutBreakingLegacyJobs() started.
+◇ Test basicTranscriptionCommitKeepsTimedSegmentsWithoutSubtitleTrack() started.
+◇ Test cancellationDuringInferenceDoesNotCommitFallback() started.
+◇ Test translationContextIsPlainTextWithoutSourceIndices() started.
+◇ Test parsesAndCleansTimedCues() started.
+◇ Test subtitleProcessorAllowsContinuationLinesWithoutPunctuation() started.
+◇ Test translationSpottingRejectsRewrittenLines() started.
+◇ Test bulkNonOverwritingPlacementMutatesTimelineOnce() started.
+◇ Test rejectsInvalidCueRanges() started.
+◇ Test mapsSecondsThroughClipPlacement() started.
+◇ Test clampsPhraseRunningPastClipEnd() started.
+◇ Test subtitleTimingPartitionerPreservesSourceCoverageWithAnchors() started.
+◇ Test outOfSliceTimestampsCannotBecomeSuccessfulClampedWords() started.
+◇ Test transcriptionRequiresBothLLMRoutesForTranslation() started.
+◇ Test transformForResolvesEachBox() started.
+◇ Test subtitlePipelineKeepsLunaPunctuationThroughRemapAndRebuild() started.
+◇ Test retryPreservesOriginalUnequalDurationSpans() started.
+◇ Test interiorDisorderDoesNotQualifyAsEdgeRecovery() started.
+◇ Test progressEventsRoundTripWithSSEStyleFields() started.
+◇ Test oneBadTailDoesNotDiscardStableInterior() started.
+◇ Test failedSingleSpanDoesNotInventTextAudioBoundaries() started.
+◇ Test curatedProviderPresetsProvideCompatibleBaseURLsAndEditableDefaults() started.
+◇ Test changingTranscriptPreservesTheUnchosenSubtitles() started.
+◇ Test distributesTimeByCharacterCount() started.
+◇ Test capsWordsPerCaption() started.
+◇ Test boundaryOptimizerEnforcesLimitsWithoutBreakingGraphemes() started.
+◇ Test splitsAtClauseWhenNoSentence() started.
+◇ Test enforcesMinimumDurationWithoutShiftingLaterPhrases() started.
+◇ Test subtitleTrackMarksKnownSpeakerChangesWhenConvertedToTranscript() started.
+◇ Test translationPacksUnpunctuatedFragmentsAndCutsOnGaps() started.
+◇ Test dropsPhraseEntirelyBeforeTrimIn() started.
+◇ Test shortSpanStillRejectsAnExcessivelyLongWord() started.
+◇ Test whisperEnglishCorrectsThenSegments() started.
+◇ Test clampsPhraseSpanningTrimmedClip() started.
+◇ Test translationPreservesCueIdentityTimingAndDurationBudgets() started.
+◇ Test subtitleProcessorBoundsConcurrentBatchesAndRestoresSourceOrder() started.
+◇ Test subtitleProcessorDoesNotRejectPunctuationByScript() started.
+◇ Test subtitleTimingPartitionerAnchoredRangesRejectMissingAnchors() started.
+◇ Test whisperNonEnglishStillCorrectsThenSegments() started.
+◇ Test structuredOutputDecoderUsesFinalJSONAfterReasoning() started.
+◇ Test phrasesFromWordsUseOnlyPassedWords() started.
+◇ Test dubVoiceAssignmentsPreferSegmentThenSpeakerThenSession() started.
+◇ Test subtitleSegmentationRecoversChangedTextWithoutRetry() started.
+◇ Test dubFlowsAlwaysAlignRenderedSpeechBeforeSubtitleSegmentation() started.
+◇ Test mapsWordEndingAtClipBoundary() started.
+◇ Test splitsAtSentenceBoundary() started.
+◇ Test transcriptionFlowSkipsSubtitlesByDefaultAndHonorsAnExplicitRequest() started.
+◇ Test maxWordsStillPrefersSentenceBoundary() started.
+◇ Test cascadeNeighboringContextKeepsTheNearestWindow() started.
+◇ Test translationReordersValidCueIDsWithoutChangingSourceTimeline() started.
+◇ Test localCaptionsSupportDenseScriptsAndMissingWordTimings() started.
+◇ Test providerProfilesAreEndpointScopedAndRequireTransportSecurity() started.
+◇ Test lineAlignedTranslationRunsConcurrentBatches() started.
+◇ Test checkboxControlsSegmentationIndependentlyOfAIAvailability() started.
+◇ Test subtitleClientSetupFailureCompletesWithWarning() started.
+◇ Test subtitleProcessorIncludesNeighboringBatchesAsContext() started.
+◇ Test whisperTranscriptionOnlyCreatesSubtitlesWhenSelected(enabled:) started.
+◇ Test completedRetranscriptionReplacesArtifactsOnlyOnSuccessAndMarksCompletedDubsOutdated() started.
+◇ Test translationWindowsRunConcurrentlyAndKeepSourceOrder() started.
+◇ Test keepsPunctuatedTokensIntact() started.
+◇ Test translationDoesNotPackAcrossSpeakerChanges() started.
+◇ Test textInstructionsPreserveLayerOrderAcrossCaptionBoundaries() started.
+◇ Test transcriptionWithoutLLMAccessSkipsRequestedTranslation() started.
+◇ Test standaloneSubtitlePreparationUsesOnlyTheReusableSubtitleStage() started.
+◇ Test localSubtitleFlowCompletesWithoutConstructingAnLLMClient() started.
+◇ Test subtitleProcessorKeepsLLMTextWhenRemapIsUnanchored() started.
+◇ Test subtitleRequestFailureUsesTimedTranscriptFallback() started.
+◇ Test localCaptionsMatchVideoEditorAndPreserveWordTimingAndSpeakers() started.
+◇ Test denseWordTimingsKeepNextPhraseStart() started.
+◇ Test templateSummaryPassesTemplateRequirementsToTheLocalModel() started.
+◇ Test splitsAtMidWordWhenNoPunctuation() started.
+◇ Test sessionTitleDefaultsToFilenameAndSurvivesPersistence() started.
+◇ Test automaticChoiceRequiresBYOKAndConnectedSubtitleProvider() started.
+◇ Test renderedDubSegmentsExposeASubtitleTrackWithTimingAndSpeakers() started.
+◇ Test oldCodableDataDoesNotClaimAlignedTiming() started.
+◇ Test subtitleProcessorUsesStableTimingAnchorsAndRetriesInvalidStructure() started.
+◇ Test boundaryProjectionIsLosslessAndRejectsAmbiguousMatches() started.
+◇ Test invalidSubtitleContentUsesTimedTranscriptFallback() started.
+◇ Test translationShrinksACompletelyInvalidBatchUntilRecoverable() started.
+◇ Test subtitleRebuildCutsBeforeAnOverlongCueGroup() started.
+◇ Test compoundsAndInternalWhitespaceSurviveSpotting() started.
+◇ Test translatedLongCueUsesNaturalCutsAndEstimatedTiming() started.
+◇ Test carriesWordTimingsAndAnimation() started.
+◇ Test ambiguousProtectionIsIgnored() started.
+◇ Test subtitleTimingPartitionerInterpolatesWhenAnyAnchorIsMissing() started.
+◇ Test writesInt16InterleavedBufferWithoutParamError() started.
+◇ Test localCloudSyncStateSurvivesPersistence() started.
+◇ Test keepsSegmentWholeWhenItFits() started.
+◇ Test replayMultilingualBenchmarkAndExportTwoLines() started.
+◇ Test subtitleSegmentationOptimizesOverlongAdviceWithoutRetry() started.
+◇ Test standaloneSubtitlePreparationTurnsLegacyAutoDiarizationOffBeforeRetrying() started.
+◇ Test graphemesAndTextArePreservedAcrossScripts() started.
+◇ Test presentationBreaksNeverChangeCanonicalText() started.
+◇ Test localOpenAICompatibleProviderPresetsCoverCommonRuntimes() started.
+◇ Test translationFlowsPrepareUnverifiedTimedSegmentsBeforeTranslation() started.
+◇ Test subtitleTimingAlwaysCoversItsContinuousSourceWordsAfterSplitting() started.
+◇ Test keepsOverlongSingleWord() started.
+◇ Test subtitleFallbackSplitsLongASRSegmentsByLength() started.
+◇ Test missingWordTimesUseEstimatedLocalTiming() started.
+◇ Test correctedSubtitleOutputMapsWordTimingBeforeTranscriptAggregation() started.
+◇ Test packsShortTurnsAndDoesNotIndexSubtitleCues() started.
+◇ Test shortCompletePhrasesAreNotMergedToFillLayout() started.
+◇ Test legacySubtitleMigrationRunsOnlyOnce() started.
+◇ Test updateTextCaptionGroupAcceptsRichTextStyleFields() started.
+◇ Test inaccurateSpeakerLabelsAndEstimatedPausesAreSoft() started.
+◇ Test updateTextCaptionGroupCollapsesToSummary() started.
+◇ Test phrasesIgnoreWordsOutsideCurrentClipFragments() started.
+◇ Test fittedTranscriptRetainsDenseWordsAtMediaTail() started.
+◇ Test templateSummarySanitizeMarkdownKeepsHeadingsWithContent() started.
+◇ Test largeCaptionSelectionResolvesWithinInteractionBudget() started.
+◇ Test keepsCanonicalPunctuationSeparateFromSubtitleDisplayText() started.
+◇ Test renamingSpeakerPreservesStableTimingAcrossTranscriptAndSubtitleTrack() started.
+◇ Test badLengthCompliantHintsCannotSplitProtectedChinesePhrase() started.
+◇ Test punctuationCannotMoveNaIntoPreviousCue() started.
+◇ Test mergesATinyTailWithinTheSoftCapWithoutSplittingSubtitleCues() started.
+◇ Test buildsCaptionSpecsFromImmutableInput() started.
+◇ Test case passing 2 arguments width → 1920, height → 1080 to subtitlesFitSafelyWithStableLanguageOrder(width:height:) started.
+◇ Test case passing 2 arguments width → 1080, height → 1080 to subtitlesFitSafelyWithStableLanguageOrder(width:height:) started.
+◇ Test case passing 2 arguments width → 1280, height → 720 to subtitlesFitSafelyWithStableLanguageOrder(width:height:) started.
+◇ Test case passing 2 arguments width → 3840, height → 2160 to subtitlesFitSafelyWithStableLanguageOrder(width:height:) started.
+◇ Test case passing 2 arguments width → 1080, height → 1920 to subtitlesFitSafelyWithStableLanguageOrder(width:height:) started.
+◇ Test case passing 1 argument engine → .qwen to punctuatingASREnginesSkipCorrectionAndOnlySegment(_:) started.
+◇ Test case passing 1 argument engine → .parakeet to punctuatingASREnginesSkipCorrectionAndOnlySegment(_:) started.
+[transcription] NOTICE: alignment edge_retry chunk=1 outcome=ineligible_structure expected=1 actual=1
+[transcription] NOTICE: alignment edge_retry chunk=1 outcome=ineligible_structure expected=4 actual=0
+[transcription] NOTICE: alignment edge_retry chunk=1 outcome=ineligible_geometry
+[transcription] NOTICE: alignment edge_retry chunk=1 outcome=recovered kept=10 estimated=2 context=1.5
+[transcription] NOTICE: alignment edge_retry chunk=1 outcome=ineligible_structure expected=12 actual=0
+[transcription] NOTICE: alignment edge_retry chunk=1 outcome=ineligible_structure expected=1 actual=1
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=3 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+◇ Test case passing 1 argument enabled → true to whisperTranscriptionOnlyCreatesSubtitlesWhenSelected(enabled:) started.
+◇ Test case passing 1 argument enabled → false to whisperTranscriptionOnlyCreatesSubtitlesWhenSelected(enabled:) started.
+[llm] NOTICE: subtitle elastic decisions cues=3 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=4 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic layout_overflow=1 cues=1
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=1
+◇ Test trackIndexValidationIsSharedByTranscriptAndCaptions() started.
+◇ Test transcriptAndCaptionSchemasExposeTrackIndex() started.
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=1 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=0 suggested=0 trusted_pause=0 hard=1 protected_ranges=1 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test ownershipIgnoresDuplicatePrefixAcrossWideGap() passed after 0.030 seconds.
+✔ Test ownershipKeepsNaturalRepetitionWhenRecognitionWindowsDoNotOverlap() passed after 0.030 seconds.
+✔ Test preservesShortNaturalCJKRepetition() passed after 0.030 seconds.
+✔ Test trimsRepeatedSuffixBeforeAlignment() passed after 0.030 seconds.
+✔ Suite "Voxella local model inference" passed after 0.031 seconds.
+✔ Test qualityLeavesCrossSpanPrefixesForOwnership() passed after 0.030 seconds.
+✔ Test trimsDegenerateInteriorCJKRunBeforeAlignment() passed after 0.030 seconds.
+✔ Test knownTextAlignmentPreservesProvidedSpeakerBoundaries() passed after 0.030 seconds.
+✔ Test cascadePromptStaysSimpleAndPassesNeighboringBatches() passed after 0.030 seconds.
+✔ Test processingOptionsClipAndTranslationMapIntoMediaFlow() passed after 0.030 seconds.
+✔ Test workbenchTrackSelectionFallsBackSafely() passed after 0.030 seconds.
+✔ Test generalSummaryTemplateRequiresDetailsWhenSpecificsRemain() passed after 0.030 seconds.
+✔ Test transcriptionAIAccessPromptOnlyPrecedesBasicLocalTranscription() passed after 0.030 seconds.
+✔ Test templateSummarySanitizeMarkdownDropsEmptyHeadings() passed after 0.030 seconds.
+✔ Test transformsText() passed after 0.030 seconds.
+✔ Test dubChunkingIsLanguageNeutralAndBounded() passed after 0.030 seconds.
+✔ Test ownershipStripsOnlyProvenOverlapFromSharedRecognitionContext() passed after 0.031 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+✔ Test ownershipDoesNotEraseTrueRepeatsInSharedContext() passed after 0.034 seconds.
+✔ Test subtitleReadabilityLimitsMatchPostprocessDefaults() passed after 0.033 seconds.
+✔ Test ownershipStripsShortAdjacentDuplicatePrefixFromLaterSpan() passed after 0.034 seconds.
+✔ Test smallBoundaryDriftRemainsRecoverable() passed after 0.034 seconds.
+✔ Suite "Configured LLM structured output integration" passed after 0.035 seconds.
+✔ Test basicTranscriptionCommitKeepsTimedSegmentsWithoutSubtitleTrack() passed after 0.034 seconds.
+✔ Test ownershipKeepsLaterSpanWhenCJKOverlapIsLong() passed after 0.034 seconds.
+✔ Test parsesAndCleansTimedCues() passed after 0.034 seconds.
+✔ Test changingSubtitlesPreservesTheUnchosenTranscriptAfterReload() passed after 0.034 seconds.
+✔ Test transcriptionAlignmentDiagnosticsPersistWithoutBreakingLegacyJobs() passed after 0.034 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test mapsSecondsThroughClipPlacement() passed after 0.035 seconds.
+✔ Test clampsPhraseRunningPastClipEnd() passed after 0.035 seconds.
+✔ Test postprocessingConvertsTimedWordsWithoutChangingTimingOrSpeakers() passed after 0.035 seconds.
+✔ Test subtitleTimingPartitionerPreservesSourceCoverageWithAnchors() passed after 0.035 seconds.
+✔ Test transcriptionRequiresBothLLMRoutesForTranslation() passed after 0.035 seconds.
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+✔ Test transformForResolvesEachBox() passed after 0.035 seconds.
+✔ Test rejectsInvalidCueRanges() passed after 0.035 seconds.
+✔ Test progressEventsRoundTripWithSSEStyleFields() passed after 0.036 seconds.
+✔ Test normalizesChineseAndCantoneseHintsForASRAndOutput() passed after 0.036 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test curatedProviderPresetsProvideCompatibleBaseURLsAndEditableDefaults() passed after 0.040 seconds.
+✔ Test changingTranscriptPreservesTheUnchosenSubtitles() passed after 0.040 seconds.
+✔ Test oneBadTailDoesNotDiscardStableInterior() passed after 0.040 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=2 skipped=0 cues=1
+✔ Test outOfSliceTimestampsCannotBecomeSuccessfulClampedWords() passed after 0.042 seconds.
+✔ Test subtitleTrackMarksKnownSpeakerChangesWhenConvertedToTranscript() passed after 0.042 seconds.
+✔ Test translationPacksUnpunctuatedFragmentsAndCutsOnGaps() passed after 0.042 seconds.
+✔ Test dropsPhraseEntirelyBeforeTrimIn() passed after 0.042 seconds.
+✔ Test retryPreservesOriginalUnequalDurationSpans() passed after 0.042 seconds.
+✔ Test interiorDisorderDoesNotQualifyAsEdgeRecovery() passed after 0.042 seconds.
+✔ Test clampsPhraseSpanningTrimmedClip() passed after 0.042 seconds.
+✔ Test failedSingleSpanDoesNotInventTextAudioBoundaries() passed after 0.042 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+✔ Test subtitleTimingPartitionerAnchoredRangesRejectMissingAnchors() passed after 0.044 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+✔ Test shortSpanStillRejectsAnExcessivelyLongWord() passed after 0.045 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test dubVoiceAssignmentsPreferSegmentThenSpeakerThenSession() passed after 0.047 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+✔ Test dubFlowsAlwaysAlignRenderedSpeechBeforeSubtitleSegmentation() passed after 0.049 seconds.
+✔ Test mapsWordEndingAtClipBoundary() passed after 0.049 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=2
+✔ Test transcriptionFlowSkipsSubtitlesByDefaultAndHonorsAnExplicitRequest() passed after 0.050 seconds.
+✔ Test distributesTimeByCharacterCount() passed after 0.051 seconds.
+✔ Test cascadeNeighboringContextKeepsTheNearestWindow() passed after 0.050 seconds.
+✔ Test splitsAtClauseWhenNoSentence() passed after 0.051 seconds.
+✔ Test enforcesMinimumDurationWithoutShiftingLaterPhrases() passed after 0.051 seconds.
+✔ Test capsWordsPerCaption() passed after 0.051 seconds.
+✔ Test providerProfilesAreEndpointScopedAndRequireTransportSecurity() passed after 0.050 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+✔ Test checkboxControlsSegmentationIndependentlyOfAIAvailability() passed after 0.052 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+✔ Test completedRetranscriptionReplacesArtifactsOnlyOnSuccessAndMarksCompletedDubsOutdated() passed after 0.054 seconds.
+✔ Test splitsAtSentenceBoundary() passed after 0.054 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test phrasesFromWordsUseOnlyPassedWords() passed after 0.056 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=2 layout_overflow=0
+✔ Test translationDoesNotPackAcrossSpeakerChanges() passed after 0.056 seconds.
+✔ Test transcriptionWithoutLLMAccessSkipsRequestedTranslation() passed after 0.056 seconds.
+✔ Test maxWordsStillPrefersSentenceBoundary() passed after 0.056 seconds.
+✔ Test standaloneSubtitlePreparationUsesOnlyTheReusableSubtitleStage() passed after 0.057 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test textInstructionsPreserveLayerOrderAcrossCaptionBoundaries() passed after 0.057 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+✔ Test sessionTitleDefaultsToFilenameAndSurvivesPersistence() passed after 0.058 seconds.
+✔ Test keepsPunctuatedTokensIntact() passed after 0.058 seconds.
+✔ Test renderedDubSegmentsExposeASubtitleTrackWithTimingAndSpeakers() passed after 0.058 seconds.
+✔ Test oldCodableDataDoesNotClaimAlignedTiming() passed after 0.058 seconds.
+✔ Test boundaryProjectionIsLosslessAndRejectsAmbiguousMatches() passed after 0.058 seconds.
+✔ Test splitsAtMidWordWhenNoPunctuation() passed after 0.058 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=recovered matched=1 skipped=1 cues=1
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=4 skipped=0 cues=1
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test denseWordTimingsKeepNextPhraseStart() passed after 0.060 seconds.
+✔ Test carriesWordTimingsAndAnimation() passed after 0.060 seconds.
+✔ Test ambiguousProtectionIsIgnored() passed after 0.060 seconds.
+✔ Test subtitleTimingPartitionerInterpolatesWhenAnyAnchorIsMissing() passed after 0.060 seconds.
+✔ Test templateSummaryPassesTemplateRequirementsToTheLocalModel() passed after 0.060 seconds.
+✔ Test localCloudSyncStateSurvivesPersistence() passed after 0.060 seconds.
+✔ Test translationSpottingRejectsRewrittenLines() passed after 0.061 seconds.
+✔ Test standaloneSubtitlePreparationTurnsLegacyAutoDiarizationOffBeforeRetrying() passed after 0.060 seconds.
+✔ Test presentationBreaksNeverChangeCanonicalText() passed after 0.061 seconds.
+✔ Test localOpenAICompatibleProviderPresetsCoverCommonRuntimes() passed after 0.060 seconds.
+✔ Test translationFlowsPrepareUnverifiedTimedSegmentsBeforeTranslation() passed after 0.060 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=3 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test keepsSegmentWholeWhenItFits() passed after 0.061 seconds.
+[llm] NOTICE: subtitle elastic batch mode=projected matched=2 skipped=0 cues=2
+[llm] NOTICE: subtitle elastic batch mode=projected matched=3 skipped=0 cues=3
+✔ Test boundaryOptimizerEnforcesLimitsWithoutBreakingGraphemes() passed after 0.063 seconds.
+✔ Test keepsOverlongSingleWord() passed after 0.062 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=4 terminal=2 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=3 skipped=0 cues=4
+✔ Test shortCompletePhrasesAreNotMergedToFillLayout() passed after 0.065 seconds.
+✔ Test inaccurateSpeakerLabelsAndEstimatedPausesAreSoft() passed after 0.065 seconds.
+✔ Test packsShortTurnsAndDoesNotIndexSubtitleCues() passed after 0.065 seconds.
+✔ Test templateSummarySanitizeMarkdownKeepsHeadingsWithContent() passed after 0.065 seconds.
+✔ Test writesInt16InterleavedBufferWithoutParamError() passed after 0.065 seconds.
+✔ Test keepsCanonicalPunctuationSeparateFromSubtitleDisplayText() passed after 0.064 seconds.
+✔ Test renamingSpeakerPreservesStableTimingAcrossTranscriptAndSubtitleTrack() passed after 0.064 seconds.
+✔ Test missingWordTimesUseEstimatedLocalTiming() passed after 0.065 seconds.
+✔ Test punctuationCannotMoveNaIntoPreviousCue() passed after 0.065 seconds.
+✔ Test mergesATinyTailWithinTheSoftCapWithoutSplittingSubtitleCues() passed after 0.064 seconds.
+✔ Test buildsCaptionSpecsFromImmutableInput() passed after 0.064 seconds.
+✔ Test visibleClipsListsTopDownAndCollapsesCaptionGroups() passed after 0.066 seconds.
+✔ Suite ProductionSubtitleReplayTests passed after 0.067 seconds.
+✔ Test fittedTranscriptRetainsDenseWordsAtMediaTail() passed after 0.065 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=2 skipped=0 cues=2
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test graphemesAndTextArePreservedAcrossScripts() passed after 0.067 seconds.
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+✔ Test largeCaptionSelectionResolvesWithinInteractionBudget() passed after 0.070 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+✔ Test badLengthCompliantHintsCannotSplitProtectedChinesePhrase() passed after 0.073 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+[llm] NOTICE: subtitle elastic decisions cues=3 terminal=0 suggested=2 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=1 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=3 skipped=0 cues=3
+[llm] NOTICE: subtitle elastic reflow input_cues=2 output_cues=2 long_cues=0
+[llm] NOTICE: subtitle elastic decisions cues=3 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=3 output_cues=3 long_cues=3
+[llm] NOTICE: subtitle elastic decisions cues=3 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=4 terminal=2 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Suite "Transcription quality processing" passed after 0.082 seconds.
+[llm] NOTICE: subtitle elastic reflow input_cues=4 output_cues=4 long_cues=1
+✔ Suite "Voxella local-first workbench" passed after 0.083 seconds.
+✔ Suite CaptionCaseTests passed after 0.083 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+✔ Test translationRepairsOnlyMissingCuesAndKeepsFullContext() passed after 0.085 seconds.
+✔ Test cancellationDuringInferenceDoesNotCommitFallback() passed after 0.085 seconds.
+✔ Suite "WeMM subtitle parsing" passed after 0.086 seconds.
+✔ Suite "Independent session display languages" passed after 0.086 seconds.
+✔ Suite "CaptionBuilder" passed after 0.086 seconds.
+✔ Test punctuatingASREnginesSkipCorrectionAndOnlySegment(_:) with 2 test cases passed after 0.086 seconds.
+✔ Test translationBindsOutputToSourceUnitTimeAndDropsLeakedIDs() passed after 0.086 seconds.
+✔ Test translationPreservesCueIdentityTimingAndDurationBudgets() passed after 0.085 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+✔ Test automaticChoiceRequiresBYOKAndConnectedSubtitleProvider() passed after 0.087 seconds.
+✔ Test whisperEnglishCorrectsThenSegments() passed after 0.088 seconds.
+✔ Test whisperNonEnglishStillCorrectsThenSegments() passed after 0.088 seconds.
+✔ Test legacySubtitleMigrationRunsOnlyOnce() passed after 0.087 seconds.
+✔ Test subtitleProcessorAllowsContinuationLinesWithoutPunctuation() passed after 0.088 seconds.
+✔ Test subtitleClientSetupFailureCompletesWithWarning() passed after 0.087 seconds.
+✔ Test structuredOutputDecoderUsesFinalJSONAfterReasoning() passed after 0.088 seconds.
+✔ Test translationReordersValidCueIDsWithoutChangingSourceTimeline() passed after 0.088 seconds.
+✔ Test localSubtitleFlowCompletesWithoutConstructingAnLLMClient() passed after 0.087 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=2 output_cues=2 long_cues=0
+✔ Suite "CompositionBuilder.buildVisuals — instructions" passed after 0.091 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=2 output_cues=2 long_cues=0
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+✔ Test translationShrinksACompletelyInvalidBatchUntilRecoverable() passed after 0.093 seconds.
+✔ Test subtitleProcessorDoesNotRejectPunctuationByScript() passed after 0.094 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+✔ Test subtitleRebuildCutsBeforeAnOverlongCueGroup() passed after 0.094 seconds.
+✔ Test localCaptionsSupportDenseScriptsAndMissingWordTimings() passed after 0.095 seconds.
+✔ Suite "Session index lexical search" passed after 0.096 seconds.
+✔ Suite TranscriptionAudioFormatTests passed after 0.096 seconds.
+✔ Suite "Transcript segment aggregation" passed after 0.096 seconds.
+✔ Suite CaptionSpecBuilderTests passed after 0.096 seconds.
+✔ Suite "ToolExecutor — clip handlers" passed after 0.096 seconds.
+✔ Test correctedSubtitleOutputMapsWordTimingBeforeTranscriptAggregation() passed after 0.094 seconds.
+✔ Test subtitleSegmentationRecoversChangedTextWithoutRetry() passed after 0.095 seconds.
+✔ Suite InspectorClipSelectionTests passed after 0.096 seconds.
+✔ Test subtitleProcessorKeepsLLMTextWhenRemapIsUnanchored() passed after 0.095 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=2 output_cues=2 long_cues=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test subtitleSegmentationOptimizesOverlongAdviceWithoutRetry() passed after 0.097 seconds.
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test invalidSubtitleJSONUsesTimedTranscriptFallback() passed after 0.099 seconds.
+✔ Suite "Long-form alignment recovery" passed after 0.100 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+[llm] NOTICE: subtitle elastic reflow input_cues=2 output_cues=2 long_cues=0
+✔ Suite "LLM routing and resilience" passed after 0.102 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test subtitleProcessorIncludesNeighboringBatchesAsContext() passed after 0.101 seconds.
+✔ Test subtitleRequestFailureUsesTimedTranscriptFallback() passed after 0.100 seconds.
+[llm] NOTICE: subtitle elastic batch mode=projected matched=1 skipped=0 cues=1
+✔ Test whisperTranscriptionOnlyCreatesSubtitlesWhenSelected(enabled:) with 2 test cases passed after 0.101 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=1 output_cues=1 long_cues=0
+✔ Test subtitleProcessorUsesStableTimingAnchorsAndRetriesInvalidStructure() passed after 0.102 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test invalidSubtitleContentUsesTimedTranscriptFallback() passed after 0.102 seconds.
+✔ Test subtitleProcessorAcceptsNaturalTextWithoutForcedPunctuation() passed after 0.103 seconds.
+✔ Test lineAlignedTranslationRunsConcurrentBatches() passed after 0.102 seconds.
+✔ Test translationContextIsPlainTextWithoutSourceIndices() passed after 0.103 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test translatedLongCueUsesNaturalCutsAndEstimatedTiming() passed after 0.104 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=3 terminal=0 suggested=2 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=6 output_cues=6 long_cues=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test subtitleProcessorBoundsConcurrentBatchesAndRestoresSourceOrder() passed after 0.107 seconds.
+[llm] NOTICE: subtitle elastic reflow input_cues=3 output_cues=3 long_cues=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test subtitleTimingAlwaysCoversItsContinuousSourceWordsAfterSplitting() passed after 0.107 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test translationWindowsRunConcurrentlyAndKeepSourceOrder() passed after 0.109 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=2 terminal=1 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test compoundsAndInternalWhitespaceSurviveSpotting() passed after 0.111 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test localCaptionsMatchVideoEditorAndPreserveWordTimingAndSpeakers() passed after 0.116 seconds.
+✔ Suite SubtitleSegmentationTests passed after 0.118 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=3 suggested=4 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=6 skipped=0 cues=5
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=5 output_cues=5 long_cues=0
+✔ Test subtitleFallbackSplitsLongASRSegmentsByLength() passed after 0.154 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=8 terminal=2 suggested=7 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=8 skipped=0 cues=8
+[llm] NOTICE: subtitle elastic decisions cues=3 terminal=0 suggested=2 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic batch mode=projected matched=3 skipped=0 cues=3
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=3 suggested=4 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=8 terminal=2 suggested=7 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=3 terminal=0 suggested=2 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic reflow input_cues=16 output_cues=16 long_cues=0
+✔ Test subtitlePipelineKeepsLunaPunctuationThroughRemapAndRebuild() passed after 0.239 seconds.
+✔ Suite "Flexible media flows" passed after 0.240 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=3 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+✔ Test getTimelineListsDeviantCaptionClipsIndividually() passed after 0.349 seconds.
+✔ Test mediaMetadataFiltersCaptionSources() passed after 0.350 seconds.
+✔ Test updateTextCaptionGroupAcceptsRichTextStyleFields() passed after 0.348 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=1 terminal=0 suggested=0 trusted_pause=0 hard=0 protected_ranges=0 layout_overflow=0
+✔ Test linkedAndTrackTargetsChooseAudioSide() passed after 0.351 seconds.
+✔ Test manualSiblingIsPreservedAndAvoided() passed after 0.351 seconds.
+✔ Test updateTextCaptionGroupCollapsesToSummary() passed after 0.349 seconds.
+✔ Test actualRenderedPixelsHaveSafeMarginsAndSeparateLanguages() passed after 0.351 seconds.
+✔ Test preparationTracksTimelineValueInsteadOfRenderRevision() passed after 0.351 seconds.
+✔ Test explicitSelectionsCanChooseNonMasterMulticamMic() passed after 0.351 seconds.
+✔ Test largeCaptionSelectionResolvesWithinInteractionBudget() passed after 0.351 seconds.
+✔ Test migrationWorksWithoutLoadedSessionAndPreservesCustomPlacement() passed after 0.351 seconds.
+✔ Test sessionInsertionAddsLanguagesAboveTheSourceWithSharedAudioIdentity() passed after 0.351 seconds.
+✔ Test textEditingReflowsSiblingsAndUndoRestoresTheEntireLayout() passed after 0.351 seconds.
+✔ Test spatialEditingBecomesManualAndResetRestoresAutomatic() passed after 0.351 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+✔ Test geometryIncludesDecorationAndAnimation() passed after 0.351 seconds.
+✔ Test eachLaneUsesItsTallestCueAndDoesNotCollapseWhenHidden() passed after 0.351 seconds.
+✔ Test subtitlesFitSafelyWithStableLanguageOrder(width:height:) with 5 test cases passed after 0.351 seconds.
+✔ Test overflowDoesNotPartiallyRepositionAnyTrack() passed after 0.351 seconds.
+✔ Test getTimelineCollapsesCaptionGroups() passed after 0.351 seconds.
+✔ Test sameSessionOnDifferentAudioTracksGetsIndependentCaptionGroups() passed after 0.351 seconds.
+✔ Test bindingsSurviveSaveAndTimelineDuplication() passed after 0.351 seconds.
+✔ Suite "ToolExecutor — set_clip_properties" passed after 0.351 seconds.
+✔ Suite CaptionTargetTests passed after 0.351 seconds.
+✔ Test ambiguousLegacySessionNeverMergesDifferentAudioTracks() passed after 0.351 seconds.
+✔ Test unrelatedAudioTracksAreNotMovedEvenWhenTheyOverlap() passed after 0.352 seconds.
+✔ Test textClipPlacementNeverPrunesOtherEmptyTracks() passed after 0.351 seconds.
+✔ Test bulkNonOverwritingPlacementMutatesTimelineOnce() passed after 0.351 seconds.
+✔ Test getTimelineCapsCaptionRowsAndNotesPaging() passed after 0.352 seconds.
+✔ Test transcriptAndCaptionSchemasExposeTrackIndex() passed after 0.331 seconds.
+✔ Test phrasesIgnoreWordsOutsideCurrentClipFragments() passed after 0.350 seconds.
+✔ Test textClipsStayOnInsertedTrackWhenAClipIsOverwritten() passed after 0.351 seconds.
+✔ Suite "ToolExecutor — read-only handlers" passed after 0.353 seconds.
+✔ Suite CaptionProjectionTests passed after 0.352 seconds.
+✔ Test trackIndexValidationIsSharedByTranscriptAndCaptions() passed after 0.331 seconds.
+✔ Suite CaptionPlacementTests passed after 0.352 seconds.
+✔ Suite "Caption source layout" passed after 0.353 seconds.
+✔ Suite "get_transcript — param tolerance" passed after 0.352 seconds.
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=4 terminal=3 suggested=0 trusted_pause=0 hard=0 protected_ranges=2 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=4 terminal=3 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=4 terminal=2 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=4 terminal=3 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=4 terminal=3 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=4 terminal=3 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=4 terminal=3 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=2 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=3 terminal=2 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=5 terminal=4 suggested=0 trusted_pause=0 hard=0 protected_ranges=3 layout_overflow=0
+[llm] NOTICE: subtitle elastic decisions cues=6 terminal=5 suggested=0 trusted_pause=0 hard=0 protected_ranges=4 layout_overflow=0
+✔ Test replayMultilingualBenchmarkAndExportTwoLines() passed after 2.057 seconds.
+✔ Suite ElasticSubtitleTests passed after 2.059 seconds.
+✔ Test run with 176 tests in 28 suites passed after 2.060 seconds.

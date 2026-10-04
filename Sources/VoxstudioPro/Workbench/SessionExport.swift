@@ -662,7 +662,7 @@ enum SessionExportBuilder {
                 SessionExportSegment(
                     start: $0.start,
                     end: $0.end,
-                    text: $0.text,
+                    text: $0.displayText,
                     translationText: nil,
                     speaker: $0.speaker
                 )
@@ -676,7 +676,7 @@ enum SessionExportBuilder {
                 SessionExportSegment(
                     start: $0.start,
                     end: $0.end,
-                    text: $0.text,
+                    text: $0.displayText,
                     translationText: nil,
                     speaker: $0.speaker
                 )
@@ -691,11 +691,11 @@ enum SessionExportBuilder {
             return sourceCues.map { cue in
                 let translated = translatedCues.first(where: {
                     $0.sourceIDs.contains(cue.id) || $0.id == cue.id
-                })?.text ?? matchingTranslation(for: cue.start, end: cue.end, in: translatedCues)
+                })?.displayText ?? matchingTranslation(for: cue.start, end: cue.end, in: translatedCues)
                 return SessionExportSegment(
                     start: cue.start,
                     end: cue.end,
-                    text: cue.text,
+                    text: cue.displayText,
                     translationText: translated,
                     speaker: cue.speaker
                 )

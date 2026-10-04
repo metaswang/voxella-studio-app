@@ -45,6 +45,13 @@ struct SubtitlePostprocessPipeline: Sendable {
         options: SubtitleProcessingPayload,
         progress: @escaping @Sendable (Double, Int?, Int?, String) -> Void
     ) async throws -> SubtitlePostprocessResult {
+        if !transcript.words.contains(where: { $0.start?.isFinite == true && $0.end?.isFinite == true }) {
+            let track = try LocalSubtitleProcessor.process(transcript)
+            progress(1, 1, 1, "Subtitles segmented with estimated segment timing")
+            return SubtitlePostprocessResult(track: track, rebuiltSegments: track.cues.map {
+                TranscriptionSegment(text: $0.text, start: $0.start, end: $0.end, speaker: $0.speaker)
+            }, warnings: ["Word timestamps unavailable; used local segmentation with estimated segment timing."])
+        }
         let sourceWords = Self.makeSourceWords(from: transcript)
         guard !sourceWords.isEmpty else { throw MediaFlowError.missingTranscript }
 
@@ -152,6 +159,7 @@ struct SubtitlePostprocessPipeline: Sendable {
             throw MediaFlowError.invalidLLMOutput("No usable subtitle output for any batch.")
         }
 
+        cues = try Self.reflow(cues, sourceWords: sourceWords, languageCode: languageCode, options: options)
         let track = SubtitleTrack(
             sourceLanguage: languageCode,
             language: languageCode,
@@ -163,10 +171,19 @@ struct SubtitlePostprocessPipeline: Sendable {
                     start: cue.start,
                     end: cue.end,
                     speaker: cue.speaker,
-                    overBudget: cue.overBudget
+                    overBudget: cue.overBudget,
+                    timingQuality: cue.timingQuality,
+                    displayLineBreaks: ElasticSubtitleSegmenter.LayoutProfile().measure(cue.text).breaks,
+                    protectedSpans: cue.protectedSpans,
+                    boundaryBefore: cue.sourceIndices.first.flatMap { id in sourceWords.firstIndex { $0.index == id } }
+                        .map { (Self.isHardBoundary(at: $0, words: sourceWords)
+                            || (index > 0 && cues[index - 1].speaker != cue.speaker
+                                && sourceWords[$0].timingQuality == .aligned
+                                && (sourceWords[$0].speakerConfidence ?? 0) >= 0.9)) ? SpeakerBoundary.hard : SpeakerBoundary.none }
                 )
             },
-            usesWordTimestamps: true
+            usesWordTimestamps: true,
+            processingVersion: ElasticSubtitleSegmenter.processingVersion
         )
         let rebuilt = Self.rebuildSegments(from: cues, languageCode: languageCode)
 
@@ -180,6 +197,12 @@ struct SubtitlePostprocessPipeline: Sendable {
         from transcript: TranscriptionResult,
         options: SubtitleProcessingPayload = SubtitleProcessingPayload()
     ) -> SubtitlePostprocessResult? {
+        if !transcript.words.contains(where: { $0.start?.isFinite == true && $0.end?.isFinite == true }) {
+            guard let track = try? LocalSubtitleProcessor.process(transcript) else { return nil }
+            return SubtitlePostprocessResult(track: track, rebuiltSegments: track.cues.map {
+                TranscriptionSegment(text: $0.text, start: $0.start, end: $0.end, speaker: $0.speaker)
+            }, warnings: ["Word timestamps unavailable; used local segmentation with estimated segment timing."])
+        }
         let sourceWords = makeSourceWords(from: transcript)
         guard !sourceWords.isEmpty else { return nil }
 
@@ -201,12 +224,13 @@ struct SubtitlePostprocessPipeline: Sendable {
             )
             guard !batchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
 
-            let subtitles = SubtitleReadabilityPolicy.splitTextByLength(
-                batchText,
-                languageCode: languageCode,
-                denseScript: isCJK,
-                limits: limits
-            )
+            guard let optimized = try? ElasticSubtitleSegmenter.optimize(.init(
+                text: batchText, languageCode: languageCode,
+                anchors: ElasticSubtitleSegmenter.anchors(text: batchText, words: words.map(\.transcriptionWord)),
+                start: words.first?.start, end: words.last?.end,
+                maximumCharacters: options.maximumCharactersPerCue, policy: options.boundaryPolicy
+            )) else { return nil }
+            let subtitles = optimized.lines
             guard !subtitles.isEmpty else { continue }
 
             let tokens = SubtitleTokenRemapper.buildDestinationTokens(
@@ -239,6 +263,8 @@ struct SubtitlePostprocessPipeline: Sendable {
 
         guard !cues.isEmpty else { return nil }
 
+        guard let reflowed = try? reflow(cues, sourceWords: sourceWords, languageCode: languageCode, options: options) else { return nil }
+        cues = reflowed
         let track = SubtitleTrack(
             sourceLanguage: languageCode,
             language: languageCode,
@@ -250,10 +276,19 @@ struct SubtitlePostprocessPipeline: Sendable {
                     start: cue.start,
                     end: cue.end,
                     speaker: cue.speaker,
-                    overBudget: cue.overBudget
+                    overBudget: cue.overBudget,
+                    timingQuality: cue.timingQuality,
+                    displayLineBreaks: ElasticSubtitleSegmenter.LayoutProfile().measure(cue.text).breaks,
+                    protectedSpans: cue.protectedSpans,
+                    boundaryBefore: cue.sourceIndices.first.flatMap { id in sourceWords.firstIndex { $0.index == id } }
+                        .map { (Self.isHardBoundary(at: $0, words: sourceWords)
+                            || (index > 0 && cues[index - 1].speaker != cue.speaker
+                                && sourceWords[$0].timingQuality == .aligned
+                                && (sourceWords[$0].speakerConfidence ?? 0) >= 0.9)) ? SpeakerBoundary.hard : SpeakerBoundary.none }
                 )
             },
-            usesWordTimestamps: true
+            usesWordTimestamps: true,
+            processingVersion: ElasticSubtitleSegmenter.processingVersion
         )
         let rebuilt = rebuildSegments(from: cues, languageCode: languageCode)
         return SubtitlePostprocessResult(
@@ -313,6 +348,11 @@ struct SubtitlePostprocessPipeline: Sendable {
         var speaker: String?
         var speakerConfidence: Double?
         var speakerBoundary: SpeakerBoundary
+        var timingQuality: WordTimingQuality = .unknown
+        var transcriptionWord: TranscriptionWord {
+            TranscriptionWord(text: text, start: start, end: end, speaker: speaker,
+                speakerConfidence: speakerConfidence, speakerBoundary: speakerBoundary, timingQuality: timingQuality)
+        }
     }
 
     private struct PendingCue: Sendable {
@@ -323,6 +363,8 @@ struct SubtitlePostprocessPipeline: Sendable {
         var sourceIndices: [Int]
         var speaker: String?
         var overBudget: Bool
+        var timingQuality: SubtitleTimingQuality = .unknown
+        var protectedSpans: [String] = []
     }
 
     private struct BatchOutcome: Sendable {
@@ -337,19 +379,20 @@ struct SubtitlePostprocessPipeline: Sendable {
 
     private static func makeSourceWords(from transcript: TranscriptionResult) -> [SourceWord] {
         var words: [SourceWord] = []
-        for word in transcript.words {
+        for (sourceIndex, word) in transcript.words.enumerated() {
             guard let start = word.start, let end = word.end,
-                  start.isFinite, end.isFinite, end > start,
+                  start.isFinite, end.isFinite, end >= start,
                   !word.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
             words.append(
                 SourceWord(
-                    index: words.count,
+                    index: sourceIndex,
                     text: word.text.trimmingCharacters(in: .whitespacesAndNewlines),
                     start: start,
                     end: end,
                     speaker: SpeakerLabelResolver.normalized(word.speaker),
                     speakerConfidence: word.speakerConfidence,
-                    speakerBoundary: word.speakerBoundary
+                    speakerBoundary: word.speakerBoundary,
+                    timingQuality: word.timingQuality
                 )
             )
         }
@@ -401,15 +444,10 @@ struct SubtitlePostprocessPipeline: Sendable {
 
         for segment in segments {
             let speaker = SpeakerLabelResolver.dominant(in: sourceWords[segment].map(\.speaker))
-            let crossesSpeaker = current != nil
-                && currentSpeaker != nil
-                && speaker != nil
-                && speaker != currentSpeaker
-            let startsHardBoundary = sourceWords[segment.lowerBound].speakerBoundary == .hard
+            let startsHardBoundary = isHardBoundary(at: segment.lowerBound, words: sourceWords)
             if let open = current,
                currentCount >= segmentLimit
                 || open.count + segment.count > wordLimit
-                || crossesSpeaker
                 || startsHardBoundary {
                 batches.append(open)
                 current = nil
@@ -453,7 +491,7 @@ struct SubtitlePostprocessPipeline: Sendable {
             var speaker = sourceWords[start].speaker
             for index in (range.lowerBound + 1)..<range.upperBound {
                 let word = sourceWords[index]
-                if word.speaker != speaker || word.speakerBoundary == .hard {
+                if isHardBoundary(at: index, words: sourceWords) {
                     output.append(start..<index)
                     start = index
                     speaker = word.speaker
@@ -535,6 +573,8 @@ struct SubtitlePostprocessPipeline: Sendable {
 
     private struct SegmentationResponse: Decodable {
         let lines: [String]
+        let protectedSpans: [String]?
+        enum CodingKeys: String, CodingKey { case lines; case protectedSpans = "protected_spans" }
     }
 
     private func cascade(
@@ -678,13 +718,15 @@ struct SubtitlePostprocessPipeline: Sendable {
                 failureStage = .segmentation
                 continue
             }
-            let optimized = try SubtitleBoundaryOptimizer.optimize(
-                sourceText: sourceText, proposedLines: response.lines, dense: isCJK,
-                minimum: limits.minimum, preferred: limits.preferred, maximum: limits.maximum, policy: options.boundaryPolicy
-            )
-            if !optimized.projection.exact || optimized.forcedBoundaries > 0 {
-                Log.llm.notice("subtitle H1 mode=\(optimized.mode) matched=\(optimized.projection.matchedLines) skipped=\(optimized.projection.skippedLines) resyncs=\(optimized.projection.resyncs) forced=\(optimized.forcedBoundaries)")
-            }
+            let timed = words.map { $0.transcriptionWord }
+            let optimized = try ElasticSubtitleSegmenter.optimize(.init(
+                text: sourceText, languageCode: languageCode, proposedLines: response.lines,
+                protectedSpans: response.protectedSpans ?? [],
+                anchors: ElasticSubtitleSegmenter.anchors(text: sourceText, words: timed),
+                start: words.first?.start, end: words.last?.end,
+                maximumCharacters: options.maximumCharactersPerCue, policy: options.boundaryPolicy
+            ))
+            Log.llm.notice("subtitle elastic batch mode=\(optimized.projection.exact ? "projected" : "recovered") matched=\(optimized.projection.matchedLines) skipped=\(optimized.projection.skippedLines) cues=\(optimized.cues.count)")
             let subtitles = optimized.lines
             try Task.checkCancellation()
             if let reason = Self.segmentationFailureReason(
@@ -716,7 +758,8 @@ struct SubtitlePostprocessPipeline: Sendable {
                 subtitles: subtitles,
                 remap: remap,
                 words: words,
-                isCJK: isCJK
+                isCJK: isCJK,
+                protectedSpans: response.protectedSpans ?? []
             )
             guard cues.count == subtitles.count,
                   Self.cuesCoverSourceWords(cues, words: words) else {
@@ -733,9 +776,6 @@ struct SubtitlePostprocessPipeline: Sendable {
                 warnings.append(!recoveredBoundaries
                     ? "Ignored invalid LLM segmentation and used local subtitle boundaries."
                     : "Recovered safe subtitle boundaries after the LLM changed text.")
-            }
-            if optimized.forcedBoundaries > 0 {
-                warnings.append("Used grapheme boundaries to satisfy the subtitle length limit.")
             }
 
             if !remap.usesAnchorTiming {
@@ -792,11 +832,6 @@ struct SubtitlePostprocessPipeline: Sendable {
         guard subtitles.count <= sourceWordCount else {
             return "excessive_subtitle_count"
         }
-        if subtitles.contains(where: {
-            displayLength($0, isCJK: isCJK) > limits.maximum
-        }) {
-            return "overlong_subtitle_line"
-        }
         return nil
     }
 
@@ -838,9 +873,10 @@ struct SubtitlePostprocessPipeline: Sendable {
         subtitles: [String],
         remap: SubtitleRemapResult,
         words: [SourceWord],
-        isCJK: Bool
+        isCJK: Bool,
+        protectedSpans: [String] = []
     ) -> [PendingCue] {
-        let partitions = SubtitleTimingPartitioner.partition(
+        let partitions = SubtitleTimingPartitioner.losslessLexicalRanges(cueTexts: subtitles, sourceTexts: words.map(\.text)) ?? SubtitleTimingPartitioner.partition(
             cueCount: subtitles.count,
             sourceWordCount: words.count,
             anchorRanges: remap.sourceAnchorRangesBySubtitle,
@@ -861,7 +897,9 @@ struct SubtitlePostprocessPipeline: Sendable {
                     end: max(first.start, last.end),
                     sourceIndices: words[sourceRange].map(\.index),
                     speaker: SpeakerLabelResolver.dominant(in: tokens.map(\.speaker)),
-                    overBudget: false
+                    overBudget: false,
+                    timingQuality: SubtitleTimingQuality.aggregate(words[sourceRange].map(\.timingQuality)),
+                    protectedSpans: protectedSpans
                 )
             )
         }
@@ -905,6 +943,49 @@ struct SubtitlePostprocessPipeline: Sendable {
             }
         }
         return true
+    }
+
+    private static func isHardBoundary(at index: Int, words: [SourceWord]) -> Bool {
+        ElasticSubtitleSegmenter.hardBoundary(
+            previous: index > 0 ? words[index - 1].transcriptionWord : nil,
+            current: words[index].transcriptionWord)
+    }
+
+    /// Processing batches are not subtitle barriers. Reflow each continuous
+    /// speaker run after all corrections and suggestions have been gathered.
+    private static func reflow(_ input: [PendingCue], sourceWords: [SourceWord],
+                               languageCode: String?, options: SubtitleProcessingPayload) throws -> [PendingCue] {
+        var groups: [[PendingCue]] = []
+        for cue in input {
+            let hard = cue.sourceIndices.first.flatMap { id in sourceWords.firstIndex { $0.index == id } }
+                .map { isHardBoundary(at: $0, words: sourceWords) } ?? false
+            if groups.isEmpty || hard { groups.append([cue]) }
+            else { groups[groups.count - 1].append(cue) }
+        }
+        var output: [PendingCue] = []
+        for group in groups {
+            try Task.checkCancellation()
+            let ids = Set(group.flatMap(\.sourceIndices))
+            let words = sourceWords.filter { ids.contains($0.index) }
+            guard let first = words.first, let last = words.last else { continue }
+            let text = ElasticSubtitleSegmenter.joinChunks(group.map(\.text), languageCode: languageCode)
+            let protections = Array(Set(group.flatMap(\.protectedSpans)))
+            let optimized = try ElasticSubtitleSegmenter.optimize(.init(
+                text: text, languageCode: languageCode, proposedLines: group.map(\.text),
+                protectedSpans: protections,
+                anchors: ElasticSubtitleSegmenter.anchors(text: text, words: words.map(\.transcriptionWord)),
+                start: first.start, end: last.end, maximumCharacters: options.maximumCharactersPerCue, policy: options.boundaryPolicy))
+            let remap = SubtitleTokenRemapper.remap(
+                sourceWords: words.map { SubtitleRemapSourceWord(text: $0.text, start: $0.start, end: $0.end, speaker: $0.speaker) },
+                destinationTokens: SubtitleTokenRemapper.buildDestinationTokens(fromSubtitles: optimized.lines, languageCode: languageCode),
+                batchStart: first.start, batchEnd: last.end, languageCode: languageCode)
+            let cues = makeCues(subtitles: optimized.lines, remap: remap, words: words,
+                                isCJK: usesDenseScript(languageCode: languageCode, sampleText: text), protectedSpans: protections)
+            guard cuesCoverSourceWords(cues, words: words) else { throw MediaFlowError.invalidLLMOutput("Elastic reflow lost source word ownership.") }
+            output.append(contentsOf: cues)
+        }
+        Log.llm.notice("subtitle elastic reflow input_cues=\(input.count) output_cues=\(output.count) long_cues=\(output.filter { $0.end - $0.start > 8 }.count)")
+        return output
     }
 
     // MARK: - Rebuild

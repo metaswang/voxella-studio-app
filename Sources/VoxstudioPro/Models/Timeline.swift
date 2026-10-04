@@ -11,6 +11,8 @@ struct TimelineViewState: Codable, Sendable, Equatable {
     var playheadFrame: Int = 0
     var zoomScale: Double = Defaults.pixelsPerFrame
     var scrollOffsetX: Double = 0
+    /// Nil identifies legacy projects, whose minimum zoom can be recognized on layout.
+    var autoFit: Bool? = nil
 }
 
 struct Timeline: Codable, Sendable, Equatable, Identifiable {
@@ -247,6 +249,8 @@ struct Clip: Codable, Sendable, Equatable, Identifiable {
     var captionGroupId: String?
     var multicamGroupId: String?
     /// Source session identity for text clips projected from Workbench cues.
+    var sourcePlacementId: String?
+    var captionLayout: CaptionLayoutBinding?
     var sourceSessionId: UUID?
     var sourceCueId: Int?
     var sourceCueScope: ClipSourceScope?
@@ -277,7 +281,7 @@ struct Clip: Codable, Sendable, Equatable, Identifiable {
         case fadeInFrames, fadeOutFrames, fadeInInterpolation, fadeOutInterpolation
         case opacity, transform, crop, edgeRounding, edgeSoftness
         case linkGroupId, captionGroupId, multicamGroupId, textContent, textStyle, textAnimation, wordTimings
-        case sourceSessionId, sourceCueId, sourceCueScope
+        case sourceSessionId, sourceCueId, sourceCueScope, sourcePlacementId, captionLayout
         case textFillMode
         case opacityTrack, positionTrack, scaleTrack, rotationTrack, cropTrack, volumeTrack
         case effects, blendMode
@@ -436,6 +440,8 @@ extension Clip {
         id = UUID().uuidString
         linkGroupId = remap(linkGroupId)
         captionGroupId = remap(captionGroupId)
+        sourcePlacementId = remap(sourcePlacementId)
+        if let placement = remap(captionLayout?.source.placementId) { captionLayout?.source.placementId = placement }
     }
 
     /// Drops kfs past `durationFrames`. Call after any mutation that shrinks the clip.
@@ -562,6 +568,8 @@ extension Clip {
             linkGroupId: try? c.decode(String.self, forKey: .linkGroupId),
             captionGroupId: try? c.decode(String.self, forKey: .captionGroupId),
             multicamGroupId: try? c.decode(String.self, forKey: .multicamGroupId),
+            sourcePlacementId: try? c.decode(String.self, forKey: .sourcePlacementId),
+            captionLayout: try? c.decode(CaptionLayoutBinding.self, forKey: .captionLayout),
             sourceSessionId: try? c.decode(UUID.self, forKey: .sourceSessionId),
             sourceCueId: try? c.decode(Int.self, forKey: .sourceCueId),
             sourceCueScope: try? c.decode(ClipSourceScope.self, forKey: .sourceCueScope),

@@ -88,63 +88,81 @@ enum VoiceActivity {
             samples: analysisSamples,
             progress: { _, _, _ in }
         )
-        let analysis = Analysis(
-            chunkCount: chunkCount(for: analysisSamples.count),
-            segments: analysisResult.segments.map {
+        return repairingLongSilence(
+            in: samples,
+            sampleRate: sampleRate,
+            speechSpans: analysisResult.segments.map {
                 Span(start: Double($0.startTime), end: Double($0.endTime))
-            }
+            },
+            maximumSilenceSeconds: maximumSilenceSeconds
         )
-        guard !analysis.segments.isEmpty else { return samples }
-
-        let scale = Double(sampleRate) / Double(Self.sampleRate)
-        let maximumSilenceFrames = Int((maximumSilenceSeconds * Double(sampleRate)).rounded(.down))
-        let maximumLeadingFrames = Int((0.08 * Double(sampleRate)).rounded(.down))
-        let paddingFrames = Int((0.04 * Double(sampleRate)).rounded(.down))
-        var output: [Float] = []
-        output.reserveCapacity(samples.count)
-        var previousEnd = 0
-
-        for (index, span) in analysis.segments.enumerated() {
-            let rawStart: Int = max(0, Int((span.start * scale).rounded(.down)))
-            let rawEnd: Int = min(samples.count, Int((span.end * scale).rounded(.up)))
-            guard rawEnd > rawStart else { continue }
-
-            let startFrame: Int = max(0, rawStart - paddingFrames)
-            let endFrame: Int = min(samples.count, rawEnd + paddingFrames)
-            if index == 0 {
-                let leadingEnd: Int = min(startFrame, maximumLeadingFrames)
-                output.append(contentsOf: samples[0..<leadingEnd])
-                output.append(contentsOf: samples[startFrame..<endFrame])
-            } else {
-                let gapFrames: Int = max(0, startFrame - previousEnd)
-                let keptGapFrames: Int = min(gapFrames, maximumSilenceFrames)
-                let leadingGapFrames: Int = keptGapFrames / 2
-                let trailingGapFrames: Int = keptGapFrames - leadingGapFrames
-                if leadingGapFrames > 0 {
-                    output.append(contentsOf: samples[
-                        previousEnd..<(previousEnd + leadingGapFrames)
-                    ])
-                }
-                if trailingGapFrames > 0 {
-                    output.append(contentsOf: samples[
-                        (startFrame - trailingGapFrames)..<startFrame
-                    ])
-                }
-                output.append(contentsOf: samples[startFrame..<endFrame])
-            }
-            previousEnd = endFrame
-        }
-
-        let trailingEnd = min(samples.count, previousEnd + maximumLeadingFrames)
-        if trailingEnd > previousEnd {
-            output.append(contentsOf: samples[previousEnd..<trailingEnd])
-        }
-        let minimumPreservedFrames = Int(Double(samples.count) * 0.6)
-        guard output.count >= minimumPreservedFrames else { return samples }
-        return output.isEmpty ? samples : output
         #else
         throw MLXRuntime.Unavailable()
         #endif
+    }
+
+    /// VAD spans are in seconds, independent of the analysis sample rate.
+    static func repairingLongSilence(
+        in samples: [Float],
+        sampleRate: Int,
+        speechSpans: [Span],
+        maximumSilenceSeconds: Double = 0.35
+    ) -> [Float] {
+        guard !samples.isEmpty, sampleRate > 0,
+              maximumSilenceSeconds.isFinite, maximumSilenceSeconds >= 0 else {
+            return samples
+        }
+        let duration = Double(samples.count) / Double(sampleRate)
+        let paddingFrames = Int((0.04 * Double(sampleRate)).rounded(.down))
+        let boundaryFrames = Int((0.08 * Double(sampleRate)).rounded(.down))
+        let maximumGapFrames = Int((min(maximumSilenceSeconds, duration)
+            * Double(sampleRate)).rounded(.down))
+        let ranges = speechSpans.compactMap { span -> Range<Int>? in
+            guard span.start.isFinite, span.end.isFinite, span.end > span.start else {
+                return nil
+            }
+            let start = Int((min(duration, max(0, span.start))
+                * Double(sampleRate)).rounded(.down))
+            let end = Int((min(duration, max(0, span.end))
+                * Double(sampleRate)).rounded(.up))
+            guard end > start else { return nil }
+            return max(0, start - paddingFrames)..<min(samples.count, end + paddingFrames)
+        }.sorted { $0.lowerBound < $1.lowerBound }
+        var merged: [Range<Int>] = []
+        for range in ranges {
+            if let last = merged.last, range.lowerBound <= last.upperBound {
+                merged[merged.count - 1] = last.lowerBound..<max(last.upperBound, range.upperBound)
+            } else {
+                merged.append(range)
+            }
+        }
+        guard let first = merged.first, let last = merged.last else { return samples }
+
+        var output: [Float] = []
+        output.reserveCapacity(samples.count)
+        output.append(contentsOf: samples[max(0, first.lowerBound - boundaryFrames)..<first.lowerBound])
+        var previousEnd = first.lowerBound
+        for range in merged {
+            let keptGap = min(range.lowerBound - previousEnd, maximumGapFrames)
+            let leading = keptGap / 2
+            let trailing = keptGap - leading
+            output.append(contentsOf: samples[previousEnd..<(previousEnd + leading)])
+            output.append(contentsOf: samples[(range.lowerBound - trailing)..<range.lowerBound])
+            output.append(contentsOf: samples[range])
+            previousEnd = range.upperBound
+        }
+        output.append(contentsOf: samples[last.upperBound..<min(samples.count, last.upperBound + boundaryFrames)])
+
+        // Protect speech that VAD missed without rejecting repairs just because
+        // silence makes up more than 40% of the generated recording.
+        func energy(_ values: [Float]) -> Double {
+            values.reduce(0) { sum, sample in
+                guard sample.isFinite else { return sum }
+                return sum + Double(sample) * Double(sample)
+            }
+        }
+        guard energy(output) >= energy(samples) * 0.99 else { return samples }
+        return output
     }
 
     static func isDamagedMedia(_ error: Error) -> Bool {

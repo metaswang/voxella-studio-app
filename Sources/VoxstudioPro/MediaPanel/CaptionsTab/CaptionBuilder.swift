@@ -26,30 +26,24 @@ enum CaptionBuilder {
         language: String? = nil,
         characterBudget: Int? = nil
     ) -> [Phrase] {
-        let maximumCharacters = characterBudget
-            ?? SubtitleReadabilityPolicy.maximumCharacters(for: segment.text)
-        let accepts: (String) -> Bool = {
-            fits($0) && visibleLength($0) <= maximumCharacters
-        }
-        // Only phrases that fit visually and within the word cap are accepted; else, keep splitting.
-        let pieces: [String]
-        if !words.isEmpty, isDenseScript(segment.text) {
-            pieces = splitTimedWordUnits(
-                words,
-                fits: accepts,
-                maxWords: maxWords,
-                language: language
-            )
-        } else if let limit = maxWords {
-            let cap = max(1, limit)
-            pieces = split(segment.text, fits: { text in
-                accepts(text) && (isDenseScript(text) || wordCount(text) <= cap)
+        let text = segment.text
+        let anchors = ElasticSubtitleSegmenter.anchors(text: text, words: words)
+        guard let result = try? ElasticSubtitleSegmenter.optimize(.init(
+            text: text, languageCode: language, anchors: anchors, start: segment.start, end: segment.end,
+            maximumCharacters: characterBudget, maximumWords: maxWords), fits: fits) else { return [] }
+        let totalLength = max(1, result.cues.reduce(0) { $0 + $1.text.count })
+        var projectedLength = 0
+        return result.cues.map { cue in
+            let projectedStart = segment.start + (segment.end - segment.start) * Double(projectedLength) / Double(totalLength)
+            projectedLength += cue.text.count
+            let projectedEnd = segment.start + (segment.end - segment.start) * Double(projectedLength) / Double(totalLength)
+            let members = anchors.enumerated().filter { NSIntersectionRange($0.element.range, cue.range).length > 0 }
+            let start = members.first?.element.start ?? projectedStart
+            let end = members.last?.element.end ?? projectedEnd
+            return Phrase(text: cue.text, start: start, end: max(start + 0.001, end), words: members.map {
+                WordSpan(text: (text as NSString).substring(with: $0.element.range), start: $0.element.start, end: $0.element.end)
             })
-        } else {
-            pieces = split(segment.text, fits: accepts)
         }
-        let timed = time(pieces, segment: segment, words: words)
-        return enforceMinDuration(timed, minDuration: minDuration)
     }
 
     static func phrases(

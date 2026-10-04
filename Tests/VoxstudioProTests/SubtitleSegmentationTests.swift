@@ -151,7 +151,7 @@ private actor SubtitleModeLLMStub: LLMTextClient {
         let track = try LocalSubtitleProcessor.process(.init(text: chinese, language: "zh", words: words, segments: []))
         #expect(track.cues.count > 1)
         #expect(track.cues.map(\.text).joined() == chinese)
-        #expect(track.cues.allSatisfy { $0.text.count <= 18 && $0.speaker == "Host" })
+        #expect(track.cues.allSatisfy { ElasticSubtitleSegmenter.LayoutProfile().measure($0.text).fits && $0.speaker == "Host" })
 
         let english = "This is a long sentence without word timestamps that must still become several readable captions while preserving the recognized text exactly."
         let segmentTrack = try LocalSubtitleProcessor.process(.init(

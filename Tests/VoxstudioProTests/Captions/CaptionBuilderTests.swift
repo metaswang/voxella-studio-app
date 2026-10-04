@@ -77,7 +77,7 @@ struct CaptionBuilderTests {
         )
         #expect(phrases.map(\.text) == ["Okay,", "so I've been sleeping"])
         #expect(phrases.map(\.start) == [1.235, 1.430])
-        #expect(phrases[0].end == 1.430)
+        #expect(phrases[0].end == 1.413) // Retain the true word end rather than filling the audio gap.
     }
 
     @Test func phrasesFromWordsUseOnlyPassedWords() {

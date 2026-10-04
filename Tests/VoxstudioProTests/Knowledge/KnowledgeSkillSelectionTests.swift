@@ -8,12 +8,12 @@ struct KnowledgeSkillSelectionTests {
     func usesBoundedDedicatedPolicy() {
         let route = LLMModelRoute.default(for: .skillSelection)
 
-        #expect(route.primaryModel == "openai/gpt-5.4-nano")
+        #expect(route.primaryModel == "openai/gpt-5-nano")
         #expect(route.fallbackModels.isEmpty)
-        #expect(route.policy.timeoutSeconds == 8)
+        #expect(route.policy.timeoutSeconds == 15)
         #expect(route.policy.maximumAttemptsPerModel == 1)
         #expect(route.policy.initialBackoffSeconds == 0)
-        #expect(LLMRequestPolicy.minimumTimeoutSeconds(for: .skillSelection) == 3)
+        #expect(LLMRequestPolicy.minimumTimeoutSeconds(for: .skillSelection) == 15)
     }
 
     @Test
@@ -31,8 +31,8 @@ struct KnowledgeSkillSelectionTests {
     func byokSelectorRequestDisablesReasoningAndCapsOutput() {
         let configuration = LLMRuntimeConfiguration(
             profile: .defaultOpenAI,
-            modelIdentifier: "openai/gpt-5.4-nano",
-            modelName: "gpt-5.4-nano",
+            modelIdentifier: "openai/gpt-5-nano",
+            modelName: "gpt-5-nano",
             endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
             apiKey: "test-key",
             useCase: .skillSelection

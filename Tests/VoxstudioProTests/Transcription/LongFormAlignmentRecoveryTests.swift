@@ -57,7 +57,7 @@ struct LongFormAlignmentRecoveryTests {
         let aligner = Aligner { text, _ in
             if text == "one two three four" { return [] }
             return text.split(separator: " ").enumerated().map { index, unit in
-                AlignedWord(text: String(unit), startTime: Float(index) * 0.2, endTime: Float(index + 1) * 0.2)
+                AlignedWord(text: String(unit), startTime: (text == "three four" ? 0.5 : 0) + Float(index) * 0.2, endTime: (text == "three four" ? 0.5 : 0) + Float(index + 1) * 0.2)
             }
         }
         let result = try LongFormAlignmentEngine.alignDetailed(
@@ -121,5 +121,37 @@ struct LongFormAlignmentRecoveryTests {
         }.value
         #expect(cancelled)
     }
+    @Test func oneBadTailDoesNotDiscardStableInterior() throws {
+        let text = (0..<12).map { "word\($0)" }.joined(separator: " ")
+        let aligner = Aligner { text, samples in
+            let shift: Float = 0.5 // The reliable leading context is unchanged on tail retry.
+            return text.split(separator: " ").enumerated().map { index, unit in
+                let start: Float = index < 10 ? shift + Float(index) : shift + 12.1 + Float(index - 10) * 0.4
+                return AlignedWord(text: String(unit), startTime: start, endTime: start + 0.3)
+            }
+        }
+        let result = try LongFormAlignmentEngine.alignDetailed(audio: Array(repeating: 0, count: 1_600), sampleRate: 100,
+            spans: [.init(text: text, startTime: 2, endTime: 14)], language: "English", aligner: aligner, progress: { _, _ in })
+        #expect(aligner.requests.map(\.text) == [text, text])
+        #expect(result.coarseTimedUnitCount == 2)
+        #expect(result.retriedAlignmentChunkCount == 1)
+        #expect(result.timingQualities == Array(repeating: .aligned, count: 10) + [.estimated, .estimated])
+        #expect(abs(result.words[5].startTime - 7) < 0.01)
+        #expect(result.words.map(\.text).joined(separator: " ") == text)
+    }
+
+    @Test func interiorDisorderDoesNotQualifyAsEdgeRecovery() throws {
+        let text = (0..<12).map { "word\($0)" }.joined(separator: " ")
+        let aligner = Aligner { text, _ in text.split(separator: " ").enumerated().map { index, unit in
+            let start: Float = index == 5 ? -4 : Float(index)
+            return AlignedWord(text: String(unit), startTime: start, endTime: start + 0.4)
+        } }
+        let result = try LongFormAlignmentEngine.alignDetailed(audio: Array(repeating: 0, count: 1_200), sampleRate: 100,
+            spans: [.init(text: text, startTime: 0, endTime: 12)], language: "English", aligner: aligner, progress: { _, _ in })
+        #expect(aligner.requests.count == 1)
+        #expect(result.coarseTimedUnitCount == 12)
+        #expect(result.timingQualities.allSatisfy { $0 == .estimated })
+    }
+
 }
 #endif

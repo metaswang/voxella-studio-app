@@ -1,0 +1,2374 @@
+{
+  "cues" : [
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 0.9599999785423279,
+      "id" : 0,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 0,
+      "text" : "疗法是什么？",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 3.679999828338623,
+      "id" : 1,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 1.1200000047683716,
+      "text" : "然后可以为我们示范怎么做呢？",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 4.079999923706055,
+      "id" : 2,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 3.759999990463257,
+      "text" : "好吗？",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 6.559999942779541,
+      "id" : 3,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 4.319999694824219,
+      "text" : "我们来介绍易罐的一个动作。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 8.960000038146973,
+      "id" : 4,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 6.799999713897705,
+      "text" : "易罐的动作就是我们刚刚前面讲到，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 11.75999927520752,
+      "id" : 5,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 8.960000038146973,
+      "text" : "就是我们会在我的背部上背部，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 14.559999465942383,
+      "id" : 6,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 11.75999927520752,
+      "text" : "然后下到这个腰带以上这个地方，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 16.639999389648438,
+      "id" : 7,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 14.719999313354492,
+      "text" : "会一边各把我们。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 18.819999237060546,
+      "id" : 8,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 18,
+      "text" : "五个这个一关，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 21.68000030517578,
+      "id" : 9,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 18.96000099182129,
+      "text" : "然后新果果各打一个，总共十二个。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 25.280000686645508,
+      "id" : 10,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 21.760000228881836,
+      "text" : "动作的时候呢，你要做就是一个假设，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 28.15999984741211,
+      "id" : 11,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 25.280000686645508,
+      "text" : "我这边右边往这边过去的时候呢，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 29.360000610351562,
+      "id" : 12,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 28.239999771118164,
+      "text" : "屁股就要往这边过去，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 33.599998474121094,
+      "id" : 13,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 29.599998474121094,
+      "text" : "也就是你这个是也感觉上是上下分离啊。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 34.10000183105469,
+      "id" : 14,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 33.76000213623047,
+      "text" : "比如说，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 35.76000213623047,
+      "id" : 15,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 34.08000183105469,
+      "text" : "这边过去，我将扭。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 38.823936462402344,
+      "id" : 16,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 38.103939056396484,
+      "text" : "不讲你了。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 42.78800155639649,
+      "id" : 17,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 40.20800018310547,
+      "text" : "所以呢，有人一开始做会做的不太正确，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 46.52799987792969,
+      "id" : 18,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 42.768001556396484,
+      "text" : "会变成旁边这样这样摇，这个是不对的。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 46.847999572753906,
+      "id" : 19,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 46.52799987792969,
+      "text" : "为什么？",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 49.0880012512207,
+      "id" : 20,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 46.847999572753906,
+      "text" : "因为你脊椎是S型侧弯，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 52.04800033569336,
+      "id" : 21,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 49.0880012512207,
+      "text" : "所以你这边往这上半身往这边跑的时候，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 52.847999572753906,
+      "id" : 22,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 52.04800033569336,
+      "text" : "我要往这边过来；",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 53.88800048828125,
+      "id" : 23,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 52.847999572753906,
+      "text" : "下半身往这边跑的时候，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 55.24800109863281,
+      "id" : 24,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 53.88800048828125,
+      "text" : "我要往这边过来。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 57.407997131347656,
+      "id" : 25,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 55.24800109863281,
+      "text" : "所以你在做的姿势呢是这样交叉的做。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 59.72800064086914,
+      "id" : 26,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 57.407997131347656,
+      "text" : "那你如果是S型侧弯呢，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 61.08799743652344,
+      "id" : 27,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 59.72800064086914,
+      "text" : "基本上也可以，你就这样做，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 63.167999267578125,
+      "id" : 28,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 61.08799743652344,
+      "text" : "自然就会自动调整。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 64.04800415039062,
+      "id" : 29,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 63.167999267578125,
+      "text" : "所以就是这样的扭。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 70.31999969482422,
+      "id" : 30,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 68.08000183105469,
+      "text" : "这个扭起来，其实非常有意思。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 74.72000122070312,
+      "id" : 31,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 70.4800033569336,
+      "text" : "平常呢，你如果说想要保养你的脊椎，你也可以",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 78.4000015258789,
+      "id" : 32,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 74.72000122070312,
+      "text" : "这样子，没有拔罐，但是也可以这样左右的摇。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 81.60216522216797,
+      "id" : 33,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 79.93199920654297,
+      "text" : "那这个摇的时候呢，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 83.06356048583984,
+      "id" : 34,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 81.60216522216797,
+      "text" : "你的手肘的位置，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 84.73372650146484,
+      "id" : 35,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 83.06356048583984,
+      "text" : "你可以上下的移动。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 86.19512176513672,
+      "id" : 36,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 84.73372650146484,
+      "text" : "今天这个位置呢，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 87.6565170288086,
+      "id" : 37,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 86.19512176513672,
+      "text" : "就调到这个脊椎。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 89.74422454833984,
+      "id" : 38,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 87.6565170288086,
+      "text" : "如果说手肘上来一点点，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 91.62316131591797,
+      "id" : 39,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 89.74422454833984,
+      "text" : "再调到这方面的脊椎。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 94.12841033935547,
+      "id" : 40,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 91.62316131591797,
+      "text" : "所以你可以平常可以这样摇，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 96.21611785888672,
+      "id" : 41,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 94.12841033935547,
+      "text" : "这边上来也可以这样摇。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 98.72136688232422,
+      "id" : 42,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 96.21611785888672,
+      "text" : "好，这是一个非常舒服、对脊椎",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 101.43538665771484,
+      "id" : 43,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 98.72136688232422,
+      "text" : "保养非常好的一个简单的动作。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 106.23711395263672,
+      "id" : 44,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 101.43538665771484,
+      "text" : "然后再来就是再请吴医生我们示范毛毛虫运动怎么做。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 109.15990447998047,
+      "id" : 45,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 106.23711395263672,
+      "text" : "我们先来做毛毛虫运动给大家看。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 112.50023651123047,
+      "id" : 46,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 109.15990447998047,
+      "text" : "这个毛毛虫运动呢，就是我们手要伸直，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 115.42302703857422,
+      "id" : 47,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 112.50023651123047,
+      "text" : "伸直之后呢，然后这样身体这样扭。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 121.0598373413086,
+      "id" : 48,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 115.42302703857422,
+      "text" : "好，这个扭呢，我现在是做的做的扭给大家看，这样会比较比较清楚。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 123.14754486083984,
+      "id" : 49,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 121.0598373413086,
+      "text" : "等一下躺着做，做这样扭。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 126.27910614013672,
+      "id" : 50,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 123.14754486083984,
+      "text" : "这个扭的时候，你就你就以这个胯骨，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 127.94927215576172,
+      "id" : 51,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 126.27910614013672,
+      "text" : "这个没胯骨上下动。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 130.0369873046875,
+      "id" : 52,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 127.94927215576172,
+      "text" : "做的时候呢，你两手伸直，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 132.12469482421875,
+      "id" : 53,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 130.0369873046875,
+      "text" : "伸直之后呢，你一开始呢，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 135.25625610351562,
+      "id" : 54,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 132.12469482421875,
+      "text" : "你的这个双脚往下搬，好往下往下搬。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 138.3878173828125,
+      "id" : 55,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 135.25625610351562,
+      "text" : "然后呢，这个以这个胯骨这个上下动，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 140.47552490234375,
+      "id" : 56,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 138.3878173828125,
+      "text" : "这样子来扭动你的脊椎，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 142.77200317382812,
+      "id" : 57,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 140.47552490234375,
+      "text" : "左右这样扭摇摆个二十次。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 147.70474243164062,
+      "id" : 58,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 144.71994018554688,
+      "text" : "然后做完之后呢，这个两脚往上勾，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 149.83673095703125,
+      "id" : 59,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 147.70474243164062,
+      "text" : "然后再摇摆，你会发现呢，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 152.1819305419922,
+      "id" : 60,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 149.83673095703125,
+      "text" : "你这边这个往上勾的时候，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 155.5931396484375,
+      "id" : 61,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 152.1819305419922,
+      "text" : "你的摇摆跟你的那个往下扳的时候的",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 159.00433349609375,
+      "id" : 62,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 155.5931396484375,
+      "text" : "摇摆的拉的感觉、筋的感觉是不一样的。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 164.7607421875,
+      "id" : 63,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 159.00433349609375,
+      "text" : "这个呢，可以让我们的这个脊椎整个做一个全身性的脊椎的调理。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 168.17193603515625,
+      "id" : 64,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 164.7607421875,
+      "text" : "做一个，如果说没有一个脊椎侧弯的人，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 172.00953674316406,
+      "id" : 65,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 168.17193603515625,
+      "text" : "你平常保养的这样的脊椎其实是非常好的。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 176.9131317138672,
+      "id" : 66,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 172.00953674316406,
+      "text" : "最后是双手叉腰、臀部左右摇摆法，又是怎么样进行的呢？",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 177.33953857421875,
+      "id" : 67,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 176.9131317138672,
+      "text" : "我们",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 180.9639434814453,
+      "id" : 68,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 177.33953857421875,
+      "text" : "再来介绍双手叉腰这个臀部左右摇摆法。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 183.30914306640625,
+      "id" : 69,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 180.9639434814453,
+      "text" : "这个方法呢，其实有个重点，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 189.70513916015625,
+      "id" : 70,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 183.30914306640625,
+      "text" : "就是你的小腿要放在一个有点高的一个垫子上，大概可能大概二十公分、",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 191.19754028320312,
+      "id" : 71,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 189.70513916015625,
+      "text" : "三十公分都可以。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 193.54273986816406,
+      "id" : 72,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 191.19754028320312,
+      "text" : "然后呢，你这个双手叉腰啊，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 196.9539337158203,
+      "id" : 73,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 193.54273986816406,
+      "text" : "这个呢，手会放在我们的腰带这个地方，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 198.65953063964844,
+      "id" : 74,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 196.9539337158203,
+      "text" : "大概是髂骨的上面。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 201.6443328857422,
+      "id" : 75,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 198.65953063964844,
+      "text" : "然后，然后屁股将臀部将左右摇摆，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 203.56314086914062,
+      "id" : 76,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 201.6443328857422,
+      "text" : "只将左右啊，左右摇摆。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 209.95913696289062,
+      "id" : 77,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 203.56314086914062,
+      "text" : "然后摇摆个左右摇摆个那个来回十次之后呢，然后呢，这个手再往上移动，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 213.15713500976562,
+      "id" : 78,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 209.95913696289062,
+      "text" : "大概两指腹的位置，然后再左右摇摆。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 215.07594299316406,
+      "id" : 79,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 213.15713500976562,
+      "text" : "正中间，然后上面中间、",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 217.63433837890625,
+      "id" : 80,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 215.07594299316406,
+      "text" : "下面中间、上面中间、下面中间、",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 220.40594482421875,
+      "id" : 81,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 217.63433837890625,
+      "text" : "上面中间、下面来回这样做三回。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 222.53793334960938,
+      "id" : 82,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 220.40594482421875,
+      "text" : "我现在躺着示范给大家，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 224.4567413330078,
+      "id" : 83,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 222.53793334960938,
+      "text" : "在做的时候，两手叉腰，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 227.22833251953125,
+      "id" : 84,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 224.4567413330078,
+      "text" : "屁股抬，这个我们的臀部抬起啊。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 229.99993896484375,
+      "id" : 85,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 227.22833251953125,
+      "text" : "然后呢，我们这个将臀部左右摇。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 233.50399780273438,
+      "id" : 86,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 231.343994140625,
+      "text" : "记得以这个叉腰这个腰为支点，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 234.86399841308594,
+      "id" : 87,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 233.74400329589844,
+      "text" : "来回做十字。",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 237.1840057373047,
+      "id" : 88,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 235.10400390625,
+      "text" : "然后呢，这个背的时候，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 238.70399475097656,
+      "id" : 89,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 237.2639923095703,
+      "text" : "背的时候你可以稍微放松下，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 242.70399475097656,
+      "id" : 90,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 238.94400024414062,
+      "text" : "臀臀部放在那个床上，然后再继续做。",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 245.0240020751953,
+      "id" : 91,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 242.70399475097656,
+      "text" : "好，我们将做完十字之后，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 247.343994140625,
+      "id" : 92,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 245.0240020751953,
+      "text" : "然后再双手往上这个地方，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 250.86399841308594,
+      "id" : 93,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 247.343994140625,
+      "text" : "两指腹的位置，然后在中间，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 254.72399475097657,
+      "id" : 94,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 250.86399841308594,
+      "text" : "在在左右摇，然后再下来这边左右摇，",
+      "timingQuality" : "mixed"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 257.12400390625,
+      "id" : 95,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 255.82400512695312,
+      "text" : "然后再上面这边左右摇。",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 262.54400634765625,
+      "id" : 96,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 257.5039978027344,
+      "text" : "基本上呢，你的髂骨放在腰带这个位置呢，大概就是我的腰椎第四椎",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 264.4639892578125,
+      "id" : 97,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 262.78399658203125,
+      "text" : "脊椎容易出问题的位置，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 267.7439880371094,
+      "id" : 98,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 264.4639892578125,
+      "text" : "大概就是二三大概所谓三四五到附近。",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 269.42401123046875,
+      "id" : 99,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 267.90399169921875,
+      "text" : "我们在左右摇的时候呢，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 273.66400146484375,
+      "id" : 100,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 269.5039978027344,
+      "text" : "可以把这个脊椎左右把它筋骨左右两边筋骨把它摇开。",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 275.66400146484375,
+      "id" : 101,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 273.9840087890625,
+      "text" : "所以呢，摇开之后呢，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 277.42401123046875,
+      "id" : 102,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 275.66400146484375,
+      "text" : "你的髂坐关节面就可以打开，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 279.9840087890625,
+      "id" : 103,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 277.42401123046875,
+      "text" : "打开之后你的骨头慢慢就可以归位。",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 283.343994140625,
+      "id" : 104,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 280.1440124511719,
+      "text" : "但是这个做这个有个有个问题就是你要特别注意，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 285.343994140625,
+      "id" : 105,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 283.343994140625,
+      "text" : "如果说你做这个动作的时候，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 288.3039855957031,
+      "id" : 106,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 285.42401123046875,
+      "text" : "感觉腰的那个呃疼痛麻木的",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+        35
+      ],
+      "end" : 294.3840026855469,
+      "id" : 107,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 288.3840026855469,
+      "text" : "感觉有一些些感觉是比较加重的时候呢，这个动作可能对你不太适合，你可能就要暂时",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 295.2640075683594,
+      "id" : 108,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 294.3840026855469,
+      "text" : "停止这个动作。",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 301.1839904785156,
+      "id" : 109,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 295.2640075683594,
+      "text" : "摇摇摇一阵之后，其实就可以让你的脊椎左右要把慢慢把它归位，就这么简单。",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 303.42401123046875,
+      "id" : 110,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 301.343994140625,
+      "text" : "那谢谢吴医生为我们做的精彩示范。",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 306.1440124511719,
+      "id" : 111,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 303.66400146484375,
+      "text" : "我想为了预防脊椎侧弯恶化，",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 311.9840087890625,
+      "id" : 112,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 306.1440124511719,
+      "text" : "其实患者平常哦，因为我们就是躺啊、坐啊、卧啊，或者是我们",
+      "timingQuality" : "mixed"
+    },
+    {
+      "displayLineBreaks" : [
+        35
+      ],
+      "end" : 317.68400146484373,
+      "id" : 113,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 312.0639953613281,
+      "text" : "平常患者要怎么样注意，有哪些细节要特别注意，可不可以请吴医生为我们做一个提醒呢？",
+      "timingQuality" : "aligned"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 321.30793334960936,
+      "id" : 114,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 318.4639892578125,
+      "text" : "啊，第一个就是我们要维持良好的一个姿势，呃，其实。",
+      "timingQuality" : "mixed"
+    },
+    {
+      "displayLineBreaks" : [
+        34
+      ],
+      "end" : 327.2630310058594,
+      "id" : 115,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 321.2879333496094,
+      "text" : "姿势，呃，其实脊椎整体的脊椎侧弯，它不完全说是一个脊呃姿势不良所造成的。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 327.44976806640625,
+      "id" : 116,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 327.2630310058594,
+      "text" : "嗯。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 328.94354248046875,
+      "id" : 117,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 327.44976806640625,
+      "text" : "啊，这因为很奇怪哦，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 331.5576477050781,
+      "id" : 118,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 328.94354248046875,
+      "text" : "就是它在青春期的发展是很快的。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 337.3460388183594,
+      "id" : 119,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 331.5576477050781,
+      "text" : "好，就是有的没有过度的姿姿势不良，但是正确的姿势其实确实是可以防止",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 339.2132568359375,
+      "id" : 120,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 337.3460388183594,
+      "text" : "那个我们的脊椎恶恶化。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 341.640625,
+      "id" : 121,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 339.2132568359375,
+      "text" : "啊，好，所以这个是也是要注意的。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 345.7485046386719,
+      "id" : 122,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 341.640625,
+      "text" : "再来的话就是不要用长期时间就是维持同一个姿势，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 348.1759033203125,
+      "id" : 123,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 345.7485046386719,
+      "text" : "也就是说你不管再好的姿势呢，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 350.97674560546875,
+      "id" : 124,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 348.1759033203125,
+      "text" : "我们其实在啊在有脊椎侧弯的人呢，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 353.40411376953125,
+      "id" : 125,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 350.97674560546875,
+      "text" : "其实因为他坐久都会不太舒服。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 355.45806884765625,
+      "id" : 126,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 353.40411376953125,
+      "text" : "啊，因为他本来姿势不太对，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 356.95184326171875,
+      "id" : 127,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 355.45806884765625,
+      "text" : "如果说坐很久的话，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 358.63232421875,
+      "id" : 128,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 356.95184326171875,
+      "text" : "啊，就是要起来动一动，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 360.3128356933594,
+      "id" : 129,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 358.63232421875,
+      "text" : "或者呃经常伸展筋骨，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 361.9933166503906,
+      "id" : 130,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 360.3128356933594,
+      "text" : "就是这样的一个意思。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 363.8605651855469,
+      "id" : 131,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 361.9933166503906,
+      "text" : "再来的话就是注意睡姿，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 365.1676025390625,
+      "id" : 132,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 363.8605651855469,
+      "text" : "尽量不要趴着睡。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 366.661376953125,
+      "id" : 133,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 365.1676025390625,
+      "text" : "你如果趴着睡的话，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 369.0887756347656,
+      "id" : 134,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 366.661376953125,
+      "text" : "你这个呃颈椎会受到一个压迫。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 372.0763244628906,
+      "id" : 135,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 369.0887756347656,
+      "text" : "那另外呢，你的胸椎呢就是会往往下凹，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 377.3045349121094,
+      "id" : 136,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 372.0763244628906,
+      "text" : "会有这些问题，所以也会造成我们脊椎的一个不好一个状况出问题。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 380.66552734375,
+      "id" : 137,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 377.3045349121094,
+      "text" : "再的话就是我们避免背一个比较重的重物，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 384.96014404296875,
+      "id" : 138,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 380.66552734375,
+      "text" : "背重物的话其实对我们那个身体是一个呃是一个压力，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 386.2671813964844,
+      "id" : 139,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 384.96014404296875,
+      "text" : "所以要特别注意。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 388.5078430175781,
+      "id" : 140,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 386.2671813964844,
+      "text" : "再的话可能要避免某些运动，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 392.0555725097656,
+      "id" : 141,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 388.5078430175781,
+      "text" : "啊，比如说长跑啊，或者是跳芭蕾舞啊，运力体操，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 393.92279052734375,
+      "id" : 142,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 392.0555725097656,
+      "text" : "甚至游泳也不太建议游。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 395.6033020019531,
+      "id" : 143,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 393.92279052734375,
+      "text" : "那这个你会觉得说，哎，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 397.6572265625,
+      "id" : 144,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 395.6033020019531,
+      "text" : "游泳它不是对称性的游泳，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 400.644775390625,
+      "id" : 145,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 397.6572265625,
+      "text" : "对对我们的脊椎的这个平衡有帮助吗？",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 406.619873046875,
+      "id" : 146,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 400.644775390625,
+      "text" : "其实是这样子，因为你脊椎侧弯的人，他虽然说我们的呃游泳是一个对称性的",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 411.2879333496094,
+      "id" : 147,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 406.619873046875,
+      "text" : "一个动作，啊，比如自由式啊或者蛙式，但是因为他脊椎侧弯说。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 417.1037902832031,
+      "id" : 148,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 411.2879333496094,
+      "text" : "是因为它脊椎侧弯的时候，它力量会出现不平均，所以它用力的这这个手还是",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+        34
+      ],
+      "end" : 423.10137939453125,
+      "id" : 149,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 417.1037902832031,
+      "text" : "比较用力，所以会变成这个肌肉不对称的失力，最后导致脊椎侧弯反的没有好处，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 426.7362976074219,
+      "id" : 150,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 423.10137939453125,
+      "text" : "反而有时候会进行式的对它有点啊状况不太好，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 428.5537414550781,
+      "id" : 151,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 426.7362976074219,
+      "text" : "所以这个要特别注意的。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 432.73388671875,
+      "id" : 152,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 428.5537414550781,
+      "text" : "最后呢，就是要改变我们的一个饮食习惯，然后补充营养。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 436.9140319824219,
+      "id" : 153,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 432.73388671875,
+      "text" : "而根据研究发现，体重如果说过轻的，而且伴随那个容易",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 440.730712890625,
+      "id" : 154,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 436.9140319824219,
+      "text" : "伴随有骨质密度不足，所以容易伴随脊椎侧弯的呢，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 446.36480712890625,
+      "id" : 155,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 440.730712890625,
+      "text" : "根据研究有三十七到三十呃二十七到三十八percent的侧弯女性出现全身性的",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 450.36322021484375,
+      "id" : 156,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 446.36480712890625,
+      "text" : "一个骨密度不足，那尤其是我们侧弯度数比较严重的，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 453.0893859863281,
+      "id" : 157,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 450.36322021484375,
+      "text" : "它可能更高达四十七的骨密度不足。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 453.8163757324219,
+      "id" : 158,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 453.0893859863281,
+      "text" : "好，吴医生",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 458.3600158691406,
+      "id" : 159,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 453.8163757324219,
+      "text" : "今天讲的这个有关于脊椎侧弯的内容真的是非常精彩实用，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 461.2679443359375,
+      "id" : 160,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 458.3600158691406,
+      "text" : "那可不可以为我们简单做一个总结呢？",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 463.0719909667969,
+      "id" : 161,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 462.59197998046875,
+      "text" : "嗯，好的。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 463.8719787597656,
+      "id" : 162,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 463.23199462890625,
+      "text" : "基本上，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 466.11199951171875,
+      "id" : 163,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 463.9519958496094,
+      "text" : "脊椎侧弯的治疗其实是蛮麻烦的。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 469.23199462890625,
+      "id" : 164,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 466.1919860839844,
+      "text" : "我们刚刚提到，就是说，如果说你真的侧弯很严重，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 470.61197998046873,
+      "id" : 165,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 469.23199462890625,
+      "text" : "你可以找专门的医师，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 476.11199951171875,
+      "id" : 166,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 470.9119873046875,
+      "text" : "好来做一些由专门在脊椎侧弯矫正的医师来做治疗，尽量不开刀，",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 477.9519958496094,
+      "id" : 167,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 476.35198974609375,
+      "text" : "就以不开刀为主。",
+      "timingQuality" : "unknown"
+    },
+    {
+      "displayLineBreaks" : [
+
+      ],
+      "end" : 481.7919921875,
+      "id" : 168,
+      "overBudget" : false,
+      "sourceIDs" : [
+
+      ],
+      "start" : 478.031982421875,
+      "text" : "那你如果说我们刚刚介绍这三个方法，如果说你这样做起来对你有帮，",
+      "timingQuality" : "unknown"
+    }
+  ],
+  "language" : "zh",
+  "processingVersion" : "elastic-v1",
+  "sourceLanguage" : "zh",
+  "usesWordTimestamps" : true
+}

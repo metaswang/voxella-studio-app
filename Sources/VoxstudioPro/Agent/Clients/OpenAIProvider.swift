@@ -29,6 +29,7 @@ enum OpenAIRequestBody {
     ) -> [String: Any] {
         // Provider overrides may have been authored for Chat Completions.
         // Translate its parameter names while preserving native Responses options.
+        let modelName = LLMModelLifecycle.replacingRetiredModel(in: modelName)
         var overrides = extraBody
         let legacyEffort = overrides.removeValue(forKey: "reasoning_effort")
         let maxTokens = overrides.removeValue(forKey: "max_tokens")

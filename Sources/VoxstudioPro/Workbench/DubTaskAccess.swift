@@ -35,7 +35,9 @@ struct DubTaskRequest: Sendable {
                     reference: reference,
                     speakerReferences: speakerReferences,
                     segmentReferences: segmentReferences,
-                    timelineMode: .automatic,
+                    // Imported transcript times describe the source recording.
+                    // The workbench generates a standalone, continuous voiceover.
+                    timelineMode: .audioFlow,
                     seed: DubSeed.deterministic(
                         language: language,
                         text: "\(jobID.uuidString)\n\(script)"

@@ -202,6 +202,22 @@ extension LLMRuntimeConfiguration {
         var result = openAICompatibleRequestOptions.extraBody
         LLMJSONValue.deepMerge(profile.resolvedExtraBody, into: &result)
 
+        // A saved provider override may have been written for a different GPT
+        // model, including one replaced after retirement.
+        if let model = OpenAIChatModelID(LLMReasoningEffort.leafModelName(modelName)) {
+            let supported = model.supportedReasoningEfforts.map(\.rawValue)
+            if case let .string(effort)? = result["reasoning_effort"],
+               !supported.contains(effort) {
+                result["reasoning_effort"] = .string(lowestReasoningEffort.rawValue)
+            }
+            if case var .object(reasoning)? = result["reasoning"],
+               case let .string(effort)? = reasoning["effort"],
+               !supported.contains(effort) {
+                reasoning["effort"] = .string(lowestReasoningEffort.rawValue)
+                result["reasoning"] = .object(reasoning)
+            }
+        }
+
         // Gateway-specific reasoning fields can remain in persisted overrides
         // after a provider is changed. The official OpenAI Chat Completions
         // endpoint rejects those fields and accepts only `reasoning_effort`.

@@ -1437,7 +1437,7 @@
 "The AI service setup is invalid. Review the connection settings." = "The AI service setup is invalid. Review the connection settings.";
 "The selected AI service is no longer available. Review the connection settings." = "The selected AI service is no longer available. Review the connection settings.";
 "Add an API key in Settings > AI before running this flow." = "Add an API key in Settings > AI before running this flow.";
-"Set timeout between 3 and 1,800 seconds." = "Set timeout between 3 and 1,800 seconds.";
+"Set timeout between 15 and 1,800 seconds." = "Set timeout between 15 and 1,800 seconds.";
 "Set retry attempts between 1 and 4." = "Set retry attempts between 1 and 4.";
 "Set initial retry delay between 0 and 10 seconds." = "Set initial retry delay between 0 and 10 seconds.";
 "Keep at least one LLM provider." = "Keep at least one LLM provider.";

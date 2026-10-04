@@ -6,6 +6,7 @@ struct CaptionTab: View {
 
     @State private var style = EditorViewModel.CaptionRequest.defaultLocalStyle
     @State private var center = AppTheme.Caption.defaultCenter
+    @State private var customPosition = false
 
     @State private var selectedTrackId: String?
     @State private var selectedClipTargets: [String] = []
@@ -246,8 +247,8 @@ struct CaptionTab: View {
             previewBox
             HStack(spacing: AppTheme.Spacing.mdLg) {
                 Spacer(minLength: AppTheme.Spacing.xs)
-                posField("X", value: center.x) { center.x = $0 }
-                posField("Y", value: center.y) { center.y = $0 }
+                posField("X", value: center.x) { customPosition = true; center.x = $0 }
+                posField("Y", value: center.y) { customPosition = true; center.y = $0 }
             }
         }
     }
@@ -346,6 +347,7 @@ struct CaptionTab: View {
             autoDetect: isAutoSource,
             style: style,
             center: center,
+            automaticLayout: !customPosition,
             censorProfanity: false,
             locale: locale,
             maxWords: maxWords,

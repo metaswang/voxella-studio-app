@@ -5,6 +5,7 @@ enum CaptionSpecBuilder {
     struct Target: Sendable {
         let clip: Clip
         let result: TranscriptionResult
+        var source: CaptionSourceContext? = nil
     }
 
     struct Input: Sendable {
@@ -17,6 +18,7 @@ enum CaptionSpecBuilder {
         let textCase: EditorViewModel.CaptionCase
         let maxWords: Int?
         let animation: TextAnimation?
+        var automaticLayout = true
     }
 
     @concurrent
@@ -54,13 +56,13 @@ enum CaptionSpecBuilder {
                     words: $0.words
                 )
             }
-            specs.append(contentsOf: CaptionBuilder.specs(
+            var targetSpecs = CaptionBuilder.specs(
                 for: cased,
                 sourceClip: target.clip,
                 trackIndex: 0,
                 fps: input.fps,
                 style: input.style,
-                captionGroupId: groupId,
+                captionGroupId: groupId + "-" + (target.source?.placementId ?? target.clip.id),
                 animation: input.animation,
                 transformFor: { text in
                     guard !Task.isCancelled else { return nil }
@@ -72,7 +74,14 @@ enum CaptionSpecBuilder {
                         canvasHeight: input.canvasHeight
                     )
                 }
-            ))
+            )
+            if let source = target.source {
+                for index in targetSpecs.indices {
+                    targetSpecs[index].sourcePlacementId = source.placementId
+                    targetSpecs[index].captionLayout = CaptionLayoutBinding(source: source, automatic: input.automaticLayout)
+                }
+            }
+            specs.append(contentsOf: targetSpecs)
             try Task.checkCancellation()
         }
         return specs
@@ -84,13 +93,7 @@ enum CaptionSpecBuilder {
         canvasWidth: Int,
         canvasHeight: Int
     ) -> Bool {
-        let size = TextLayout.naturalSize(
-            content: text,
-            style: style,
-            maxWidth: .greatestFiniteMagnitude,
-            canvasHeight: CGFloat(canvasHeight)
-        )
-        return size.width <= CGFloat(canvasWidth) * AppTheme.ComponentSize.captionPreviewMaxTextWidthRatio
+        ElasticSubtitleSegmenter.LayoutProfile(style: style, canvasWidth: canvasWidth, canvasHeight: canvasHeight).measure(text).fits
     }
 
     private static func transform(

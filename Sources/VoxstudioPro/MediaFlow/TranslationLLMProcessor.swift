@@ -77,6 +77,9 @@ struct TranslationLLMProcessor: Sendable {
         struct Translation: Decodable, Sendable {
             let id: Int
             let text: String
+            let lines: [String]?
+            let protectedSpans: [String]?
+            enum CodingKeys: String, CodingKey { case id, text, lines; case protectedSpans = "protected_spans" }
         }
 
         let translations: [Translation]
@@ -193,14 +196,17 @@ struct TranslationLLMProcessor: Sendable {
                 end: source.end,
                 speaker: source.speaker,
                 characterBudget: budget,
-                overBudget: TranslationDurationPolicy.visibleCharacterCount(text) > budget
+                overBudget: TranslationDurationPolicy.visibleCharacterCount(text) > budget,
+                timingQuality: .estimated,
+                protectedSpans: translationsByID[source.id]?.protectedSpans,
+                segmentationHints: translationsByID[source.id]?.lines
             )
         }
         progress(1, batches.count, batches.count, "Translation ready")
         return SubtitleTrack(
             sourceLanguage: track.language ?? track.sourceLanguage,
             language: target,
-            cues: translatedCues
+            cues: translatedCues, processingVersion: ElasticSubtitleSegmenter.processingVersion
         )
     }
 
@@ -287,7 +293,8 @@ struct TranslationLLMProcessor: Sendable {
 
     private func completeRecovering(
         request: RequestEnvelope,
-        maximumAttempts: Int
+        maximumAttempts: Int,
+        remainingRequestRecoveries: Int = 1
     ) async throws -> [ResponseEnvelope.Translation] {
         let encoded = try Self.encodedUserPrompt(request)
         let expectedIDs = request.cues.map(\.id)
@@ -298,6 +305,7 @@ struct TranslationLLMProcessor: Sendable {
         )
         var acceptedByID: [Int: ResponseEnvelope.Translation] = [:]
         var priorFailure: String?
+        var requestRecoveries = remainingRequestRecoveries
         let attempts = max(1, maximumAttempts)
         for attempt in 0..<attempts {
             try Task.checkCancellation()
@@ -305,7 +313,29 @@ struct TranslationLLMProcessor: Sendable {
             if let priorFailure {
                 user += "\n\nThe previous response was rejected: \(priorFailure). Return corrected JSON only."
             }
-            let raw = try await client.complete(system: Self.translationSystemPrompt, user: user)
+            let raw: String
+            do {
+                raw = try await client.complete(system: Self.translationSystemPrompt, user: user)
+                try Task.checkCancellation()
+            } catch {
+                try Task.checkCancellation()
+                if error is CancellationError { throw error }
+                // Compression is advisory. A later request failure must not
+                // discard a complete, valid translation already received.
+                if acceptedByID.count == expectedIDs.count {
+                    Log.llm.notice("translation keeping complete response after refinement failure")
+                    return expectedIDs.compactMap { acceptedByID[$0] }
+                }
+                guard requestRecoveries > 0, request.cues.count > 1,
+                      Self.canRecoverWithSmallerBatch(error) else {
+                    throw error
+                }
+                // The client has already tried its model chain. A smaller
+                // request can recover timeouts or truncated/empty responses.
+                Log.llm.warning("translation shrinking failed batch cues=\(request.cues.count) error=\(LLMDiagnostics.description(error))")
+                requestRecoveries -= 1
+                break
+            }
             do {
                 let response = try SubtitleLLMProcessor.decodeJSON(ResponseEnvelope.self, from: raw)
                 let grouped = Dictionary(grouping: response.translations) { $0.id }
@@ -391,7 +421,8 @@ struct TranslationLLMProcessor: Sendable {
             )
             let recovered = try await completeRecovering(
                 request: recoveryRequest,
-                maximumAttempts: maximumAttempts
+                maximumAttempts: maximumAttempts,
+                remainingRequestRecoveries: requestRecoveries
             )
             for translation in recovered {
                 acceptedByID[translation.id] = translation
@@ -416,6 +447,22 @@ struct TranslationLLMProcessor: Sendable {
             user += "\n<context_after>\n\(after)\n</context_after>"
         }
         return user
+    }
+
+    private static func canRecoverWithSmallerBatch(_ error: Error) -> Bool {
+        guard let error = error as? LLMClientError else { return false }
+        switch error {
+        case .timeout, .emptyResponse, .invalidResponse:
+            return true
+        case .provider(let status, _, _):
+            return status == 413
+        case .exhausted(let failures):
+            return !failures.isEmpty && failures.allSatisfy {
+                ["timeout", "empty_response", "invalid_response", "http_413"].contains($0.reason)
+            }
+        case .transport, .nonHTTPResponse, .insufficientCredits:
+            return false
+        }
     }
 
     private static func rejectionReason(
@@ -444,42 +491,20 @@ struct TranslationLLMProcessor: Sendable {
 
     private static let translationSystemPrompt = """
     You translate subtitle cues into the requested target language.
-    Return one JSON object only: {"translations":[{"id":0,"text":"..."}]}.
+    Return one JSON object only: {"translations":[{"id":0,"text":"...","lines":["..."],"protected_spans":["..."]}]}.
+    lines and protected_spans are optional, verbatim semantic boundary hints in the translated text; never change text when proposing them. Preserve tightly bound phrases and names; do not aim for a fixed number of characters per subtitle.
     Keep every id exactly once and in the original order. Do not merge or omit cues.
     If context_cues is present, use it only for linguistic context. Translate only the items in cues.
     If <context_before> or <context_after> is present, use it only for names, pronouns, and terminology. Never translate or quote that context into the output.
     Preserve meaning, tone, names, numbers, and speaker intent without adding information.
-    Keep each translation concise enough for its character_budget and target duration.
+    Keep translations natural and concise for the target duration. character_budget is an advisory estimate, not a reason to omit meaning.
     Prefer natural short phrasing over literal expansion. Output only target-language text.
     """
 }
 
 enum TranslationDurationPolicy {
-    private static let rates: [String: Double] = [
-        "zh": 6.3,
-        "yue": 6.3,
-        "en": 14.5,
-        "ja": 7.1,
-        "ko": 6.5,
-        "de": 13.0,
-        "fr": 13.4,
-        "es": 14.4,
-        "it": 14.0,
-        "pt": 13.5,
-        "ru": 12.5,
-        "nl": 12.8,
-        "pl": 12.2,
-        "ar": 11.6,
-    ]
-
-    static func charactersPerSecond(for language: String) -> Double {
-        let normalized = language.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .split(separator: "-")
-            .first
-            .map(String.init) ?? ""
-        return rates[normalized] ?? 13.0
-    }
+    /// Wire compatibility only: the final solver measures shaped glyph width in em.
+    static func charactersPerSecond(for language: String) -> Double { 16 }
 
     static func visibleCharacterCount(_ text: String) -> Int {
         text.filter { !$0.isWhitespace }.count

@@ -124,11 +124,7 @@ struct TextTab: View {
         InspectorRow(
             label: L10n.string("Position"),
             onReset: {
-                editor.commitClipProperties(clipIds: clipIds) {
-                    $0.transform.centerX = Transform().centerX
-                    $0.transform.centerY = Transform().centerY
-                    $0.positionTrack = nil
-                }
+                editor.resetCaptionPositions(clipIds: clipIds)
             }
         ) {
             InspectorPositionFields(clips: clips)

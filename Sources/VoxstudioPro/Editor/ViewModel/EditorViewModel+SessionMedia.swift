@@ -79,7 +79,8 @@ extension EditorViewModel {
         _ session: WorkbenchSession,
         track: SubtitleTrack,
         scope: ClipSourceScope,
-        startFrame: Int = 0
+        startFrame: Int = 0,
+        sourceContext: CaptionSourceContext? = nil
     ) {
         let cues = track.cues.filter {
             $0.start.isFinite && $0.end.isFinite && $0.end > $0.start
@@ -88,10 +89,13 @@ extension EditorViewModel {
             mediaPanelToast = MediaPanelToast(message: L10n.string("This session has no timed subtitles."))
             return
         }
+        let before = timeline
+        let source = sourceContext ?? sessionCaptionSource(sessionID: session.id, startFrame: startFrame, scope: scope)
+            ?? CaptionSourceContext(audioTrackId: "unbound-" + UUID().uuidString, placementId: UUID().uuidString)
         if timeline.tracks.contains(where: { track in
             trackRoleMatches(track.role, scope: scope)
                 && track.clips.contains {
-                    $0.sourceSessionId == session.id && $0.sourceCueScope == scope
+                    $0.sourceSessionId == session.id && $0.sourceCueScope == scope && $0.captionLayout?.source == source
                 }
         }) {
             mediaPanelToast = MediaPanelToast(message: L10n.string("This subtitle track is already on the timeline."))
@@ -103,16 +107,21 @@ extension EditorViewModel {
         switch scope {
         case .source:
             trackRole = .sourceSubtitles
-            style = TextStyle()
+            style = CaptionRequest.defaultLocalStyle
         case .translation(let languageCode):
             trackRole = .translation(languageCode: languageCode)
             style = translationSubtitleStyle
         case .dub:
             trackRole = .dub
-            style = TextStyle()
+            style = CaptionRequest.defaultLocalStyle
         }
 
-        let groupID = "\(session.id.uuidString)-\(scope.contentKey)"
+        let groupID = "\(session.id.uuidString)-\(source.placementId)-\(scope.contentKey)"
+        let existingOrders = timeline.tracks.flatMap(\.clips).compactMap { clip -> Int? in
+            guard clip.captionLayout?.source == source else { return nil }
+            return clip.captionLayout?.order
+        }
+        let order = scope == .source ? 0 : max(1, (existingOrders.max() ?? 0) + 1)
         let specs = cues.map { cue in
             TextClipSpec(
                 trackIndex: 0,
@@ -128,7 +137,9 @@ extension EditorViewModel {
                 words: sessionWordTimings(for: cue, session: session),
                 sourceSessionId: session.id,
                 sourceCueId: cue.id,
-                sourceCueScope: scope
+                sourceCueScope: scope,
+                sourcePlacementId: source.placementId,
+                captionLayout: CaptionLayoutBinding(source: source, order: order)
             )
         }
 
@@ -138,6 +149,13 @@ extension EditorViewModel {
                 at: min(0, timeline.tracks.count)
             )
             _ = placeTextClips(specs, clearExistingRegions: false, refreshVisuals: false)
+            var arranged = timeline
+            if CaptionLayoutEngine.arrange(&arranged, source: source) {
+                timeline = arranged
+            } else {
+                timeline = before
+                mediaPanelToast = MediaPanelToast(message: L10n.string("Subtitles are too tall to arrange. Reduce the font size or the number of languages."))
+            }
         }
         notifyTimelineChanged(refreshVisuals: false)
     }
@@ -297,6 +315,7 @@ extension EditorViewModel {
                     }
                 }
             }
+            if let first = created.first { _ = captionSourceContext(for: first) }
             sortClips(trackIndex: resolvedTrackIndex)
             pruneEmptyTracks()
         }
@@ -304,7 +323,7 @@ extension EditorViewModel {
     }
 
     private var translationSubtitleStyle: TextStyle {
-        var style = TextStyle()
+        var style = CaptionRequest.defaultLocalStyle
         style.fontScale *= 0.82
         style.background.color.a *= 0.82
         return style

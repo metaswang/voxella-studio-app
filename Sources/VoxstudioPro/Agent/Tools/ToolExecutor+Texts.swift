@@ -613,6 +613,7 @@ extension ToolExecutor {
                     clip.textStyle = style
                 }
                 if let t = transform {
+                    clip.captionLayout?.automatic = false
                     t.apply(to: &clip)
                 }
                 if shouldSetAnimation {

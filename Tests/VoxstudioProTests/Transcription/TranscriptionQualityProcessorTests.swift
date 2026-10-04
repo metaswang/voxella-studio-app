@@ -84,6 +84,21 @@ struct TranscriptionQualityProcessorTests {
         #expect(resolved.removedDuplicateSuffixes == 0)
     }
 
+    @Test func ownershipDoesNotEraseTrueRepeatsInSharedContext() {
+        let resolved = ASROwnershipResolver.resolve(spans: [
+            .init(text: "很好。", startTime: 1, endTime: 1.4, inputStart: 0, inputEnd: 5),
+            .init(text: "很好。", startTime: 1.5, endTime: 1.9, inputStart: 0, inputEnd: 5)
+        ], languageCode: "zh", requireAudioEvidence: true)
+        #expect(resolved.spans.count == 2)
+        #expect(resolved.removedDuplicatePrefixes == 0)
+        #expect(resolved.unresolvedBoundaryCount == 1)
+        let duplicate = ASROwnershipResolver.resolve(spans: [
+            .init(text: "same audio", startTime: 1, endTime: 2, inputStart: 0, inputEnd: 5),
+            .init(text: "same audio", startTime: 1, endTime: 2, inputStart: 0, inputEnd: 5)
+        ], languageCode: "en", requireAudioEvidence: true)
+        #expect(duplicate.spans.count == 1)
+    }
+
     @Test func ownershipKeepsLaterSpanWhenCJKOverlapIsLong() {
         let prefix = "然后才知道我这位学弟当年考试的成绩非常优秀"
         let overlap = "他考进了台湾大学的土木工程系"

@@ -106,8 +106,8 @@ struct LLMRequestOverridesTests {
     func skillSelectionUsesOfficialOpenAIMaxCompletionTokens() {
         let configuration = LLMRuntimeConfiguration(
             profile: .defaultOpenAI,
-            modelIdentifier: "openai/gpt-5.4-nano",
-            modelName: "gpt-5.4-nano",
+            modelIdentifier: "openai/gpt-5-nano",
+            modelName: "gpt-5-nano",
             endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
             apiKey: "test-key",
             useCase: .skillSelection
@@ -115,6 +115,75 @@ struct LLMRequestOverridesTests {
 
         #expect(configuration.resolvedExtraBody["max_completion_tokens"] == .number(256))
         #expect(configuration.resolvedExtraBody["max_tokens"] == nil)
+    }
+
+    @Test(arguments: [LLMUseCase.translation, .subtitleProcessing, .skillSelection])
+    func nanoUsesSupportedEffortThroughOfficialAndGatewayTransports(useCase: LLMUseCase) {
+        for gateway in [false, true] {
+            var profile = gateway ? LLMProviderProfile(
+                provider: .openRouter,
+                baseURL: "https://openrouter.ai/api/v1",
+                model: "openai/gpt-5-nano"
+            ) : .defaultOpenAI
+            profile.extraBody = gateway
+                ? ["reasoning": .object(["effort": .string("none")])]
+                : ["reasoning_effort": .string("none")]
+            let configuration = LLMRuntimeConfiguration(
+                profile: profile,
+                modelIdentifier: gateway ? "openrouter/openai/gpt-5-nano" : "openai/gpt-5-nano",
+                modelName: gateway ? "openai/gpt-5-nano" : "gpt-5-nano",
+                endpoint: URL(string: gateway ? "https://openrouter.ai/api/v1/chat/completions" : "https://api.openai.com/v1/chat/completions")!,
+                apiKey: "test-key",
+                useCase: useCase
+            )
+            #expect(configuration.lowestReasoningEffort == .minimal)
+            if gateway {
+                #expect(configuration.resolvedExtraBody["reasoning"] == .object(["effort": .string("minimal")]))
+            } else {
+                #expect(configuration.resolvedExtraBody["reasoning_effort"] == .string("minimal"))
+            }
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func translationFlowCompletesAgainstProviderThatRejectsUnsupportedEffort(savedOverride: Bool) async throws {
+        var profile = LLMProviderProfile.defaultOpenAI
+        if savedOverride { profile.extraBody = ["reasoning_effort": .string("none")] }
+        let configuration = LLMRuntimeConfiguration(
+            profile: profile,
+            modelIdentifier: "openai/gpt-5-nano",
+            modelName: "gpt-5-nano",
+            endpoint: URL(string: "https://api.openai.com/v1/chat/completions")!,
+            apiKey: "test-key",
+            useCase: .translation
+        )
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [CapturingLLMURLProtocol.self]
+        let client = OpenAICompatibleClient(configuration: configuration, session: URLSession(configuration: sessionConfiguration))
+        let executor = MediaFlowExecutor(llmClientFactory: { client })
+        let transcript = TranscriptionResult(
+            text: "Bonjour.", language: "fr", words: [],
+            segments: [.init(text: "Bonjour.", start: 0, end: 2, speaker: nil)]
+        )
+        let request = MediaFlowRequest(
+            input: .transcript(transcript: transcript, subtitles: nil, translation: nil),
+            steps: [.translate(.init(targetLanguage: "en"))]
+        )
+        var track: SubtitleTrack?
+        var status: MediaJobStatus?
+        for await event in executor.events(for: request) {
+            switch event {
+            case .artifact(.translation(let translated)): track = translated
+            case .progress(let progress): status = progress.status
+            default: break
+            }
+        }
+        #expect(status == .completed)
+        #expect(track?.cues.map(\.text) == ["Hello."])
+        let data = try #require(CapturingLLMURLProtocol.recorder.body())
+        let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(body["model"] as? String == "gpt-5-nano")
+        #expect(body["reasoning_effort"] as? String == "minimal")
     }
 
     @Test
@@ -223,13 +292,19 @@ private final class CapturingLLMURLProtocol: URLProtocol {
     override func startLoading() {
         let body = request.httpBody ?? readBodyStream()
         Self.recorder.record(body)
+        let json = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let nano = json?["model"] as? String == "gpt-5-nano"
+        let rejectsEffort = nano && json?["reasoning_effort"] as? String == "none"
         let response = HTTPURLResponse(
             url: request.url!,
-            statusCode: 200,
+            statusCode: rejectsEffort ? 400 : 200,
             httpVersion: nil,
             headerFields: ["Content-Type": "application/json"]
         )!
-        let data = Data(#"{"choices":[{"message":{"content":"ok"}}]}"#.utf8)
+        let content = nano ? #"{"translations":[{"id":0,"text":"Hello."}]}"# : "ok"
+        let data = rejectsEffort
+            ? Data(#"{"error":{"message":"Unsupported value: reasoning_effort none"}}"#.utf8)
+            : (try! JSONSerialization.data(withJSONObject: ["choices": [["message": ["content": content]]]]))
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)

@@ -24,7 +24,8 @@ enum ASROwnershipResolver {
 
     static func resolve(
         spans: [RecognizedSpan],
-        languageCode: String?
+        languageCode: String?,
+        requireAudioEvidence: Bool = false
     ) -> Result {
         let ordered = spans.compactMap(Self.normalized).sorted {
             if $0.startTime != $1.startTime { return $0.startTime < $1.startTime }
@@ -52,6 +53,22 @@ enum ASROwnershipResolver {
 
             if let previous = resolved.last, working.startTime - previous.endTime <= adjacentGapTolerance {
                 if recognitionInputsOverlap(previous, working) {
+                    if requireAudioEvidence {
+                        // Shared input context is not proof that a repeated phrase
+                        // was spoken only once. Only duplicate descriptions of the
+                        // same owned audio interval may be removed before alignment.
+                        let sameInterval = abs(previous.startTime - working.startTime) <= 0.000001
+                            && abs(previous.endTime - working.endTime) <= 0.000001
+                        if sameInterval, compactFolded(previous.text) == compactFolded(working.text) {
+                            removedContainedSpans += 1
+                            continue
+                        }
+                        if compactOverlapLength(previous: previous.text, current: working.text) > 0 {
+                            unresolvedBoundaryCount += 1
+                        }
+                        if let cleaned = Self.normalized(working) { resolved.append(cleaned) }
+                        continue
+                    }
                     let overlap = boundaryOverlap(
                         previous: previous.text,
                         current: working.text,

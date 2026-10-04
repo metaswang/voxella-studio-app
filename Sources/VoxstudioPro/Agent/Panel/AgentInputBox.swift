@@ -31,6 +31,8 @@ struct AgentInputBox<LeadingTools: View>: View {
     }
 
     @FocusState private var focused: Bool
+    @State private var voiceInputActive = false
+    private var canSubmit: Bool { canSend && !voiceInputActive }
     @State private var mentionQuery: String? = nil
     @State private var highlightedMentionIndex: Int = 0
     @State private var mentionTab: MentionTab = .all
@@ -66,6 +68,7 @@ struct AgentInputBox<LeadingTools: View>: View {
                     )
                 }
                 .onChange(of: mentionTab) { _, _ in highlightedMentionIndex = 0 }
+            voiceInput
             bottomBar
         }
         .appGlassEffect(in: .rect(cornerRadius: AppTheme.Radius.xl))
@@ -126,6 +129,31 @@ struct AgentInputBox<LeadingTools: View>: View {
         }
     }
 
+    private var voiceInput: some View {
+        let service = editor.agentService
+        let sessionID = service.currentSessionId
+        return HStack {
+            Spacer(minLength: 0)
+            InlineVoiceInputControl(
+                text: $draft, multiline: true, presentation: .embedded,
+                onActivityChanged: { active in
+                    guard service.currentSessionId == sessionID else { return }
+                    voiceInputActive = active
+                    if active { mentionQuery = nil }
+                    else if editor.agentPanelVisible { focused = true }
+                },
+                canInsert: {
+                    service.currentSessionId == sessionID && editor.agentPanelVisible && !service.isStreaming
+                },
+                showsEmbeddedRecovery: true
+            )
+            .id(sessionID)
+            .disabled(!editor.agentPanelVisible || isSending)
+        }
+        .padding(.horizontal, AppTheme.Spacing.sm)
+        .onChange(of: sessionID) { _, _ in voiceInputActive = false }
+    }
+
     private var bottomBar: some View {
         HStack(spacing: AppTheme.Spacing.md) {
             leadingTools
@@ -164,8 +192,8 @@ struct AgentInputBox<LeadingTools: View>: View {
             .controlSize(.regular)
             .tint(AppTheme.Accent.primary)
             .appGlassEffectID("sendStop", in: sendStopNamespace)
-            .disabled(!canSend)
-            .opacity(canSend ? 1 : AppTheme.Opacity.strong)
+            .disabled(!canSubmit)
+            .opacity(canSubmit ? 1 : AppTheme.Opacity.strong)
             .transition(.scale.combined(with: .opacity))
         }
     }
@@ -204,7 +232,7 @@ struct AgentInputBox<LeadingTools: View>: View {
         }
 
         guard press.phase == .down else { return .ignored }
-        if press.key == .return, !press.modifiers.contains(.shift), canSend {
+        if press.key == .return, !press.modifiers.contains(.shift), canSubmit {
             onSend()
             return .handled
         }

@@ -1525,7 +1525,7 @@
 "The AI service setup is invalid. Review the connection settings." = "AI 服务设置无效。请检查连接设置。";
 "The selected AI service is no longer available. Review the connection settings." = "所选 AI 服务已不可用。请检查连接设置。";
 "Add an API key in Settings > AI before running this flow." = "请先在“设置”>“AI”中添加 API 密钥，再运行此流程。";
-"Set timeout between 3 and 1,800 seconds." = "请将超时时间设为 3 到 1,800 秒之间。";
+"Set timeout between 15 and 1,800 seconds." = "请将超时时间设为 15 到 1,800 秒之间。";
 "Set retry attempts between 1 and 4." = "请将重试次数设为 1 到 4 次。";
 "Set initial retry delay between 0 and 10 seconds." = "请将初始重试延迟设为 0 到 10 秒。";
 "Keep at least one LLM provider." = "请至少保留一个 LLM 提供商。";

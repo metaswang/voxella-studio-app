@@ -43,6 +43,7 @@ extension ToolExecutor {
         var request = scope.captionRequest(in: editor, provider: provider)
         request.style = style
         request.center = center
+        request.automaticLayout = args["transform"] == nil
         request.censorProfanity = args.bool("censorProfanity") ?? false
         request.locale = context.preferredLocale
         request.maxWords = maxWords

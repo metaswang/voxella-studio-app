@@ -510,7 +510,7 @@ struct AISettingsPane: View {
                     L10n.format("Timeout: %@s", String(Int(draft.wrappedValue.policy.timeoutSeconds))),
                     value: draft.policy.timeoutSeconds,
                     in: timeoutRange(for: useCase),
-                    step: timeoutStep(for: useCase)
+                    step: 5
                 )
                 Stepper(
                     L10n.format("Attempts/model: %@", String(draft.wrappedValue.policy.maximumAttemptsPerModel)),
@@ -910,19 +910,7 @@ struct AISettingsPane: View {
     }
 
     private func timeoutRange(for useCase: LLMUseCase) -> ClosedRange<Double> {
-        let minimum = LLMRequestPolicy.minimumTimeoutSeconds(for: useCase)
-        switch useCase {
-        case .subtitleProcessing, .graphExtraction:
-            return max(60, minimum)...1_800
-        case .skillSelection:
-            return minimum...1_800
-        case .translation, .chat, .graphQueryUnderstanding:
-            return minimum...1_800
-        }
-    }
-
-    private func timeoutStep(for useCase: LLMUseCase) -> Double {
-        useCase == .skillSelection ? 1 : 15
+        LLMRequestPolicy.minimumTimeoutSeconds(for: useCase)...1_800
     }
 
     private func routeValidationMessage(for useCase: LLMUseCase) -> String? {

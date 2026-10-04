@@ -11,8 +11,9 @@ extension EditorViewModel {
 
         var sourceClipIds: [String] = []
         var autoDetect: Bool = false
-        var style: TextStyle = TextStyle()
+        var style: TextStyle = defaultLocalStyle
         var center: CGPoint = AppTheme.Caption.defaultCenter
+        var automaticLayout = true
         var textCase: CaptionCase = .auto
         var censorProfanity: Bool = false
         var locale: Locale? = nil
@@ -164,7 +165,16 @@ extension EditorViewModel {
         targets = resolvedCaptionTargets(for: request)
         guard !targets.isEmpty else { throw CaptionError.noSource }
 
+        let provenanceBefore = timeline
+        var contexts: [String: CaptionSourceContext] = [:]
+        for target in targets {
+            if let context = captionSourceContext(for: target.id) { contexts[target.id] = context }
+        }
         let preparationTimeline = timeline
+        // If preparation fails/cancels before placement, remove only our unchanged
+        // provenance staging; never restore over a concurrent user edit.
+        var placed = false
+        defer { if !placed && timeline == preparationTimeline { timeline = provenanceBefore } }
 
         if request.autoDetect {
             guard let winner = dominantSpeechTrack(targets, results) else { return [] }
@@ -174,7 +184,7 @@ extension EditorViewModel {
         let animation: TextAnimation? = request.animation.isActive ? request.animation : nil
         let input = CaptionSpecBuilder.Input(
             targets: targets.compactMap { target in
-                results[target.clip.mediaRef].map { CaptionSpecBuilder.Target(clip: target.clip, result: $0) }
+                results[target.clip.mediaRef].map { CaptionSpecBuilder.Target(clip: target.clip, result: $0, source: contexts[target.id]) }
             },
             fps: timeline.fps,
             canvasWidth: timeline.width,
@@ -183,7 +193,8 @@ extension EditorViewModel {
             center: request.center,
             textCase: request.textCase,
             maxWords: request.maxWords,
-            animation: animation
+            animation: animation,
+            automaticLayout: request.automaticLayout && request.center == AppTheme.Caption.defaultCenter
         )
         let specs = try await CaptionSpecBuilder.build(input)
         try Task.checkCancellation()
@@ -195,9 +206,13 @@ extension EditorViewModel {
         }
         guard !specs.isEmpty else { return [] }
         if let mutation {
-            return try await mutation { self.placeCaptionTrack(specs) }
+            let ids = try await mutation { self.placeCaptionTrack(specs, undoBefore: provenanceBefore) }
+            placed = !ids.isEmpty
+            return ids
         }
-        return placeCaptionTrack(specs)
+        let ids = placeCaptionTrack(specs, undoBefore: provenanceBefore)
+        placed = !ids.isEmpty
+        return ids
     }
 
     // Estimate the cost of cloud transcription given the request. 0 if hit cache.
@@ -317,14 +332,14 @@ extension EditorViewModel {
         return wordsByTrack.filter { $0.value > 0 }.max { $0.value < $1.value }?.key
     }
 
-    private func placeCaptionTrack(_ specs: [TextClipSpec]) -> [String] {
+    private func placeCaptionTrack(_ specs: [TextClipSpec], undoBefore: Timeline? = nil) -> [String] {
         undo.perform("Generate Captions") {
-            let before = timeline
+            let before = undoBefore ?? timeline
             let ids = undo.withoutRegistration {
-                timeline.tracks.insert(Track(type: .video), at: 0)
+                timeline.tracks.insert(Track(type: .video, role: .sourceSubtitles), at: 0)
                 return placeTextClips(specs, clearExistingRegions: false, refreshVisuals: false)
             }
-            guard !ids.isEmpty else {
+            guard !ids.isEmpty, reflowCaptionLayouts() else {
                 timeline = before
                 videoEngine?.refreshVisuals()
                 return []

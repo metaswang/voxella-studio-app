@@ -464,6 +464,7 @@ class VideoProject: NSDocument {
             loadedManifest = nil
             restoreAssetsFromManifest()
         }
+        editorViewModel.repairLegacyCaptionLayouts()
         editorViewModel.enhancePendingDenoises()
         if editorViewModel.markSpeakers { editorViewModel.identifySpeakers() }
 

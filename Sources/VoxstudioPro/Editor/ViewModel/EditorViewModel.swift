@@ -123,7 +123,12 @@ final class EditorViewModel {
     var selectedTimelineIds: Set<String> = []
     var pendingSwapClipId: String?
     var clipClipboard: [ClipClipboardEntry] = []
-    var zoomScale: Double = Defaults.pixelsPerFrame
+    var zoomScale: Double = Defaults.pixelsPerFrame {
+        didSet { if !isApplyingTimelineFit && oldValue != zoomScale { timelineAutoFit = false } }
+    }
+    var timelineAutoFit = true
+    @ObservationIgnored var isApplyingTimelineFit = false
+    @ObservationIgnored var classifyLegacyTimelineZoom = false
     var canvasZoom: CGFloat = 1.0 {
         didSet {
             if canvasZoom <= 1.0 { canvasOffset = .zero }
@@ -480,6 +485,7 @@ final class EditorViewModel {
 
     /// Per-clip snapshot at drag start, keyed by clip id so multiple clips can be edited in tandem.
     var dragBefore: [String: Clip] = [:]
+    @ObservationIgnored var captionEditBefore: Timeline?
 
     /// Whole-timeline snapshot at drag start, for ripple mutations whose per-clip undos can't compose cleanly.
     var preDragTimeline: Timeline?

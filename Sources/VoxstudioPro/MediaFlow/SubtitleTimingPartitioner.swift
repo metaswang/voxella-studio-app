@@ -1,6 +1,32 @@
 import Foundation
 
 struct SubtitleTimingPartitioner {
+    /// When lexical content is unchanged, punctuation cannot move ownership
+    /// to a neighboring cue. Display text is never rewritten by this mapping.
+    static func losslessLexicalRanges(cueTexts: [String], sourceTexts: [String]) -> [Range<Int>]? {
+        let lexical = CharacterSet.alphanumerics.union(.nonBaseCharacters)
+        func key(_ text: String) -> String {
+            String(String.UnicodeScalarView(text.unicodeScalars.filter { lexical.contains($0) }))
+        }
+        let source = sourceTexts.map(key)
+        let cues = cueTexts.map(key)
+        guard !source.isEmpty, !cues.isEmpty, source.allSatisfy({ !$0.isEmpty }),
+              cues.allSatisfy({ !$0.isEmpty }), source.joined() == cues.joined() else { return nil }
+        var ends: [Int: Int] = [:]
+        var total = 0
+        for (index, text) in source.enumerated() { total += text.utf16.count; ends[total] = index + 1 }
+        var result: [Range<Int>] = []
+        var offset = 0
+        var word = 0
+        for cue in cues {
+            offset += cue.utf16.count
+            guard let next = ends[offset], next > word else { return nil }
+            result.append(word..<next)
+            word = next
+        }
+        return word == source.count ? result : nil
+    }
+
     static func anchoredRanges(
         cueCount: Int,
         sourceWordCount: Int,

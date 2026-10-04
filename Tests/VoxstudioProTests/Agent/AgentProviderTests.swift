@@ -10,7 +10,6 @@ struct AgentProviderTests {
             ["claude-opus-5", "Opus 5"],
             ["claude-fable-5", "Fable 5"],
             ["gpt-5-nano", "GPT-5 Nano"],
-            ["gpt-5.4-nano", "GPT-5.4 Nano"],
             ["gpt-5.6-luna", "GPT-5.6 Luna"],
             ["gpt-5.6-terra", "GPT-5.6 Terra"],
             ["gpt-5.6-sol", "GPT-5.6 Sol"],
@@ -21,7 +20,7 @@ struct AgentProviderTests {
         #expect(AgentModel.persisted("claude-opus-4-8") == .opus5)
         #expect(AgentModel.allCases.map(\.provider) == [
             .anthropic, .anthropic, .anthropic,
-            .openAI, .openAI, .openAI, .openAI, .openAI, .openAI,
+            .openAI, .openAI, .openAI, .openAI, .openAI,
         ])
         #expect(AgentModel.allCases.filter(\.requiresPaidHostedPlan) == [.fable5, .sol])
         let anthropicEfforts: [AgentReasoningEffort] = [.low, .medium, .high, .xHigh, .max]
@@ -35,7 +34,6 @@ struct AgentProviderTests {
         }
             .allSatisfy { $0.supportedReasoningEfforts == openAIEfforts })
         #expect(AgentModel.nano.supportedReasoningEfforts == nanoEfforts)
-        #expect(AgentModel.nano54.supportedReasoningEfforts == nanoEfforts)
         #expect(AgentModel.astra.supportedReasoningEfforts
             == [.low, .medium, .high, .xHigh, .max])
         #expect(OpenAIChatModelID("gpt-5.6-nano")?.supportedReasoningEfforts
@@ -43,7 +41,7 @@ struct AgentProviderTests {
     }
 
     @Test func discoveredOpenAIModelsKeepOnlySupportedChatVersionsAndEfforts() throws {
-        let data = Data(#"{"data":[{"id":"gpt-5.6-sol"},{"id":"gpt-6-astra"},{"id":"gpt-5.5"},{"id":"gpt-image-2.5"},{"id":"gpt-realtime-2"},{"id":"ft:gpt-5.6-terra:example"}]}"#.utf8)
+        let data = Data(#"{"data":[{"id":"gpt-5.6-sol"},{"id":"gpt-6-astra"},{"id":"gpt-5.4-nano"},{"id":"gpt-5.5"},{"id":"gpt-image-2.5"},{"id":"gpt-realtime-2"},{"id":"ft:gpt-5.6-terra:example"}]}"#.utf8)
         let models = try OpenAIModelDiscovery.models(from: data)
 
         #expect(models == [.sol, AgentModel.persisted("gpt-6-astra")!])
@@ -54,14 +52,14 @@ struct AgentProviderTests {
         #expect(OpenAIChatModelID("gpt-5.10") != nil)
         #expect(OpenAIChatModelID("gpt-5.5") == nil)
         #expect(OpenAIChatModelID("gpt-5-nano") != nil)
-        #expect(OpenAIChatModelID("gpt-5.4-nano") != nil)
+        #expect(OpenAIChatModelID("gpt-5.4-nano") == nil)
         #expect(OpenAIChatModelID("gpt-5.5-nano") != nil)
         #expect(OpenAIChatModelID("gpt-image-2.5") == nil)
     }
 
     @Test func chatCatalogUsesTheOpenAIFiveSixAndClaudeFourEightBoundaries() {
         #expect(AgentModel.chatModels(for: .openAI) == [
-            .nano, .nano54, .luna, .terra, .sol, .astra,
+            .nano, .luna, .terra, .sol, .astra,
         ])
         #expect(ClaudeChatModelID("claude-opus-4-8") != nil)
         #expect(ClaudeChatModelID("claude-sonnet-4-7") == nil)

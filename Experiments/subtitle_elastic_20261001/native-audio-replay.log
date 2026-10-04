@@ -1,0 +1,20 @@
+CASE REPLAY Aligning chunk 1 of 1…
+[transcription] NOTICE: alignment edge_retry chunk=1 outcome=recovered kept=455 estimated=6 context=1.5
+CASE REPLAY Aligned chunk 1 of 1
+CASE REPLAY 那 301.344 301.344 estimated 6 retry 1
+[transcription] NOTICE: alignment edge_retry chunk=1 outcome=recovered kept=455 estimated=5 context=1.5
+CASE REPLAY fresh ASR 460 5
+CASE REPLAY speakers Speaker 2 Speaker 1 Na confidence 0.9737240567370299
+✔ Test scoliosisOriginalCacheAlignment() passed after 13.126 seconds.
+✔ Suite ProductionSubtitleReplayTests passed after 13.126 seconds.
+✔ Test run with 1 test in 1 suite passed after 13.126 seconds.
+CASE REPLAY Aligning chunk 1 of 1…
+[transcription] NOTICE: alignment edge_retry chunk=1 outcome=recovered kept=453 estimated=8 context=1.5
+CASE REPLAY Aligned chunk 1 of 1
+CASE REPLAY 那 301.344 301.344 estimated 8 retry 1
+[transcription] NOTICE: alignment edge_retry chunk=1 outcome=recovered kept=453 estimated=7 context=1.5
+CASE REPLAY fresh ASR 460 7
+CASE REPLAY speakers Speaker 2 Speaker 1 Na confidence 0.9737240567370299
+✔ Test scoliosisOriginalCacheAlignment() passed after 12.922 seconds.
+✔ Suite ProductionSubtitleReplayTests passed after 12.922 seconds.
+✔ Test run with 1 test in 1 suite passed after 12.922 seconds.

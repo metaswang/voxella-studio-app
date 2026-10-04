@@ -59,6 +59,10 @@ struct ToolbarView: View {
 
             // Zoom
             HStack(spacing: AppTheme.Spacing.xs) {
+                Button("Fit", action: editor.fitTimelineToViewport)
+                    .buttonStyle(.borderless)
+                    .help(L10n.string("Fit timeline"))
+                    .accessibilityLabel(L10n.string("Fit timeline"))
                 zoomButton(
                     "minus.magnifyingglass",
                     help: L10n.string("Zoom Out"),

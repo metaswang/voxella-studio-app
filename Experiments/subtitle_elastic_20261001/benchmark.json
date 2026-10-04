@@ -1,0 +1,525 @@
+{
+  "provenance" : "Synthetic multilingual benchmark; reference cuts are not human gold",
+  "samples" : [
+    {
+      "cueCount" : 5,
+      "id" : "en-01",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-02",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-03",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "en-04",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-05",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-06",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-07",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "en-08",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-09",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-10",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "en-11",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-12",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-13",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-14",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-15",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-16",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-17",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-18",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-19",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "en-20",
+      "language" : "en",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 4,
+      "id" : "zh-Hans-01",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "zh-Hans-02",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 4,
+      "id" : "zh-Hans-03",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "zh-Hans-04",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 4,
+      "id" : "zh-Hans-05",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 4,
+      "id" : "zh-Hans-06",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "zh-Hans-07",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 4,
+      "id" : "zh-Hans-08",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "zh-Hans-09",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "zh-Hans-10",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "zh-Hans-11",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 4,
+      "id" : "zh-Hans-12",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "zh-Hans-13",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 4,
+      "id" : "zh-Hans-14",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "zh-Hans-15",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "zh-Hans-16",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "zh-Hans-17",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "zh-Hans-18",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "zh-Hans-19",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "zh-Hans-20",
+      "language" : "zh-Hans",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "ja-01",
+      "language" : "ja",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "ja-02",
+      "language" : "ja",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "ja-03",
+      "language" : "ja",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "ja-04",
+      "language" : "ja",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 3,
+      "id" : "ja-05",
+      "language" : "ja",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "de-01",
+      "language" : "de",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "de-02",
+      "language" : "de",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "de-03",
+      "language" : "de",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "de-04",
+      "language" : "de",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "de-05",
+      "language" : "de",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "fr-01",
+      "language" : "fr",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "fr-02",
+      "language" : "fr",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "fr-03",
+      "language" : "fr",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "fr-04",
+      "language" : "fr",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "fr-05",
+      "language" : "fr",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "es-01",
+      "language" : "es",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "es-02",
+      "language" : "es",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "es-03",
+      "language" : "es",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "es-04",
+      "language" : "es",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "es-05",
+      "language" : "es",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "pt-BR-01",
+      "language" : "pt-BR",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "pt-BR-02",
+      "language" : "pt-BR",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "pt-BR-03",
+      "language" : "pt-BR",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 5,
+      "id" : "pt-BR-04",
+      "language" : "pt-BR",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    },
+    {
+      "cueCount" : 6,
+      "id" : "pt-BR-05",
+      "language" : "pt-BR",
+      "layoutOverflow" : 0,
+      "lossless" : true,
+      "protectedPhraseBreaks" : 0
+    }
+  ]
+}

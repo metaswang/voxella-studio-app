@@ -138,6 +138,7 @@ private extension EditorViewModel {
             if let g = p.source.linkGroupId { groupCounts[g, default: 0] += 1 }
         }
         var groups: [String: String] = [:]
+        let copiedMediaPlacements = Set(placements.filter { $0.source.mediaType != .text }.compactMap { $0.source.sourcePlacementId })
 
         var newIds: [String] = []
         withTimelineSwap(actionName: actionName) {
@@ -151,6 +152,13 @@ private extension EditorViewModel {
                 var clone = p.source
                 clone.startFrame = p.dstStart
                 clone.freshenIds(groups: &groups)
+                if let binding = p.source.captionLayout, !copiedMediaPlacements.contains(binding.source.placementId) {
+                    clone.sourcePlacementId = p.source.sourcePlacementId
+                    clone.captionLayout?.source = binding.source
+                    clone.captionLayout?.order = 1 + (timeline.tracks.flatMap(\.clips).compactMap {
+                        $0.captionLayout?.source == binding.source ? $0.captionLayout?.order : nil
+                    }.max() ?? 0)
+                }
                 clone.multicamGroupId = nil
                 if let oldGroup = p.source.linkGroupId, (groupCounts[oldGroup] ?? 0) <= 1 {
                     clone.linkGroupId = nil

@@ -21,6 +21,8 @@ struct TranslationTrackBuilder: Sendable {
         var start: Double
         var end: Double
         var speaker: String?
+        var timingQuality: SubtitleTimingQuality? = nil
+        var boundaryBefore: SpeakerBoundary? = nil
     }
 
     private struct TranslationUnit: Sendable {
@@ -30,6 +32,7 @@ struct TranslationTrackBuilder: Sendable {
         var start: Double
         var end: Double
         var speaker: String?
+        var hardBefore = false
     }
 
     func build(
@@ -79,7 +82,7 @@ struct TranslationTrackBuilder: Sendable {
             options: options,
             progress: progress
         )
-        let cues = Self.spottedCues(
+        let cues = try Self.spottedCues(
             units: units,
             translated: translated,
             languageCode: target,
@@ -89,7 +92,8 @@ struct TranslationTrackBuilder: Sendable {
         guard !cues.isEmpty else {
             throw MediaFlowError.invalidLLMOutput("Translation produced no target cues.")
         }
-        return SubtitleTrack(sourceLanguage: sourceLanguage, language: target, cues: cues)
+        return SubtitleTrack(sourceLanguage: sourceLanguage, language: target, cues: cues,
+                             processingVersion: ElasticSubtitleSegmenter.processingVersion)
     }
 
     private static func normalizedSource(_ track: SubtitleTrack) -> [SourceCue] {
@@ -106,7 +110,8 @@ struct TranslationTrackBuilder: Sendable {
                 text: cue.text.trimmingCharacters(in: .whitespacesAndNewlines),
                 start: cue.start,
                 end: cue.end,
-                speaker: SpeakerLabelResolver.normalized(cue.speaker)
+                speaker: SpeakerLabelResolver.normalized(cue.speaker),
+                timingQuality: cue.timingQuality, boundaryBefore: cue.boundaryBefore
             )
         }
     }
@@ -134,7 +139,10 @@ struct TranslationTrackBuilder: Sendable {
                     end: cue.end,
                     speaker: cue.speaker,
                     characterBudget: budget,
-                    overBudget: TranslationDurationPolicy.visibleCharacterCount(cue.text) > budget
+                    overBudget: TranslationDurationPolicy.visibleCharacterCount(cue.text) > budget,
+                    timingQuality: cue.timingQuality,
+                    displayLineBreaks: ElasticSubtitleSegmenter.LayoutProfile().measure(cue.text).breaks,
+                    boundaryBefore: cue.boundaryBefore
                 )
             }
         )
@@ -174,7 +182,9 @@ struct TranslationTrackBuilder: Sendable {
                 text: TranscriptSegmenter.joinedText(group.map(\.text), language: languageCode),
                 start: start,
                 end: end,
-                speaker: SpeakerLabelResolver.dominant(in: group.map(\.speaker))
+                speaker: SpeakerLabelResolver.dominant(in: group.map(\.speaker)),
+                hardBefore: group.first?.boundaryBefore == .hard
+                    || (group.first?.boundaryBefore == nil && index > 0 && speakersDiffer(groups[index - 1].last?.speaker, group.first?.speaker))
             )
         }
     }
@@ -185,10 +195,11 @@ struct TranslationTrackBuilder: Sendable {
         languageCode: String?
     ) -> Bool {
         guard let last = current.last, let first = current.first else { return false }
-        if speakersDiffer(last.speaker, next.speaker) { return true }
+        if next.boundaryBefore == .hard || (next.boundaryBefore == nil && speakersDiffer(last.speaker, next.speaker)) { return true }
         if next.start - last.end >= Policy.packGapSeconds { return true }
         if hasStrongEndPunctuation(last.text) { return true }
-        if next.end - first.start > Policy.maximumUnitDuration { return true }
+        // The 12-second target is advisory; never sever an unfinished clause to hit it.
+        if next.end - first.start > Policy.maximumUnitDuration, last.text.last.map(ElasticSubtitleSegmenter.isTerminal) == true { return true }
         let prospective = TranscriptSegmenter.joinedText(
             current.map(\.text) + [next.text],
             language: languageCode
@@ -202,85 +213,83 @@ struct TranslationTrackBuilder: Sendable {
     }
 
     private static func hasStrongEndPunctuation(_ text: String) -> Bool {
-        guard let last = text.last.map(String.init) else { return false }
-        return SubtitleReadabilityPolicy.strongEndPunctuation.contains(last)
+        guard let last = text.last else { return false }
+        return ElasticSubtitleSegmenter.isTerminal(last)
     }
 
+    /// Translation units provide timing ownership, not mandatory output cue cuts.
     private static func spottedCues(
-        units: [TranslationUnit],
-        translated: SubtitleTrack,
-        languageCode: String,
-        denseScript: Bool,
-        limits: SubtitleReadabilityPolicy.Limits
-    ) -> [SubtitleCue] {
-        let byID = Dictionary(
-            translated.cues.map { ($0.id, $0) },
-            uniquingKeysWith: { current, _ in current }
-        )
-        let charactersPerSecond = TranslationDurationPolicy.charactersPerSecond(for: languageCode)
-        var cues: [SubtitleCue] = []
+        units: [TranslationUnit], translated: SubtitleTrack, languageCode: String,
+        denseScript: Bool, limits: SubtitleReadabilityPolicy.Limits
+    ) throws -> [SubtitleCue] {
+        let byID = Dictionary(translated.cues.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var groups: [[TranslationUnit]] = []
         for unit in units {
-            let translatedText = byID[unit.id]?.text
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let sourceText = translatedText.isEmpty ? unit.text : translatedText
-            let lines = spottedLines(
-                sourceText,
-                languageCode: languageCode,
-                denseScript: denseScript,
-                limits: limits
-            )
-            let timings = allocatedTimes(
-                lineCount: lines.count,
-                weights: lines.map {
-                    max(1, SubtitleReadabilityPolicy.displayLength($0, denseScript: denseScript))
-                },
-                start: unit.start,
-                end: unit.end
-            )
-            for (index, text) in lines.enumerated() {
-                let timing = index < timings.count ? timings[index] : (unit.start, unit.end)
-                let budget = characterBudget(
-                    start: timing.0,
-                    end: timing.1,
-                    charactersPerSecond: charactersPerSecond
-                )
-                cues.append(
-                    SubtitleCue(
-                        id: cues.count,
-                        sourceIDs: unit.sourceIDs,
-                        text: text,
-                        start: timing.0,
-                        end: timing.1,
-                        speaker: unit.speaker,
-                        characterBudget: budget,
-                        overBudget: TranslationDurationPolicy.visibleCharacterCount(text) > budget
-                    )
-                )
+            if groups.isEmpty || unit.hardBefore { groups.append([unit]) }
+            else { groups[groups.count - 1].append(unit) }
+        }
+        var output: [SubtitleCue] = []
+        for group in groups {
+            var text = ""
+            var ownership: [(range: NSRange, unit: TranslationUnit)] = []
+            var suggestions: [String] = []
+            var protections: [String] = []
+            for unit in group {
+                let target = byID[unit.id]?.text ?? ""
+                guard !target.isEmpty else { continue }
+                let joined = ElasticSubtitleSegmenter.joinChunks([text, target], languageCode: languageCode)
+                // Joining may normalize boundary whitespace, but never rebuild tokens.
+                let position = (joined as NSString).length - (target as NSString).length
+                guard position >= 0, (joined as NSString).substring(from: position) == target else { throw MediaFlowError.invalidLLMOutput("Translation text projection failed.") }
+                text = joined
+                ownership.append((NSRange(location: position, length: (target as NSString).length), unit))
+                suggestions.append(contentsOf: byID[unit.id]?.segmentationHints ?? [])
+                protections.append(contentsOf: byID[unit.id]?.protectedSpans ?? [])
+            }
+            guard let first = group.first, let last = group.last, !text.isEmpty else { continue }
+            let layout = ElasticSubtitleSegmenter.LayoutProfile()
+            let optimized = try ElasticSubtitleSegmenter.optimize(.init(
+                text: text, languageCode: languageCode, proposedLines: suggestions,
+                protectedSpans: protections, start: first.start, end: last.end))
+            func projectedTime(at offset: Int, isEnd: Bool) -> Double {
+                let owner = ownership.first { isEnd ? NSMaxRange($0.range) >= offset : NSMaxRange($0.range) > offset } ?? ownership.last!
+                let local = min(owner.range.length, max(0, offset - owner.range.location))
+                let unitText = (text as NSString).substring(with: owner.range)
+                let prefix = (unitText as NSString).substring(to: local)
+                let total = max(0.001, layout.measure(unitText).em)
+                let fraction = min(1, max(0, layout.measure(prefix).em / total))
+                return owner.unit.start + (owner.unit.end - owner.unit.start) * fraction
+            }
+            for cue in optimized.cues {
+                let owners = ownership.filter { NSIntersectionRange($0.range, cue.range).length > 0 }
+                let start = projectedTime(at: cue.range.location, isEnd: false)
+                let end = max(start + 0.001, projectedTime(at: NSMaxRange(cue.range), isEnd: true))
+                let count = max(1, TranslationDurationPolicy.visibleCharacterCount(cue.text))
+                let em = max(0.001, layout.measure(cue.text).em)
+                let budget = max(1, Int((8 * (end - start) * Double(count) / em).rounded(.down)))
+                output.append(SubtitleCue(id: output.count, sourceIDs: Array(Set(owners.flatMap { $0.unit.sourceIDs })).sorted(),
+                    text: cue.text, start: start, end: end,
+                    speaker: SpeakerLabelResolver.dominant(in: owners.map { $0.unit.speaker }),
+                    characterBudget: budget, overBudget: em / max(0.001, end - start) > 8 || cue.layoutOverflow,
+                    timingQuality: .estimated, displayLineBreaks: cue.displayLineBreaks,
+                    boundaryBefore: output.isEmpty || (cue.range.location == optimized.cues.first?.range.location && first.hardBefore) ? SpeakerBoundary.hard : SpeakerBoundary.none))
             }
         }
-        return cues
+        Log.llm.notice("translation elastic units=\(units.count) cues=\(output.count) long_cues=\(output.filter { $0.end - $0.start > 8 }.count) over_budget=\(output.filter(\.overBudget).count) timing=estimated")
+        return output
     }
 
     static func spottedLines(
-        _ text: String,
-        languageCode: String,
-        denseScript: Bool,
+        _ text: String, languageCode: String, denseScript: Bool,
         limits: SubtitleReadabilityPolicy.Limits
     ) -> [String] {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-        let pieces = SubtitleReadabilityPolicy.splitTextByLength(
-            trimmed,
-            languageCode: languageCode,
-            denseScript: denseScript,
-            limits: limits
-        ).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard !pieces.isEmpty else { return [trimmed] }
-        guard linesPreserveText(pieces, source: trimmed, languageCode: languageCode) else {
-            return [trimmed]
+        do {
+            return try ElasticSubtitleSegmenter.optimize(.init(text: text, languageCode: languageCode,
+                maximumCharacters: limits.maximum)).lines
+        } catch {
+            Log.llm.error("translation elastic failed reason=\(error.localizedDescription)")
+            return []
         }
-        return pieces
     }
 
     static func linesPreserveText(

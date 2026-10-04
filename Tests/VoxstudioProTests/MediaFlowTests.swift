@@ -19,6 +19,28 @@ private actor StubLLMClient: LLMTextClient {
     var requestCount: Int { requests.count }
 }
 
+private actor TranslationRecoveryLLMClient: LLMTextClient {
+    enum Outcome: Sendable {
+        case response(String)
+        case failure(LLMClientError)
+        case cancelled
+    }
+    private var outcomes: [Outcome]
+    private(set) var users: [String] = []
+
+    init(_ outcomes: [Outcome]) { self.outcomes = outcomes }
+
+    func complete(system: String, user: String) async throws -> String {
+        users.append(user)
+        guard !outcomes.isEmpty else { throw LLMClientError.emptyResponse }
+        switch outcomes.removeFirst() {
+        case .response(let text): return text
+        case .failure(let error): throw error
+        case .cancelled: throw CancellationError()
+        }
+    }
+}
+
 private actor ConcurrencyProbeLLMClient: LLMTextClient {
     private var activeRequests = 0
     private(set) var maximumActiveRequests = 0
@@ -407,9 +429,9 @@ struct MediaFlowTests {
         #expect(firstRequest.user.contains("speaker: Speaker 1"))
         #expect(!firstRequest.user.contains("cue_limits"))
         #expect(requests[1].user.contains("invalid_correction_json"))
-        #expect(requests[2].user.contains(#""minimumCharactersPerCue":24"#))
-        #expect(requests[2].user.contains(#""preferredCharactersPerCue":42"#))
-        #expect(requests[2].user.contains(#""maximumCharactersPerCue":56"#))
+        #expect(!requests[2].user.contains("minimumCharactersPerCue"))
+        #expect(!requests[2].user.contains("preferredCharactersPerCue"))
+        #expect(requests[2].user.contains("maximum 2 lines"))
     }
 
     @Test func subtitleReadabilityLimitsMatchPostprocessDefaults() {
@@ -686,7 +708,7 @@ struct MediaFlowTests {
             options: .init(maximumConcurrentBatches: 1, maximumAttempts: 2),
             progress: { _, _, _, _ in }
         )
-        #expect(output.track.cues.map(\.text) == ["请先看清楚完整示范，", "然后按照自己的节奏慢慢练习。"])
+        #expect(output.track.cues.map(\.text).joined() == source)
         #expect(await client.requestCount == 2)
         #expect(output.warnings.contains { $0.contains("Recovered safe subtitle boundaries") })
         try assertContinuousCueCoverage(output.track, sourceWords: sourceWords)
@@ -708,7 +730,7 @@ struct MediaFlowTests {
             progress: { _, _, _, _ in }
         )
         #expect(output.track.cues.map(\.text).joined(separator: " ") == source)
-        #expect(output.track.cues.allSatisfy { $0.text.count <= 56 })
+        #expect(output.track.cues.allSatisfy { ElasticSubtitleSegmenter.LayoutProfile().measure($0.text).fits })
         #expect(await client.requestCount == 1)
         try assertContinuousCueCoverage(output.track, sourceWords: sourceWords)
     }
@@ -767,12 +789,8 @@ struct MediaFlowTests {
         )
 
         #expect(await client.requestCount == 2)
-        #expect(output.track.cues.map(\.text) == [
-            "上一次我看那个医师",
-            "就叫我们转这个耳朵",
-            "拉这个耳朵就转转转",
-            "真的收获很大",
-        ])
+        #expect(output.track.cues.map(\.text).joined() == source)
+        #expect(output.track.cues.allSatisfy { ElasticSubtitleSegmenter.LayoutProfile().measure($0.text).fits })
         #expect(output.warnings.isEmpty)
         try assertContinuousCueCoverage(output.track, sourceWords: sourceWords)
     }
@@ -804,7 +822,7 @@ struct MediaFlowTests {
         )
 
         #expect(await client.requestCount == 2)
-        #expect(output.track.cues.map(\.text) == ["眼前一亮的.那种感觉好像很亮"])
+        #expect(output.track.cues.map(\.text).joined() == "眼前一亮的.那种感觉好像很亮")
         #expect(output.warnings.isEmpty)
         try assertContinuousCueCoverage(output.track, sourceWords: sourceWords)
     }
@@ -1094,7 +1112,7 @@ struct MediaFlowTests {
 
         #expect(output != nil)
         #expect(output!.track.cues.count > 1)
-        #expect(output!.track.cues.allSatisfy { $0.text.count <= 56 })
+        #expect(output!.track.cues.allSatisfy { ElasticSubtitleSegmenter.LayoutProfile().measure($0.text).fits })
         #expect(output!.track.cues.map(\.text).joined(separator: " ").contains("word0"))
     }
 
@@ -1168,7 +1186,7 @@ struct MediaFlowTests {
         #expect(resultingTrack?.cues.count == 1)
         #expect(terminalProgress?.status == .completed)
         #expect(terminalProgress?.message.contains("Subtitle cleanup failed") == true)
-        #expect(terminalProgress?.message.contains("The LLM provider returned an empty response.") == true)
+        #expect(terminalProgress?.message.contains(LLMClientError.emptyResponse.localizedDescription) == true)
     }
 
     @Test func subtitleClientSetupFailureCompletesWithWarning() async throws {
@@ -1242,7 +1260,7 @@ struct MediaFlowTests {
         #expect(translated.cues.map(\.start) == [1, 3.5])
         #expect(translated.cues.map(\.end) == [3, 4.5])
         #expect(translated.cues.map(\.speaker) == ["Speaker 1", "Speaker 2"])
-        #expect(translated.cues.map(\.characterBudget) == [29, 14])
+        #expect(translated.cues.map(\.characterBudget) == [32, 16])
         #expect(translated.cues.allSatisfy { !$0.overBudget })
         let requestCount = await client.requestCount
         #expect(requestCount == 2)
@@ -1274,6 +1292,122 @@ struct MediaFlowTests {
         #expect(await client.requestCount == 1)
     }
 
+    @Test func translationKeepsValidTextWhenAdvisoryCompressionTimesOut() async throws {
+        let text = "This is a complete translation that exceeds the advisory budget."
+        let client = TranslationRecoveryLLMClient([
+            .response(#"{"translations":[{"id":7,"text":"This is a complete translation that exceeds the advisory budget."}]}"#),
+            .failure(.timeout),
+        ])
+        let source = SubtitleTrack(sourceLanguage: "fr", language: "fr", cues: [
+            SubtitleCue(id: 7, sourceIDs: [10], text: "Une phrase.", start: 1, end: 2, speaker: "A"),
+        ])
+        let track = try await TranslationLLMProcessor(client: client).lineAlignedTranslate(
+            track: source, options: .init(targetLanguage: "en"), progress: { _, _, _, _ in }
+        )
+        #expect(track.cues.map(\.text) == [text])
+        #expect(track.cues.first?.overBudget == true)
+        #expect(track.cues.first?.start == 1)
+        #expect(track.cues.first?.end == 2)
+        #expect(await client.users.count == 2)
+    }
+
+    @Test func translationRecoversExhaustedTimeoutUsingSmallerBatches() async throws {
+        let client = TranslationRecoveryLLMClient([
+            .failure(.exhausted([.init(model: "openai/gpt-5-nano", attempt: 2, reason: "timeout")])),
+            .response(#"{"translations":[{"id":0,"text":"First."}]}"#),
+            .response(#"{"translations":[{"id":1,"text":"Next."}]}"#),
+        ])
+        let transcript = TranscriptionResult(text: "Premier. Ensuite.", language: "fr", words: [], segments: [
+            .init(text: "Premier.", start: 1, end: 2, speaker: "A"),
+            .init(text: "Ensuite.", start: 3, end: 4, speaker: "B"),
+        ])
+        let executor = MediaFlowExecutor(llmClientFactory: { client })
+        let request = MediaFlowRequest(
+            input: .transcript(transcript: transcript, subtitles: nil, translation: nil),
+            steps: [.translate(.init(targetLanguage: "en"))]
+        )
+        var status: MediaJobStatus?
+        var track: SubtitleTrack?
+        for await event in executor.events(for: request) {
+            switch event {
+            case .progress(let progress): status = progress.status
+            case .artifact(.translation(let translated)): track = translated
+            default: break
+            }
+        }
+        #expect(status == .completed)
+        #expect(track?.cues.map(\.text) == ["First.", "Next."])
+        #expect(track?.cues.map(\.start) == [1, 3])
+        #expect(track?.cues.map(\.end) == [2, 4])
+        #expect(await client.users.count == 3)
+    }
+
+    @Test func translationKeepsPartialResponseAndRepairsOnlyMissingCueAfterTimeout() async throws {
+        let client = TranslationRecoveryLLMClient([
+            .response(#"{"translations":[{"id":7,"text":"First."}]}"#),
+            .failure(.timeout),
+            .response(#"{"translations":[{"id":8,"text":"Next."}]}"#),
+        ])
+        let source = SubtitleTrack(sourceLanguage: "fr", language: "fr", cues: [
+            SubtitleCue(id: 7, sourceIDs: [10], text: "Premier.", start: 1, end: 2, speaker: "A"),
+            SubtitleCue(id: 8, sourceIDs: [11], text: "Ensuite.", start: 3, end: 4, speaker: "B"),
+        ])
+        let track = try await TranslationLLMProcessor(client: client).lineAlignedTranslate(
+            track: source, options: .init(targetLanguage: "en"), progress: { _, _, _, _ in }
+        )
+        #expect(track.cues.map(\.text) == ["First.", "Next."])
+        let users = await client.users
+        #expect(users.count == 3)
+        let data = Data(jsonPayload(fromUser: users[2]).utf8)
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let cues = try #require(json["cues"] as? [[String: Any]])
+        #expect(cues.compactMap { $0["id"] as? Int } == [8])
+    }
+
+    @Test(arguments: [400, 401, 403, 429])
+    func translationDoesNotSplitPermanentOrRateLimitFailures(status: Int) async throws {
+        let client = TranslationRecoveryLLMClient([.failure(.provider(status: status, message: nil, retryAfterSeconds: nil))])
+        let source = SubtitleTrack(sourceLanguage: "fr", language: "fr", cues: [
+            SubtitleCue(id: 7, sourceIDs: [10], text: "Premier.", start: 1, end: 2, speaker: "A"),
+            SubtitleCue(id: 8, sourceIDs: [11], text: "Ensuite.", start: 3, end: 4, speaker: "B"),
+        ])
+        await #expect(throws: LLMClientError.self) {
+            try await TranslationLLMProcessor(client: client).lineAlignedTranslate(
+                track: source, options: .init(targetLanguage: "en"), progress: { _, _, _, _ in }
+            )
+        }
+        #expect(await client.users.count == 1)
+    }
+
+    @Test func translationStopsSplittingWhenSmallerRequestsAlsoTimeOut() async throws {
+        let client = TranslationRecoveryLLMClient([.failure(.timeout), .failure(.timeout)])
+        let source = SubtitleTrack(sourceLanguage: "fr", language: "fr", cues: (0..<4).map {
+            SubtitleCue(id: $0, sourceIDs: [$0], text: "Premier.", start: Double($0), end: Double($0 + 1), speaker: nil)
+        })
+        await #expect(throws: LLMClientError.self) {
+            try await TranslationLLMProcessor(client: client).lineAlignedTranslate(
+                track: source, options: .init(targetLanguage: "en"), progress: { _, _, _, _ in }
+            )
+        }
+        #expect(await client.users.count == 2)
+    }
+
+    @Test func translationCancellationDoesNotPublishPreviouslyAcceptedText() async throws {
+        let client = TranslationRecoveryLLMClient([
+            .response(#"{"translations":[{"id":7,"text":"This translation exceeds the advisory budget."}]}"#),
+            .cancelled,
+        ])
+        let source = SubtitleTrack(sourceLanguage: "fr", language: "fr", cues: [
+            SubtitleCue(id: 7, sourceIDs: [10], text: "Premier.", start: 1, end: 2, speaker: "A"),
+        ])
+        await #expect(throws: CancellationError.self) {
+            try await TranslationLLMProcessor(client: client).lineAlignedTranslate(
+                track: source, options: .init(targetLanguage: "en"), progress: { _, _, _, _ in }
+            )
+        }
+        #expect(await client.users.count == 2)
+    }
+
     @Test func translationRepairsOnlyMissingCuesAndKeepsFullContext() async throws {
         let client = StubLLMClient(responses: [
             #"{"translations":[{"id":7,"text":"First."},{"id":8,"text":""}]}"#,
@@ -1300,7 +1434,7 @@ struct MediaFlowTests {
         #expect(requests[1].user.contains(#""context_cues""#))
         #expect(requests[1].user.contains(#""id":7"#))
         #expect(requests[1].user.contains(#""id":8"#))
-        let recoveryCueMarker = #""cues":[{"character_budget":14,"id":8"#
+        let recoveryCueMarker = #""cues":[{"character_budget":16,"id":8"#
         #expect(requests[1].user.contains(recoveryCueMarker))
     }
 

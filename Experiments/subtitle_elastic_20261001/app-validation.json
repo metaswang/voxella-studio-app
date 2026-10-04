@@ -1,0 +1,77 @@
+{
+  "verifiedAtUTC": "2026-10-01T15:51:29.844531+00:00",
+  "caseID": "2AE0FBF5-CDD5-446B-9C35-F7016D42F4DF",
+  "title": "脊椎侧弯运动与日常注意事项 · 弹性字幕新构建验证",
+  "scope": "Actual non-MAS app copy: full local ASR/alignment, then final source resegmentation and existing configured English translation requests. Original case retained. Exports were saved through the app UI.",
+  "wordCount": 2390,
+  "timingQuality": {
+    "aligned": 2034,
+    "estimated": 356
+  },
+  "estimatedFraction": 0.1489539748953975,
+  "originalEstimatedFractionFromDiagnostic": 0.8049393051485978,
+  "originalNaStart": 300.00811767578125,
+  "newNaWordStart": 301.343994140625,
+  "newNaCueStart": 301.343994140625,
+  "referenceNaStart": 301.344,
+  "referenceProvenance": "Original decoded-audio forced-alignment replay; repeated fresh-ASR replay agrees. Not an independent human word-boundary annotation.",
+  "sourceWordsCoveredExactlyOnce": true,
+  "sourceCueCount": 167,
+  "englishCueCount": 109,
+  "englishTwoLineExportCount": 21,
+  "sourceCuesAbove8Seconds": 0,
+  "englishCuesAbove8Seconds": 7,
+  "phrases": {
+    "打开之后你的骨头慢慢就可以归位": {
+      "id": 99,
+      "text": "打开之后你的骨头慢慢就可以归位。",
+      "start": 277.42401123046875,
+      "end": 279.9840087890625,
+      "speaker": "Speaker 2",
+      "timingQuality": "mixed"
+    },
+    "比较加重的时候": {
+      "id": 102,
+      "text": "呃疼痛麻木的感觉有一些些感觉是比较加重的时候呢，",
+      "start": 287.1839904785156,
+      "end": 291.343994140625,
+      "speaker": "Speaker 2",
+      "timingQuality": "aligned"
+    },
+    "就这么简单": {
+      "id": 104,
+      "text": "摇摇摇阵之后，其实就可以让你的脊椎左右要把慢慢把它归位，就这么简单。",
+      "start": 295.66400146484375,
+      "end": 301.1839904785156,
+      "speaker": "Speaker 2",
+      "timingQuality": "mixed"
+    },
+    "那谢谢吴医生": {
+      "id": 105,
+      "text": "那谢谢吴医生为我们做的精彩示范。",
+      "start": 301.343994140625,
+      "end": 303.42401123046875,
+      "speaker": "Speaker 1",
+      "timingQuality": "aligned"
+    }
+  },
+  "uiVerification": [
+    "Chinese host cue at 05:01 displayed on the original video with Speaker 1",
+    "English cue at 04:28 displayed on two lines",
+    "Source SRT and translated VTT saved from Export dialog"
+  ],
+  "exportOptions": "Subtitles; no speaker prefixes; app default trailing punctuation removal. Canonical JSON retains punctuation and internal whitespace.",
+  "regressionTests": {
+    "passed": 176,
+    "suites": 28,
+    "traits": "BundledSpeech",
+    "filter": "ElasticSubtitleTests|MediaFlow|Subtitle|Caption|LongFormAlignmentRecoveryTests|TranscriptionQualityProcessorTests|ASROwnership"
+  },
+  "limitations": [
+    "356 words still estimated and explicitly labeled",
+    "Translated cue timing projected from source audio, not target-language forced alignment",
+    "Duration above 8 seconds is diagnostic and soft, not a mandatory cut",
+    "Multilingual benchmark is synthetic, not human gold",
+    "Broad SparkleUpdates test configuration has an existing unrelated AppUpdaterTests initializer mismatch; targeted BundledSpeech tests and signed app build pass"
+  ]
+}
