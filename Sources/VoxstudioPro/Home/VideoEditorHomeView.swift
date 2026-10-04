@@ -273,63 +273,24 @@ struct VideoEditorHomeView: View {
     }
 
     private func projectList(entries: [ProjectEntry]) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: AppTheme.Spacing.md) {
-                if isSelecting {
-                    Color.clear.frame(width: AppTheme.IconSize.md)
-                }
-                Text("Name")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Opened")
-                    .frame(width: AppTheme.VideoEditorHome.listOpenedColumnWidth, alignment: .leading)
-                Text("Location")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.semibold))
-            .tracking(AppTheme.Tracking.wide)
-            .textCase(.uppercase)
-            .foregroundStyle(AppTheme.Text.mutedColor)
-            .padding(.horizontal, AppTheme.Spacing.lg)
-            .padding(.vertical, AppTheme.Spacing.md)
-            .background(AppTheme.Background.raisedColor.opacity(AppTheme.Opacity.prominent))
-
-            Divider()
-
+        LazyVStack(spacing: AppTheme.Spacing.mdLg) {
             if !isSearching && !isSelecting {
                 NewTimelineListRow(action: { AppState.shared.createProjectInteractively() })
-                if !entries.isEmpty {
-                    Divider()
-                }
             }
-
-            LazyVStack(spacing: 0) {
-                ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                    VideoProjectListRow(
-                        entry: entry,
-                        isInProgress: isSuspended(entry),
-                        isDeleting: deletingProjectIDs.contains(entry.id),
-                        isSelecting: isSelecting,
-                        isSelected: selectedProjectIDs.contains(entry.id),
-                        onToggleSelection: { toggleSelection(entry.id) },
-                        onOpen: open,
-                        onRemove: remove,
-                        onDelete: { requestDeletion(entry) }
-                    )
-                    if index < entries.count - 1 {
-                        Divider()
-                    }
-                }
+            ForEach(entries) { entry in
+                VideoProjectListRow(
+                    entry: entry,
+                    isInProgress: isSuspended(entry),
+                    isDeleting: deletingProjectIDs.contains(entry.id),
+                    isSelecting: isSelecting,
+                    isSelected: selectedProjectIDs.contains(entry.id),
+                    onToggleSelection: { toggleSelection(entry.id) },
+                    onOpen: open,
+                    onRemove: remove,
+                    onDelete: { requestDeletion(entry) }
+                )
             }
         }
-        .background(
-            AppTheme.Background.surfaceColor,
-            in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
     }
 
     private var emptySearchState: some View {
@@ -737,57 +698,46 @@ private struct VideoProjectPoster: View {
 
 private struct NewTimelineListRow: View {
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: AppTheme.Spacing.md) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
-                        .fill(AppTheme.Background.raisedColor)
-                    Image(systemName: "plus")
-                        .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
-                        .foregroundStyle(AppTheme.Accent.primary)
-                }
-                .frame(
-                    width: AppTheme.VideoEditorHome.listPosterWidth,
-                    height: AppTheme.VideoEditorHome.listPosterHeight
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
-                        .strokeBorder(
-                            AppTheme.Border.primaryColor,
-                            style: StrokeStyle(
-                                lineWidth: AppTheme.BorderWidth.thin,
-                                dash: AppTheme.VideoEditorHome.posterDash
+            HStack(spacing: AppTheme.Spacing.lgXl) {
+                Image(systemName: "plus")
+                    .font(.system(size: AppTheme.FontSize.lg, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(AppTheme.Accent.primary)
+                    .frame(
+                        width: AppTheme.Workbench.recentSessionThumbnailWidth,
+                        height: AppTheme.Workbench.recentSessionThumbnailHeight
+                    )
+                    .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                            .strokeBorder(
+                                AppTheme.Border.primaryColor,
+                                style: StrokeStyle(lineWidth: AppTheme.BorderWidth.thin, dash: AppTheme.VideoEditorHome.posterDash)
                             )
-                        )
-                }
+                    }
 
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                     Text("New Project")
-                        .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
+                        .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
                     Text("Start a blank timeline")
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Text.mutedColor)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Color.clear
-                    .frame(width: AppTheme.VideoEditorHome.listOpenedColumnWidth)
-
-                Color.clear
-                    .frame(maxWidth: .infinity)
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, AppTheme.Spacing.lg)
-            .frame(minHeight: AppTheme.VideoEditorHome.listRowMinHeight)
-            .background(isHovered ? AppTheme.Background.raisedColor.opacity(AppTheme.Opacity.strong) : .clear)
+            .padding(AppTheme.Spacing.lgXl)
+            .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.sessionHeaderMinHeight, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .modifier(ProjectListCardChrome(isHovered: isHovered))
         .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: AppTheme.Anim.hover), value: isHovered)
-                .help(L10n.string("Create a new timeline project"))
+        .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Anim.hover), value: isHovered)
+        .help(L10n.string("Create a new timeline project"))
         .accessibilityLabel("New Project")
     }
 }
@@ -803,6 +753,7 @@ private struct VideoProjectListRow: View {
     let onRemove: (URL) -> Void
     let onDelete: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
     var body: some View {
@@ -814,119 +765,134 @@ private struct VideoProjectListRow: View {
                 onOpen(entry.url)
             }
         } label: {
-            HStack(spacing: AppTheme.Spacing.md) {
+            HStack(spacing: AppTheme.Spacing.lg) {
                 if isSelecting {
-                    Group {
-                        if isDeleting {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            LibrarySelectionIndicator(isSelected: isSelected)
-                        }
-                    }
-                    .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
+                    LibrarySelectionIndicator(isSelected: isSelected)
                 }
-                ProjectPackageThumbnail(
-                    url: entry.url,
-                    freshness: entry.lastOpenedDate,
-                    maxPixelSize: ImageEncoder.libraryThumbnailMaxPixelSize,
-                    placeholderSize: AppTheme.FontSize.lg
-                )
-                .frame(
-                    width: AppTheme.VideoEditorHome.listPosterWidth,
-                    height: AppTheme.VideoEditorHome.listPosterHeight
-                )
-                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
-                        .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.hairline)
-                }
-
-                HStack(spacing: AppTheme.Spacing.sm) {
-                    Text(entry.name)
-                        .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.medium))
-                        .foregroundStyle(
-                            entry.isAccessible ? AppTheme.Text.primaryColor : AppTheme.Text.mutedColor
-                        )
-                        .lineLimit(1)
-                    if isInProgress {
-                        Text("In progress")
-                            .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.semibold))
-                            .foregroundStyle(AppTheme.Text.primaryColor)
-                            .padding(.horizontal, AppTheme.Spacing.sm)
-                            .padding(.vertical, AppTheme.Spacing.xxs)
-                            .background(
-                                AppTheme.Background.raisedColor,
-                                in: Capsule()
-                            )
-                    }
-                    if !entry.isAccessible {
-                        Text("Missing")
-                            .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.semibold))
-                            .foregroundStyle(AppTheme.Status.errorColor)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Text(ProjectRecency.string(for: entry.lastOpenedDate))
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
-                    .lineLimit(1)
-                    .frame(width: AppTheme.VideoEditorHome.listOpenedColumnWidth, alignment: .leading)
-
-                Text(locationLabel)
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Text.mutedColor)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                projectContent
             }
-            .padding(.horizontal, AppTheme.Spacing.lg)
-            .frame(minHeight: AppTheme.VideoEditorHome.listRowMinHeight)
-            .background(isSelecting && isSelected
-                ? AppTheme.Accent.link.opacity(AppTheme.Opacity.faint)
-                : (isHovered ? AppTheme.Background.raisedColor.opacity(AppTheme.Opacity.strong) : .clear))
-            .overlay {
-                if isSelecting && isSelected {
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
-                        .strokeBorder(AppTheme.Accent.link.opacity(AppTheme.Opacity.strong), lineWidth: AppTheme.BorderWidth.medium)
-                }
-            }
+            .padding(AppTheme.Spacing.lgXl)
+            .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.sessionHeaderMinHeight, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .trailing) {
-            if !isSelecting && (isHovered || isDeleting) {
-                VideoProjectDeleteButton(
-                    projectName: entry.name,
-                    isDeleting: isDeleting,
-                    action: onDelete
-                )
-                .padding(.trailing, AppTheme.Spacing.smMd)
-            }
-        }
-        .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: AppTheme.Anim.hover), value: isHovered)
-        .contextMenu {
-            if !isSelecting && !isDeleting {
-                ProjectEntryContextActions(
-                    entry: entry,
-                    onOpen: onOpen,
-                    onRemove: onRemove,
-                    onDelete: onDelete
-                )
-            }
-        }
-        .disabled(isDeleting)
         .help(isSelecting
             ? L10n.string(isSelected ? "Deselect project" : "Select project")
             : (entry.isAccessible ? L10n.format("Open %@", entry.name) : L10n.format("%@ is missing", entry.name)))
         .accessibilityLabel(entry.name)
         .accessibilityValue(isSelecting ? L10n.string(isSelected ? "Selected" : "Not selected") : "")
         .accessibilityAddTraits(isSelecting && isSelected ? [.isSelected] : [])
+        .modifier(ProjectListCardChrome(isHovered: isHovered, isSelected: isSelecting && isSelected))
+        .overlay(alignment: .trailing) {
+            if !isSelecting && !isDeleting && isHovered {
+                VideoProjectDeleteButton(projectName: entry.name, isDeleting: false, action: onDelete)
+                    .padding(.trailing, AppTheme.Spacing.lgXl)
+            }
+        }
+        .onHover { isHovered = $0 }
+        .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Anim.hover), value: isHovered)
+        .animation(reduceMotion ? nil : .easeInOut(duration: AppTheme.Anim.transition), value: isSelecting)
+        .animation(reduceMotion ? nil : .easeInOut(duration: AppTheme.Anim.hover), value: isSelected)
+        .contextMenu {
+            if !isSelecting && !isDeleting {
+                ProjectEntryContextActions(entry: entry, onOpen: onOpen, onRemove: onRemove, onDelete: onDelete)
+            }
+        }
+        .disabled(isDeleting)
+        .opacity(isDeleting ? AppTheme.Opacity.strong : AppTheme.Opacity.opaque)
+    }
+
+    private var projectContent: some View {
+        HStack(spacing: AppTheme.Spacing.lgXl) {
+            ProjectPackageThumbnail(
+                url: entry.url,
+                freshness: entry.lastOpenedDate,
+                maxPixelSize: ImageEncoder.libraryThumbnailMaxPixelSize,
+                placeholderSize: AppTheme.FontSize.lg
+            )
+            .frame(
+                width: AppTheme.Workbench.recentSessionThumbnailWidth,
+                height: AppTheme.Workbench.recentSessionThumbnailHeight
+            )
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                    .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.hairline)
+            }
+
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                Text(entry.name)
+                    .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(entry.isAccessible ? AppTheme.Text.primaryColor : AppTheme.Text.mutedColor)
+                    .lineLimit(1)
+                HStack(spacing: AppTheme.Spacing.smMd) {
+                    Text(L10n.format("Opened %@", ProjectRecency.string(for: entry.lastOpenedDate)))
+                        .fixedSize(horizontal: true, vertical: false)
+                    Text(locationLabel)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.mutedColor)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if isInProgress {
+                Text("In progress")
+                    .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(AppTheme.Text.primaryColor)
+                    .padding(.horizontal, AppTheme.Spacing.smMd)
+                    .padding(.vertical, AppTheme.Spacing.xs)
+                    .background(AppTheme.Background.raisedColor, in: Capsule())
+            } else if !entry.isAccessible {
+                Text("Missing")
+                    .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(AppTheme.Status.errorColor)
+            }
+
+            if isDeleting {
+                ProgressView().controlSize(.small)
+                    .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
+            } else if !isSelecting {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.semibold))
+                    .foregroundStyle(AppTheme.Text.mutedColor)
+                    .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
+                    .opacity(isHovered ? 0 : 1)
+            }
+        }
     }
 
     private var locationLabel: String {
         entry.url.deletingLastPathComponent().path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+    }
+}
+
+private struct ProjectListCardChrome: ViewModifier {
+    let isHovered: Bool
+    var isSelected = false
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+                    .fill(isHovered ? AppTheme.Background.raisedColor : AppTheme.Background.surfaceColor)
+                    .overlay {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+                                .fill(AppTheme.Accent.link.opacity(AppTheme.Opacity.faint))
+                        }
+                    }
+                    .shadow(isHovered ? AppTheme.Shadow.md : AppTheme.Shadow.sm)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.mdLg)
+                    .strokeBorder(
+                        isSelected ? AppTheme.Accent.link.opacity(AppTheme.Opacity.strong)
+                            : (isHovered ? AppTheme.Border.primaryColor : AppTheme.Border.subtleColor),
+                        lineWidth: isSelected ? AppTheme.BorderWidth.medium : AppTheme.BorderWidth.thin
+                    )
+            }
     }
 }
 
