@@ -33,7 +33,7 @@ struct DubAudioFlowTests {
         #expect(prepared.count >= 2)
         #expect(prepared.allSatisfy { $0.source.start == nil && $0.source.end == nil })
         #expect(prepared.map(\.source.text).joined() == request.script)
-        #expect(prepared.last?.source.text == "他们看得懂眼前的世界吗？")
+        #expect(prepared.last?.source.text.hasSuffix("他们看得懂眼前的世界吗？") == true)
 
         let generated = prepared.enumerated().map { index, segment in
             LocalDubFlowRenderer.GeneratedSegment(
@@ -99,7 +99,7 @@ struct DubAudioFlowTests {
         print("[dub-replay] duration=\(duration)s output=\(outputURL.path)")
         #expect(duration > 10 && duration < 80)
         #expect(result.segments.first?.start == 0)
-        #expect(result.segments.last?.text == "他们看得懂眼前的世界吗？")
+        #expect(result.segments.last?.text.hasSuffix("他们看得懂眼前的世界吗？") == true)
         for index in 1..<result.segments.count {
             #expect(abs(result.segments[index].start - result.segments[index - 1].end - 0.2) < 0.0001)
         }

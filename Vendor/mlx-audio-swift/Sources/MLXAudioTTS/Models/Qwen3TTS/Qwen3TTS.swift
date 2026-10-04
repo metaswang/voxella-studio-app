@@ -1173,33 +1173,8 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
         try model.talker.update(parameters: ModuleParameters.unflattened(talkerPairs), verify: .all)
         eval(model.talker.parameters())
 
-        // Generate tokenizer.json if missing (Qwen3-TTS ships without it)
-        let tokenizerJsonPath = modelDir.appendingPathComponent("tokenizer.json")
-        if !fm.fileExists(atPath: tokenizerJsonPath.path) {
-            let vocabPath = modelDir.appendingPathComponent("vocab.json")
-            let mergesPath = modelDir.appendingPathComponent("merges.txt")
-            let hasVocab = fm.fileExists(atPath: vocabPath.path)
-            let hasMerges = fm.fileExists(atPath: mergesPath.path)
-            if hasVocab, hasMerges {
-                do {
-                    try generateTokenizerJson(
-                        vocabPath: vocabPath,
-                        mergesPath: mergesPath,
-                        tokenizerConfigPath: modelDir.appendingPathComponent("tokenizer_config.json"),
-                        outputPath: tokenizerJsonPath
-                    )
-                    print("Generated tokenizer.json from vocab.json + merges.txt")
-                } catch {
-                    print("Warning: Failed to generate tokenizer.json: \(error)")
-                }
-            } else {
-                print("Warning: Cannot generate tokenizer.json — vocab.json: \(hasVocab), merges.txt: \(hasMerges)")
-            }
-        }
-
-        // Load tokenizer
         do {
-            model.tokenizer = try await AutoTokenizer.from(modelFolder: modelDir)
+            model.tokenizer = try await loadTextTokenizer(from: modelDir)
         } catch {
             print("Warning: Could not load tokenizer: \(error)")
         }
@@ -1276,6 +1251,21 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
     }
 
     // MARK: - Generate tokenizer.json from vocab.json + merges.txt
+
+    /// Prepare/read only text tokenizer assets, without initializing MLX weights.
+    /// Planning and synthesis share this loader so their token budgets agree.
+    public static func loadTextTokenizer(from modelDir: URL) async throws -> any Tokenizers.Tokenizer {
+        let tokenizerPath = modelDir.appendingPathComponent("tokenizer.json")
+        if !FileManager.default.fileExists(atPath: tokenizerPath.path) {
+            try generateTokenizerJson(
+                vocabPath: modelDir.appendingPathComponent("vocab.json"),
+                mergesPath: modelDir.appendingPathComponent("merges.txt"),
+                tokenizerConfigPath: modelDir.appendingPathComponent("tokenizer_config.json"),
+                outputPath: tokenizerPath
+            )
+        }
+        return try await AutoTokenizer.from(modelFolder: modelDir)
+    }
 
     /// Qwen3-TTS repos ship with a slow tokenizer (vocab.json + merges.txt) but
     /// swift-transformers requires tokenizer.json (fast tokenizer format). This
@@ -1366,6 +1356,6 @@ public final class Qwen3TTSModel: Module, SpeechGenerationModel, @unchecked Send
         ]
 
         let jsonData = try JSONSerialization.data(withJSONObject: tokenizerJson, options: [.sortedKeys])
-        try jsonData.write(to: outputPath)
+        try jsonData.write(to: outputPath, options: .atomic)
     }
 }

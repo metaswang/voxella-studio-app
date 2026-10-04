@@ -1712,9 +1712,10 @@ struct MediaFlowTests {
         #expect(decoded == event)
     }
 
-    @Test func dubChunkingIsLanguageNeutralAndBounded() {
+    @Test func dubChunkingIsLanguageNeutralAndBounded() throws {
         let mixed = "Hello, 世界。This is a longer sentence that needs another chunk."
-        let chunks = DubTextChunker.chunks(mixed, maximumCharacters: 18)
+        let plan = try DubChunkPlanner.plan(mixed, language: "auto", budget: .init(maximumCharacters: 18), tokenCount: DubChunkPlanner.estimatedTokenCount)
+        let chunks = plan.chunks.map(\.text)
         #expect(!chunks.isEmpty)
         #expect(chunks.allSatisfy { $0.count <= 18 })
         #expect(chunks.joined().replacingOccurrences(of: " ", with: "")

@@ -16,6 +16,7 @@ actor LocalDubFlowRenderer {
         var source: DubSegmentPayload
         var reference: DubVoiceReference?
         var chunks: [String]
+        var planning: DubChunkPlanner.Chunk
     }
 
     struct GeneratedSegment: Sendable {
@@ -27,16 +28,17 @@ actor LocalDubFlowRenderer {
         payload: DubFlowPayload,
         progress: @escaping @Sendable (DubFlowProgress) -> Void
     ) async throws -> DubFlowResult {
-        try await LocalSpeechScheduler.shared.withLease(jobID: UUID(), lane: .dub) {
-            try await self.renderHoldingLease(payload: payload, progress: progress)
+        let prepared = try await DubPreprocessingRuntime.shared.prepare(payload)
+        return try await LocalSpeechScheduler.shared.withLease(jobID: UUID(), lane: .dub) {
+            try await self.renderHoldingLease(payload: payload, prepared: prepared, progress: progress)
         }
     }
 
     private func renderHoldingLease(
         payload: DubFlowPayload,
+        prepared: [PreparedSegment],
         progress: @escaping @Sendable (DubFlowProgress) -> Void
     ) async throws -> DubFlowResult {
-        let prepared = try Self.prepare(payload)
         let chunkCount = prepared.reduce(0) { $0 + $1.chunks.count }
         progress(.init(
             stage: .dubPreprocessing,
@@ -163,33 +165,15 @@ actor LocalDubFlowRenderer {
         return DubFlowResult(outputURL: outputURL, segments: assembly.segments)
     }
 
-    static func prepare(_ payload: DubFlowPayload) throws -> [PreparedSegment] {
-        let semanticSegments = try SemanticDubPreprocessor.prepare(payload)
-        let prepared = semanticSegments.compactMap { prepared -> PreparedSegment? in
+    /// Synchronous CPU preview; live rendering uses DubPreprocessingRuntime.
+    static func prepare(_ payload: DubFlowPayload,
+                        tokenCount: (String) -> Int = DubChunkPlanner.estimatedTokenCount) throws -> [PreparedSegment] {
+        try SemanticDubPreprocessor.prepare(payload, tokenCount: tokenCount).map { prepared in
             var segment = prepared.segment
-            // Resolve the voice using the original segment before assigning its
-            // output label; grouping can change both speaker keys and indexes.
-            segment.speaker = prepared.reference?.speakerLabel(fallback: segment.speaker)
-                ?? segment.speaker
-            let normalized = normalizeTTSText(segment.text)
-            guard !normalized.isEmpty else { return nil }
-            let chunks = DubTextChunker.chunks(
-                normalized,
-                maximumCharacters: max(1, payload.maximumChunkCharacters)
-            )
-            return chunks.isEmpty ? nil : PreparedSegment(
-                source: segment, reference: prepared.reference, chunks: chunks
-            )
+            segment.speaker = prepared.reference?.speakerLabel(fallback: segment.speaker) ?? segment.speaker
+            // This is the sole final split: no character-based second pass.
+            return PreparedSegment(source: segment, reference: prepared.reference, chunks: [segment.text], planning: prepared.chunk)
         }
-        guard !prepared.isEmpty else { throw MediaFlowError.emptyDubScript }
-        return prepared
-    }
-
-    private static func normalizeTTSText(_ text: String) -> String {
-        text.precomposedStringWithCompatibilityMapping
-            .split(whereSeparator: \.isWhitespace)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func reference(
@@ -381,42 +365,5 @@ actor LocalDubFlowRenderer {
         let file = try AVAudioFile(forWriting: URL, settings: format.settings)
         try file.write(from: buffer)
         return URL
-    }
-}
-
-enum DubTextChunker {
-    static func chunks(_ text: String, maximumCharacters: Int) -> [String] {
-        let maximum = max(1, maximumCharacters)
-        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return [] }
-
-        var sentences: [String] = []
-        var cursor = normalized.startIndex
-        while cursor < normalized.endIndex {
-            let remaining = normalized[cursor...]
-            let limit = remaining.index(
-                remaining.startIndex,
-                offsetBy: min(maximum, remaining.count),
-                limitedBy: remaining.endIndex
-            ) ?? remaining.endIndex
-            if limit == remaining.endIndex {
-                sentences.append(String(remaining))
-                break
-            }
-            let preferred = remaining[..<limit].lastIndex(where: isBoundary)
-            let split = preferred.map { remaining.index(after: $0) } ?? limit
-            let piece = String(remaining[..<split])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !piece.isEmpty { sentences.append(piece) }
-            cursor = split
-            while cursor < normalized.endIndex, normalized[cursor].isWhitespace {
-                cursor = normalized.index(after: cursor)
-            }
-        }
-        return sentences
-    }
-
-    private static func isBoundary(_ character: Character) -> Bool {
-        character.isWhitespace || ".!?。！？；;：:，,".contains(character)
     }
 }

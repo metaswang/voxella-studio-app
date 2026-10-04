@@ -1,173 +1,142 @@
 import Foundation
 
+/// Preserve voice/timeline constraints before planning one final set of TTS inputs.
 enum SemanticDubPreprocessor {
     struct PreparedSegment: Sendable {
         var segment: DubSegmentPayload
         var reference: DubVoiceReference?
+        var chunk: DubChunkPlanner.Chunk
     }
 
     struct Configuration: Sendable {
-        var minimumSequenceCharacters = 40
-        var maximumSequenceCharacters = 220
-        var maximumTimelineDuration: Double = 12
-        var maximumGap: Double = 1.2
+        var maximumSequenceCharacters: Int? = nil
+        var budget = DubChunkPlanner.Budget()
     }
 
     private struct Context: Equatable {
         var speaker: String?
         var reference: DubVoiceReference?
         var options: [String: String]
-        var hasSegmentReference: Bool
+    }
+
+    private struct SourceSpan {
+        var segment: DubSegmentPayload
+        var range: NSRange
     }
 
     private struct Group {
-        var segments: [DubSegmentPayload]
-        var text: String
+        var sources: [SourceSpan] = []
+        var text = ""
+        var utf16Length = 0
+
+        mutating func append(_ segment: DubSegmentPayload, language: String) {
+            if !text.isEmpty {
+                // Derive script-sensitive spacing without normalizing the full source again.
+                let tail = String(text.suffix(32))
+                let head = String(segment.text.prefix(32))
+                let joined = TranscriptSegmenter.joinedText([tail, head], language: language == "auto" ? nil : language)
+                if joined != tail + head { text += " "; utf16Length += 1 }
+            }
+            let range = NSRange(location: utf16Length, length: segment.text.utf16.count)
+            text += segment.text
+            utf16Length += range.length
+            sources.append(SourceSpan(segment: segment, range: range))
+        }
     }
 
-    static func preprocess(
-        _ payload: DubFlowPayload,
-        configuration: Configuration = Configuration()
-    ) throws -> [DubSegmentPayload] {
+    static func preprocess(_ payload: DubFlowPayload, configuration: Configuration = Configuration()) throws -> [DubSegmentPayload] {
         try prepare(payload, configuration: configuration).map(\.segment)
     }
 
-    static func prepare(
-        _ payload: DubFlowPayload,
-        configuration: Configuration = Configuration()
-    ) throws -> [PreparedSegment] {
-        let normalized = payload.segments
-            .sorted { $0.index < $1.index }
-            .compactMap { segment -> DubSegmentPayload? in
-                let text = normalizeTTSText(
-                    TranscriptSegmenter.normalizeDisplayText(
-                        segment.text,
-                        language: payload.language == "auto" ? nil : payload.language
-                    )
-                )
-                guard !text.isEmpty else { return nil }
-                var normalized = segment
-                normalized.text = text
-                return normalized
-            }
+    /// The estimate is for offline previews/tests. Live rendering injects Qwen's tokenizer.
+    static func prepare(_ payload: DubFlowPayload, configuration: Configuration = Configuration(),
+                        tokenCount: (String) -> Int = DubChunkPlanner.estimatedTokenCount) throws -> [PreparedSegment] {
+        let normalized = payload.segments.sorted { $0.index < $1.index }.compactMap { segment -> DubSegmentPayload? in
+            let text = normalize(segment.text, language: payload.language)
+            guard !text.isEmpty else { return nil }
+            var value = segment
+            value.text = text
+            return value
+        }
         guard !normalized.isEmpty else { throw MediaFlowError.emptyDubScript }
-
+        let timelineMode = payload.resolvedTimelineMode
         var groups: [Group] = []
-        var pending: [DubSegmentPayload] = []
-
-        func flush() {
-            guard !pending.isEmpty else { return }
-            let text = joinedText(pending.map(\.text), language: payload.language)
-            if !text.isEmpty {
-                groups.append(Group(segments: pending, text: text))
-            }
-            pending.removeAll(keepingCapacity: true)
-        }
-
+        var pending = Group()
         for segment in normalized {
-            if pending.isEmpty {
-                pending = [segment]
-                continue
+            try Task.checkCancellation()
+            if let previous = pending.sources.last?.segment {
+                let hardBoundary = context(for: previous, payload: payload) != context(for: segment, payload: payload)
+                    || payload.segmentReferences[previous.index] != nil || payload.segmentReferences[segment.index] != nil
+                    // Explicit video anchors are independent fitting windows. Audio-only
+                    // requests deliberately ignore imported subtitle timestamps.
+                    || (timelineMode == .videoTimeline
+                        && (validTime(previous.start) != nil || validTime(segment.start) != nil))
+                if hardBoundary { groups.append(pending); pending = Group() }
             }
-
-            let previous = pending[pending.count - 1]
-            let currentText = joinedText(pending.map(\.text), language: payload.language)
-            let contextChanged = context(for: previous, payload: payload)
-                != context(for: segment, payload: payload)
-                || payload.segmentReferences[previous.index] != nil
-                || payload.segmentReferences[segment.index] != nil
-            let gapTooLarge = timelineGap(from: previous, to: segment) > configuration.maximumGap
-            let durationTooLarge = timelineDuration(
-                from: pending.first,
-                to: pending.last,
-                mode: payload.resolvedTimelineMode
-            ) > configuration.maximumTimelineDuration
-            let textTooLarge = currentText.count + segment.text.count
-                > configuration.maximumSequenceCharacters
-            let sentenceComplete = hasSentenceEnd(currentText)
-
-            if contextChanged
-                || gapTooLarge
-                || durationTooLarge
-                || textTooLarge
-                || (sentenceComplete
-                    && currentText.count >= configuration.minimumSequenceCharacters) {
-                flush()
-            }
-            pending.append(segment)
+            pending.append(segment, language: payload.language)
         }
-        flush()
+        if !pending.sources.isEmpty { groups.append(pending) }
 
+        var budget = configuration.budget
+        let limits = [budget.maximumCharacters, configuration.maximumSequenceCharacters, payload.maximumChunkCharacters].compactMap { $0 }
+        budget.maximumCharacters = limits.min()
         var output: [PreparedSegment] = []
-        var usedIndexes = Set<Int>()
+        // Reserve original explicit-voice keys so a split chunk never accidentally
+        // masquerades as another original segment when it is reindexed.
+        var usedIndexes = Set(payload.segmentReferences.keys)
         for group in groups {
-            let chunks = splitOverlongText(
-                group.text,
-                maximumCharacters: configuration.maximumSequenceCharacters,
-                language: payload.language
-            )
-            guard !chunks.isEmpty else { continue }
-
-            let start = validTime(group.segments.first?.start)
-            let end = validTime(group.segments.last?.end)
-            let duration = start.flatMap { start in
-                end.map { max(0.001, $0 - start) }
-            }
-
-            for (chunkIndex, chunk) in chunks.enumerated() {
+            try Task.checkCancellation()
+            let plan = try DubChunkPlanner.plan(group.text, language: payload.language, budget: budget, tokenCount: tokenCount)
+            let first = group.sources[0].segment
+            let start = validTime(first.start)
+            let end = validTime(group.sources.last?.segment.end)
+            let duration = start.flatMap { a in end.flatMap { $0 > a ? $0 - a : nil } }
+            let weight = max(0.001, plan.chunks.reduce(0) { $0 + max(0.001, $1.estimatedSeconds) })
+            var elapsedWeight: Double = 0
+            var sourceCursor = 0
+            for (position, chunk) in plan.chunks.enumerated() {
+                while sourceCursor + 1 < group.sources.count,
+                      NSMaxRange(group.sources[sourceCursor].range) <= chunk.range.location { sourceCursor += 1 }
+                let source = group.sources[sourceCursor].segment
+                let chunkWeight = max(0.001, chunk.estimatedSeconds)
                 let chunkStart: Double?
                 let chunkEnd: Double?
-                if payload.resolvedTimelineMode == .audioFlow {
-                    chunkStart = nil
-                    chunkEnd = nil
+                if timelineMode == .audioFlow {
+                    chunkStart = nil; chunkEnd = nil
                 } else if let start, let duration {
-                    let fractionStart = Double(chunkIndex) / Double(chunks.count)
-                    let fractionEnd = Double(chunkIndex + 1) / Double(chunks.count)
-                    chunkStart = start + duration * fractionStart
-                    chunkEnd = start + duration * fractionEnd
+                    chunkStart = start + duration * elapsedWeight / weight
+                    chunkEnd = position == plan.chunks.count - 1 ? end : start + duration * (elapsedWeight + chunkWeight) / weight
                 } else {
-                    chunkStart = start
-                    chunkEnd = end
+                    chunkStart = start; chunkEnd = end
                 }
-
-                let isSingleExplicitReference = group.segments.count == 1
-                    && payload.segmentReferences[group.segments[0].index] != nil
-                    && chunks.count == 1
-                let preferredIndex = isSingleExplicitReference
-                    ? group.segments[0].index
-                    : output.count
-                let index = nextAvailableIndex(preferredIndex, used: &usedIndexes)
-                output.append(
-                    PreparedSegment(segment: DubSegmentPayload(
-                        index: index,
-                        text: chunk,
-                        start: chunkStart,
-                        end: chunkEnd,
-                        speaker: group.segments.first?.speaker,
-                        sourceSubtitleID: group.segments.first?.sourceSubtitleID,
-                        options: group.segments.first?.options ?? [:]
-                    ), reference: payload.reference(for: group.segments[0]))
-                )
+                elapsedWeight += chunkWeight
+                let retainIndex = group.sources.count == 1 && plan.chunks.count == 1 && payload.segmentReferences[first.index] != nil
+                if retainIndex { usedIndexes.remove(first.index) }
+                let index = nextAvailableIndex(retainIndex ? first.index : output.count, used: &usedIndexes)
+                output.append(PreparedSegment(segment: DubSegmentPayload(
+                    index: index, text: chunk.text, start: chunkStart, end: chunkEnd,
+                    speaker: first.speaker, sourceSubtitleID: source.sourceSubtitleID, options: source.options
+                ), reference: payload.reference(for: first), chunk: chunk))
             }
         }
-
         guard !output.isEmpty else { throw MediaFlowError.emptyDubScript }
         return output
     }
 
-    private static func context(
-        for segment: DubSegmentPayload,
-        payload: DubFlowPayload
-    ) -> Context {
-        let reference = payload.reference(for: segment)
-        return Context(
-            speaker: segment.speaker?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .lowercased(),
-            reference: reference,
-            options: segment.options,
-            hasSegmentReference: payload.segmentReferences[segment.index] != nil
-        )
+    private static func normalize(_ text: String, language: String) -> String {
+        text.precomposedStringWithCanonicalMapping
+            .replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\n\n").replacingOccurrences(of: "\u{2028}", with: "\n")
+            .replacingOccurrences(of: #"\n[\t\p{Zs}]*\n(?:[\t\p{Zs}]*\n)*"#, with: "\n\n", options: .regularExpression)
+            .components(separatedBy: "\n\n")
+            .map { TranscriptSegmenter.normalizeDisplayText($0, language: language == "auto" ? nil : language)
+                .replacingOccurrences(of: "…", with: "……").trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
+    private static func context(for segment: DubSegmentPayload, payload: DubFlowPayload) -> Context {
+        Context(speaker: segment.speaker?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                reference: payload.reference(for: segment), options: segment.options)
     }
 
     private static func validTime(_ value: Double?) -> Double? {
@@ -175,118 +144,10 @@ enum SemanticDubPreprocessor {
         return value
     }
 
-    private static func timelineGap(
-        from previous: DubSegmentPayload,
-        to current: DubSegmentPayload
-    ) -> Double {
-        guard let previousEnd = validTime(previous.end),
-              let currentStart = validTime(current.start) else { return 0 }
-        return max(0, currentStart - previousEnd)
-    }
-
-    private static func timelineDuration(
-        from first: DubSegmentPayload?,
-        to last: DubSegmentPayload?,
-        mode: DubTimelineMode
-    ) -> Double {
-        guard mode == .videoTimeline,
-              let start = validTime(first?.start),
-              let end = validTime(last?.end) else { return 0 }
-        return max(0, end - start)
-    }
-
-    private static func nextAvailableIndex(
-        _ preferred: Int,
-        used: inout Set<Int>
-    ) -> Int {
+    private static func nextAvailableIndex(_ preferred: Int, used: inout Set<Int>) -> Int {
         var candidate = max(0, preferred)
-        while used.contains(candidate) {
-            candidate += 1
-        }
+        while used.contains(candidate) { candidate += 1 }
         used.insert(candidate)
         return candidate
-    }
-
-    private static func joinedText(_ parts: [String], language: String) -> String {
-        TranscriptSegmenter.joinedText(
-            parts,
-            language: language == "auto" ? nil : language
-        )
-    }
-
-    private static func normalizeTTSText(_ text: String) -> String {
-        var value = text
-            .replacingOccurrences(of: "…", with: "……")
-            .split(whereSeparator: \.isWhitespace)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        for pair in [(" ，", "，"), (" 。", "。"), (" ？", "？"), (" ！", "！"),
-                     (" ,", ","), (" .", "."), (" ?", "?"), (" !", "!")] {
-            value = value.replacingOccurrences(of: pair.0, with: pair.1)
-        }
-        return value
-    }
-
-    private static func hasSentenceEnd(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let last = trimmed.last else { return false }
-        return ".!?。！？…".contains(last)
-    }
-
-    private static func splitOverlongText(
-        _ text: String,
-        maximumCharacters: Int,
-        language: String
-    ) -> [String] {
-        let maximum = max(1, maximumCharacters)
-        if text.count <= maximum {
-            let sentences = sentenceParts(text, language: language)
-            return sentences.count > 1 && text.count >= 40 ? sentences : [text]
-        }
-
-        let characters = Array(text)
-        var result: [String] = []
-        var start = 0
-        while start < characters.count {
-            let end = min(start + maximum, characters.count)
-            if end == characters.count {
-                result.append(String(characters[start..<end]))
-                break
-            }
-
-            let searchStart = max(start + 1, end - maximum / 3)
-            let split = (searchStart..<end).last(where: {
-                "，,；;：:、。.!?！？ ".contains(characters[$0])
-            }) ?? end
-            let actualEnd = max(start + 1, split + 1)
-            let piece = normalizeTTSText(
-                joinedText([String(characters[start..<actualEnd])], language: language)
-            )
-            if !piece.isEmpty { result.append(piece) }
-            start = actualEnd
-        }
-        return result
-    }
-
-    private static func sentenceParts(_ text: String, language: String) -> [String] {
-        var parts: [String] = []
-        var current = ""
-        for character in text {
-            current.append(character)
-            if ".!?。！？…".contains(character) {
-                let normalized = normalizeTTSText(
-                    joinedText([current], language: language)
-                )
-                if !normalized.isEmpty {
-                    parts.append(normalized)
-                }
-                current.removeAll(keepingCapacity: true)
-            }
-        }
-        let trailing = normalizeTTSText(joinedText([current], language: language))
-        if !trailing.isEmpty {
-            parts.append(trailing)
-        }
-        return parts
     }
 }

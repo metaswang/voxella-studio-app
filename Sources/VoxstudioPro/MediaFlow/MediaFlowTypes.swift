@@ -543,7 +543,8 @@ struct DubFlowPayload: Sendable {
     var reference: DubVoiceReference?
     var speakerReferences: [String: DubVoiceReference]
     var segmentReferences: [Int: DubVoiceReference] = [:]
-    var maximumChunkCharacters = 150
+    // Optional caller cap; automatic planning uses the installed tokenizer budget.
+    var maximumChunkCharacters: Int? = nil
     var segmentGapSeconds = 0.2
     var timelineMode: DubTimelineMode = .automatic
     var seed: UInt64?
