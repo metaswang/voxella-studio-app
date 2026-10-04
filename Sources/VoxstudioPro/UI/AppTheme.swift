@@ -605,6 +605,8 @@ enum AppTheme {
         static let sessionStatusPulseScale: CGFloat = 1.06
         static var recentSessionThumbnailWidth: CGFloat { AppTheme.zoomed(76) }
         static var recentSessionThumbnailHeight: CGFloat { AppTheme.zoomed(52) }
+        static var recentSessionCardMinWidth: CGFloat { AppTheme.zoomed(288) }
+        static var recentSessionCardMaxWidth: CGFloat { AppTheme.zoomed(400) }
         static var fullscreenControlSize: CGFloat { AppTheme.zoomed(48) }
         static let fullscreenChromeIdle: Duration = .seconds(3)
         static let fullscreenSeekStepSeconds: Double = 5

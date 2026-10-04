@@ -6,7 +6,10 @@ struct VideoEditorHomeView: View {
 
     @AppStorage("voxella.videoEditor.libraryLayout") private var layoutRaw = LibraryLayout.grid.rawValue
     @State private var searchQuery = ""
-    @State private var projectPendingDeletion: ProjectEntry?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isSelecting = false
+    @State private var selectedProjectIDs: Set<UUID> = []
+    @State private var projectsPendingDeletion: [ProjectEntry] = []
     @State private var deletingProjectIDs: Set<UUID> = []
     @State private var deletionMessage: String?
     @FocusState private var isSearchFocused: Bool
@@ -31,7 +34,7 @@ struct VideoEditorHomeView: View {
             toolbar
             ScrollView {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                    if let project = suspendedProject {
+                    if let project = suspendedProject, !isSelecting {
                         resumeBanner(project)
                     }
                     library
@@ -46,17 +49,14 @@ struct VideoEditorHomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(AppTheme.Background.baseColor)
-        .alert(L10n.string("Delete Project?"), isPresented: Binding(
-            get: { projectPendingDeletion != nil },
-            set: { if !$0 { projectPendingDeletion = nil } }
+        .alert(L10n.string(projectsPendingDeletion.count == 1 ? "Delete Project?" : "Delete Selected Projects?"), isPresented: Binding(
+            get: { !projectsPendingDeletion.isEmpty },
+            set: { if !$0 { projectsPendingDeletion = [] } }
         )) {
-            Button("Cancel", role: .cancel) { projectPendingDeletion = nil }
-            Button("Delete", role: .destructive) { deletePendingProject() }
+            Button("Cancel", role: .cancel) { projectsPendingDeletion = [] }
+            Button("Delete", role: .destructive) { deletePendingProjects() }
         } message: {
-            Text(L10n.format(
-                "“%@” will be moved to the Trash. You can restore it from Finder.",
-                projectPendingDeletion?.name ?? L10n.string("This project")
-            ))
+            Text(deletionPrompt)
         }
         .alert(L10n.string("Project Couldn’t Be Deleted"), isPresented: Binding(
             get: { deletionMessage != nil },
@@ -66,6 +66,27 @@ struct VideoEditorHomeView: View {
         } message: {
             Text(deletionMessage.map(L10n.display) ?? "")
         }
+        .onChange(of: Set(filteredEntries.map(\.id))) { _, ids in
+            selectedProjectIDs.formIntersection(ids)
+        }
+        .onChange(of: registry.entries.isEmpty) { _, isEmpty in
+            if isEmpty { endSelection() }
+        }
+        .onExitCommand {
+            if isSelecting { endSelection() }
+        }
+    }
+
+    private var visibleProjectIDs: Set<UUID> {
+        Set(filteredEntries.map(\.id)).subtracting(deletingProjectIDs)
+    }
+
+    private var allVisibleSelected: Bool {
+        !visibleProjectIDs.isEmpty && visibleProjectIDs.isSubset(of: selectedProjectIDs)
+    }
+
+    private var selectionAnimation: Animation? {
+        reduceMotion ? nil : .easeInOut(duration: AppTheme.Anim.transition)
     }
 
     private var toolbar: some View {
@@ -99,14 +120,79 @@ struct VideoEditorHomeView: View {
             HStack(spacing: AppTheme.Spacing.md) {
                 searchField
                 Spacer(minLength: 0)
+                if !isSelecting {
+                    Button {
+                        withAnimation(selectionAnimation) { isSelecting = true }
+                    } label: {
+                        Label(L10n.string("Select"), systemImage: "checkmark.circle")
+                    }
+                    .buttonStyle(LibrarySelectionActionButtonStyle())
+                    .disabled(visibleProjectIDs.isEmpty || !deletingProjectIDs.isEmpty)
+                    .help(L10n.string("Select projects"))
+                }
                 layoutPicker
             }
+            if isSelecting { selectionToolbar }
         }
         .padding(.horizontal, AppTheme.Spacing.xxl)
         .padding(.top, AppTheme.Spacing.xl)
         .padding(.bottom, AppTheme.Spacing.md)
         .frame(maxWidth: AppTheme.Workbench.contentMaxWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var selectionToolbar: some View {
+        HStack(spacing: AppTheme.Spacing.mdLg) {
+            HStack(spacing: AppTheme.Spacing.smMd) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(AppTheme.Accent.link)
+                    .accessibilityHidden(true)
+                Text(selectionLabel)
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                    .monospacedDigit()
+            }
+            .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
+
+            Button {
+                withAnimation(selectionAnimation) {
+                    selectedProjectIDs = allVisibleSelected ? [] : visibleProjectIDs
+                }
+            } label: {
+                Text(L10n.string(allVisibleSelected ? "Deselect All" : "Select All"))
+            }
+            .buttonStyle(LibrarySelectionActionButtonStyle())
+            .disabled(visibleProjectIDs.isEmpty || !deletingProjectIDs.isEmpty)
+            .help(L10n.string(allVisibleSelected ? "Deselect All" : "Select all visible projects"))
+
+            Spacer(minLength: AppTheme.Spacing.md)
+
+            Button(role: .destructive) {
+                projectsPendingDeletion = filteredEntries.filter { selectedProjectIDs.contains($0.id) }
+            } label: {
+                Label(
+                    selectedProjectIDs.isEmpty
+                        ? L10n.string("Delete")
+                        : L10n.format("Delete %@", selectedProjectIDs.count),
+                    systemImage: "trash"
+                )
+            }
+            .buttonStyle(LibrarySelectionActionButtonStyle(tone: .destructive))
+            .disabled(selectedProjectIDs.isEmpty || !deletingProjectIDs.isEmpty)
+            .help(L10n.string("Delete selected projects"))
+
+            Button(L10n.string("Done"), action: endSelection)
+                .buttonStyle(LibrarySelectionActionButtonStyle(tone: .accent))
+                .disabled(!deletingProjectIDs.isEmpty)
+        }
+        .frame(minHeight: AppTheme.zoomed(32))
+    }
+
+    private var selectionLabel: String {
+        switch selectedProjectIDs.count {
+        case 0: L10n.string("Select projects")
+        case 1: L10n.string("1 project selected")
+        default: L10n.format("%@ projects selected", selectedProjectIDs.count)
+        }
     }
 
     private var searchField: some View {
@@ -147,22 +233,10 @@ struct VideoEditorHomeView: View {
     }
 
     private var layoutPicker: some View {
-        Picker("Layout", selection: Binding(
+        LibraryLayoutPicker(layout: Binding(
             get: { layout },
             set: { layout = $0 }
-        )) {
-            Image(systemName: "square.grid.2x2")
-                .tag(LibraryLayout.grid)
-                .help(L10n.string("Grid"))
-            Image(systemName: "list.bullet")
-                .tag(LibraryLayout.list)
-                .help(L10n.string("List"))
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(width: AppTheme.VideoEditorHome.layoutPickerWidth)
-                .help(L10n.string("Project layout"))
-                .accessibilityLabel(L10n.string("Project layout"))
+        ), accessibilityLabel: L10n.string("Project layout"))
     }
 
     @ViewBuilder
@@ -179,7 +253,7 @@ struct VideoEditorHomeView: View {
 
     private func projectGrid(entries: [ProjectEntry]) -> some View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: AppTheme.Spacing.xl) {
-            if !isSearching {
+            if !isSearching && !isSelecting {
                 NewTimelinePoster(action: { AppState.shared.createProjectInteractively() })
             }
             ForEach(entries) { entry in
@@ -187,6 +261,9 @@ struct VideoEditorHomeView: View {
                     entry: entry,
                     isInProgress: isSuspended(entry),
                     isDeleting: deletingProjectIDs.contains(entry.id),
+                    isSelecting: isSelecting,
+                    isSelected: selectedProjectIDs.contains(entry.id),
+                    onToggleSelection: { toggleSelection(entry.id) },
                     onOpen: open,
                     onRemove: remove,
                     onDelete: { requestDeletion(entry) }
@@ -198,6 +275,9 @@ struct VideoEditorHomeView: View {
     private func projectList(entries: [ProjectEntry]) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: AppTheme.Spacing.md) {
+                if isSelecting {
+                    Color.clear.frame(width: AppTheme.IconSize.md)
+                }
                 Text("Name")
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text("Opened")
@@ -215,7 +295,7 @@ struct VideoEditorHomeView: View {
 
             Divider()
 
-            if !isSearching {
+            if !isSearching && !isSelecting {
                 NewTimelineListRow(action: { AppState.shared.createProjectInteractively() })
                 if !entries.isEmpty {
                     Divider()
@@ -228,6 +308,9 @@ struct VideoEditorHomeView: View {
                         entry: entry,
                         isInProgress: isSuspended(entry),
                         isDeleting: deletingProjectIDs.contains(entry.id),
+                        isSelecting: isSelecting,
+                        isSelected: selectedProjectIDs.contains(entry.id),
+                        onToggleSelection: { toggleSelection(entry.id) },
                         onOpen: open,
                         onRemove: remove,
                         onDelete: { requestDeletion(entry) }
@@ -388,34 +471,69 @@ struct VideoEditorHomeView: View {
         registry.remove(url)
     }
 
-    private func requestDeletion(_ entry: ProjectEntry) {
-        projectPendingDeletion = entry
+    private func toggleSelection(_ id: UUID) {
+        guard deletingProjectIDs.isEmpty else { return }
+        withAnimation(selectionAnimation) {
+            if selectedProjectIDs.contains(id) {
+                selectedProjectIDs.remove(id)
+            } else {
+                selectedProjectIDs.insert(id)
+            }
+        }
     }
 
-    private func deletePendingProject() {
-        guard let entry = projectPendingDeletion else { return }
-        projectPendingDeletion = nil
-        deletingProjectIDs.insert(entry.id)
+    private func endSelection() {
+        guard deletingProjectIDs.isEmpty else { return }
+        withAnimation(selectionAnimation) {
+            isSelecting = false
+            selectedProjectIDs.removeAll()
+        }
+    }
+
+    private var deletionPrompt: String {
+        if projectsPendingDeletion.count == 1 {
+            return L10n.format(
+                "“%@” will be moved to the Trash. You can restore it from Finder.",
+                projectsPendingDeletion[0].name
+            )
+        }
+        return L10n.format(
+            "The %@ selected projects will be moved to the Trash. You can restore them from Finder.",
+            projectsPendingDeletion.count
+        )
+    }
+
+    private func requestDeletion(_ entry: ProjectEntry) {
+        guard deletingProjectIDs.isEmpty else { return }
+        projectsPendingDeletion = [entry]
+    }
+
+    private func deletePendingProjects() {
+        // Capture the confirmed projects before clearing the alert or changing selection.
+        let entries = projectsPendingDeletion
+        guard !entries.isEmpty else { return }
+        let ids = Set(entries.map(\.id))
+        projectsPendingDeletion = []
+        deletingProjectIDs.formUnion(ids)
         Task { @MainActor in
-            defer { deletingProjectIDs.remove(entry.id) }
             do {
-                let result = try await appState.deleteProjects(withIDs: [entry.id])
-                if let failed = result.failedNames.first {
-                    deletionMessage = L10n.format("Couldn’t move %@ to the Trash.", failed)
-                } else if result.deletedIDs.isEmpty {
-                    deletionMessage = L10n.format("“%@” is no longer in Recent Projects.", entry.name)
+                let result = try await appState.deleteProjects(withIDs: ids)
+                deletingProjectIDs.subtract(ids)
+                selectedProjectIDs.subtract(result.deletedIDs)
+                if !result.failedNames.isEmpty {
+                    selectedProjectIDs.formUnion(ids.intersection(visibleProjectIDs))
+                    deletionMessage = L10n.format("Couldn’t move %@ to the Trash.", result.failedNames.formatted())
+                } else {
+                    endSelection()
                 }
             } catch {
+                deletingProjectIDs.subtract(ids)
+                selectedProjectIDs.formUnion(ids.intersection(visibleProjectIDs))
                 deletionMessage = error.localizedDescription
             }
         }
     }
 
-}
-
-private enum LibraryLayout: String, Hashable {
-    case grid
-    case list
 }
 
 private struct NewTimelinePoster: View {
@@ -484,6 +602,9 @@ private struct VideoProjectPoster: View {
     let entry: ProjectEntry
     let isInProgress: Bool
     let isDeleting: Bool
+    let isSelecting: Bool
+    let isSelected: Bool
+    let onToggleSelection: () -> Void
     let onOpen: (URL) -> Void
     let onRemove: (URL) -> Void
     let onDelete: () -> Void
@@ -492,8 +613,12 @@ private struct VideoProjectPoster: View {
 
     var body: some View {
         Button {
-            guard entry.isAccessible, !isDeleting else { return }
-            onOpen(entry.url)
+            guard !isDeleting else { return }
+            if isSelecting {
+                onToggleSelection()
+            } else if entry.isAccessible {
+                onOpen(entry.url)
+            }
         } label: {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                 ZStack {
@@ -514,7 +639,7 @@ private struct VideoProjectPoster: View {
                                 .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                         }
                         .foregroundStyle(AppTheme.MediaOverlay.tertiaryColor)
-                    } else if isHovered {
+                    } else if isHovered && !isSelecting {
                         AppTheme.MediaOverlay.backgroundColor.opacity(AppTheme.VideoEditorHome.hoverOpenOverlay)
                         Text("Open")
                             .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.semibold))
@@ -539,11 +664,25 @@ private struct VideoProjectPoster: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
                         .strokeBorder(
-                            isHovered || isInProgress
-                                ? AppTheme.Border.primaryColor
-                                : AppTheme.Border.subtleColor,
-                            lineWidth: AppTheme.BorderWidth.hairline
+                            isSelecting && isSelected
+                                ? AppTheme.Accent.link
+                                : (isHovered || isInProgress ? AppTheme.Border.primaryColor : AppTheme.Border.subtleColor),
+                            lineWidth: isSelecting && isSelected ? AppTheme.BorderWidth.medium : AppTheme.BorderWidth.hairline
                         )
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if isSelecting {
+                        Group {
+                            if isDeleting {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                LibrarySelectionIndicator(isSelected: isSelected)
+                            }
+                        }
+                        .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
+                        .background(AppTheme.Background.surfaceColor, in: Circle())
+                        .padding(AppTheme.Spacing.smMd)
+                    }
                 }
                 .shadow(isHovered ? AppTheme.Shadow.md : AppTheme.Shadow.sm)
 
@@ -564,7 +703,7 @@ private struct VideoProjectPoster: View {
         }
         .buttonStyle(.plain)
         .overlay(alignment: .topTrailing) {
-            if isHovered || isDeleting {
+            if !isSelecting && (isHovered || isDeleting) {
                 VideoProjectDeleteButton(
                     projectName: entry.name,
                     isDeleting: isDeleting,
@@ -577,17 +716,22 @@ private struct VideoProjectPoster: View {
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: AppTheme.Anim.hover), value: isHovered)
         .contextMenu {
-            ProjectEntryContextActions(
-                entry: entry,
-                onOpen: onOpen,
-                onRemove: onRemove,
-                onDelete: onDelete
-            )
+            if !isSelecting && !isDeleting {
+                ProjectEntryContextActions(
+                    entry: entry,
+                    onOpen: onOpen,
+                    onRemove: onRemove,
+                    onDelete: onDelete
+                )
+            }
         }
-        .help(entry.isAccessible
-            ? L10n.format("Open %@", entry.name)
-            : L10n.format("%@ is missing", entry.name))
+        .disabled(isDeleting)
+        .help(isSelecting
+            ? L10n.string(isSelected ? "Deselect project" : "Select project")
+            : (entry.isAccessible ? L10n.format("Open %@", entry.name) : L10n.format("%@ is missing", entry.name)))
         .accessibilityLabel(entry.name)
+        .accessibilityValue(isSelecting ? L10n.string(isSelected ? "Selected" : "Not selected") : "")
+        .accessibilityAddTraits(isSelecting && isSelected ? [.isSelected] : [])
     }
 }
 
@@ -652,6 +796,9 @@ private struct VideoProjectListRow: View {
     let entry: ProjectEntry
     let isInProgress: Bool
     let isDeleting: Bool
+    let isSelecting: Bool
+    let isSelected: Bool
+    let onToggleSelection: () -> Void
     let onOpen: (URL) -> Void
     let onRemove: (URL) -> Void
     let onDelete: () -> Void
@@ -660,10 +807,24 @@ private struct VideoProjectListRow: View {
 
     var body: some View {
         Button {
-            guard entry.isAccessible, !isDeleting else { return }
-            onOpen(entry.url)
+            guard !isDeleting else { return }
+            if isSelecting {
+                onToggleSelection()
+            } else if entry.isAccessible {
+                onOpen(entry.url)
+            }
         } label: {
             HStack(spacing: AppTheme.Spacing.md) {
+                if isSelecting {
+                    Group {
+                        if isDeleting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            LibrarySelectionIndicator(isSelected: isSelected)
+                        }
+                    }
+                    .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
+                }
                 ProjectPackageThumbnail(
                     url: entry.url,
                     freshness: entry.lastOpenedDate,
@@ -721,12 +882,20 @@ private struct VideoProjectListRow: View {
             }
             .padding(.horizontal, AppTheme.Spacing.lg)
             .frame(minHeight: AppTheme.VideoEditorHome.listRowMinHeight)
-            .background(isHovered ? AppTheme.Background.raisedColor.opacity(AppTheme.Opacity.strong) : .clear)
+            .background(isSelecting && isSelected
+                ? AppTheme.Accent.link.opacity(AppTheme.Opacity.faint)
+                : (isHovered ? AppTheme.Background.raisedColor.opacity(AppTheme.Opacity.strong) : .clear))
+            .overlay {
+                if isSelecting && isSelected {
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                        .strokeBorder(AppTheme.Accent.link.opacity(AppTheme.Opacity.strong), lineWidth: AppTheme.BorderWidth.medium)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .overlay(alignment: .trailing) {
-            if isHovered || isDeleting {
+            if !isSelecting && (isHovered || isDeleting) {
                 VideoProjectDeleteButton(
                     projectName: entry.name,
                     isDeleting: isDeleting,
@@ -738,17 +907,22 @@ private struct VideoProjectListRow: View {
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: AppTheme.Anim.hover), value: isHovered)
         .contextMenu {
-            ProjectEntryContextActions(
-                entry: entry,
-                onOpen: onOpen,
-                onRemove: onRemove,
-                onDelete: onDelete
-            )
+            if !isSelecting && !isDeleting {
+                ProjectEntryContextActions(
+                    entry: entry,
+                    onOpen: onOpen,
+                    onRemove: onRemove,
+                    onDelete: onDelete
+                )
+            }
         }
-        .help(entry.isAccessible
-            ? L10n.format("Open %@", entry.name)
-            : L10n.format("%@ is missing", entry.name))
+        .disabled(isDeleting)
+        .help(isSelecting
+            ? L10n.string(isSelected ? "Deselect project" : "Select project")
+            : (entry.isAccessible ? L10n.format("Open %@", entry.name) : L10n.format("%@ is missing", entry.name)))
         .accessibilityLabel(entry.name)
+        .accessibilityValue(isSelecting ? L10n.string(isSelected ? "Selected" : "Not selected") : "")
+        .accessibilityAddTraits(isSelecting && isSelected ? [.isSelected] : [])
     }
 
     private var locationLabel: String {

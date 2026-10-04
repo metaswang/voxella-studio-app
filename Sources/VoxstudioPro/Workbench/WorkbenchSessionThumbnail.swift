@@ -9,6 +9,7 @@ struct WorkbenchSessionThumbnail: View {
     )
     /// Corner type badge only when a real video/poster image is shown (never on the glyph fallback).
     var showsTypeBadge: Bool = false
+    var placeholderSize: CGFloat = AppTheme.IconSize.md
 
     @State private var oEmbedThumbnailURL: URL?
     @State private var localThumbnailData: Data?
@@ -17,6 +18,8 @@ struct WorkbenchSessionThumbnail: View {
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             thumbnailContent
+                .frame(width: size.width, height: size.height)
+                .clipped()
             if showsTypeBadge, showsLoadedImage {
                 typeBadge
             }
@@ -76,7 +79,7 @@ struct WorkbenchSessionThumbnail: View {
     }
 
     private var fallback: some View {
-        session.sessionType.navGlyph.view(size: AppTheme.IconSize.md)
+        session.sessionType.navGlyph.view(size: placeholderSize)
             .foregroundStyle(AppTheme.Accent.link)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

@@ -5,10 +5,27 @@ struct RecentSessionsView: View {
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var account = AccountService.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("voxella.recentSessions.libraryLayout") private var layoutRaw = LibraryLayout.grid.rawValue
     @State private var searchText = ""
     @State private var isSelecting = false
     @State private var selectedSessionIDs: Set<UUID> = []
     @State private var deletionRequest: RecentSessionDeletionRequest?
+
+    private var layout: LibraryLayout {
+        get { LibraryLayout(rawValue: layoutRaw) ?? .grid }
+        nonmutating set { layoutRaw = newValue.rawValue }
+    }
+
+    private var columns: [GridItem] {
+        [GridItem(
+            .adaptive(
+                minimum: AppTheme.Workbench.recentSessionCardMinWidth,
+                maximum: AppTheme.Workbench.recentSessionCardMaxWidth
+            ),
+            spacing: AppTheme.Spacing.xl,
+            alignment: .top
+        )]
+    }
 
     private var filteredSessions: [WorkbenchSession] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -121,7 +138,7 @@ struct RecentSessionsView: View {
                 } label: {
                     Text(L10n.string(allVisibleSelected ? "Deselect All" : "Select All"))
                 }
-                .buttonStyle(RecentSessionActionButtonStyle())
+                .buttonStyle(LibrarySelectionActionButtonStyle())
                 .disabled(visibleSessionIDs.isEmpty)
                 .help(L10n.string(allVisibleSelected ? "Deselect All" : "Select all visible sessions"))
 
@@ -135,12 +152,12 @@ struct RecentSessionsView: View {
                         systemImage: "trash"
                     )
                 }
-                .buttonStyle(RecentSessionActionButtonStyle(tone: .destructive))
+                .buttonStyle(LibrarySelectionActionButtonStyle(tone: .destructive))
                 .disabled(selectedSessionIDs.isEmpty)
                 .help(L10n.string("Delete selected sessions"))
 
                 Button(L10n.string("Done"), action: endSelection)
-                    .buttonStyle(RecentSessionActionButtonStyle(tone: .accent))
+                    .buttonStyle(LibrarySelectionActionButtonStyle(tone: .accent))
             } else {
                 Spacer()
                 Button {
@@ -148,10 +165,14 @@ struct RecentSessionsView: View {
                 } label: {
                     Label(L10n.string("Select"), systemImage: "checkmark.circle")
                 }
-                .buttonStyle(RecentSessionActionButtonStyle())
+                .buttonStyle(LibrarySelectionActionButtonStyle())
                 .disabled(visibleSessionIDs.isEmpty || store.isHydrating)
                 .help(L10n.string("Select sessions"))
             }
+            LibraryLayoutPicker(layout: Binding(
+                get: { layout },
+                set: { layout = $0 }
+            ), accessibilityLabel: L10n.string("Session layout"))
         }
         .frame(minHeight: AppTheme.zoomed(32))
         .animation(selectionAnimation, value: isSelecting)
@@ -181,37 +202,61 @@ struct RecentSessionsView: View {
             )
             .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.emptyStateMinHeight)
             .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+        } else if layout == .grid {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                ForEach(filteredSessions) { session in
+                    sessionItem(session)
+                }
+            }
         } else {
             LazyVStack(spacing: AppTheme.Spacing.mdLg) {
                 ForEach(filteredSessions) { session in
-                    SessionListRow(
-                        session: session,
-                        onOpen: { store.openSession(session.id) },
-                        onDelete: { deletionRequest = RecentSessionDeletionRequest(sessions: [session]) },
-                        allowsDelete: true,
-                        isSelecting: isSelecting,
-                        isSelected: selectedSessionIDs.contains(session.id),
-                        isDeleting: store.isDeletingSession(session),
-                        onToggleSelection: { toggleSelection(session.id) }
-                    )
-                    .contextMenu {
-                        if let sourceURL = session.sourceURL {
-                            Button(L10n.string("Reveal source in Finder")) {
-                                NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
-                            }
-                        }
-                        if let outputURL = session.outputURL {
-                            Button(L10n.string("Reveal dub in Finder")) {
-                                NSWorkspace.shared.activateFileViewerSelecting([outputURL])
-                            }
-                        }
-                        if !isSelecting && !store.isDeletingSession(session) {
-                            Divider()
-                            Button(L10n.string("Delete"), role: .destructive) {
-                                deletionRequest = RecentSessionDeletionRequest(sessions: [session])
-                            }
-                        }
-                    }
+                    sessionItem(session)
+                }
+            }
+        }
+    }
+
+    private func sessionItem(_ session: WorkbenchSession) -> some View {
+        Group {
+            if layout == .grid {
+                SessionGridCard(
+                    session: session,
+                    isSelecting: isSelecting,
+                    isSelected: selectedSessionIDs.contains(session.id),
+                    isDeleting: store.isDeletingSession(session),
+                    onOpen: { store.openSession(session.id) },
+                    onDelete: { deletionRequest = RecentSessionDeletionRequest(sessions: [session]) },
+                    onToggleSelection: { toggleSelection(session.id) }
+                )
+            } else {
+                SessionListRow(
+                    session: session,
+                    onOpen: { store.openSession(session.id) },
+                    onDelete: { deletionRequest = RecentSessionDeletionRequest(sessions: [session]) },
+                    allowsDelete: true,
+                    isSelecting: isSelecting,
+                    isSelected: selectedSessionIDs.contains(session.id),
+                    isDeleting: store.isDeletingSession(session),
+                    onToggleSelection: { toggleSelection(session.id) }
+                )
+            }
+        }
+        .contextMenu {
+            if let sourceURL = session.sourceURL {
+                Button(L10n.string("Reveal source in Finder")) {
+                    NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
+                }
+            }
+            if let outputURL = session.outputURL {
+                Button(L10n.string("Reveal dub in Finder")) {
+                    NSWorkspace.shared.activateFileViewerSelecting([outputURL])
+                }
+            }
+            if !isSelecting && !store.isDeletingSession(session) {
+                Divider()
+                Button(L10n.string("Delete"), role: .destructive) {
+                    deletionRequest = RecentSessionDeletionRequest(sessions: [session])
                 }
             }
         }
@@ -272,61 +317,5 @@ private struct RecentSessionDeletionRequest: Identifiable {
 
     @MainActor var deleteButtonTitle: String {
         sessions.count == 1 ? L10n.string("Delete") : L10n.format("Delete %@", sessions.count)
-    }
-}
-
-private struct RecentSessionActionButtonStyle: ButtonStyle {
-    enum Tone { case neutral, accent, destructive }
-    var tone: Tone = .neutral
-
-    func makeBody(configuration: Configuration) -> some View {
-        Chrome(configuration: configuration, tone: tone)
-    }
-
-    private struct Chrome: View {
-        let configuration: ButtonStyleConfiguration
-        let tone: Tone
-        @Environment(\.isEnabled) private var isEnabled
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-        @State private var isHovered = false
-
-        private var tint: Color {
-            switch tone {
-            case .neutral: AppTheme.Text.secondaryColor
-            case .accent: AppTheme.Accent.link
-            case .destructive: AppTheme.Status.errorColor
-            }
-        }
-
-        var body: some View {
-            configuration.label
-                .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
-                .foregroundStyle(isEnabled ? tint : AppTheme.Text.mutedColor)
-                .padding(.horizontal, AppTheme.Spacing.lg)
-                .frame(height: AppTheme.zoomed(32))
-                .background {
-                    Capsule()
-                        .fill(tone == .neutral || !isEnabled
-                            ? AppTheme.Background.raisedColor
-                            : tint.opacity(AppTheme.Opacity.soft))
-                        .overlay {
-                            Capsule().fill(tint.opacity(isHovered && isEnabled ? AppTheme.Opacity.faint : 0))
-                        }
-                }
-                .overlay {
-                    Capsule().strokeBorder(
-                        tone == .neutral || !isEnabled
-                            ? AppTheme.Border.subtleColor
-                            : tint.opacity(AppTheme.Opacity.moderate),
-                        lineWidth: AppTheme.BorderWidth.thin
-                    )
-                }
-                .opacity(isEnabled ? 1 : AppTheme.Opacity.strong)
-                .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
-                .contentShape(Capsule())
-                .onHover { isHovered = $0 }
-                .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Anim.hover), value: isHovered)
-                .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Anim.hover), value: configuration.isPressed)
-        }
     }
 }

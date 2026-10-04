@@ -55,7 +55,7 @@ struct SessionListRow: View {
         if isSelecting && !isDeleting {
             Button { onToggleSelection?() } label: {
                 HStack(spacing: AppTheme.Spacing.lg) {
-                    selectionIndicator
+                    LibrarySelectionIndicator(isSelected: isSelected)
                     sessionContent
                 }
                 .padding(AppTheme.Spacing.lgXl)
@@ -70,25 +70,6 @@ struct SessionListRow: View {
         } else {
             standardRowContent
         }
-    }
-
-    private var selectionIndicator: some View {
-        ZStack {
-            Circle()
-                .fill(isSelected ? AppTheme.Accent.link : Color.clear)
-            Circle()
-                .strokeBorder(
-                    isSelected ? AppTheme.Accent.link : AppTheme.Text.mutedColor,
-                    lineWidth: AppTheme.BorderWidth.medium
-                )
-            Image(systemName: "checkmark")
-                .font(.system(size: AppTheme.FontSize.sm, weight: .bold))
-                .foregroundStyle(.white)
-                .opacity(isSelected ? 1 : 0)
-                .scaleEffect(isSelected || reduceMotion ? 1 : 0.6)
-        }
-        .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
-        .accessibilityHidden(true)
     }
 
     private var standardRowContent: some View {

@@ -2492,6 +2492,7 @@
 "Enable Denoise" = "Enable Denoise";
 "Generate a dub above to return to it here." = "Generate a dub above to return to it here.";
 "Grid" = "Grid";
+"Session layout" = "Session layout";
 "List" = "List";
 "Next" = "Next";
 "No matching references" = "No matching references";
@@ -2942,3 +2943,13 @@
 "Compare the decisions in my selected VoxStudio sessions. Cite each source and explain any gaps in the evidence." = "Compare the decisions in my selected VoxStudio sessions. Cite each source and explain any gaps in the evidence.";
 "Find media clips in VoxStudio related to the topic I give you, and return their source references and time ranges." = "Find media clips in VoxStudio related to the topic I give you, and return their source references and time ranges.";
 "Index status reflects the canonical knowledge body." = "Index status reflects the canonical knowledge body.";
+
+/* Video Editor project selection */
+"Select projects" = "Select projects";
+"Select all visible projects" = "Select all visible projects";
+"Delete selected projects" = "Delete selected projects";
+"1 project selected" = "1 project selected";
+"%@ projects selected" = "%@ projects selected";
+"Select project" = "Select project";
+"Deselect project" = "Deselect project";
+"The %@ selected projects will be moved to the Trash. You can restore them from Finder." = "The %@ selected projects will be moved to the Trash. You can restore them from Finder.";

@@ -2492,6 +2492,7 @@
 "Enable Denoise" = "启用降噪";
 "Generate a dub above to return to it here." = "请在上方生成配音，然后在这里继续。";
 "Grid" = "网格";
+"Session layout" = "会话展示方式";
 "List" = "列表";
 "Next" = "下一步";
 "No matching references" = "没有匹配的参考声音";
@@ -2942,3 +2943,13 @@
 "Compare the decisions in my selected VoxStudio sessions. Cite each source and explain any gaps in the evidence." = "请比较所选 VoxStudio 会话中的决策，引用各个来源，并说明证据缺失之处。";
 "Find media clips in VoxStudio related to the topic I give you, and return their source references and time ranges." = "请在 VoxStudio 中查找与我提供的主题相关的媒体片段，并返回来源与时间范围。";
 "Index status reflects the canonical knowledge body." = "索引状态反映当前知识库权威正文。";
+
+/* Video Editor project selection */
+"Select projects" = "选择项目";
+"Select all visible projects" = "选择所有显示的项目";
+"Delete selected projects" = "删除选中的项目";
+"1 project selected" = "已选择 1 个项目";
+"%@ projects selected" = "已选择 %@ 个项目";
+"Select project" = "选择项目";
+"Deselect project" = "取消选择项目";
+"The %@ selected projects will be moved to the Trash. You can restore them from Finder." = "所选的 %@ 个项目将移至废纸篓。你可以在访达中恢复它们。";
