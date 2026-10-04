@@ -109,6 +109,72 @@ struct ExportQueueTests {
         #expect(queue.job(jobID)?.progress == 1)
     }
 
+    @Test func historyPersistsLinksAndRemovalWithoutDeletingOutput() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let history = directory.appendingPathComponent("history.json")
+        let output = directory.appendingPathComponent("export.xml")
+        let source = directory.appendingPathComponent("source.voxella")
+        let queue = ExportQueue(historyURL: history)
+        let submission = try queue.enqueueVideo(
+            timeline: Fixtures.timeline(),
+            resolver: MediaResolver(manifest: { MediaManifest() }, projectURL: { nil }),
+            resolveTimeline: { _ in nil }, format: .xml, resolution: .matchTimeline,
+            missingMediaRefs: [], outputURL: output, source: .manual,
+            projectID: "persisted-project", analyticsProjectID: nil, sourceProjectURL: source
+        )
+        #expect(await waitUntil { !queue.hasActivity })
+        let restored = ExportQueue(historyURL: history)
+        let job = try #require(restored.jobs.first)
+        #expect(job.id == submission.jobID)
+        #expect(job.status == .completed)
+        #expect(job.sourceProjectURL == source)
+        #expect(job.outputBytes != nil)
+        #expect(job.mediaSummary?.contains("XMEML") == true)
+        restored.remove(job.id)
+        #expect(ExportQueue(historyURL: history).jobs.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: output.path))
+    }
+
+    @Test func interruptedJobsRestoreAsFailuresAndReleaseDestination() throws {
+        let history = temporaryURL(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: history) }
+        let output = temporaryURL("interrupted.mp4")
+        let job = ExportJob(id: UUID(), projectID: "project", filename: "interrupted.mp4",
+                            source: .manual, outputURL: output, createdAt: .now,
+                            status: .exporting, progress: 0.4, warnings: [],
+                            coverData: Data([1, 2, 3]), mediaSummary: "1920×1080 · 30 fps")
+        try JSONEncoder().encode([job]).write(to: history)
+        let queue = ExportQueue(historyURL: history)
+        #expect(queue.jobs.first?.status == .failed)
+        #expect(queue.jobs.first?.coverData == job.coverData)
+        #expect(queue.jobs.first?.error?.contains("interrupted") == true)
+        #expect(!queue.isDestinationReserved(output))
+        #expect(!queue.hasActivity)
+    }
+
+    @Test func readsCoverAndActualMetadataFromVideoAndProjectPackage() async throws {
+        let video = try await ImageVideoGenerator.blackVideo(size: CGSize(width: 320, height: 180))
+        let metadata = await ExportArtifactMetadata.read(video)
+        let cover = try #require(metadata.cover)
+        #expect(ImageEncoder.thumbnail(data: cover, maxPixelSize: 320) != nil)
+        #expect(metadata.videoSummary?.contains("320×180") == true)
+        #expect(metadata.videoSummary?.contains("fps") == true)
+        #expect(metadata.bytes == Int64(try video.resourceValues(forKeys: [.fileSizeKey]).fileSize!))
+        #expect(metadata.createdAt != nil)
+        #expect(metadata.modifiedAt != nil)
+
+        let package = temporaryURL(UUID().uuidString + ".voxella")
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: package) }
+        try cover.write(to: package.appendingPathComponent(Project.thumbnailFilename))
+        try Data([1, 2, 3]).write(to: package.appendingPathComponent("test-media"))
+        let packageMetadata = await ExportArtifactMetadata.read(package)
+        #expect(packageMetadata.cover != nil)
+        #expect(packageMetadata.bytes == Int64(cover.count + 3))
+    }
+
     private func enqueue(
         _ queue: ExportQueue,
         _ name: String,
@@ -125,7 +191,7 @@ struct ExportQueueTests {
     private func waitUntil(_ condition: @escaping @MainActor () -> Bool) async -> Bool {
         for _ in 0..<1_000 {
             if condition() { return true }
-            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(5))
         }
         return condition()
     }

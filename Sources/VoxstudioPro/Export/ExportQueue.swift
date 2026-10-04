@@ -1,11 +1,12 @@
 import Foundation
+import AVFoundation
 
-enum ExportJobSource: String, Sendable {
+enum ExportJobSource: String, Codable, Sendable {
     case manual
     case agent
 }
 
-enum ExportJobStatus: String, Sendable {
+enum ExportJobStatus: String, Codable, Sendable {
     case waiting = "queued"
     case preparing
     case exporting = "rendering"
@@ -31,7 +32,7 @@ enum ExportJobStatus: String, Sendable {
     var isPending: Bool { self == .waiting || isRunning }
 }
 
-struct ExportJob: Identifiable, Sendable {
+struct ExportJob: Identifiable, Codable, Sendable {
     let id: UUID
     let projectID: String
     let filename: String
@@ -42,7 +43,30 @@ struct ExportJob: Identifiable, Sendable {
     var progress: Double
     var error: String?
     var warnings: [String]
-    var palmierReport: PalmierProjectExporter.Report?
+    var palmierReport: PalmierProjectExporter.Report? = nil
+    var sourceProjectURL: URL? = nil
+    var sourceProjectRegistryID: UUID? = nil
+
+    var coverData: Data? = nil
+    var mediaSummary: String? = nil
+    var outputBytes: Int64? = nil
+    var outputModifiedAt: Date? = nil
+    var outputCreatedAt: Date? = nil
+    var artifact: ExportArtifactDescriptor? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case id, projectID, filename, source, outputURL, createdAt, status, progress, error, warnings
+        case sourceProjectURL, sourceProjectRegistryID, coverData, mediaSummary, outputBytes, outputModifiedAt, outputCreatedAt
+        case artifact
+    }
+
+    @MainActor var linkedProjectURL: URL? {
+        if let sourceProjectRegistryID,
+           let entry = ProjectRegistry.shared.entries.first(where: { $0.id == sourceProjectRegistryID }) {
+            return entry.url
+        }
+        return sourceProjectURL
+    }
 }
 
 struct ExportQueueSubmission: Sendable {
@@ -65,7 +89,7 @@ enum ExportQueueError: LocalizedError {
 @Observable
 @MainActor
 final class ExportQueue {
-    static let shared = ExportQueue()
+    static let shared = ExportQueue(historyURL: Project.storageDirectory.appendingPathComponent("export-history.json"))
 
     typealias Operation = @MainActor (ExportService) async -> Void
     private(set) var jobs: [ExportJob] = []
@@ -73,6 +97,35 @@ final class ExportQueue {
     private var activeID: UUID?
     private var activeTask: Task<Void, Never>?
     private var activeService: ExportService?
+
+    private let historyURL: URL?
+    private(set) var historyError: String?
+
+    // Explicit storage keeps test queues isolated from the user's export library.
+    init(historyURL: URL? = nil) {
+        self.historyURL = historyURL
+        guard let historyURL, FileManager.default.fileExists(atPath: historyURL.path) else { return }
+        do {
+            jobs = try JSONDecoder().decode([ExportJob].self, from: Data(contentsOf: historyURL))
+            for index in jobs.indices where jobs[index].status.isPending {
+                jobs[index].status = .failed
+                jobs[index].error = "Export interrupted when VoxStudio closed. Export again to retry."
+            }
+        } catch {
+            historyError = error.localizedDescription
+        }
+    }
+
+    private func saveHistory() {
+        guard let historyURL else { return }
+        do {
+            try FileManager.default.createDirectory(at: historyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(jobs).write(to: historyURL, options: .atomic)
+            historyError = nil
+        } catch {
+            historyError = error.localizedDescription
+        }
+    }
 
     var hasActivity: Bool { jobs.contains { $0.status.isPending } }
     var isExportActive: Bool { activeID != nil }
@@ -101,12 +154,15 @@ final class ExportQueue {
         resolution: ExportResolution,
         fcpxmlVersion: FCPXMLVersion = .default,
         fcpxmlTarget: FCPXMLTarget = .default,
+        targetEditor: TimelineExportEditor? = nil,
         missingMediaRefs: Set<String>,
         outputURL: URL,
         source: ExportJobSource,
         projectID: String,
         analyticsProjectID: String?,
-        warnings: [String] = []
+        warnings: [String] = [],
+        sourceProjectURL: URL? = nil,
+        coverData: Data? = nil
     ) throws -> ExportQueueSubmission {
         let resolver = resolver.snapshot()
         let analyticsInput = ExportTimelineAnalyticsInput(
@@ -114,7 +170,26 @@ final class ExportQueue {
             manifest: resolver.manifestSnapshot(),
             exportFilename: outputURL.lastPathComponent
         )
-        return try enqueue(outputURL: outputURL, projectID: projectID, source: source, warnings: warnings) { service in
+        let size = resolution.renderSize(for: CGSize(width: timeline.width, height: timeline.height))
+        let seconds = Double(timeline.totalFrames) / Double(max(1, timeline.fps))
+        let formatName: String = switch format {
+        case .h264: "H.264"
+        case .h265: "H.265"
+        case .prores: "ProRes"
+        case .hevcHDR: "HEVC 10-bit HDR"
+        case .xml: "XMEML"
+        case .fcpxml: "FCPXML"
+        }
+        let summary = "\(Int(seconds) / 60):\(String(format: "%02d", Int(seconds) % 60)) · \(Int(size.width))×\(Int(size.height)) · \(timeline.fps) fps · \(formatName)"
+        let isTimeline = format == .xml || format == .fcpxml
+        let artifact = ExportArtifactDescriptor(
+            kind: isTimeline ? .timeline : .video,
+            format: formatName,
+            targetEditor: isTimeline ? (targetEditor ?? (format == .xml ? .premiere : (fcpxmlTarget == .fcp ? .fcp : .resolve))) : nil,
+            durationSeconds: seconds
+        )
+        return try enqueue(outputURL: outputURL, projectID: projectID, source: source, warnings: warnings,
+                           sourceProjectURL: sourceProjectURL, mediaSummary: summary, coverData: coverData, artifact: artifact) { service in
             await service.export(
                 timeline: timeline,
                 resolver: resolver,
@@ -142,7 +217,8 @@ final class ExportQueue {
         outputURL: URL,
         source: ExportJobSource,
         projectID: String,
-        analyticsProjectID: String?
+        analyticsProjectID: String?,
+        coverData: Data? = nil
     ) throws -> ExportQueueSubmission {
         let analyticsInput = ExportTimelineAnalyticsInput(
             scope: .project(
@@ -152,7 +228,9 @@ final class ExportQueue {
             manifest: manifest,
             exportFilename: outputURL.lastPathComponent
         )
-        return try enqueue(outputURL: outputURL, projectID: projectID, source: source) { service in
+        let artifact = ExportArtifactDescriptor(kind: .project, format: Project.fileExtension,
+            timelineCount: projectFile.timelines.count, mediaFileCount: manifest.entries.count)
+        return try enqueue(outputURL: outputURL, projectID: projectID, source: source, sourceProjectURL: sourceProjectURL, mediaSummary: L10n.format("%@ timelines · %@ media files", projectFile.timelines.count, manifest.entries.count), coverData: coverData, artifact: artifact) { service in
             await service.exportPalmierProject(
                 projectFile: projectFile,
                 manifest: manifest,
@@ -174,6 +252,7 @@ final class ExportQueue {
         case .waiting:
             operations[id] = nil
             jobs[index].status = .canceled
+            saveHistory()
             return true
         case .preparing, .exporting:
             if let activeService, !activeService.cancel() { return false }
@@ -190,10 +269,12 @@ final class ExportQueue {
     func remove(_ id: UUID) {
         guard jobs.first(where: { $0.id == id })?.status.isFinished == true else { return }
         jobs.removeAll { $0.id == id }
+        saveHistory()
     }
 
     func clearFinished(for projectID: String) {
         jobs.removeAll { $0.projectID == projectID && $0.status.isFinished }
+        saveHistory()
     }
 
 #if DEBUG
@@ -212,6 +293,10 @@ final class ExportQueue {
         projectID: String,
         source: ExportJobSource,
         warnings: [String] = [],
+        sourceProjectURL: URL? = nil,
+        mediaSummary: String? = nil,
+        coverData: Data? = nil,
+        artifact: ExportArtifactDescriptor? = nil,
         operation: @escaping Operation
     ) throws -> ExportQueueSubmission {
         guard !isDestinationReserved(outputURL) else {
@@ -229,8 +314,16 @@ final class ExportQueue {
             status: .waiting,
             progress: 0,
             warnings: warnings,
-            palmierReport: nil
+            palmierReport: nil,
+            sourceProjectURL: sourceProjectURL,
+            sourceProjectRegistryID: sourceProjectURL.flatMap { ProjectRegistry.shared.id(for: $0) },
+            coverData: coverData ?? sourceProjectURL.flatMap {
+                ImageEncoder.thumbnail(url: $0.appendingPathComponent(Project.thumbnailFilename), maxPixelSize: 320)
+            }.flatMap { ImageEncoder.encodeJPEG($0, quality: 0.8) },
+            mediaSummary: mediaSummary,
+            artifact: artifact
         ))
+        saveHistory()
         operations[id] = operation
         startNext()
 
@@ -275,6 +368,29 @@ final class ExportQueue {
             service.error = "Export produced no output."
             status = .failed
         }
+        if status == .completed, let outputURL = job(id)?.outputURL {
+            let metadata = await Task.detached(priority: .utility) {
+                await ExportArtifactMetadata.read(outputURL)
+            }.value
+            if let index = jobs.firstIndex(where: { $0.id == id }) {
+                // A project cover supplied from the current timeline is newer than the
+                // package's last saved thumbnail. Video covers come from the rendered file.
+                let isVideo = ["mp4", "mov", "m4v"].contains(outputURL.pathExtension.lowercased())
+                if let cover = metadata.cover, isVideo || jobs[index].coverData == nil {
+                    jobs[index].coverData = cover
+                }
+                jobs[index].outputBytes = metadata.bytes
+                jobs[index].outputModifiedAt = metadata.modifiedAt
+                jobs[index].outputCreatedAt = metadata.createdAt
+                if let duration = metadata.durationSeconds {
+                    jobs[index].artifact?.durationSeconds = duration
+                }
+                if let summary = metadata.videoSummary {
+                    let hdr = jobs[index].mediaSummary?.contains("HDR") == true ? " · HDR" : ""
+                    jobs[index].mediaSummary = summary + hdr
+                }
+            }
+        }
         let source = job(id)?.source
         let filename = job(id)?.filename
         let outputURL = job(id)?.outputURL
@@ -302,6 +418,7 @@ final class ExportQueue {
             jobs[index].palmierReport = report
             jobs[index].warnings = report.warnings
         }
+        saveHistory()
         operations[id] = nil
         activeID = nil
         activeTask = nil

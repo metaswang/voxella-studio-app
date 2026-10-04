@@ -168,7 +168,8 @@ extension ToolExecutor {
             source: .agent,
             projectID: editor.exportQueueProjectID,
             analyticsProjectID: editor.projectId,
-            warnings: warnings
+            warnings: warnings,
+            sourceProjectURL: editor.projectURL
         )
 
         var payload: [String: Any] = [

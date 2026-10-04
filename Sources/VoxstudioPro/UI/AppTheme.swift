@@ -682,8 +682,9 @@ enum AppTheme {
 
     enum Export {
         static var sheetWidth: CGFloat { AppTheme.zoomed(600) }
-        static var sheetHeight: CGFloat { AppTheme.zoomed(600) }
-        static var logPaneWidth: CGFloat { AppTheme.zoomed(420) }
+        static var sheetHeight: CGFloat { AppTheme.zoomed(740) }
+        static var logPaneWidth: CGFloat { AppTheme.zoomed(500) }
+        static let accent = Color.indigo
         static var queueTimestampWidth: CGFloat { AppTheme.zoomed(56) }
         static var activityDotSize: CGFloat { AppTheme.zoomed(6) }
         static var queueProgressBarWidth: CGFloat { AppTheme.zoomed(96) }
