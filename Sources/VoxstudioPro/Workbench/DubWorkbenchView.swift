@@ -374,6 +374,10 @@ struct DubWorkbenchView: View {
 
     private func start(_ job: WorkbenchDubJob) {
         guard canGenerate(job) else { return }
+        guard AccountService.shared.isSignedIn else {
+            continueGeneration(jobID: job.id, placement: .localDefault)
+            return
+        }
         showProcessingOptions = true
     }
 
