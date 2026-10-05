@@ -1,0 +1,157 @@
+{
+  "date": "2026-10-05",
+  "host": "Claude Desktop",
+  "model": "Sonnet 5.5 Medium",
+  "app": {
+    "chat": "https://claude.ai/chat/f9e40357-023f-4ccd-8b94-38a15b036cd5",
+    "endpoint": "/app/mcp",
+    "profile": "legacy full App connector; OpenAI core uses /chatgpt/mcp",
+    "knowledge": {
+      "status": "passed",
+      "source_id": "F18F0A30-AFBE-4C80-AB1D-2143132A03DA",
+      "title": "Make Your Own Lemonade",
+      "checks": [
+        "original evidence read",
+        "session reader",
+        "40 subtitle segments",
+        "15-second actual playback"
+      ]
+    },
+    "asr": {
+      "status": "passed",
+      "session_id": "C4C3F31D-C0B7-45C7-BEC3-DB8983466273",
+      "job_id": "AF09D181-F386-4970-8B1E-C06DF15D2D86",
+      "text": "Welcome to Voxella Studio. This sentence tests local word timestamps.",
+      "export": "TXT response verified in Claude, save=false"
+    },
+    "tts": {
+      "generation": "passed",
+      "session_id": "37B00455-2C46-4AE9-AD53-C7DA6323D205",
+      "job_id": "9FE9E274-10A7-4D57-BD50-9D0ED7612D98",
+      "playback_seconds": 6.698667,
+      "reopened_panel": "passed in Claude: final card completed; 6.698667-second playback ended; View session loaded correct title and original script without request_id error"
+    }
+  },
+  "cloud": {
+    "chat": "https://claude.ai/chat/1ffa3f17-47b7-44a5-9f08-d67fb5483a6b",
+    "knowledge": {
+      "status": "passed",
+      "source_id": "c1195263-8478-408b-bb2c-7b006355d832",
+      "text": "This is an isolated Vox Studio Cloud Acceptance Test. The Aurora project launches on October 6, 2026. Jordan owns the next step.",
+      "checks": [
+        "real list_sources/fetch calls",
+        "workspace and source reader displayed",
+        "Sources verified after knowledge.complete_turn"
+      ]
+    },
+    "tts": {
+      "status": "generation and audio export passed",
+      "title": "Claude-MCP-Cloud-TTS-20261005",
+      "submitted_call_authorized_in_ui": true,
+      "job_id": "01a10c4b-b523-7003-b27e-fbb054a2e933:dub:01a10c4b-b55e-7003-9408-d96179f2ba14",
+      "reference_audio_id": "f39063b0-acd1-406f-9b1a-b56b85587d62",
+      "session_id": "01a10c4b-b523-7003-b27e-fbb054a2e933",
+      "duration_seconds": 6.492,
+      "audio_bytes": 157293,
+      "voice": "Justin",
+      "generation_count": 1,
+      "preview": {
+        "status": "passed in actual Claude Cloud source reader",
+        "duration_seconds": 6.492,
+        "observed_elapsed": "0:06",
+        "playback_ended": true,
+        "source_id": "f7106518-2bcc-4842-b91a-8d8f5d3a667b",
+        "canonical_script_characters": 98
+      }
+    },
+    "asr": {
+      "status": "submission, eventual transcript read and TXT export passed",
+      "session_id": "01a10c54-85bb-7005-9cb0-d545fc5e434f",
+      "queued_job_id": "716b52b10275493eb719ab47d62b179c",
+      "generation_count": 1,
+      "segment_id": 2995,
+      "segment_range_seconds": [
+        0,
+        6.32
+      ],
+      "text": "This is a Vox Studio Claude end-to-end test, knowledge, transcription, and voiceover work together.",
+      "txt_bytes": 100,
+      "txt_source": "transcript_segments",
+      "export_verified_in_claude": true
+    },
+    "status_consistency": {
+      "status": "failed observation",
+      "sequence": [
+        "completed with empty transcript",
+        "started",
+        "completed with readable transcript"
+      ],
+      "impact": "Early transcript export twice returned Transcript not found; following actual processing completion succeeded. Status consistency has not been changed in this turn."
+    },
+    "video_boundary": {
+      "status": "passed in Claude tool discovery",
+      "queries": [
+        "video",
+        "timeline",
+        "clip",
+        "edit",
+        "trim",
+        "split",
+        "export"
+      ],
+      "cloud_editing_tools_found": false,
+      "media_tools_loaded": [
+        "app_transcription",
+        "app_dubbing",
+        "dub_result",
+        "dub_reference_list",
+        "session_get",
+        "transcript_context",
+        "media_preview_url",
+        "session_export"
+      ],
+      "local_editing_tools_remain_on_local_connector": true,
+      "editing_calls_made": false
+    },
+    "receipt_guard": {
+      "status": "passed",
+      "cross_operation_uuid_reuse": "rejected",
+      "different operation with fresh UUID": "succeeded",
+      "note": "A UUID identifies one write, not an entire workflow. This was a model request error; service rejection behaved correctly."
+    }
+  },
+  "request_id_fix": {
+    "scope": "Mac App shared MCP UI; no API source changes in this fix",
+    "cause_evidence": "UI previously initialized write-tool policy exclusively from tool-result _meta; missing/delayed first result left fallback without UUID. Observed toast did not expose its triggering UI RPC, so exact original call attribution remains unverified.",
+    "changes": [
+      "bootstrap write-tool policy from current profile catalog before UI bundle execution",
+      "retain generated UUID on request object for retries",
+      "refresh panel resource versions with backward aliases",
+      "insert bootstrap only at the first document head; preserve embedded script literals; final workspace/transcription/dubbing resource version v6"
+    ],
+    "verification": [
+      "Docker mocked-host regression",
+      "Docker live App/core/native panel catalogs match bootstrap (5 panels each)",
+      "Docker live saved TTS reopen and identical retry succeed",
+      "missing ID and conflicting retry still rejected",
+      "debug App build signed and started",
+      "3 Docker mocked-host cases passed; live HTML has exactly one bootstrap per panel; 15 panels across 3 endpoints verified"
+    ],
+    "claude_retest": "passed: actual playback and in-panel navigation",
+    "regression_found_and_fixed": "Claude revealed global head replacement corrupted workspace script strings; corrected first-head-only insertion and retested navigation and transcript"
+  },
+  "blocker": null,
+  "deployment": {
+    "api": "previous MCP changes synced and APIs restarted on myvps2 and myvps3; source hashes reverified this run",
+    "request_id_fix": "local App only; debug build signed, not notarized; no production DMG update"
+  },
+  "resumed_with": {
+    "account": "Claude Pro",
+    "model": "Sonnet 5.5 Medium",
+    "date": "2026-10-05"
+  },
+  "overall": "App knowledge/ASR/TTS and repaired panel navigation passed. Cloud knowledge, TTS playback/audio export, ASR transcript/TXT export and video exclusion passed. Cloud ASR early completion status consistency remains a failed observation.",
+  "outstanding": [
+    "Cloud ASR session_get completion status was reported before readable transcription, then regressed to started; no status lifecycle fix or related API deployment was performed in this verification turn."
+  ]
+}

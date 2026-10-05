@@ -1,0 +1,9 @@
+{
+  "fixed_url_verified": true,
+  "fixed_url": "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/VoxStudio-OpenAI-Plugin.zip",
+  "version": "0.2.0",
+  "sha256": "2c8ae679c56c67257e380eca58e1e40cd5a518e95cbe06c1547eaaf2c3fd3e76",
+  "redirect_status": 302,
+  "cache_control": "no-store",
+  "get_head_verified": true
+}

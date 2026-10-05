@@ -3,6 +3,8 @@ name: voxstudio-video-editing
 description: Edit the native VoxStudio Mac video editor directly from ChatGPT or Codex prompts through MCP tools.
 ---
 
+Use the separately configured `voxstudio_native` MCP at `/native/mcp`. Video editing is unavailable through the core `voxstudio` and Cloud plugins. Read and validate real project/session IDs on this connection; never transfer temporary grants from another connection.
+
 Video editing has no MCP HTML panel. Apply the user's requested edits directly to the VoxStudio Mac app's project and timeline using the existing editor tools. Do not open the session library, an HTML timeline, or a transcription panel as a substitute for video editing.
 
 1. Use `manage_project(action="list")` to identify the current/visible project. If the user names a project, select it by its real returned ID/name. If there is one visible/current project and the request refers to it, use that project. Ask for the target only when multiple choices make it ambiguous. `manage_project(action="open", id=...)` binds the MCP connection to the chosen project and brings the native editor forward.
@@ -17,6 +19,6 @@ Example user prompts:
 - “In the current VoxStudio project, trim the first clip to 00:02–00:12 and lower its linked audio to −6 dB.”
 - “Split the selected timeline at 10 seconds, then add a title saying ‘A new beginning’.”
 
-If tools are missing from the host, report the exact missing native tool and refresh the plugin connection; do not use an HTML editor fallback.
+If tools are missing from the host, report the exact missing native tool and refresh the `voxstudio_native` MCP connection; do not use an HTML editor fallback.
 
 For tools whose schema requires `request_id`, supply a fresh UUID for each intended write and preserve it on retries. Never repeat an unknown write after an App restart or after the one-hour receipt lifetime.

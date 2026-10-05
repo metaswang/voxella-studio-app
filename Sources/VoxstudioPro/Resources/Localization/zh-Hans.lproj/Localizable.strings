@@ -3041,3 +3041,19 @@
 
 // Session local copy deletion
 "The local copy was deleted. The cloud session was kept." = "已删除本地副本，云端会话已保留。";
+
+// Independent OpenAI plugin distribution
+"Download latest VoxStudio plugin" = "下载最新版 VoxStudio 插件";
+"Save bundled plugin (offline)" = "保存内置插件（离线备用）";
+"Download the latest plugin, then extract it in Downloads. Plugin updates are independent of App updates. Keep the extracted folder after installation." = "下载最新插件并解压到下载目录。插件更新独立于 App 更新，安装后请保留解压目录。";
+"Run after extracting the ZIP. The installer checks App compatibility and replaces the old Media and Knowledge plugins with one VoxStudio connection, preserving your preferences." = "解压 ZIP 后运行。安装程序检查 App 兼容性，将旧媒体和知识插件替换为一个 VoxStudio 连接，并保留你的偏好设置。";
+"The fixed download link always provides the latest published plugin. An App update is only required when new server features need it." = "固定下载链接始终提供最新发布的插件；只有需要新的服务端功能时才需要更新 App。";
+"Bundled plugin: 0.2.0 · ZIP" = "内置插件：0.2.0 · ZIP";
+
+"Bundled plugin: 0.3.0 · ZIP" = "内置插件：0.3.0 · ZIP";
+
+"The core plugin includes knowledge, transcription and voiceover. Native editing connects independently through voxstudio_native." = "核心插件包含知识库、转录和配音。原生编辑通过独立的 voxstudio_native MCP 接入。";
+
+"Native MCP (optional)" = "原生 MCP（可选）";
+
+"Connect video editing, document editing, color, audio processing, multicam and media generation independently. The core plugin does not register this connection." = "独立接入视频编辑、文档编辑、调色、音频处理、多机位和媒体生成。核心插件不会注册此连接。";

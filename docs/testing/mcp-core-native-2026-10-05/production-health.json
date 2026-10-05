@@ -1,0 +1,18 @@
+{
+  "myvps2": {
+    "api_http": 200,
+    "cloud_without_authorization_http": 401,
+    "plugin_version": "0.3.0",
+    "container_status": "running",
+    "rollout": "selective-code-sync-and-api-restart",
+    "backup": "/voxella/releases/mcp-core-native-20261005/backups/api-before.tgz"
+  },
+  "myvps3": {
+    "api_http": 200,
+    "cloud_without_authorization_http": 401,
+    "plugin_version": "0.3.0",
+    "container_status": "running",
+    "rollout": "selective-code-sync-and-api-restart",
+    "backup": "/voxella/releases/mcp-core-native-20261005/backups/api-before.tgz"
+  }
+}

@@ -14,9 +14,16 @@ struct MCPServerInstance: Sendable {
 }
 
 enum MCPServerProfile: String, Sendable {
-    case legacy, knowledge, app
+    case legacy, knowledge, app, chatgpt, native
     static func resolve(path: String) -> Self? {
-        switch path { case "/", "/mcp": .legacy; case "/knowledge/mcp": .knowledge; case "/app/mcp": .app; default: nil }
+        switch path {
+        case "/", "/mcp": .legacy
+        case "/knowledge/mcp": .knowledge
+        case "/app/mcp": .app
+        case "/chatgpt/mcp": .chatgpt
+        case "/native/mcp": .native
+        default: nil
+        }
     }
 }
 
@@ -46,12 +53,20 @@ actor MCPHTTPServer {
         port: UInt16,
         makeKnowledgeServer: (@Sendable () async -> MCPServerInstance)? = nil,
         makeAppServer: (@Sendable () async -> MCPServerInstance)? = nil,
+        makeCoreServer: (@Sendable () async -> MCPServerInstance)? = nil,
+        makeNativeServer: (@Sendable () async -> MCPServerInstance)? = nil,
         makeServer: @escaping @Sendable () async -> MCPServerInstance
     ) {
         self.port = port
         self.makeServer = { profile in
             if profile == .knowledge, let makeKnowledgeServer { return await makeKnowledgeServer() }
             if profile == .app, let makeAppServer { return await makeAppServer() }
+            if profile == .chatgpt, let makeCoreServer { return await makeCoreServer() }
+            if profile == .native, let makeNativeServer { return await makeNativeServer() }
+            if profile == .chatgpt || profile == .native {
+                // A missing profile factory must never fall back to the full legacy catalog.
+                return MCPServerInstance(server: Server(name: "voxstudio-unavailable", version: "1.0.0", capabilities: .init())) { _ in }
+            }
             return await makeServer()
         }
     }

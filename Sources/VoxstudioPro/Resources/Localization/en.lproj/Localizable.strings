@@ -3041,3 +3041,19 @@
 
 // Session local copy deletion
 "The local copy was deleted. The cloud session was kept." = "The local copy was deleted. The cloud session was kept.";
+
+// Independent OpenAI plugin distribution
+"Download latest VoxStudio plugin" = "Download latest VoxStudio plugin";
+"Save bundled plugin (offline)" = "Save bundled plugin (offline)";
+"Download the latest plugin, then extract it in Downloads. Plugin updates are independent of App updates. Keep the extracted folder after installation." = "Download the latest plugin, then extract it in Downloads. Plugin updates are independent of App updates. Keep the extracted folder after installation.";
+"Run after extracting the ZIP. The installer checks App compatibility and replaces the old Media and Knowledge plugins with one VoxStudio connection, preserving your preferences." = "Run after extracting the ZIP. The installer checks App compatibility and replaces the old Media and Knowledge plugins with one VoxStudio connection, preserving your preferences.";
+"The fixed download link always provides the latest published plugin. An App update is only required when new server features need it." = "The fixed download link always provides the latest published plugin. An App update is only required when new server features need it.";
+"Bundled plugin: 0.2.0 · ZIP" = "Bundled plugin: 0.2.0 · ZIP";
+
+"Bundled plugin: 0.3.0 · ZIP" = "Bundled plugin: 0.3.0 · ZIP";
+
+"The core plugin includes knowledge, transcription and voiceover. Native editing connects independently through voxstudio_native." = "The core plugin includes knowledge, transcription and voiceover. Native editing connects independently through voxstudio_native.";
+
+"Native MCP (optional)" = "Native MCP (optional)";
+
+"Connect video editing, document editing, color, audio processing, multicam and media generation independently. The core plugin does not register this connection." = "Connect video editing, document editing, color, audio processing, multicam and media generation independently. The core plugin does not register this connection.";

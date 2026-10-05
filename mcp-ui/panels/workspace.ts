@@ -1,9 +1,10 @@
 import {$,app,esc,shell,icon,action,call,start,context,notice,clearPlayer,onDispose,isDisposed,backButton,type Obj} from '../shared/ui';
 import {createSessionView} from '../shared/session-view';
 import {createSessionList,sessionListMarkup} from '../shared/session-list';
-import {stateArguments,sessionPresentation,sessionRow,distinctSessions} from '../shared/workspace-model';
+import {stateArguments,sessionPresentation,sessionRow,distinctSessions,workspaceReadingContext,workspaceContextText,isWorkspaceSnapshot} from '../shared/workspace-model';
 let state:Obj={},workspaceId='',boundTurn:string|undefined,revision:number|undefined,expanded=true;
 let catalog:Obj[]=[],catalogCursor:string|undefined,mode='',detailSignature='',shownSource='',generation=0;
+let shownSession:Obj|undefined;
 let catalogScope='';
 let reader:ReturnType<typeof createSessionView>|undefined,list:ReturnType<typeof createSessionList>|undefined;
 let listExtras:Obj[]=[],listKey='',extraCursor:string|undefined,hasExtraPage=false;
@@ -13,7 +14,7 @@ shell('Sessions',`<div class="panel-display"><button id="expand" class="text-but
 function hostMode(){const host=app.getHostContext();expanded=host?.displayMode!=='inline'||!boundTurn;$('expand').hidden=!host?.availableDisplayModes?.includes('fullscreen')||host?.displayMode==='fullscreen';}
 function isHistorical(){return Boolean(!expanded&&boundTurn&&state.active_turn_id!==boundTurn);}
 function updateControls(){const pin=$('pin-session');if(pin){pin.hidden=isHistorical();pin.textContent=state.view?.pinned?'Unpin session':'Pin session';pin.setAttribute('aria-pressed',String(Boolean(state.view?.pinned)));}}
-async function readingContext(){await context({workspace_id:workspaceId,turn_id:state.turn_id,scope:state.next_scope??{},reading_source_id:mode==='session'?shownSource:undefined});}
+async function readingContext(){const value=workspaceReadingContext(workspaceId,state,mode==='session'?shownSession:undefined);await context(value,workspaceContextText(value));}
 function saveView(values:Obj,render=false){
  const id=workspaceId,turn=state.turn_id,origin=generation;
  viewQueue=viewQueue.catch(()=>{}).then(async()=>{
@@ -62,7 +63,7 @@ async function renderPresentation(){
  const presentation=sessionPresentation(state,catalog);
  if(presentation.kind==='list'){
   if(mode!=='list'){
-   generation++;reader?.dispose();reader=undefined;mode='list';detailSignature='';shownSource='';
+   generation++;reader?.dispose();reader=undefined;mode='list';detailSignature='';shownSource='';shownSession=undefined;
    $('content').innerHTML=sessionListMarkup();
    list=createSessionList({open:openSession,refresh:async()=>{await loadCatalog();await renderPresentation();},more:moreSessions});
   }
@@ -75,6 +76,7 @@ async function renderPresentation(){
  const current=++generation;reader?.dispose();mode='session';detailSignature=nextSignature;list=undefined;
  $('content').innerHTML=`<div class="back-row session-navigation">${backButton()}<button id="pin-session" class="text-button" aria-pressed="false">Pin session</button></div><div id="detail"><div class="loading-card"><div class="skeleton wide"></div></div></div>`;
  shownSource=presentation.source.session_id;
+ shownSession=presentation.source;
  action('back',backToList);action('pin-session',()=>saveView({source_id:shownSource,pinned:!state.view?.pinned}));updateControls();
  const readingTurn=state.turn_id;
  reader=createSessionView({readOnly:true,onChange:values=>current===generation&&readingTurn===state.turn_id?saveView({...values,evidence_id:null,manual_turn_id:state.turn_id??null}):Promise.resolve()});
@@ -86,19 +88,20 @@ async function renderPresentation(){
   if(current!==generation||stopped)return;
   source=sessionRow({...source,...metadata});
  }
+ shownSession=source;
  const evidence=presentation.evidence??{};
  if(state.view?.evidence_id){await call('fetch',{evidence_id:state.view.evidence_id,limit:1});if(current!==generation||stopped)return;}
  await reader.show(source,{...state.view,character_start:evidence.character_start,character_end:evidence.character_end,anchor:state.view?.anchor??evidence.character_start});
 }
 async function applyState(next:Obj){
- if(stopped||next.unchanged||typeof next.revision!=='number'||(revision!==undefined&&next.revision<revision))return;
+ if(stopped||next.unchanged||!isWorkspaceSnapshot(next)||(revision!==undefined&&next.revision<revision))return;
  state=next;revision=next.revision;
  if(isHistorical())state={...state,view:{...state.view,...historicalView}};
  if(catalogScope!==JSON.stringify(state.scope??state.next_scope??{}))await loadCatalog();
  await renderPresentation();await readingContext();
 }
 function clearContent(message:string){
- generation++;reader?.dispose();reader=undefined;list=undefined;catalog=[];catalogCursor=undefined;mode='';detailSignature='';shownSource='';state={};clearPlayer();
+ generation++;reader?.dispose();reader=undefined;list=undefined;catalog=[];catalogCursor=undefined;mode='';detailSignature='';shownSource='';shownSession=undefined;state={};clearPlayer();
  $('content').innerHTML=`<div class="empty-state"><h3>Sessions unavailable</h3><p>${esc(message)}</p><button id="reopen" class="button small">Reopen sessions</button></div>`;
  action('reopen',async()=>{const result=await call('voxstudio.workspace');workspaceId=result.workspace_id;boundTurn=undefined;revision=undefined;hostMode();await loadCatalog();await applyState(result);void pollState();});
 }

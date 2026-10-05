@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the single VoxStudio connection with verified, reversible migration."""
+"""Install the core plugin and optionally a separate ordinary native MCP."""
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -30,8 +30,7 @@ def restore_sections(config, original, enabled):
     config.parent.mkdir(parents=True,exist_ok=True)
     temp=config.with_suffix('.voxstudio.tmp');temp.write_text(text);temp.replace(config)
 
-def probe():
-    endpoint='http://127.0.0.1:19789/app/mcp'
+def probe(endpoint='http://127.0.0.1:19789/chatgpt/mcp', native=False):
     def call(method,params=None):
         body=json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params or {}}).encode()
         req=urllib.request.Request(endpoint,body,{'Content-Type':'application/json','Accept':'application/json, text/event-stream','MCP-Protocol-Version':'2025-06-18'})
@@ -46,9 +45,32 @@ def probe():
         return result['result']
     call('initialize',{'protocolVersion':'2025-06-18','capabilities':{},'clientInfo':{'name':'voxstudio-installer','version':'0.2.0'}})
     names={row['name'] for row in call('tools/list')['tools']}
-    assert {'voxstudio.workspace','app_knowledge','knowledge.complete_turn','search','fetch'}<=names,'Unified App is not ready'
+    if native:
+        assert {'get_timeline','set_clip_properties','documents.commit'}<=names,'Native MCP is not ready'
+        assert 'app_knowledge' not in names,'Native endpoint exposes the core catalog'
+        return
+    assert {'voxstudio.workspace','app_knowledge','knowledge.complete_turn','search','fetch','app_transcription','app_dubbing','media.export'}<=names,'Core App is not ready'
+    assert not {'set_clip_properties','documents.commit','session.editor.commit'} & names,'Core endpoint exposes editing tools'
     ui=call('resources/read',{'uri':'ui://voxstudio/workspace/v1'})['contents']
     assert any(row.get('mimeType')=='text/html;profile=mcp-app' and 'voxstudio-session-companion-v1' in row.get('text','') for row in ui),'Session UI is missing from the running App'
+
+def configure_native(cli, codex_home, verify=None):
+    endpoint='http://127.0.0.1:19789/native/mcp'
+    (verify or (lambda: probe(endpoint,native=True)))()
+    inspected=subprocess.run([cli,'mcp','get','voxstudio_native','--json'],capture_output=True,text=True)
+    if inspected.returncode==0:
+        state=json.loads(inspected.stdout)
+        transport=state.get('transport',{})
+        if transport.get('url')!=endpoint or transport.get('type')!='streamable_http':
+            raise RuntimeError('voxstudio_native already has a different endpoint or transport; it was not changed')
+        return # Preserve existing enable state and tool policy.
+    if "No MCP server named 'voxstudio_native' found" not in inspected.stderr:
+        raise RuntimeError(inspected.stderr.strip() or 'Cannot inspect voxstudio_native configuration')
+    config=codex_home/'config.toml'
+    if config.exists():
+        backup=codex_home/'voxstudio-native-backups'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+        backup.mkdir(parents=True);shutil.copy2(config,backup/'config.toml')
+    subprocess.run([cli,'mcp','add','voxstudio_native','--url',endpoint],check=True,capture_output=True,text=True)
 
 def migrate(root,cli,codex_home,verify=probe):
     def run(*args):
@@ -94,14 +116,14 @@ def migrate(root,cli,codex_home,verify=probe):
     try:
         changed=True
         register(root);run('add',MAIN)
-        restore_sections(config,original,enabled)
+        restore_sections(config,original,True if enabled is None else enabled)
         current={row['pluginId']:row for row in run('list').get('installed',[])}
         assert current[MAIN]['version']==manifest['version'],'Installed version does not match package'
         if enabled is not None:assert current[MAIN]['enabled']==enabled,'Enable preference changed'
         verify()
         if OLD in installed:run('remove',OLD)
         # Keep original plugin policy blocks as dormant preferences for rollback.
-        restore_sections(config,original,enabled)
+        restore_sections(config,original,True if enabled is None else enabled)
         return backup
     except Exception:
         if changed:
@@ -118,13 +140,20 @@ def migrate(root,cli,codex_home,verify=probe):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--cli');parser.add_argument('--plugin',choices=['voxstudio'],default='voxstudio')
+    parser.add_argument('--native',action='store_true',help='Also register the independent ordinary voxstudio_native MCP')
+    parser.add_argument('--native-only',action='store_true',help='Register native MCP without changing the core plugin')
     args=parser.parse_args();root=Path(__file__).resolve().parent
     bundled='/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex'
     cli=args.cli or (bundled if Path(bundled).is_file() else shutil.which('codex'))
     if not cli:parser.error('Install a desktop client with plugin support first')
     home=Path(os.environ.get('CODEX_HOME',str(Path.home()/'.codex')))
+    if args.native_only:
+        configure_native(cli,home)
+        print('Configured voxstudio_native independently. Open a new chat.');return
     backup=migrate(root,cli,home)
-    print(f'Installed VoxStudio 0.2.0. Recovery snapshot: {backup}\nKeep this extracted folder. Open a new chat; your existing enable preference was preserved.')
+    if args.native:configure_native(cli,home)
+    version=json.loads((root/'plugins/voxstudio/plugin.json').read_text())['version']
+    print(f'Installed VoxStudio {version}. Recovery snapshot: {backup}\nKeep this extracted folder. Open a new chat; your existing enable preference was preserved.')
 if __name__=='__main__':
     try:main()
     except Exception as error:print(f'VoxStudio installation failed: {error}',file=sys.stderr);sys.exit(1)

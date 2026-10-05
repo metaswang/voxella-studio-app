@@ -1,0 +1,23 @@
+{
+  "cdn_verified": true,
+  "url": "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.2.0/2c8ae679c56c67257e380eca58e1e40cd5a518e95cbe06c1547eaaf2c3fd3e76/VoxStudio-OpenAI-Plugin.zip",
+  "sha256": "2c8ae679c56c67257e380eca58e1e40cd5a518e95cbe06c1547eaaf2c3fd3e76",
+  "size": 235429,
+  "cache_control": "public, max-age=31536000, immutable",
+  "get_status": 200,
+  "head_status": 200,
+  "promoted": true,
+  "fixed_url": "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/VoxStudio-OpenAI-Plugin.zip",
+  "previous": {
+    "version": "0.2.0",
+    "sha256": "d83cbbfce78f2db65f34b98ca1d9e9cd28b24ea4e87be650a6b22dc8d775f272",
+    "size": 235415,
+    "url": "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.2.0/d83cbbfce78f2db65f34b98ca1d9e9cd28b24ea4e87be650a6b22dc8d775f272/VoxStudio-OpenAI-Plugin.zip"
+  },
+  "current": {
+    "version": "0.2.0",
+    "sha256": "2c8ae679c56c67257e380eca58e1e40cd5a518e95cbe06c1547eaaf2c3fd3e76",
+    "size": 235429,
+    "url": "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.2.0/2c8ae679c56c67257e380eca58e1e40cd5a518e95cbe06c1547eaaf2c3fd3e76/VoxStudio-OpenAI-Plugin.zip"
+  }
+}

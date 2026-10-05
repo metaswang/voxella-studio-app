@@ -15,10 +15,10 @@ enum OpenAICreateElicitation: MCP.Method {
 final class MCPOpenAIExtensions {
     // Hosts cache panel HTML and CSP by URI. Bump these when shipping panel changes;
     // legacy URIs remain readable for clients with older tool metadata.
-    nonisolated static let uiURI = "ui://voxstudio/library/v3"
-    nonisolated static let transcriptionUIURI = "ui://voxstudio/transcription/v4"
-    nonisolated static let sessionUIURI = "ui://voxstudio/session/v8"
-    nonisolated static let dubbingUIURI = "ui://voxstudio/dubbing/v4"
+    nonisolated static let uiURI = "ui://voxstudio/library/v5"
+    nonisolated static let transcriptionUIURI = "ui://voxstudio/transcription/v6"
+    nonisolated static let sessionUIURI = "ui://voxstudio/session/v10"
+    nonisolated static let dubbingUIURI = "ui://voxstudio/dubbing/v6"
     nonisolated static let uiResources: [(name: String, uri: String, file: String)] = [
         ("VoxStudio · Sessions", uiURI, "library"),
         ("VoxStudio · Transcribe", transcriptionUIURI, "transcription"),
@@ -26,6 +26,14 @@ final class MCPOpenAIExtensions {
         ("VoxStudio · Voiceover", dubbingUIURI, "dubbing"),
     ]
     nonisolated static let legacyUIURIs: [String: String] = [
+        "ui://voxstudio/dubbing/v5": dubbingUIURI,
+        "ui://voxstudio/session/v9": sessionUIURI,
+        "ui://voxstudio/transcription/v5": transcriptionUIURI,
+        "ui://voxstudio/library/v4": uiURI,
+        "ui://voxstudio/dubbing/v4": dubbingUIURI,
+        "ui://voxstudio/session/v8": sessionUIURI,
+        "ui://voxstudio/transcription/v4": transcriptionUIURI,
+        "ui://voxstudio/library/v3": uiURI,
         "ui://voxstudio/workbench/v1": uiURI,
         "ui://voxstudio/library/v2": uiURI,
         "ui://voxstudio/transcription/v1": transcriptionUIURI,
@@ -53,6 +61,7 @@ final class MCPOpenAIExtensions {
         }
     }
     nonisolated static let mediaExtensions = ["m4a", "wav", "mp3", "aac", "flac", "mp4", "mov"]
+    var receiptToolNames: [String]?
     private var capabilities = Client.Capabilities()
     private var formActive = false
     private var assets: [UUID: Asset] = [:]
@@ -159,6 +168,10 @@ final class MCPOpenAIExtensions {
             ("documents.commit", "Atomically save a managed document with conflict detection", schema(["document_id": string, "expected_revision": string, "text": string, "request_id": string], required: ["document_id", "expected_revision", "text", "request_id"]), false),
             ("documents.save_as", "Ask the user where to save a managed document copy", schema(["document_id": string], required: ["document_id"]), false),
             ("documents.export", "Export a session track into a managed text document", schema(common.merging(["format": string, "name": string, "bilingual": field("boolean")], uniquingKeysWith: { _, new in new }), required: ["session_id", "format"]), false),
+            ("media.export", "Export ASR text/subtitles or completed TTS audio. Text returns a managed resource and readable content; save=true opens the system save dialog. Audio uses the save dialog.", schema(common.merging([
+                "format": ["type": "string", "enum": ["srt", "vtt", "txt", "audio"]], "name": string,
+                "bilingual": field("boolean"), "save": field("boolean")
+            ], uniquingKeysWith: { _, new in new }), required: ["session_id", "format"]), false),
             ("documents.export_form", "Ask for session export options in a native form", schema(common, required: ["session_id"]), false),
             ("session.editor.read", "Read session transcript or subtitle cues and revision, including read-only voiceover tracks", schema(common, required: ["session_id"]), true),
             ("session.editor.commit", "Apply an atomic cue-edit batch with expected revision", schema(common.merging(["expected_revision": string, "request_id": string, "operations": .object(["type": "array", "items": .object(["type": "object"])])], uniquingKeysWith: { _, new in new }), required: ["session_id", "expected_revision", "request_id", "operations"]), false),
@@ -444,6 +457,9 @@ final class MCPOpenAIExtensions {
             case "media.input_status": return try assetResult(try assetID(args))
             case "media.session_preview":
                 let id = try sessionID(string(args, "session_id"))
+                if WorkbenchStore.shared.dubs.contains(where: { $0.id == id }) {
+                    return try registerPreview(Self.adapted(await mediaExecutor("media.preview", args)))
+                }
                 guard let job = WorkbenchStore.shared.transcriptions.first(where: { $0.id == id }), job.result != nil else { throw MCPDocumentError("not_ready", "Transcription media is not ready") }
                 let source = URL(fileURLWithPath: job.sourcePath)
                 return try await preview(FileManager.default.fileExists(atPath: source.path) ? source : job.playbackAudioURL, args: args, subtitles: MCPMediaTools.track(job, language: args["language"] as? String, allowTranscriptFallback: false))
@@ -478,6 +494,21 @@ final class MCPOpenAIExtensions {
                 try document.bytes.write(to: url, options: .atomic)
                 return try Self.result(["outcome": "saved", "name": url.lastPathComponent])
             case "documents.export": return try await exportDocument(args)
+            case "media.export":
+                var options = args; options.removeValue(forKey: "save")
+                if args["format"] as? String == "audio" {
+                    return await execute(.init(name: "media.save_result", arguments: ["session_id": .string(try string(args, "session_id"))]))
+                }
+                let exported = try await exportDocument(options)
+                guard let id = exported.structuredContent?.objectValue?["document_id"]?.stringValue else { return exported }
+                let document = try await readDocument(["document_id": id])
+                var fields = ToolArgsBridge.argsFromMCP(try documentResult(document).structuredContent?.objectValue ?? [:])
+                if args["save"] as? Bool == true {
+                    let saved = await execute(.init(name: "documents.save_as", arguments: ["document_id": .string(id)]))
+                    fields["save_result"] = ToolArgsBridge.argsFromMCP(saved.structuredContent?.objectValue ?? [:])
+                    return try Self.result(fields, error: saved.isError == true)
+                }
+                return try Self.result(fields)
             case "session.editor.read": return try editorResult(args)
             case "session.editor.commit", "session.document.apply": return try await commitSession(params.name, args)
             default: throw MCPDocumentError("unknown_tool", "Unknown extension tool")
@@ -946,7 +977,7 @@ final class MCPOpenAIExtensions {
         let resourceURI = Self.legacyUIURIs[uri] ?? uri
         if let panel = Self.uiResources.first(where: { $0.uri == resourceURI }) {
             guard let url = Bundle.module.url(forResource: panel.file, withExtension: "html", subdirectory: "MCPApps") else { throw MCPDocumentError("missing_ui", "MCP panel is missing from this build") }
-            return .init(contents: [.text(try String(contentsOf: url, encoding: .utf8), uri: uri, mimeType: "text/html;profile=mcp-app", _meta: .init(additionalFields: [
+            return .init(contents: [.text(try MCPMutationReceipts.panelHTML(String(contentsOf: url, encoding: .utf8), receiptTools: receiptToolNames), uri: uri, mimeType: "text/html;profile=mcp-app", _meta: .init(additionalFields: [
                 // Embedded branding uses data: and MCP preview bytes use blob:.
                 // Declare both for the host's image/media CSP; no remote origin is needed.
                 "ui": .object(["csp": .object(["connectDomains": .array([]), "resourceDomains": ["data:", "blob:"]]), "prefersBorder": false]),

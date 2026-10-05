@@ -1,7 +1,7 @@
 {
   "name": "voxstudio",
-  "version": "0.2.0",
-  "description": "Session knowledge, transcription, voiceover and native video editing in one VoxStudio connection.",
+  "version": "0.3.0",
+  "description": "Original session knowledge, transcription and voiceover in VoxStudio.",
   "author": {
     "name": "VoxStudio"
   },
@@ -10,8 +10,8 @@
       "onboardingSkill": "./skills/onboarding/SKILL.md",
       "interface": {
         "displayName": "VoxStudio",
-        "shortDescription": "Ask your sessions, transcribe and create media",
-        "longDescription": "Ask questions and read the relevant session details or matching sessions beside your chat. Transcribe media, create voiceovers and edit the native VoxStudio timeline through the same connection.",
+        "shortDescription": "Knowledge, transcription and voiceover",
+        "longDescription": "Read original session evidence, transcribe audio/video and create voiceovers. Native editing connects independently through voxstudio_native.",
         "developerName": "VoxStudio",
         "category": "Productivity",
         "capabilities": [
@@ -25,8 +25,7 @@
           "Ask my VoxStudio sessions and show the original evidence",
           "Open my VoxStudio sessions",
           "Transcribe an audio or video file",
-          "Create a voiceover",
-          "Edit the current timeline in VoxStudio"
+          "Create a voiceover"
         ]
       }
     }
@@ -35,8 +34,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "VoxStudio",
-    "shortDescription": "Ask your sessions, transcribe and create media",
-    "longDescription": "Ask questions and read the relevant session details or matching sessions beside your chat. Transcribe media, create voiceovers and edit the native VoxStudio timeline through the same connection.",
+    "shortDescription": "Knowledge, transcription and voiceover",
+    "longDescription": "Read original session evidence, transcribe audio/video and create voiceovers. Native editing connects independently through voxstudio_native.",
     "developerName": "VoxStudio",
     "category": "Productivity",
     "capabilities": [
@@ -50,8 +49,7 @@
       "Ask my VoxStudio sessions and show the original evidence",
       "Open my VoxStudio sessions",
       "Transcribe an audio or video file",
-      "Create a voiceover",
-      "Edit the current timeline in VoxStudio"
+      "Create a voiceover"
     ]
   }
 }

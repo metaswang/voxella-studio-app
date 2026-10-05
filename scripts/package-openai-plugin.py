@@ -16,13 +16,13 @@ def package(root: Path, output: Path) -> dict:
     files = {}
     plugins = []
     plugin_versions = {}
-    for plugin_name, skills in [("voxstudio", ["onboarding", "media-workflow", "session-retrieval", "file-editing", "video-editing", "knowledge-qa"])]:
+    for plugin_name, skills in [("voxstudio", ["onboarding", "media-workflow", "session-retrieval", "knowledge-qa"])]:
         plugin = root / "Plugins" / plugin_name
         manifest = json.loads((plugin / "plugin.json").read_text())
         plugin_versions[plugin_name] = manifest["version"]
         config = json.loads((plugin / "mcp.json").read_text())
         expected_key = "voxstudio" if plugin_name == "voxstudio" else "voxstudio_knowledge"
-        expected_path = "/app/mcp"
+        expected_path = "/chatgpt/mcp"
         assert manifest["name"] == plugin_name
         assert config["mcpServers"][expected_key]["url"] == "http://127.0.0.1:19789" + expected_path
         prefix = "plugins/" + plugin_name + "/"

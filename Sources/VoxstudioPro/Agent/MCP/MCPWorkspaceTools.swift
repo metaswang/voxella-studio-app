@@ -4,17 +4,17 @@ import MCP
 /// Standard MCP Apps registration. OpenAI entrypoints are optional descriptor additions.
 enum MCPAppPresentation {
     // Version the resource when bundled UI behavior changes: hosts cache HTML by URI.
-    static let workspaceURI = "ui://voxstudio/workspace/v3"
+    static let workspaceURI = "ui://voxstudio/workspace/v6"
     static let legacyWorkspaceURI = "ui://voxstudio/workspace/v1"
-    static let legacyWorkspaceURIs = [legacyWorkspaceURI, "ui://voxstudio/workspace/v2"]
+    static let legacyWorkspaceURIs = [legacyWorkspaceURI, "ui://voxstudio/workspace/v2", "ui://voxstudio/workspace/v3", "ui://voxstudio/workspace/v4", "ui://voxstudio/workspace/v5"]
     static func metadata(entry: Bool = false) -> Metadata {
         var fields: [String: Value] = ["ui": ["resourceUri": .string(workspaceURI)]]
         if entry { fields["openai/ui"] = ["entrypoints": [["type": "global"], ["type": "thread"]]] }
         return .init(additionalFields: fields)
     }
-    static func resource(_ uri: String) throws -> ReadResource.Result {
+    static func resource(_ uri: String, receiptTools: [String]? = nil) throws -> ReadResource.Result {
         guard let url = Bundle.module.url(forResource: "workspace", withExtension: "html", subdirectory: "MCPApps") else { throw WorkspaceError("missing_ui", "Workspace UI is missing from this build") }
-        return .init(contents: [.text(try String(contentsOf: url, encoding: .utf8), uri: uri, mimeType: "text/html;profile=mcp-app",
+        return .init(contents: [.text(try MCPMutationReceipts.panelHTML(String(contentsOf: url, encoding: .utf8), receiptTools: receiptTools), uri: uri, mimeType: "text/html;profile=mcp-app",
             _meta: .init(additionalFields: ["ui": ["csp": ["connectDomains": [], "resourceDomains": ["data:", "blob:"]], "prefersBorder": false]]))])
     }
 }
@@ -23,6 +23,10 @@ enum MCPAppPresentation {
 final class MCPWorkspaceTools {
     nonisolated static let instructions = """
     VoxStudio provides session evidence, media workflows and the native video editor.
+    This is the local VoxStudio Mac MCP server. Keep every workspace_id, turn_id,
+    source_id and evidence_id on this same server. VoxStudio Cloud is a different
+    provider: never pass these IDs to Cloud tools or treat a Cloud lookup failure
+    as evidence that a session visible on your Mac is unavailable.
     Writes require a fresh UUID request_id. Preserve it across retries; receipts last one hour.
     Never retry an execution of unknown status after an app restart or receipt expiry.
     Use your own reasoning for knowledge questions. Do not call the app's answer model.
@@ -32,6 +36,13 @@ final class MCPWorkspaceTools {
     is all authorized sessions; browsing a source does not restrict it. For 'this session',
     explicitly pass scope.source_ids from the UI reading context. Set an explicit scope only when the user asks to restrict sessions.
     Search candidates are not verified claims. Fetch current original spans before citing.
+    app_evidence is the local data-only evidence gateway: use action=search, fetch,
+    list_sources, aggregate, find_text or methods with the same arguments as the
+    corresponding local evidence tool. For methods, use method_action=list or read.
+    Use action=complete_turn with the normal completion arguments. This gateway
+    remains available when the host exposes only part of the local tool inventory.
+    Follow the returned next_call through this same app_evidence tool; do not
+    switch providers merely because a standalone search or fetch is not exposed.
     Call knowledge.complete_turn with cited_evidence_ids and cited_observation_ids before
     your final answer, including no_evidence, clarification or failed when appropriate.
     Only UI entry tools have UI templates. Data calls update the open session/list panel.
@@ -60,6 +71,61 @@ final class MCPWorkspaceTools {
     nonisolated static func schema(_ properties: [String: Value], required: [String] = []) -> Value {
         ["type": "object", "properties": .object(properties), "required": .array(required.map(Value.string)), "additionalProperties": false]
     }
+    nonisolated private static var knowledgeEntrySchema: Value {
+        let string: Value = ["type": "string"]
+        return schema([
+            "action": ["type": "string", "enum": ["begin", "show"], "default": "show"],
+            "query": string, "workspace_id": string, "turn_id": string, "request_id": string,
+            "scope": schema(["source_ids": ["type": "array", "items": string],
+                "origin": ["type": "string", "enum": ["all", "local", "cloud"]]])
+        ])
+    }
+    nonisolated private static var knowledgeGatewaySchema: Value {
+        var properties: [String: Value] = ["workspace_id": ["type": "string"], "turn_id": ["type": "string"]]
+        for tool in MCPKnowledgeBaseTools.tools {
+            properties.merge(tool.inputSchema.objectValue!["properties"]!.objectValue!.filter { $0.key != "action" }) { _, new in new }
+        }
+        let array: Value = ["type": "array", "items": ["type": "string"]]
+        properties.merge([
+            "action": ["type": "string", "enum": ["search", "fetch", "list_sources", "aggregate", "find_text", "methods", "complete_turn"]],
+            "method_action": ["type": "string", "enum": ["list", "read"]],
+            "cited_evidence_ids": array, "cited_observation_ids": array,
+            "outcome": ["type": "string", "enum": ["answered", "no_evidence", "clarification", "failed"]]
+        ]) { _, new in new }
+        return schema(properties, required: ["action"])
+    }
+    nonisolated private static let evidenceProvider: Value = ["server": "voxstudio", "backend": "local_mcp", "tool": "app_evidence"]
+
+    nonisolated private static func entryResult(_ value: Value, beginning: Bool = false) -> CallTool.Result {
+        var fields = value.objectValue ?? [:]
+        fields["evidence_provider"] = evidenceProvider
+        var arguments: [String: Value] = [:]
+        if let workspace = fields["workspace_id"], let turn = fields["turn_id"] {
+            arguments["workspace_id"] = workspace; arguments["turn_id"] = turn
+        }
+        let selected = fields["scope"]?.objectValue?["source_ids"]?.arrayValue
+        let source = selected?.count == 1 ? selected?.first : (beginning ? nil : fields["view"]?.objectValue?["source_id"])
+        if let source, !source.isNull {
+            arguments.merge(["action": "fetch", "source_id": source, "view": "body", "limit": 100]) { _, new in new }
+            fields["next_call"] = ["tool": "app_evidence", "arguments": .object(arguments)]
+        } else if let query = fields["query"] {
+            arguments.merge(["action": "search", "query": query, "target": "passages"]) { _, new in new }
+            fields["next_call"] = ["tool": "app_evidence", "arguments": .object(arguments)]
+        }
+        return result(.object(fields))
+    }
+
+    nonisolated private static func gatewayResult(_ result: CallTool.Result, action: String, arguments: [String: Value]) -> CallTool.Result {
+        var fields = result.structuredContent?.objectValue ?? [:]
+        fields["evidence_provider"] = evidenceProvider
+        if result.isError != true, let cursor = fields["next_cursor"], !cursor.isNull {
+            var next = arguments; next["action"] = .string(action); next["cursor"] = cursor
+            fields["next_call"] = ["tool": "app_evidence", "arguments": .object(next)]
+        }
+        var routed = Self.result(.object(fields), error: result.isError == true)
+        routed._meta = result._meta
+        return routed
+    }
     nonisolated static var tools: [Tool] {
         let string: Value = ["type": "string"]
         let array: Value = ["type": "array", "items": ["type": "string"]]
@@ -69,9 +135,8 @@ final class MCPWorkspaceTools {
             ("voxstudio.workspace", "Open the VoxStudio sessions list", schema([:]), true),
             ("app_workbench", "Open VoxStudio sessions (compatibility entry)", schema([:]), true),
             ("app_session", "Open the existing VoxStudio session detail UI", schema(["session_id": string], required: ["session_id"]), true),
-            ("app_knowledge", "Show a simple session detail or sessions list alongside chat and begin a question; use show to resume. begin requires query and a fresh UUID request_id; preserve it when retrying.", schema([
-                "action": ["type": "string", "enum": ["begin", "show"], "default": "show"], "query": string, "workspace_id": string,
-                "turn_id": string, "request_id": string, "scope": scope]), true),
+            ("app_evidence", "Read original session evidence on the local VoxStudio Mac MCP server. action selects search, fetch, list_sources, aggregate, find_text, methods or complete_turn, using that operation's normal arguments; methods uses method_action=list or read. Keep the workspace_id and turn_id returned by local app_knowledge together. Use this data-only gateway when standalone evidence tools are unavailable. Never send these local IDs to VoxStudio Cloud.", knowledgeGatewaySchema, false),
+            ("app_knowledge", "Show a local VoxStudio session detail or sessions list alongside chat and begin a question; use show to resume. begin requires query and a fresh UUID request_id; preserve it when retrying. Follow next_call with the local app_evidence gateway to read original evidence and complete the turn. Never switch these local workspace or source IDs to VoxStudio Cloud.", knowledgeEntrySchema, true),
             ("knowledge.complete_turn", "Finalize this question's answer sources after successful original reads. Presentation only; does not generate an answer.", schema(common.merging([
                 "cited_evidence_ids": array, "cited_observation_ids": array,
                 "outcome": ["type": "string", "enum": ["answered", "no_evidence", "clarification", "failed"]]], uniquingKeysWith: { _, new in new }), required: ["workspace_id", "turn_id", "outcome"]), false),
@@ -154,6 +219,15 @@ final class MCPWorkspaceTools {
             let name = parameters.name
             guard let tool = Self.tools.first(where: { $0.name == name }) else { throw WorkspaceError("invalid_argument", "Unknown tool") }
             try Self.validate(.object(args), schema: tool.inputSchema)
+            if name == "app_evidence" {
+                let action = args["action"]!.stringValue!
+                var arguments = args; arguments.removeValue(forKey: "action")
+                if action == "methods", let methodAction = arguments.removeValue(forKey: "method_action") {
+                    arguments["action"] = methodAction
+                }
+                let delegated = await execute(.init(name: action == "complete_turn" ? "knowledge.complete_turn" : action, arguments: arguments, meta: parameters._meta))
+                return Self.gatewayResult(delegated, action: action, arguments: args)
+            }
             let workspaceID = args["workspace_id"]?.stringValue
             if name == "app_knowledge" || name == "voxstudio.workspace" || name == "app_workbench" || name == "app_session" {
                 let action = args["action"]?.stringValue ?? "show"
@@ -168,7 +242,7 @@ final class MCPWorkspaceTools {
                     if id == nil { id = try await store.receiptWorkspace(requestID: requestID) }
                     if let id, let previous = try await store.resumeBegin(id: id, requestID: requestID, query: query, scope: args["scope"]) {
                         var fields = previous.objectValue!; fields["ui_support"] = .string(uiSupport)
-                        return Self.result(.object(fields))
+                        return Self.entryResult(.object(fields), beginning: true)
                     }
                     if id == nil {
                         let opened = try await store.open(id: nil, snapshot: access)
@@ -180,7 +254,7 @@ final class MCPWorkspaceTools {
                     if scope != .all, Set(snapshot.sessions.map(\.id)) != Set(scope.sessionIDs) { throw WorkspaceError("unauthorized_source", "Selected session is unavailable") }
                     var result = try await store.begin(id: id!, query: query, scope: selected, snapshot: snapshot, requestID: requestID).objectValue!
                     result["ui_support"] = .string(uiSupport)
-                    return Self.result(.object(result))
+                    return Self.entryResult(.object(result), beginning: true)
                 }
                 var result = try await store.open(id: id, snapshot: access)
                 if let source = args["session_id"]?.stringValue {
@@ -189,7 +263,7 @@ final class MCPWorkspaceTools {
                 }
                 if let turn = args["turn_id"]?.stringValue { result = try await store.state(id: result.objectValue!["workspace_id"]!.stringValue!, turnID: turn, after: nil) }
                 var fields = result.objectValue!; fields["ui_support"] = .string(uiSupport)
-                return Self.result(.object(fields))
+                return Self.entryResult(.object(fields))
             }
             if name == "knowledge.workspace_state" {
                 if let page = args["page"]?.objectValue {

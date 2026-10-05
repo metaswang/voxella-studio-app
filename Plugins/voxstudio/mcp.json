@@ -3,7 +3,7 @@
   "mcpServers": {
     "voxstudio": {
       "type": "streamable-http",
-      "url": "http://127.0.0.1:19789/app/mcp"
+      "url": "http://127.0.0.1:19789/chatgpt/mcp"
     }
   }
 }

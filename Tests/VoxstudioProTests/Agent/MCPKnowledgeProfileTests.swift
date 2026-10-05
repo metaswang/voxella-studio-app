@@ -82,7 +82,10 @@ struct MCPUnifiedInventoryTests {
         let result=try await rpc("tools/list"),tools=try #require(result.objectValue?["tools"]?.arrayValue)
         let names=tools.compactMap{$0.objectValue?["name"]?.stringValue}
         #expect(Set(names).count==names.count)
-        #expect(["search","fetch","aggregate","app_knowledge","voxstudio.workspace","get_timeline","set_clip_properties","media.status"].allSatisfy(names.contains))
+        #expect(["search","fetch","aggregate","app_evidence","app_knowledge","voxstudio.workspace","get_timeline","set_clip_properties","media.status"].allSatisfy(names.contains))
+        #expect(Array(names.sorted().prefix(25)).contains("app_evidence"))
+        let evidenceGateway = try #require(tools.first { $0.objectValue?["name"]?.stringValue == "app_evidence" })
+        #expect(evidenceGateway.objectValue?["_meta"]?.objectValue?["ui"] == nil)
         #expect(!names.contains("knowledge.ask"));#expect(!names.contains("knowledge.search"))
         let mutation=try #require(tools.first{$0.objectValue?["name"]?.stringValue=="set_clip_properties"})
         #expect(mutation.objectValue?["inputSchema"]?.objectValue?["required"]?.arrayValue?.contains("request_id")==true)

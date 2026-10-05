@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-05",
+  "endpoint": "http://127.0.0.1:19789/app/mcp",
+  "session_title": "Origin of Writing",
+  "provider": {
+    "server": "voxstudio",
+    "backend": "local_mcp",
+    "tool": "app_evidence"
+  },
+  "gateway_in_first_25_model_tools": true,
+  "gateway_has_no_ui_template": true,
+  "scoped_begin": true,
+  "pages_read": 4,
+  "segments_read": 50,
+  "text_characters_read": 55206,
+  "pagination_complete": true,
+  "cited_evidence_count": 50,
+  "completion_status": "answered",
+  "ui_tests_passed": 13,
+  "plugin_package_tests_passed": 7,
+  "native_host_chat_retest": "not_run",
+  "swift_tests_passed": 15,
+  "swift_suites_passed": 3,
+  "signed_debug_app_built": true,
+  "local_plugin_installed_version": "0.2.1",
+  "local_plugin_enabled": true,
+  "cloud_plugin_installed_version": "0.2.4",
+  "cloud_plugin_enabled": true,
+  "swift_test_configuration": "default",
+  "workspace_resource": "ui://voxstudio/workspace/v4",
+  "native_host_app_session_rpc": true
+}

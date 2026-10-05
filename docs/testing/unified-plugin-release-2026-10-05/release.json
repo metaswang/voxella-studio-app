@@ -1,0 +1,13 @@
+{
+  "name": "voxstudio",
+  "version": "0.2.0",
+  "filename": "VoxStudio-OpenAI-Plugin.zip",
+  "size": 235429,
+  "sha256": "2c8ae679c56c67257e380eca58e1e40cd5a518e95cbe06c1547eaaf2c3fd3e76",
+  "file_count": 16,
+  "object_key": "app-releases/voxstudio/plugins/voxstudio/0.2.0/2c8ae679c56c67257e380eca58e1e40cd5a518e95cbe06c1547eaaf2c3fd3e76/VoxStudio-OpenAI-Plugin.zip",
+  "url": "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.2.0/2c8ae679c56c67257e380eca58e1e40cd5a518e95cbe06c1547eaaf2c3fd3e76/VoxStudio-OpenAI-Plugin.zip",
+  "plugins": {
+    "voxstudio": "0.2.0"
+  }
+}

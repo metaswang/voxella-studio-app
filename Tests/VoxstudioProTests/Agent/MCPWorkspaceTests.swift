@@ -116,6 +116,129 @@ struct MCPWorkspaceTests {
         let data=MCPWorkspaceTools.tools.filter{MCPKnowledgeBaseTools.tools.map(\.name).contains($0.name)}
         #expect(data.allSatisfy{$0._meta==nil})
         #expect(MCPWorkspaceTools.tools.first{$0.name=="app_knowledge"}?._meta?["ui"]?.objectValue?["resourceUri"]?.stringValue==MCPAppPresentation.workspaceURI)
+        let gateway = try #require(MCPWorkspaceTools.tools.first { $0.name == "app_evidence" })
+        #expect(gateway._meta == nil)
+    }
+    @Test @MainActor func localEvidenceGatewayReadsVisibleSessionAndCompletesWithVerifiedCitations() async throws {
+        let helper = KnowledgeEvidenceWorkspaceTests()
+        let source = helper.fixture(title: "Origin of Writing", segments: [
+            .init(text: "Irving Finkel discusses the origins of writing and ancient languages.", start: 0, end: 12)
+        ])
+        let snapshot = helper.snapshot([source])
+        let tools = MCPWorkspaceTools(store: MCPWorkspaceStore(), capture: { _, _ in snapshot })
+        let opened = await tools.execute(.init(name: "app_knowledge", arguments: [
+            "action": "begin", "query": "Summarize this", "request_id": .string(UUID().uuidString),
+            "scope": ["source_ids": [.string(source.id.uuidString)]]
+        ]))
+        #expect(opened.isError != true)
+        let provider: Value = ["server": "voxstudio", "backend": "local_mcp", "tool": "app_evidence"]
+        #expect(opened.structuredContent?.objectValue?["evidence_provider"] == provider)
+        let next = try #require(opened.structuredContent?.objectValue?["next_call"]?.objectValue)
+        #expect(next["tool"] == "app_evidence")
+        let arguments = try #require(next["arguments"]?.objectValue)
+        #expect(arguments["action"] == "fetch")
+        #expect(arguments["source_id"] == .string(source.id.uuidString))
+        let fetched = await tools.execute(.init(name: "app_evidence", arguments: arguments))
+        #expect(fetched.isError != true)
+        #expect(fetched.structuredContent?.objectValue?["evidence_provider"] == provider)
+        let rows = try #require(fetched.structuredContent?.objectValue?["segments"]?.arrayValue)
+        #expect(rows.first?.objectValue?["text"]?.stringValue?.contains("Irving Finkel") == true)
+        let evidence = try #require(rows.first?.objectValue?["evidence_id"])
+        let observation = try #require(fetched.structuredContent?.objectValue?["observation_id"])
+        let done = await tools.execute(.init(name: "app_evidence", arguments: [
+            "action": "complete_turn", "workspace_id": try #require(arguments["workspace_id"]),
+            "turn_id": try #require(arguments["turn_id"]), "outcome": "answered",
+            "cited_evidence_ids": [evidence], "cited_observation_ids": [observation]
+        ]))
+        #expect(done.isError != true)
+        #expect(done.structuredContent?.objectValue?["status"] == "answered")
+        #expect(done.structuredContent?.objectValue?["cited_evidence_ids"] == [evidence])
+        #expect(done.structuredContent?.objectValue?["evidence_provider"] == provider)
+    }
+    @Test @MainActor func localEvidenceGatewayKeepsFrozenScopeAndRejectsActionSpecificArguments() async throws {
+        let helper = KnowledgeEvidenceWorkspaceTests()
+        let selected = helper.fixture(segments: [.init(text: "Authorized original", start: 0, end: 2)])
+        let other = helper.fixture(segments: [.init(text: "Other original", start: 0, end: 2)])
+        let snapshot = helper.snapshot([selected, other])
+        let tools = MCPWorkspaceTools(store: MCPWorkspaceStore(), capture: { scope, _ in
+            if scope == .all { return snapshot }
+            return helper.snapshot(snapshot.sessions.filter { scope.sessionIDs.contains($0.id) })
+        })
+        let opened = await tools.execute(.init(name: "app_knowledge", arguments: [
+            "action": "begin", "query": "Summarize this", "request_id": .string(UUID().uuidString),
+            "scope": ["source_ids": [.string(selected.id.uuidString)]]
+        ]))
+        let workspace = try #require(opened.structuredContent?.objectValue?["workspace_id"])
+        let turn = try #require(opened.structuredContent?.objectValue?["turn_id"])
+        let forbidden = await tools.execute(.init(name: "app_evidence", arguments: [
+            "action": "fetch", "workspace_id": workspace, "turn_id": turn, "source_id": .string(other.id.uuidString)
+        ]))
+        #expect(forbidden.isError == true)
+        #expect(forbidden.structuredContent?.objectValue?["segments"] == nil)
+        let listed = await tools.execute(.init(name: "app_evidence", arguments: [
+            "action": "list_sources", "workspace_id": workspace, "turn_id": turn
+        ]))
+        #expect(listed.isError != true)
+        #expect(listed.structuredContent?.objectValue?["sources"]?.arrayValue?.count == 1)
+        #expect(listed.structuredContent?.objectValue?["sources"]?.arrayValue?.first?.objectValue?["source_id"] == .string(selected.id.uuidString))
+        for arguments: [String: Value] in [
+            ["action": "fetch", "source_id": .string(selected.id.uuidString), "request_id": .string(UUID().uuidString)],
+            ["action": "list_sources", "query": "unexpected"],
+            ["action": "complete_turn", "workspace_id": workspace, "turn_id": turn, "outcome": "answered", "source_id": .string(selected.id.uuidString)],
+            ["action": "begin", "query": "question", "request_id": .string(UUID().uuidString), "source_id": .string(selected.id.uuidString)],
+            ["action": "fetch", "workspace_id": workspace, "source_id": .string(selected.id.uuidString)]
+        ] {
+            let result = await tools.execute(.init(name: "app_evidence", arguments: arguments))
+            #expect(result.isError == true)
+            #expect(result.structuredContent?.objectValue?["segments"] == nil)
+        }
+    }
+    @Test @MainActor func localEvidenceGatewayPaginationStaysOnTheLocalProvider() async throws {
+        let helper = KnowledgeEvidenceWorkspaceTests()
+        let snapshot = helper.snapshot([helper.fixture(title: "One"), helper.fixture(title: "Two")])
+        let tools = MCPWorkspaceTools(store: MCPWorkspaceStore(), capture: { _, _ in snapshot })
+        let opened = await tools.execute(.init(name: "app_knowledge", arguments: [
+            "action": "begin", "query": "List the sessions", "request_id": .string(UUID().uuidString)
+        ]))
+        let search = try #require(opened.structuredContent?.objectValue?["next_call"]?.objectValue?["arguments"]?.objectValue)
+        #expect(search["action"] == "search")
+        let first = await tools.execute(.init(name: "app_evidence", arguments: [
+            "action": "list_sources", "workspace_id": try #require(search["workspace_id"]),
+            "turn_id": try #require(search["turn_id"]), "limit": 1
+        ]))
+        let next = try #require(first.structuredContent?.objectValue?["next_call"]?.objectValue)
+        #expect(next["tool"] == "app_evidence")
+        let arguments = try #require(next["arguments"]?.objectValue)
+        #expect(arguments["action"] == "list_sources")
+        #expect(arguments["workspace_id"] == search["workspace_id"])
+        #expect(arguments["turn_id"] == search["turn_id"])
+        let second = await tools.execute(.init(name: "app_evidence", arguments: arguments))
+        #expect(second.isError != true)
+        #expect(second.structuredContent?.objectValue?["complete"] == true)
+        #expect(second.structuredContent?.objectValue?["next_call"] == nil)
+        #expect(second.structuredContent?.objectValue?["sources"]?.arrayValue?.first != first.structuredContent?.objectValue?["sources"]?.arrayValue?.first)
+    }
+    @Test @MainActor func broadBeginDoesNotTurnPinnedReadingFocusIntoEvidenceScope() async throws {
+        let snapshot = fixture()
+        let tools = MCPWorkspaceTools(store: MCPWorkspaceStore(), capture: { _, _ in snapshot })
+        let focused = await tools.execute(.init(name: "app_session", arguments: ["session_id": .string(snapshot.sessions[0].id.uuidString)]))
+        let workspace = try #require(focused.structuredContent?.objectValue?["workspace_id"])
+        let viewRevision = try #require(focused.structuredContent?.objectValue?["view_revision"])
+        _ = await tools.execute(.init(name: "knowledge.update_view", arguments: [
+            "workspace_id": workspace, "expected_view_revision": viewRevision, "view": ["pinned": true]
+        ]))
+        for scope: Value in [.object([:]), ["source_ids": .array(snapshot.sessions.map { .string($0.id.uuidString) })]] {
+            let opened = await tools.execute(.init(name: "app_knowledge", arguments: [
+                "action": "begin", "workspace_id": workspace, "query": "Compare the sessions",
+                "request_id": .string(UUID().uuidString), "scope": scope
+            ]))
+            #expect(opened.isError != true)
+            #expect(opened.structuredContent?.objectValue?["view"]?.objectValue?["source_id"] == .string(snapshot.sessions[0].id.uuidString))
+            let next = try #require(opened.structuredContent?.objectValue?["next_call"]?.objectValue?["arguments"]?.objectValue)
+            #expect(next["action"] == "search")
+            #expect(next["source_id"] == nil)
+            #expect(opened.structuredContent?.objectValue?["scope"] == scope)
+        }
     }
     @Test @MainActor func frozenCatalogCanPageInItsOriginalScopeWithoutChangingTheCompletedTurn() async throws {
         let helper=KnowledgeEvidenceWorkspaceTests()

@@ -1,0 +1,9 @@
+{
+  "cdn_verified": true,
+  "url": "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.2.0/2c8ae679c56c67257e380eca58e1e40cd5a518e95cbe06c1547eaaf2c3fd3e76/VoxStudio-OpenAI-Plugin.zip",
+  "sha256": "2c8ae679c56c67257e380eca58e1e40cd5a518e95cbe06c1547eaaf2c3fd3e76",
+  "size": 235429,
+  "cache_control": "public, max-age=31536000, immutable",
+  "get_status": 200,
+  "head_status": 200
+}

@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-05",
+  "version": "0.2.0",
+  "installed": [
+    {
+      "pluginId": "voxstudio@voxstudio-local",
+      "name": "voxstudio",
+      "marketplaceName": "voxstudio-local",
+      "version": "0.2.0",
+      "installed": true,
+      "enabled": true,
+      "source": {
+        "source": "local",
+        "path": "/Users/adamwang/Project/subdub/voxella-studio-app/.build/openai-plugin-installation/VoxStudio-OpenAI-Plugin/plugins/voxstudio"
+      },
+      "marketplaceSource": {
+        "sourceType": "local",
+        "source": "/Users/adamwang/Project/subdub/voxella-studio-app/.build/openai-plugin-installation/VoxStudio-OpenAI-Plugin"
+      },
+      "installPolicy": "AVAILABLE",
+      "authPolicy": "ON_INSTALL"
+    }
+  ],
+  "old_media_plugin_removed_before_install": true,
+  "old_knowledge_plugin_was_not_installed": true,
+  "settings_ui_verified": true,
+  "fixed_link_visible": true,
+  "bundled_offline_action_visible": true,
+  "independent_update_copy_visible": true,
+  "bundled_version_label_visible": true,
+  "settings_server_url": "http://127.0.0.1:19789/app/mcp",
+  "signed_app_build_passed": true,
+  "bundled_zip_matches_public_release": true,
+  "package_migration_tests_passed": 7,
+  "worker_tests_passed": 58,
+  "worker_version": "5bffaba9-a536-4205-9d23-18a98976b056",
+  "previous_worker_version": "7f75e37a-f345-4607-bf66-3c41361cbcf9",
+  "publication_explicitly_authorized_before_full_host_ui_acceptance": true,
+  "remaining_host_ui_acceptance": "See docs/plugins/unified-workspace-acceptance.md"
+}

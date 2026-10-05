@@ -1,6 +1,7 @@
 import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
 import {openLegacyPanel} from './legacy-panel';
 import { voxStudioLogo } from './logo';
+import {isWorkspaceSnapshot} from './workspace-model';
 export type Obj = Record<string, any>;
 export const app = new App({name: 'VoxStudio', version: '0.2.0'}, {availableDisplayModes: ['inline', 'fullscreen']});
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -39,7 +40,7 @@ export function shell(section: string, body: string) {
 }
 export function notice(message: string, error = false) { $('notice-message').textContent=message; $('notice').hidden=false; $('notice').classList.toggle('error',error); }
 export function clearNotice() { $('notice').hidden=true; }
-let receiptTools = new Set<string>();
+let receiptTools = new Set<string>((window as any).__voxstudioReceiptTools ?? []);
 export function decode(result: Obj): Obj {
  if(Array.isArray(result._meta?.["voxstudio/receiptTools"]))receiptTools=new Set(result._meta["voxstudio/receiptTools"]);
  const text=result.content?.find((c: Obj)=>c.type==='text')?.text;
@@ -56,7 +57,9 @@ class VoxStudioUnavailableError extends Error {}
 export async function rawCall(name: string, args: Obj = {}) {
  if (!connected) throw new Error(t('尚未连接到 VoxStudio，请稍候','Waiting for VoxStudio to connect.'));
  try {
-  const result = await app.callServerTool({name, arguments:receiptTools.has(name)&&!args.request_id?{...args,request_id:crypto.randomUUID()}:args});
+  // Retain the ID on the request object so retrying that request cannot duplicate a write.
+  if(receiptTools.has(name)&&!args.request_id)args.request_id=crypto.randomUUID();
+  const result = await app.callServerTool({name, arguments:args});
   if(Array.isArray(result._meta?.['voxstudio/receiptTools']))receiptTools=new Set(result._meta['voxstudio/receiptTools']);
   if (result.isError) decode(result);
   $('connection').innerHTML='<i></i>Connected';$('connection').classList.add('online');
@@ -105,7 +108,7 @@ export async function openPanel(tool: string, args: Obj = {}) {
  if(!receiptTools.size){await openLegacyPanel(app,panelNames[tool][1],tool,args);return;}
  const name=tool==='app_workbench'?'voxstudio.workspace':tool;
  const result=await rawCall(name,args);
- const uri=['app_session','app_workbench'].includes(tool)?'ui://voxstudio/workspace/v3':tool==='app_transcription'?'ui://voxstudio/transcription/v4':'ui://voxstudio/dubbing/v4';
+ const uri=['app_session','app_workbench'].includes(tool)?'ui://voxstudio/workspace/v6':tool==='app_transcription'?'ui://voxstudio/transcription/v6':'ui://voxstudio/dubbing/v6';
  const resource=await app.readServerResource({uri});
  const html=resource.contents.find(row=>'text' in row);
  if(!html||!('text' in html))throw new Error('Panel resource is unavailable.');
@@ -113,7 +116,7 @@ export async function openPanel(tool: string, args: Obj = {}) {
  disposed=true;for(const cleanup of cleanups)cleanup();await app.close();
  document.open();document.write(html.text);document.close();
 }
-export async function context(value: Obj) { try { await app.updateModelContext({structuredContent:value}); } catch { /* Content still works when optional model context is unsupported. */ } }
+export async function context(value: Obj, text?:string) { try { await app.updateModelContext({structuredContent:value,...(text?{content:[{type:'text' as const,text}]}:{})}); } catch { /* Content still works when optional model context is unsupported. */ } }
 export function progress(state:Obj) {const amount=Math.max(0,Math.min(100,Math.round((state.progress||0)*100)));return `<div class="progress-heading">${badge(state.status)}<span>${amount}%</span></div><progress max="100" value="${amount}">${amount}%</progress><p class="muted">${esc(state.error||state.message||(state.status==='completed'?'Your result is ready.':state.status==='failed'?'The job could not be completed. Open the session for details.':state.status==='cancelled'?'This job was cancelled.':'Processing on your Mac. You can return to this session later.'))}</p>`;}
 export function poll(read:()=>Promise<Obj>,render:(v:Obj)=>void) {let timer:ReturnType<typeof setTimeout>|undefined;let stopped=false;const run=async()=>{if(stopped||disposed)return;try{const v=await read();if(stopped||disposed)return;render(v);if(!['completed','failed','cancelled','idle'].includes(v.status))timer=setTimeout(run,2000)}catch(e){notice(String(e),true)}};void run();const stop=()=>{stopped=true;clearTimeout(timer)};onDispose(stop);return stop;}
 export async function waitInput(result: Obj,onState?:(state:Obj)=>void):Promise<Obj|undefined> {
@@ -139,7 +142,7 @@ export function start(fallbackTool:string,consume:(data:Obj)=>Promise<void>|void
  if(handoff){initial=decode(handoff);delete (window as any).__voxstudioPanelResult;}
  const deliver=(data:Obj)=>{const signature=JSON.stringify(data);if(signature===delivered)return;delivered=signature;chain=chain.then(()=>consume(data)).then(()=>undefined).catch(e=>notice(e instanceof Error?e.message:String(e),true));};
  app.ontoolinput=p=>{input=p.arguments as Obj;consumeInput?.(input)};
- app.ontoolresult=p=>{try{const data=decode(p);if(fallbackTool==='voxstudio.workspace'&&!data.workspace_id)return;initial=data;if(connected)deliver(initial)}catch(e){notice(String(e),true)}};
+ app.ontoolresult=p=>{try{const data=decode(p);if(fallbackTool==='voxstudio.workspace'&&!isWorkspaceSnapshot(data))return;initial=data;if(connected)deliver(initial)}catch(e){notice(String(e),true)}};
  const host=(ctx:Obj)=>{if(ctx.theme)applyDocumentTheme(ctx.theme);if(ctx.styles?.variables)applyHostStyleVariables(ctx.styles.variables)};
  app.onhostcontextchanged=host;
  app.onteardown=async()=>{disposed=true;for(const fn of cleanups)fn();return {}};

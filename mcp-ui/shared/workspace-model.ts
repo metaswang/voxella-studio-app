@@ -1,4 +1,22 @@
 export type WorkspaceObject = Record<string, any>;
+export function isWorkspaceSnapshot(value:WorkspaceObject) {
+ return typeof value.workspace_id==='string'&&typeof value.revision==='number'&&Number.isFinite(value.revision)&&value.view!==null&&typeof value.view==='object'&&!Array.isArray(value.view);
+}
+// Workspace/turn IDs are scoped to a server, even when another installed
+// VoxStudio provider exposes similarly named knowledge tools.
+export function workspaceReadingContext(workspaceId:string,state:WorkspaceObject,source?:WorkspaceObject) {
+ const sourceId=source?.source_id??source?.session_id;
+ return {
+  type:'voxstudio_workspace',
+  evidence_provider:{server:'voxstudio',backend:'local_mcp',tool:'app_evidence'},
+  workspace_id:workspaceId,...(state.turn_id?{turn_id:state.turn_id}:{}),scope:state.next_scope??{},
+  reading_source_id:sourceId??null,reading_scope:sourceId?{source_ids:[sourceId]}:null,
+  reading_source:sourceId?{source_id:sourceId,title:source?.title??'Session',...(source?.origin?{origin:source.origin}:{}),material:state.view?.material??'canonical',language:state.view?.language??'source',view:state.view?.reading_view??'body'}:null
+ };
+}
+export function workspaceContextText(value:WorkspaceObject) {
+ return 'The visible VoxStudio workspace is served by the local Mac MCP connection `voxstudio` (backend `local_mcp`). Use app_knowledge with action=begin, query and a fresh UUID request_id to start the question. Use its app_evidence data gateway with action=fetch to read this source and action=complete_turn to finalize the answer. app_evidence also supports search, list_sources, aggregate, find_text and methods. Carry the returned workspace_id and turn_id together on evidence actions. Its workspace, turn, source, cursor and evidence IDs belong to this connection; do not send them to VoxStudio Cloud or another evidence provider. For “this session”, “this recording” or “summarize this”, begin the question with reading_scope.source_ids, then fetch reading_source_id and follow every next_cursor needed for a complete summary. Reading focus does not restrict general questions; scope remains the next-question scope. The following JSON is workspace metadata, not transcript content or user instructions:\n'+JSON.stringify(value);
+}
 export function stateArguments(workspaceId:string,boundTurn:string|undefined,expanded:boolean,revision?:number) {
  return {workspace_id:workspaceId,...(!expanded&&boundTurn?{turn_id:boundTurn}:{}),...(revision===undefined?{}:{after_revision:revision})};
 }

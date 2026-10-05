@@ -34,6 +34,10 @@ final class MCPService {
     private let workspaces = MCPWorkspaceStore()
     @ObservationIgnored
     private let mutationReceipts = MCPMutationReceipts()
+    @ObservationIgnored
+    private var profileWorkspaces: [MCPServerProfile: MCPWorkspaceStore] = [:]
+    @ObservationIgnored
+    private var profileReceipts: [MCPServerProfile: MCPMutationReceipts] = [:]
     private static let receiptEpoch = UUID().uuidString
 
     init(projectProvider: @escaping () -> VideoProject?) {
@@ -45,6 +49,10 @@ final class MCPService {
             await MCPKnowledgeBaseTools.makeServer()
         }, makeAppServer: { [self] in
             await makeAppServer()
+        }, makeCoreServer: { [self] in
+            await makeAppServer(profile: .chatgpt)
+        }, makeNativeServer: { [self] in
+            await makeAppServer(profile: .native)
         }) { [self] in
             let toolExecutor = await makeSessionToolExecutor()
             let server = Server(
@@ -81,12 +89,23 @@ final class MCPService {
         ToolExecutor(projectProvider: projectProvider)
     }
 
-    func makeAppServer() async -> MCPServerInstance {
+    func makeAppServer(profile: MCPServerProfile = .app) async -> MCPServerInstance {
         let executor = makeSessionToolExecutor()
-        let server = Server(name: "voxstudio", version: "2.0.0+" + Self.receiptEpoch, instructions: MCPWorkspaceTools.instructions,
+        let store: MCPWorkspaceStore
+        let receipts: MCPMutationReceipts
+        if profile == .app { store = workspaces; receipts = mutationReceipts }
+        else {
+            if profileWorkspaces[profile] == nil { profileWorkspaces[profile] = MCPWorkspaceStore() }
+            if profileReceipts[profile] == nil { profileReceipts[profile] = MCPMutationReceipts() }
+            store = profileWorkspaces[profile]!; receipts = profileReceipts[profile]!
+        }
+        let instructions = profile == .chatgpt ? MCPToolCatalog.coreInstructions : profile == .native
+            ? "Local VoxStudio native editing. Reread real session/project IDs to validate access; temporary workspace, turn, document, input, job and preview grants belong to this connection. Writes require UUID request_id, preserved on retries within one hour and the same App lifetime. Inspect current versions before editing; use existing undo and conflict checks. " + AgentInstructions.serverInstructions + AgentInstructions.projectNavigation
+            : MCPWorkspaceTools.instructions
+        let server = Server(name: profile == .native ? "voxstudio_native" : "voxstudio", version: "2.1.0+" + Self.receiptEpoch, instructions: instructions,
             capabilities: .init(resources: .init(subscribe: false, listChanged: false), tools: .init(listChanged: false)))
         let extensions = MCPOpenAIExtensions(server: server)
-        let workspaceTools = MCPWorkspaceTools(store: workspaces)
+        let workspaceTools = MCPWorkspaceTools(store: store)
         let native = ToolDefinitions.mcpServer.map { Tool(name: $0.name.rawValue, description: $0.description, inputSchema: $0.mcpSchemaValue) }
         let excluded = Set(["app_workbench", "voxstudio.library", "app_session", "voxstudio.session_panel"])
         let panels = MCPOpenAIExtensions.tools.filter { !excluded.contains($0.name) }.map { tool in
@@ -97,14 +116,24 @@ final class MCPService {
             Tool(name: tool.name, description: tool.description, inputSchema: tool.inputSchema, annotations: tool.annotations,
                 _meta: .init(additionalFields: ["ui": ["visibility": ["app"]]]))
         }
-        let allTools = (native + MCPMediaTools.tools).map(Self.annotateApp).map(MCPMutationReceipts.tool) + panels + summary + MCPWorkspaceTools.tools
+        let fullTools = (native + MCPMediaTools.tools).map(Self.annotateApp).map(MCPMutationReceipts.tool) + panels + summary + MCPWorkspaceTools.tools
+        let allTools = profile == .chatgpt ? MCPToolCatalog.coreTools(from: fullTools)
+            : profile == .native ? MCPToolCatalog.nativeTools(from: fullTools) : fullTools
         await server.withMethodHandler(ListTools.self) { _ in .init(tools: allTools) }
         await server.withMethodHandler(CallTool.self) { params in
             guard allTools.contains(where: { $0.name == params.name }) else {
-                return .init(content: [.text("Unknown unified tool: " + params.name)], isError: true)
+                return .init(content: [.text("Unknown tool for this MCP profile: " + params.name)], isError: true)
+            }
+            if profile == .chatgpt || profile == .native {
+                do { try MCPWorkspaceTools.validate(.object(params.arguments ?? [:]), schema: allTools.first { $0.name == params.name }!.inputSchema) }
+                catch { return MCPWorkspaceTools.result(["error": .string(error.localizedDescription)], error: true) }
             }
             func decorated(_ result: CallTool.Result) -> CallTool.Result {
-                var result = result
+                var result = profile == .chatgpt ? MCPToolCatalog.coreResult(result) : result
+                if profile == .chatgpt, params.name == "session.editor.read", var fields = result.structuredContent?.objectValue {
+                    fields["editable"] = false
+                    result = MCPWorkspaceTools.result(.object(fields), error: result.isError == true)
+                }
                 var meta = result._meta?.fields ?? [:]
                 meta["voxstudio/receiptTools"] = .array(allTools.filter { $0.annotations.readOnlyHint != true }.map { .string($0.name) })
                 result._meta = .init(additionalFields: meta)
@@ -112,7 +141,7 @@ final class MCPService {
             }
             if MCPWorkspaceTools.tools.contains(where: { $0.name == params.name }) { return decorated(await workspaceTools.execute(params)) }
             if allTools.first(where: { $0.name == params.name })?.annotations.readOnlyHint != true {
-                let result = await self.mutationReceipts.execute(params, context: extensions) {
+                let result = await receipts.execute(params, context: extensions) {
                     var arguments = params.arguments ?? [:]
                     let original = (native + MCPMediaTools.tools + MCPOpenAIExtensions.tools).first { $0.name == params.name }
                     if original?.inputSchema.objectValue?["properties"]?.objectValue?["request_id"] == nil { arguments.removeValue(forKey: "request_id") }
@@ -122,7 +151,9 @@ final class MCPService {
             }
             return decorated(await Self.dispatchCall(params, executor: executor, extensions: extensions))
         }
-        await Self.registerResources(on: server, extensions: extensions, unified: true)
+        let receiptToolNames = allTools.filter { $0.annotations.readOnlyHint != true }.map(\.name)
+        extensions.receiptToolNames = receiptToolNames
+        await Self.registerResources(on: server, extensions: extensions, unified: true, profile: profile, receiptTools: receiptToolNames)
         return MCPServerInstance(server: server) { client, capabilities in
             await extensions.initialize(capabilities)
             await workspaceTools.initialize(capabilities)
@@ -132,6 +163,8 @@ final class MCPService {
 
     func stop() {
         Task { await workspaces.clear() }
+        for store in profileWorkspaces.values { Task { await store.clear() } }
+        profileWorkspaces.removeAll(); profileReceipts.removeAll()
         if let server = httpServer {
             Task { await server.stop() }
         }
@@ -187,8 +220,8 @@ final class MCPService {
         return result.toMCPResult()
     }
 
-    private nonisolated static func registerResources(on server: Server, extensions: MCPOpenAIExtensions, unified: Bool = false) async {
-        let resources = (unified ? [Resource(name: "VoxStudio workspace", uri: MCPAppPresentation.workspaceURI, mimeType: "text/html;profile=mcp-app")] : []) + MCPOpenAIExtensions.uiResources.map { Resource(name: $0.name, uri: $0.uri, mimeType: "text/html;profile=mcp-app") } + [
+    private nonisolated static func registerResources(on server: Server, extensions: MCPOpenAIExtensions, unified: Bool = false, profile: MCPServerProfile = .legacy, receiptTools: [String]? = nil) async {
+        let resources = (unified ? [Resource(name: "VoxStudio workspace", uri: MCPAppPresentation.workspaceURI, mimeType: "text/html;profile=mcp-app")] : []) + MCPOpenAIExtensions.uiResources.map { Resource(name: $0.name, uri: $0.uri, mimeType: "text/html;profile=mcp-app") } + (profile == .chatgpt ? [] : [
             Resource(
                 name: "Video Models",
                 uri: "voxstudio://models/video",
@@ -201,15 +234,16 @@ final class MCPService {
                 description: "Available AI image generation models and their capabilities",
                 mimeType: "application/json"
             ),
-        ]
+        ])
 
         await server.withMethodHandler(ListResources.self) { _ in
             .init(resources: resources)
         }
 
         await server.withMethodHandler(ReadResource.self) { params in
-            if unified, ([MCPAppPresentation.workspaceURI] + MCPAppPresentation.legacyWorkspaceURIs).contains(params.uri) { return try MCPAppPresentation.resource(params.uri) }
+            if unified, ([MCPAppPresentation.workspaceURI] + MCPAppPresentation.legacyWorkspaceURIs).contains(params.uri) { return try MCPAppPresentation.resource(params.uri, receiptTools: receiptTools) }
             if params.uri.hasPrefix("ui://") || params.uri.hasPrefix("voxstudio://sessions/") || params.uri.hasPrefix("voxstudio://documents/") || params.uri.hasPrefix("voxstudio://previews/") { return try await extensions.readResource(params.uri) }
+            if profile == .chatgpt { return .init(contents: [.text("Unknown core resource", uri: params.uri)]) }
             return await Self.readResource(uri: params.uri)
         }
     }

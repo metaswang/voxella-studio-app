@@ -57,10 +57,10 @@ if [ "$MODE" = "mas" ]; then
 fi
 
 echo "==> Generating MCP UI and installable connectors"
-python3 "$ROOT/scripts/sync-mcp-branding.py"
+uv run --no-project python "$ROOT/scripts/sync-mcp-branding.py"
 (cd "$ROOT/mcp-ui" && npm run check && npm run build)
-python3 "$ROOT/scripts/package-mcpb.py"
-python3 "$ROOT/scripts/package-openai-plugin.py" --output "$ROOT/.build/openai-plugin"
+uv run --no-project python "$ROOT/scripts/package-mcpb.py"
+uv run --no-project python "$ROOT/scripts/package-openai-plugin.py" --output "$ROOT/.build/openai-plugin"
 mkdir -p "$RESOURCES/OpenAIPlugin"
 cp "$ROOT/.build/openai-plugin/VoxStudio-OpenAI-Plugin.zip" "$RESOURCES/OpenAIPlugin/"
 echo "==> Building ($CONFIG)"
@@ -80,14 +80,14 @@ if ! xcrun -sdk macosx metal -v >/dev/null 2>&1; then
   echo "!! Install it with: xcodebuild -downloadComponent MetalToolchain" >&2
   exit 1
 fi
-python3 "$ROOT/scripts/build_metal.py" preflight
+uv run --no-project python "$ROOT/scripts/build_metal.py" preflight
 
 swift build "${BUILD_ARGS[@]}"
 BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
 # SwiftPM hard-codes Bundle.main.bundleURL/<resource>.bundle. For a signed
 # macOS app those bundles must live under Contents/Resources, so patch the
 # generated accessors and rebuild them before assembling the app.
-python3 "$ROOT/scripts/patch_swiftpm_bundle_accessors.py" "$BIN_DIR"
+uv run --no-project python "$ROOT/scripts/patch_swiftpm_bundle_accessors.py" "$BIN_DIR"
 swift build "${BUILD_ARGS[@]}"
 BIN="$BIN_DIR/VoxStudio"
 SPARKLE_TOOLS="$ROOT/.build/sparkle-tools"
@@ -227,7 +227,7 @@ done
 # Always evaluate the compiler/source/target cache, including CI kernels that
 # SwiftPM may have cached under an older toolchain. One library serves M1–M4.
 METAL_DIR="$ROOT/.build/metal/$CONFIG"
-python3 "$ROOT/scripts/build_metal.py" prepare --output "$METAL_DIR"
+uv run --no-project python "$ROOT/scripts/build_metal.py" prepare --output "$METAL_DIR"
 for source in "$ROOT"/Metal/*.metal; do
   name="$(basename "$source" .metal).metallib"
   cp "$METAL_DIR/$name" "$APP/Contents/Resources/$name"
@@ -235,7 +235,7 @@ done
 mkdir -p "$APP/Contents/Resources/mlx-swift_Cmlx.bundle"
 cp "$METAL_DIR/mlx.metallib" "$APP/Contents/Resources/mlx-swift_Cmlx.bundle/default.metallib"
 cp "$METAL_DIR/metal-build.json" "$APP/Contents/Resources/metal-build.json"
-python3 "$ROOT/scripts/verify_metal.py" "$APP"
+uv run --no-project python "$ROOT/scripts/verify_metal.py" "$APP"
 
 echo "==> Clearing extended attributes before signing"
 # SwiftPM checks out package resources read-only. Normalize owner write access

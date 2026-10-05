@@ -1,0 +1,178 @@
+{
+  "result": {
+    "deployments": [
+      {
+        "id": "b707c183-3ec7-48d8-8eb0-0b29167ad7a0",
+        "source": "api",
+        "strategy": "percentage",
+        "author_email": "catblueberry2021@gmail.com",
+        "annotations": {
+          "workers/message": "Serve public static media with Range and WebVTT...",
+          "workers/triggered_by": "upload"
+        },
+        "versions": [
+          {
+            "version_id": "7f75e37a-f345-4607-bf66-3c41361cbcf9",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-10-04T13:45:45.982274Z"
+      },
+      {
+        "id": "19e024f3-a06e-4fe5-9c51-419dbd5e980d",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "catblueberry2021@gmail.com",
+        "annotations": {
+          "workers/message": "Add immutable VoxStudio OpenAI plugin ZIP downloads",
+          "workers/triggered_by": "deployment"
+        },
+        "versions": [
+          {
+            "version_id": "71e5dbef-bd54-42df-ae3a-6eebab27f66a",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-10-02T18:21:58.120546Z"
+      },
+      {
+        "id": "d0c8a117-cc68-482a-be1d-a22e104335a1",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "catblueberry2021@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "deployment"
+        },
+        "versions": [
+          {
+            "version_id": "5a5b16e9-a818-45c8-8c5f-e2cab5b5950e",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-23T10:41:05.790657Z"
+      },
+      {
+        "id": "910e616a-142e-464f-af22-5c8c8db6241f",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "catblueberry2021@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "deployment"
+        },
+        "versions": [
+          {
+            "version_id": "06acd615-1fc7-4fc8-9c17-7d781c67a2e2",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-19T12:06:45.546365Z"
+      },
+      {
+        "id": "f5108ba7-f407-4b34-9f5d-d1b50c67f489",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "catblueberry2021@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "deployment"
+        },
+        "versions": [
+          {
+            "version_id": "b15ce9f4-53a4-4ce1-9fc0-1a8d760ae0e4",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-19T11:21:17.265236Z"
+      },
+      {
+        "id": "600d36e4-1e9c-44c2-ae96-38b89a47f2e9",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "catblueberry2021@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "deployment"
+        },
+        "versions": [
+          {
+            "version_id": "c2b41159-a8fc-4f5b-9efc-a5393e0caf7f",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-19T11:09:49.745751Z"
+      },
+      {
+        "id": "86cf2fad-4e0f-4571-8ed5-2a6b714a4954",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "catblueberry2021@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "deployment"
+        },
+        "versions": [
+          {
+            "version_id": "f4d8e90e-3d9a-4e01-8084-d8c968646e7e",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-19T11:06:52.220494Z"
+      },
+      {
+        "id": "2a438ad6-12c6-4ce4-9ae0-8d64d9d191da",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "catblueberry2021@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "deployment"
+        },
+        "versions": [
+          {
+            "version_id": "c8ae4e21-cfd3-48d2-a6f1-ad15d4725cde",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-19T10:23:03.949431Z"
+      },
+      {
+        "id": "4375cfe6-6846-40a2-a6a0-0b07933b3f0e",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "catblueberry2021@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "deployment"
+        },
+        "versions": [
+          {
+            "version_id": "6526be61-eb51-4595-abdd-3e3eea4c9ea6",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-19T03:35:35.912973Z"
+      },
+      {
+        "id": "68d00e76-0eb2-4f65-8858-9ef8d1966570",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "catblueberry2021@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "secret"
+        },
+        "versions": [
+          {
+            "version_id": "84e86c19-bd43-48be-b30c-332894529b17",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-19T03:34:59.000061Z"
+      }
+    ]
+  },
+  "success": true,
+  "errors": [],
+  "messages": [],
+  "result_info": {
+    "page": 1,
+    "per_page": 10,
+    "count": 10,
+    "total_count": 41,
+    "total_pages": 5
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "source_session_id": "F8C8DAF5-9EC3-4243-BCA7-454763AC7884",
+  "source_title": "Emma and the Little Bird",
+  "source_sample_rate": 24000,
+  "source_channels": 1,
+  "model": "starkdmi/MossFormer2-SE-fp16",
+  "sample_rate": 48000,
+  "model_sha256": "61e63484df9c2be7e1111ca0346d431422a98b263331021a67c2d7ddb2f67a85",
+  "recipe": "full context (<20 seconds), same MLXAudioSTS implementation as app",
+  "postprocessing": "app 80 Hz HPF for blended variants; constant BS.1770 loudness gain; 24-bit PCM; no compression/EQ boost/reverb",
+  "target_lufs": -19.94,
+  "peak_ceiling_dbtp": -1.5,
+  "pure_raw_samples": 333696,
+  "filtered_wet_raw_samples": 333696,
+  "source_48k_samples": 334146,
+  "measured_alignment_samples": 0,
+  "tail_padding_samples": 450,
+  "variants": {
+    "A_original_matched": {
+      "sample_count": 334146,
+      "duration_seconds": 6.961375,
+      "finite_ratio": 1.0,
+      "sample_peak_dbfs": -1.7411174949291515,
+      "correlation_with_original": 0.9999999999999355,
+      "gain_matched_residual_rms_ratio": 6.692651973592207e-07,
+      "meter": {
+        "i": -19.94,
+        "tp": -1.74,
+        "lra": 0.6,
+        "thresh": -30.21
+      },
+      "linear_gain_db": -0.75,
+      "path": "/Users/adamwang/Project/subdub/voxella-studio-app/Experiments/EmmaMossFormer48k_20261005/audio/A_original_matched_48k24bit.wav"
+    },
+    "B_mossformer_pure": {
+      "sample_count": 334146,
+      "duration_seconds": 6.961375,
+      "finite_ratio": 1.0,
+      "sample_peak_dbfs": -1.7814119675995146,
+      "correlation_with_original": 0.9999533457974374,
+      "gain_matched_residual_rms_ratio": 0.009661405777376527,
+      "meter": {
+        "i": -19.93,
+        "tp": -1.78,
+        "lra": 0.6,
+        "thresh": -30.2
+      },
+      "linear_gain_db": -0.7300000000000004,
+      "path": "/Users/adamwang/Project/subdub/voxella-studio-app/Experiments/EmmaMossFormer48k_20261005/audio/B_mossformer_pure_48k24bit.wav"
+    },
+    "C_natural_45pct": {
+      "sample_count": 334146,
+      "duration_seconds": 6.961375,
+      "finite_ratio": 1.0,
+      "sample_peak_dbfs": -1.6145538055227748,
+      "correlation_with_original": 0.9834857982303995,
+      "gain_matched_residual_rms_ratio": 0.18098555775294753,
+      "meter": {
+        "i": -19.95,
+        "tp": -1.6,
+        "lra": 0.7,
+        "thresh": -30.22
+      },
+      "linear_gain_db": -0.5800000000000018,
+      "path": "/Users/adamwang/Project/subdub/voxella-studio-app/Experiments/EmmaMossFormer48k_20261005/audio/C_natural_45pct_48k24bit.wav"
+    },
+    "D_clean_70pct": {
+      "sample_count": 334146,
+      "duration_seconds": 6.961375,
+      "finite_ratio": 1.0,
+      "sample_peak_dbfs": -1.614644833990594,
+      "correlation_with_original": 0.9834735502882135,
+      "gain_matched_residual_rms_ratio": 0.1810521003274598,
+      "meter": {
+        "i": -19.94,
+        "tp": -1.6,
+        "lra": 0.7,
+        "thresh": -30.21
+      },
+      "linear_gain_db": -0.5700000000000003,
+      "path": "/Users/adamwang/Project/subdub/voxella-studio-app/Experiments/EmmaMossFormer48k_20261005/audio/D_clean_70pct_48k24bit.wav"
+    }
+  },
+  "limitations": "No clean ground truth. Correlation/residual measure change, not perceptual quality. 48 kHz resampling does not restore missing bandwidth. Subjective premium sound needs human audition."
+}

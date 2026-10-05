@@ -43,6 +43,16 @@ final class MCPMutationReceipts {
         if let context { context.recoverGrants(from: context, result: result, access: access) }
         return result
     }
+    /// Bootstrap before the UI bundle runs: hosts can delay or omit tool-result metadata.
+    /// Names come from this connection's catalog and convey no authorization.
+    nonisolated static func panelHTML(_ html: String, receiptTools: [String]?) throws -> String {
+        guard let receiptTools else { return html }
+        let json = String(decoding: try JSONEncoder().encode(receiptTools), as: UTF8.self)
+            .replacingOccurrences(of: "<", with: "\\u003c")
+        guard let head = html.range(of: "<head>") else { return html }
+        return html.replacingCharacters(in: head, with: "<head><script>window.__voxstudioReceiptTools=\(json);</script>")
+    }
+
     nonisolated static func tool(_ tool: Tool) -> Tool {
         guard tool.annotations.readOnlyHint != true else { return tool }
         var schema = tool.inputSchema.objectValue ?? [:]

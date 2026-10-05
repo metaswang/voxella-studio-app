@@ -23,6 +23,16 @@ observed catalog with its exact frozen snapshot and arguments. It leaves a compl
 turn, its evidence and its observations unchanged.
 The frozen scopes, validated evidence and historical turns below remain server state.
 
+The local plugin 0.2.1 adds the data-only `app_evidence` gateway so original reads
+and citation completion remain callable when a host exposes a partial tool inventory.
+`app_knowledge` opens/begins the question and returns the local provider and a concrete
+`next_call`; the gateway delegates through the existing strict operation schemas,
+authorization, frozen scope and evidence recorder. Local workspace/source IDs stay
+on `voxstudio`, including cloud-origin sessions displayed by the Mac. The panel sends
+both text and structured provider/reading context for “summarize this” while retaining
+the general next-question scope. Workspace resource v4 invalidates cached v3 HTML;
+v3 remains a readable alias. Data-only results cannot replace the workspace snapshot.
+
 ## Protocol and state
 
 - UI clients begin each question with `app_knowledge(action=begin, query,
@@ -169,4 +179,6 @@ still operate. Fixture playback and generated HTML do not prove Claude MCPB rend
 
 Keep the extracted local installer folder and its `.migration` snapshots. The
 bundled installation path allows local testing without publishing a CDN asset.
-**Release remains gated on the outstanding real desktop host acceptance.**
+**Outstanding real desktop host acceptance remains pending. The user explicitly
+authorized publishing OpenAI plugin 0.2.0 on 2026-10-05 before that gate completed;
+see `openai-plugin-distribution.md` and `docs/testing/unified-plugin-release-2026-10-05/`.**

@@ -7,8 +7,9 @@ struct MCPInstructionsPane: View {
     @State private var claudeInstallError: String?
     @State private var showingPluginInfo = false
 
-    private var mcpEndpoint: String { "http://127.0.0.1:\(MCPService.port)/app/mcp" }
+    private var mcpEndpoint: String { "http://127.0.0.1:\(MCPService.port)" + (usesOpenAIPlugin ? "/chatgpt/mcp" : "/app/mcp") }
     private var connectionEndpoint: String { mcpEndpoint }
+    private var nativeEndpoint: String { "http://127.0.0.1:\(MCPService.port)/native/mcp" }
 
     private var claudeCodeCommand: String {
         "claude mcp add --transport http voxstudio \(mcpEndpoint)"
@@ -17,6 +18,7 @@ struct MCPInstructionsPane: View {
     private var pluginInstallCommand: String {
         "bash \"$HOME/Downloads/VoxStudio-OpenAI-Plugin/install.sh\" --plugin voxstudio"
     }
+    private let pluginDownloadURL = URL(string: "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/VoxStudio-OpenAI-Plugin.zip")!
     private var usesOpenAIPlugin: Bool { client == .chatgpt }
 
     private var cursorJSONConfig: String {
@@ -255,7 +257,7 @@ struct MCPInstructionsPane: View {
             HStack(spacing: AppTheme.Spacing.sm) {
                 Text(L10n.string("VoxStudio plugin"))
                     .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
-                Text("0.2.0 · ZIP")
+                Text(L10n.string("Bundled plugin: 0.3.0 · ZIP"))
                     .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                 Spacer()
@@ -273,7 +275,8 @@ struct MCPInstructionsPane: View {
                         Text(L10n.string("About the OpenAI plugin"))
                             .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
                         setupDescription("The ZIP contains a local marketplace, plugin manifests, workflow skills and an installer. VoxStudio provides the MCP server and panels.")
-                        setupDescription("One VoxStudio connection includes session questions, original evidence, media previews, transcription, voiceover and editing.")
+                        setupDescription("The fixed download link always provides the latest published plugin. An App update is only required when new server features need it.")
+                        setupDescription("The core plugin includes knowledge, transcription and voiceover. Native editing connects independently through voxstudio_native.")
                         setupDescription("Use a desktop client with local plugin support on this Mac. ChatGPT web and cloud sessions cannot connect to this local server. Client versions may offer different plugin features.")
                         setupDescription("Disable any old direct MCP connection named voxstudio before enabling this plugin. A same-name connection can hide the plugin tools.")
                         setupDescription("Panels use English. Video edits run in the native VoxStudio timeline; there is no HTML video editor.")
@@ -284,15 +287,19 @@ struct MCPInstructionsPane: View {
                 }
             }
             setupDescription("Recommended for ChatGPT on this Mac. Keep VoxStudio running and MCP enabled.")
-            pluginStep("1", title: "Download and extract", detail: "Save the connector included with this App, then extract it in Downloads. Keep the extracted folder in place after installation.") {
+            pluginStep("1", title: "Download and extract", detail: "Download the latest plugin, then extract it in Downloads. Plugin updates are independent of App updates. Keep the extracted folder after installation.") {
                 HStack(spacing: AppTheme.Spacing.md) {
-                    Button(action: saveOpenAIPlugin) {
-                        Label(L10n.string("Save VoxStudio plugin"), systemImage: "arrow.down.circle")
+                    Link(destination: pluginDownloadURL) {
+                        Label(L10n.string("Download latest VoxStudio plugin"), systemImage: "arrow.down.circle")
                     }
                     .buttonStyle(.capsule(.prominent))
+                    Button(action: saveOpenAIPlugin) {
+                        Text(L10n.string("Save bundled plugin (offline)"))
+                    }
+                    .buttonStyle(.capsule(.secondary))
                 }
             }
-            pluginStep("2", title: "Install from Terminal", detail: "Run after extracting the ZIP. The installer checks the running App, preserves your preferences and migrates the old Knowledge plugin after verification.") {
+            pluginStep("2", title: "Install from Terminal", detail: "Run after extracting the ZIP. The installer checks App compatibility and replaces the old Media and Knowledge plugins with one VoxStudio connection, preserving your preferences.") {
                 CodeBlockView(content: pluginInstallCommand)
             }
             pluginStep("3", title: "Enable and start a new chat", detail: "In your desktop client's Plugins page, enable VoxStudio under VoxStudio Local. Restart the client if it is missing, then open a new chat.") {
@@ -303,6 +310,10 @@ struct MCPInstructionsPane: View {
                     Spacer()
                     CopyButton(value: L10n.string("Find evidence in my VoxStudio sessions and show the original text."), label: "Copy prompt")
                 }
+            }
+            pluginStep("4", title: "Native MCP (optional)", detail: "Connect video editing, document editing, color, audio processing, multicam and media generation independently. The core plugin does not register this connection.") {
+                CodeBlockView(content: "[mcp_servers.voxstudio_native]\nurl = \"\(nativeEndpoint)\"")
+                CodeBlockView(content: pluginInstallCommand + " --native-only")
             }
         }
     }
@@ -377,9 +388,7 @@ struct MCPInstructionsPane: View {
             .init(id: "plugin-transcription", icon: "text.bubble", title: "Transcribe media",
                   scope: "Transcription panel", prompt: "Open the VoxStudio transcription panel so I can choose an audio or video file and review the options before starting.", skillID: ""),
             .init(id: "plugin-voiceover", icon: "waveform.and.person.filled", title: "Create a voiceover",
-                  scope: "Voiceover panel", prompt: "Open the VoxStudio voiceover panel so I can choose a voice and enter my script.", skillID: ""),
-            .init(id: "plugin-timeline", icon: "timeline.selection", title: "Edit the Mac timeline",
-                  scope: "Open a video project", prompt: "Inspect the active project in the VoxStudio Mac app. Tell me what is on its timeline, then help me edit it from this chat.", skillID: "")
+                  scope: "Voiceover panel", prompt: "Open the VoxStudio voiceover panel so I can choose a voice and enter my script.", skillID: "")
         ]
     }
 
