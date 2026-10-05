@@ -8,6 +8,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
     var modeTitle: String = "Import Files"
     var onChooseMedia: (() -> Void)?
 
+    @State private var deletionRequest: RecentSessionDeletionRequest?
     @State private var searchText = ""
     @State private var statusFilter: WorkbenchSessionStatusFilter = .all
 
@@ -52,6 +53,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
             RoundedRectangle(cornerRadius: AppTheme.Radius.xl)
                 .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
         }
+        .sessionDeletionAlert(item: $deletionRequest)
     }
 
     private var filterToolbar: some View {
@@ -332,7 +334,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
     }
 
     private func delete(_ session: WorkbenchSession) {
-        store.deleteSession(session.id)
+        deletionRequest = RecentSessionDeletionRequest.prepare(sessions: [session])
     }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {

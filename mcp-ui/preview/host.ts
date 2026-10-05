@@ -25,6 +25,8 @@ const sessions=[
 ];
 const voices=[{voice_id:'voice-a',name:'Alex',language:'en',duration:18},{voice_id:'voice-b',name:'Jamie',language:'en',duration:12},{voice_id:'voice-c',name:'林',language:'zh',duration:24}];
 let cues=[{id:1,start_ms:0,end_ms:8000,text:'The best tools give you room to think. They make the complicated feel effortless.',speaker:'Alex'},{id:2,start_ms:8000,end_ms:16000,text:'We started with a simple question: what would a quieter, more intentional workspace look like?',speaker:'Jamie'},{id:3,start_ms:16000,end_ms:24000,text:'Fewer distractions. Clearer choices. And a little more space for the work that matters.',speaker:'Alex'}];
+let transcriptCues=[{id:1,start_ms:0,end_ms:8000,text:'The best tools give you room to think.',speaker:'Alex'},{id:2,start_ms:8000,end_ms:16000,text:'They make the complicated feel effortless.',speaker:'Alex'},{id:3,start_ms:16000,end_ms:24000,text:'A quieter workspace leaves room for the work that matters.',speaker:'Jamie'}];
+const noSubtitles=new URLSearchParams(location.search).get('subtitles')==='none';
 let revision='fixture-1';
 const frame=document.querySelector<HTMLIFrameElement>('#panel')!;
 const status=document.querySelector('#status')!;
@@ -60,13 +62,27 @@ async function respond(name:string,args:any={}){
   const video=name==='media.session_preview',mimeType=video?'video/mp4':'audio/mp4';
   const uri='voxstudio://previews/fixture/'+crypto.randomUUID();
   fixturePreviews.set(uri,{mimeType,file:video?'fixture-video.mp4':'fixture-audio.m4a'});
-  return result({preview_resource_uri:uri,mime_type:mimeType,start,end:start+15,cues:cues.filter(c=>c.end_ms/1000>start&&c.start_ms/1000<start+15).map(c=>({id:c.id,start:c.start_ms/1000,end:c.end_ms/1000,text:c.text}))});
+  return result({preview_resource_uri:uri,mime_type:mimeType,start,end:start+15,captions_ready:!noSubtitles,cues:noSubtitles?[]:cues.filter(c=>c.end_ms/1000>start&&c.start_ms/1000<start+15).map(c=>({id:c.id,start:c.start_ms/1000,end:c.end_ms/1000,text:c.text}))});
  }
- if(name==='session.editor.read')return result({session_id:args.session_id,scope:args.scope,language:args.language??'en',revision,cues});
+ if(name==='session.get_summary'){
+  const mode=new URLSearchParams(location.search).get('summary');
+  if(mode==='error')throw Error('Sample summary could not be read. Refresh to retry.');
+  if(mode==='none')return result({session_id:args.session_id,status:'unavailable',summary_markdown:null,complete:false});
+  const markdown='# A more intentional workspace\n\n## Key points\n\n- Fewer distractions give people room to think.\n- Clear choices make creative work feel effortless.\n\n## Next steps\n\nDiscuss a quieter workspace with the team.\n\n> 让创作更简单。'+(mode==='unsafe'?'\n\n<script>throw Error("unsafe")</script><img src="https://example.com/track.png" onerror="alert(1)"><p onclick="alert(1)">Safe text</p>':'');
+  const cursor=Number(args.cursor??0),page=mode==='paged'?markdown.slice(cursor,cursor+100):markdown;
+  return result({session_id:args.session_id,summary_markdown:page,complete:cursor+page.length>=markdown.length,next_cursor:cursor+page.length<markdown.length?cursor+page.length:null});
+ }
+ if(name==='session.editor.read'){
+  const selected=args.scope==='transcript'?transcriptCues:noSubtitles?[]:cues;
+  const paragraphs:typeof selected=[];
+  for(const cue of selected){const last=paragraphs[paragraphs.length-1];if(last&&last.speaker&&last.speaker===cue.speaker){last.text+=' '+cue.text;last.end_ms=cue.end_ms}else paragraphs.push({...cue})}
+  return result({session_id:args.session_id,scope:args.scope,language:args.language??'en',revision,cues:selected,paragraphs,available:selected.length>0,editable:selected.length>0&&args.session_id!==sessions[1].session_id});
+ }
  if(name==='session.editor.commit'){
   if(failSave)return {content:[{type:'text' as const,text:'This transcript changed in another window. Your draft has been kept.'}],isError:true};
   if(args.expected_revision!==revision)return {content:[{type:'text' as const,text:'Revision conflict'}],isError:true};
-  for(const op of args.operations){const cue=cues.find(c=>c.id===op.cue_id)!;if(op.type==='text')cue.text=op.text;if(op.type==='timing'){cue.start_ms=op.start_ms;cue.end_ms=op.end_ms}}
+  const selected=args.scope==='transcript'?transcriptCues:cues;
+  for(const op of args.operations){const cue=selected.find(c=>c.id===op.cue_id)!;if(op.type==='text')cue.text=op.text;if(op.type==='timing'){cue.start_ms=op.start_ms;cue.end_ms=op.end_ms}}
   revision='fixture-'+Date.now();return result({revision,cues,outcome:'local_committed'});
  }
  if(name==='media.choose_local_file')return result({asset_id:'fixture-asset',status:'ready',name:'Design conversation.m4a'});

@@ -63,20 +63,7 @@ struct RecentSessionsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.Background.baseColor)
-        .alert(item: $deletionRequest) { request in
-            Alert(
-                title: Text(request.title),
-                message: Text(request.message),
-                primaryButton: .destructive(Text(request.deleteButtonTitle)) {
-                    // Use the confirmed snapshot, not a selection that may change while the alert is open.
-                    for session in request.sessions {
-                        store.deleteSession(session.id)
-                    }
-                    endSelection()
-                },
-                secondaryButton: .cancel()
-            )
-        }
+        .sessionDeletionAlert(item: $deletionRequest, onFinished: endSelection)
         .onChange(of: visibleSessionIDs) { _, ids in
             selectedSessionIDs.formIntersection(ids)
         }
@@ -226,14 +213,14 @@ struct RecentSessionsView: View {
                     isSelected: selectedSessionIDs.contains(session.id),
                     isDeleting: store.isDeletingSession(session),
                     onOpen: { store.openSession(session.id) },
-                    onDelete: { deletionRequest = RecentSessionDeletionRequest(sessions: [session]) },
+                    onDelete: { delete([session]) },
                     onToggleSelection: { toggleSelection(session.id) }
                 )
             } else {
                 SessionListRow(
                     session: session,
                     onOpen: { store.openSession(session.id) },
-                    onDelete: { deletionRequest = RecentSessionDeletionRequest(sessions: [session]) },
+                    onDelete: { delete([session]) },
                     allowsDelete: true,
                     isSelecting: isSelecting,
                     isSelected: selectedSessionIDs.contains(session.id),
@@ -256,7 +243,7 @@ struct RecentSessionsView: View {
             if !isSelecting && !store.isDeletingSession(session) {
                 Divider()
                 Button(L10n.string("Delete"), role: .destructive) {
-                    deletionRequest = RecentSessionDeletionRequest(sessions: [session])
+                    delete([session])
                 }
             }
         }
@@ -288,7 +275,12 @@ struct RecentSessionsView: View {
             selectedSessionIDs.contains($0.id) && !store.isDeletingSession($0)
         }
         guard !sessions.isEmpty else { return }
-        deletionRequest = RecentSessionDeletionRequest(sessions: sessions)
+        delete(sessions)
+    }
+
+    private func delete(_ sessions: [WorkbenchSession]) {
+        deletionRequest = RecentSessionDeletionRequest.prepare(sessions: sessions)
+        if deletionRequest == nil { endSelection() }
     }
 
     private func endSelection() {
@@ -296,26 +288,5 @@ struct RecentSessionsView: View {
             isSelecting = false
             selectedSessionIDs.removeAll()
         }
-    }
-}
-
-private struct RecentSessionDeletionRequest: Identifiable {
-    let id = UUID()
-    let sessions: [WorkbenchSession]
-
-    @MainActor var title: String {
-        sessions.count == 1
-            ? L10n.string("Delete session?")
-            : L10n.format("Delete %@ sessions?", sessions.count)
-    }
-
-    @MainActor var message: String {
-        sessions.count == 1
-            ? L10n.format("\"%@\" and its saved workflow data will be removed.", sessions[0].title)
-            : L10n.format("The %@ selected sessions and their saved workflow data will be removed.", sessions.count)
-    }
-
-    @MainActor var deleteButtonTitle: String {
-        sessions.count == 1 ? L10n.string("Delete") : L10n.format("Delete %@", sessions.count)
     }
 }

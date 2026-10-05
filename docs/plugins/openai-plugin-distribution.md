@@ -1,20 +1,20 @@
 # OpenAI plugin ZIP distribution
 
 The app's Settings → MCP screen links to an immutable package for
-`voxstudio@voxstudio-local` version `0.1.1` and
+`voxstudio@voxstudio-local` version `0.1.2` and
 `voxstudio-knowledge@voxstudio-local` version `0.1.0`. Both plugins are
 independently installable from one download. The package is a local marketplace
 directory inside a ZIP, not a ZIP-import connector. Users extract it and run its
 installer; the same instructions appear in `openai-plugin-install.md`, shipped
 as `README.md` at the marketplace root.
 
-The verified package is 15,368 bytes and contains 20 files. SHA-256:
+The verified package is 16,676 bytes and contains 20 files. SHA-256:
 
 ```text
-edbe20b7921d0e69200356ea5804417e9ce430a59a9d94ebe5f56833e78eed93
+31cb7283c7b7cae8b4e87736a5f941e261dc1833df8ec95103a84ff77240ea3c
 ```
 
-[Download the verified ZIP](https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.1.1/edbe20b7921d0e69200356ea5804417e9ce430a59a9d94ebe5f56833e78eed93/VoxStudio-OpenAI-Plugin.zip).
+[Download the verified ZIP](https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.1.2/31cb7283c7b7cae8b4e87736a5f941e261dc1833df8ec95103a84ff77240ea3c/VoxStudio-OpenAI-Plugin.zip).
 
 ## Build and publish an update
 
@@ -67,7 +67,7 @@ restoring the previous app package URL for a plugin content regression: do not
 overwrite or delete an immutable ZIP to replace it with different bytes.
 
 Machine-readable evidence is in
-`docs/testing/knowledge-purpose-qa-2026-10-03/plugin-cdn-verification.json`
+`docs/testing/mcp-plugin-2026-10-05/plugin-cdn-verification.json`
 for this update; the original publication record remains in
 `docs/testing/openai-mcp/plugin-cdn-verification.json`. This package/download
 verification does not imply complete ChatGPT Work/Codex business-flow acceptance.
@@ -80,3 +80,11 @@ and enable either or both plugins. The endpoint and example prompts follow
 the selection. The QA option does not remove media/frame indexes or change
 the existing media tool profile. This publication reused the existing CDN
 route and R2 publisher without changing the Worker, DMG channels or appcast.
+
+## Media workflow update (2026-10-05)
+
+Media plugin 0.1.2 includes direct transcription from prompt paths and explicitly
+identified ChatGPT attachments, automatic language/speaker defaults, and job/session
+ID polling that keeps the result associated after its title changes. Knowledge
+plugin 0.1.0 remains included. MCP server and panel fixes are supplied by the
+VoxStudio app rather than embedded in the plugin ZIP.

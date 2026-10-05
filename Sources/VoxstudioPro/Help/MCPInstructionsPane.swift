@@ -14,7 +14,7 @@ struct MCPInstructionsPane: View {
         "claude mcp add --transport http voxstudio \(mcpEndpoint)"
     }
 
-    private let pluginDownloadURL = URL(string: "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.1.1/edbe20b7921d0e69200356ea5804417e9ce430a59a9d94ebe5f56833e78eed93/VoxStudio-OpenAI-Plugin.zip")!
+    private let pluginDownloadURL = URL(string: "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.1.2/31cb7283c7b7cae8b4e87736a5f941e261dc1833df8ec95103a84ff77240ea3c/VoxStudio-OpenAI-Plugin.zip")!
     private var pluginInstallCommand: String {
         "bash \"$HOME/Downloads/VoxStudio-OpenAI-Plugin/install.sh\" --plugin \(openAIPlugin.rawValue)"
     }
@@ -269,7 +269,7 @@ struct MCPInstructionsPane: View {
             HStack(spacing: AppTheme.Spacing.sm) {
                 Text(L10n.string("VoxStudio plugins"))
                     .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
-                Text("0.1.1 · ZIP")
+                Text("0.1.2 · ZIP")
                     .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                 Spacer()

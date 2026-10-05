@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct WorkbenchLibraryView: View {
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var voiceInputShortcut = VoiceInputShortcutPreferences.shared
-    @State private var sessionPendingDeletion: WorkbenchSession?
+    @State private var sessionPendingDeletion: RecentSessionDeletionRequest?
 
     private let columns = [GridItem(.adaptive(minimum: 210, maximum: 320), spacing: AppTheme.Spacing.lg)]
 
@@ -101,7 +101,7 @@ struct WorkbenchLibraryView: View {
                                 SessionListRow(
                                     session: session,
                                     onOpen: { store.openSession(session.id) },
-                                    onDelete: { sessionPendingDeletion = session },
+                                    onDelete: { sessionPendingDeletion = RecentSessionDeletionRequest.prepare(sessions: [session]) },
                                     allowsDelete: true
                                 )
                                 .contextMenu {
@@ -117,7 +117,7 @@ struct WorkbenchLibraryView: View {
                                     }
                                     Divider()
                                     Button(L10n.string("Delete"), role: .destructive) {
-                                        sessionPendingDeletion = session
+                                        sessionPendingDeletion = RecentSessionDeletionRequest.prepare(sessions: [session])
                                     }
                                 }
                             }
@@ -139,16 +139,7 @@ struct WorkbenchLibraryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(AppTheme.Background.baseColor)
-        .alert(item: $sessionPendingDeletion) { session in
-            Alert(
-                title: Text(L10n.string("Delete session?")),
-                message: Text(L10n.format("\"%@\" and its saved workflow data will be removed.", session.title)),
-                primaryButton: .destructive(Text(L10n.string("Delete"))) {
-                    store.deleteSession(session.id)
-                },
-                secondaryButton: .cancel()
-            )
-        }
+        .sessionDeletionAlert(item: $sessionPendingDeletion)
     }
 
     private func actionCard(

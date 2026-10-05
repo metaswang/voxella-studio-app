@@ -1,5 +1,7 @@
 # Mac Knowledge Base QA — Skills / Planner / Tools
 
+> 文档状态：2026-09-15 的 Skills / Planner 方案，保留历史设计与验收背景。重构后的当前流程以 [知识库问答流程](knowledge-base-rag-flow.zh-CN.md) 为准；本文中的规划或旧流程不表示当前默认行为。
+
 日期：2026-09-15  
 范围：`voxella-studio-app` Knowledge 页 QA；对齐 `voxella-api` chat_agent（skills + router + tool-loop），不照搬 LangGraph 全量。  
 相关：`docs/design/mac-knowledge-base-qa.md`、`docs/design/knowledge-base-rag-flow.zh-CN.md`；API `app/services/chat_agent/*`、`app/services/chat_skills.py`

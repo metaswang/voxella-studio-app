@@ -82,6 +82,28 @@ struct MCPMediaToolsTests {
         #expect(job.selectedTranslationLanguageCode == "ja")
     }
 
+    @Test func previewCaptionsRequireGeneratedSubtitlesRatherThanTranscriptFallback() throws {
+        var job = WorkbenchTranscriptionJob(sourcePath: "/tmp/source.m4a")
+        job.result = .init(text: "An entire unsegmented transcript", language: "en", words: [],
+                           segments: [.init(text: "An entire unsegmented transcript", start: 0, end: 38, speaker: nil)])
+        #expect(try MCPMediaTools.track(job, language: "source")?.text == job.result?.text)
+        #expect(try MCPMediaTools.track(job, language: "source", allowTranscriptFallback: false) == nil)
+        #expect(try MCPMediaTools.track(job, language: nil, allowTranscriptFallback: false) == nil)
+        let segmented = SubtitleTrack(sourceLanguage: "en", language: "en", cues: [
+            .init(id: 1, sourceIDs: [0], text: "An entire", start: 0, end: 2, speaker: nil),
+            .init(id: 2, sourceIDs: [0], text: "unsegmented transcript", start: 2, end: 4, speaker: nil),
+        ])
+        job.subtitleTrack = segmented
+        #expect(try MCPMediaTools.track(job, language: "source", allowTranscriptFallback: false) == segmented)
+        let translated = SubtitleTrack(sourceLanguage: "en", language: "zh", cues: [
+            .init(id: 1, sourceIDs: [1], text: "完整的转录文本", start: 0, end: 4, speaker: nil),
+        ])
+        job.upsertTranslation(translated, languageCode: "zh")
+        job.selectedTrack = .translation
+        #expect(try MCPMediaTools.track(job, language: nil, allowTranscriptFallback: false) == translated)
+        #expect(try MCPMediaTools.track(job, language: "source", allowTranscriptFallback: false) == segmented)
+    }
+
     @Test func serverAnnouncesMediaToolsWithoutProject() async throws {
         let port = UInt16.random(in: 49_500...64_000)
         let http = MCPHTTPServer(port: port) {

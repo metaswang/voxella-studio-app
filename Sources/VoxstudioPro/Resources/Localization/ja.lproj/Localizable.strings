@@ -631,3 +631,7 @@
 /* Lifetime software upgrades */
 "Free lifetime software upgrades" = "ソフトウェアの生涯無料アップグレード";
 "One-time Mac access with free software upgrades for life." = "Macを一度購入すれば、生涯無料のソフトウェアアップグレードを利用できます。";
+"Load earlier messages" = "以前のメッセージを読み込む";
+
+// Session local copy deletion
+"The local copy was deleted. The cloud session was kept." = "ローカルコピーを削除しました。クラウドセッションは保持されています。";

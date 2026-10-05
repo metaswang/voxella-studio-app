@@ -1,5 +1,7 @@
 # 知识库 Agentic QA v2 实施记录
 
+当前完整调用链、工具边界与预算见 [知识库问答流程（2026-10-04 核对）](knowledge-base-rag-flow.zh-CN.md)。
+
 2026-10-03：正文选择、QA/素材路由、分通道索引和 Work/Codex 证据入口已按 [用途路由实施说明](knowledge-qa-purpose-routing.zh-CN.md) 更新。以下记录保留此前阶段背景；关联配音静默 fallback、未经标定的 reranker 硬过滤及强制 skill 流程以新说明为准。
 
 本分支将 macOS 正常问答路径切换为共享证据工作区及供应商原生流式循环；旧 RAG 仅作为完整的开发对照路径。此记录描述代码能力，不宣称真实资料质量、线上延迟或费用已达标。

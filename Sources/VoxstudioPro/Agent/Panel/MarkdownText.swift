@@ -6,10 +6,12 @@ struct MarkdownText: View {
     let text: String
     var proseFont: Font = .body
     var blockSpacing: CGFloat = AppTheme.Spacing.md
+    var isStreaming = false
+    @State private var liveParse = LatestParse()
 
     var body: some View {
         VStack(alignment: .leading, spacing: blockSpacing) {
-            ForEach(Array(Self.cachedParse(text).enumerated()), id: \.offset) { _, block in
+            ForEach(Array(parsedBlocks.enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .prose(let attr):
                     Text(attr)
@@ -73,6 +75,25 @@ struct MarkdownText: View {
         }
     }
 
+    private var parsedBlocks: [Block] {
+        isStreaming ? liveParse.blocks(for: text) : Self.cachedParse(text)
+    }
+
+    // A live message owns only its latest parse; growing prefixes must not fill
+    // the shared cache and keep every intermediate answer alive.
+    @MainActor private final class LatestParse {
+        private var text: String?
+        private var value: [Block] = []
+
+        func blocks(for text: String) -> [Block] {
+            if self.text != text {
+                self.text = text
+                value = MarkdownText.parse(text)
+            }
+            return value
+        }
+    }
+
     private enum Block {
         case prose(AttributedString)
         case code(language: String?, code: String)
@@ -93,6 +114,7 @@ struct MarkdownText: View {
     private static let cache: NSCache<NSString, CachedBlocks> = {
         let c = NSCache<NSString, CachedBlocks>()
         c.countLimit = 512
+        c.totalCostLimit = 8 * 1024 * 1024
         return c
     }()
 
@@ -104,7 +126,7 @@ struct MarkdownText: View {
     private static func cachedParse(_ text: String) -> [Block] {
         if let hit = cache.object(forKey: text as NSString) { return hit.value }
         let value = parse(text)
-        cache.setObject(CachedBlocks(value), forKey: text as NSString)
+        cache.setObject(CachedBlocks(value), forKey: text as NSString, cost: max(1, text.utf8.count * 4))
         return value
     }
 

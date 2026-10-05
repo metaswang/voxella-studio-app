@@ -1,0 +1,39 @@
+{
+  "session_id": "7B26ED86-1DB0-4015-8819-80B34734CAE3",
+  "title": "VfnDyrd1VaY_clip_20m18s-28m20s",
+  "summary_characters": 664,
+  "summary_complete": true,
+  "resource_uri": "ui://voxstudio/session/v7",
+  "v6_alias_matches_v7": true,
+  "routing_tests_passed": 6,
+  "fixture_checks": {
+    "markdown_headings": true,
+    "markdown_bullets": true,
+    "markdown_quote": true,
+    "pagination_complete": true,
+    "missing_summary": true,
+    "read_error_retry": true,
+    "unsafe_html_removed": true,
+    "unsaved_edits_preserved": true,
+    "keyboard_tabs": true,
+    "narrow_layout": true,
+    "voiceover_summary": true
+  },
+  "plugin_version": "0.1.2",
+  "plugin_zip_matches_published_sha256": "31cb7283c7b7cae8b4e87736a5f941e261dc1833df8ec95103a84ff77240ea3c",
+  "plugin_republication_required": false,
+  "markdown_tests_passed": 3,
+  "signed_debug_build_verified": true,
+  "bundled_panel_matches_source": true,
+  "live_markdown_render": {
+    "headings": [
+      "概述",
+      "重点",
+      "细节与事实"
+    ],
+    "list_items": 9,
+    "bold_labels": 6,
+    "literal_asterisks": false,
+    "refresh_after_restart": true
+  }
+}

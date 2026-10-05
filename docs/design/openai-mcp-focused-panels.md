@@ -17,9 +17,9 @@ Rechecked the official repository HEAD: `900032d8bd7c1566202d0cb1666986584f93204
 | Tool | Resource | Responsibility |
 | --- | --- | --- |
 | `app_workbench`, `voxstudio.library` | `ui://voxstudio/library/v3` | Two task entry cards, search/filter/recent sessions |
-| `app_transcription` | `ui://voxstudio/transcription/v2` | Media selection, options, explicit start, job progress |
-| `app_session`, `voxstudio.session_panel` | `ui://voxstudio/session/v3` | One result: reading, timed preview, opt-in text/timing edit, export |
-| `app_dubbing` | `ui://voxstudio/dubbing/v2` | Script, saved voice, language, generation, preview and audio saving |
+| `app_transcription` | `ui://voxstudio/transcription/v4` | Prompt path/attachment submission, asynchronous native media selection, options, job progress |
+| `app_session`, `voxstudio.session_panel` | `ui://voxstudio/session/v7` | One result: reading, timed preview, opt-in text/timing edit, export |
+| `app_dubbing` | `ui://voxstudio/dubbing/v3` | Script, saved voice, language, generation, preview and audio saving |
 
 Panel resource versions change when shared HTML, branding, playback, or CSP changes, so hosts invalidate cached documents. Previous panel URIs remain readable aliases.
 
@@ -32,6 +32,15 @@ Each document has its own JS entry, initial tool result, state and teardown. Sha
 Neutral canvas, white surfaces, restrained indigo actions, warm voiceover accents; system typography, thin borders, 8–24 px spacing and readable information hierarchy. Host theme and style variables are applied. Dark and 390 px layouts share the same information order.
 
 The library is a navigation surface. Task panels use progressive disclosure: common choices first, advanced caption/translation choices collapsed. Session detail defaults to reading, with edit controls introduced explicitly. Changing tracks or leaving the panel with a draft is blocked until save/discard. Revision conflicts keep the draft. Actions disable while in flight; successful transcription submission cannot be repeated accidentally. Media and frame previews do not autoplay. Job polling stops at a terminal state or teardown.
+
+An explicit transcription prompt can call `app_transcription` with a local `path`
+or a ChatGPT `attachment` file object and `start: true`. This bypasses file pickers
+and host forms, defaults to automatic language/speaker detection, and opens the
+panel with the applied filename and queued job. The panel hides configuration
+after submission and follows `voxstudio.job_status`, then `media.status`.
+Attachment import uses `openai/fileParams`; it is separate from the existing
+file-viewer `{name, resourceUri}` contract. Omitted/false `start` only opens or
+preselects. The panel's delayed-result fallback never replays a submission.
 
 Video editing has no HTML document or entry tool. ChatGPT/Codex prompts select the native project with `manage_project`, inspect `get_timeline`/`get_media`, and use the existing undoable editor tools to modify the Mac app's real timeline. Export uses `export_project` and `manage_exports`. The plugin video-editing skill guides this flow and explicitly forbids an HTML fallback.
 

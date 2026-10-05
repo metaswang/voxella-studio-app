@@ -1,33 +1,188 @@
-import { $, t, esc, shell, icon, action, call, start, value, field, backButton, openPanel, openNativeSession, notice, poll, progress, mountPlayer, clearPlayer, languageLabel, time, languages, context, type Obj } from '../shared/ui';
-type Cue={id:number;start_ms:number;end_ms:number;text:string;speaker?:string};
-let session:Obj|undefined,track:Obj|undefined,editing=false,dirty=false,stopJob:(()=>void)|undefined,loadingTrack=false;
+import { parseSummaryMarkdown } from '../shared/summary-markdown';
+import DOMPurify from 'dompurify';
+import { $, t, esc, shell, icon, action, call, start, value, backButton, openPanel, openNativeSession, notice, poll, progress, mountPlayer, clearPlayer, languageLabel, time, languages, context, type Obj } from '../shared/ui';
+type Cue = { id:number; start_ms:number; end_ms:number; text:string; speaker?:string; cue_ids?:number[] };
+const textTabs = ['transcript','subtitles','summary'] as const;
+type TextTab = typeof textTabs[number];
+let session:Obj|undefined, track:Obj|undefined, editing=false, dirty=false, stopJob:(()=>void)|undefined;
+let activeTab:TextTab='transcript', trackGeneration=0;
 let player:Awaited<ReturnType<typeof mountPlayer>>|undefined;
-let previewGeneration=0;
-function resetPreview(){previewGeneration++;player=undefined;const container=$('player');if(container)clearPlayer(container);}
+let previewGeneration=0, summaryGeneration=0, summaryMarkdown='', summaryCursor:number|undefined;
+function resetPreview() { previewGeneration++; player=undefined; const container=$('player'); if(container)clearPlayer(container); }
 shell(t('会话详情','Session'),`<div class="back-row">${backButton()}</div><div id="detail"><div class="loading-card"><div class="skeleton wide"></div><div class="skeleton"></div></div></div>`);
-action('back',()=>{if(dirty)throw new Error(t('请先保存或放弃修改','Save or discard your edits first.'));return openPanel('app_workbench')});
-function args(){const selected=value('track')||'source';return {session_id:session!.session_id,scope:selected==='source'?'source':'translation',...(selected==='source'?{}:{language:selected})};}
-function operations(){const out:Obj[]=[];for(const row of $('cues').querySelectorAll<HTMLElement>('[data-cue]')){const cue=(track?.cues as Cue[]).find(c=>String(c.id)===row.dataset.cue)!;const text=row.querySelector<HTMLTextAreaElement>('textarea')?.value;if(text!==undefined&&text!==cue.text)out.push({type:'text',cue_id:cue.id,text});const start=row.querySelector<HTMLInputElement>('[data-start]'),end=row.querySelector<HTMLInputElement>('[data-end]');if(start&&end){const a=Math.round(Number(start.value)*1000),b=Math.round(Number(end.value)*1000);if(!Number.isFinite(a)||!Number.isFinite(b)||a<0||b<=a)throw new Error(t('结束时间必须晚于开始时间','End time must be after start time.'));if(a!==cue.start_ms||b!==cue.end_ms)out.push({type:'timing',cue_id:cue.id,start_ms:a,end_ms:b})}}return out;}
-function renderCues(){const cues:Cue[]=track?.cues??[];$('cue-count').textContent=`${cues.length} ${t('段','segments')}`;$('cues').innerHTML=cues.length?cues.map(c=>`<div class="cue-row" data-cue="${c.id}"><button class="cue-time" data-seek="${c.start_ms/1000}" aria-label="${t('定位到','Seek to')} ${time(c.start_ms/1000)}">${time(c.start_ms/1000)}</button><div>${c.speaker?`<p class="speaker">${esc(c.speaker)}</p>`:''}${editing?`<textarea aria-label="${t('字幕','Caption')} ${c.id}">${esc(c.text)}</textarea><div class="cue-timing"><label>${t('起始秒','Start (s)')} <input type="number" data-start min="0" step="0.001" value="${c.start_ms/1000}"></label><span>→</span><label>${t('结束秒','End (s)')} <input type="number" data-end min="0" step="0.001" value="${c.end_ms/1000}"></label></div>`:`<p class="cue-copy">${esc(c.text)}</p>`}</div></div>`).join(''):`<p class="muted" style="padding:25px 0">${t('这个轨道暂时没有文字。','This track has no text yet.')}</p>`;
- $('cues').querySelectorAll<HTMLButtonElement>('[data-seek]').forEach((b,i)=>{b.id=`seek-${i}`;action(b.id,async()=>{const at=Number(b.dataset.seek);await preview(at);const cue=cues.find(c=>c.start_ms/1000===at);await context({...args(),start_ms:cue?.start_ms,end_ms:cue?.end_ms,text:cue?.text.slice(0,2500)})})});
- $('cues').oninput=()=>{dirty=true;$('save-note').textContent=t('有未保存的修改','You have unsaved changes');$<HTMLButtonElement>('save').disabled=false};$('save-bar').hidden=!editing;$('edit').innerHTML=icon('edit')+t(editing?'结束编辑':'编辑文字',editing?'Done editing':'Edit text');}
-async function loadTrack(){if(loadingTrack)return;loadingTrack=true;try{track=await call('session.editor.read',args());renderCues();await context({...args(),title:session?.title})}finally{loadingTrack=false}}
-async function preview(at=0){if(player&&at>=player.start&&at<player.end){player.media.currentTime=at-player.start;return;}const generation=++previewGeneration;const button=$<HTMLButtonElement>('preview');button.innerHTML=icon('clock')+'Preparing preview…';try{const dub=session?.kind==='dubbing';const result=await call(dub?'media.preview':'media.session_preview',{session_id:session?.session_id,start:at,duration:15,...(!dub?{language:value('track')||'source'}:{})});if(generation!==previewGeneration)return;const next=await mountPlayer($('player'),result,(seconds)=>{document.querySelectorAll<HTMLElement>('[data-cue]').forEach(row=>{const cue=(track?.cues as Cue[]|undefined)?.find(c=>String(c.id)===row.dataset.cue);row.classList.toggle('active',!!cue&&cue.start_ms/1000<=seconds&&cue.end_ms/1000>seconds)})},()=>generation===previewGeneration);if(generation===previewGeneration)player=next;}finally{if(generation===previewGeneration&&button.isConnected)button.innerHTML=icon('play')+'Load preview';}}
-async function showResult(){if(!session)return;const dub=session.kind==='dubbing';
- $('result').innerHTML=`<div class="actions" style="margin-bottom:18px"><button id="preview" class="button primary">${icon('play')}${t('加载试听','Load preview')}</button>${dub?`<button id="save-audio" class="button">${icon('download')}${t('保存音频','Save audio')}</button>`:''}<button id="native-open" class="text-button">${t('在 VoxStudio 中打开','Open in VoxStudio')}${icon('external')}</button></div><div id="player" class="player-box" hidden></div>${dub?'':`<section class="card" style="margin-top:22px"><div class="toolbar"><div class="actions"><select id="track" aria-label="${t('字幕语言','Caption language')}"><option value="source">${t('原文','Original')}</option>${(session.translation_languages??[]).map((l:string)=>`<option value="${esc(l)}">${esc(languageLabel(l))}</option>`).join('')}</select><span id="cue-count" class="muted"></span></div><button id="edit" class="button small">${icon('edit')}${t('编辑文字','Edit text')}</button></div><div id="cues"><div class="skeleton wide"></div></div><div id="save-bar" class="save-bar" hidden><span id="save-note">${t('可修改文字与时间','Edit wording and timing')}</span><div class="actions"><button id="discard" class="button small">${t('放弃修改','Discard')}</button><button id="save" class="button primary small" disabled>${t('保存修改','Save changes')}</button></div></div></section><details><summary>${t('翻译与导出','Translate & export')}</summary><div class="field-grid"><div><label for="translate-language" class="eyebrow">${t('添加译文','ADD TRANSLATION')}</label><div class="export-row"><select id="translate-language">${languages()}</select><button id="translate" class="button">${t('添加','Translate')}</button></div></div><div><label for="format" class="eyebrow">${t('导出当前轨道','EXPORT THIS TRACK')}</label><div class="export-row"><select id="format"><option value="srt">SRT</option><option value="vtt">VTT</option><option value="txt">TXT</option></select><button id="export" class="button">${icon('download')}${t('导出','Export')}</button></div></div></div><p class="field-hint">${t('字幕保存在 VoxStudio；导出时可选择目标位置。','Captions stay in VoxStudio. Choose a destination when exporting.')}</p></details>`}`;
- action('preview',()=>preview());action('native-open',()=>openNativeSession(session!.session_id));
- if(dub){action('save-audio',async()=>{const r=await call('media.save_result',{session_id:session!.session_id});if(r.outcome==='saved')notice(t('音频已保存','Audio saved'))});return;}
- const select=$<HTMLSelectElement>('track');let previous='source';select.onchange=async()=>{if(dirty){select.value=previous;notice(t('先保存或放弃修改，再切换语言','Save or discard changes before switching languages.'),true);return}previous=select.value;resetPreview();$('preview').innerHTML=icon('play')+'Load preview';try{await loadTrack()}catch(e){notice(String(e),true)}};
- action('edit',async()=>{if(dirty)throw new Error(t('请先保存或放弃修改','Save or discard your changes first.'));editing=!editing;renderCues()});
- action('discard',async()=>{dirty=false;editing=false;renderCues()});
- action('save',async()=>{const ops=operations();if(ops.length){track=await call('session.editor.commit',{...args(),expected_revision:track!.revision,operations:ops,request_id:crypto.randomUUID()});notice(t('修改已保存到 VoxStudio','Changes saved in VoxStudio'))}dirty=false;editing=false;renderCues()});
- action('export',async()=>{if(dirty)throw new Error(t('导出前请先保存修改','Save your changes before exporting.'));const document=await call('documents.export',{...args(),format:value('format')});const r=await call('documents.save_as',{document_id:document.document_id});if(r.outcome==='saved')notice(t('文件已导出','File exported'))});
- action('translate',async()=>{if(dirty)throw new Error(t('翻译前请先保存修改','Save your changes before translating.'));await call('transcription.translate',{session_id:session!.session_id,target_languages:[value('translate-language')]});notice(t('译文已添加','Translation added'));await loadSession(session!.session_id)});
- try{await loadTrack()}catch(e){$('cues').innerHTML=`<div class="empty-state"><h3>${t('文字暂不可编辑','Text is not available for editing')}</h3><p>${esc(e instanceof Error?e.message:String(e))}</p></div>`;$<HTMLButtonElement>('edit').disabled=true;}
+action('back',()=>{if(dirty)throw new Error('Save or discard your edits first.'); return openPanel('app_workbench');});
+function args() {
+ const selected=value('track')||'source';
+ return { session_id:session!.session_id, scope:selected==='source'?(activeTab==='transcript'?'transcript':'source'):'translation', ...(selected==='source'?{}:{language:selected}) };
 }
-async function loadSession(id:string){stopJob?.();resetPreview();const snapshot=await call('media.status',{session_id:id});session={...session,...snapshot,session_id:id};$('detail').innerHTML=`<div class="detail-heading"><p class="eyebrow">${session.kind==='dubbing'?'VOICEOVER':'TRANSCRIPT'}</p><h1>${esc(session.title||t('会话详情','Session details'))}</h1><div class="detail-meta"><span id="state"></span><span>${t('内容保存在 VoxStudio','Saved in VoxStudio')}</span></div></div><div id="job" class="job-card" hidden></div><div id="result"></div>`;
- $('state').textContent=t(session.kind==='dubbing'?'配音作品':'音视频转录',session.kind==='dubbing'?'Voiceover':'Audio & video transcript');
- if(snapshot.status==='completed'){await showResult();return;}
- $('job').hidden=false;const render=(v:Obj)=>{$('job').innerHTML=progress(v);if(v.status==='completed')void loadSession(id).catch(e=>notice(String(e),true))};render(snapshot);if(!['failed','cancelled','idle'].includes(snapshot.status))stopJob=poll(()=>call('media.status',{session_id:id}),render);
+function operations() {
+ const out:Obj[]=[];
+ for(const row of $('cues').querySelectorAll<HTMLElement>('[data-cue]')) {
+  const cue=(track?.cues as Cue[]).find(c=>String(c.id)===row.dataset.cue)!;
+  const text=row.querySelector<HTMLTextAreaElement>('textarea')?.value;
+  if(text!==undefined&&text!==cue.text)out.push({type:'text',cue_id:cue.id,text});
+  const start=row.querySelector<HTMLInputElement>('[data-start]'),end=row.querySelector<HTMLInputElement>('[data-end]');
+  if(start&&end) {
+   const a=Math.round(Number(start.value)*1000),b=Math.round(Number(end.value)*1000);
+   if(!Number.isFinite(a)||!Number.isFinite(b)||a<0||b<=a)throw new Error('End time must be after start time.');
+   if(a!==cue.start_ms||b!==cue.end_ms)out.push({type:'timing',cue_id:cue.id,start_ms:a,end_ms:b});
+  }
+ }
+ return out;
 }
-start('voxstudio.session_panel',async data=>{if(dirty)return;if(!data.session_id){$('detail').innerHTML=`<div class="empty-state"><span class="empty-icon">${icon('text')}</span><h3>${t('打开一段会话','Open a session')}</h3><p>${t('在会话列表中选择一个转录或配音作品。','Choose a transcript or voiceover from your sessions.')}</p><button id="choose-session" class="button primary" style="margin-top:20px">${t('选择会话','Browse sessions')}${icon('arrow')}</button></div>`;action('choose-session',()=>openPanel('app_workbench'));return;}session=data;if(data.remote_only){$('detail').innerHTML=`<div class="detail-heading"><p class="eyebrow">CLOUD SESSION</p><h1>${esc(data.title)}</h1></div><div class="card"><h3>Available in VoxStudio</h3><p class="muted" style="margin-top:10px">This session is stored in the cloud. Download it in VoxStudio to preview or edit it here.</p></div>`;return;}await loadSession(data.session_id)});
+function renderCues() {
+ const cues:Cue[]=track?.cues??[];
+ const grouped=activeTab==='transcript'&&!editing;
+ const rows:Cue[]=grouped?(track?.paragraphs??cues):cues;
+ $('cue-count').textContent=`${rows.length} ${grouped?'paragraphs':'segments'}`;
+ $('cues').innerHTML=rows.length?rows.map(c=>`<div class="cue-row" ${grouped?'data-paragraph':'data-cue'}="${c.id}"><button class="cue-time" data-seek="${c.start_ms/1000}" aria-label="Seek to ${time(c.start_ms/1000)}">${time(c.start_ms/1000)}</button><div>${c.speaker?`<p class="speaker">${esc(c.speaker)}</p>`:''}${editing?`<textarea aria-label="Text ${c.id}">${esc(c.text)}</textarea><div class="cue-timing"><label>Start (s) <input type="number" data-start min="0" step="0.001" value="${c.start_ms/1000}"></label><span>→</span><label>End (s) <input type="number" data-end min="0" step="0.001" value="${c.end_ms/1000}"></label></div>`:`<p class="cue-copy">${esc(c.text)}</p>`}</div></div>`).join(''):`<div class="empty-state"><h3>${activeTab==='subtitles'?'No subtitles generated':'No transcript available'}</h3><p>${activeTab==='subtitles'?'Subtitle segmentation is optional. You can read the original text in Transcript.':'This session has no readable transcript yet.'}</p></div>`;
+ $('cues').querySelectorAll<HTMLButtonElement>('[data-seek]').forEach((b,i)=>{
+  b.id=`seek-${i}`;
+  action(b.id,async()=>{await preview(Number(b.dataset.seek)); const row=rows[i]; await context({...args(),start_ms:row.start_ms,end_ms:row.end_ms,text:row.text.slice(0,2500)});});
+ });
+ const edit=$<HTMLButtonElement>('edit');
+ if(edit){edit.disabled=track?.editable===false||!cues.length; edit.innerHTML=icon('edit')+(editing?'Done editing':'Edit text');}
+ const saveBar=$('save-bar'); if(saveBar)saveBar.hidden=!editing;
+ $('cues').oninput=editing?()=>{dirty=true; $('save-note').textContent='You have unsaved changes'; $<HTMLButtonElement>('save').disabled=false;}:null;
+}
+async function loadTrack() {
+ const generation=++trackGeneration, request=args();
+ track=undefined; $('cues').innerHTML='<div class="skeleton wide"></div>'; $('cue-count').textContent='';
+ const edit=$<HTMLButtonElement>('edit'); if(edit)edit.disabled=true;
+ try {
+  const next=await call('session.editor.read',request);
+  if(generation!==trackGeneration)return;
+  track=next; renderCues();
+  const text=(track.cues as Cue[]??[]).map(c=>c.text).join(' ');
+  await context({...request,title:session?.title,text:text.slice(0,16000),text_complete:text.length<=16000});
+ } catch(error) {
+  if(generation!==trackGeneration)return;
+  $('cues').innerHTML=`<div class="empty-state"><h3>Text is unavailable</h3><p>${esc(error instanceof Error?error.message:String(error))}</p></div>`;
+ }
+}
+async function preview(at=0) {
+ if(player&&at>=player.start&&at<player.end){player.media.currentTime=at-player.start; return;}
+ const generation=++previewGeneration, button=$<HTMLButtonElement>('preview');
+ button.innerHTML=icon('clock')+'Preparing preview…';
+ try {
+  const dub=session?.kind==='dubbing';
+  const result=await call(dub?'media.preview':'media.session_preview',{session_id:session?.session_id,start:at,duration:15,...(!dub?{language:value('track')||'source'}:{})});
+  if(generation!==previewGeneration)return;
+  const next=await mountPlayer($('player'),result,seconds=>{
+   const rows:Cue[]=activeTab==='transcript'&&!editing?(track?.paragraphs??track?.cues??[]):track?.cues??[];
+   document.querySelectorAll<HTMLElement>('[data-cue], [data-paragraph]').forEach(row=>{
+    const cue=rows.find(c=>String(c.id)===(row.dataset.cue??row.dataset.paragraph));
+    row.classList.toggle('active',!!cue&&cue.start_ms/1000<=seconds&&cue.end_ms/1000>seconds);
+   });
+  },()=>generation===previewGeneration);
+  if(generation===previewGeneration)player=next;
+ } finally {if(generation===previewGeneration&&button.isConnected)button.innerHTML=icon('play')+'Load preview';}
+}
+function renderSummary() {
+ const content=$('summary-body');
+ content.innerHTML=DOMPurify.sanitize(parseSummaryMarkdown(summaryMarkdown),{
+  ALLOWED_TAGS:['h1','h2','h3','h4','h5','h6','p','br','hr','ul','ol','li','strong','em','del','blockquote','pre','code','table','thead','tbody','tr','th','td'],
+  ALLOWED_ATTR:[]
+ });
+ $('summary-more').hidden=summaryCursor===undefined;
+}
+async function loadSummary(append=false) {
+ const generation=++summaryGeneration, id=session!.session_id;
+ const cursor=append?summaryCursor:undefined;
+ if(append&&cursor===undefined)return;
+ if(!append){summaryMarkdown='';summaryCursor=undefined;$('summary-body').innerHTML='<div class="skeleton wide"></div>';$('summary-more').hidden=true;}
+ $<HTMLButtonElement>('summary-refresh').disabled=true;
+ $<HTMLButtonElement>('summary-more').disabled=true;
+ try {
+  const result=await call('session.get_summary',{session_id:id,...(cursor===undefined?{}:{cursor})});
+  if(generation!==summaryGeneration||activeTab!=='summary'||session?.session_id!==id)return;
+  const markdown=typeof result.summary_markdown==='string'?result.summary_markdown:'';
+  if(!markdown.trim()&&!append){
+   $('summary-body').innerHTML='<div class="empty-state"><h3>No summary generated</h3><p>Generate a summary in VoxStudio, then refresh to read it here.</p></div>';
+   await context({session_id:id,title:session?.title,view:'summary',summary_available:false});
+   return;
+  }
+  summaryMarkdown+=markdown;
+  summaryCursor=result.complete===false&&Number.isInteger(result.next_cursor)&&result.next_cursor>(cursor??0)?result.next_cursor:undefined;
+  renderSummary();
+  await context({session_id:id,title:session?.title,view:'summary',summary_markdown:summaryMarkdown.slice(0,16000),text_complete:summaryCursor===undefined&&summaryMarkdown.length<=16000});
+ } catch(error) {
+  if(generation!==summaryGeneration)return;
+  if(append){notice(error instanceof Error?error.message:String(error),true);}
+  else $('summary-body').innerHTML=`<div class="empty-state"><h3>Summary is unavailable</h3><p>${esc(error instanceof Error?error.message:String(error))}</p></div>`;
+ } finally {
+  if(generation===summaryGeneration){$<HTMLButtonElement>('summary-refresh').disabled=false;$<HTMLButtonElement>('summary-more').disabled=false;}
+ }
+}
+function updateTabs() {
+ for(const tab of textTabs) {
+  const button=$(`tab-${tab}`);
+  button.setAttribute('aria-selected',String(activeTab===tab));
+  button.setAttribute('tabindex',activeTab===tab?'0':'-1');
+ }
+ const summary=activeTab==='summary';
+ $('text-content').hidden=summary;
+ $('summary-content').hidden=!summary;
+ $('track-actions')?.setAttribute('hidden','');
+ if(!summary)$('track-actions')?.removeAttribute('hidden');
+ $('text-content').setAttribute('aria-labelledby',`tab-${summary?'transcript':activeTab}`);
+ $('track').setAttribute('aria-label',activeTab==='transcript'?'Transcript language':'Subtitle language');
+}
+async function switchTab(tab:TextTab) {
+ if(activeTab===tab)return;
+ if(dirty)throw new Error('Save or discard your edits before switching tabs.');
+ trackGeneration++; summaryGeneration++;
+ activeTab=tab; editing=false; updateTabs(); resetPreview(); $('save-bar')?.setAttribute('hidden','');
+ if(tab==='summary')await loadSummary();else await loadTrack();
+}
+async function showResult() {
+ if(!session)return;
+ const dub=session.kind==='dubbing'; activeTab='transcript'; editing=false; dirty=false;
+ $('result').innerHTML=`<div class="actions" style="margin-bottom:18px"><button id="preview" class="button primary">${icon('play')}Load preview</button>${dub?`<button id="save-audio" class="button">${icon('download')}Save audio</button>`:''}<button id="native-open" class="text-button">Open in VoxStudio${icon('external')}</button></div><div id="player" class="player-box" hidden></div><section class="card" style="margin-top:22px"><div class="session-text-tabs segmented" role="tablist" aria-label="Session text"><button id="tab-transcript" role="tab" aria-controls="text-content" aria-selected="true">Transcript</button><button id="tab-subtitles" role="tab" aria-controls="text-content" aria-selected="false" tabindex="-1">Subtitles</button><button id="tab-summary" role="tab" aria-controls="summary-content" aria-selected="false" tabindex="-1">Summary</button></div><div id="text-content" role="tabpanel" aria-labelledby="tab-transcript"><div class="toolbar"><div class="actions"><select id="track" aria-label="Transcript language"><option value="source">Original</option>${(session.translation_languages??[]).map((l:string)=>`<option value="${esc(l)}">${esc(languageLabel(l))}</option>`).join('')}</select><span id="cue-count" class="muted"></span></div>${dub?'':'<button id="edit" class="button small" disabled>'+icon('edit')+'Edit text</button>'}</div><div id="cues"><div class="skeleton wide"></div></div>${dub?'':`<div id="save-bar" class="save-bar" hidden><span id="save-note">Edit wording and timing</span><div class="actions"><button id="discard" class="button small">Discard</button><button id="save" class="button primary small" disabled>Save changes</button></div></div>`}</div><div id="summary-content" role="tabpanel" aria-labelledby="tab-summary" hidden><div class="toolbar"><span class="muted">Saved in VoxStudio</span><button id="summary-refresh" class="button small">${icon('refresh')}Refresh summary</button></div><div id="summary-body" class="summary-markdown"></div><button id="summary-more" class="button small" style="margin-top:18px" hidden>Load more</button></div></section>${dub?'':`<details id="track-actions"><summary>Translate & export</summary><div class="field-grid"><div><label for="translate-language" class="eyebrow">ADD TRANSLATION</label><div class="export-row"><select id="translate-language">${languages()}</select><button id="translate" class="button">Translate</button></div></div><div><label for="format" class="eyebrow">EXPORT THIS TRACK</label><div class="export-row"><select id="format"><option value="srt">SRT</option><option value="vtt">VTT</option><option value="txt">TXT</option></select><button id="export" class="button">${icon('download')}Export</button></div></div></div><p class="field-hint">Captions stay in VoxStudio. Choose a destination when exporting.</p></details>`}`;
+ action('preview',()=>preview()); action('native-open',()=>openNativeSession(session!.session_id));
+ for(const tab of textTabs) {
+  action(`tab-${tab}`,()=>switchTab(tab));
+  $(`tab-${tab}`).onkeydown=event=>{
+   if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+   event.preventDefault();
+   const index=textTabs.indexOf(tab);
+   const next=event.key==='Home'?textTabs[0]:event.key==='End'?textTabs[textTabs.length-1]:textTabs[(index+(event.key==='ArrowRight'?1:-1)+textTabs.length)%textTabs.length];
+   void switchTab(next).then(()=>$(`tab-${next}`).focus()).catch(error=>notice(String(error),true));
+  };
+ }
+ action('summary-refresh',()=>loadSummary()); action('summary-more',()=>loadSummary(true));
+ const select=$<HTMLSelectElement>('track'); let previous='source';
+ select.onchange=async()=>{
+  if(dirty){select.value=previous; notice('Save or discard changes before switching languages.',true); return;}
+  previous=select.value; editing=false; resetPreview(); await loadTrack();
+ };
+ if(dub)action('save-audio',async()=>{const result=await call('media.save_result',{session_id:session!.session_id}); if(result.outcome==='saved')notice('Audio saved');});
+ else {
+  action('edit',async()=>{if(dirty)throw new Error('Save or discard your changes first.'); editing=!editing; renderCues();});
+  action('discard',async()=>{dirty=false; editing=false; renderCues();});
+  action('save',async()=>{
+   const ops=operations();
+   if(ops.length){await call('session.editor.commit',{...args(),expected_revision:track!.revision,operations:ops,request_id:crypto.randomUUID()}); notice('Changes saved in VoxStudio');}
+   dirty=false; editing=false; await loadTrack();
+  });
+  action('export',async()=>{if(dirty)throw new Error('Save your changes before exporting.'); const document=await call('documents.export',{...args(),format:value('format')}); const result=await call('documents.save_as',{document_id:document.document_id}); if(result.outcome==='saved')notice('File exported');});
+  action('translate',async()=>{if(dirty)throw new Error('Save your changes before translating.'); await call('transcription.translate',{session_id:session!.session_id,target_languages:[value('translate-language')]}); notice('Translation added'); await loadSession(session!.session_id);});
+ }
+ await loadTrack();
+}
+async function loadSession(id:string) {
+ stopJob?.(); resetPreview(); trackGeneration++; summaryGeneration++;
+ const snapshot=await call('media.status',{session_id:id}); session={...session,...snapshot,session_id:id};
+ $('detail').innerHTML=`<div class="detail-heading"><p class="eyebrow">${session.kind==='dubbing'?'VOICEOVER':'TRANSCRIPT'}</p><h1>${esc(session.title||'Session details')}</h1><div class="detail-meta"><span>${session.kind==='dubbing'?'Voiceover':'Audio & video transcript'}</span><span>Saved in VoxStudio</span></div></div><div id="job" class="job-card" hidden></div><div id="result"></div>`;
+ if(snapshot.status==='completed'){await showResult(); return;}
+ $('job').hidden=false;
+ const render=(state:Obj)=>{$('job').innerHTML=progress(state); if(state.status==='completed')void loadSession(id).catch(error=>notice(String(error),true));};
+ render(snapshot); if(!['failed','cancelled','idle'].includes(snapshot.status))stopJob=poll(()=>call('media.status',{session_id:id}),render);
+}
+start('voxstudio.session_panel',async data=>{
+ if(dirty)return;
+ if(!data.session_id){$('detail').innerHTML=`<div class="empty-state"><span class="empty-icon">${icon('text')}</span><h3>Open a session</h3><p>Choose a transcript or voiceover from your sessions.</p><button id="choose-session" class="button primary" style="margin-top:20px">Browse sessions${icon('arrow')}</button></div>`; action('choose-session',()=>openPanel('app_workbench')); return;}
+ session=data; track=undefined; editing=false; dirty=false; activeTab='transcript'; trackGeneration++; summaryGeneration++;
+ if(data.remote_only){$('detail').innerHTML=`<div class="detail-heading"><p class="eyebrow">CLOUD SESSION</p><h1>${esc(data.title)}</h1></div><div class="card"><h3>Available in VoxStudio</h3><p class="muted" style="margin-top:10px">This session is stored in the cloud. Download it in VoxStudio to preview or edit it here.</p></div>`; return;}
+ await loadSession(data.session_id);
+});

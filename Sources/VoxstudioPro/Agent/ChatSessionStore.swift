@@ -1,6 +1,6 @@
 import Foundation
 
-struct ChatSession: Codable, Identifiable {
+struct ChatSession: Codable, Identifiable, Sendable {
     let id: UUID
     var title: String
     var updatedAt: Date
@@ -30,13 +30,6 @@ struct ChatSession: Codable, Identifiable {
 enum ChatSessionStore {
     static let dirName = "chat"
 
-    private static let encoder: JSONEncoder = {
-        let e = JSONEncoder()
-        e.outputFormatting = [.prettyPrinted, .sortedKeys]
-        e.dateEncodingStrategy = .iso8601
-        return e
-    }()
-
     private static let decoder: JSONDecoder = {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
@@ -56,6 +49,10 @@ enum ChatSessionStore {
     }
 
     static func encodeSession(_ session: ChatSession) -> Data? {
-        try? encoder.encode(session)
+        // Different documents can save concurrently on AppKit's writer queues.
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try? encoder.encode(session)
     }
 }

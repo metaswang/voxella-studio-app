@@ -21,7 +21,7 @@ struct WorkbenchSessionDetailView: View {
     @State private var showTemplateLoginAlert = false
     @State private var showTemplateSheet = false
     @State private var showSummaryRefinementSheet = false
-    @State private var sessionPendingDeletion: WorkbenchSession?
+    @State private var sessionPendingDeletion: RecentSessionDeletionRequest?
     @State private var isOpeningClip = false
     @State private var cuePlaybackRequest: SessionCuePlaybackRequest?
     @State private var activePlaybackCueID: Int?
@@ -208,21 +208,7 @@ struct WorkbenchSessionDetailView: View {
         } message: {
             Text(L10n.string("Sign in at voxstudio.me to choose and edit summary templates."))
         }
-        .alert(item: $sessionPendingDeletion) { session in
-            Alert(
-                title: Text(L10n.string("Delete session?")),
-                message: Text(
-                    L10n.format(
-                        "\"%@\" and its saved workflow data will be removed.",
-                        session.title
-                    )
-                ),
-                primaryButton: .destructive(Text(L10n.string("Delete"))) {
-                    store.deleteSession(session.id)
-                },
-                secondaryButton: .cancel()
-            )
-        }
+        .sessionDeletionAlert(item: $sessionPendingDeletion)
     }
 
     @ViewBuilder
@@ -765,7 +751,7 @@ struct WorkbenchSessionDetailView: View {
             }
             Divider()
             Button(L10n.string("Delete"), role: .destructive) {
-                sessionPendingDeletion = session
+                sessionPendingDeletion = RecentSessionDeletionRequest.prepare(sessions: [session])
             }
         } label: {
             Image(systemName: "ellipsis")

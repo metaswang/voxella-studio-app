@@ -631,3 +631,7 @@
 /* Lifetime software upgrades */
 "Free lifetime software upgrades" = "Atualizações de software gratuitas por toda a vida";
 "One-time Mac access with free software upgrades for life." = "Acesso ao Mac com pagamento único e atualizações de software gratuitas por toda a vida.";
+"Load earlier messages" = "Carregar mensagens anteriores";
+
+// Session local copy deletion
+"The local copy was deleted. The cloud session was kept." = "A cópia local foi excluída. A sessão na nuvem foi mantida.";

@@ -99,7 +99,7 @@ enum AgentMentionContext {
     }
 }
 
-struct AgentMention: Identifiable, Hashable, Codable {
+struct AgentMention: Identifiable, Hashable, Codable, Sendable {
     let id: UUID
     let displayName: String
     let mediaRef: String?
@@ -152,7 +152,7 @@ extension MediaAsset {
     }
 }
 
-struct AgentTimelineRangeMention: Hashable, Codable {
+struct AgentTimelineRangeMention: Hashable, Codable, Sendable {
     let startFrame: Int
     let endFrame: Int
     let durationFrames: Int

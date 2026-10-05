@@ -1,5 +1,7 @@
 # 知识库 Agentic QA v2：围绕证据组织搜索、阅读与分析
 
+> 文档状态：Agentic QA v2 设计提案，保留历史设计与验收背景。重构后的当前流程以 [知识库问答流程](knowledge-base-rag-flow.zh-CN.md) 为准；本文中的规划或旧流程不表示当前默认行为。
+
 日期：2026-09-29  
 范围：macOS 知识库 QA、Hosted 网关、BYOK 原生协议。保留 hybrid search、reranker、MMR、SQLite 和可选知识图。
 

@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 READ_TOOLS = {
     'app_workbench', 'voxstudio.library', 'voxstudio.sessions',
     'app_session', 'voxstudio.session_panel', 'app_transcription', 'app_dubbing',
-    'voice.list', 'media.status', 'session.editor.read', 'documents.read',
+    'voice.list', 'media.status', 'session.editor.read', 'session.get_summary', 'documents.read',
     'search_mentions', 'media.preview', 'media.session_preview',
 }
 class Handler(SimpleHTTPRequestHandler):
@@ -57,6 +57,10 @@ class Handler(SimpleHTTPRequestHandler):
                 raise ValueError('This local preview supports read-only MCP requests.')
             if method == 'tools/call' and request.get('params', {}).get('name') not in READ_TOOLS:
                 raise ValueError('This local preview is read-only. Create and edit in the ChatGPT/Codex plugin.')
+            if method == 'tools/call' and request.get('params', {}).get('name') == 'app_transcription':
+                args = request['params'].get('arguments', {})
+                if any(key in args for key in ('path', 'attachment')) or args.get('start'):
+                    raise ValueError('This local preview is read-only. Submit transcription inputs in the ChatGPT/Codex plugin.')
             headers = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'}
             for key in ('Mcp-Session-Id', 'MCP-Protocol-Version'):
                 if self.headers.get(key):

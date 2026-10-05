@@ -1,5 +1,7 @@
 # Mac Knowledge Base QA
 
+> 文档状态：2026-09-15 的旧版行为契约，保留历史设计与验收背景。重构后的当前流程以 [知识库问答流程](knowledge-base-rag-flow.zh-CN.md) 为准；本文中的规划或旧流程不表示当前默认行为。
+
 日期：2026-09-15
 范围：`voxella-studio-app`
 

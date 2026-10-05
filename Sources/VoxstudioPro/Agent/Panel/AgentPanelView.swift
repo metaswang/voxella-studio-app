@@ -103,7 +103,8 @@ struct AgentPanelView: View {
     }
 
     @State private var showHistory = false
-    @State private var isScrolledFromBottom = false
+    @State private var displayedMessageLimit = Self.historyPageSize
+    private static let historyPageSize = 40
 
     private var historyButton: some View {
         Button { showHistory.toggle() } label: {
@@ -141,16 +142,28 @@ struct AgentPanelView: View {
         }
     }
 
-    private var toolResults: [String: ToolRunResult] {
-        var out: [String: ToolRunResult] = [:]
-        for msg in service.messages where msg.role == .user {
-            for block in msg.blocks {
-                if case let .toolResult(id, content, isError) = block {
-                    out[id] = ToolRunResult(content: content, isError: isError)
-                }
+    private func toolResults(for message: AgentMessage) -> [String: ToolRunResult] {
+        var results: [String: ToolRunResult] = [:]
+        for block in message.blocks {
+            if case let .toolUse(id, _, _) = block, let result = service.toolResults[id] {
+                results[id] = ToolRunResult(content: result.content, isError: result.isError)
             }
         }
-        return out
+        return results
+    }
+
+    private var displayableMessages: [AgentMessage] {
+        service.messages.filter { message in
+            message.role != .user || message.blocks.contains {
+                if case .text = $0 { return true }
+                return false
+            }
+        }
+    }
+
+    private struct ScrollUpdate: Equatable {
+        let lastMessage: AgentMessage?
+        let isStreaming: Bool
     }
 
     private var messageList: some View {
@@ -169,52 +182,59 @@ struct AgentPanelView: View {
     }
 
     private var scrollingMessages: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                    let results = toolResults
-                    ForEach(service.messages) { msg in
-                        AgentMessageView(message: msg, toolResults: results)
-                            .id(msg.id)
+        let messages = displayableMessages
+        let submittedID = messages.last(where: { $0.role == .user })?.id
+        return ChatScrollView(
+            conversationID: service.currentSessionId,
+            updateToken: ScrollUpdate(lastMessage: service.messages.last, isStreaming: service.isStreaming),
+            submittedMessageID: submittedID,
+            horizontalInset: AppTheme.Spacing.lgXl,
+            maximumColumnWidth: Layout.chatColumnMax
+        ) { contentWidth in
+            // Dynamic chat rows must have concrete heights and widths. Lazy
+            // estimates coupled to an animated bottom anchor can fail to settle.
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                if messages.count > displayedMessageLimit {
+                    Button(L10n.string("Load earlier messages")) {
+                        displayedMessageLimit += Self.historyPageSize
                     }
-                    if service.isStreaming {
-                        ThinkingDots().id("streaming-indicator")
-                    }
-                    errorBanner
-                        .padding(.top, AppTheme.Spacing.sm)
+                    .buttonStyle(.plain)
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, AppTheme.Spacing.lgXl)
-                .padding(.top, Layout.panelHeaderHeight + AppTheme.Spacing.mdLg)
-                .padding(.bottom, AppTheme.Spacing.smMd)
-                .frame(maxWidth: Layout.chatColumnMax)
-                .frame(maxWidth: .infinity)
-                .background(AgentOverlayScrollerStyle())
-            }
-            .scrollIndicators(.automatic)
-            .appScrollEdgeEffect(.bottom)
-            .onScrollGeometryChange(for: Bool.self) { geo in
-                let distance = geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height
-                return distance > 80
-            } action: { _, newValue in
-                withAnimation(.easeOut(duration: 0.15)) { isScrolledFromBottom = newValue }
-            }
-            .onChange(of: service.messages.count) { _, _ in scrollToBottom(proxy) }
-            .onChange(of: service.isStreaming) { _, _ in scrollToBottom(proxy) }
-            .overlay(alignment: .bottomTrailing) {
-                if isScrolledFromBottom {
-                    scrollToBottomButton(proxy: proxy)
-                        .padding(.trailing, AppTheme.Spacing.mdLg)
-                        .padding(.bottom, AppTheme.Spacing.mdLg)
-                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                ForEach(messages.suffix(displayedMessageLimit)) { msg in
+                    AgentMessageView(
+                        message: msg,
+                        toolResults: toolResults(for: msg),
+                        isStreaming: service.isStreaming && msg.id == service.messages.last?.id
+                    )
+                    .equatable()
+                    .id(msg.id)
                 }
+                if service.isStreaming {
+                    ProgressView().controlSize(.small)
+                }
+                errorBanner
+                    .padding(.top, AppTheme.Spacing.sm)
             }
+            .frame(width: contentWidth, alignment: .leading)
+            .padding(.top, Layout.panelHeaderHeight + AppTheme.Spacing.mdLg)
+            .padding(.bottom, AppTheme.Spacing.smMd)
+            .background(AgentOverlayScrollerStyle())
+        } scrollAway: { scrollToLatest in
+            scrollToBottomButton(action: scrollToLatest)
+                .padding(.trailing, AppTheme.Spacing.mdLg)
+                .padding(.bottom, AppTheme.Spacing.mdLg)
+        }
+        .appScrollEdgeEffect(.bottom)
+        .onChange(of: service.currentSessionId) { _, _ in
+            displayedMessageLimit = Self.historyPageSize
         }
     }
 
-    private func scrollToBottomButton(proxy: ScrollViewProxy) -> some View {
-        Button {
-            scrollToBottom(proxy)
-        } label: {
+    private func scrollToBottomButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             Image(systemName: "arrow.down")
                 .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
@@ -335,18 +355,6 @@ struct AgentPanelView: View {
         AITransportPolicy.current == .unavailable
             ? L10n.string("Sign in or enable BYOK")
             : L10n.string("Configure an AI provider")
-    }
-
-    private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        if service.isStreaming {
-            withAnimation(.easeOut(duration: 0.15)) {
-                proxy.scrollTo("streaming-indicator", anchor: .bottom)
-            }
-        } else if let last = service.messages.last {
-            withAnimation(.easeOut(duration: 0.15)) {
-                proxy.scrollTo(last.id, anchor: .bottom)
-            }
-        }
     }
 
     private var footer: some View {

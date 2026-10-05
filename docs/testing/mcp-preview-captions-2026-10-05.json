@@ -1,0 +1,26 @@
+{
+  "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87",
+  "title": "The Lost Red Umbrella",
+  "transcript_characters": 560,
+  "subtitle_track_available": false,
+  "previews": {
+    "media.session_preview": {
+      "captions_ready": false,
+      "cue_count": 0,
+      "start": 0,
+      "end": 15
+    },
+    "media.preview": {
+      "captions_ready": false,
+      "cue_count": 0,
+      "start": 0,
+      "end": 15
+    }
+  },
+  "fixture_without_subtitles_caption_nodes": 0,
+  "fixture_with_subtitles_caption_nodes": 1,
+  "swift_tests_passed": 20,
+  "live_player_caption_nodes": 0,
+  "live_transcript_readable": true,
+  "signed_debug_build_verified": true
+}

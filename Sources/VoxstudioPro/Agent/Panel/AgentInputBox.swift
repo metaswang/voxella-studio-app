@@ -38,7 +38,7 @@ struct AgentInputBox<LeadingTools: View>: View {
     @State private var mentionTab: MentionTab = .all
     @State private var mentionScrollTick: Int = 0
     @State private var isDropTargeted = false
-    @State private var textEditorID = UUID()
+    @State private var submissionPending = false
     @Namespace private var sendStopNamespace
 
     private var showMentionPicker: Bool { mentionQuery != nil }
@@ -90,7 +90,6 @@ struct AgentInputBox<LeadingTools: View>: View {
     private var textField: some View {
         ZStack(alignment: .topLeading) {
             TextEditor(text: $draft)
-                .id(textEditorID)
                 .font(.body)
                 .scrollContentBackground(.hidden)
                 .scrollIndicators(.never)
@@ -99,15 +98,8 @@ struct AgentInputBox<LeadingTools: View>: View {
                 .padding(.bottom, AppTheme.Spacing.xs)
                 .focused($focused)
                 .frame(minHeight: 32, maxHeight: 64)
-                .onChange(of: draft) { old, new in
+                .onChange(of: draft) { _, new in
                     updateMentionQuery(from: new)
-                    if !old.isEmpty && new.isEmpty {
-                        let wasFocused = focused
-                        textEditorID = UUID()
-                        if wasFocused {
-                            Task { @MainActor in focused = true }
-                        }
-                    }
                 }
                 .onPasteCommand(of: [.fileURL, .image, .png, .jpeg, .tiff], perform: handlePaste)
                 .onKeyPress(phases: [.down, .repeat]) { press in handleKey(press) }
@@ -233,7 +225,22 @@ struct AgentInputBox<LeadingTools: View>: View {
 
         guard press.phase == .down else { return .ignored }
         if press.key == .return, !press.modifiers.contains(.shift), canSubmit {
-            onSend()
+            if let textView = NSApp.keyWindow?.firstResponder as? NSTextView, textView.hasMarkedText() {
+                return .ignored
+            }
+            guard !submissionPending else { return .handled }
+            submissionPending = true
+            let snapshot = draft
+            let sessionID = editor.agentService.currentSessionId
+            // End the native key event before inserting rows or clearing text.
+            DispatchQueue.main.async {
+                submissionPending = false
+                guard editor.agentService.currentSessionId == sessionID,
+                      editor.agentService.draft == snapshot,
+                      !voiceInputActive,
+                      !editor.agentService.isStreaming else { return }
+                onSend()
+            }
             return .handled
         }
         return .ignored

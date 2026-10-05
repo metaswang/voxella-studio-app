@@ -1550,6 +1550,7 @@ final class WorkbenchStore {
     private let taskAccess: any TranscriptionTaskAccessing
     private let dubTaskAccess: any DubTaskAccessing
     private let cloudSessionSync: any CloudSessionSyncing
+    private let isCloudMode: @MainActor () -> Bool
     private let voxellaAPI: VoxellaAPIClient
 
     private struct StagedTranscriptionArtifacts {
@@ -1648,11 +1649,15 @@ final class WorkbenchStore {
         dubTaskAccess: any DubTaskAccessing = RoutedDubTaskAccess(),
         cloudSessionSync: any CloudSessionSyncing = VoxellaCloudSessionSync(),
         voxellaAPI: VoxellaAPIClient = .shared,
-        persistenceURL: URL? = nil
+        persistenceURL: URL? = nil,
+        isCloudMode: @escaping @MainActor () -> Bool = {
+            AccountService.shared.isSignedIn && !AccountService.shared.isOfflineAccount
+        }
     ) {
         self.taskAccess = taskAccess
         self.dubTaskAccess = dubTaskAccess
         self.cloudSessionSync = cloudSessionSync
+        self.isCloudMode = isCloudMode
         self.voxellaAPI = voxellaAPI
         let storedRoute = UserDefaults.standard.string(forKey: Self.routeDefaultsKey)
             .flatMap(WorkbenchRoute.init(rawValue:))
@@ -2818,19 +2823,21 @@ final class WorkbenchStore {
 
     func deleteTranscription(_ id: UUID) {
         guard transcriptions.contains(where: { $0.id == id }) else { return }
-        beginRemoteFirstDeletion(
+        beginSessionDeletion(
             transcriptionIDs: [id],
             dubIDs: [],
-            selectedSessionID: selectedSessionID == id ? id : nil
+            selectedSessionID: selectedSessionID == id ? id : nil,
+            localCopyOnly: !isCloudMode()
         )
     }
 
     func deleteDub(_ id: UUID) {
         guard dubs.contains(where: { $0.id == id }) else { return }
-        beginRemoteFirstDeletion(
+        beginSessionDeletion(
             transcriptionIDs: [],
             dubIDs: [id],
-            selectedSessionID: selectedSessionID == id ? id : nil
+            selectedSessionID: selectedSessionID == id ? id : nil,
+            localCopyOnly: !isCloudMode()
         )
     }
 
@@ -2849,8 +2856,10 @@ final class WorkbenchStore {
 
     func deleteSession(_ id: UUID) {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
+        let localCopyOnly = !isCloudMode()
         if case .remote(let remoteSessionID) = Self.sessionDeletionTarget(for: session) {
-            beginRemoteFirstDeletion(
+            guard !localCopyOnly else { return }
+            beginSessionDeletion(
                 transcriptionIDs: [],
                 dubIDs: [],
                 additionalRemoteSessionIDs: [remoteSessionID],
@@ -2870,10 +2879,11 @@ final class WorkbenchStore {
             relatedDubIDs = []
         }
 
-        beginRemoteFirstDeletion(
+        beginSessionDeletion(
             transcriptionIDs: session.transcriptionID.map { [$0] } ?? [],
             dubIDs: relatedDubIDs,
-            selectedSessionID: id
+            selectedSessionID: id,
+            localCopyOnly: localCopyOnly
         )
     }
 
@@ -2886,11 +2896,12 @@ final class WorkbenchStore {
         return .remote(remoteSessionID)
     }
 
-    private func beginRemoteFirstDeletion(
+    private func beginSessionDeletion(
         transcriptionIDs: [UUID],
         dubIDs: [UUID],
         additionalRemoteSessionIDs: [UUID] = [],
-        selectedSessionID: UUID? = nil
+        selectedSessionID: UUID? = nil,
+        localCopyOnly: Bool = false
     ) {
         let transcriptionIDs = Array(Set(transcriptionIDs))
         let dubIDs = Array(Set(dubIDs))
@@ -2899,12 +2910,24 @@ final class WorkbenchStore {
         guard !localIDs.isEmpty || !additionalRemoteSessionIDs.isEmpty,
               localIDs.isDisjoint(with: deletingSessionIDs),
               additionalRemoteSessionIDs.isDisjoint(with: deletingRemoteSessionIDs) else { return }
+        let removesCloudLocalCopy = localCopyOnly && (
+            transcriptions.contains { localIDs.contains($0.id) && $0.storage == .cloud }
+                || dubs.contains { localIDs.contains($0.id) && $0.placement.storage == .cloud }
+        )
 
         deletingSessionIDs.formUnion(localIDs)
         deletingRemoteSessionIDs.formUnion(additionalRemoteSessionIDs)
         let flowIDs = localIDs.filter { flowTasks[$0] != nil }
         for id in flowIDs {
             flowTasks[id]?.cancel()
+        }
+        // Stop pending edits before removing a local copy, including while a flow winds down.
+        if localCopyOnly {
+            for id in localIDs {
+                cloudSyncTasks[id]?.cancel()
+                cloudSyncTasks[id] = nil
+                cloudSyncGenerations[id, default: 0] += 1
+            }
         }
 
         Task { [weak self] in
@@ -2915,12 +2938,13 @@ final class WorkbenchStore {
                 }
             }
 
-            let remoteIDs = Set(additionalRemoteSessionIDs).union(
+            let linkedRemoteIDs = Set(additionalRemoteSessionIDs).union(
                 self.remoteSessionIDs(
                     transcriptionIDs: transcriptionIDs,
                     dubIDs: dubIDs
                 )
             ).sorted { $0.uuidString < $1.uuidString }
+            let remoteIDs = localCopyOnly ? [] : linkedRemoteIDs
             self.deletingRemoteSessionIDs.formUnion(remoteIDs)
             do {
                 for remoteID in remoteIDs {
@@ -2948,6 +2972,13 @@ final class WorkbenchStore {
             for id in dubIDs {
                 removeDubLocally(id)
             }
+            if removesCloudLocalCopy {
+                WorkbenchTipCenter.shared.show(
+                    "The local copy was deleted. The cloud session was kept.",
+                    kind: .success,
+                    id: "session.delete.local.\(selectedSessionID?.uuidString ?? localIDs.first?.uuidString ?? "unknown")"
+                )
+            }
             deletingSessionIDs.subtract(localIDs)
             for remoteID in remoteIDs {
                 remoteSessions.removeValue(forKey: remoteID)
@@ -2962,6 +2993,11 @@ final class WorkbenchStore {
                 self.remoteSessionLoadingID = nil
                 self.selectedSessionID = nil
                 if self.route == .session { self.route = .recent }
+            }
+            if localCopyOnly, !linkedRemoteIDs.isEmpty, self.isCloudMode() {
+                // The list excludes cloud sessions with local copies. Reload now that those
+                // copies are gone so the preserved cloud sessions can appear on their own.
+                await self.refreshRemoteSessions()
             }
         }
     }
@@ -3013,6 +3049,7 @@ final class WorkbenchStore {
         cloudSyncTasks[id] = nil
         cloudSyncGenerations[id, default: 0] += 1
         dubs.removeAll { $0.id == id }
+        SessionIndexCoordinator.shared.remove(id)
         if selectedDubID == id { selectedDubID = dubs.first?.id }
         save()
     }

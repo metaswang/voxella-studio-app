@@ -58,13 +58,14 @@ class VideoProject: NSDocument {
     private nonisolated(unsafe) var snapshotManifest: MediaManifest?
     private nonisolated(unsafe) var snapshotGenerationLog: GenerationLog?
     private nonisolated(unsafe) var snapshotThumbnail: Data?
-    private nonisolated(unsafe) var snapshotChatSessionFiles: [(name: String, data: Data)] = []
+    private nonisolated(unsafe) var snapshotChatSessions: [ChatSession] = []
     private nonisolated(unsafe) var snapshotSourceProjectURL: URL?
     private nonisolated(unsafe) var snapshotPreparedForWrite = false
     // AppKit saves asynchronously, but write() consumes one shared snapshot at a time.
     // Keep the first request active and serialize any requests behind it.
     private var saveQueue: [SaveRequest] = []
     private var projectCheckpointAutosaveScheduled = false
+    private var projectCheckpointAutosavePending = false
     private var isSavingBeforeClose = false
 
     // MARK: - Persistence
@@ -174,6 +175,9 @@ class VideoProject: NSDocument {
             request.completion(error)
             self.saveQueue.removeFirst()
             self.performNextSave()
+            if self.saveQueue.isEmpty, self.projectCheckpointAutosavePending {
+                self.scheduleProjectCheckpointAutosave()
+            }
         }
     }
 
@@ -255,12 +259,21 @@ class VideoProject: NSDocument {
         let manifest = snapshotManifest
         let generationLog = snapshotGenerationLog
         let thumbnail = snapshotThumbnail
-        let chatSessionFiles = snapshotChatSessionFiles
+        let chatSessions = snapshotChatSessions
+        snapshotChatSessions = []
         let sourceURL = snapshotSourceProjectURL
         snapshotPreparedForWrite = false
         snapshotSourceProjectURL = nil
         unblockUserInteraction()
         mainThreadUnblocked = true
+
+        // AppKit's asynchronous writer owns the expensive JSON encoding. The
+        // main-thread capture retains only immutable, copy-on-write values.
+        let chatSessionFiles = chatSessions
+            .filter { !$0.messages.isEmpty }
+            .compactMap { session in
+                ChatSessionStore.encodeSession(session).map { (name: "\(session.id.uuidString).json", data: $0) }
+            }
 
         guard let file, let data = try? JSONEncoder().encode(file) else {
             Log.project.error("save: project snapshot missing at write()")
@@ -288,11 +301,7 @@ class VideoProject: NSDocument {
         snapshotManifest = Self.manifestSnapshot(manifest: editorViewModel.mediaManifest, loadFailed: manifestLoadFailed)
         snapshotGenerationLog = editorViewModel.generationLog
         snapshotThumbnail = captureThumbnail()
-        snapshotChatSessionFiles = editorViewModel.agentService.sessions
-            .filter { !$0.messages.isEmpty }
-            .compactMap { session in
-                ChatSessionStore.encodeSession(session).map { (name: "\(session.id.uuidString).json", data: $0) }
-            }
+        snapshotChatSessions = editorViewModel.agentService.sessions
         snapshotPreparedForWrite = true
     }
 
@@ -398,13 +407,17 @@ class VideoProject: NSDocument {
         editorViewModel.isDocumentEdited = isDocumentEdited
     }
 
-    private func scheduleProjectCheckpointAutosave() {
-        guard fileURL != nil, !projectCheckpointAutosaveScheduled, !isSavingBeforeClose else { return }
+    func scheduleProjectCheckpointAutosave() {
+        guard fileURL != nil, !isSavingBeforeClose else { return }
+        projectCheckpointAutosavePending = true
+        guard !projectCheckpointAutosaveScheduled, saveQueue.isEmpty else { return }
         projectCheckpointAutosaveScheduled = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.projectCheckpointAutosaveScheduled = false
-            guard self.fileURL != nil, !self.isSavingBeforeClose else { return }
+            guard self.fileURL != nil, !self.isSavingBeforeClose,
+                  self.saveQueue.isEmpty, self.projectCheckpointAutosavePending else { return }
+            self.projectCheckpointAutosavePending = false
             self.autosave(withImplicitCancellability: false) { error in
                 if let error {
                     Log.project.error("project checkpoint autosave failed: \(error.localizedDescription)")
@@ -454,6 +467,7 @@ class VideoProject: NSDocument {
         editorViewModel.agentService.loadSessions(from: fileURL)
         editorViewModel.agentService.onSessionsChanged = { [weak self] in
             self?.updateChangeCount(.changeDone)
+            self?.scheduleProjectCheckpointAutosave()
         }
         editorViewModel.onProjectCheckpointRequired = { [weak self] in
             self?.scheduleProjectCheckpointAutosave()
@@ -674,4 +688,3 @@ class VideoProject: NSDocument {
         )
     }
 }
-

@@ -1,0 +1,119 @@
+{
+  "initial": {
+    "instructions": "Session created. Use this exact session_id for progress and results, even if the title changes. When media.status is completed, read app_session. Do not search the session list by filename.",
+    "job_id": "83DAA694-1AC4-4679-A84B-D084119BB84F",
+    "kind": "transcription",
+    "message": "Queued \u2014 waiting for local speech processing",
+    "name": "dub-flow-E1431DF4-11BB-46A3-AD8E-328BB871557D.wav",
+    "native_forms": false,
+    "next_call": {
+      "arguments": {
+        "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87"
+      },
+      "tool": "media.status"
+    },
+    "options": {},
+    "progress": 0,
+    "result_call": {
+      "arguments": {
+        "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87"
+      },
+      "tool": "app_session"
+    },
+    "selected_language": "und",
+    "selected_track": "source",
+    "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87",
+    "status": "queued",
+    "title": "dub-flow-E1431DF4-11BB-46A3-AD8E-328BB871557D",
+    "translation_languages": [],
+    "view": "transcription"
+  },
+  "submission_seconds": 0.1187,
+  "resolved": {
+    "instructions": "Session created. Use this exact session_id for progress and results, even if the title changes. When media.status is completed, read app_session. Do not search the session list by filename.",
+    "job_id": "83DAA694-1AC4-4679-A84B-D084119BB84F",
+    "kind": "transcription",
+    "message": "Queued \u2014 waiting for local speech processing",
+    "name": "dub-flow-E1431DF4-11BB-46A3-AD8E-328BB871557D.wav",
+    "native_forms": false,
+    "next_call": {
+      "arguments": {
+        "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87"
+      },
+      "tool": "media.status"
+    },
+    "options": {},
+    "progress": 0,
+    "result_call": {
+      "arguments": {
+        "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87"
+      },
+      "tool": "app_session"
+    },
+    "selected_language": "und",
+    "selected_track": "source",
+    "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87",
+    "status": "queued",
+    "title": "dub-flow-E1431DF4-11BB-46A3-AD8E-328BB871557D",
+    "translation_languages": [],
+    "view": "transcription"
+  },
+  "final": {
+    "kind": "transcription",
+    "message": "Transcript and summary ready",
+    "next_call": {
+      "arguments": {
+        "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87"
+      },
+      "tool": "app_session"
+    },
+    "progress": 1,
+    "selected_language": "en",
+    "selected_track": "source",
+    "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87",
+    "status": "completed",
+    "title": "The Lost Red Umbrella",
+    "translation_languages": []
+  },
+  "result": {
+    "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87",
+    "title": "The Lost Red Umbrella",
+    "text_characters": 560,
+    "language": "en"
+  },
+  "elapsed_seconds": 8.192,
+  "searched_session_list": false,
+  "creation_calls": 1,
+  "panel_model_context": [
+    {
+      "type": "voxstudio_transcription",
+      "job_id": "83DAA694-1AC4-4679-A84B-D084119BB84F",
+      "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87",
+      "status": "queued",
+      "title": "dub-flow-E1431DF4-11BB-46A3-AD8E-328BB871557D",
+      "result_call": {
+        "tool": "app_session",
+        "arguments": {
+          "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87"
+        }
+      }
+    },
+    {
+      "type": "voxstudio_transcription",
+      "job_id": "83DAA694-1AC4-4679-A84B-D084119BB84F",
+      "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87",
+      "status": "completed",
+      "title": "The Lost Red Umbrella",
+      "result_call": {
+        "tool": "app_session",
+        "arguments": {
+          "session_id": "F71C096E-70E6-416F-A2E8-A4D25EE0FA87"
+        }
+      }
+    }
+  ],
+  "panel_view_transcript_verified": true,
+  "mcp_regression_tests_passed": 27,
+  "plugin_package_tests_passed": 4,
+  "signed_debug_build_verified": true
+}

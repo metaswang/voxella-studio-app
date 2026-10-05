@@ -1,5 +1,7 @@
 # Local MCP 知识库
 
+接口核对日期：2026-10-04。完整 App / MCP 问答链路见 [知识库问答流程](design/knowledge-base-rag-flow.zh-CN.md)。
+
 App 启动后，同一端口提供两个独立 profile。`http://127.0.0.1:19789/mcp` 保留视频编辑、素材工具和 `knowledge.ask`；`http://127.0.0.1:19789/knowledge/mcp` 为 Work/Codex 提供只读知识证据，由宿主模型自行回答。profile 的 factory、session 和无状态回退隔离，跨入口复用 session ID 返回 404。
 
 ## Work/Codex 证据入口
@@ -43,10 +45,12 @@ QA 的 kind/scope/generation 限制进入向量候选预过滤，不扩散到通
 | `session.search_segments` | 指定会话内检索 |
 | `session.get_timeline` | 分桶时间线 |
 | `knowledge.compare_sessions` | 跨会话比较证据 |
-| `finish_with_evidence` | 返回已接受的引用 ID（调用方控制信号） |
-| `ask_clarification` | 返回澄清问题（调用方控制信号） |
+| `session.get_speakers` | 可用说话人标签 |
+| `session.aggregate` | 完整筛选目录计数、已知时长汇总、分组与排序 |
+| `knowledge.search_sources` | 通过摘要及正文发现候选来源 |
+| `knowledge.find_text` | 当前可读原文中的字面查词及分页 |
 
-所有工具可传 `origin: "all" | "local" | "cloud"`，默认 `all`，受当前账户可见性限制。指定不可见或不存在的 session ID 返回 MCP tool error。两个控制工具只返回结构化信号，不终止 MCP 连接，也不修改 App UI。
+所有工具可传 `origin: "all" | "local" | "cloud"`，默认 `all`，受当前账户可见性限制。指定不可见或不存在的 session ID 返回 MCP tool error。`finish_with_evidence` 已从当前 registry 移除；`ask_clarification`、`analysis.update`、`read_skill`、`read_payload` 是 App Agent 内部能力，不向旧 MCP adapter 暴露。新入口的 `methods` 独立提供方法读取。
 
 ## 完整问答
 
@@ -68,4 +72,4 @@ QA 的 kind/scope/generation 限制进入向量候选预过滤，不扩散到通
 
 可选 `session_ids` 为非空 UUID 数组，不传则覆盖当前可见会话。`answer_mode` 支持 `concise`、`normal`（默认）、`detailed`。`allow_cloud` 控制模型路由，`origin` 控制资料来源，二者独立。`history` 由调用方传入，支持 user/assistant 消息，不写入 App 的聊天记录。
 
-MCP 等待 QA pipeline 完成后返回 JSON 文本；`status` 为 `completed` 或 `clarification`。回答包含 `answer` 和 `citations`，澄清包含 `question`，需要配置时可包含 `recovery_actions`。执行失败通过 MCP `isError` 返回。QA 引用使用 `KnowledgeSourceRef` 的 Codable 字段（如 `sourceID`、`startTime`），低层工具保留原 chatbot 工具的字段（如 `source_id`、`start_time`）。
+MCP 等待 QA pipeline 完成后返回 JSON 文本；`status` 为 `completed` 或 `clarification`。回答包含 `answer` 和 `citations`，`.clarification` 终态包含 `question`，需要配置时可包含 `recovery_actions`。默认原生路径的澄清工具只产生 observation，模型随后输出问题时一般仍以普通 `completed` 回答结束；legacy planner 才直接产生澄清终态。执行失败通过 MCP `isError` 返回。QA 引用使用 `KnowledgeSourceRef` 的 Codable 字段（如 `sourceID`、`startTime`），低层工具保留原 chatbot 工具的字段（如 `source_id`、`start_time`）。

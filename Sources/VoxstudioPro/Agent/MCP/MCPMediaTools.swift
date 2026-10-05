@@ -16,6 +16,17 @@ enum MCPMediaTools {
     of the supplied reference clip (3–30 seconds of one speaker); never invent reference words.
     All creation uses local compute/storage. Models and translation/subtitle AI must be configured
     in VoxStudio. A failed operation is not a completed result; report its error before retrying.
+    When the user asks to transcribe a local path, call app_transcription with that exact path
+    and start=true, or transcription.create with path. Omit language for automatic detection.
+    Do not ask the user to choose the same file again or open transcription.start_form.
+    app_transcription without start only opens/prepares the panel; it does not submit a job.
+    A submitted app_transcription returns session_id when creation is ready, otherwise job_id.
+    Follow next_call: poll voxstudio.job_status with the returned job_id until session_id,
+    then media.status with that exact session_id; when completed, read app_session with it.
+    Session titles can change automatically. Never identify a submitted result by filename,
+    repeatedly open session lists, retry creation, or report it missing before resolving its job_id.
+    For a ChatGPT attachment explicitly identified by the user, use app_transcription with
+    the host-provided attachment file object and start=true. Do not fabricate file IDs or URLs.
     """
 
     nonisolated static let definitions: [KnowledgeToolDefinition] = [
@@ -141,7 +152,7 @@ enum MCPMediaTools {
                 guard let speakers = SpeakerCountOption(rawValue: args["speakers"] as? String ?? "auto") else { throw ToolError("Invalid speakers option") }
                 try await AccountService.shared.prepareNewContentAccess()
                 var options = LocalProcessingOptions()
-                options.languageCode = args["language"] as? String
+                options.languageCode = sourceLanguage(args["language"] as? String)
                 options.customTitle = args["title"] as? String
                 options.speakerCount = speakers
                 options.useLLMSubtitleProcessing = segment
@@ -239,11 +250,15 @@ enum MCPMediaTools {
             var value: [String: Any] = ["session_id": id.uuidString, "kind": "transcription", "status": pipelineErrors[id] != nil ? "failed" : (pipelines[id] != nil || finishing ? "running" : job.state.rawValue), "progress": finishing ? min(job.progress, 0.99) : job.progress, "message": finishing ? "Finishing media processing" : job.progressMessage, "title": job.sessionTitle, "translation_languages": job.translationTracks.map(\.languageCode), "selected_track": job.currentTrack.rawValue]
             value["selected_language"] = selectedLanguage(job)
             value["error"] = pipelineErrors[id] ?? job.errorMessage
+            if value["status"] as? String == "completed" {
+                value["next_call"] = ["tool": "app_session", "arguments": ["session_id": id.uuidString]]
+            }
             return try json(value)
         }
         guard let job = WorkbenchStore.shared.dubs.first(where: { $0.id == id }) else { throw ToolError("Media session not found") }
         var value: [String: Any] = ["session_id": id.uuidString, "kind": "dubbing", "status": job.state.rawValue, "progress": job.progress, "message": job.progressMessage, "title": job.displayTitle]
         value["audio_path"] = job.outputURL?.path; value["error"] = job.errorMessage
+        if job.state == .completed { value["next_call"] = ["tool": "app_session", "arguments": ["session_id": id.uuidString]] }
         return try json(value)
     }
 
@@ -252,9 +267,11 @@ enum MCPMediaTools {
         return job.subtitleTrack?.language ?? job.result?.language ?? job.languageCode ?? "und"
     }
 
-    static func track(_ job: WorkbenchTranscriptionJob, language: String?) throws -> SubtitleTrack? {
+    static func track(_ job: WorkbenchTranscriptionJob, language: String?, allowTranscriptFallback: Bool = true) throws -> SubtitleTrack? {
         let chosen = language ?? (job.currentTrack == .translation ? job.selectedTranslationLanguageCode : nil) ?? "source"
-        if chosen == "source" { return job.subtitleTrack ?? job.result.map { SubtitleTrack.fromTranscript($0) } }
+        if chosen == "source" {
+            return job.subtitleTrack ?? (allowTranscriptFallback ? job.result.map { SubtitleTrack.fromTranscript($0) } : nil)
+        }
         guard let translation = job.translationTracks.first(where: { $0.languageCode.caseInsensitiveCompare(chosen) == .orderedSame }) else { throw ToolError("Translation track not found: \(chosen)") }
         return translation.track
     }
@@ -264,10 +281,10 @@ enum MCPMediaTools {
         let subtitles: SubtitleTrack?
         if let job = WorkbenchStore.shared.transcriptions.first(where: { $0.id == id }) {
             guard job.result != nil else { throw ToolError("Transcript is not ready; poll media.status") }
-            url = job.playbackAudioURL; subtitles = try track(job, language: args["language"] as? String)
+            url = job.playbackAudioURL; subtitles = try track(job, language: args["language"] as? String, allowTranscriptFallback: false)
         } else if let job = WorkbenchStore.shared.dubs.first(where: { $0.id == id }), let output = job.outputURL {
             if let language = args["language"] as? String, language != "source" { throw ToolError("Dubbing preview supports source track only") }
-            url = output; subtitles = job.renderedSubtitleTrack
+            url = output; subtitles = job.subtitleTrack
         } else { throw ToolError("Media result is not ready or session was not found") }
         let start = (args["start"] as? NSNumber)?.doubleValue ?? 0
         let duration = (args["duration"] as? NSNumber)?.doubleValue ?? 15
@@ -293,10 +310,17 @@ enum MCPMediaTools {
         }
         let cues = subtitles?.cues.filter { $0.end > start && $0.start < end } ?? []
         return try json(["session_id": id.uuidString, "audio_path": output.path, "start": start, "end": end,
-                         "language": subtitles?.language ?? "und", "cues": cues.map { ["id": $0.id, "start": $0.start, "end": $0.end, "text": $0.text, "speaker": $0.speaker ?? ""] as [String: Any] }])
+                         "language": subtitles?.language ?? "und", "captions_ready": subtitles?.cues.isEmpty == false,
+                         "cues": cues.map { ["id": $0.id, "start": $0.start, "end": $0.end, "text": $0.text, "speaker": $0.speaker ?? ""] as [String: Any] }])
     }
 
-    private static func localFile(_ path: String) throws -> URL {
+    static func sourceLanguage(_ language: String?) -> String? {
+        guard let language = language?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !language.isEmpty, language.lowercased() != "auto" else { return nil }
+        return language
+    }
+
+    static func localFile(_ path: String) throws -> URL {
         let expanded = (path as NSString).expandingTildeInPath
         guard expanded.hasPrefix("/") else { throw ToolError("Use an absolute local file path") }
         let url = URL(fileURLWithPath: expanded)

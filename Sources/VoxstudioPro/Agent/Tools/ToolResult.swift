@@ -1,8 +1,8 @@
 import Foundation
 import MCP
 
-struct ToolResult: Sendable {
-    enum Block: Sendable {
+struct ToolResult: Sendable, Equatable {
+    enum Block: Sendable, Equatable {
         case text(String)
         case image(base64: String, mediaType: String)
     }

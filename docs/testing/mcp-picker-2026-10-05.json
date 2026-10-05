@@ -1,0 +1,25 @@
+{
+  "native_picker_wait_seconds": 79.53,
+  "initial_call_seconds": 0.01,
+  "max_short_request_seconds": 0.2599,
+  "cancelled": true,
+  "reopened": true,
+  "input_ready": {
+    "asset_id": "70DC6161-4B16-4B1F-9376-23980FC12F2C",
+    "name": "dub-flow-E1431DF4-11BB-46A3-AD8E-328BB871557D.wav",
+    "status": "ready"
+  },
+  "busy_other_connection": {
+    "initial": {
+      "job_id": "9720EB5C-AC5B-4C69-8D3A-D78B2A7ED28F",
+      "message": "Choose a file in the VoxStudio window on your Mac.",
+      "status": "selecting"
+    },
+    "submission_seconds": 0.0018,
+    "final": {
+      "error": "A VoxStudio file picker is already open. Select a file or cancel it before opening another.",
+      "outcome": "picker_busy",
+      "status": "failed"
+    }
+  }
+}

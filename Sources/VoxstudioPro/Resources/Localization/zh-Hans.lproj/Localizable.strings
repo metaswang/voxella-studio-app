@@ -3037,3 +3037,7 @@
 "Video exports" = "视频导出记录";
 "VoxStudio cannot read this file. Check its permissions." = "VoxStudio 无法读取此文件，请检查文件权限。";
 "VoxStudio project" = "VoxStudio 项目";
+"Load earlier messages" = "加载更早的消息";
+
+// Session local copy deletion
+"The local copy was deleted. The cloud session was kept." = "已删除本地副本，云端会话已保留。";

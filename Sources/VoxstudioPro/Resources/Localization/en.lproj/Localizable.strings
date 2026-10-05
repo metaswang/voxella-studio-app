@@ -3037,3 +3037,7 @@
 "Video exports" = "Video exports";
 "VoxStudio cannot read this file. Check its permissions." = "VoxStudio cannot read this file. Check its permissions.";
 "VoxStudio project" = "VoxStudio project";
+"Load earlier messages" = "Load earlier messages";
+
+// Session local copy deletion
+"The local copy was deleted. The cloud session was kept." = "The local copy was deleted. The cloud session was kept.";

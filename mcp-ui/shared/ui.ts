@@ -107,9 +107,24 @@ export async function openPanel(tool: string, args: Obj = {}) {
 export async function context(value: Obj) { try { await app.updateModelContext({structuredContent:value}); } catch { /* Content still works when optional model context is unsupported. */ } }
 export function progress(state:Obj) {const amount=Math.max(0,Math.min(100,Math.round((state.progress||0)*100)));return `<div class="progress-heading">${badge(state.status)}<span>${amount}%</span></div><progress max="100" value="${amount}">${amount}%</progress><p class="muted">${esc(state.error||state.message||(state.status==='completed'?'Your result is ready.':state.status==='failed'?'The job could not be completed. Open the session for details.':state.status==='cancelled'?'This job was cancelled.':'Processing on your Mac. You can return to this session later.'))}</p>`;}
 export function poll(read:()=>Promise<Obj>,render:(v:Obj)=>void) {let timer:ReturnType<typeof setTimeout>|undefined;let stopped=false;const run=async()=>{if(stopped||disposed)return;try{const v=await read();if(stopped||disposed)return;render(v);if(!['completed','failed','cancelled','idle'].includes(v.status))timer=setTimeout(run,2000)}catch(e){notice(String(e),true)}};void run();const stop=()=>{stopped=true;clearTimeout(timer)};onDispose(stop);return stop;}
-export async function waitInput(result: Obj):Promise<Obj|undefined> {if(result.outcome==='cancelled')return;while(result.status==='importing'&&!disposed){await new Promise(r=>setTimeout(r,600));result=await call('media.input_status',{asset_id:result.asset_id})}if(result.status!=='ready')throw new Error(result.error||t('媒体导入失败','Media import failed'));return result;}
-export async function resolveJob(result:Obj):Promise<Obj> {let attempts=0;while(result.job_id&&!result.session_id&&!result.document_id&&['queued','running','pending',undefined].includes(result.status)&&!disposed){if(++attempts>80)throw new Error(t('任务已提交，稍后可在会话列表查看','Job submitted. Check the sessions list in a moment.'));await new Promise(r=>setTimeout(r,600));result=await call('voxstudio.job_status',{job_id:result.job_id})}if(result.error||result.status==='failed')throw new Error(result.error||'Job failed');return result;}
-export function start(fallbackTool:string,consume:(data:Obj)=>Promise<void>|void) {
+export async function waitInput(result: Obj,onState?:(state:Obj)=>void):Promise<Obj|undefined> {
+ while(!disposed){
+  if(result.outcome==='cancelled'||result.status==='cancelled')return;
+  onState?.(result);
+  if(result.status==='ready')return result;
+  if(result.status==='selecting'&&result.job_id){
+   await new Promise(r=>setTimeout(r,600));
+   if(disposed)return;
+   result=await call('voxstudio.job_status',{job_id:result.job_id});
+  }else if(result.status==='importing'&&result.asset_id){
+   await new Promise(r=>setTimeout(r,600));
+   if(disposed)return;
+   result=await call('media.input_status',{asset_id:result.asset_id});
+  }else throw new Error(result.error||t('媒体导入失败','Media import failed'));
+ }
+}
+export async function resolveJob(result:Obj):Promise<Obj> {let attempts=0;while(result.job_id&&!result.session_id&&!result.document_id&&['queued','running','pending','importing',undefined].includes(result.status)&&!disposed){if(++attempts>300)throw new Error(t('任务已提交，稍后可在会话列表查看','Job submitted. Check the sessions list in a moment.'));await new Promise(r=>setTimeout(r,600));result=await call('voxstudio.job_status',{job_id:result.job_id})}if(result.error||result.status==='failed')throw new Error(result.error||'Job failed');return result;}
+export function start(fallbackTool:string,consume:(data:Obj)=>Promise<void>|void,fallbackArgs:(args:Obj)=>Obj|undefined= args=>args) {
  let initial:Obj|undefined, input:Obj|undefined, chain=Promise.resolve(), delivered='';
  const deliver=(data:Obj)=>{const signature=JSON.stringify(data);if(signature===delivered)return;delivered=signature;chain=chain.then(()=>consume(data)).then(()=>undefined).catch(e=>notice(e instanceof Error?e.message:String(e),true));};
  app.ontoolinput=p=>{input=p.arguments as Obj};
@@ -118,7 +133,7 @@ export function start(fallbackTool:string,consume:(data:Obj)=>Promise<void>|void
  app.onhostcontextchanged=host;
  app.onteardown=async()=>{disposed=true;for(const fn of cleanups)fn();return {}};
  const timeout=setTimeout(()=>{if(!connected)notice(t('连接尚未完成。请确认 VoxStudio 正在运行，然后重新打开此面板。','Still connecting. Check that VoxStudio is running, then reopen this panel.'),true)},12000);
- void (async()=>{try{await app.connect();connected=true;clearTimeout(timeout);host(app.getHostContext()??{});$('connection').innerHTML=`<i></i>${t('已连接','Connected')}`;$('connection').classList.add('online');if(initial)deliver(initial);else {const fallback=setTimeout(()=>{if(!initial&&!disposed)void call(fallbackTool,input??{}).then(deliver).catch(e=>notice(String(e),true));},350);onDispose(()=>clearTimeout(fallback));}}catch(e){clearTimeout(timeout);$('connection').textContent=t('连接失败','Disconnected');notice(String(e),true)}})();
+ void (async()=>{try{await app.connect();connected=true;clearTimeout(timeout);host(app.getHostContext()??{});$('connection').innerHTML=`<i></i>${t('已连接','Connected')}`;$('connection').classList.add('online');if(initial)deliver(initial);else {const fallback=setTimeout(()=>{if(!initial&&!disposed){const args=fallbackArgs(input??{});if(args)void call(fallbackTool,args).then(deliver).catch(e=>notice(String(e),true));}},350);onDispose(()=>clearTimeout(fallback));}}catch(e){clearTimeout(timeout);$('connection').textContent=t('连接失败','Disconnected');notice(String(e),true)}})();
 }
 type MountedPlayer={media:HTMLMediaElement,start:number,end:number,dispose:()=>void,container:HTMLElement};
 let mountedPlayer:MountedPlayer|undefined;
@@ -160,17 +175,19 @@ export async function mountPlayer(container:HTMLElement,preview:Obj,onTime?:(tim
  try{await waitForMetadata(media)}catch(error){dispose();if(isCurrent()&&!isDisposed())throw error;return;}
  if(isDisposed()||!container.isConnected||!isCurrent()){dispose();return;}
  clearPlayer();
- const caption=document.createElement('p');caption.className='player-caption';caption.setAttribute('aria-live','off');
+ const cues:Obj[]=preview.captions_ready===true&&Array.isArray(preview.cues)?preview.cues:[];
+ const caption=cues.length?document.createElement('p'):undefined;
+ if(caption){caption.className='player-caption';caption.setAttribute('aria-live','off')}
  const heading=document.createElement('div');heading.className='player-heading';
  const label=document.createElement('p');label.className='eyebrow';label.textContent=`PREVIEW · ${time(start)}–${time(end)}`;
  const play=document.createElement('button');play.className='button small';play.type='button';
  const reflectPlayback=()=>{play.textContent=media.paused?'Play preview':'Pause preview';play.setAttribute('aria-pressed',String(!media.paused))};
  play.onclick=async()=>{try{if(media.paused){if(media.ended)media.currentTime=0;await media.play()}else media.pause()}catch(error){notice(error instanceof Error?error.message:'Playback failed. Open the result in VoxStudio.',true)}};
  heading.append(label,play);reflectPlayback();
- const updateTime=()=>{const at=start+media.currentTime;caption.textContent=preview.cues?.find((c:Obj)=>c.start<=at&&c.end>at)?.text??'';onTime?.(at)};
+ const updateTime=()=>{const at=start+media.currentTime;if(caption){caption.textContent=cues.find(c=>c.start<=at&&c.end>at)?.text??'';caption.hidden=!caption.textContent}onTime?.(at)};
  media.ontimeupdate=updateTime;media.onplay=reflectPlayback;media.onpause=reflectPlayback;media.onended=reflectPlayback;
  media.onerror=()=>notice(playbackError(media).message,true);
- container.replaceChildren(heading,media,caption);container.hidden=false;updateTime();
+ container.replaceChildren(heading,media,...(caption?[caption]:[]));container.hidden=false;updateTime();
  mountedPlayer={media,start,end,dispose,container};
  return mountedPlayer;
 }

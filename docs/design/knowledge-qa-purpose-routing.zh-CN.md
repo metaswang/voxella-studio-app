@@ -1,5 +1,7 @@
 # 知识库 QA 按用途选择证据
 
+当前完整调用链、工具边界与预算见 [知识库问答流程（2026-10-04 核对）](knowledge-base-rag-flow.zh-CN.md)。
+
 本次实现保留字幕、mediaClip、text/video/mixed 向量和独立帧索引。QA 默认读取权威 Transcript，缺失时使用同来源当前字幕 fallback；素材和通用搜索继续调用原来的媒体路径。此设计取代删除字幕或素材索引的方案。
 
 ## 查询与材料

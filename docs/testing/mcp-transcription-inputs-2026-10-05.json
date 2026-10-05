@@ -1,0 +1,65 @@
+{
+  "initial": {
+    "job_id": "E62EBBC5-93D7-475A-9352-558C02A09FF5",
+    "name": "dub-flow-E1431DF4-11BB-46A3-AD8E-328BB871557D.wav",
+    "native_forms": true,
+    "options": {},
+    "status": "queued",
+    "view": "transcription"
+  },
+  "submission_seconds": 0.002,
+  "tool_uri": "ui://voxstudio/transcription/v3",
+  "file_params": [
+    "attachment"
+  ],
+  "final": {
+    "kind": "transcription",
+    "message": "Transcript and summary ready",
+    "progress": 1,
+    "selected_language": "en",
+    "selected_track": "source",
+    "session_id": "A46C37DF-06E3-406C-95F9-7D5BA8DE9825",
+    "status": "completed",
+    "title": "Emma Returns the Umbrella",
+    "translation_languages": []
+  },
+  "elapsed_seconds": 9.04,
+  "creation_calls": 1,
+  "host_forms": 0,
+  "file_pickers": 0,
+  "result": {
+    "language": "en",
+    "text_characters": 560,
+    "has_transcript": true,
+    "title": "Emma Returns the Umbrella"
+  },
+  "date": "2026-10-05",
+  "cause": [
+    "app_transcription previously accepted no path or attachment arguments",
+    "Plugin skills routed explicit transcription requests to manual selection and a seven-field host form",
+    "Native host form waited only 45 seconds"
+  ],
+  "verification": {
+    "swift_tests": 21,
+    "swift_traits": "BundledSpeech",
+    "typescript_check": "passed",
+    "panel_bundle_check": "passed",
+    "plugin_package_tests": 4,
+    "skill_validation": "passed",
+    "installed_skills_match_source": true,
+    "signed_debug_build": "passed",
+    "signing": "Developer ID Application",
+    "signature_verification": "passed",
+    "native_result_opened": true,
+    "playback_paused": true,
+    "panel_visual_qa": "Fixture host: applied filename, automatic language, hidden options, job progression; one creation call"
+  },
+  "attachment_verification": {
+    "file_params_contract": "download_url and file_id required; mime_type and file_name declared optional",
+    "successful_import_and_submission": "passed with injected download and media executor",
+    "expired_download_creates_no_transcription": "passed",
+    "missing_extension_mime_inference": "passed",
+    "actual_chatgpt_host_attachment": "Not exercised: no real media attachment was supplied in this chat"
+  },
+  "test_configuration_limit": "SparkleUpdates test configuration hits existing AppUpdaterTests initializer mismatch; focused tests passed without SparkleUpdates. Signed app was built with SparkleUpdates."
+}

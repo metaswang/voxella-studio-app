@@ -1,0 +1,10 @@
+{
+  "settings_download_url_matches_verified_release": true,
+  "settings_version": "0.1.2",
+  "packaged_workflow_skills_match_sources": true,
+  "portable_and_host_manifests_version": "0.1.2",
+  "package_tests_passed": 4,
+  "previous_url_preserved": "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.1.1/edbe20b7921d0e69200356ea5804417e9ce430a59a9d94ebe5f56833e78eed93/VoxStudio-OpenAI-Plugin.zip",
+  "signed_debug_build_verified": true,
+  "built_app_contains_verified_download_url": true
+}

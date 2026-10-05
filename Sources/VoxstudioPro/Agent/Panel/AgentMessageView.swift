@@ -1,10 +1,15 @@
 import AppKit
 import SwiftUI
 
-struct AgentMessageView: View {
+struct AgentMessageView: View, Equatable {
     let message: AgentMessage
     let toolResults: [String: ToolRunResult]
+    var isStreaming = false
     @State private var isHovering = false
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.message == rhs.message && lhs.toolResults == rhs.toolResults && lhs.isStreaming == rhs.isStreaming
+    }
 
     var body: some View {
         switch message.role {
@@ -79,7 +84,7 @@ struct AgentMessageView: View {
                         ThinkingSummaryView(text: summary, isComplete: !encryptedContent.isEmpty)
                     }
                 case .text(let text):
-                    MarkdownText(text: text)
+                    MarkdownText(text: text, isStreaming: isStreaming)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 case .toolUse(let id, let name, let inputJSON):
                     ToolRunRow(name: name, inputJSON: inputJSON, result: toolResults[id])
@@ -175,7 +180,7 @@ private struct CopyMessageButton: View {
     }
 }
 
-struct ToolRunResult {
+struct ToolRunResult: Equatable, Sendable {
     let content: [ToolResult.Block]
     let isError: Bool
 }

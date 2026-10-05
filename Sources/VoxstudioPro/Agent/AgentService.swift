@@ -4,15 +4,28 @@ import Observation
 @Observable
 @MainActor
 final class AgentService {
+    typealias ToolOperation = @MainActor (String, [String: Any], String) async -> ToolResult
 
     private let userDefaults: UserDefaults
     private var reasoningEfforts: [AgentModel: AgentReasoningEffort]
     private var lastBYOKRunModelReference: String?
     private let transportOverride: AITransport?
     private var transport: AITransport { transportOverride ?? AITransportPolicy.current }
+    @ObservationIgnored private let clientFactory: (@MainActor (AgentRunSettings) async -> (any AgentClient)?)?
+    @ObservationIgnored private let toolOperation: ToolOperation?
+    @ObservationIgnored private let checkpointInterval: Duration
 
-    init(userDefaults: UserDefaults = .standard, transportOverride: AITransport? = nil) {
+    init(
+        userDefaults: UserDefaults = .standard,
+        transportOverride: AITransport? = nil,
+        checkpointInterval: Duration = .seconds(2),
+        clientFactory: (@MainActor (AgentRunSettings) async -> (any AgentClient)?)? = nil,
+        toolOperation: ToolOperation? = nil
+    ) {
         self.transportOverride = transportOverride
+        self.clientFactory = clientFactory
+        self.toolOperation = toolOperation
+        self.checkpointInterval = max(.milliseconds(1), checkpointInterval)
         self.userDefaults = userDefaults
         self.model = userDefaults.string(forKey: "agentModel")
             .flatMap(AgentModel.persisted)
@@ -23,7 +36,7 @@ final class AgentService {
     }
 
     var route: AgentRoute {
-        switch AITransportPolicy.current {
+        switch transport {
         case .hosted:
             .hosted
         case .byok:
@@ -38,7 +51,7 @@ final class AgentService {
     }
 
     var availableModels: [AgentModel] {
-        switch AITransportPolicy.current {
+        switch transport {
         case .byok:
             AgentModel.allCases
         case .hosted, .unavailable:
@@ -121,18 +134,21 @@ final class AgentService {
         AgentRunSettings(model: model, reasoningEffort: reasoningEffort)
     }
 
-    private func selectClient(for settings: AgentRunSettings) async -> (any AgentClient)? {
-        if AITransportPolicy.current == .hosted { return HostedAgentClient(settings: settings) }
-        guard AITransportPolicy.current == .byok else { return nil }
-        switch AITransportPolicy.current {
+    private func selectClient(for settings: AgentRunSettings, run: RunIdentity) async -> (any AgentClient)? {
+        if let clientFactory { return await clientFactory(settings) }
+        switch transport {
         case .hosted:
             return HostedAgentClient(settings: settings)
         case .byok:
             do {
                 lastBYOKRunModelReference = nil
                 var client = ProviderAgentClient(route: try await LLMSettingsStore.shared.agentRuntimeRoute())
+                guard isCurrentRun(run) else { return nil }
                 client.onModelSelected = { [weak self] model in
-                    await MainActor.run { self?.lastBYOKRunModelReference = model }
+                    await MainActor.run {
+                        guard let self, self.isCurrentRun(run) else { return }
+                        self.lastBYOKRunModelReference = model
+                    }
                 }
                 return client
             } catch {
@@ -157,6 +173,7 @@ final class AgentService {
     var sessions: [ChatSession] = []
     var currentSessionId: UUID?
     var messages: [AgentMessage] = []
+    private(set) var toolResults: [String: ToolResult] = [:]
     var isStreaming: Bool = false
     var streamError: AgentServiceError?
     var onSessionsChanged: (@MainActor () -> Void)?
@@ -295,9 +312,20 @@ final class AgentService {
         didSet { toolExecutor = editor.map { ToolExecutor(editor: $0) } }
     }
     private var toolExecutor: ToolExecutor?
-    private var currentTask: Task<Void, Never>?
+    private struct RunIdentity: Equatable, Sendable {
+        let id = UUID()
+        let conversationID: UUID
+    }
+    @ObservationIgnored private var activeRun: RunIdentity?
+    @ObservationIgnored private var activeAssistantID: UUID?
+    @ObservationIgnored private var currentTask: Task<Void, Never>?
+    @ObservationIgnored private var checkpointTask: Task<Void, Never>?
 
     func loadSessions(from projectURL: URL?) {
+        if activeRun != nil {
+            stopCurrentRun()
+            checkpointMessages()
+        }
         sessions = ChatSessionStore.load(from: projectURL)
             .filter { !$0.messages.isEmpty }
             .map {
@@ -311,6 +339,7 @@ final class AgentService {
         sessions.insert(session, at: 0)
         currentSessionId = session.id
         messages = []
+        toolResults = [:]
         draft = ""
         mentions.removeAll()
         streamError = nil
@@ -318,7 +347,7 @@ final class AgentService {
     }
 
     func newChat() {
-        currentTask?.cancel()
+        stopCurrentRun()
         syncMessagesIntoCurrentSession()
         if let id = currentSessionId,
            let idx = sessions.firstIndex(where: { $0.id == id }),
@@ -329,6 +358,7 @@ final class AgentService {
         sessions.insert(session, at: 0)
         currentSessionId = session.id
         messages = []
+        toolResults = [:]
         streamError = nil
         toolExecutor?.resetFeedbackState()
         onSessionsChanged?()
@@ -338,24 +368,29 @@ final class AgentService {
 
     func selectSession(_ id: UUID) {
         guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
-        currentTask?.cancel()
+        stopCurrentRun()
         syncMessagesIntoCurrentSession()
         if !sessions[idx].isOpen {
             sessions[idx].isOpen = true
-            onSessionsChanged?()
         }
         currentSessionId = id
-        messages = sessions[idx].messages
+        restoreMessages(from: sessions[idx])
         streamError = nil
+        onSessionsChanged?()
     }
 
     func closeTab(_ id: UUID) {
         guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
+        if currentSessionId == id {
+            stopCurrentRun()
+            syncMessagesIntoCurrentSession()
+        }
         sessions[idx].isOpen = false
         if currentSessionId == id {
             if let next = sessions.first(where: { $0.isOpen }) {
                 currentSessionId = next.id
-                messages = next.messages
+                restoreMessages(from: next)
+                streamError = nil
             } else {
                 newChat()
                 return
@@ -365,15 +400,25 @@ final class AgentService {
     }
 
     func deleteSession(_ id: UUID) {
+        if currentSessionId == id { stopCurrentRun() }
         sessions.removeAll { $0.id == id }
         if currentSessionId == id {
             currentSessionId = sessions.first(where: { $0.isOpen })?.id
-            messages = currentSessionId
-                .flatMap { id in sessions.first { $0.id == id }?.messages }
-                ?? []
+            restoreMessages(from: currentSessionId.flatMap { id in sessions.first { $0.id == id } })
+            streamError = nil
         }
         if openSessions.isEmpty { newChat(); return }
         onSessionsChanged?()
+    }
+
+    private func restoreMessages(from session: ChatSession?) {
+        let restored = session?.messages ?? []
+        messages = restored
+        // No execution remains attached to a restored history. Only unresolved
+        // calls need a cancellation result; completed calls remain unchanged.
+        resolveOrphanToolUses()
+        rebuildToolResultIndex()
+        if messages != restored { syncMessagesIntoCurrentSession() }
     }
 
     func send(text: String, mentions: [AgentMention]) {
@@ -387,6 +432,7 @@ final class AgentService {
             streamError = .upstream("Chat session unavailable.")
             return
         }
+        stopCurrentRun()
         let referencedMentions = AgentMentionContext.referencedMentions(mentions, in: trimmed)
         let contextHint = referencedMentions.isEmpty
             ? nil
@@ -397,7 +443,7 @@ final class AgentService {
         )
         let analyticsPayload: [String: Any] = [
             "project_id": editor?.projectId ?? "unknown",
-            "model": (AITransportPolicy.current == .byok ? lastBYOKRunModelReference : nil) ?? runSettings.model.rawValue,
+            "model": (transport == .byok ? lastBYOKRunModelReference : nil) ?? runSettings.model.rawValue,
         ]
         if sessionActivation.activate() {
             Analytics.capture(.agentSessionStarted, properties: analyticsPayload)
@@ -409,6 +455,7 @@ final class AgentService {
             mentions: referencedMentions, contextHint: contextHint
         ))
         streamError = nil
+        checkpointMessages()
         kickOffStream(
             conversationID: conversationID,
             traceID: UUID(),
@@ -418,14 +465,57 @@ final class AgentService {
 
     func postSystemNotice(_ text: String) {
         messages.append(AgentMessage(role: .system, blocks: [.text(text)]))
+        checkpointMessages()
+    }
+
+    func cancel() {
+        stopCurrentRun()
+        checkpointMessages()
+    }
+
+    private func stopCurrentRun() {
+        // Invalidate before cancellation: an old await/defer may resume after a
+        // replacement run has already started on the same session.
+        activeRun = nil
+        currentTask?.cancel()
+        currentTask = nil
+        checkpointTask?.cancel()
+        checkpointTask = nil
+        isStreaming = false
+        if let activeAssistantID { dropEmptyAssistantTurn(id: activeAssistantID) }
+        activeAssistantID = nil
+        resolveOrphanToolUses()
+    }
+
+    private func isCurrentRun(_ run: RunIdentity) -> Bool {
+        activeRun == run && currentSessionId == run.conversationID
+    }
+
+    private func finishRun(_ run: RunIdentity) {
+        guard isCurrentRun(run) else { return }
+        isStreaming = false
+        checkpointMessages()
+        activeRun = nil
+        activeAssistantID = nil
+        currentTask = nil
+    }
+
+    private func checkpointMessages() {
+        checkpointTask?.cancel()
+        checkpointTask = nil
         syncMessagesIntoCurrentSession()
         onSessionsChanged?()
     }
 
-    func cancel() {
-        currentTask?.cancel()
-        currentTask = nil
-        isStreaming = false
+    private func scheduleCheckpoint(for run: RunIdentity) {
+        // Throttle rather than debounce so continuous output still gets saved.
+        guard isCurrentRun(run), checkpointTask == nil else { return }
+        let interval = checkpointInterval
+        checkpointTask = Task { [weak self] in
+            do { try await Task.sleep(for: interval) } catch { return }
+            guard let self, self.isCurrentRun(run), !Task.isCancelled else { return }
+            self.checkpointMessages()
+        }
     }
 
     private func kickOffStream(
@@ -433,16 +523,13 @@ final class AgentService {
         traceID: UUID,
         settings: AgentRunSettings
     ) {
-        currentTask?.cancel()
+        let run = RunIdentity(conversationID: conversationID)
+        activeRun = run
         isStreaming = true
         currentTask = Task { [weak self] in
-            defer {
-                self?.isStreaming = false
-                self?.syncMessagesIntoCurrentSession()
-                self?.onSessionsChanged?()
-            }
+            defer { self?.finishRun(run) }
             await self?.runLoop(
-                conversationID: conversationID,
+                run: run,
                 traceID: traceID,
                 settings: settings
             )
@@ -450,24 +537,28 @@ final class AgentService {
     }
 
     private func runLoop(
-        conversationID: UUID,
+        run: RunIdentity,
         traceID: UUID,
         settings: AgentRunSettings
     ) async {
         let chosenModel = settings.model
-        guard let client = await selectClient(for: settings) else {
+        let selectedClient = await selectClient(for: settings, run: run)
+        guard isCurrentRun(run), !Task.isCancelled else { return }
+        guard let client = selectedClient else {
             streamError = .unavailable(chosenModel)
             return
         }
         if Task.isCancelled { return }
         await SkillStore.shared.reloadInBackground()
+        guard isCurrentRun(run), !Task.isCancelled else { return }
         let tools = ToolDefinitions.inAppAgent.map {
             AgentToolSchema(name: $0.name.rawValue, description: $0.description, inputSchema: $0.inputSchema)
         }
 
-        loop: while !Task.isCancelled {
+        loop: while isCurrentRun(run), !Task.isCancelled {
             resolveOrphanToolUses()
-            let apiMsgs = await apiMessages()
+            let apiMsgs = await apiMessages(for: run)
+            guard isCurrentRun(run), !Task.isCancelled else { return }
             guard let inputMessageID = messages.last(where: { $0.role == .user })?.id else {
                 streamError = .upstream("The agent request has no user message.")
                 break loop
@@ -475,6 +566,7 @@ final class AgentService {
             let assistant = AgentMessage(role: .assistant, blocks: [])
             messages.append(assistant)
             let assistantID = assistant.id
+            activeAssistantID = assistantID
 
             do {
                 let stream = client.stream(
@@ -482,7 +574,7 @@ final class AgentService {
                     tools: tools,
                     messages: apiMsgs,
                     context: AgentRequestContext(
-                        conversationID: conversationID,
+                        conversationID: run.conversationID,
                         traceID: traceID,
                         spanID: UUID(),
                         inputMessageID: inputMessageID,
@@ -495,6 +587,7 @@ final class AgentService {
 
                 for try await event in stream {
                     try Task.checkCancellation()
+                    guard isCurrentRun(run) else { return }
                     switch event {
                     case .thinkingDelta(let chunk):
                         updateThinking(textDelta: chunk, toAssistant: assistantID)
@@ -520,28 +613,34 @@ final class AgentService {
                         stopReason = reason
                     case .tokenUsage: break
                     }
+                    if case .tokenUsage = event { continue }
+                    scheduleCheckpoint(for: run)
                 }
 
+                guard isCurrentRun(run), !Task.isCancelled else { return }
                 dropEmptyAssistantTurn(id: assistantID)
                 if stopReason == .refusal {
                     streamError = .refusal(chosenModel)
                     break loop
                 }
                 if stopReason == .toolUse {
-                    await runPendingToolUses(assistantID: assistantID, conversationID: conversationID)
-                    if Task.isCancelled { break loop }
+                    await runPendingToolUses(assistantID: assistantID, run: run)
+                    guard isCurrentRun(run), !Task.isCancelled else { return }
                     continue loop
                 }
                 if Task.isCancelled { break loop }
                 break loop
             } catch is CancellationError {
+                guard isCurrentRun(run) else { return }
                 dropEmptyAssistantTurn(id: assistantID)
                 break loop
             } catch let err as AgentServiceError {
+                guard isCurrentRun(run) else { return }
                 dropEmptyAssistantTurn(id: assistantID)
                 streamError = err
                 break loop
             } catch let err as AgentClientTransportError {
+                guard isCurrentRun(run) else { return }
                 switch err {
                 case .insufficientCredits(let message):
                     // The hosted API settles after streaming. If settlement
@@ -554,6 +653,7 @@ final class AgentService {
                 }
                 break loop
             } catch {
+                guard isCurrentRun(run) else { return }
                 dropEmptyAssistantTurn(id: assistantID)
                 streamError = .upstream(error.localizedDescription)
                 break loop
@@ -668,34 +768,67 @@ final class AgentService {
         messages[index].blocks.append(.toolUse(id: toolUseID, name: name, inputJSON: inputJSON))
     }
 
-    private func runPendingToolUses(assistantID: UUID, conversationID: UUID) async {
+    private func runPendingToolUses(assistantID: UUID, run: RunIdentity) async {
+        guard isCurrentRun(run), !Task.isCancelled else { return }
         guard let assistantIndex = assistantMessageIndex(id: assistantID) else { return }
-        guard let executor = toolExecutor else {
-            messages.append(AgentMessage(role: .user, blocks: [.text("Tool executor unavailable.")]))
-            return
-        }
-
         let toolUses: [(id: String, name: String, input: String)] = messages[assistantIndex].blocks.compactMap {
             if case let .toolUse(id, name, input) = $0 { return (id, name, input) }
             return nil
         }
         let alreadyResolved = resolvedToolUseIds(afterAssistantAt: assistantIndex)
-
-        var resultBlocks: [AgentContentBlock] = []
         for use in toolUses where !alreadyResolved.contains(use.id) {
-            if Task.isCancelled {
-                resultBlocks.append(.toolResult(toolUseId: use.id, content: [.text("Cancelled")], isError: true))
-                continue
+            guard isCurrentRun(run), !Task.isCancelled else { return }
+            let args = Self.parseJSONObject(use.input)
+            let result: ToolResult
+            if let toolOperation {
+                result = await toolOperation(use.name, args, run.conversationID.uuidString)
+            } else if let executor = toolExecutor {
+                result = await executor.execute(
+                    name: use.name,
+                    args: args,
+                    sessionID: run.conversationID.uuidString
+                )
+            } else {
+                result = .error("Tool executor unavailable.")
             }
-            let result = await executor.execute(
-                name: use.name,
-                args: Self.parseJSONObject(use.input),
-                sessionID: conversationID.uuidString
-            )
-            resultBlocks.append(.toolResult(toolUseId: use.id, content: result.content, isError: result.isError))
+            guard isCurrentRun(run), !Task.isCancelled else { return }
+            appendToolResults([
+                .toolResult(toolUseId: use.id, content: result.content, isError: result.isError)
+            ], afterAssistant: assistantID)
+            // A later tool can suspend for minutes. Save each completed result
+            // before moving on, preserving it if that later operation is stopped.
+            checkpointMessages()
         }
-        if !resultBlocks.isEmpty {
-            messages.append(AgentMessage(role: .user, blocks: resultBlocks))
+    }
+
+    private func appendToolResults(_ blocks: [AgentContentBlock], afterAssistant assistantID: UUID) {
+        guard let assistantIndex = assistantMessageIndex(id: assistantID) else { return }
+        let resolved = resolvedToolUseIds(afterAssistantAt: assistantIndex)
+        let pending = blocks.filter {
+            guard case .toolResult(let id, _, _) = $0 else { return false }
+            return !resolved.contains(id)
+        }
+        guard !pending.isEmpty else { return }
+        let next = nextNonSystemIndex(after: assistantIndex)
+        if next < messages.count, messages[next].role == .user,
+           messages[next].blocks.allSatisfy({ if case .toolResult = $0 { true } else { false } }) {
+            messages[next].blocks.append(contentsOf: pending)
+        } else {
+            messages.insert(AgentMessage(role: .user, blocks: pending), at: next)
+        }
+        indexToolResults(in: pending)
+    }
+
+    func rebuildToolResultIndex() {
+        toolResults = [:]
+        for message in messages { indexToolResults(in: message.blocks) }
+    }
+
+    private func indexToolResults(in blocks: [AgentContentBlock]) {
+        for block in blocks {
+            if case let .toolResult(id, content, isError) = block {
+                toolResults[id] = ToolResult(content: content, isError: isError)
+            }
         }
     }
 
@@ -745,6 +878,7 @@ final class AgentService {
             let synthetic: [AgentContentBlock] = orphans.map {
                 .toolResult(toolUseId: $0, content: [.text(reason)], isError: true)
             }
+            indexToolResults(in: synthetic)
             if nextIsToolResult {
                 messages[next].blocks.insert(contentsOf: synthetic, at: 0)
             } else {
@@ -770,13 +904,15 @@ final class AgentService {
         }
     }
 
-    private func apiMessages() async -> [AgentRequestMessage] {
+    private func apiMessages(for run: RunIdentity) async -> [AgentRequestMessage] {
         var result: [AgentRequestMessage] = []
         for msg in messages {
+            guard isCurrentRun(run), !Task.isCancelled else { return [] }
             if msg.role == .system { continue }
             var content = msg.blocks.map(AgentRequestBlock.content)
             if msg.role == .user, !msg.mentions.isEmpty {
                 let inlined = await inlineImageBlocks(for: msg.mentions)
+                guard isCurrentRun(run), !Task.isCancelled else { return [] }
                 var hint = msg.contextHint ?? AgentMentionContext.hint(msg.mentions, editor: editor)
                 if let note = AgentMentionContext.inlineNote(for: inlined) { hint += " " + note }
                 content.insert(contentsOf: inlined.blocks, at: 0)
@@ -834,8 +970,8 @@ final class AgentService {
     }
 }
 
-struct AgentMessage: Identifiable, Codable {
-    enum Role: String, Codable { case user, assistant, system }
+struct AgentMessage: Identifiable, Codable, Equatable, Sendable {
+    enum Role: String, Codable, Sendable { case user, assistant, system }
     let id: UUID
     let role: Role
     var blocks: [AgentContentBlock]
@@ -851,7 +987,7 @@ struct AgentMessage: Identifiable, Codable {
     }
 }
 
-enum AgentContentBlock: Codable, Sendable {
+enum AgentContentBlock: Codable, Sendable, Equatable {
     case thinking(text: String, signature: String)
     case redactedThinking(data: String)
     case openAIReasoning(

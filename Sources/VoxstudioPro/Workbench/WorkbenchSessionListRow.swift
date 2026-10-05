@@ -214,7 +214,7 @@ struct SessionPlacementIndicators: View {
             Image(systemName: compute == .local ? "laptopcomputer" : "cloud")
                 .accessibilityLabel(L10n.string(key: TaskPlacementCopy.computeTooltip(for: compute)))
                 .help(L10n.string(key: TaskPlacementCopy.computeTooltip(for: compute)))
-            if showsLabel {
+            if showsLabel && hasCloudPlacement {
                 Text(L10n.string(key: placementLabel))
                     .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                     .lineLimit(1)
