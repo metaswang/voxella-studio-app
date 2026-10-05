@@ -35,6 +35,18 @@ struct MCPWorkspaceTests {
         #expect(history["cited_evidence_ids"]==["read-b"])
         #expect(try await store.record(second,name:"fetch",arguments:[:],result:read,isError:false)==nil)
     }
+    @Test func activeTurnPollKeepsLiveTabChangesAfterCompletion() async throws {
+        let snapshot=fixture(),store=MCPWorkspaceStore(),id=try await open(store,snapshot),turn=try await begin(store,id,snapshot)
+        let source=snapshot.sessions[0].id.uuidString
+        let fetch=try await store.startOperation(id:id,turnID:turn)
+        _ = try await store.record(fetch,name:"fetch",arguments:[:],result:["segments":[["source_id":.string(source),"evidence_id":"read-a","text":"Original"]]],isError:false)
+        _ = try await store.finish(id:id,turnID:turn,evidence:["read-a"],observations:[],outcome:"answered")
+        let before=try await store.state(id:id,turnID:turn,after:nil).objectValue!
+        _ = try await store.updateView(id:id,expected:before["view_revision"]!.intValue!,values:["source_id":.string(source),"evidence_id":.null,"material":"subtitles","reading_view":"body"])
+        let polled=try await store.state(id:id,turnID:turn,after:nil).objectValue!
+        #expect(polled["view"]?.objectValue?["material"]?.stringValue=="subtitles")
+        #expect(polled["view"]?.objectValue?["evidence_id"]==nil)
+    }
     @Test func unreadEvidenceIsRejectedAndFinishIsImmutableAndIdempotent() async throws {
         let snapshot=fixture(),store=MCPWorkspaceStore(),id=try await open(store,snapshot),turn=try await begin(store,id,snapshot)
         do { _ = try await store.finish(id:id,turnID:turn,evidence:["unread"],observations:[],outcome:"answered"); Issue.record("Accepted unread evidence") }

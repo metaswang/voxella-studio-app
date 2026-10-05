@@ -266,7 +266,9 @@ actor MCPWorkspaceStore {
         // the old question's content with the new workspace revision.
         if turnID == nil, current.active != workspace.active { return try await state(id: id, turnID: nil, after: after) }
         if after == current.revision { return .object(["workspace_id": .string(id), "revision": .int(current.revision), "unchanged": true]) }
-        return render(current, turn: selected.flatMap { current.turns[$0] }, historical: turnID != nil)
+        // The active turn's panel keeps saving tab/language/anchor changes to the
+        // live view; only superseded turns are served their frozen snapshot.
+        return render(current, turn: selected.flatMap { current.turns[$0] }, historical: turnID != nil && turnID != current.active)
     }
     private func deduplicated(_ rows: [Value]) -> [Value] {
         var seen = Set<String>()
