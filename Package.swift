@@ -138,6 +138,7 @@ let package = Package(
                 .copy("Resources/StatusBarIcon.svg"),
                 .copy("Resources/Fonts"),
                 .copy("Resources/MCPB/voxstudio.mcpb"),
+                .copy("Resources/OpenAIPlugin"),
                 .copy("Resources/Images"),
                 .copy("Resources/Localization"),
                 .copy("Resources/Models"),

@@ -18,3 +18,5 @@ Example user prompts:
 - “Split the selected timeline at 10 seconds, then add a title saying ‘A new beginning’.”
 
 If tools are missing from the host, report the exact missing native tool and refresh the plugin connection; do not use an HTML editor fallback.
+
+For tools whose schema requires `request_id`, supply a fresh UUID for each intended write and preserve it on retries. Never repeat an unknown write after an App restart or after the one-hour receipt lifetime.

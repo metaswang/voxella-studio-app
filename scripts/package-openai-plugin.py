@@ -16,18 +16,18 @@ def package(root: Path, output: Path) -> dict:
     files = {}
     plugins = []
     plugin_versions = {}
-    for plugin_name, skills in [("voxstudio", ["onboarding", "media-workflow", "session-retrieval", "file-editing", "video-editing"]),
-                                ("voxstudio-knowledge", ["knowledge-qa"])]:
+    for plugin_name, skills in [("voxstudio", ["onboarding", "media-workflow", "session-retrieval", "file-editing", "video-editing", "knowledge-qa"])]:
         plugin = root / "Plugins" / plugin_name
         manifest = json.loads((plugin / "plugin.json").read_text())
         plugin_versions[plugin_name] = manifest["version"]
         config = json.loads((plugin / "mcp.json").read_text())
         expected_key = "voxstudio" if plugin_name == "voxstudio" else "voxstudio_knowledge"
-        expected_path = "/mcp" if plugin_name == "voxstudio" else "/knowledge/mcp"
+        expected_path = "/app/mcp"
         assert manifest["name"] == plugin_name
         assert config["mcpServers"][expected_key]["url"] == "http://127.0.0.1:19789" + expected_path
         prefix = "plugins/" + plugin_name + "/"
-        for name in ["plugin.json", "mcp.json", "assets/icon.svg"]:
+        assert (plugin/'assets/icon.png').read_bytes() == (root/'Sources/VoxstudioPro/Resources/AppIcon.png').read_bytes(), 'Run scripts/sync-mcp-branding.py before packaging'
+        for name in ["plugin.json", "mcp.json", "assets/icon.png"]:
             files[prefix + name] = (plugin / name).read_bytes()
         # Explicit reviewed whitelist; no arbitrary skills or repo files enter the archive.
         for skill in skills:
@@ -43,6 +43,7 @@ def package(root: Path, output: Path) -> dict:
     files[".agents/plugins/marketplace.json"] = encode({"name": "voxstudio-local", "interface": {"displayName": "VoxStudio Local"}, "plugins": plugins})
     files["README.md"] = (root / "docs/plugins/openai-plugin-install.md").read_bytes()
     files["install.sh"] = (root / "scripts/openai-plugin-install.sh").read_bytes()
+    files["install.py"] = (root / "scripts/openai-plugin-install.py").read_bytes()
     files["FILES.sha256"] = "".join(
         f"{hashlib.sha256(data).hexdigest()}  {name}\n" for name, data in sorted(files.items())
     ).encode()

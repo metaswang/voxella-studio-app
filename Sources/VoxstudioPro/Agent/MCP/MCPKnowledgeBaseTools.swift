@@ -35,7 +35,8 @@ enum MCPKnowledgeBaseTools {
                 "modality": ["type": "string", "enum": ["text", "video", "mixed"]],
             ], ["query"]),
             ("fetch", "Read current original evidence or an explicit subtitle track; clips return media preview locations.", Array(common.keys), [
-                "evidence_id": ["type": "string"], "view": ["type": "string", "enum": ["body", "summary", "metadata", "timeline", "media"]],
+                "evidence_id": ["type": "string"], "view": ["type": "string", "enum": ["body", "cues", "summary", "metadata", "timeline", "media"],
+                    "description": "cues preserves each saved subtitle cue; requires material=subtitles or translation. body returns retrieval passages."],
             ], []),
             ("list_sources", "Page through the complete authorized source catalog with body provenance and index lane readiness.", Array(common.keys).filter { !["material", "speaker", "start", "end", "revision"].contains($0) }, [:], []),
             ("aggregate", "Count, sum known media durations, group and sort the full authorized catalog; unknowns remain unknown.", Array(common.keys).filter { !["material", "speaker", "start", "end", "revision"].contains($0) }, [
@@ -457,6 +458,9 @@ enum MCPKnowledgeBaseTools {
             return result.merging(["complete": true, "media_path": candidate.mediaPath, "visual_verified": false]) { _, rhs in rhs }
         }
         let material = locator?.material ?? args["material"] as? String ?? "canonical"
+        if view == "cues", material != "subtitles", material != "translation" {
+            throw KnowledgeToolError.invalidParameter("view=cues requires material=subtitles or translation")
+        }
         var bodyArgs = args
         if let language = locator?.language { bodyArgs["language"] = language }
         guard let body = try body(source, args: bodyArgs, material: material) else {
@@ -464,7 +468,17 @@ enum MCPKnowledgeBaseTools {
         }
         if let locator, locator.generation != body.generation { throw KnowledgeToolError.invalidParameter("Evidence expired; search current material again") }
         try validateTime(args)
-        var chunks = await KnowledgeTextTokenizer.shared.chunks(for: body).filter { accepts($0, args: args) }
+        // Reading subtitles must preserve the saved editor boundaries. Retrieval
+        // passages deliberately pack many cues and remain the default body view.
+        let selectedChunks: [KnowledgeBodyChunker.Chunk]
+        if view == "cues" {
+            let text = body.text as NSString
+            selectedChunks = body.spans.map { span in
+                .init(text: text.substring(with: NSRange(location: span.lower, length: span.upper - span.lower)),
+                      context: "", lower: span.lower, upper: span.upper, spans: [span])
+            }
+        } else { selectedChunks = await KnowledgeTextTokenizer.shared.chunks(for: body) }
+        var chunks = selectedChunks.filter { accepts($0, args: args) }
         if let locator { chunks = chunks.filter { $0.lower < locator.upper && $0.upper > locator.lower } }
         guard offset <= chunks.count else { throw KnowledgeToolError.invalidParameter("Cursor outside body") }
         var page: [KnowledgeBodyChunker.Chunk] = [], characters = 0
@@ -472,7 +486,15 @@ enum MCPKnowledgeBaseTools {
             if characters + chunk.text.count > 16_000 { break }
             page.append(chunk); characters += chunk.text.count
         }
-        var result: [String: Any] = ["source_id": source.id.uuidString, "segments": page.map { passage(source, body: body, chunk: $0, material: material) },
+        let rows = page.map { chunk in
+            var row = passage(source, body: body, chunk: chunk, material: material)
+            if view == "cues", let span = chunk.spans.first {
+                row["cue_id"] = span.cueID as Any? ?? NSNull()
+                row["timing_precision"] = span.timingPrecision
+            }
+            return row
+        }
+        var result: [String: Any] = ["source_id": source.id.uuidString, "segments": rows,
             "returned_count": page.count, "total_count": chunks.count, "original_segment_count": body.segments.count,
             "complete": offset + page.count == chunks.count, "next_cursor": offset + page.count < chunks.count ? offset + page.count : NSNull(),
             "provenance": body.provenance, "generation": body.generation,

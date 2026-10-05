@@ -1,6 +1,32 @@
-# OpenAI plugin ZIP distribution
+# Unified plugin distribution (0.2.0)
 
-The app's Settings → MCP screen links to an immutable package for
+The current App bundles the reproducible unified ZIP and exports it from Settings.
+It contains one `voxstudio@voxstudio-local` plugin at `/app/mcp`. Claude Desktop's
+extension is rebuilt from `mcpb/` as 0.3.1 during every App bundle. Source manifests,
+transport bytes, UI HTML and package versions are checked before SwiftPM builds.
+Both connectors and embedded panels use `Resources/AppIcon.png`. The bundle script
+synchronizes that source before building; both package validators require the exact
+App icon bytes, so an old connector logo cannot silently enter an artifact.
+
+```sh
+python3 scripts/sync-mcp-branding.py
+npm --prefix mcp-ui run check
+npm --prefix mcp-ui run build
+python3 scripts/build-openai-plugin.py
+python3 scripts/package-mcpb.py
+python3 scripts/package-openai-plugin.py
+python3 -m unittest discover -s Tests/scripts -p test_openai_plugin_package.py
+node --test mcpb/tests/transport.test.js
+```
+
+Keep the SDK lock versions. Do not publish this ZIP or update any CDN URL until
+Codex, ChatGPT Desktop and Claude Desktop have passed the real UI acceptance
+sequence in `unified-workspace-acceptance.md`. Local packaging, HTTP and fixture
+checks do not satisfy that gate. Older immutable ZIPs below remain rollback assets.
+
+## Historical 0.1.2 distribution record
+
+The previous App's Settings → MCP screen linked to an immutable package for
 `voxstudio@voxstudio-local` version `0.1.2` and
 `voxstudio-knowledge@voxstudio-local` version `0.1.0`. Both plugins are
 independently installable from one download. The package is a local marketplace
@@ -45,9 +71,9 @@ app-releases/voxstudio/plugins/voxstudio/<version>/<sha256>/VoxStudio-OpenAI-Plu
 
 Its public URL is the same suffix under
 `https://assets.voxstudio.me/downloads/voxstudio/`. No mutable latest pointer is
-used. After verifying an update, change `pluginDownloadURL` and the displayed
-version in `MCPInstructionsPane.swift` to the verified release values, then build
-and sign the app. Do not change the DMG stable pointer or Sparkle appcast.
+used. For 0.2.0 the settings action exports the package bundled with the App; it has
+no CDN download URL to replace. Rebuild and sign the App with the verified connector
+sources and package. Do not change the DMG stable pointer or Sparkle appcast.
 
 ## CDN route and rollback
 
@@ -72,7 +98,7 @@ for this update; the original publication record remains in
 `docs/testing/openai-mcp/plugin-cdn-verification.json`. This package/download
 verification does not imply complete ChatGPT Work/Codex business-flow acceptance.
 
-## Knowledge plugin update
+## Historical Knowledge plugin update
 
 Settings → MCP → ChatGPT Work / Codex defaults to Knowledge QA. Users can
 choose Media workflows, copy the corresponding `--plugin` install command,

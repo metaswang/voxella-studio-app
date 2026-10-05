@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "voxstudio",
   "display_name": "VoxStudio",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "Connect VoxStudio media, knowledge, and video editing tools to Claude Desktop.",
   "long_description": "Connects Claude Desktop to the local MCP server inside VoxStudio. Transcribe and translate media, create reference voices and voiceovers, preview results, search knowledge, and edit video timelines.",
   "icon": "icon.png",
@@ -26,11 +26,11 @@
   },
   "server": {
     "type": "node",
-    "entry_point": "server/index.js",
+    "entry_point": "server/stdio.js",
     "mcp_config": {
       "command": "node",
       "args": [
-        "${__dirname}/server/index.js"
+        "${__dirname}/server/stdio.js"
       ]
     }
   }

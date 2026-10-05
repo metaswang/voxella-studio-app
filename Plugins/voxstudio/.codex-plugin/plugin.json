@@ -1,7 +1,7 @@
 {
   "name": "voxstudio",
-  "version": "0.1.2",
-  "description": "Transcription, voiceover and focused video editing with the VoxStudio Mac app.",
+  "version": "0.2.0",
+  "description": "Session knowledge, transcription, voiceover and native video editing in one VoxStudio connection.",
   "author": {
     "name": "VoxStudio"
   },
@@ -10,8 +10,8 @@
       "onboardingSkill": "./skills/onboarding/SKILL.md",
       "interface": {
         "displayName": "VoxStudio",
-        "shortDescription": "Transcribe, create voiceovers and edit videos",
-        "longDescription": "Use dedicated panels for transcription, voiceover and session results. Describe video edits in chat to modify the native VoxStudio Mac app timeline through MCP tools.",
+        "shortDescription": "Ask your sessions, transcribe and create media",
+        "longDescription": "Ask questions and read the relevant session details or matching sessions beside your chat. Transcribe media, create voiceovers and edit the native VoxStudio timeline through the same connection.",
         "developerName": "VoxStudio",
         "category": "Productivity",
         "capabilities": [
@@ -19,13 +19,14 @@
           "Read",
           "Write"
         ],
-        "composerIcon": "./assets/icon.svg",
-        "logo": "./assets/icon.svg",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/icon.png",
         "defaultPrompt": [
+          "Ask my VoxStudio sessions and show the original evidence",
           "Open my VoxStudio sessions",
           "Transcribe an audio or video file",
           "Create a voiceover",
-          "Edit the current timeline in the VoxStudio Mac app"
+          "Edit the current timeline in VoxStudio"
         ]
       }
     }
@@ -34,8 +35,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "VoxStudio",
-    "shortDescription": "Transcribe, create voiceovers and edit videos",
-    "longDescription": "Use dedicated panels for transcription, voiceover and session results. Describe video edits in chat to modify the native VoxStudio Mac app timeline through MCP tools.",
+    "shortDescription": "Ask your sessions, transcribe and create media",
+    "longDescription": "Ask questions and read the relevant session details or matching sessions beside your chat. Transcribe media, create voiceovers and edit the native VoxStudio timeline through the same connection.",
     "developerName": "VoxStudio",
     "category": "Productivity",
     "capabilities": [
@@ -43,13 +44,14 @@
       "Read",
       "Write"
     ],
-    "composerIcon": "./assets/icon.svg",
-    "logo": "./assets/icon.svg",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/icon.png",
     "defaultPrompt": [
+      "Ask my VoxStudio sessions and show the original evidence",
       "Open my VoxStudio sessions",
       "Transcribe an audio or video file",
       "Create a voiceover",
-      "Edit the current timeline in the VoxStudio Mac app"
+      "Edit the current timeline in VoxStudio"
     ]
   }
 }

@@ -14,3 +14,5 @@ If the user only asks to open/configure the panel, use `app_transcription({})`, 
 For voiceover, list existing voices using `voice.list`, then submit the user's script and selected voice ID to `dubbing.create`. Do not invent a reference voice or transcript. If the voice library is empty, guide the user to add a reference in VoxStudio. `media.save_result` saves a completed voiceover through the system dialog.
 
 Poll `media.status` every two seconds until completed/failed/cancelled. `media.preview` supports generated voiceover audio; `media.session_preview` provides bounded transcription audio/video. Play only on user action. A successful job submission is not a completed result. Use the independent session panel for reading/editing captions, adding translations and exporting; retain all source and language tracks.
+
+For tools whose schema requires `request_id`, supply a fresh UUID for each intended write and preserve it on retries. Never repeat an unknown write after an App restart or after the one-hour receipt lifetime.

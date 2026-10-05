@@ -1,7 +1,7 @@
 {
   "name": "voxstudio-mcpb-shim",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "private": true,
-  "description": "Stdio→HTTP shim packaged inside voxstudio.mcpb for Claude Desktop. Reconnects indefinitely across VoxStudio restarts.",
-  "main": "index.js"
+  "description": "Standard stdio to local unified MCP Apps transport with bounded, receipt-aware recovery.",
+  "main": "stdio.js"
 }

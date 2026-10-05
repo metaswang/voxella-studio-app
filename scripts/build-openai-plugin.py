@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Generate both independently installable host compatibility manifests."""
+"""Generate the unified plugin manifests; keep legacy source manifests for compatibility."""
 import json
 from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 entries = []
-for name in ("voxstudio", "voxstudio-knowledge"):
+for name in ("voxstudio",):
     plugin = root / "Plugins" / name
     manifest = json.loads((plugin / "plugin.json").read_text())
     config = json.loads((plugin / "mcp.json").read_text())
@@ -17,4 +17,4 @@ for name in ("voxstudio", "voxstudio-knowledge"):
 marketplace = root / ".agents/plugins"
 marketplace.mkdir(parents=True, exist_ok=True)
 (marketplace / "marketplace.json").write_text(json.dumps({"name": "voxstudio-local", "interface": {"displayName": "VoxStudio Local"}, "plugins": entries}, indent=2) + "\n")
-print("Generated separately installable VoxStudio and VoxStudio Knowledge manifests")
+print("Generated unified VoxStudio manifests")

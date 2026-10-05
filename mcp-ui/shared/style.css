@@ -8,3 +8,6 @@
 .session-text-tabs{width:max-content;max-width:100%;margin-bottom:20px}.session-text-tabs [role=tab][aria-selected=true]{background:var(--surface);color:var(--ink);box-shadow:0 1px 4px #00000008}.session-text-tabs [role=tab]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 .summary-markdown{font-size:14px;line-height:1.85;overflow-wrap:anywhere}.summary-markdown>*+*{margin-top:14px}.summary-markdown h1{font-size:23px}.summary-markdown h2{font-size:19px}.summary-markdown h3{font-size:16px}.summary-markdown ul,.summary-markdown ol{padding-left:24px}.summary-markdown li+li{margin-top:5px}.summary-markdown blockquote{margin-left:0;margin-right:0;padding-left:16px;border-left:3px solid var(--line);color:var(--muted)}.summary-markdown pre{padding:14px;background:var(--surface-soft);border-radius:8px;white-space:pre-wrap}.summary-markdown table{display:block;overflow-x:auto;border-collapse:collapse}.summary-markdown th,.summary-markdown td{border:1px solid var(--line);padding:8px 12px;text-align:left}
+
+/* QA reuses the session/list views, with compact host display controls. */
+.panel-display{display:flex;justify-content:flex-end}.panel-display:has([hidden]){display:none}.session-navigation{display:flex;justify-content:space-between;align-items:center}.cue-copy mark{background:rgba(250,204,21,.28);color:inherit;border-radius:3px}

@@ -14,9 +14,9 @@ struct MCPServerInstance: Sendable {
 }
 
 enum MCPServerProfile: String, Sendable {
-    case legacy, knowledge
+    case legacy, knowledge, app
     static func resolve(path: String) -> Self? {
-        switch path { case "/", "/mcp": .legacy; case "/knowledge/mcp": .knowledge; default: nil }
+        switch path { case "/", "/mcp": .legacy; case "/knowledge/mcp": .knowledge; case "/app/mcp": .app; default: nil }
     }
 }
 
@@ -45,11 +45,13 @@ actor MCPHTTPServer {
     init(
         port: UInt16,
         makeKnowledgeServer: (@Sendable () async -> MCPServerInstance)? = nil,
+        makeAppServer: (@Sendable () async -> MCPServerInstance)? = nil,
         makeServer: @escaping @Sendable () async -> MCPServerInstance
     ) {
         self.port = port
         self.makeServer = { profile in
             if profile == .knowledge, let makeKnowledgeServer { return await makeKnowledgeServer() }
+            if profile == .app, let makeAppServer { return await makeAppServer() }
             return await makeServer()
         }
     }

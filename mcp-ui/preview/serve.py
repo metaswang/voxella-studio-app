@@ -6,7 +6,7 @@ import http.client
 import json
 ROOT = Path(__file__).resolve().parents[2]
 READ_TOOLS = {
-    'app_workbench', 'voxstudio.library', 'voxstudio.sessions',
+    'voxstudio.workspace', 'app_knowledge', 'knowledge.workspace_state', 'knowledge.update_view', 'search', 'fetch', 'list_sources', 'aggregate', 'find_text', 'methods', 'app_workbench', 'voxstudio.library', 'voxstudio.sessions',
     'app_session', 'voxstudio.session_panel', 'app_transcription', 'app_dubbing',
     'voice.list', 'media.status', 'session.editor.read', 'session.get_summary', 'documents.read',
     'search_mentions', 'media.preview', 'media.session_preview',
@@ -18,7 +18,7 @@ class Handler(SimpleHTTPRequestHandler):
         origin = self.headers.get('Origin')
         return host in allowed and (not origin or origin == f'http://{host}')
     def do_DELETE(self):
-        if self.path != '/mcp' or not self.headers.get('Mcp-Session-Id'):
+        if self.path not in ('/mcp', '/app/mcp') or not self.headers.get('Mcp-Session-Id'):
             self.send_error(400)
             return
         if not self.accepts_origin():
@@ -26,7 +26,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
         upstream = http.client.HTTPConnection('127.0.0.1', 19789, timeout=5)
         try:
-            upstream.request('DELETE', '/mcp', headers={'Mcp-Session-Id': self.headers['Mcp-Session-Id']})
+            upstream.request('DELETE', self.path, headers={'Mcp-Session-Id': self.headers['Mcp-Session-Id']})
             response = upstream.getresponse()
             response.read()
             self.send_response(response.status)
@@ -37,7 +37,7 @@ class Handler(SimpleHTTPRequestHandler):
         finally:
             upstream.close()
     def do_POST(self):
-        if self.path != '/mcp':
+        if self.path not in ('/mcp', '/app/mcp'):
             self.send_error(404)
             return
         if not self.accepts_origin():
@@ -66,7 +66,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if self.headers.get(key):
                     headers[key] = self.headers[key]
             upstream = http.client.HTTPConnection('127.0.0.1', 19789, timeout=15)
-            upstream.request('POST', '/mcp', body, headers)
+            upstream.request('POST', self.path, body, headers)
             response = upstream.getresponse()
             content = response.read()
             self.send_response(response.status)

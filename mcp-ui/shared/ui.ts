@@ -1,7 +1,8 @@
 import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
+import {openLegacyPanel} from './legacy-panel';
 import { voxStudioLogo } from './logo';
 export type Obj = Record<string, any>;
-export const app = new App({name: 'VoxStudio', version: '0.1.0'}, {availableDisplayModes: ['inline', 'fullscreen']});
+export const app = new App({name: 'VoxStudio', version: '0.2.0'}, {availableDisplayModes: ['inline', 'fullscreen']});
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 // Product requirement: always English, independent of the host/system locale.
 export const chinese = false;
@@ -38,7 +39,9 @@ export function shell(section: string, body: string) {
 }
 export function notice(message: string, error = false) { $('notice-message').textContent=message; $('notice').hidden=false; $('notice').classList.toggle('error',error); }
 export function clearNotice() { $('notice').hidden=true; }
+let receiptTools = new Set<string>();
 export function decode(result: Obj): Obj {
+ if(Array.isArray(result._meta?.["voxstudio/receiptTools"]))receiptTools=new Set(result._meta["voxstudio/receiptTools"]);
  const text=result.content?.find((c: Obj)=>c.type==='text')?.text;
  if (result.isError) throw new Error(result.structuredContent?.error || text || t('操作失败，请重试','Operation failed. Please try again.'));
  if (result.structuredContent) return result.structuredContent;
@@ -53,7 +56,8 @@ class VoxStudioUnavailableError extends Error {}
 export async function rawCall(name: string, args: Obj = {}) {
  if (!connected) throw new Error(t('尚未连接到 VoxStudio，请稍候','Waiting for VoxStudio to connect.'));
  try {
-  const result = await app.callServerTool({name, arguments:args});
+  const result = await app.callServerTool({name, arguments:receiptTools.has(name)&&!args.request_id?{...args,request_id:crypto.randomUUID()}:args});
+  if(Array.isArray(result._meta?.['voxstudio/receiptTools']))receiptTools=new Set(result._meta['voxstudio/receiptTools']);
   if (result.isError) decode(result);
   $('connection').innerHTML='<i></i>Connected';$('connection').classList.add('online');
   return result;
@@ -94,15 +98,20 @@ export function languageLabel(code:string) { return ({zh:t('中文','Chinese'),e
 export function field(label:string,control:string,hint='') { return `<div class="field">${label}${control}${hint?`<p class="field-hint">${hint}</p>`:''}</div>`; }
 export function backButton() { return `<button id="back" class="text-button">${icon('back')}${t('会话列表','Sessions')}</button>`; }
 const panelNames: Record<string,[string,string]> = {app_workbench:['会话列表','Sessions'],app_transcription:['转录','Transcription'],app_dubbing:['配音','Voiceover'],app_session:['会话详情','Session details']};
-// Opening a separate document is a host operation. tools/call alone only returns data;
-// the standard ui/message asks the host to invoke its UI-bearing tool in this chat.
+// Navigate unified panels through standard resources without adding model instructions to chat.
 export async function openPanel(tool: string, args: Obj = {}) {
- if(!connected)throw new Error(t('请等待连接完成','Please wait for the connection.'));
+ if(!connected)throw new Error('Please wait for the connection.');
  if(!panelNames[tool])throw new Error('Unknown panel');
- const title=panelNames[tool][1];
- const result=await app.sendMessage({role:'user',content:[{type:'text',text:`Open the VoxStudio ${title} panel. Call ${tool} with arguments ${JSON.stringify(args)} and display its independent interactive panel.`}]});
- if(result.isError)throw new Error(t('宿主未能打开页面，请在聊天中重试','The host could not open this page. Please retry in chat.'));
- notice(t('已请求在聊天中打开独立页面','Requested a separate panel in this chat.'));
+ if(!receiptTools.size){await openLegacyPanel(app,panelNames[tool][1],tool,args);return;}
+ const name=tool==='app_workbench'?'voxstudio.workspace':tool;
+ const result=await rawCall(name,args);
+ const uri=['app_session','app_workbench'].includes(tool)?'ui://voxstudio/workspace/v1':tool==='app_transcription'?'ui://voxstudio/transcription/v4':'ui://voxstudio/dubbing/v3';
+ const resource=await app.readServerResource({uri});
+ const html=resource.contents.find(row=>'text' in row);
+ if(!html||!('text' in html))throw new Error('Panel resource is unavailable.');
+ (window as any).__voxstudioPanelResult=result;
+ disposed=true;for(const cleanup of cleanups)cleanup();await app.close();
+ document.open();document.write(html.text);document.close();
 }
 export async function context(value: Obj) { try { await app.updateModelContext({structuredContent:value}); } catch { /* Content still works when optional model context is unsupported. */ } }
 export function progress(state:Obj) {const amount=Math.max(0,Math.min(100,Math.round((state.progress||0)*100)));return `<div class="progress-heading">${badge(state.status)}<span>${amount}%</span></div><progress max="100" value="${amount}">${amount}%</progress><p class="muted">${esc(state.error||state.message||(state.status==='completed'?'Your result is ready.':state.status==='failed'?'The job could not be completed. Open the session for details.':state.status==='cancelled'?'This job was cancelled.':'Processing on your Mac. You can return to this session later.'))}</p>`;}
@@ -126,9 +135,11 @@ export async function waitInput(result: Obj,onState?:(state:Obj)=>void):Promise<
 export async function resolveJob(result:Obj):Promise<Obj> {let attempts=0;while(result.job_id&&!result.session_id&&!result.document_id&&['queued','running','pending','importing',undefined].includes(result.status)&&!disposed){if(++attempts>300)throw new Error(t('任务已提交，稍后可在会话列表查看','Job submitted. Check the sessions list in a moment.'));await new Promise(r=>setTimeout(r,600));result=await call('voxstudio.job_status',{job_id:result.job_id})}if(result.error||result.status==='failed')throw new Error(result.error||'Job failed');return result;}
 export function start(fallbackTool:string,consume:(data:Obj)=>Promise<void>|void,fallbackArgs:(args:Obj)=>Obj|undefined= args=>args) {
  let initial:Obj|undefined, input:Obj|undefined, chain=Promise.resolve(), delivered='';
+ const handoff=(window as any).__voxstudioPanelResult;
+ if(handoff){initial=decode(handoff);delete (window as any).__voxstudioPanelResult;}
  const deliver=(data:Obj)=>{const signature=JSON.stringify(data);if(signature===delivered)return;delivered=signature;chain=chain.then(()=>consume(data)).then(()=>undefined).catch(e=>notice(e instanceof Error?e.message:String(e),true));};
  app.ontoolinput=p=>{input=p.arguments as Obj};
- app.ontoolresult=p=>{try{initial=decode(p);if(connected)deliver(initial)}catch(e){notice(String(e),true)}};
+ app.ontoolresult=p=>{try{const data=decode(p);if(fallbackTool==='voxstudio.workspace'&&!data.workspace_id)return;initial=data;if(connected)deliver(initial)}catch(e){notice(String(e),true)}};
  const host=(ctx:Obj)=>{if(ctx.theme)applyDocumentTheme(ctx.theme);if(ctx.styles?.variables)applyHostStyleVariables(ctx.styles.variables)};
  app.onhostcontextchanged=host;
  app.onteardown=async()=>{disposed=true;for(const fn of cleanups)fn();return {}};

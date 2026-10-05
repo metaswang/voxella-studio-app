@@ -1,115 +1,78 @@
-# VoxStudio for ChatGPT Work and Codex
+# VoxStudio 0.2.0 for ChatGPT Desktop and Codex
 
-This download contains independently installable `voxstudio` and `voxstudio-knowledge` plugins, a local marketplace,
-an installation script and workflow skills. The VoxStudio Mac app runs the MCP
-server and renders the panels; the ZIP contains no app binary or Node server.
+Install one **VoxStudio** connection for knowledge questions, session reading,
+media previews, transcription, voiceover and native video editing. Keep the Mac
+App running with **Settings → MCP** enabled. The host model answers questions;
+VoxStudio supplies original evidence and the interactive workspace.
 
-## Install on your Mac
+## Install or upgrade
 
-1. Install and open the VoxStudio Mac app. Enable **Settings → MCP**.
-2. Download `VoxStudio-OpenAI-Plugin.zip` and extract the entire ZIP in Finder.
-   Keep the extracted folder in place after installation: the marketplace uses
-   that folder. A ZIP or ZIP URL cannot be used as the marketplace source.
-3. If the folder is in Downloads, run this in Terminal:
+1. In VoxStudio **Settings → MCP → ChatGPT / Codex**, click **Save VoxStudio plugin**.
+   The ZIP is bundled with the App, so its version matches this build. Extract
+   the entire ZIP in Downloads and keep the extracted directory.
+2. Run:
 
-   ```bash
-   # Knowledge QA (read-only evidence tools)
-   bash "$HOME/Downloads/VoxStudio-OpenAI-Plugin/install.sh" --plugin voxstudio-knowledge
-
-   # Media workflows (transcription, voiceover, frame search, previews and editing)
-   bash "$HOME/Downloads/VoxStudio-OpenAI-Plugin/install.sh" --plugin voxstudio
+   ```sh
+   bash "$HOME/Downloads/VoxStudio-OpenAI-Plugin/install.sh"
    ```
 
-   If you extracted it elsewhere, use its actual `install.sh` path. The script
-   prefers the CLI bundled with `/Applications/ChatGPT.app`, then `codex` on PATH.
-   It registers the extracted marketplace and installs the selected plugin. Run
-   both commands if you need both workflows. Without `--plugin`, it installs
-   `voxstudio@voxstudio-local` for compatibility with older instructions.
-   To choose another CLI, use `bash install.sh --cli /absolute/path/to/codex`.
-4. Open **Plugins** in your desktop client. Enable **VoxStudio Knowledge** for QA,
-   and **VoxStudio** for media workflows, under **VoxStudio Local**. Restart the client if the installed
-   plugin does not appear, then open a new chat in ChatGPT Work or Codex.
-5. For QA, ask: **“Find evidence in my VoxStudio sessions and cite the original text.”**
-   For media workflows, ask: **“Open my VoxStudio sessions.”** Keep VoxStudio running on the same Mac.
+   Use the actual path if extracted elsewhere. The installer prefers the CLI
+   bundled in ChatGPT Desktop; `--cli /absolute/path/to/codex` selects another.
+3. In the desktop client's Plugins page, enable **VoxStudio** under **VoxStudio
+   Local**, then open a new chat. Existing disabled preferences remain disabled.
+4. Ask: **“Find evidence in my VoxStudio sessions and show the original text.”**
+   Follow up in chat while reading the existing session detail page. Searching
+   or selecting multiple sessions shows the existing sessions list. Tell the host
+   which sessions to search in chat; opening a session changes reading focus only.
+   **Pin session** keeps it open through later questions.
 
-Manual equivalent (replace the folder with its actual location):
+The installer first verifies `/app/mcp` and its HTML resource. It saves installed
+versions, sources, plugin policy settings and immutable cached packages under
+`.migration/` in the extracted folder. It installs and validates version 0.2.0,
+then removes the old Knowledge plugin. A failure restores old plugins from the
+snapshot. Keep that folder for recovery; existing old release ZIPs are unchanged.
+Manual `codex plugin add` bypasses these migration safeguards.
 
-```bash
-codex plugin marketplace add "$HOME/Downloads/VoxStudio-OpenAI-Plugin" --json
-codex plugin add voxstudio-knowledge@voxstudio-local --json
-codex plugin add voxstudio@voxstudio-local --json
+## Claude Desktop and Claude Code
+
+Claude Desktop uses one **VoxStudio** MCPB extension, version 0.3.1. Click
+**Install in Claude Desktop** in VoxStudio settings. Its local stdio transport
+forwards to the same `/app/mcp` endpoint. Interactive cards and fullscreen depend
+on Claude's advertised capabilities; actual local extension rendering is a
+separate release acceptance check.
+
+Claude Code:
+
+```sh
+claude mcp add --transport http voxstudio http://127.0.0.1:19789/app/mcp
 ```
 
-Local marketplace/plugin support varies by client version and desktop surface.
-Use a current desktop client with plugin support. This local endpoint is not a
-ChatGPT website/cloud connector. The knowledge endpoint is
-`http://127.0.0.1:19789/knowledge/mcp`; the media endpoint is
-`http://127.0.0.1:19789/mcp`, both on this Mac.
+Knowledge tools and public server instructions work without plugin skills or UI.
+Write tools require a stable UUID `request_id`; keep the ID on retries. Receipts
+last one hour and do not survive App restart. Never blindly retry an execution
+whose status is unknown after a restart. Skills exported to Claude are optional.
 
-## Independent knowledge plugin
+## Compatibility and troubleshooting
 
-Install the read-only evidence plugin separately:
+- `/mcp` and `/knowledge/mcp` retain their previous contracts. Their HTTP session
+  IDs are isolated from `/app/mcp`. New installations use only `/app/mcp`.
+- Avoid an additional direct MCP connection named `voxstudio` alongside the plugin.
+- Account and material versions are rechecked on reads; reopen after signing out,
+  switching account, App restart or workspace expiration.
+- Workspaces expire after one idle hour. Up to 64 workspaces and 64 turns per
+  workspace are retained. Historical inline cards read their original turn.
+- Web/mobile remote connectors cannot reach this Mac's loopback server. Remote
+  service deployment is outside this release. Cowork remains an explicit probe.
+- Transcript text containing tool instructions is evidence content. UI navigation
+  uses tools/resources and must not promote source text into instructions.
+- Panels use English. Media creation and editing use the existing typed tools and
+  native App workflows. Host forms and attachments are optional enhancements.
 
-```bash
-bash install.sh --plugin voxstudio-knowledge
-```
+To verify extracted files:
 
-Its MCP key is `voxstudio_knowledge`, at `http://127.0.0.1:19789/knowledge/mcp`.
-It exposes `search`, `fetch`, `list_sources`, `aggregate`, `find_text`, and `methods`.
-The host model reasons from the returned evidence. Default passage QA chooses current Transcript,
-or same-source subtitle fallback when Transcript is unavailable. Explicit subtitle and media targets remain available.
-The legacy `voxstudio` plugin retains editing, media previews/search, and `knowledge.ask`.
-Each plugin can be enabled independently; install both when you need evidence QA and native media workflows.
-They share the same app and indexes. Installing only the knowledge plugin does
-not remove video frame indexes or media search from the app. Default QA limits
-its evidence to canonical text; explicit media discovery and the original media
-tools continue to use the media indexes.
-Knowledge session IDs belong only to the knowledge endpoint and cannot be reused on `/mcp`.
-
-## What you can do
-
-- Open a dedicated session list or a single session panel.
-- Start transcription and translation; review subtitles and audio/video previews.
-- Create voiceovers in a separate panel.
-- Describe video edits in chat to change the **native VoxStudio editor timeline**.
-  The plugin does not include an HTML video editor.
-
-MCP panels use English. Native forms and host attachment features depend on
-client capabilities. Importing a file does not automatically start transcription.
-
-## If the plugin or sessions are missing
-
-- Check VoxStudio **Settings → MCP** shows the server running.
-- Check **Plugins → VoxStudio Local** has the plugin you need enabled, then start a new chat.
-- If a separately configured MCP server is named `voxstudio`, disable/remove
-  that direct connection before using the plugin. It can shadow the plugin.
-- Do not register the same connection through both plugin and direct MCP setup.
-- Plugin installation does not sign you into VoxStudio or download speech models.
-  Configure your account/models in VoxStudio before starting those workflows.
-
-## Update or uninstall
-
-Download and extract the new ZIP. Run its `install.sh --plugin voxstudio-knowledge`
-or `install.sh --plugin voxstudio` to register the new folder and update each
-plugin you use, then restart the client and start a new chat. If the old
-version persists, uninstall VoxStudio from **Plugins**, rerun the script and
-enable it again. Keep the old folder until the new plugin is verified.
-
-Uninstall VoxStudio through the client's **Plugins** page. Removing the plugin
-does not delete your VoxStudio sessions or media. Remove the marketplace entry
-before deleting its extracted folder. A direct MCP setup remains a separate
-configuration and must be managed separately.
-
-## Verify the package
-
-From inside the extracted folder:
-
-```bash
+```sh
+cd "$HOME/Downloads/VoxStudio-OpenAI-Plugin"
 shasum -a 256 -c FILES.sha256
 ```
 
-The release report also includes the ZIP SHA-256. The archive contains only
-manifests, an icon, skills, this guide, the installer and a file checksum list.
-
-Official references: [OpenAI plugin packaging and local marketplaces](https://developers.openai.com/plugins/build/plugins),
-[Using plugins in Codex](https://learn.chatgpt.com/docs/plugins).
+Uninstall through the host Plugins page. This does not delete sessions or media.

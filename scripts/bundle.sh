@@ -56,6 +56,13 @@ if [ "$MODE" = "mas" ]; then
   fi
 fi
 
+echo "==> Generating MCP UI and installable connectors"
+python3 "$ROOT/scripts/sync-mcp-branding.py"
+(cd "$ROOT/mcp-ui" && npm run check && npm run build)
+python3 "$ROOT/scripts/package-mcpb.py"
+python3 "$ROOT/scripts/package-openai-plugin.py" --output "$ROOT/.build/openai-plugin"
+mkdir -p "$RESOURCES/OpenAIPlugin"
+cp "$ROOT/.build/openai-plugin/VoxStudio-OpenAI-Plugin.zip" "$RESOURCES/OpenAIPlugin/"
 echo "==> Building ($CONFIG)"
 TRAITS="BundledSpeech"
 if [ "$MODE" = "mas" ]; then

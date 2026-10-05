@@ -1,5 +1,7 @@
 // Development host: real, read-only MCP data by default. ?mode=fixture is explicit.
 import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/app-bridge';
+const unified = new URLSearchParams(location.search).get('panel')==='workspace';
+const endpoint=unified?'/app/mcp':'/mcp';
 const live = new URLSearchParams(location.search).get('mode') !== 'fixture';
 let sessionId = '', requestId = 0, initializing: Promise<void>|undefined;
 async function rpc(method:string, params:any={}, retry=true):Promise<any> {
@@ -8,7 +10,7 @@ async function rpc(method:string, params:any={}, retry=true):Promise<any> {
   await initializing;
  }
  const id=++requestId;
- const response=await fetch('/mcp',{method:'POST',headers:{'Content-Type':'application/json',...(sessionId?{'Mcp-Session-Id':sessionId}:{}),'MCP-Protocol-Version':'2025-11-25'},body:JSON.stringify({jsonrpc:'2.0',...(method.startsWith('notifications/')?{}:{id}),method,params})});
+ const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',...(sessionId?{'Mcp-Session-Id':sessionId}:{}),'MCP-Protocol-Version':'2025-11-25'},body:JSON.stringify({jsonrpc:'2.0',...(method.startsWith('notifications/')?{}:{id}),method,params})});
  if(response.status===404&&sessionId&&retry){sessionId='';return rpc(method,params,false)}
  sessionId=response.headers.get('Mcp-Session-Id')||sessionId;
  const raw=await response.text();
@@ -16,7 +18,7 @@ async function rpc(method:string, params:any={}, retry=true):Promise<any> {
  if(!response.ok||reply?.error)throw Error(typeof reply?.error==='string'?reply.error:reply?.error?.message||'Could not connect to the local VoxStudio MCP. Open the latest Mac app build.');
  return reply?.result??{};
 }
-const result=(data:any)=>({content:[{type:'text' as const,text:JSON.stringify(data)}],structuredContent:data});
+const result=(data:any)=>({content:[{type:'text' as const,text:JSON.stringify(data)}],structuredContent:data,...(unified?{_meta:{'voxstudio/receiptTools':['media.choose_local_file','transcription.create_from_input','session.open']}}:{})});
 const sessions=[
  {session_id:'11111111-1111-4111-8111-111111111111',title:'Designing a more human workspace',kind:'transcription',status:'completed',duration:148,language:'en',updated_at:'2026-10-03T08:00:00Z',translation_languages:['zh']},
  {session_id:'22222222-2222-4222-8222-222222222222',title:'Introducing the next chapter',kind:'dubbing',status:'completed',duration:32,language:'en',updated_at:'2026-10-02T12:00:00Z'},
@@ -38,15 +40,39 @@ const fixtureMedia=new Map<string,Promise<string>>();
 async function readResource(uri:string){
  if(live)return rpc('resources/read',{uri});
  const preview=fixturePreviews.get(uri);
+ if(uri.startsWith('ui://')){const name=uri.includes('workspace')?'workspace':uri.includes('transcription')?'transcription':'dubbing';const text=await (await fetch('/panels/'+name+'.html')).text();return {contents:[{uri,mimeType:'text/html;profile=mcp-app',text}]};}
  if(!preview)throw Error('Sample preview is no longer available. Load it again.');
  let bytes=fixtureMedia.get(preview.file);
  if(!bytes){bytes=(async()=>{const response=await fetch('/'+preview.file);if(!response.ok)throw Error('Sample media is missing. Rebuild the local preview fixtures.');const data=new Uint8Array(await response.arrayBuffer());let binary='';for(let i=0;i<data.length;i+=8192)binary+=String.fromCharCode(...data.subarray(i,i+8192));return btoa(binary)})();fixtureMedia.set(preview.file,bytes);bytes.catch(()=>fixtureMedia.delete(preview.file));}
  return {contents:[{uri,mimeType:preview.mimeType,blob:await bytes}]};
 }
-const panelFor:Record<string,string>={app_workbench:'library',app_transcription:'transcription',app_session:'session',app_dubbing:'dubbing'};
+const panelFor:Record<string,string>={'voxstudio.workspace':'workspace',app_workbench:'library',app_transcription:'transcription',app_session:'session',app_dubbing:'dubbing'};
+let workspaceState:any={workspace_id:'fixture-workspace',active_turn_id:'fixture-turn-1',turn_id:'fixture-turn-1',query:'What makes a quieter workspace?',revision:1,view_revision:0,status:'answered',complete:true,scope:{},next_scope:{},view:{source_id:sessions[0].session_id,evidence_id:'fixture-evidence'},
+ candidates:[],read_evidence:[{source_id:sessions[0].session_id,title:sessions[0].title,evidence_id:'fixture-evidence',text:transcriptCues[0].text,start:0,end:8,character_start:0,character_end:transcriptCues[0].text.length,material_kind:'transcript'}],cited_evidence_ids:['fixture-evidence'],observations:{}};
+const scenario=new URLSearchParams(location.search).get('scenario');
+if(scenario==='scoped')workspaceState.scope={source_ids:[sessions[0].session_id,sessions[2].session_id]};
+if(scenario==='search'||scenario==='empty')workspaceState.observations={s:{tool:'search',sequence:0,arguments:{query:'Design',target:'sources'},result:{retrieval:{target:'sources'},results:scenario==='empty'?[]:[{source_id:sessions[0].session_id,title:sessions[0].title}]}}};
+if(scenario==='cloud')workspaceState.view={source_id:sessions[2].session_id};
+if(scenario==='catalog-paged'){workspaceState.scope={source_ids:[sessions[0].session_id,sessions[2].session_id]};workspaceState.observations={s:{sequence:0,tool:'list_sources',arguments:{limit:1},result:{sources:[{source_id:sessions[0].session_id,title:sessions[0].title}],next_cursor:'fixture-list-next'}}};}
+const fixtureHistory=new Map<string,any>();
 async function respond(name:string,args:any={}){
  counts[name]=(counts[name]||0)+1;log.textContent=`${++callCount} calls · ${name} (${counts[name]})`;
  if(live)return rpc('tools/call',{name,arguments:args});
+ if(unified&&['app_workbench','app_session'].includes(name))return result({...workspaceState,view:name==='app_session'?{source_id:args.session_id}:workspaceState.view});
+ if(name==='voxstudio.workspace'||name==='app_knowledge')return result(workspaceState);
+ if(name==='knowledge.workspace_state'&&args.page)return result({page:{sources:[{...sessions[2],source_id:sessions[2].session_id}],complete:true}});
+ if(name==='knowledge.workspace_state'){const old=args.turn_id?fixtureHistory.get(args.turn_id):undefined;const current=old?{...old,active_turn_id:workspaceState.active_turn_id,revision:workspaceState.revision,view_revision:workspaceState.view_revision}:workspaceState;return result(args.after_revision===current.revision?{workspace_id:workspaceState.workspace_id,revision:current.revision,unchanged:true}:current);}
+ if(name==='knowledge.update_view'){
+  workspaceState={...workspaceState,revision:workspaceState.revision+1,view_revision:workspaceState.view_revision+1,view:{...workspaceState.view,...args.view},next_scope:args.view.next_scope??workspaceState.next_scope};
+  if(scenario==='view-race'){
+   // A new question can finish between a view write and its returned snapshot.
+   workspaceState={...workspaceState,turn_id:'fixture-turn-2',active_turn_id:'fixture-turn-2',revision:workspaceState.revision+1,view:{pinned:false},observations:{s:{tool:'search',sequence:0,arguments:{query:'Design',target:'sources'},result:{retrieval:{target:'sources'},results:[{source_id:sessions[0].session_id,title:sessions[0].title}]}}}};
+  }
+  return result(workspaceState);
+ }
+ if(name==='list_sources')return result({sources:sessions.filter(row=>!args.source_ids||args.source_ids.includes(row.session_id)).map(row=>({...row,source_id:row.session_id,body_readable:true})),complete:true});
+ if(name==='fetch'&&args.view==='metadata')return result(sessions.find(row=>row.session_id===args.source_id)??sessions[0]);
+ if(name==='fetch')return result(args.view==='summary'?{summary_markdown:'# Saved source summary\n\nA quieter workspace gives people room to think.',complete:true}:{segments:transcriptCues.map((row,i)=>({text:row.text,speaker:row.speaker,start:scenario==='cloud'?null:row.start_ms/1000,end:scenario==='cloud'?null:row.end_ms/1000,character_start:i*80,character_end:i*80+row.text.length,role:'original',source_id:args.source_id??sessions[0].session_id,evidence_id:i===0?'fixture-evidence':'fixture-'+i})).filter((_,i)=>scenario!=='paged'||(args.cursor?i>0:i===0)),provenance:'transcript',complete:scenario!=='paged'||Boolean(args.cursor),next_cursor:scenario==='paged'&&!args.cursor?'fixture-next':null});
  if(name==='voxstudio.sessions'||name==='voxstudio.library'||name==='app_workbench')return result({view:'library',sessions:emptyList?[]:sessions,native_forms:false});
  if(name==='app_transcription')return result({view:'transcription',native_forms:false});
  if(name==='app_dubbing'||name==='voice.list')return result({view:'dubbing',voices:emptyList?[]:voices});
@@ -97,12 +123,13 @@ async function mount(name:string,args:any={}){
  if(live&&name==='session'&&!args.session_id&&selectedSession)args={session_id:selectedSession};
  const label=live?'Local MCP preview · real app data · read-only':'Fixture host · sample data';
  if(bridge)await bridge.close();page=name;frame.src='about:blank';status.textContent=`${label} · connecting`;
- bridge=new AppBridge(null,{name:live?'VoxStudio local preview':'VoxStudio fixture preview',version:'1'}, {serverTools:{},serverResources:{},updateModelContext:{},message:{text:{}}} as any,{hostContext:{theme:dark?'dark':'light',locale:'zh-CN',displayMode:'fullscreen'}});
+ bridge=new AppBridge(null,{name:live?'VoxStudio local preview':'VoxStudio fixture preview',version:'1'}, {serverTools:{},serverResources:{},updateModelContext:{},message:{text:{}}} as any,{hostContext:{theme:dark?'dark':'light',locale:'zh-CN',displayMode:new URLSearchParams(location.search).get('display')==='inline'?'inline':'fullscreen',availableDisplayModes:['inline','fullscreen']}});
+ bridge.onrequestdisplaymode=async p=>{await bridge!.setHostContext({displayMode:p.mode});return {mode:p.mode};};
  bridge.oncalltool=p=>respond(p.name,p.arguments);
  bridge.onreadresource=p=>readResource(p.uri);
  bridge.onupdatemodelcontext=async()=>({});
  bridge.onmessage=async p=>{const text=p.content.find(c=>c.type==='text');const name=Object.keys(panelFor).find(n=>text?.type==='text'&&text.text.includes(n));const json=text?.type==='text'?text.text.match(/\{[\s\S]*\}/)?.[0]:undefined;let args={};try{if(json)args=JSON.parse(json)}catch{}if(name)setTimeout(()=>void mount(panelFor[name],args),0);return {}};
- bridge.oninitialized=async()=>{const tool=Object.keys(panelFor).find(k=>panelFor[k]===name)!;await bridge!.sendToolInput({arguments:args});try{await bridge!.sendToolResult(await respond(tool,args));status.textContent=`${label} · connected`}catch(error){status.textContent=`${label} · unavailable`;await bridge!.sendToolResult({content:[{type:'text',text:String(error)}],isError:true})}};
+ bridge.oninitialized=async()=>{let tool=Object.keys(panelFor).find(k=>panelFor[k]===name)!;const workspace=new URLSearchParams(location.search).get('workspace_id');if(live&&name==='workspace'&&workspace){tool='app_knowledge';args={action:'show',workspace_id:workspace};}await bridge!.sendToolInput({arguments:args});try{await bridge!.sendToolResult(await respond(tool,args));status.textContent=`${label} · connected`}catch(error){status.textContent=`${label} · unavailable`;await bridge!.sendToolResult({content:[{type:'text',text:String(error)}],isError:true})}};
  await bridge.connect(new PostMessageTransport(frame.contentWindow!,frame.contentWindow!));
  frame.src=`/panels/${name}.html`;
  document.querySelectorAll<HTMLButtonElement>('[data-panel]').forEach(b=>{b.setAttribute('aria-pressed',String(b.dataset.panel===name));b.disabled=live&&b.dataset.panel==='session'&&!selectedSession});
@@ -112,6 +139,8 @@ document.querySelector('#theme')!.addEventListener('click',()=>{dark=!dark;void 
 document.querySelector('#width')!.addEventListener('click',()=>{frame.classList.toggle('narrow')});
 document.querySelector('#conflict')!.addEventListener('change',e=>{failSave=(e.target as HTMLInputElement).checked});
 document.querySelector('#empty')!.addEventListener('change',e=>{emptyList=(e.target as HTMLInputElement).checked;void mount(page)});
+const follow=document.createElement('button');follow.textContent='Simulate follow-up';follow.id='follow-up';follow.hidden=live;document.querySelector('nav')!.append(follow);
+follow.onclick=()=>{fixtureHistory.set(workspaceState.turn_id,structuredClone(workspaceState));workspaceState={...workspaceState,turn_id:'fixture-turn-2',active_turn_id:'fixture-turn-2',revision:workspaceState.revision+1,view_revision:workspaceState.view_revision+1,scope:{},observations:{},view:workspaceState.view.pinned?workspaceState.view:{source_id:sessions[2].session_id}};void bridge?.sendToolResult(result(workspaceState));};
 if(live){document.querySelector('#conflict')!.parentElement!.hidden=true;document.querySelector('#empty')!.parentElement!.hidden=true;log.textContent='Real app sessions · read-only browser preview · create/edit in the ChatGPT/Codex plugin'}
-window.addEventListener('pagehide',()=>{if(sessionId)void fetch('/mcp',{method:'DELETE',headers:{'Mcp-Session-Id':sessionId},keepalive:true})});
-void mount('library');
+window.addEventListener('pagehide',()=>{if(sessionId)void fetch(endpoint,{method:'DELETE',headers:{'Mcp-Session-Id':sessionId},keepalive:true})});
+void mount(unified?'workspace':'library');

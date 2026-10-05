@@ -60,6 +60,15 @@ final class MCPOpenAIExtensions {
     private var receipts: [String: (String, CallTool.Result)] = [:]
     private var jobs: [String: CallTool.Result] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
+    private final class RecoveredGrant {
+        weak var provider: MCPOpenAIExtensions?
+        let local: Bool
+        let access: KnowledgeScopeSnapshot
+        init(provider: MCPOpenAIExtensions, local: Bool, access: KnowledgeScopeSnapshot) {
+            self.provider = provider; self.local = local; self.access = access
+        }
+    }
+    private var recoveredGrants: [String: RecoveredGrant] = [:]
     private weak var server: Server?
     private let documentStore: MCPDocumentStore
     private let inputRoot: URL
@@ -79,6 +88,23 @@ final class MCPOpenAIExtensions {
     }
     func initialize(_ capabilities: Client.Capabilities) { self.capabilities = capabilities }
     var supportsForm: Bool { capabilities.extensions?["openai/elicitation"]?.objectValue?["form"]?.objectValue != nil }
+
+    /// Only a validated receipt transfers its returned grants to a reconnecting
+    /// client. Host capabilities, unrelated inputs and attachment grants stay private.
+    func recoverGrants(from previous: MCPOpenAIExtensions, result: CallTool.Result, access: KnowledgeScopeSnapshot) {
+        guard result.isError != true else { return }
+        let grant = RecoveredGrant(provider: previous, local: previous === self, access: access)
+        func visit(_ value: Value) {
+            if let object = value.objectValue {
+                for (key, value) in object {
+                    if let id = value.stringValue, ["asset_id", "job_id", "document_id"].contains(key) { recoveredGrants[key + ":" + id] = grant }
+                    if let uri = value.stringValue, ["preview_resource_uri", "resource_uri", "resourceUri"].contains(key), uri.hasPrefix("voxstudio://") { recoveredGrants["uri:" + uri] = grant }
+                    visit(value)
+                }
+            } else if let values = value.arrayValue { values.forEach(visit) }
+        }
+        if let value = result.structuredContent { visit(value) }
+    }
 
     nonisolated static func schema(_ properties: [String: Value] = [:], required: [String] = []) -> Value {
         .object(["type": "object", "properties": .object(properties), "required": .array(required.map(Value.string)), "additionalProperties": false])
@@ -249,6 +275,20 @@ final class MCPOpenAIExtensions {
             }
             for key in tool.inputSchema.objectValue?["required"]?.arrayValue?.compactMap(\.stringValue) ?? [] {
                 guard args[key] != nil else { throw MCPDocumentError("invalid_argument", "Missing \(key)") }
+            }
+            for field in ["asset_id", "job_id", "document_id"] {
+                guard let id = args[field] as? String, let grant = recoveredGrants[field + ":" + id] else { continue }
+                try await grant.access.validateAccess()
+                if !grant.local {
+                    guard let provider = grant.provider else { throw MCPDocumentError("grant_expired", "Recovered input expired; select it again") }
+                    // Forms must use this client's server/capabilities. Concrete
+                    // media and document operations can use the original grant.
+                    if params.name.hasSuffix("_form") { throw MCPDocumentError("recovered_input", "Use the typed tool with this recovered input, or select a new input for a host form") }
+                    let result = await provider.execute(params)
+                    try await grant.access.validateAccess()
+                    recoverGrants(from: provider, result: result, access: grant.access)
+                    return result
+                }
             }
             switch params.name {
             case "app_workbench", "voxstudio.library", "voxstudio.sessions":
@@ -850,6 +890,15 @@ final class MCPOpenAIExtensions {
         return try Self.result(["preview_resource_uri": uri, "mime_type": mime, "start": start, "end": end, "captions_ready": subtitles?.cues.isEmpty == false, "cues": (subtitles?.cues.filter { $0.end > start && $0.start < end } ?? []).map { ["id": $0.id, "start": $0.start, "end": $0.end, "text": $0.text] as [String: Any] }])
     }
     func readResource(_ uri: String) async throws -> ReadResource.Result {
+        if let grant = recoveredGrants["uri:" + uri] {
+            try await grant.access.validateAccess()
+            if !grant.local {
+                guard let provider = grant.provider else { throw MCPDocumentError("grant_expired", "Recovered resource expired; load it again") }
+                let result = try await provider.readResource(uri)
+                try await grant.access.validateAccess()
+                return result
+            }
+        }
         let resourceURI = Self.legacyUIURIs[uri] ?? uri
         if let panel = Self.uiResources.first(where: { $0.uri == resourceURI }) {
             guard let url = Bundle.module.url(forResource: panel.file, withExtension: "html", subdirectory: "MCPApps") else { throw MCPDocumentError("missing_ui", "MCP panel is missing from this build") }

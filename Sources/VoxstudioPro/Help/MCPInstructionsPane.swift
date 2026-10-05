@@ -1,22 +1,21 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct MCPInstructionsPane: View {
     var embedded = false
     @State private var claudeInstallError: String?
     @State private var showingPluginInfo = false
 
-    private var mcpEndpoint: String { "http://127.0.0.1:\(MCPService.port)/mcp" }
-    private var knowledgeEndpoint: String { "http://127.0.0.1:\(MCPService.port)/knowledge/mcp" }
-    private var connectionEndpoint: String { usesOpenAIPlugin && openAIPlugin == .knowledge ? knowledgeEndpoint : mcpEndpoint }
+    private var mcpEndpoint: String { "http://127.0.0.1:\(MCPService.port)/app/mcp" }
+    private var connectionEndpoint: String { mcpEndpoint }
 
     private var claudeCodeCommand: String {
         "claude mcp add --transport http voxstudio \(mcpEndpoint)"
     }
 
-    private let pluginDownloadURL = URL(string: "https://assets.voxstudio.me/downloads/voxstudio/plugins/voxstudio/0.1.2/31cb7283c7b7cae8b4e87736a5f941e261dc1833df8ec95103a84ff77240ea3c/VoxStudio-OpenAI-Plugin.zip")!
     private var pluginInstallCommand: String {
-        "bash \"$HOME/Downloads/VoxStudio-OpenAI-Plugin/install.sh\" --plugin \(openAIPlugin.rawValue)"
+        "bash \"$HOME/Downloads/VoxStudio-OpenAI-Plugin/install.sh\" --plugin voxstudio"
     }
     private var usesOpenAIPlugin: Bool { client == .chatgpt }
 
@@ -43,7 +42,7 @@ struct MCPInstructionsPane: View {
     }
 
     private enum Client: String, CaseIterable {
-        case chatgpt = "ChatGPT", claudeDesktop = "Claude Desktop", claudeCode = "Claude Code", cursor = "Cursor"
+        case chatgpt = "ChatGPT / Codex", claudeDesktop = "Claude Desktop", claudeCode = "Claude Code", cursor = "Cursor"
 
         var agent: SkillExternalAgent {
             switch self {
@@ -55,7 +54,6 @@ struct MCPInstructionsPane: View {
     }
 
     @State private var client: Client = .chatgpt
-    @State private var openAIPlugin: OpenAIPlugin = .knowledge
     @State private var presentedSkill: SkillLink?
     @State private var installing: Set<String> = []
     @State private var skillError: String?
@@ -64,18 +62,6 @@ struct MCPInstructionsPane: View {
 
     private struct SkillLink: Identifiable { let id: String }
     private var running: Bool { AppState.shared.mcpService?.isRunning ?? false }
-
-    private enum OpenAIPlugin: String, CaseIterable {
-        case knowledge = "voxstudio-knowledge", media = "voxstudio"
-
-        var title: String { self == .knowledge ? "Knowledge QA" : "Media workflows" }
-        var icon: String { self == .knowledge ? "books.vertical" : "film" }
-        var description: String {
-            self == .knowledge
-                ? "VoxStudio Knowledge: read-only answers from your sessions, with original quotes and source references."
-                : "VoxStudio: transcribe, create voiceovers, search video frames, preview media and edit the Mac timeline."
-        }
-    }
 
     var body: some View {
         Group {
@@ -267,9 +253,9 @@ struct MCPInstructionsPane: View {
     private var openAIPluginInstructions: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.mdLg) {
             HStack(spacing: AppTheme.Spacing.sm) {
-                Text(L10n.string("VoxStudio plugins"))
+                Text(L10n.string("VoxStudio plugin"))
                     .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
-                Text("0.1.2 · ZIP")
+                Text("0.2.0 · ZIP")
                     .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                 Spacer()
@@ -287,7 +273,7 @@ struct MCPInstructionsPane: View {
                         Text(L10n.string("About the OpenAI plugin"))
                             .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
                         setupDescription("The ZIP contains a local marketplace, plugin manifests, workflow skills and an installer. VoxStudio provides the MCP server and panels.")
-                        setupDescription("One download includes two independent plugins. Enable VoxStudio Knowledge for evidence QA; add VoxStudio for media creation, previews and editing. Both use the same app and session library.")
+                        setupDescription("One VoxStudio connection includes session questions, original evidence, media previews, transcription, voiceover and editing.")
                         setupDescription("Use a desktop client with local plugin support on this Mac. ChatGPT web and cloud sessions cannot connect to this local server. Client versions may offer different plugin features.")
                         setupDescription("Disable any old direct MCP connection named voxstudio before enabling this plugin. A same-name connection can hide the plugin tools.")
                         setupDescription("Panels use English. Video edits run in the native VoxStudio timeline; there is no HTML video editor.")
@@ -298,60 +284,40 @@ struct MCPInstructionsPane: View {
                 }
             }
             setupDescription("Recommended for ChatGPT on this Mac. Keep VoxStudio running and MCP enabled.")
-            pluginSelection
-            if openAIPlugin == .knowledge {
-                setupDescription("Answers use Transcript first, or subtitles when no Transcript is available. You can also explicitly search subtitles and media clips. Video frame search, previews and editing remain available in the VoxStudio media plugin.")
-            }
-            pluginStep("1", title: "Download and extract", detail: "Download the ZIP and extract it in Downloads. Keep the extracted folder in place after installation.") {
+            pluginStep("1", title: "Download and extract", detail: "Save the connector included with this App, then extract it in Downloads. Keep the extracted folder in place after installation.") {
                 HStack(spacing: AppTheme.Spacing.md) {
-                    Button { NSWorkspace.shared.open(pluginDownloadURL) } label: {
-                        Label(L10n.string("Download plugin"), systemImage: "arrow.down.circle")
+                    Button(action: saveOpenAIPlugin) {
+                        Label(L10n.string("Save VoxStudio plugin"), systemImage: "arrow.down.circle")
                     }
                     .buttonStyle(.capsule(.prominent))
-                    CopyButton(value: pluginDownloadURL.absoluteString, label: "Copy download URL")
                 }
             }
-            pluginStep("2", title: "Install from Terminal", detail: "Run the command for the selected plugin after extracting the ZIP. To install both, choose each plugin and run its command. Use the actual install.sh path if you extracted elsewhere.") {
+            pluginStep("2", title: "Install from Terminal", detail: "Run after extracting the ZIP. The installer checks the running App, preserves your preferences and migrates the old Knowledge plugin after verification.") {
                 CodeBlockView(content: pluginInstallCommand)
             }
-            pluginStep("3", title: "Enable and start a new chat", detail: "In your desktop client's Plugins page, enable the selected plugin under VoxStudio Local. Restart the client if it is missing, then open a new chat.") {
+            pluginStep("3", title: "Enable and start a new chat", detail: "In your desktop client's Plugins page, enable VoxStudio under VoxStudio Local. Restart the client if it is missing, then open a new chat.") {
                 HStack {
-                    Text(L10n.string(openAIPlugin == .knowledge ? "Find evidence in my VoxStudio sessions and cite the original text." : "Open my VoxStudio sessions."))
+                    Text(L10n.string("Find evidence in my VoxStudio sessions and show the original text."))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .textSelection(.enabled)
                     Spacer()
-                    CopyButton(value: L10n.string(openAIPlugin == .knowledge ? "Find evidence in my VoxStudio sessions and cite the original text." : "Open my VoxStudio sessions."), label: "Copy prompt")
+                    CopyButton(value: L10n.string("Find evidence in my VoxStudio sessions and show the original text."), label: "Copy prompt")
                 }
             }
         }
     }
 
-    private var pluginSelection: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            Text(L10n.string("Choose a plugin"))
-                .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
-            ForEach(OpenAIPlugin.allCases, id: \.self) { plugin in
-                Button { openAIPlugin = plugin } label: {
-                    HStack(alignment: .top, spacing: AppTheme.Spacing.smMd) {
-                        Image(systemName: plugin.icon)
-                            .foregroundStyle(AppTheme.Accent.link)
-                        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                            Text(L10n.string(plugin.title))
-                                .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
-                            setupDescription(plugin.description)
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: openAIPlugin == plugin ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(AppTheme.Accent.link)
-                    }
-                    .padding(AppTheme.Spacing.smMd)
-                    .themedSurface(AppTheme.Background.surfaceColor, cornerRadius: AppTheme.Radius.sm,
-                                   border: openAIPlugin == plugin ? AppTheme.Accent.link : AppTheme.Border.subtleColor)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(openAIPlugin == plugin ? .isSelected : [])
-            }
+    private func saveOpenAIPlugin() {
+        guard let source = Bundle.module.url(forResource: "VoxStudio-OpenAI-Plugin", withExtension: "zip", subdirectory: "OpenAIPlugin") else {
+            skillError = "The connector package is missing. Rebuild or update VoxStudio."; return
+        }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "VoxStudio-OpenAI-Plugin.zip"
+        panel.allowedContentTypes = [.zip]
+        panel.begin { response in
+            guard response == .OK, let destination = panel.url else { return }
+            do { try Data(contentsOf: source).write(to: destination, options: .atomic) }
+            catch { skillError = error.localizedDescription }
         }
     }
 
@@ -390,9 +356,7 @@ struct MCPInstructionsPane: View {
                 }
             }
             Text(L10n.string(usesOpenAIPlugin
-                            ? (openAIPlugin == .knowledge
-                               ? "Ask about your sessions, compare sources, or request original quotes. Enable the media plugin as well when you need previews or editing."
-                               : "Use separate panels for sessions, transcription and voiceover. Describe video edits in chat to update the Mac app timeline.")
+                            ? "Ask about your sessions, compare original sources, preview media or describe edits to the Mac timeline."
                             : "Skills install in VoxStudio. Open a skill and choose Add to External Agent to use it in Claude Code, Codex, or Cursor."))
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -402,17 +366,12 @@ struct MCPInstructionsPane: View {
 
     private var workflowExamples: [MCPWorkflow] {
         guard usesOpenAIPlugin else { return MCPWorkflow.examples }
-        if openAIPlugin == .knowledge {
-            return [
-                .init(id: "plugin-evidence", icon: "text.quote", title: "Answer with evidence",
-                      scope: "VoxStudio Knowledge", prompt: "Find evidence in my VoxStudio sessions and cite the original text.", skillID: ""),
-                .init(id: "plugin-compare", icon: "rectangle.split.2x1", title: "Compare sessions",
-                      scope: "VoxStudio Knowledge", prompt: "Compare the decisions in my selected VoxStudio sessions. Cite each source and explain any gaps in the evidence.", skillID: ""),
-                .init(id: "plugin-media-search", icon: "film", title: "Find media clips",
-                      scope: "VoxStudio Knowledge", prompt: "Find media clips in VoxStudio related to the topic I give you, and return their source references and time ranges.", skillID: "")
-            ]
-        }
+
         return [
+            .init(id: "plugin-evidence", icon: "text.quote", title: "Answer with evidence",
+                  scope: "Original sessions", prompt: "Find evidence in my VoxStudio sessions and show the original text.", skillID: ""),
+            .init(id: "plugin-compare", icon: "rectangle.split.2x1", title: "Compare sessions",
+                  scope: "Original sessions", prompt: "Compare the decisions in my selected VoxStudio sessions and cite each source.", skillID: ""),
             .init(id: "plugin-sessions", icon: "rectangle.stack", title: "Open your sessions",
                   scope: "Session library", prompt: "Open my VoxStudio sessions.", skillID: ""),
             .init(id: "plugin-transcription", icon: "text.bubble", title: "Transcribe media",
