@@ -118,6 +118,7 @@ enum MCPKnowledgeBaseTools {
     static func execute(name: String, args: [String: Any], snapshot supplied: KnowledgeScopeSnapshot? = nil,
                         service suppliedService: SearchService? = nil) async -> CallTool.Result {
         do {
+            try Task.checkCancellation()
             guard let tool = tools.first(where: { $0.name == name }),
                   let schema = tool.inputSchema.objectValue, let properties = schema["properties"]?.objectValue else {
                 throw KnowledgeToolError.unknownTool(name)
@@ -208,6 +209,8 @@ enum MCPKnowledgeBaseTools {
             try Task.checkCancellation()
             try await subset.validate()
             return try MCPOpenAIExtensions.result(result)
+        } catch is CancellationError {
+            return (try? MCPOpenAIExtensions.result(["status": "error", "complete": false, "code": "request_cancelled", "error": "This read was cancelled. Retry loading the session. Your saved media is still available."], error: true)) ?? .init(isError: true)
         } catch {
             return (try? MCPOpenAIExtensions.result(["status": "error", "complete": false, "error": error.localizedDescription], error: true))
                 ?? .init(content: [.text(error.localizedDescription)], isError: true)
@@ -483,7 +486,10 @@ enum MCPKnowledgeBaseTools {
         guard offset <= chunks.count else { throw KnowledgeToolError.invalidParameter("Cursor outside body") }
         var page: [KnowledgeBodyChunker.Chunk] = [], characters = 0
         for chunk in chunks.dropFirst(offset).prefix(min(100, limit)) {
-            if characters + chunk.text.count > 16_000 { break }
+            if characters + chunk.text.count > 16_000 {
+                guard !page.isEmpty else { throw KnowledgeToolError.invalidParameter("Selected cue exceeds the 16000-character read limit; use view=body") }
+                break
+            }
             page.append(chunk); characters += chunk.text.count
         }
         let rows = page.map { chunk in
@@ -491,6 +497,7 @@ enum MCPKnowledgeBaseTools {
             if view == "cues", let span = chunk.spans.first {
                 row["cue_id"] = span.cueID as Any? ?? NSNull()
                 row["timing_precision"] = span.timingPrecision
+                row["display_text"] = TranscriptSegmenter.renderedSubtitleText(chunk.text)
             }
             return row
         }

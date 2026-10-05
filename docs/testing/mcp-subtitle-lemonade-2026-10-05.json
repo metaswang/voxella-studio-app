@@ -1,0 +1,28 @@
+{
+  "source_id": "F18F0A30-AFBE-4C80-AB1D-2143132A03DA",
+  "title": "Make Your Own Lemonade",
+  "nativeCues": 40,
+  "bodyPassages": 2,
+  "fixedCues": 40,
+  "canonicalPassages": 1,
+  "matchesNative": true,
+  "verification_date": "2026-10-05",
+  "matched_fields": [
+    "cue_id",
+    "text",
+    "speaker",
+    "start_ms",
+    "end_ms"
+  ],
+  "ui": {
+    "data": "live local MCP",
+    "tab": "Subtitles",
+    "count": "40 segments",
+    "screenshot": "openai-mcp/lemonade-subtitles-fixed.jpg"
+  },
+  "validation": {
+    "swift": "swift test --traits BundledSpeech --filter KnowledgeCanonicalRetrievalTests: 26 passed",
+    "frontend": "npm run check; node --test tests/*.test.mjs: 10 passed",
+    "bundle": "./scripts/bundle.sh debug --sign: passed; signature verified; app restarted"
+  }
+}

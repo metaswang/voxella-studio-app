@@ -13,7 +13,7 @@ async function call(method,params={}){
  try{
   const initialized=await call('initialize',{protocolVersion:'2025-06-18',capabilities:{extensions:{'io.modelcontextprotocol/ui':{mimeTypes:['text/html;profile=mcp-app']}}},clientInfo:{name:'voxstudio-stdio-acceptance',version:'1'}});
   const inventory=await call('tools/list');const entry=inventory.tools.find(row=>row.name==='app_knowledge');
-  assert.equal(entry._meta.ui.resourceUri,'ui://voxstudio/workspace/v1');assert.ok(inventory.tools.find(row=>row.name==='session.editor.commit'));
+  assert.equal(entry._meta.ui.resourceUri,'ui://voxstudio/workspace/v3');assert.ok(inventory.tools.find(row=>row.name==='session.editor.commit'));
   const html=await call('resources/read',{uri:entry._meta.ui.resourceUri});assert.equal(html.contents[0].mimeType,'text/html;profile=mcp-app');assert.ok(html.contents[0].text.includes('voxstudio-session-companion-v1'));
   const read=await call('tools/call',{name:'fetch',arguments:{source_id:sessionId,limit:1}});assert.equal(read.isError,undefined);assert.ok(read.structuredContent.segments[0].text.length>0);
   const preview=await call('tools/call',{name:'media.session_preview',arguments:{session_id:sessionId,start:0,duration:15}});assert.ok(!preview.isError,JSON.stringify(preview));

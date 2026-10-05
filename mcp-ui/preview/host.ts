@@ -72,10 +72,19 @@ async function respond(name:string,args:any={}){
  }
  if(name==='list_sources')return result({sources:sessions.filter(row=>!args.source_ids||args.source_ids.includes(row.session_id)).map(row=>({...row,source_id:row.session_id,body_readable:true})),complete:true});
  if(name==='fetch'&&args.view==='metadata')return result(sessions.find(row=>row.session_id===args.source_id)??sessions[0]);
- if(name==='fetch')return result(args.view==='summary'?{summary_markdown:'# Saved source summary\n\nA quieter workspace gives people room to think.',complete:true}:{segments:transcriptCues.map((row,i)=>({text:row.text,speaker:row.speaker,start:scenario==='cloud'?null:row.start_ms/1000,end:scenario==='cloud'?null:row.end_ms/1000,character_start:i*80,character_end:i*80+row.text.length,role:'original',source_id:args.source_id??sessions[0].session_id,evidence_id:i===0?'fixture-evidence':'fixture-'+i})).filter((_,i)=>scenario!=='paged'||(args.cursor?i>0:i===0)),provenance:'transcript',complete:scenario!=='paged'||Boolean(args.cursor),next_cursor:scenario==='paged'&&!args.cursor?'fixture-next':null});
+ if(name==='fetch'){
+  if(args.view==='summary')return result({summary_markdown:'# Saved source summary\n\nA quieter workspace gives people room to think.',complete:true});
+  const subtitle=args.material==='subtitles'||args.material==='translation';
+  const selected=subtitle?(noSubtitles?[]:cues):transcriptCues;
+  let offset=0;
+  const segments=selected.map((row,i)=>{const start=offset;offset+=row.text.length+1;return {text:row.text,speaker:[row.speaker],start:scenario==='cloud'?null:row.start_ms/1000,end:scenario==='cloud'?null:row.end_ms/1000,character_start:start,character_end:start+row.text.length,...(args.view==='cues'?{cue_id:row.id,display_text:row.text.replace(/\.$/,'')}:{}),role:'original',source_id:args.source_id??sessions[0].session_id,evidence_id:i===0?'fixture-evidence':'fixture-'+i};}).filter((_,i)=>scenario!=='paged'||(args.cursor?i>0:i===0));
+  return result({segments,provenance:subtitle?'subtitle_track':'transcript',total_count:selected.length,complete:scenario!=='paged'||Boolean(args.cursor),next_cursor:scenario==='paged'&&!args.cursor?'fixture-next':null});
+ }
  if(name==='voxstudio.sessions'||name==='voxstudio.library'||name==='app_workbench')return result({view:'library',sessions:emptyList?[]:sessions,native_forms:false});
  if(name==='app_transcription')return result({view:'transcription',native_forms:false});
- if(name==='app_dubbing'||name==='voice.list')return result({view:'dubbing',voices:emptyList?[]:voices});
+ if(name==='voice.list')return result({voices:emptyList?[]:voices});
+ if(name==='app_dubbing'&&scenario==='voiceover-delayed')await new Promise(resolve=>setTimeout(resolve,2000));
+ if(name==='app_dubbing')return result({view:'dubbing',voices:emptyList?[]:voices,options:args.session_id?{text:'A saved voiceover script.',title:sessions[1].title,voice_id:voices[0].voice_id,language:'en'}:args,...(args.start||args.session_id?{...sessions[1],title:args.title||sessions[1].title,progress:1}:{})});
  if(name==='app_session'||name==='voxstudio.session_panel')return result({view:'session',...sessions.find(s=>s.session_id===args.session_id)??sessions[0]});
  if(name==='media.status')return result({...sessions.find(s=>s.session_id===args.session_id)??sessions[0],progress:1});
  if(name==='media.session_preview'||name==='media.preview'){
@@ -143,4 +152,7 @@ const follow=document.createElement('button');follow.textContent='Simulate follo
 follow.onclick=()=>{fixtureHistory.set(workspaceState.turn_id,structuredClone(workspaceState));workspaceState={...workspaceState,turn_id:'fixture-turn-2',active_turn_id:'fixture-turn-2',revision:workspaceState.revision+1,view_revision:workspaceState.view_revision+1,scope:{},observations:{},view:workspaceState.view.pinned?workspaceState.view:{source_id:sessions[2].session_id}};void bridge?.sendToolResult(result(workspaceState));};
 if(live){document.querySelector('#conflict')!.parentElement!.hidden=true;document.querySelector('#empty')!.parentElement!.hidden=true;log.textContent='Real app sessions · read-only browser preview · create/edit in the ChatGPT/Codex plugin'}
 window.addEventListener('pagehide',()=>{if(sessionId)void fetch(endpoint,{method:'DELETE',headers:{'Mcp-Session-Id':sessionId},keepalive:true})});
-void mount(unified?'workspace':'library');
+const requestedPanel=new URLSearchParams(location.search).get('panel');
+const voiceoverScript='Make Your Own Lemonade” is about turning life’s setbacks into chances for practical action and growth. It encourages acknowledging what’s hard, then choosing a next step—such as addressing worry, protecting your health or finances, and finding small things to be grateful for.';
+const requestedSession=new URLSearchParams(location.search).get('session_id');
+void mount(requestedPanel&&['workspace','session','dubbing','transcription'].includes(requestedPanel)?requestedPanel:'library',requestedSession?{session_id:requestedSession}:scenario==='voiceover-prompt'?{text:voiceoverScript,title:'Make Your Own Lemonade',voice_id:voices[0].voice_id,language:'en',start:false}:['voiceover-start','voiceover-delayed'].includes(scenario??'')?{text:voiceoverScript,title:'Make Your Own Lemonade',voice_id:voices[0].voice_id,language:'en',start:true}:{});

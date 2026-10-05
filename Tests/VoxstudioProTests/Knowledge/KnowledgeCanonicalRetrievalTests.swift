@@ -126,6 +126,60 @@ struct KnowledgeCanonicalRetrievalTests {
         #expect(Set(chunks.flatMap { $0.spans.compactMap(\.cueID) }) == Set(cues.map(\.id)))
     }
 
+    @Test @MainActor func mcpSubtitleReaderPreservesSavedCuesAcrossPages() async throws {
+        var source = fixtures.fixture(segments: [.init(text: "Canonical transcript only", start: 0, end: 80)])
+        let cues = (0..<40).map { SubtitleCue(id: 100 + $0, sourceIDs: [$0], text: "字幕 🙂 \($0).",
+            start: Double($0 * 2) + 0.6, end: Double($0 * 2) + 1.7, speaker: "Speaker 1") }
+        source.subtitleTrack = .init(sourceLanguage: "en", language: "en", cues: cues)
+        let scope = fixtures.snapshot([source])
+        let args: [String: Any] = ["source_id": source.id.uuidString, "material": "subtitles", "view": "cues", "limit": 7]
+        var rows: [[String: Any]] = [], cursor: String?
+        repeat {
+            var request = args; request["cursor"] = cursor
+            let page = try payload(await MCPKnowledgeBaseTools.execute(name: "fetch", args: request, snapshot: scope))
+            #expect(page["total_count"] as? Int == cues.count)
+            rows += try #require(page["segments"] as? [[String: Any]])
+            cursor = page["next_cursor"] as? String
+        } while cursor != nil
+        #expect(rows.count == cues.count)
+        for (row, cue) in zip(rows, cues) {
+            #expect(row["cue_id"] as? Int == cue.id)
+            #expect(row["text"] as? String == cue.text)
+            #expect(row["display_text"] as? String == TranscriptSegmenter.renderedSubtitleText(cue.text))
+            #expect(row["start"] as? Double == cue.start)
+            #expect(row["end"] as? Double == cue.end)
+            #expect(row["speaker"] as? [String] == [cue.speaker!])
+            #expect(row["timing_precision"] as? String == "cue")
+            let locator = try MCPKnowledgeBaseTools.Locator.decode(try #require(row["evidence_id"] as? String))
+            let body = try #require(KnowledgeTranscriptMaterial.from(subtitles: source.subtitleTrack))
+            #expect((body.text as NSString).substring(with: NSRange(location: locator.lower, length: locator.upper - locator.lower)) == cue.text)
+        }
+        // Evidence retrieval still groups cues; original transcript remains independent.
+        let passages = try payload(await MCPKnowledgeBaseTools.execute(name: "fetch",
+            args: ["source_id": source.id.uuidString, "material": "subtitles"], snapshot: scope))
+        #expect(try #require(passages["total_count"] as? Int) < cues.count)
+        let original = try payload(await MCPKnowledgeBaseTools.execute(name: "fetch",
+            args: ["source_id": source.id.uuidString], snapshot: scope))
+        #expect((original["segments"] as? [[String: Any]])?.first?["text"] as? String == "Canonical transcript only")
+    }
+
+    @Test @MainActor func mcpCueReaderSelectsTranslationAndDoesNotBorrowMissingSubtitles() async throws {
+        var source = fixtures.fixture(segments: [.init(text: "Transcript exists", start: 0, end: 10)])
+        source.translationTracks = [.init(languageCode: "zh", track: .init(sourceLanguage: "en", language: "zh", cues: [
+            .init(id: 9, sourceIDs: [1], text: "翻译第一行", start: 2.6, end: 5.7, speaker: "Speaker 1"),
+            .init(id: 12, sourceIDs: [2], text: "翻译第二行", start: 6.1, end: 9.0, speaker: "Speaker 1")]))]
+        let scope = fixtures.snapshot([source])
+        let translated = try payload(await MCPKnowledgeBaseTools.execute(name: "fetch", args: [
+            "source_id": source.id.uuidString, "material": "translation", "language": "zh", "view": "cues"], snapshot: scope))
+        #expect((translated["segments"] as? [[String: Any]])?.compactMap { $0["text"] as? String } == ["翻译第一行", "翻译第二行"])
+        let missing = try payload(await MCPKnowledgeBaseTools.execute(name: "fetch", args: [
+            "source_id": source.id.uuidString, "material": "subtitles", "view": "cues"], snapshot: scope))
+        #expect(missing["status"] as? String == "unavailable")
+        #expect((missing["segments"] as? [Any])?.isEmpty == true)
+        #expect(await MCPKnowledgeBaseTools.execute(name: "fetch", args: [
+            "source_id": source.id.uuidString, "view": "cues"], snapshot: scope).isError == true)
+    }
+
     @Test func knowledgeRebuildPreservesClipIDsAndBothVisualVectorTables() async throws {
         let (store, directory) = try makeStore()
         defer { try? FileManager.default.removeItem(at: directory) }

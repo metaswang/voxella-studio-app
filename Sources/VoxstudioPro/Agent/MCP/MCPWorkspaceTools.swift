@@ -3,7 +3,10 @@ import MCP
 
 /// Standard MCP Apps registration. OpenAI entrypoints are optional descriptor additions.
 enum MCPAppPresentation {
-    static let workspaceURI = "ui://voxstudio/workspace/v1"
+    // Version the resource when bundled UI behavior changes: hosts cache HTML by URI.
+    static let workspaceURI = "ui://voxstudio/workspace/v3"
+    static let legacyWorkspaceURI = "ui://voxstudio/workspace/v1"
+    static let legacyWorkspaceURIs = [legacyWorkspaceURI, "ui://voxstudio/workspace/v2"]
     static func metadata(entry: Bool = false) -> Metadata {
         var fields: [String: Value] = ["ui": ["resourceUri": .string(workspaceURI)]]
         if entry { fields["openai/ui"] = ["entrypoints": [["type": "global"], ["type": "thread"]]] }
@@ -147,6 +150,7 @@ final class MCPWorkspaceTools {
     func execute(_ parameters: CallTool.Parameters) async -> CallTool.Result {
         let args = parameters.arguments ?? [:]
         do {
+            try Task.checkCancellation()
             let name = parameters.name
             guard let tool = Self.tools.first(where: { $0.name == name }) else { throw WorkspaceError("invalid_argument", "Unknown tool") }
             try Self.validate(.object(args), schema: tool.inputSchema)
@@ -218,6 +222,8 @@ final class MCPWorkspaceTools {
                 return Self.result(.object(fields), error: result.isError == true)
             }
             return result
+        } catch is CancellationError {
+            return Self.result(["status": "error", "complete": false, "code": "request_cancelled", "error": "This read was cancelled. Retry loading the session. Your saved media is still available."], error: true)
         } catch {
             return Self.result(["status": "error", "complete": false, "code": .string((error as? WorkspaceError)?.code ?? "materials_changed"), "error": .string(error.localizedDescription)], error: true)
         }

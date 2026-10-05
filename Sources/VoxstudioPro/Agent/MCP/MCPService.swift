@@ -208,7 +208,7 @@ final class MCPService {
         }
 
         await server.withMethodHandler(ReadResource.self) { params in
-            if unified, params.uri == MCPAppPresentation.workspaceURI { return try MCPAppPresentation.resource(params.uri) }
+            if unified, ([MCPAppPresentation.workspaceURI] + MCPAppPresentation.legacyWorkspaceURIs).contains(params.uri) { return try MCPAppPresentation.resource(params.uri) }
             if params.uri.hasPrefix("ui://") || params.uri.hasPrefix("voxstudio://sessions/") || params.uri.hasPrefix("voxstudio://documents/") || params.uri.hasPrefix("voxstudio://previews/") { return try await extensions.readResource(params.uri) }
             return await Self.readResource(uri: params.uri)
         }

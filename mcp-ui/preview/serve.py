@@ -61,6 +61,8 @@ class Handler(SimpleHTTPRequestHandler):
                 args = request['params'].get('arguments', {})
                 if any(key in args for key in ('path', 'attachment')) or args.get('start'):
                     raise ValueError('This local preview is read-only. Submit transcription inputs in the ChatGPT/Codex plugin.')
+            if method == 'tools/call' and request.get('params', {}).get('name') == 'app_dubbing' and request['params'].get('arguments', {}).get('start'):
+                raise ValueError('This local preview is read-only. Create voiceovers in the ChatGPT/Codex plugin.')
             headers = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'}
             for key in ('Mcp-Session-Id', 'MCP-Protocol-Version'):
                 if self.headers.get(key):

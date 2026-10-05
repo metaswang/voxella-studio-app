@@ -2,7 +2,7 @@ import { parseSummaryMarkdown } from './summary-markdown';
 import DOMPurify from 'dompurify';
 import {highlightedParts} from './workspace-model';
 import { $, t, esc, icon, action, call, value, openNativeSession, notice, poll, progress, mountPlayer, clearPlayer, languageLabel, time, languages, context, type Obj } from './ui';
-type Cue = { id:number; start_ms:number; end_ms:number; text:string; speaker?:string; cue_ids?:number[]; character_start?:number; character_end?:number };
+type Cue = { id:number; start_ms:number; end_ms:number; text:string; display_text?:string; speaker?:string; cue_ids?:number[]; character_start?:number; character_end?:number };
 const textTabs = ['transcript','subtitles','summary'] as const;
 type TextTab = typeof textTabs[number];
 export function createSessionView(options: {readOnly?:boolean; onChange?:(view:Obj)=>Promise<unknown>;onBrowse?:()=>Promise<unknown>} = {}) {
@@ -34,8 +34,14 @@ function operations() {
 }
 function cueText(cue:Cue) {
  if(!options.readOnly)return esc(cue.text);
- const [before,match,after]=highlightedParts(cue.text,cue.character_start??0,reading.character_start,reading.character_end);
+ const text=activeTab==='subtitles'?(cue.display_text??cue.text):cue.text;
+ const [before,match,after]=highlightedParts(text,cue.character_start??0,reading.character_start,reading.character_end);
  return esc(before)+(match?'<mark>'+esc(match)+'</mark>':'')+esc(after);
+}
+function cueMetadata(cue:Cue) {
+ const range=activeTab==='subtitles'&&Number.isFinite(cue.start_ms)&&Number.isFinite(cue.end_ms)
+  ? `${(cue.start_ms/1000).toFixed(1)}s – ${(cue.end_ms/1000).toFixed(1)}s` : '';
+ return range||cue.speaker?`<p class="speaker">${esc([range,cue.speaker].filter(Boolean).join(' · '))}</p>`:'';
 }
 function renderCues() {
  suppressScrollUntil=Date.now()+500;
@@ -43,7 +49,7 @@ function renderCues() {
  const grouped=activeTab==='transcript'&&!editing;
  const rows:Cue[]=grouped?(track?.paragraphs??cues):cues;
  $('cue-count').textContent=`${rows.length} ${grouped?'paragraphs':'segments'}`;
- $('cues').innerHTML=rows.length?rows.map(c=>`<div class="cue-row" ${grouped?'data-paragraph':'data-cue'}="${c.id}" data-range="${c.character_start??0}"><button class="cue-time" data-seek="${c.start_ms/1000}" ${Number.isFinite(c.start_ms)?'':'disabled'} aria-label="${Number.isFinite(c.start_ms)?'Seek to '+time(c.start_ms/1000):'Text without timecode'}">${Number.isFinite(c.start_ms)?time(c.start_ms/1000):'Text'}</button><div>${c.speaker?`<p class="speaker">${esc(c.speaker)}</p>`:''}${editing?`<textarea aria-label="Text ${c.id}">${esc(c.text)}</textarea><div class="cue-timing"><label>Start (s) <input type="number" data-start min="0" step="0.001" value="${c.start_ms/1000}"></label><span>→</span><label>End (s) <input type="number" data-end min="0" step="0.001" value="${c.end_ms/1000}"></label></div>`:`<p class="cue-copy">${cueText(c)}</p>`}</div></div>`).join(''):`<div class="empty-state"><h3>${activeTab==='subtitles'?'No subtitles generated':'No transcript available'}</h3><p>${activeTab==='subtitles'?'Subtitle segmentation is optional. You can read the original text in Transcript.':'This session has no readable transcript yet.'}</p></div>`;
+ $('cues').innerHTML=rows.length?rows.map(c=>`<div class="cue-row" ${grouped?'data-paragraph':'data-cue'}="${c.id}" data-range="${c.character_start??0}"><button class="cue-time" data-seek="${c.start_ms/1000}" ${Number.isFinite(c.start_ms)?'':'disabled'} aria-label="${Number.isFinite(c.start_ms)?'Seek to '+time(c.start_ms/1000):'Text without timecode'}">${Number.isFinite(c.start_ms)?time(c.start_ms/1000):'Text'}</button><div>${cueMetadata(c)}${editing?`<textarea aria-label="Text ${c.id}">${esc(c.text)}</textarea><div class="cue-timing"><label>Start (s) <input type="number" data-start min="0" step="0.001" value="${c.start_ms/1000}"></label><span>→</span><label>End (s) <input type="number" data-end min="0" step="0.001" value="${c.end_ms/1000}"></label></div>`:`<p class="cue-copy">${cueText(c)}</p>`}</div></div>`).join(''):`<div class="empty-state"><h3>${activeTab==='subtitles'?'No subtitles generated':'No transcript available'}</h3><p>${activeTab==='subtitles'?'Subtitle segmentation is optional. You can read the original text in Transcript.':'This session has no readable transcript yet.'}</p></div>`;
  $('cues').querySelectorAll<HTMLButtonElement>('[data-seek]').forEach((b,i)=>{
   b.id=`seek-${i}`;
   action(b.id,async()=>{await preview(Number(b.dataset.seek)); const row=rows[i]; if(options.readOnly)await options.onChange?.({anchor:row.character_start??0});else await context({...args(),start_ms:row.start_ms,end_ms:row.end_ms,text:row.text.slice(0,2500)});});
@@ -61,10 +67,11 @@ async function loadTrack(append=false) {
  const edit=$<HTMLButtonElement>('edit'); if(edit)edit.disabled=true;
  try {
   const selected=value('track')||'source';
-  const next=options.readOnly?await call('fetch',{source_id:session!.session_id,material:selected==='source'?(activeTab==='subtitles'?'subtitles':'canonical'):'translation',...(selected==='source'?{}:{language:selected}),limit:64,...(pageCursor?{cursor:pageCursor}:{})}):await call('session.editor.read',request);
+  const material=selected==='source'?(activeTab==='subtitles'?'subtitles':'canonical'):'translation';
+  const next=options.readOnly?await call('fetch',{source_id:session!.session_id,material,...(activeTab==='subtitles'?{view:'cues'}:{}),...(selected==='source'?{}:{language:selected}),limit:64,...(pageCursor?{cursor:pageCursor}:{})}):await call('session.editor.read',request);
   if(generation!==trackGeneration||disposed)return;
   if(options.readOnly){
-   const cues=(next.segments??[]).map((row:Obj,index:number)=>({id:row.character_start??index,text:row.text??'',speaker:row.speaker,start_ms:Number.isFinite(row.start)?row.start*1000:NaN,end_ms:Number.isFinite(row.end)?row.end*1000:NaN,character_start:row.character_start,character_end:row.character_end}));
+   const cues=(next.segments??[]).map((row:Obj,index:number)=>({id:row.cue_id??row.character_start??index,text:row.text??'',display_text:row.display_text,speaker:Array.isArray(row.speaker)?row.speaker.join(', '):row.speaker,start_ms:Number.isFinite(row.start)?row.start*1000:NaN,end_ms:Number.isFinite(row.end)?row.end*1000:NaN,character_start:row.character_start,character_end:row.character_end}));
    track={...next,cues:[...(previous?.cues??[]),...cues],editable:false};trackCursor=next.next_cursor||undefined;
   }else track=next;
   renderCues();

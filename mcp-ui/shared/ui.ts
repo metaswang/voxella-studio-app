@@ -85,7 +85,7 @@ export async function openNativeSession(sessionId:string) {
 }
 export function action(id: string, handler:()=>Promise<unknown>) {
  const button=$(id) as HTMLButtonElement;
- button.onclick=async()=>{if(button.disabled)return; button.disabled=true;button.setAttribute('aria-busy','true');clearNotice();try{await handler()}catch(e){notice(e instanceof Error?e.message:String(e),true)}finally{if(button.isConnected){button.disabled=false;button.removeAttribute('aria-busy')}}};
+ button.onclick=async()=>{if(button.disabled)return; button.disabled=true;button.setAttribute('aria-busy','true');clearNotice();try{await handler()}catch(e){if(!disposed&&button.isConnected)notice(e instanceof Error?e.message:String(e),true)}finally{if(button.isConnected){button.disabled=false;button.removeAttribute('aria-busy')}}};
 }
 export function value(id: string) { return ($<HTMLInputElement>(id)).value; }
 export function time(seconds: number) { if(!Number.isFinite(seconds)||seconds<0)return '—';const s=Math.floor(seconds);return `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`; }
@@ -105,7 +105,7 @@ export async function openPanel(tool: string, args: Obj = {}) {
  if(!receiptTools.size){await openLegacyPanel(app,panelNames[tool][1],tool,args);return;}
  const name=tool==='app_workbench'?'voxstudio.workspace':tool;
  const result=await rawCall(name,args);
- const uri=['app_session','app_workbench'].includes(tool)?'ui://voxstudio/workspace/v1':tool==='app_transcription'?'ui://voxstudio/transcription/v4':'ui://voxstudio/dubbing/v3';
+ const uri=['app_session','app_workbench'].includes(tool)?'ui://voxstudio/workspace/v3':tool==='app_transcription'?'ui://voxstudio/transcription/v4':'ui://voxstudio/dubbing/v4';
  const resource=await app.readServerResource({uri});
  const html=resource.contents.find(row=>'text' in row);
  if(!html||!('text' in html))throw new Error('Panel resource is unavailable.');
@@ -133,12 +133,12 @@ export async function waitInput(result: Obj,onState?:(state:Obj)=>void):Promise<
  }
 }
 export async function resolveJob(result:Obj):Promise<Obj> {let attempts=0;while(result.job_id&&!result.session_id&&!result.document_id&&['queued','running','pending','importing',undefined].includes(result.status)&&!disposed){if(++attempts>300)throw new Error(t('任务已提交，稍后可在会话列表查看','Job submitted. Check the sessions list in a moment.'));await new Promise(r=>setTimeout(r,600));result=await call('voxstudio.job_status',{job_id:result.job_id})}if(result.error||result.status==='failed')throw new Error(result.error||'Job failed');return result;}
-export function start(fallbackTool:string,consume:(data:Obj)=>Promise<void>|void,fallbackArgs:(args:Obj)=>Obj|undefined= args=>args) {
+export function start(fallbackTool:string,consume:(data:Obj)=>Promise<void>|void,fallbackArgs:(args:Obj)=>Obj|undefined= args=>args,consumeInput?:(args:Obj)=>void) {
  let initial:Obj|undefined, input:Obj|undefined, chain=Promise.resolve(), delivered='';
  const handoff=(window as any).__voxstudioPanelResult;
  if(handoff){initial=decode(handoff);delete (window as any).__voxstudioPanelResult;}
  const deliver=(data:Obj)=>{const signature=JSON.stringify(data);if(signature===delivered)return;delivered=signature;chain=chain.then(()=>consume(data)).then(()=>undefined).catch(e=>notice(e instanceof Error?e.message:String(e),true));};
- app.ontoolinput=p=>{input=p.arguments as Obj};
+ app.ontoolinput=p=>{input=p.arguments as Obj;consumeInput?.(input)};
  app.ontoolresult=p=>{try{const data=decode(p);if(fallbackTool==='voxstudio.workspace'&&!data.workspace_id)return;initial=data;if(connected)deliver(initial)}catch(e){notice(String(e),true)}};
  const host=(ctx:Obj)=>{if(ctx.theme)applyDocumentTheme(ctx.theme);if(ctx.styles?.variables)applyHostStyleVariables(ctx.styles.variables)};
  app.onhostcontextchanged=host;

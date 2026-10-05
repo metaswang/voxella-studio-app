@@ -27,6 +27,11 @@ enum MCPMediaTools {
     repeatedly open session lists, retry creation, or report it missing before resolving its job_id.
     For a ChatGPT attachment explicitly identified by the user, use app_transcription with
     the host-provided attachment file object and start=true. Do not fabricate file IDs or URLs.
+    For a voiceover prompt containing a script, first use voice.list, then call app_dubbing
+    with text, a saved voice_id and start=true. This submits once and opens the filled script
+    with progress. Do not call app_dubbing with empty arguments when the script is provided.
+    If voice selection is still needed, pass text and start=false to preserve the draft.
+    Reopen a submitted voiceover with app_dubbing(session_id); never create it again.
     """
 
     nonisolated static let definitions: [KnowledgeToolDefinition] = [
@@ -90,6 +95,10 @@ enum MCPMediaTools {
             }
         }
         if let id = args["voice_id"] as? String, UUID(uuidString: id) == nil { throw ToolError("Invalid voice UUID") }
+        if name == "dubbing.create" {
+            guard ((args["text"] as? String)?.count ?? 0) <= 12_000 else { throw ToolError("Script must be at most 12,000 characters") }
+            if let language = args["language"] as? String, WorkbenchDubLanguage(rawValue: language) == nil { throw ToolError("Unsupported dubbing language") }
+        }
         if let start = (args["start"] as? NSNumber)?.doubleValue, start < 0 { throw ToolError("start must be nonnegative") }
         if let duration = (args["duration"] as? NSNumber)?.doubleValue, duration <= 0 || duration > 30 { throw ToolError("duration must be >0 and <=30 seconds") }
         if name == "transcription.create", args["start"] != nil || args["end"] != nil {
@@ -105,6 +114,7 @@ enum MCPMediaTools {
 
     static func execute(name: String, args: [String: Any]) async -> ToolResult {
         do {
+            try Task.checkCancellation()
             try validate(args, name: name)
             let store = WorkbenchStore.shared
             let voices = VoiceLibraryStore.shared
@@ -192,6 +202,7 @@ enum MCPMediaTools {
                 }
             }
         } catch let error as ToolError { return .error(error.message) }
+        catch is CancellationError { return .error("This request was cancelled. Retry loading the preview or status. Your saved media is still available.") }
         catch { return .error(error.localizedDescription) }
     }
 

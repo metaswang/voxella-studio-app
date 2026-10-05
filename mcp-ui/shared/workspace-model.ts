@@ -31,7 +31,10 @@ export function sessionPresentation(state:WorkspaceObject,catalog:WorkspaceObjec
  const withMetadata=(rows:WorkspaceObject[])=>distinctSessions(rows.map(row=>({...known.find(item=>item.session_id===(row.source_id??row.session_id)),...row})));
  let rows=last?withMetadata(observedRows):(searched||state.candidates?.length?withMetadata(state.candidates??[]):known);
  if(scope.length){rows=last||state.candidates?.length?rows.filter(row=>scope.includes(row.session_id)):scope.map((id:string)=>known.find(row=>row.session_id===id)??sessionRow({source_id:id,title:'Session'}));}
- const loading=Boolean(state.turn_id&&state.complete===false&&!scope.length&&!manual&&!observations.length);
+ // The unified panel loads the session catalog while an answer is in progress.
+ // Do not hide those already available rows behind the answer's pending state;
+ // some hosts may not deliver complete_turn promptly (or at all).
+ const loading=Boolean(state.turn_id&&state.complete===false&&!scope.length&&!manual&&!observations.length&&!known.length);
  return {kind:'list' as const,rows,loading,listing:last,cursor:last?.result?.next_cursor,args:last?.arguments??{}};
 }
 export function highlightedParts(text:string,start:number,lower?:number,upper?:number) {

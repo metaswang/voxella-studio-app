@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-05",
+  "session_id": "B22850F8-7AF9-41B7-B307-A4E275A80BAD",
+  "voice": "Demo · American Female",
+  "job_id": "D40A629B-9EDF-4146-9758-F7F3AA15420F",
+  "status": "completed",
+  "script_preserved": true,
+  "receipt_replay_same_result": true,
+  "transcript_cues": 1,
+  "alignment_punctuation": "Alignment added an opening curly quote; saved script remains exact.",
+  "preview": {
+    "start": 0,
+    "end": 15,
+    "mime": "audio/mp4",
+    "bytes": 64026,
+    "decoded_without_error": true,
+    "file_duration_seconds": 15.104
+  },
+  "panel_uri": "ui://voxstudio/dubbing/v4",
+  "html_sha256": "f21ce4d827fc904cec7b19ccd764c9027e65e3f6bb3be99bf89ff285600fcd33",
+  "tests": {
+    "swift": 49,
+    "typescript_check": true,
+    "frontend_existing": 10,
+    "transport": 7
+  },
+  "ui": {
+    "host": "Codex in-app browser, real VoxStudio MCP data",
+    "prompt_visible_before_delayed_result": true,
+    "delayed_host_submission_calls": 1,
+    "preview_loaded": true,
+    "playback": {
+      "current_time": 0.195795,
+      "paused": false,
+      "media_error": null,
+      "ready_state": 4,
+      "source": "blob"
+    },
+    "screenshot": "filled-voiceover.png",
+    "session_transcript_paragraphs": 1,
+    "session_preview_loaded": true,
+    "session_screenshot": "session-transcript.png"
+  },
+  "plugin": {
+    "installed": "voxstudio@voxstudio-local",
+    "version": "0.2.0",
+    "skill_matches_source": true,
+    "existing_preferences_preserved": true
+  },
+  "limitations": [
+    "Host prompt orchestration was not replayed inside ChatGPT Work; fresh chat required to reload plugin schemas and skills.",
+    "Speech naturalness and voice similarity were not evaluated."
+  ],
+  "build": {
+    "command": "./scripts/bundle.sh debug --sign",
+    "signed": true,
+    "signature_verified": true,
+    "bundle_path": "/Users/adamwang/Project/subdub/voxella-studio-app/.build/VoxStudio.app",
+    "bundled_panels_match_source": true,
+    "relaunched": true,
+    "read_and_preview_after_restart": true
+  },
+  "panel_uris": {
+    "voiceover": "ui://voxstudio/dubbing/v4",
+    "session": "ui://voxstudio/session/v8",
+    "workspace": "ui://voxstudio/workspace/v3"
+  }
+}

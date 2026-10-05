@@ -17,8 +17,8 @@ final class MCPOpenAIExtensions {
     // legacy URIs remain readable for clients with older tool metadata.
     nonisolated static let uiURI = "ui://voxstudio/library/v3"
     nonisolated static let transcriptionUIURI = "ui://voxstudio/transcription/v4"
-    nonisolated static let sessionUIURI = "ui://voxstudio/session/v7"
-    nonisolated static let dubbingUIURI = "ui://voxstudio/dubbing/v3"
+    nonisolated static let sessionUIURI = "ui://voxstudio/session/v8"
+    nonisolated static let dubbingUIURI = "ui://voxstudio/dubbing/v4"
     nonisolated static let uiResources: [(name: String, uri: String, file: String)] = [
         ("VoxStudio · Sessions", uiURI, "library"),
         ("VoxStudio · Transcribe", transcriptionUIURI, "transcription"),
@@ -37,8 +37,10 @@ final class MCPOpenAIExtensions {
         "ui://voxstudio/session/v4": sessionUIURI,
         "ui://voxstudio/session/v5": sessionUIURI,
         "ui://voxstudio/session/v6": sessionUIURI,
+        "ui://voxstudio/session/v7": sessionUIURI,
         "ui://voxstudio/dubbing/v1": dubbingUIURI,
         "ui://voxstudio/dubbing/v2": dubbingUIURI,
+        "ui://voxstudio/dubbing/v3": dubbingUIURI,
     ]
     nonisolated static func panelURI(for tool: String) -> String? {
         switch tool {
@@ -128,7 +130,12 @@ final class MCPOpenAIExtensions {
                 "segment_subtitles": field("boolean"),
                 "target_languages": .object(["type": "array", "items": string]),
             ]), false),
-            ("app_dubbing", "Create a voiceover", schema(), true),
+            ("app_dubbing", "Create a voiceover", schema([
+                "text": .object(["type": "string", "description": "The user's supplied script, up to 12,000 characters. Always pass it when the prompt contains a script; it is retained in the panel."]),
+                "title": string, "voice_id": string, "language": string,
+                "start": .object(["type": "boolean", "description": "Set true for an explicit voiceover creation request with text and a real voice_id from voice.list. Default false prepares a filled draft without generating.", "default": false]),
+                "session_id": .object(["type": "string", "description": "Reopen an existing voiceover's script, progress and result. Do not combine with text or start; never creates a second job."]),
+            ]), false),
             ("app_session", "View a VoxStudio session", schema(["session_id": string], required: ["session_id"]), true),
             ("session.open", "Open a session in the VoxStudio Mac app", schema(["session_id": string], required: ["session_id"]), false),
             ("voxstudio.sessions", "Read visible sessions for the library", schema(), true),
@@ -181,6 +188,8 @@ final class MCPOpenAIExtensions {
             if name == "app_transcription" { meta["openai/fileParams"] = ["attachment"] }
             let description = name == "app_transcription"
                 ? "Transcribe audio/video in one call: pass either the exact local path from the prompt or the ChatGPT media attachment in attachment, plus start=true. Language and speakers are detected automatically when omitted. Follow the returned next_call: resolve job_id with voxstudio.job_status if session_id is not present, otherwise use media.status with that exact session_id. When completed, read app_session with the same session_id. Titles change automatically; do not find results by filename or repeatedly open session lists. No file picker or host form is needed. With start omitted/false, open the panel and optionally preselect the input without creating a job."
+                : name == "app_dubbing"
+                ? "Create a voiceover from the prompt in one call: first list saved voices with voice.list, then pass the user's text, a real voice_id and start=true. The panel retains the supplied script and follows the exact job_id/session_id. Omit start or set false to prepare a filled draft for voice selection; use an empty call only when no script is supplied. To reopen an existing result, pass session_id alone. Do not open an empty form before separately calling dubbing.create, and never submit the same script twice."
                 : title
             return Tool(name: name, title: title, description: description, inputSchema: input, annotations: .init(readOnlyHint: readOnly, destructiveHint: name == "documents.commit" || name == "session.editor.commit" || name == "session.document.apply", idempotentHint: readOnly || name.hasSuffix(".commit"), openWorldHint: false), outputSchema: .object(["type": "object"]), _meta: .init(additionalFields: meta))
         }
@@ -255,6 +264,7 @@ final class MCPOpenAIExtensions {
     }
     func execute(_ params: CallTool.Parameters) async -> CallTool.Result {
         do {
+            try Task.checkCancellation()
             let args = ToolArgsBridge.argsFromMCP(params.arguments ?? [:])
             guard let tool = Self.tools.first(where: { $0.name == params.name }) else { throw MCPDocumentError("unknown_tool", "Unknown extension tool") }
             let properties = tool.inputSchema.objectValue?["properties"]?.objectValue ?? [:]
@@ -368,11 +378,42 @@ final class MCPOpenAIExtensions {
                 NSApp.activate(ignoringOtherApps: true)
                 return try Self.result(["outcome": "opened", "session_id": id.uuidString])
             case "app_dubbing":
-                let voices = Self.adapted(await MCPMediaTools.execute(name: "voice.list", args: [:]))
+                let shouldStart = args["start"] as? Bool == true
+                var options = args
+                options.removeValue(forKey: "start")
+                options.removeValue(forKey: "session_id")
+                if args["session_id"] != nil {
+                    guard options.isEmpty, !shouldStart else { throw MCPDocumentError("invalid_argument", "Reopen a voiceover with session_id alone") }
+                } else {
+                    if shouldStart {
+                        try MCPMediaTools.validate(options, name: "dubbing.create")
+                    } else {
+                        // Reuse creation validation for partial drafts without creating work.
+                        var validation = options
+                        validation["text"] = options["text"] ?? "Draft"
+                        validation["voice_id"] = options["voice_id"] ?? UUID().uuidString
+                        try MCPMediaTools.validate(validation, name: "dubbing.create")
+                    }
+                }
+                let voices = Self.adapted(await mediaExecutor("voice.list", [:]))
                 if voices.isError == true { return voices }
-                var value = voices.structuredContent?.objectValue ?? [:]
+                var value = ToolArgsBridge.argsFromMCP(voices.structuredContent?.objectValue ?? [:])
                 value["view"] = "dubbing"
-                return .init(content: voices.content, structuredContent: .object(value))
+                value["options"] = options
+                if args["session_id"] != nil {
+                    let id = try sessionID(string(args, "session_id"))
+                    guard let job = WorkbenchStore.shared.dubs.first(where: { $0.id == id }) else { throw MCPDocumentError("not_found", "Voiceover not found") }
+                    value["options"] = ["text": job.script, "title": job.title, "language": job.language, "voice_id": job.referenceVoiceID?.uuidString ?? ""]
+                    let status = Self.adapted(await mediaExecutor("media.status", ["session_id": id.uuidString]))
+                    value.merge(ToolArgsBridge.argsFromMCP(status.structuredContent?.objectValue ?? [:]), uniquingKeysWith: { _, new in new })
+                    return try Self.result(value, error: status.isError == true)
+                }
+                if shouldStart {
+                    let queued = await submissionResult(try enqueueMedia("dubbing.create", options))
+                    value.merge(ToolArgsBridge.argsFromMCP(queued.structuredContent?.objectValue ?? [:]), uniquingKeysWith: { _, new in new })
+                    return try Self.result(value, error: queued.isError == true)
+                }
+                return try Self.result(value)
             case "media.save_result":
                 let id = try sessionID(string(args, "session_id"))
                 guard let job = WorkbenchStore.shared.dubs.first(where: { $0.id == id }), job.state == .completed, let url = job.outputURL,
@@ -442,7 +483,10 @@ final class MCPOpenAIExtensions {
             default: throw MCPDocumentError("unknown_tool", "Unknown extension tool")
             }
         } catch let error as MCPDocumentError { return (try? Self.result(["outcome": error.code, "error": error.message], error: true)) ?? .init(isError: true) }
-        catch is CancellationError { return (try? Self.result(["outcome": "cancelled"])) ?? .init() }
+        catch let error as ToolError { return (try? Self.result(["outcome": "invalid_argument", "error": error.message], error: true)) ?? .init(isError: true) }
+        catch is CancellationError {
+            return (try? Self.result(["outcome": "request_cancelled", "error": "This request was cancelled. Retry loading the panel or preview. Your saved media is still available."], error: true)) ?? .init(isError: true)
+        }
         catch { return (try? Self.result(["outcome": "failed", "error": error.localizedDescription], error: true)) ?? .init(isError: true) }
     }
 
@@ -633,11 +677,11 @@ final class MCPOpenAIExtensions {
         if !error, let session = value["session_id"] as? String {
             value["next_call"] = ["tool": "media.status", "arguments": ["session_id": session]]
             value["result_call"] = ["tool": "app_session", "arguments": ["session_id": session]]
-            value["message"] = result["message"] ?? "Your transcription has been submitted."
+            value["message"] = result["message"] ?? "Your media job has been submitted."
             value["instructions"] = "Session created. Use this exact session_id for progress and results, even if the title changes. When media.status is completed, read app_session. Do not search the session list by filename."
         } else if !error {
             value["next_call"] = ["tool": "voxstudio.job_status", "arguments": ["job_id": id]]
-            value["message"] = "Preparing your transcription on your Mac."
+            value["message"] = "Preparing your media job on your Mac."
             value["instructions"] = "Submission accepted; it has not returned a session_id yet. Poll voxstudio.job_status with this exact job_id until session_id is returned, then media.status and app_session. Do not retry creation or search the session list by filename."
         }
         return try Self.result(value, error: error)
