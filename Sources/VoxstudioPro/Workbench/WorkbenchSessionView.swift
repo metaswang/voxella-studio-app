@@ -1493,7 +1493,7 @@ private struct SessionMediaPlayer: View {
                 ? .infinity
                 : audioChromeHeight
         )
-        .task(id: "\(URL?.absoluteString ?? "")|\(secondaryAudioURL?.absoluteString ?? "")") {
+        .task(id: "\(URL?.absoluteString ?? "")|\(secondaryAudioURL?.absoluteString ?? "")|\(showsVideoCanvas)") {
             playback.configureSubtitles(
                 subtitleTrack: subtitleTrack,
                 translationTracks: translationTracks

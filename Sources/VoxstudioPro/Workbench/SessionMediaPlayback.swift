@@ -306,6 +306,9 @@ final class SessionPlaybackController {
             let nextAlternate = AVPlayer(url: alternateAudioURL)
             nextAlternate.defaultRate = Float(playbackRate)
             alternateAudioPlayer = nextAlternate
+            // The video keeps its own (original) soundtrack; mute it so only the
+            // enhanced track is audible. Otherwise both play and sound like an echo.
+            nextPlayer.isMuted = true
         }
         installTimeObserver(for: nextPlayer)
         endObserver = NotificationCenter.default.addObserver(
@@ -331,6 +334,13 @@ final class SessionPlaybackController {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 nextPlayer.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
                     continuation.resume()
+                }
+            }
+            if let alternate = alternateAudioPlayer {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    alternate.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                        continuation.resume()
+                    }
                 }
             }
             guard !Task.isCancelled, generation == loadGeneration else { return }
@@ -393,7 +403,18 @@ final class SessionPlaybackController {
         let seconds = time.seconds
         guard seconds.isFinite else { return }
         currentTime = seconds
+        resyncAlternateAudioIfDrifted(to: time)
         updateActiveCueID()
+    }
+
+    /// Keeps the enhanced audio player locked to the video clock while playing.
+    private func resyncAlternateAudioIfDrifted(to time: CMTime) {
+        guard isPlaying,
+              let alternateAudioPlayer,
+              alternateAudioPlayer.currentItem?.status == .readyToPlay else { return }
+        let drift = abs(alternateAudioPlayer.currentTime().seconds - time.seconds)
+        guard drift.isFinite, drift > AppTheme.Workbench.alternateAudioMaxDrift else { return }
+        alternateAudioPlayer.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
     private func updateActiveCueID() {

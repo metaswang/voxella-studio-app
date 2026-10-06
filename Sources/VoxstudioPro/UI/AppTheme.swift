@@ -633,6 +633,8 @@ enum AppTheme {
         static var waveformMinimumBarHeight: CGFloat { AppTheme.zoomed(3) }
         static let waveformMinimumLoudness: CGFloat = 0.08
         static let playerRefreshInterval: Double = 0.2
+        /// Max tolerated offset between video and enhanced audio before re-seeking.
+        static let alternateAudioMaxDrift: Double = 0.08
         static let playerEndTolerance: Double = 0.05
         static let playerTimescale: Int32 = 600
         static var dubScriptMinHeight: CGFloat { AppTheme.zoomed(190) }
