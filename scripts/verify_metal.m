@@ -24,6 +24,16 @@ int main(int argc, const char **argv) {
             error = nil;
             NSUInteger functions = 0;
             if ([path hasPrefix:@"mlx-swift_Cmlx.bundle/"]) {
+                NSURL *bundleURL = [resources URLByAppendingPathComponent:@"mlx-swift_Cmlx.bundle"];
+                url = [[NSBundle bundleWithURL:bundleURL] URLForResource:@"default" withExtension:@"metallib"];
+                if (!url) {
+                    fprintf(stderr, "Cannot locate packaged MLX Metal library\n");
+                    return 1;
+                }
+                if (!url) {
+                    fprintf(stderr, "Missing packaged MLX Metal library\n");
+                    return 1;
+                }
                 id<MTLLibrary> library = [device newLibraryWithURL:url error:&error];
                 functions = library.functionNames.count;
                 if (!library || !functions) {

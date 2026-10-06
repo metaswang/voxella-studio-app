@@ -82,9 +82,7 @@ BUILD_ARGS=(-c "$CONFIG" --traits "$TRAITS")
 
 swift build "${BUILD_ARGS[@]}"
 BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
-# SwiftPM hard-codes Bundle.main.bundleURL/<resource>.bundle. For a signed
-# macOS app those bundles must live under Contents/Resources, so patch the
-# generated accessors and rebuild them before assembling the app.
+# Validate current resource lookups and repair legacy paths/name mismatches.
 uv run --no-project python "$ROOT/scripts/patch_swiftpm_bundle_accessors.py" "$BIN_DIR"
 swift build "${BUILD_ARGS[@]}"
 BIN="$BIN_DIR/VoxStudio"
@@ -148,7 +146,10 @@ fi
 cp "$RESOURCES/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # Flatten SwiftPM's resource bundle into the app's Resources tree.
-RES_BUNDLE="$(dirname "$BIN")/VoxstudioPro_VoxstudioPro.bundle"
+bundle_resource_directory() {
+  uv run --no-project python "$ROOT/scripts/bundle_resources.py" "$1"
+}
+RES_BUNDLE="$(bundle_resource_directory "$BIN_DIR/VoxstudioPro_VoxstudioPro.bundle")"
 if [ -d "$RES_BUNDLE/Fonts" ]; then
   cp -R "$RES_BUNDLE/Fonts" "$APP/Contents/Resources/"
 else
@@ -215,8 +216,9 @@ if [ ! -d "$YTKIT_BUNDLE" ]; then
   echo "!! missing YouTubeKit_YouTubeKit.bundle at $YTKIT_BUNDLE" >&2
   exit 1
 fi
+YTKIT_RESOURCES="$(bundle_resource_directory "$APP/Contents/Resources/YouTubeKit_YouTubeKit.bundle")"
 for resource in meriyah.umd.js astring.umd.js yt_ejs_helper.js; do
-  if [ ! -f "$APP/Contents/Resources/YouTubeKit_YouTubeKit.bundle/$resource" ]; then
+  if [ ! -f "$YTKIT_RESOURCES/$resource" ]; then
     echo "!! YouTubeKit resource bundle is missing $resource" >&2
     exit 1
   fi
@@ -231,7 +233,8 @@ for source in "$ROOT"/Metal/*.metal; do
   cp "$METAL_DIR/$name" "$APP/Contents/Resources/$name"
 done
 mkdir -p "$APP/Contents/Resources/mlx-swift_Cmlx.bundle"
-cp "$METAL_DIR/mlx.metallib" "$APP/Contents/Resources/mlx-swift_Cmlx.bundle/default.metallib"
+MLX_RESOURCES="$(bundle_resource_directory "$APP/Contents/Resources/mlx-swift_Cmlx.bundle")"
+cp "$METAL_DIR/mlx.metallib" "$MLX_RESOURCES/default.metallib"
 cp "$METAL_DIR/metal-build.json" "$APP/Contents/Resources/metal-build.json"
 uv run --no-project python "$ROOT/scripts/verify_metal.py" "$APP"
 

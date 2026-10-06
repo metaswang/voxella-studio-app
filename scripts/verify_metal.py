@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 
 from build_metal import ROOT, LANGUAGE, MINIMUM, capture, sha
+from bundle_resources import bundle_resource_directory, resource_path
 
 
 def verify_resources(resources, minimum):
@@ -24,16 +25,18 @@ def verify_resources(resources, minimum):
     # root for BundledResource. Count the app load paths here; the nested module
     # copies are checked below for byte-for-byte consistency.
     actual = {p.name for p in resources.glob("*.metallib")}
-    mlx_library = resources / "mlx-swift_Cmlx.bundle/default.metallib"
+    mlx_library = resource_path(resources, "mlx-swift_Cmlx.bundle/default.metallib")
     if mlx_library.is_file():
-        actual.add(str(mlx_library.relative_to(resources)))
+        actual.add("mlx-swift_Cmlx.bundle/default.metallib")
+    if set((resources / "mlx-swift_Cmlx.bundle").rglob("*.metallib")) != {mlx_library}:
+        raise ValueError("Missing, duplicate, or unexpected packaged MLX libraries")
     if len(entries) != len(expected) or {e["path"] for e in entries} != expected or actual != expected:
         raise ValueError("Missing, duplicate, or unexpected packaged Metal libraries")
     for entry in entries:
-        path = resources / entry["path"]
+        path = resource_path(resources, entry["path"])
         if path.stat().st_size != entry["bytes"] or sha(path) != entry["sha256"]:
             raise ValueError(f"Packaged shader differs from build manifest: {entry['path']}")
-        module_copy = resources / "VoxstudioPro_VoxstudioPro.bundle" / path.name
+        module_copy = bundle_resource_directory(resources / "VoxstudioPro_VoxstudioPro.bundle") / path.name
         if module_copy.exists() and sha(module_copy) != sha(path):
             raise ValueError(f"SwiftPM module shader copy differs from app resource: {path.name}")
     return manifest
