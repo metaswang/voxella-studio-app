@@ -216,6 +216,9 @@ struct SpeakerDiarizationPolicy: Equatable, Sendable {
     var minimumTurnDuration: Double = 0.16
     var mergeGap: Double = 0.24
     var shortTurnDuration: Double = 0.6
+    /// Minimum same-speaker run that can promote a soft change to a hard split.
+    /// Longer than `shortTurnDuration` so brief replies stay soft.
+    var sustainedTurnDuration: Double = 1
     var maximumShortTurnWords: Int = 2
     var softBoundaryConfidence: Double = 0.72
     var hardBoundaryConfidence: Double = 0.84

@@ -308,6 +308,22 @@ enum LexicalSpeakerResolver {
             }
         }
 
+        // Sortformer's onset lags, so the first word of a real turn is often soft
+        // even when the rest of the turn is unambiguous. Promote only when both
+        // full same-speaker runs carry sustained evidence.
+        for (unitIndex, unit) in units.enumerated() {
+            let wordIndex = unit.wordIndices.lowerBound
+            guard boundaryByWordIndex[wordIndex] == .soft, unitIndex > 0,
+                  let outgoing = sustainedRunEvidence(around: unitIndex - 1, extendingEarlier: true,
+                                                      units: units, words: words, timeline: timeline, policy: policy),
+                  let incoming = sustainedRunEvidence(around: unitIndex, extendingEarlier: false,
+                                                      units: units, words: words, timeline: timeline, policy: policy),
+                  outgoing.speakerID != incoming.speakerID else {
+                continue
+            }
+            boundaryByWordIndex[wordIndex] = .hard
+        }
+
         return words.enumerated().map { index, word in
             TranscriptionWord(
                 text: word.text,
@@ -318,6 +334,39 @@ enum LexicalSpeakerResolver {
                 speakerBoundary: boundaryByWordIndex[index] ?? .none, timingQuality: word.timingQuality
             )
         }
+    }
+
+    /// Integrated evidence for the full same-speaker run containing `anchor`,
+    /// extended toward earlier or later units. Returns nil unless the run is
+    /// long enough and its frame evidence is unambiguous.
+    private static func sustainedRunEvidence(
+        around anchor: Int,
+        extendingEarlier: Bool,
+        units: [LexicalUnit],
+        words: [TranscriptionWord],
+        timeline: SpeakerActivityTimeline,
+        policy: SpeakerDiarizationPolicy
+    ) -> SpeakerAttribution? {
+        guard units.indices.contains(anchor),
+              let speaker = normalizedSpeaker(words[units[anchor].wordIndices.lowerBound].speaker) else { return nil }
+        func label(at index: Int) -> String? {
+            normalizedSpeaker(words[units[index].wordIndices.lowerBound].speaker)
+        }
+        var lower = anchor
+        var upper = anchor
+        if extendingEarlier {
+            while lower > 0, label(at: lower - 1) == speaker { lower -= 1 }
+        } else {
+            while upper + 1 < units.count, label(at: upper + 1) == speaker { upper += 1 }
+        }
+        let start = units[lower].start
+        let end = units[upper].end
+        guard end - start >= policy.sustainedTurnDuration,
+              let evidence = timeline.attributionForWord(start: start, end: end),
+              evidence.confidence >= policy.hardBoundaryConfidence,
+              evidence.absoluteProbability >= Double(policy.onsetThreshold),
+              evidence.margin >= 0.2 else { return nil }
+        return evidence
     }
 
     private static func prefersCharacterAlignedUnits(languageCode: String?, texts: [String]) -> Bool {

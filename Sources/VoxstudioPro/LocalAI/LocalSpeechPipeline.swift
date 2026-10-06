@@ -998,7 +998,8 @@ actor LocalSpeechPipeline {
         Log.transcription.notice(
             "Transcript quality postprocess elapsed=\(String(format: "%.2f", qualityElapsed))s words=\(words.count)"
         )
-        let segments = Self.makeSegments(from: words)
+        let labeledWords = SpeakerLabelResolver.canonicalizedByFirstAppearance(words)
+        let segments = Self.makeSegments(from: labeledWords)
         progressUpdate(.init(stage: .finalizing, fraction: 0.99, message: "Finalizing transcript…"))
         let alignmentDiagnostics = TranscriptionAlignmentDiagnostics(
             trimmedHallucinatedSpanCount: quality.statistics.trimmedRepeatedSpans,
@@ -1021,15 +1022,15 @@ actor LocalSpeechPipeline {
             ownershipLexicalUnitCount: Self.lexicalUnitCount(ownership.spans),
             alignmentLexicalUnitCount: aligned.count,
             retryLexicalUnitCount: retryLexicalUnitCount,
-            finalLexicalUnitCount: words.count,
+            finalLexicalUnitCount: labeledWords.count,
             speakerBoundaryRefinement: boundaryRefinement.diagnostics
         )
         try Task.checkCancellation()
         return .timed(LocalTranscriptionOutput(
             result: TranscriptionResult(
-                text: TranscriptSegmenter.joinedText(words.map(\.text)),
+                text: TranscriptSegmenter.joinedText(labeledWords.map(\.text)),
                 language: resolvedLanguageCode,
-                words: words,
+                words: labeledWords,
                 segments: segments,
                 asrEngine: route.engine
             ),
@@ -1263,7 +1264,7 @@ actor LocalSpeechPipeline {
                 timeline: timeline, samples: samples, languageCode: resolvedLanguageCode,
                 policy: .standard(requestedSpeakerCount: requestedSpeakerCount)
             )
-            words = refined.words
+            words = SpeakerLabelResolver.canonicalizedByFirstAppearance(refined.words)
             boundaryDiagnostics = refined.diagnostics
         }
         try Task.checkCancellation()

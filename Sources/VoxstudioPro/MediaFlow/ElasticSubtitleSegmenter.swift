@@ -91,7 +91,7 @@ enum ElasticSubtitleSegmenter {
 
     static func hardBoundary(previous: TranscriptionWord?, current: TranscriptionWord) -> Bool {
         guard current.timingQuality != .estimated else { return false }
-        if current.speakerBoundary == .hard, (current.speakerConfidence ?? 1) >= 0.9 { return true }
+        if current.speakerBoundary == .hard { return true }
         // Legacy/provided speakers have no diarization confidence; preserve those assignments.
         return current.speakerConfidence == nil && current.speakerBoundary != .soft
             && previous?.speaker != nil && current.speaker != nil && previous?.speaker != current.speaker
