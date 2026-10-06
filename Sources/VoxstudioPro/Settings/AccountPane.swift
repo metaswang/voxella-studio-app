@@ -1,9 +1,13 @@
 import SwiftUI
 
 struct AccountPane: View {
+    @Environment(\.openURL) private var openURL
     @Bindable var account = AccountService.shared
     @State private var topOffDollars: Int = 20
     @State private var showDeviceManagement = false
+    @State private var deletion = AccountDeletionStore()
+    @State private var showDeletionConfirmation = false
+    @State private var deletionUserID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
@@ -33,6 +37,28 @@ struct AccountPane: View {
                     .foregroundStyle(AppTheme.Status.warningColor)
                     .frame(maxWidth: AppTheme.Auth.contentWidth, alignment: .leading)
             }
+            if deletion.wasScheduled {
+                Text(L10n.string("Account deletion scheduled. Your cloud account is now unavailable; cloud content will be removed in the background. Local projects remain on this Mac."))
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+            }
+        }
+        .alert(L10n.string("Delete account?"), isPresented: $showDeletionConfirmation) {
+            Button(L10n.string("Cancel"), role: .cancel) { deletionUserID = nil }
+            Button(L10n.string("Manage App Store subscriptions")) {
+                openURL(URL(string: "https://apps.apple.com/account/subscriptions")!)
+            }
+            Button(L10n.string("Delete account"), role: .destructive) {
+                guard let userID = deletionUserID else { return }
+                Task { await deletion.deleteAccount(userID: userID) }
+            }
+            .accessibilityIdentifier("settings-confirm-delete-account")
+        } message: {
+            Text(L10n.string("Your cloud account becomes unavailable immediately. Web subscriptions are canceled and cloud content is removed in the background. This cannot be undone. Local projects remain on this Mac.\n\nApple subscriptions keep renewing after account deletion. Cancel them in the App Store to stop future renewals. Deletion does not automatically refund paid fees or unused credits. Your statutory rights are unaffected."))
+        }
+        .onChange(of: account.userID) { _, _ in
+            showDeletionConfirmation = false
+            deletionUserID = nil
         }
     }
 
@@ -43,8 +69,8 @@ struct AccountPane: View {
             licenseKeySection
 #endif
 
-            plansSection
 #if !MAC_APP_STORE
+            plansSection
             if account.featureAccessSnapshot.license != .lifetime {
                 SettingsGroup(title: "Lifetime purchase") {
                     AppAccessOffersView(lifetimeOnly: true)
@@ -72,6 +98,29 @@ struct AccountPane: View {
                 Task { await account.signOut() }
             }
             .buttonStyle(.capsule(.secondary, size: .regular))
+            .disabled(deletion.isDeleting)
+
+            SettingsGroup(title: "Delete account") {
+                Text(L10n.string("Permanently delete your cloud account and its content. Apple subscriptions must be canceled separately in the App Store. Local projects remain on this Mac."))
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                Link(L10n.string("Manage App Store subscriptions"), destination: URL(string: "https://apps.apple.com/account/subscriptions")!)
+                Button(L10n.string("Delete account"), role: .destructive) {
+                    deletionUserID = account.userID
+                    showDeletionConfirmation = true
+                }
+                .buttonStyle(.capsule(.secondary, size: .regular))
+                .disabled(deletion.isDeleting || account.userID == nil)
+                .accessibilityIdentifier("settings-delete-account")
+                if deletion.isDeleting {
+                    ProgressView(L10n.string("Deleting account…"))
+                }
+                if let errorMessage = deletion.errorMessage {
+                    Text(errorMessage)
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Status.errorColor)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
 #if !MAC_APP_STORE

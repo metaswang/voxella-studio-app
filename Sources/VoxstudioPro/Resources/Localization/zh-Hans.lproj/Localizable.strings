@@ -3057,3 +3057,24 @@
 "Native MCP (optional)" = "原生 MCP（可选）";
 
 "Connect video editing, document editing, color, audio processing, multicam and media generation independently. The core plugin does not register this connection." = "独立接入视频编辑、文档编辑、调色、音频处理、多机位和媒体生成。核心插件不会注册此连接。";
+
+/* Account registration and deletion */
+"Create your account" = "创建账号";
+"Create account" = "创建账号";
+"Creating account…" = "正在创建账号…";
+"Don't have an account? Sign up" = "还没有账号？注册";
+"Already have an account? Sign in" = "已有账号？登录";
+"Use at least 8 characters, including a letter and a number." = "至少使用 8 个字符，包含字母和数字。";
+"By creating an account, you agree to our Terms of Use and Privacy Policy." = "创建账号即表示你同意我们的使用条款和隐私政策。";
+"Terms of Use" = "使用条款";
+"Privacy Policy" = "隐私政策";
+"Check your email" = "请检查邮箱";
+"We sent a verification link to %@. Verify your email, then return here to sign in." = "我们已向 %@ 发送验证链接。验证邮箱后，请返回此处登录。";
+"Resend verification email" = "重新发送验证邮件";
+"Delete account" = "删除账号";
+"Delete account?" = "删除账号？";
+"Deleting account…" = "正在删除账号…";
+"Manage App Store subscriptions" = "管理 App Store 订阅";
+"Permanently delete your cloud account and its content. Apple subscriptions must be canceled separately in the App Store. Local projects remain on this Mac." = "永久删除云端账号及其内容。Apple 订阅需要在 App Store 中单独取消。本机项目会保留。";
+"Account deletion scheduled. Your cloud account is now unavailable; cloud content will be removed in the background. Local projects remain on this Mac." = "账号删除请求已受理。云端账号现已停用，云端内容将在后台删除。本机项目会保留。";
+"Your cloud account becomes unavailable immediately. Web subscriptions are canceled and cloud content is removed in the background. This cannot be undone. Local projects remain on this Mac.\n\nApple subscriptions keep renewing after account deletion. Cancel them in the App Store to stop future renewals. Deletion does not automatically refund paid fees or unused credits. Your statutory rights are unaffected." = "云端账号将立即停用。网页订阅将取消，云端内容将在后台删除。此操作无法撤销。本机项目会保留。\n\n删除账号后，Apple 订阅仍会继续续费。请在 App Store 中取消订阅，以停止后续续费。删除账号不会自动退还已支付的费用或未使用的积分。你的法定权利不受影响。";

@@ -1790,6 +1790,24 @@ final class AccountService {
         )
     }
 
+    /// The server disables the account immediately and removes cloud data in
+    /// the background. Keep local projects and independent device purchases.
+    func deleteAccount(expectedUserID: UUID) async throws {
+        guard isSignedIn, userID == expectedUserID else {
+            throw VoxellaAPIError.unauthorized
+        }
+        let generation = sessionGeneration
+        let authGeneration = await VoxellaAuthService.shared.currentSessionGeneration()
+        guard isCurrentSession(generation), userID == expectedUserID else {
+            throw CancellationError()
+        }
+        try await api.deleteAccount(authGeneration: authGeneration)
+        guard isCurrentSession(generation), userID == expectedUserID else {
+            throw CancellationError()
+        }
+        await signOut()
+    }
+
     func signOut() async {
         appAccessPreparationTask?.cancel()
         Log.account.notice("sign out requested", telemetry: "Sign out requested")

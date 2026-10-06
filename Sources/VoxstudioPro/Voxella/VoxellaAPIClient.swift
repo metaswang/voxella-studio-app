@@ -1109,6 +1109,11 @@ struct LicenseKeyDevicesListResponse: Decodable, Sendable {
 }
 #endif
 
+struct VoxellaRegistrationResponse: Decodable, Sendable {
+    let message: String
+    let email: String
+}
+
 actor VoxellaAPIClient {
     static let shared = VoxellaAPIClient()
 
@@ -1120,11 +1125,39 @@ actor VoxellaAPIClient {
         self.session = session
     }
 
+    func register(email: String, password: String) async throws -> VoxellaRegistrationResponse {
+        try await unauthenticatedDecode(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/auth/register"), method: "POST",
+            json: ["email": email.trimmingCharacters(in: .whitespacesAndNewlines), "password": password],
+            as: VoxellaRegistrationResponse.self
+        )
+    }
+
+    func resendVerification(email: String) async throws -> VoxellaRegistrationResponse {
+        try await unauthenticatedDecode(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/auth/resend-verification"), method: "POST",
+            json: ["email": email.trimmingCharacters(in: .whitespacesAndNewlines)],
+            as: VoxellaRegistrationResponse.self
+        )
+    }
+
     func accountProfile() async throws -> VoxellaAccountProfile {
         try await request(
             url: VoxellaAPIConfiguration.apiURL("api/v1/users/me"),
             method: "GET",
             as: VoxellaAccountProfile.self
+        )
+    }
+
+    func deleteAccount(authGeneration: UUID? = nil) async throws {
+        struct Accepted: Decodable {}
+        let generation: UUID
+        if let authGeneration { generation = authGeneration }
+        else { generation = await auth.currentSessionGeneration() }
+        _ = try await send(
+            url: VoxellaAPIConfiguration.apiURL("api/v1/users/me"),
+            method: "DELETE", json: nil, headers: [:], as: Accepted.self,
+            retryingUnauthorized: true, expectedAuthGeneration: generation
         )
     }
 
@@ -2638,9 +2671,21 @@ actor VoxellaAPIClient {
         json: [String: Any]?,
         headers: [String: String],
         as type: T.Type,
-        retryingUnauthorized: Bool
+        retryingUnauthorized: Bool,
+        expectedAuthGeneration: UUID? = nil
     ) async throws -> T {
+        if let expectedAuthGeneration {
+            guard await auth.currentSessionGeneration() == expectedAuthGeneration else {
+                throw CancellationError()
+            }
+        }
         var request = try await authorizedRequest(url: url, method: method)
+        if let expectedAuthGeneration {
+            guard await auth.currentSessionGeneration() == expectedAuthGeneration else {
+                throw CancellationError()
+            }
+            try Task.checkCancellation()
+        }
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
         if let json {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -2651,8 +2696,13 @@ actor VoxellaAPIClient {
             throw VoxellaAPIError.http(0, "No response")
         }
         if http.statusCode == 401, retryingUnauthorized {
+            if let expectedAuthGeneration {
+                guard await auth.currentSessionGeneration() == expectedAuthGeneration else {
+                    throw CancellationError()
+                }
+            }
             _ = try await auth.refreshAccessToken()
-            return try await send(url: url, method: method, json: json, headers: headers, as: type, retryingUnauthorized: false)
+            return try await send(url: url, method: method, json: json, headers: headers, as: type, retryingUnauthorized: false, expectedAuthGeneration: expectedAuthGeneration)
         }
         if http.statusCode == 401 {
             throw VoxellaAPIError.unauthorized

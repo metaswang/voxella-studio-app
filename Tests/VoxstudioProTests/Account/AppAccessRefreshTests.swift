@@ -65,7 +65,9 @@ struct AppAccessRefreshTests {
         let user = AccountUser(id: UUID(), email: nil, name: nil, image: nil, tier: .none,
             currentPeriodEnd: nil, cancelAtPeriodEnd: nil, spentCreditsThisPeriod: nil, purchasedCredits: nil)
         let account = AccountResponse(user: user, plan: nil)
-        let access = AppAccessSnapshot(license: .lifetime, offlineValidUntil: Date.now.addingTimeInterval(86400))
+        // A valid MAS Lifetime cache must identify its purchase source.
+        let access = AppAccessSnapshot(license: .lifetime, purchaseSources: [.appStore],
+            offlineValidUntil: Date.now.addingTimeInterval(86400))
         try await cache.save(account: account, access: access, revision: 1)
         #expect(try await cache.load() != nil)
         try await cache.clear(revision: 3)

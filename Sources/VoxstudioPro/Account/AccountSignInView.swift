@@ -5,6 +5,8 @@ struct AccountSignInView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var isPasswordVisible = false
+    @State private var isSigningUp = false
+    @State private var registration = AccountRegistrationStore()
     @FocusState private var focusedField: SignInField?
 
     private enum SignInField: Hashable {
@@ -15,7 +17,7 @@ struct AccountSignInView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                Text("Sign in to VoxStudio")
+                Text(L10n.string(isSigningUp ? "Create your account" : "Sign in to VoxStudio"))
                     .font(.system(size: AppTheme.FontSize.xl, weight: AppTheme.FontWeight.semibold))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                 Text("Sign in to subscribe and use AI generation.")
@@ -38,10 +40,19 @@ struct AccountSignInView: View {
                     Task { await account.signInWithGoogle() }
                 }
             }
-            .disabled(account.isSigningIn)
+            .disabled(isBusy)
 
             authDivider
-            emailSignInForm
+            if let verificationEmail = registration.verificationEmail {
+                verificationForm(email: verificationEmail)
+            } else {
+                emailSignInForm
+            }
+            if let errorMessage = registration.errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Status.errorColor)
+            }
         }
         .frame(maxWidth: AppTheme.Auth.contentWidth, alignment: .leading)
         .onChange(of: account.isSignedIn) { _, isSignedIn in
@@ -95,9 +106,9 @@ struct AccountSignInView: View {
                         }
                     }
                     .textFieldStyle(.plain)
-                    .textContentType(.password)
+                    .textContentType(isSigningUp ? .newPassword : .password)
                     .focused($focusedField, equals: .password)
-                    .onSubmit(submitEmailLogin)
+                    .onSubmit(submitEmail)
 
                     Button {
                         isPasswordVisible.toggle()
@@ -115,30 +126,62 @@ struct AccountSignInView: View {
                 .authFieldChrome(isFocused: focusedField == .password)
             }
 
-            Button(action: submitEmailLogin) {
+            if isSigningUp {
+                Text(L10n.string("Use at least 8 characters, including a letter and a number."))
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+            }
+
+            Button(action: submitEmail) {
                 HStack(spacing: AppTheme.Spacing.smMd) {
-                    if account.isSigningIn {
+                    if isBusy {
                         ProgressView()
                             .controlSize(.small)
                             .tint(AppTheme.Auth.primaryForeground)
                     }
-                    Text(L10n.string(account.isSigningIn ? "Signing in…" : "Sign in"))
+                    Text(L10n.string(isSigningUp ? (isBusy ? "Creating account…" : "Create account") : (isBusy ? "Signing in…" : "Sign in")))
                 }
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(AuthPrimaryButtonStyle())
             .disabled(!canSubmitEmail)
             .keyboardShortcut(.return, modifiers: [])
+            .accessibilityIdentifier(isSigningUp ? "email-sign-up" : "email-sign-in")
+
+            if isSigningUp {
+                Text(L10n.string("By creating an account, you agree to our Terms of Use and Privacy Policy."))
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                HStack(spacing: AppTheme.Spacing.md) {
+                    Link(L10n.string("Terms of Use"), destination: URL(string: "https://voxstudio.me/terms")!)
+                    Link(L10n.string("Privacy Policy"), destination: URL(string: "https://voxstudio.me/privacy.html")!)
+                }
+                .font(.system(size: AppTheme.FontSize.xs))
+            }
+            Button(L10n.string(isSigningUp ? "Already have an account? Sign in" : "Don't have an account? Sign up")) {
+                isSigningUp.toggle()
+                password = ""
+                isPasswordVisible = false
+                registration.reset()
+                focusedField = .email
+            }
+            .buttonStyle(.borderless)
+            .disabled(isBusy)
+            .accessibilityIdentifier("email-auth-mode-toggle")
         }
+        .disabled(isBusy)
     }
+
+    private var isBusy: Bool { account.isSigningIn || registration.isWorking }
 
     private var canSubmitEmail: Bool {
         !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !password.isEmpty
-            && !account.isSigningIn
+            && (!isSigningUp || AccountRegistrationStore.isPasswordValid(password))
+            && !isBusy
     }
 
-    private func submitEmailLogin() {
+    private func submitEmail() {
         guard canSubmitEmail else {
             if email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 focusedField = .email
@@ -151,12 +194,40 @@ struct AccountSignInView: View {
         focusedField = nil
         let submittedEmail = email
         let submittedPassword = password
+        let shouldRegister = isSigningUp
         Task {
+            if shouldRegister {
+                await registration.createAccount(email: submittedEmail, password: submittedPassword)
+                if registration.verificationEmail != nil { password = "" }
+                return
+            }
             await account.signInWithEmail(email: submittedEmail, password: submittedPassword)
             if account.isSignedIn {
                 password = ""
             }
         }
+    }
+
+    private func verificationForm(email: String) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            Text(L10n.string("Check your email"))
+                .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
+            Text(L10n.format("We sent a verification link to %@. Verify your email, then return here to sign in.", email))
+                .font(.system(size: AppTheme.FontSize.sm))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+            if registration.isWorking { ProgressView() }
+            Button(L10n.string("Resend verification email")) {
+                Task { await registration.resendVerification() }
+            }
+            .accessibilityIdentifier("resend-verification")
+            Button(L10n.string("Already have an account? Sign in")) {
+                registration.reset()
+                isSigningUp = false
+                password = ""
+                focusedField = .password
+            }
+        }
+        .disabled(isBusy)
     }
 
     private func providerButton(
