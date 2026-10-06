@@ -635,3 +635,14 @@
 
 // Session local copy deletion
 "The local copy was deleted. The cloud session was kept." = "A cópia local foi excluída. A sessão na nuvem foi mantida.";
+
+/* Cloud plan transcription comparison */
+"Best value" = "Melhor custo-benefício";
+"%@ credits / month" = "%@ créditos / mês";
+"≈%@ standard transcription hours / month" = "≈%@ horas de transcrição padrão / mês";
+"%@× transcription" = "%@× de transcrição";
+"Compare transcription rates" = "Comparar tarifas de transcrição";
+"Why Pro goes further" = "Por que o Pro rende mais";
+"Pro includes %@× the monthly credits, giving you about %@× Starter’s transcription time." = "O Pro inclui %@× os créditos mensais e oferece cerca de %@× o tempo de transcrição do Starter.";
+"Pro uses about %@%% fewer credits per hour for standard transcription." = "O Pro usa cerca de %@%% menos créditos por hora de transcrição padrão.";
+"Estimates use all monthly credits for standard transcription only, without translation or subtitle splitting. Other cloud features share the same credit balance." = "As estimativas usam todos os créditos mensais apenas para transcrição padrão, sem tradução nem divisão de legendas. Outros recursos na nuvem compartilham o mesmo saldo.";

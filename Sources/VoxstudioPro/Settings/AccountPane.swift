@@ -148,6 +148,7 @@ struct AccountPane: View {
         }
     }
 
+#if !MAC_APP_STORE
     /// Cloud recurring plan. Independent of Lifetime, which is permanent software ownership on this Mac.
     private var plansSection: some View {
         SettingsGroup(title: "Plans") {
@@ -198,7 +199,7 @@ struct AccountPane: View {
                 }
 
                 if showsCloudUpgrade {
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                         ForEach(upgradePlans) { plan in
                             cloudUpgradeRow(plan)
                         }
@@ -233,28 +234,11 @@ struct AccountPane: View {
     }
 
     private func cloudUpgradeRow(_ plan: AvailablePlan) -> some View {
-        HStack(spacing: AppTheme.Spacing.sm) {
-            Text(plan.tier.localizedUpgradeLabel)
-                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
-                .foregroundStyle(AppTheme.Text.primaryColor)
-            Text(L10n.format("$%@/mo", plan.effectiveMonthlyPriceUsd))
-                .font(.system(size: AppTheme.FontSize.sm))
-                .foregroundStyle(AppTheme.Text.secondaryColor)
-                .monospacedDigit()
-            if let credits = plan.monthlyBudgetCredits {
-                Text(L10n.format("%@ credits", credits))
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
-                    .monospacedDigit()
-            }
-            Spacer(minLength: 0)
-            Button(L10n.string("Upgrade")) {
-                Task { await account.subscribe(tier: plan.tier) }
-            }
-            .buttonStyle(.capsule(plan.tier.subscriptionRank == upgradePlans.first?.tier.subscriptionRank ? .prominent : .secondary))
-            .controlSize(.small)
+        CloudPlanUpgradeRow(plan: plan, comparisonPlans: account.availablePlans) {
+            Task { await account.subscribe(tier: plan.tier) }
         }
     }
+#endif
 
     private var creditsSection: some View {
         SettingsGroup(title: "Credits") {

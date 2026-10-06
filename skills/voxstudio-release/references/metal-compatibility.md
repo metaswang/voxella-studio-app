@@ -24,10 +24,18 @@ Apple documents the language baseline in
 `scripts/build_metal.py` is the maintained entry point. Do not edit files inside
 `.build/checkouts` or invoke the old speech-swift builder from packaging.
 
+`scripts/build_prerequisites.py` 负责当前 Xcode 的组件初始化，`bundle.sh` 在耗时构建前自动调用。已有编译器不下载组件；缺失时先尝试 `.build/toolchains/MetalToolchain/` 中当前 Xcode 的完整离线导出，再使用 Apple 官方 `-downloadComponent` / `-importComponent` 流程。首次安装或 Xcode 变更可能需要下载，之后正常打包复用已安装组件。可用 `METAL_TOOLCHAIN_CACHE_DIR` 指定长期缓存目录；`METAL_INSTALL_TIMEOUT_SECONDS` 默认 1800 秒，用于限制首次下载等待。不要手动拼接资产、修改导出版本或软链接其他 Xcode 的编译器来冒充初始化成功。
+
+只检查状态，不下载安装：
+
 ```sh
-python3 scripts/build_metal.py preflight
-python3 scripts/build_metal.py prepare --output .build/metal/release
-python3 Tests/MetalBuildTests.py
+uv run --no-project python scripts/build_prerequisites.py --config debug --mode sign --check-only
+```
+
+```sh
+uv run --no-project python scripts/build_metal.py preflight
+uv run --no-project python scripts/build_metal.py prepare --output .build/metal/release
+uv run --no-project python Tests/MetalBuildTests.py
 ```
 
 `bundle.sh` calls prepare on every build and copies only the libraries and the

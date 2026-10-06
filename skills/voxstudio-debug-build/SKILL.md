@@ -42,9 +42,8 @@ ad-hoc build to accept or reject authentication, Keychain, or privacy behavior.
 
 1. Inspect `git status --short` and `git diff -- scripts/bundle.sh`; preserve all
    existing changes.
-2. Confirm the selected Xcode has the Metal toolchain. Let `bundle.sh` perform its
-   authoritative preflight; if missing, follow its exact
-   `xcodebuild -downloadComponent MetalToolchain` remediation.
+2. `bundle.sh` 在编译前自动检查当前 Xcode 的 Metal 编译器；缺失时先恢复所选 Xcode 的离线导出，再通过 Apple 官方命令下载并安装一次。已安装时直接复用，着色器缓存仍由 `build_metal.py` 验证。仅诊断状态可用 `uv run --no-project python scripts/build_prerequisites.py --config debug --mode sign --check-only`。
+   本地 debug 签名不需要 `NOTARY_PROFILE`，不得因公证配置暂停本地构建，也不要为 debug 检查调用正式发布入口。
 3. For non-MAS, require a Developer ID Application identity and a matching
    Developer ID provisioning profile through
    `DEVELOPER_ID_PROVISIONING_PROFILE`. Never fall back to generic

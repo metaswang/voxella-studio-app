@@ -90,6 +90,8 @@ if [ "$RELEASE_TARGET" = "r2" ] || [ "$RELEASE_TARGET" = "dmg" ]; then
   fi
   require_worktree_ok
   require_macos_15
+  # Recover local prerequisites before changing the release version or building.
+  uv run --no-project python "$ROOT/scripts/build_prerequisites.py" --config release --mode dist
   verify_sparkle_key
 
   LIVE_APPCAST="$(mktemp -t voxstudio-appcast.XXXXXX).xml"
@@ -228,6 +230,7 @@ if ! cmp -s "$APPCAST" "$LIVE_APPCAST"; then
   exit 1
 fi
 
+uv run --no-project python "$ROOT/scripts/build_prerequisites.py" --config release --mode dist
 CURRENT_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")"
 CURRENT_BUILD="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST")"
 VERSION="$(python3 "$ROOT/scripts/release_version.py" next \

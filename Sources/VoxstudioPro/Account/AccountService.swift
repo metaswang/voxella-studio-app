@@ -83,6 +83,7 @@ struct AvailablePlan: Decodable, Sendable, Identifiable {
     let monthlyPriceUsd: Int
     let discountedMonthlyPriceUsd: Int?
     let monthlyBudgetCredits: Int?
+    let usageRates: [VoxellaBillingUsageRate]?
 
     var id: String { tier.rawValue }
     var effectiveMonthlyPriceUsd: Int {
@@ -91,6 +92,13 @@ struct AvailablePlan: Decodable, Sendable, Identifiable {
     var hasDiscount: Bool {
         guard let discounted = discountedMonthlyPriceUsd else { return false }
         return discounted < monthlyPriceUsd
+    }
+
+    var transcriptionAllowance: PlanTranscriptionAllowance? {
+        PlanTranscriptionAllowance(
+            monthlyCredits: monthlyBudgetCredits,
+            creditsPerSecond: usageRates?.first { $0.usageType == "upload_transcribe" }?.creditsPerSecond
+        )
     }
 }
 
@@ -692,7 +700,8 @@ final class AccountService {
                 planID: plan.id,
                 monthlyPriceUsd: Self.monthlyPrice(for: plan),
                 discountedMonthlyPriceUsd: nil,
-                monthlyBudgetCredits: plan.includedCredits
+                monthlyBudgetCredits: plan.includedCredits,
+                usageRates: plan.usageRates
             )
         } ?? []
         lastError = nil

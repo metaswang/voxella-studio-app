@@ -56,6 +56,14 @@ if [ "$MODE" = "mas" ]; then
   fi
 fi
 
+PREREQUISITES_ENV="$ROOT/.build/build-prerequisites/$CONFIG-$MODE.env"
+uv run --no-project python "$ROOT/scripts/build_prerequisites.py" \
+  --config "$CONFIG" --mode "$MODE" --environment-loaded \
+  --resolved-env "$PREREQUISITES_ENV"
+# Only resolved profile names/paths are written here; credentials stay in Keychain.
+. "$PREREQUISITES_ENV"
+uv run --no-project python "$ROOT/scripts/build_metal.py" preflight
+
 echo "==> Generating MCP UI and installable connectors"
 uv run --no-project python "$ROOT/scripts/sync-mcp-branding.py"
 (cd "$ROOT/mcp-ui" && npm run check && npm run build)
@@ -71,16 +79,6 @@ else
   TRAITS="$TRAITS,SparkleUpdates"
 fi
 BUILD_ARGS=(-c "$CONFIG" --traits "$TRAITS")
-
-# SwiftPM invokes the Metal compiler for the app's CI kernels. Xcode ships
-# this as an optional component, so fail early with the exact remediation
-# instead of emitting one error per .metal source halfway through the build.
-if ! xcrun -sdk macosx metal -v >/dev/null 2>&1; then
-  echo "!! Metal Toolchain is not installed for the selected Xcode." >&2
-  echo "!! Install it with: xcodebuild -downloadComponent MetalToolchain" >&2
-  exit 1
-fi
-uv run --no-project python "$ROOT/scripts/build_metal.py" preflight
 
 swift build "${BUILD_ARGS[@]}"
 BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"

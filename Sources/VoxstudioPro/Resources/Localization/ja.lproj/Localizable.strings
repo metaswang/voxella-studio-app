@@ -635,3 +635,14 @@
 
 // Session local copy deletion
 "The local copy was deleted. The cloud session was kept." = "ローカルコピーを削除しました。クラウドセッションは保持されています。";
+
+/* Cloud plan transcription comparison */
+"Best value" = "おすすめ";
+"%@ credits / month" = "%@ クレジット / 月";
+"≈%@ standard transcription hours / month" = "月あたり約 %@ 時間の標準文字起こし";
+"%@× transcription" = "%@× の文字起こし時間";
+"Compare transcription rates" = "文字起こし料金を比較";
+"Why Pro goes further" = "Pro ならもっと使える理由";
+"Pro includes %@× the monthly credits, giving you about %@× Starter’s transcription time." = "Pro は月間クレジットが %@ 倍になり、Starter の約 %@ 倍の文字起こし時間を利用できます。";
+"Pro uses about %@%% fewer credits per hour for standard transcription." = "Pro の標準文字起こしは、1 時間あたりのクレジット消費が約 %@%% 少なくなります。";
+"Estimates use all monthly credits for standard transcription only, without translation or subtitle splitting. Other cloud features share the same credit balance." = "月間クレジットをすべて標準文字起こしに使用した場合の目安です。翻訳や字幕分割は含みません。他のクラウド機能も同じクレジット残高を使用します。";

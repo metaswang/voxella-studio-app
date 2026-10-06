@@ -49,8 +49,10 @@ For shader packaging or hardware/OS qualification, read [Metal compatibility](re
 - scripts/bundle.sh loads .env.prod for release when present, otherwise .env.
 - SIGNING_IDENTITY must identify a Developer ID Application certificate.
 - TEAM_IDENTIFIER must match the Team ID in that certificate. The bundle script can derive it from the certificate when omitted.
-- NOTARY_PROFILE must name an existing xcrun notarytool Keychain profile.
-- If NOTARY_PROFILE is missing, recover it before building by following the API-key or app-specific-password procedure in the runbook.
+- `NOTARY_PROFILE` 是 `--dist` 公证阶段的技术前置条件，不是额外的用户批准门槛。先用 `uv run --no-project python scripts/build_prerequisites.py --config release --mode dist --notary-only` 验证实际 Keychain profile；成功后直接继续已获授权的打包，不得仅引用本条要求暂停。
+- profile 未配置或失效时，预检先复用 `.secrets/notary-profile.env`，再使用已有 `NOTARY_API_*` 或 `APP_STORE_CONNECT_API_*` Team API key 配置自动恢复并验证；有效 profile 不会被替换，临时网络或 Keychain 访问故障也不会触发凭据重写。只有恢复所需资料确实缺失、Apple 拒绝现有凭据或实际权限问题无法处理时，才报告具体缺项并请求必要输入。用户提供新密码或创建/轮换 API key 仍按明确授权处理。
+- 本地 `debug --sign`、`--fast` 和 MAS 构建不需要 `NOTARY_PROFILE`。发布技能不适用于仅验证本地 debug 应用的任务；使用对应 debug 技能，继续完成不依赖公证的工作。
+- `bundle.sh` 在资源生成和编译前运行统一预检，`release.sh` 在版本号变更前运行预检。Metal 编译器缺失时自动执行 Apple 官方组件初始化并保留所选 Xcode 的离线导出；编译器可用时直接复用，仍由 `build_metal.py` 校验着色器缓存和 macOS 15 / Metal 3.2 基线。首次安装、组件失效或切换 Xcode 后，只在编译器不可用时恢复或下载相应组件，禁止用旧工具链软链接、改导出元数据或绕过缓存校验替代。
 - Developer ID builds embed Sparkle for in-app update checks and installation. Sparkle Ed25519 signing also signs the appcast and DMG. `SUPublicEDKey` must match the private key used by `sign_update`; do not publish an unsigned appcast or an artifact signed by an unrelated key.
 - If the existing Sparkle private key is unavailable, recover it before publishing. If key rotation is intentional, generate a new Ed25519 key, export a backup to the ignored `.secrets/` directory with mode 600, update `SUPublicEDKey`, and ship a transition release deliberately. Existing Sparkle installations that trust the old public key will not accept updates signed only by the new key.
 - App Store Connect API keys are managed at https://appstoreconnect.apple.com/access/integrations/api.

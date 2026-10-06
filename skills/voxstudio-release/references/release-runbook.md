@@ -30,7 +30,7 @@ The complete release includes Textual and bundled speech, both of which require 
 
 Read [Metal compatibility](metal-compatibility.md) for the macOS 15 / Metal 3.2
 packaging policy, cache invalidation, and M1–M4 physical-device qualification.
-Run `python3 scripts/build_metal.py preflight` before a costly distribution build.
+正式打包前运行 `uv run --no-project python scripts/build_prerequisites.py --config release --mode dist`。`release.sh` 会在改版本号前调用，`bundle.sh` 会在资源生成和编译前调用；已有组件和凭据会复用，缺项按下文流程自动初始化。着色器基线由 `uv run --no-project python scripts/build_metal.py preflight` 继续验证。
 Do not compile shaders with implicit host defaults or patch SwiftPM dependency checkouts.
 
 Inspect release variables without printing values:
@@ -73,19 +73,23 @@ If SIGNING_IDENTITY is set, verify its certificate metadata without exposing unr
 
 The expected Team ID is the ten-character identifier associated with the selected Developer ID certificate. If TEAM_IDENTIFIER is configured, it must match that certificate.
 
-For notarization, NOTARY_PROFILE must already exist in the local Keychain. Read only the profile name from the selected release environment:
+`NOTARY_PROFILE` 只用于 `--dist` 的 Apple 公证。它是技术前置条件，通过实际验证后直接继续已授权的打包，不需要再次要求用户批准。本地 `debug --sign`、`--fast` 或 MAS 打包不检查此项。
 
-      RELEASE_ENV='.env'
-      if [ -f .env.prod ]; then RELEASE_ENV='.env.prod'; fi
-      NOTARY_PROFILE="$(sed -n 's/^NOTARY_PROFILE=//p' "$RELEASE_ENV" | tail -n 1 | tr -d "\"'")"
-      test -n "$NOTARY_PROFILE"
-      xcrun notarytool history --keychain-profile "$NOTARY_PROFILE"
+只检查现状，不修改 Keychain 或下载组件：
 
-This command may return an empty history and still prove that the profile is usable. A missing profile must be fixed before building the distribution artifact. Do not print the environment file or any credential value.
+      uv run --no-project python scripts/build_prerequisites.py --config release --mode dist --notary-only --check-only
+
+自动检查并恢复缺失的 profile，不构建或发布：
+
+      uv run --no-project python scripts/build_prerequisites.py --config release --mode dist --notary-only
+
+脚本加载 `.env.prod`（存在时）或 `.env`，先验证配置的 Keychain profile；配置缺失时复用 Git 忽略的 `.secrets/notary-profile.env`。成功历史为空也算验证通过。有效 profile 不会被替换；网络或 Keychain 访问故障不会触发重写凭据。验证后的 profile 名称会保存到该本地文件，私钥和密码不会写入其中。
+
+profile 不存在或认证已失效时，脚本复用完整的 `NOTARY_API_KEY_PATH`、`NOTARY_API_KEY_ID`、`NOTARY_API_ISSUER`，或项目已有的 `APP_STORE_CONNECT_API_PRIVATE_KEY_PATH`、`APP_STORE_CONNECT_API_KEY_ID`、`APP_STORE_CONNECT_API_ISSUER_ID`，执行 `store-credentials --validate` 后再次验证。没有指定 profile 名称时使用应用 bundle ID 派生的名称。只有必要资料确实缺失或 Apple 拒绝配置时，才需要补充输入；下列手动流程用于首次提供新凭据，不应在每次打包时重复执行。
 
 ### Recover a missing profile with an App Store Connect Team API key
 
-Open [App Store Connect API Keys](https://appstoreconnect.apple.com/access/integrations/api), create or select a Team API key, and download its private key. The private key is an `AuthKey_<KEY_ID>.p8` file; it is not a `.provisionprofile`. Individual API keys cannot be used with `notarytool`.
+打开 [App Store Connect API Keys](https://appstoreconnect.apple.com/access/integrations/api)，选择已授权的 Team API key 及其 `AuthKey_<KEY_ID>.p8` 私钥。自动恢复入口使用 Team API key 的 Issuer ID；`.provisionprofile` 不是公证凭据。创建或轮换新 key 需要用户明确授权。
 
 Keep the private key local to this repository only in the ignored `.secrets/` directory. For this checkout, the expected path is:
 
