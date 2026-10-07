@@ -3089,3 +3089,26 @@
 "Pro includes %@× the monthly credits, giving you about %@× Starter’s transcription time." = "Pro includes %@× the monthly credits, giving you about %@× Starter’s transcription time.";
 "Pro uses about %@%% fewer credits per hour for standard transcription." = "Pro uses about %@%% fewer credits per hour for standard transcription.";
 "Estimates use all monthly credits for standard transcription only, without translation or subtitle splitting. Other cloud features share the same credit balance." = "Estimates use all monthly credits for standard transcription only, without translation or subtitle splitting. Other cloud features share the same credit balance.";
+
+/* Dub subtitle import */
+"Import subtitles (SRT/VTT)" = "Import subtitles (SRT/VTT)";
+"Use the text of a subtitle file as one dub segment. Timestamps are ignored." = "Use the text of a subtitle file as one dub segment. Timestamps are ignored.";
+"Choose a subtitle file" = "Choose a subtitle file";
+"Drop an SRT or VTT file to use its text" = "Drop an SRT or VTT file to use its text";
+"Replace the current script?" = "Replace the current script?";
+"Replace" = "Replace";
+"The subtitle text replaces all dub segments in this draft." = "The subtitle text replaces all dub segments in this draft.";
+"Couldn't import subtitles" = "Couldn't import subtitles";
+"Imported %@ · punctuation refined with AI" = "Imported %@ · punctuation refined with AI";
+"Imported %@ · added %@ punctuation marks from subtitle line breaks" = "Imported %@ · added %@ punctuation marks from subtitle line breaks";
+"Imported %@" = "Imported %@";
+"Refining…" = "Refining…";
+"Refine punctuation with AI" = "Refine punctuation with AI";
+"AI may only add or change punctuation. Results that change words are discarded." = "AI may only add or change punctuation. Results that change words are discarded.";
+"Undo punctuation" = "Undo punctuation";
+"AI punctuation changed words, so the original punctuation was kept." = "AI punctuation changed words, so the original punctuation was kept.";
+"AI punctuation applied to %@ of %@ parts; the rest kept the original punctuation." = "AI punctuation applied to %@ of %@ parts; the rest kept the original punctuation.";
+"Choose an SRT or VTT subtitle file." = "Choose an SRT or VTT subtitle file.";
+"The subtitle file is too large to import." = "The subtitle file is too large to import.";
+"The subtitle file could not be read. Save it as UTF-8 and try again." = "The subtitle file could not be read. Save it as UTF-8 and try again.";
+"The subtitle file contains no spoken text." = "The subtitle file contains no spoken text.";

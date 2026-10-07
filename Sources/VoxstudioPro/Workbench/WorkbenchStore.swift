@@ -784,6 +784,7 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     var speakerVoiceIDs: [String: UUID]?
     var segmentVoiceIDs: [Int: UUID]?
     var sourceTranscriptionID: UUID?
+    var subtitleImport: WorkbenchDubSubtitleImport?
     var outputPath: String?
     var segments: [DubSegmentPayload]?
     var renderedSegments: [DubRenderedSegment]?
@@ -863,7 +864,7 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, title, createdAt, modifiedAt, state, script, language, model
         case referenceAudioPath, referenceText, referenceVoiceID
-        case speakerVoiceIDs, segmentVoiceIDs, sourceTranscriptionID, outputPath
+        case speakerVoiceIDs, segmentVoiceIDs, sourceTranscriptionID, subtitleImport, outputPath
         case segments, renderedSegments, alignedTranscript, subtitleTrack
         case alignmentDiagnostics, revisions, activeRevisionID
         case summaryMarkdown, summaryTemplateID, summaryTemplateName, summaryTemplateUserEdition
@@ -892,6 +893,7 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
         speakerVoiceIDs = try container.decodeIfPresent([String: UUID].self, forKey: .speakerVoiceIDs)
         segmentVoiceIDs = try container.decodeIfPresent([Int: UUID].self, forKey: .segmentVoiceIDs)
         sourceTranscriptionID = try container.decodeIfPresent(UUID.self, forKey: .sourceTranscriptionID)
+        subtitleImport = try? container.decodeIfPresent(WorkbenchDubSubtitleImport.self, forKey: .subtitleImport)
         outputPath = try container.decodeIfPresent(String.self, forKey: .outputPath)
         segments = try container.decodeIfPresent([DubSegmentPayload].self, forKey: .segments)
         renderedSegments = try container.decodeIfPresent([DubRenderedSegment].self, forKey: .renderedSegments)
@@ -954,6 +956,7 @@ struct WorkbenchDubJob: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(speakerVoiceIDs, forKey: .speakerVoiceIDs)
         try container.encodeIfPresent(segmentVoiceIDs, forKey: .segmentVoiceIDs)
         try container.encodeIfPresent(sourceTranscriptionID, forKey: .sourceTranscriptionID)
+        try container.encodeIfPresent(subtitleImport, forKey: .subtitleImport)
         try container.encodeIfPresent(outputPath, forKey: .outputPath)
         try container.encodeIfPresent(segments, forKey: .segments)
         try container.encodeIfPresent(renderedSegments, forKey: .renderedSegments)
@@ -2751,9 +2754,7 @@ final class WorkbenchStore {
         return job
     }
 
-    private static var preferredDubLanguage: String {
-        Locale.current.language.languageCode?.identifier == "zh" ? "zh" : "en"
-    }
+    private static var preferredDubLanguage: String { preferredDubLanguageCode }
 
     private nonisolated static func isEmptyDubDraft(_ job: WorkbenchDubJob) -> Bool {
         job.state == .notStarted
@@ -4751,6 +4752,7 @@ final class WorkbenchStore {
         ) else { return }
         updateDub(dubID) {
             $0.sourceTranscriptionID = transcriptID
+            $0.subtitleImport = nil
             $0.script = transcript.segments.map(\.text).joined(separator: "\n")
             $0.segments = transcript.segments.enumerated().map { index, segment in
                 DubSegmentPayload(

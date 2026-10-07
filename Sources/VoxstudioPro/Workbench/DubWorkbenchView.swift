@@ -6,6 +6,10 @@ struct DubWorkbenchView: View {
     @Bindable private var store = WorkbenchStore.shared
     @State private var rewriteSegmentIndex: Int?
     @State private var showProcessingOptions = false
+    @State private var pendingSubtitleURL: URL?
+    @State private var subtitleImportError: String?
+    @State private var isSubtitleDropTargeted = false
+    @State private var punctuation = DubPunctuationController()
 
     var body: some View {
         Group {
@@ -34,6 +38,9 @@ struct DubWorkbenchView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
                     headerCard(job)
+                    if let info = job.subtitleImport, segments.count == 1 {
+                        subtitleImportBanner(job: job, info: info)
+                    }
                     ForEach(Array(segments.enumerated()), id: \.element.index) { displayIndex, segment in
                         segmentCard(job: job, displayIndex: displayIndex, segment: segment)
                     }
@@ -66,6 +73,53 @@ struct DubWorkbenchView: View {
                 .padding(.horizontal, AppTheme.Spacing.xxl)
                 .padding(.bottom, AppTheme.Spacing.lg)
         }
+        .overlay {
+            if isSubtitleDropTargeted {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+                    .strokeBorder(AppTheme.Accent.primary, style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+                    .background(AppTheme.Accent.primary.opacity(0.06))
+                    .overlay {
+                        Label(L10n.string("Drop an SRT or VTT file to use its text"), systemImage: "captions.bubble")
+                            .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
+                    }
+                    .padding(AppTheme.Spacing.lg)
+                    .allowsHitTesting(false)
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first(where: SubtitleScriptImporter.accepts), !job.state.isActive else { return false }
+            requestSubtitleImport(url, jobID: job.id)
+            return true
+        } isTargeted: { targeted in
+            isSubtitleDropTargeted = targeted && !job.state.isActive
+        }
+        .alert(
+            L10n.string("Replace the current script?"),
+            isPresented: Binding(
+                get: { pendingSubtitleURL != nil },
+                set: { if !$0 { pendingSubtitleURL = nil } }
+            )
+        ) {
+            Button(L10n.string("Replace"), role: .destructive) {
+                if let url = pendingSubtitleURL { importSubtitle(url, jobID: job.id) }
+                pendingSubtitleURL = nil
+            }
+            Button(L10n.string("Cancel"), role: .cancel) { pendingSubtitleURL = nil }
+        } message: {
+            Text(L10n.string("The subtitle text replaces all dub segments in this draft."))
+        }
+        .alert(
+            L10n.string("Couldn't import subtitles"),
+            isPresented: Binding(
+                get: { subtitleImportError != nil },
+                set: { if !$0 { subtitleImportError = nil } }
+            )
+        ) {
+            Button(L10n.string("OK"), role: .cancel) { subtitleImportError = nil }
+        } message: {
+            Text(L10n.display(subtitleImportError ?? ""))
+        }
+        .onDisappear { punctuation.cancel() }
         .sheet(item: Binding(
             get: { rewriteSegmentIndex.map(DubRewriteTarget.init(segmentIndex:)) },
             set: { rewriteSegmentIndex = $0?.segmentIndex }
@@ -164,6 +218,17 @@ struct DubWorkbenchView: View {
                     }
                 }
                 .disabled(store.transcriptions.allSatisfy { $0.result == nil })
+                Button {
+                    Task { @MainActor in
+                        if let url = await Self.pickSubtitleFile() {
+                            requestSubtitleImport(url, jobID: job.id)
+                        }
+                    }
+                } label: {
+                    Label(L10n.string("Import subtitles (SRT/VTT)"), systemImage: "captions.bubble")
+                }
+                .disabled(job.state.isActive)
+                .help(L10n.string("Use the text of a subtitle file as one dub segment. Timestamps are ignored."))
                 Spacer()
             }
         }
@@ -172,6 +237,89 @@ struct DubWorkbenchView: View {
         .overlay {
             RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
                 .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+        }
+    }
+
+    private func subtitleImportBanner(job: WorkbenchDubJob, info: WorkbenchDubSubtitleImport) -> some View {
+        let currentText = job.segments?.first?.text ?? ""
+        let unchanged = currentText == info.restoredText
+        let summary: String = if info.aiApplied {
+            L10n.format("Imported %@ · punctuation refined with AI", info.fileName)
+        } else if info.insertedCount > 0 {
+            L10n.format("Imported %@ · added %@ punctuation marks from subtitle line breaks", info.fileName, info.insertedCount)
+        } else {
+            L10n.format("Imported %@", info.fileName)
+        }
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            HStack(spacing: AppTheme.Spacing.md) {
+                Image(systemName: "captions.bubble")
+                    .foregroundStyle(AppTheme.Accent.primary)
+                Text(summary)
+                    .font(.system(size: AppTheme.FontSize.sm))
+                Spacer(minLength: 0)
+                if info.coverage != .complete || info.aiApplied {
+                    Button(L10n.string(punctuation.isRunning ? "Refining…" : "Refine punctuation with AI")) {
+                        punctuation.start(store: store, jobID: job.id)
+                    }
+                    .disabled(punctuation.isRunning || job.state.isActive || currentText.isEmpty)
+                    .help(L10n.string("AI may only add or change punctuation. Results that change words are discarded."))
+                }
+                if unchanged, info.insertedCount > 0 || info.aiApplied {
+                    Button(L10n.string("Undo punctuation")) {
+                        punctuation.cancel()
+                        store.undoSubtitlePunctuation(job.id)
+                    }
+                    .disabled(punctuation.isRunning || job.state.isActive)
+                }
+                Button {
+                    punctuation.cancel()
+                    store.dismissSubtitleImportNotice(job.id)
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help(L10n.string("Dismiss"))
+            }
+            if let message = punctuation.errorMessage ?? punctuation.notice {
+                Text(L10n.display(message))
+                    .font(.system(size: AppTheme.FontSize.xs))
+                    .foregroundStyle(punctuation.errorMessage == nil ? AppTheme.Text.mutedColor : AppTheme.Status.errorColor)
+            }
+        }
+        .padding(AppTheme.Spacing.md)
+        .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
+                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
+        }
+    }
+
+    private func requestSubtitleImport(_ url: URL, jobID: UUID) {
+        if store.dubHasScript(jobID) {
+            pendingSubtitleURL = url
+        } else {
+            importSubtitle(url, jobID: jobID)
+        }
+    }
+
+    private func importSubtitle(_ url: URL, jobID: UUID) {
+        punctuation.cancel()
+        do {
+            try store.importSubtitleScript(url, forDub: jobID)
+        } catch {
+            subtitleImportError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private static func pickSubtitleFile() async -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = L10n.string("Choose a subtitle file")
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = SubtitleScriptImporter.contentTypes
+        return await withCheckedContinuation { continuation in
+            panel.begin { response in continuation.resume(returning: response == .OK ? panel.url : nil) }
         }
     }
 

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Recent transcription sessions block aligned with web
@@ -57,77 +58,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
     }
 
     private var filterToolbar: some View {
-        HStack(spacing: AppTheme.Spacing.md) {
-            HStack(spacing: AppTheme.Spacing.smMd) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(AppTheme.Text.mutedColor)
-                TextField(L10n.string("Search"), text: $searchText)
-                    .textFieldStyle(.plain)
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(AppTheme.Text.mutedColor)
-                    }
-                    .buttonStyle(.plain)
-                    .help(L10n.string("Clear search"))
-                }
-            }
-            .padding(.horizontal, AppTheme.Spacing.lg)
-            .frame(height: 44)
-            .frame(maxWidth: .infinity)
-            .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
-            .overlay {
-                RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                    .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-            }
-
-            Menu {
-                ForEach(WorkbenchSessionStatusFilter.allCases) { filter in
-                    Button {
-                        statusFilter = filter
-                    } label: {
-                        if statusFilter == filter {
-                            Label(L10n.string(key: filter.label), systemImage: "checkmark")
-                        } else {
-                            Text(L10n.string(key: filter.label))
-                        }
-                    }
-                }
-            } label: {
-                Label(L10n.string("Filter"), systemImage: "line.3.horizontal.decrease")
-                    .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
-                    .padding(.horizontal, AppTheme.Spacing.lg)
-                    .frame(height: 44)
-                    .background(
-                        statusFilter == .all
-                            ? AppTheme.Background.raisedColor
-                            : AppTheme.Accent.link.opacity(AppTheme.Opacity.soft),
-                        in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                            .strokeBorder(
-                                statusFilter == .all
-                                    ? AppTheme.Border.subtleColor
-                                    : AppTheme.Accent.link.opacity(0.45),
-                                lineWidth: AppTheme.BorderWidth.thin
-                            )
-                    }
-                    .foregroundStyle(
-                        statusFilter == .all
-                            ? AppTheme.Text.secondaryColor
-                            : AppTheme.Accent.link
-                    )
-            }
-            .menuStyle(.borderlessButton)
-            .help(
-                statusFilter == .all
-                    ? L10n.string("Filter sessions")
-                    : L10n.format("Filter: %@", L10n.string(key: statusFilter.label))
-            )
-        }
+        WorkbenchRecentSessionFilterToolbar(searchText: $searchText, statusFilter: $statusFilter)
     }
 
     private var emptyState: some View {
@@ -164,148 +95,42 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
     }
 
     private var sessionsTable: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Text("SESSION")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("UPDATED")
-                    .frame(width: 132, alignment: .leading)
-                Text("TAGS")
-                    .frame(width: 160, alignment: .leading)
-                Color.clear.frame(width: 36)
-            }
-            .font(.system(size: AppTheme.FontSize.xxs, weight: .semibold))
-            .tracking(1.6)
-            .foregroundStyle(AppTheme.Text.mutedColor)
-            .padding(.horizontal, AppTheme.Spacing.lg)
-            .padding(.vertical, AppTheme.Spacing.md)
-            .background(AppTheme.Background.raisedColor.opacity(0.85))
-
-            Divider()
-
-            LazyVStack(spacing: 0) {
-                ForEach(filteredSessions) { session in
-                    recentSessionRow(session)
-                    if session.id != filteredSessions.last?.id {
-                        Divider()
-                    }
-                }
-            }
-        }
-        .background(AppTheme.Background.baseColor.opacity(0.35), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+        WorkbenchRecentSessionsTable(
+            sessions: filteredSessions,
+            kindLabel: { _ in L10n.string("Import") },
+            metadata: { session in
+                [
+                    session.sourceURL?.lastPathComponent,
+                    session.duration.map { L10n.format("Duration %@", formatDuration($0)) },
+                    L10n.format("Created %@", session.createdAt.formatted(date: .numeric, time: .shortened)),
+                ].compactMap { $0 }
+            },
+            tag: { _ in nil },
+            onOpen: { store.openSession($0.id) },
+            actions: sessionActions
+        )
     }
 
-    private func recentSessionRow(_ session: WorkbenchSession) -> some View {
-        HStack(alignment: .center, spacing: 0) {
-            Button {
-                store.openSession(session.id)
-            } label: {
-                HStack(alignment: .center, spacing: 0) {
-                    HStack(alignment: .center, spacing: AppTheme.Spacing.lg) {
-                        WorkbenchSessionThumbnail(session: session)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(session.title)
-                                .font(.system(size: AppTheme.FontSize.md, weight: .bold))
-                                .foregroundStyle(AppTheme.Text.primaryColor)
-                                .lineLimit(1)
-                            HStack(spacing: 6) {
-                                Text("Import")
-                                    .foregroundStyle(AppTheme.Accent.link)
-                                metaDot
-                                if let filename = session.sourceURL?.lastPathComponent {
-                                    Text(filename)
-                                        .lineLimit(1)
-                                }
-                                if let duration = session.duration {
-                                    metaDot
-                                    Text(L10n.format("Duration %@", formatDuration(duration)))
-                                }
-                                metaDot
-                                Text(L10n.format("Created %@", session.createdAt.formatted(date: .numeric, time: .shortened)))
-                            }
-                            .font(.system(size: AppTheme.FontSize.xs))
-                            .foregroundStyle(AppTheme.Text.mutedColor)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Text(relativeUpdated(session.modifiedAt))
-                        .font(.system(size: AppTheme.FontSize.sm))
-                        .foregroundStyle(AppTheme.Text.secondaryColor)
-                        .frame(width: 132, alignment: .leading)
-
-                    Text("-")
-                        .font(.system(size: AppTheme.FontSize.sm))
-                        .foregroundStyle(AppTheme.Text.mutedColor)
-                        .frame(width: 160, alignment: .leading)
-                }
-                .contentShape(Rectangle())
+    @ViewBuilder
+    private func sessionActions(_ session: WorkbenchSession) -> some View {
+        Button(L10n.string("Open session")) { store.openSession(session.id) }
+        if let transcriptionID = session.transcriptionID {
+            Button(L10n.string("Re-transcribe and rebuild subtitles")) {
+                retranscribe(transcriptionID)
             }
-            .buttonStyle(.plain)
-
-            Menu {
-                Button(L10n.string("Open session")) { store.openSession(session.id) }
-                if let transcriptionID = session.transcriptionID {
-                    Button(L10n.string("Re-transcribe and rebuild subtitles")) {
-                        retranscribe(transcriptionID)
-                    }
-                    .disabled(session.status.showsProcessing || session.status.showsQueued)
-                    Button(session.hasDub ? L10n.string("Redub") : L10n.string("Create dub")) {
-                        createDub(for: transcriptionID)
-                    }
-                    .disabled(session.transcript == nil)
-                }
-                if let sourceURL = session.sourceURL {
-                    Button(L10n.string("Reveal source in Finder")) {
-                        NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
-                    }
-                }
-                Divider()
-                Button(L10n.string("Delete"), role: .destructive) {
-                    delete(session)
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
-                    .foregroundStyle(AppTheme.Text.mutedColor)
-                    .frame(width: 36, height: 36)
-                    .contentShape(Rectangle())
+            .disabled(session.status.showsProcessing || session.status.showsQueued)
+            Button(session.hasDub ? L10n.string("Redub") : L10n.string("Create dub")) {
+                createDub(for: transcriptionID)
             }
-            .menuStyle(.borderlessButton)
-            .help(L10n.string("Session options"))
+            .disabled(session.transcript == nil)
         }
-        .padding(.horizontal, AppTheme.Spacing.lg)
-        .padding(.vertical, AppTheme.Spacing.lg)
-        .contextMenu {
-            Button(L10n.string("Open session")) { store.openSession(session.id) }
-            if let transcriptionID = session.transcriptionID {
-                Button(L10n.string("Re-transcribe and rebuild subtitles")) { retranscribe(transcriptionID) }
-                Button(session.hasDub ? L10n.string("Redub") : L10n.string("Create dub")) { createDub(for: transcriptionID) }
-                    .disabled(session.transcript == nil)
+        if let sourceURL = session.sourceURL {
+            Button(L10n.string("Reveal source in Finder")) {
+                NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
             }
-            if let sourceURL = session.sourceURL {
-                Button(L10n.string("Reveal source in Finder")) {
-                    NSWorkspace.shared.activateFileViewerSelecting([sourceURL])
-                }
-            }
-            Divider()
-            Button(L10n.string("Delete"), role: .destructive) { delete(session) }
         }
-    }
-
-    private var metaDot: some View {
-        Text("·")
-            .opacity(0.4)
-    }
-
-    private func relativeUpdated(_ date: Date) -> String {
-        Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
+        Divider()
+        Button(L10n.string("Delete"), role: .destructive) { delete(session) }
     }
 
     private func formatDuration(_ seconds: Double) -> String {
@@ -337,9 +162,4 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
         deletionRequest = RecentSessionDeletionRequest.prepare(sessions: [session])
     }
 
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return formatter
-    }()
 }

@@ -3089,3 +3089,26 @@
 "Pro includes %@× the monthly credits, giving you about %@× Starter’s transcription time." = "Pro 每月提供 %@ 倍积分，可获得约为 Starter %@ 倍的转录时长。";
 "Pro uses about %@%% fewer credits per hour for standard transcription." = "Pro 的标准转录每小时扣费约低 %@%%。";
 "Estimates use all monthly credits for standard transcription only, without translation or subtitle splitting. Other cloud features share the same credit balance." = "时长按整个月度积分全部用于标准转录估算，不含翻译或字幕切割。其他云端功能共用同一积分余额。";
+
+/* Dub subtitle import */
+"Import subtitles (SRT/VTT)" = "导入字幕 (SRT/VTT)";
+"Use the text of a subtitle file as one dub segment. Timestamps are ignored." = "将字幕文件的文本作为一个配音片段，忽略时间轴。";
+"Choose a subtitle file" = "选择字幕文件";
+"Drop an SRT or VTT file to use its text" = "拖放 SRT 或 VTT 文件以使用其文本";
+"Replace the current script?" = "替换当前脚本？";
+"Replace" = "替换";
+"The subtitle text replaces all dub segments in this draft." = "字幕文本将替换此草稿中的所有配音片段。";
+"Couldn't import subtitles" = "无法导入字幕";
+"Imported %@ · punctuation refined with AI" = "已导入 %@ · 已用 AI 优化标点";
+"Imported %@ · added %@ punctuation marks from subtitle line breaks" = "已导入 %@ · 根据字幕分行补全了 %@ 处标点";
+"Imported %@" = "已导入 %@";
+"Refining…" = "优化中…";
+"Refine punctuation with AI" = "用 AI 优化标点";
+"AI may only add or change punctuation. Results that change words are discarded." = "AI 只能增改标点，改动文字的结果会被丢弃。";
+"Undo punctuation" = "撤销标点";
+"AI punctuation changed words, so the original punctuation was kept." = "AI 改动了文字，已保留原有标点。";
+"AI punctuation applied to %@ of %@ parts; the rest kept the original punctuation." = "AI 标点已应用于 %@/%@ 部分，其余保留原有标点。";
+"Choose an SRT or VTT subtitle file." = "请选择 SRT 或 VTT 字幕文件。";
+"The subtitle file is too large to import." = "字幕文件过大，无法导入。";
+"The subtitle file could not be read. Save it as UTF-8 and try again." = "无法读取字幕文件，请另存为 UTF-8 后重试。";
+"The subtitle file contains no spoken text." = "字幕文件中没有可朗读的文本。";

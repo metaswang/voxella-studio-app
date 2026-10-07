@@ -49,79 +49,7 @@ struct WorkbenchRecentDubSessionsSection: View {
     }
 
     private var filterToolbar: some View {
-        HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
-            HStack(spacing: AppTheme.Spacing.smMd) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(AppTheme.Text.mutedColor)
-                TextField("Search", text: $searchText)
-                    .textFieldStyle(.plain)
-                InlineVoiceInputControl(text: $searchText, multiline: false)
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(AppTheme.Text.mutedColor)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Clear search")
-                }
-            }
-            .padding(.horizontal, AppTheme.Spacing.lg)
-            .padding(.vertical, AppTheme.Spacing.sm)
-            .frame(minHeight: AppTheme.Workbench.recentSessionControlHeight)
-            .frame(maxWidth: .infinity)
-            .background(AppTheme.Background.raisedColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
-            .overlay {
-                RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                    .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-            }
-
-            Menu {
-                ForEach(WorkbenchSessionStatusFilter.allCases) { filter in
-                    Button {
-                        statusFilter = filter
-                    } label: {
-                        if statusFilter == filter {
-                            Label(L10n.string(key: filter.label), systemImage: "checkmark")
-                        } else {
-                            Text(L10n.string(key: filter.label))
-                        }
-                    }
-                }
-            } label: {
-                Label("Filter", systemImage: "line.3.horizontal.decrease")
-                    .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
-                    .padding(.horizontal, AppTheme.Spacing.lg)
-                    .frame(height: AppTheme.Workbench.recentSessionControlHeight)
-                    .background(
-                        statusFilter == .all
-                            ? AppTheme.Background.raisedColor
-                            : AppTheme.Accent.link.opacity(AppTheme.Opacity.soft),
-                        in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                            .strokeBorder(
-                                statusFilter == .all
-                                    ? AppTheme.Border.subtleColor
-                                    : AppTheme.Accent.link.opacity(AppTheme.Opacity.moderate),
-                                lineWidth: AppTheme.BorderWidth.thin
-                            )
-                    }
-                    .foregroundStyle(
-                        statusFilter == .all
-                            ? AppTheme.Text.secondaryColor
-                            : AppTheme.Accent.link
-                    )
-            }
-            .menuStyle(.borderlessButton)
-            .help(
-                statusFilter == .all
-                    ? L10n.string("Filter sessions")
-                    : L10n.format("Filter: %@", L10n.string(key: statusFilter.label))
-            )
-        }
+        WorkbenchRecentSessionFilterToolbar(searchText: $searchText, statusFilter: $statusFilter, showsVoiceInput: true)
     }
 
     private var emptyState: some View {
@@ -158,111 +86,19 @@ struct WorkbenchRecentDubSessionsSection: View {
     }
 
     private var sessionsTable: some View {
-        VStack(spacing: AppTheme.Spacing.zero) {
-            HStack(spacing: AppTheme.Spacing.zero) {
-                Text("SESSION")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("UPDATED")
-                    .frame(width: AppTheme.Workbench.recentSessionUpdatedColumnWidth, alignment: .leading)
-                Text("TAGS")
-                    .frame(width: AppTheme.Workbench.recentSessionTagColumnWidth, alignment: .leading)
-                Color.clear.frame(width: AppTheme.Workbench.recentSessionMenuWidth)
-            }
-            .font(.system(size: AppTheme.FontSize.xxs, weight: AppTheme.FontWeight.semibold))
-            .tracking(AppTheme.Tracking.wide)
-            .foregroundStyle(AppTheme.Text.mutedColor)
-            .padding(.horizontal, AppTheme.Spacing.lg)
-            .padding(.vertical, AppTheme.Spacing.md)
-            .background(AppTheme.Background.raisedColor.opacity(AppTheme.Opacity.prominent))
-
-            Divider()
-
-            LazyVStack(spacing: AppTheme.Spacing.zero) {
-                ForEach(filteredSessions) { session in
-                    recentSessionRow(session)
-                    if session.id != filteredSessions.last?.id {
-                        Divider()
-                    }
-                }
-            }
-        }
-        .background(AppTheme.Background.baseColor.opacity(AppTheme.Opacity.medium), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
-                .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
-    }
-
-    private func recentSessionRow(_ session: WorkbenchSession) -> some View {
-        HStack(alignment: .center, spacing: AppTheme.Spacing.zero) {
-            Button {
-                store.openSession(session.id)
-            } label: {
-                HStack(alignment: .center, spacing: AppTheme.Spacing.zero) {
-                    HStack(alignment: .center, spacing: AppTheme.Spacing.lg) {
-                        WorkbenchSessionThumbnail(session: session)
-                        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                            Text(session.title)
-                                .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.bold))
-                                .foregroundStyle(AppTheme.Text.primaryColor)
-                                .lineLimit(1)
-                            HStack(spacing: AppTheme.Spacing.sm) {
-                                Text(session.source == .media ? L10n.string("Transcript dub") : L10n.string("Dub"))
-                                    .foregroundStyle(AppTheme.Accent.link)
-                                metaDot
-                                if let duration = session.duration {
-                                    Text(L10n.format("Duration %@", formatDuration(duration)))
-                                    metaDot
-                                }
-                                Text(L10n.format("Created %@", session.createdAt.formatted(date: .numeric, time: .shortened)))
-                            }
-                            .font(.system(size: AppTheme.FontSize.xs))
-                            .foregroundStyle(AppTheme.Text.mutedColor)
-                        }
-                        Spacer(minLength: AppTheme.Spacing.zero)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Text(relativeUpdated(session.modifiedAt))
-                        .font(.system(size: AppTheme.FontSize.sm))
-                        .foregroundStyle(AppTheme.Text.secondaryColor)
-                        .frame(width: AppTheme.Workbench.recentSessionUpdatedColumnWidth, alignment: .leading)
-
-                    Text(session.sessionTag ?? "–")
-                        .font(.system(size: AppTheme.FontSize.sm))
-                        .foregroundStyle(AppTheme.Text.mutedColor)
-                        .lineLimit(1)
-                        .frame(width: AppTheme.Workbench.recentSessionTagColumnWidth, alignment: .leading)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            sessionMenu(session)
-        }
-        .padding(.horizontal, AppTheme.Spacing.lg)
-        .padding(.vertical, AppTheme.Spacing.lg)
-        .contextMenu {
-            sessionMenuActions(session)
-        }
-    }
-
-    private func sessionMenu(_ session: WorkbenchSession) -> some View {
-        Menu {
-            sessionMenuActions(session)
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: AppTheme.FontSize.sm, weight: AppTheme.FontWeight.semibold))
-                .foregroundStyle(AppTheme.Text.mutedColor)
-                .frame(
-                    width: AppTheme.Workbench.recentSessionMenuWidth,
-                    height: AppTheme.Workbench.recentSessionMenuWidth
-                )
-                .contentShape(Rectangle())
-        }
-        .menuStyle(.borderlessButton)
-        .help(L10n.string("Session options"))
+        WorkbenchRecentSessionsTable(
+            sessions: filteredSessions,
+            kindLabel: { $0.source == .media ? L10n.string("Transcript dub") : L10n.string("Dub") },
+            metadata: { session in
+                [
+                    session.duration.map { L10n.format("Duration %@", formatDuration($0)) },
+                    L10n.format("Created %@", session.createdAt.formatted(date: .numeric, time: .shortened)),
+                ].compactMap { $0 }
+            },
+            tag: { $0.sessionTag },
+            onOpen: { store.openSession($0.id) },
+            actions: sessionMenuActions
+        )
     }
 
     @ViewBuilder
@@ -284,11 +120,6 @@ struct WorkbenchRecentDubSessionsSection: View {
         }
     }
 
-    private var metaDot: some View {
-        Text("·")
-            .opacity(AppTheme.Opacity.medium)
-    }
-
     private func canRegenerate(_ id: UUID) -> Bool {
         guard let job = store.dubs.first(where: { $0.id == id }) else { return false }
         guard !job.state.isActive else { return false }
@@ -300,10 +131,6 @@ struct WorkbenchRecentDubSessionsSection: View {
     private func regenerate(_ id: UUID) {
         guard store.dubs.contains(where: { $0.id == id }) else { return }
         store.openDub(id)
-    }
-
-    private func relativeUpdated(_ date: Date) -> String {
-        Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
     }
 
     private func formatDuration(_ seconds: Double) -> String {
@@ -318,9 +145,4 @@ struct WorkbenchRecentDubSessionsSection: View {
         return String(format: "%02d:%02d", minutes, secs)
     }
 
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return formatter
-    }()
 }
