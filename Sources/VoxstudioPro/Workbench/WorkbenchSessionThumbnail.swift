@@ -12,7 +12,8 @@ struct WorkbenchSessionThumbnail: View {
     var placeholderSize: CGFloat = AppTheme.IconSize.md
 
     @State private var oEmbedThumbnailURL: URL?
-    @State private var localThumbnailData: Data?
+    /// Decoded once on load; decoding `Data` in `body` re-ran on every row update.
+    @State private var localThumbnail: NSImage?
     @State private var remoteImageLoaded = false
 
     var body: some View {
@@ -54,8 +55,8 @@ struct WorkbenchSessionThumbnail: View {
             remoteAsyncImage(url: oEmbedThumbnailURL)
         } else if let remotePosterURL = session.remoteSourcePosterURL {
             remoteAsyncImage(url: remotePosterURL)
-        } else if let localThumbnailData, let image = NSImage(data: localThumbnailData) {
-            Image(nsImage: image).resizable().scaledToFill()
+        } else if let localThumbnail {
+            Image(nsImage: localThumbnail).resizable().scaledToFill()
         } else {
             fallback
         }
@@ -97,13 +98,13 @@ struct WorkbenchSessionThumbnail: View {
     }
 
     private var showsLoadedImage: Bool {
-        if localThumbnailData != nil { return true }
+        if localThumbnail != nil { return true }
         return remoteImageLoaded
     }
 
     private func loadThumbnail() async {
         oEmbedThumbnailURL = nil
-        localThumbnailData = nil
+        localThumbnail = nil
         remoteImageLoaded = false
         if let netVideo = session.netVideoSource, netVideo.platform == .youtube {
             let url = await YouTubeOEmbedClient.shared.metadata(for: netVideo.sourceURL)?.thumbnailURL
@@ -118,7 +119,7 @@ struct WorkbenchSessionThumbnail: View {
         }
         let data = await SessionPosterFrameLoader.load(url: sourceURL, enabled: true)
         guard !Task.isCancelled else { return }
-        localThumbnailData = data
+        localThumbnail = data.flatMap(NSImage.init(data:))
     }
 
     private static func isVideoFile(_ url: URL) -> Bool {

@@ -34,44 +34,38 @@ struct DubWorkbenchView: View {
             partial + estimateDurationSeconds(segment.text, language: job.language)
         }
 
-        return ZStack(alignment: .bottom) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                    headerCard(job)
-                    if let info = job.subtitleImport, segments.count == 1 {
-                        subtitleImportBanner(job: job, info: info)
-                    }
-                    ForEach(Array(segments.enumerated()), id: \.element.index) { displayIndex, segment in
-                        segmentCard(job: job, displayIndex: displayIndex, segment: segment)
-                    }
-                    addSegmentButton(job.id)
-                    if job.state.isActive {
-                        progressCard(job)
-                    }
-                    if let error = job.errorMessage {
-                        Label(L10n.display(error), systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(AppTheme.Status.errorColor)
-                    }
-                    if job.resolvedCloudSyncState == .pending {
-                        Button(L10n.string("Retry cloud sync")) {
-                            store.retryDubCloudSync(job.id)
-                        }
-                        .buttonStyle(.borderless)
-                    }
-                    if let output = job.outputURL {
-                        outputCard(output: output)
-                    }
-                    WorkbenchRecentDubSessionsSection()
-                    Color.clear.frame(height: AppTheme.zoomed(88))
+        return ScrollView {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                headerCard(job)
+                if let info = job.subtitleImport, segments.count == 1 {
+                    subtitleImportBanner(job: job, info: info)
                 }
-                .padding(AppTheme.Spacing.xxl)
-                .frame(maxWidth: AppTheme.Workbench.composerMaxWidth, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .center)
+                ForEach(Array(segments.enumerated()), id: \.element.index) { displayIndex, segment in
+                    segmentCard(job: job, displayIndex: displayIndex, segment: segment)
+                }
+                addSegmentButton(job.id)
+                generateBar(job: job, segmentCount: segments.count, totalSeconds: totalSeconds)
+                if job.state.isActive {
+                    progressCard(job)
+                }
+                if let error = job.errorMessage {
+                    Label(L10n.display(error), systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(AppTheme.Status.errorColor)
+                }
+                if job.resolvedCloudSyncState == .pending {
+                    Button(L10n.string("Retry cloud sync")) {
+                        store.retryDubCloudSync(job.id)
+                    }
+                    .buttonStyle(.borderless)
+                }
+                if let output = job.outputURL {
+                    outputCard(output: output)
+                }
+                WorkbenchRecentDubSessionsSection()
             }
-
-            generateBar(job: job, segmentCount: segments.count, totalSeconds: totalSeconds)
-                .padding(.horizontal, AppTheme.Spacing.xxl)
-                .padding(.bottom, AppTheme.Spacing.lg)
+            .padding(AppTheme.Spacing.xxl)
+            .frame(maxWidth: AppTheme.Workbench.composerMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
         .overlay {
             if isSubtitleDropTargeted {
@@ -446,13 +440,12 @@ struct DubWorkbenchView: View {
             }
         }
         .padding(AppTheme.Spacing.mdLg)
-        .frame(maxWidth: AppTheme.zoomed(720))
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
+            RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
                 .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
         }
-        .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
     }
 
     private func progressCard(_ job: WorkbenchDubJob) -> some View {

@@ -339,8 +339,10 @@ struct TranscriptionProcessingView: View {
                     cloudPipelineDetails(for: job)
                 }
 
-                LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
-                    ForEach(events) { event in
+                // Eager and bounded: a LazyVStack nested in the page's ScrollView can
+                // spin in lazy placement while progress keeps appending events.
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
+                    ForEach(events.suffix(Self.visibleEventLimit)) { event in
                         Text(verbatim: "\(event.time)  \(L10n.display(event.message))")
                             .font(.system(size: AppTheme.FontSize.xs, design: .monospaced))
                             .foregroundStyle(AppTheme.Text.secondaryColor)
@@ -545,6 +547,8 @@ struct TranscriptionProcessingView: View {
             appendEvent(message)
         }
     }
+
+    private static let visibleEventLimit = 200
 
     private func appendEvent(_ message: String) {
         if events.last?.message == message { return }

@@ -191,7 +191,8 @@ struct KnowledgeChatPane: View {
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                         .padding(.vertical, AppTheme.Spacing.md)
                 } else {
-                    LazyVStack(spacing: AppTheme.Spacing.sm) {
+                    // ChatScrollView requires eager content; at most 8 rows.
+                    VStack(spacing: AppTheme.Spacing.sm) {
                         ForEach(recentSessions) { session in
                             KnowledgeRecentSessionRow(
                                 session: session,

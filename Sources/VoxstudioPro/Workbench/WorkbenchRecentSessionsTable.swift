@@ -110,7 +110,10 @@ struct WorkbenchRecentSessionsTable<Actions: View>: View {
 
             Divider()
 
-            LazyVStack(spacing: AppTheme.Spacing.zero) {
+            // Eager on purpose: this table sits in a parent's non-lazy VStack inside a
+            // ScrollView, and a LazyVStack there spun forever re-placing each row's
+            // AppKit-backed Menu (main thread hung, memory grew past 60 GB).
+            VStack(spacing: AppTheme.Spacing.zero) {
                 ForEach(sessions) { session in
                     row(session)
                     if session.id != sessions.last?.id {
@@ -157,7 +160,7 @@ struct WorkbenchRecentSessionsTable<Actions: View>: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(Self.relativeFormatter.localizedString(for: session.modifiedAt, relativeTo: Date()))
+                    Text(Self.relativeUpdated(session.modifiedAt))
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.secondaryColor)
                         .lineLimit(1)
@@ -194,6 +197,13 @@ struct WorkbenchRecentSessionsTable<Actions: View>: View {
         .contextMenu {
             actions(session)
         }
+    }
+
+    /// A draft saved a moment ago can carry a timestamp slightly ahead of `Date()`;
+    /// clamp it so the column never reads "in 0 seconds".
+    private static func relativeUpdated(_ date: Date) -> String {
+        let now = Date()
+        return relativeFormatter.localizedString(for: min(date, now), relativeTo: now)
     }
 
     private static var relativeFormatter: RelativeDateTimeFormatter {

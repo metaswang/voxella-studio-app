@@ -96,7 +96,9 @@ struct WorkbenchLibraryView: View {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                         Text(L10n.string("Recent tasks"))
                             .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
-                        LazyVStack(spacing: AppTheme.Spacing.mdLg) {
+                        // Eager: at most 8 rows, nested in the page's ScrollView (see
+                        // WorkbenchRecentSessionsTable for the LazyVStack hang this avoids).
+                        VStack(spacing: AppTheme.Spacing.mdLg) {
                             ForEach(store.sessions.prefix(8)) { session in
                                 SessionListRow(
                                     session: session,
