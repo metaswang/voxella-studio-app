@@ -84,6 +84,7 @@ struct MediaSessionsBrowser: View {
                     )
             }
             .menuStyle(.borderlessButton)
+            .fixedSize()
             .help(L10n.string("Filter sessions"))
         }
         .padding(.horizontal, AppTheme.Spacing.sm)

@@ -761,6 +761,7 @@ struct WorkbenchSessionDetailView: View {
                 .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
         .menuIndicator(.hidden)
         .help(L10n.string("Session options"))
         .accessibilityLabel(L10n.string("Session options"))
@@ -904,6 +905,7 @@ struct WorkbenchSessionDetailView: View {
                         }
                     }
                     .menuStyle(.borderlessButton)
+                    .fixedSize()
                     .menuIndicator(.hidden)
                     .id(languageMenuIdentity(for: tab, session: session))
                 }
@@ -1837,6 +1839,7 @@ private struct SessionMediaPlayer: View {
                 .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
         .help(L10n.string("Playback speed"))
     }
 

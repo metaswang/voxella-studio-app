@@ -243,6 +243,7 @@ struct ProcessingOptionsSheet: View {
                 processingMenuLabel(selectedLanguageLabel)
             }
             .menuStyle(.borderlessButton)
+            .fixedSize()
             .menuIndicator(.hidden)
         }
     }
@@ -312,6 +313,7 @@ struct ProcessingOptionsSheet: View {
                     processingMenuLabel(speakerCount.label)
                 }
                 .menuStyle(.borderlessButton)
+                .fixedSize()
                 .menuIndicator(.hidden)
             }
 
@@ -429,6 +431,7 @@ struct ProcessingOptionsSheet: View {
                         processingMenuLabel(targetLanguageLabel)
                     }
                     .menuStyle(.borderlessButton)
+                    .fixedSize()
                     .menuIndicator(.hidden)
                 }
             }

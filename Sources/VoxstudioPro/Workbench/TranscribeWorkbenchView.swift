@@ -734,6 +734,7 @@ struct TranscribeWorkbenchView: View {
                                 .foregroundStyle(speakerColor(segment.speaker))
                             }
                             .menuStyle(.borderlessButton)
+                            .fixedSize()
                             .help(L10n.string("Assign a speaker to this segment"))
 
                             if let speaker = segment.speaker {

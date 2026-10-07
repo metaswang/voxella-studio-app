@@ -86,6 +86,7 @@ extension GenerationView {
             .padding(.vertical, AppTheme.Spacing.xs)
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
         .menuIndicator(.hidden)
         .hoverHighlight()
     }
@@ -115,6 +116,7 @@ extension GenerationView {
             .padding(.vertical, AppTheme.Spacing.xs)
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
         .menuIndicator(.hidden)
         .hoverHighlight()
         .help(L10n.string("Target Language"))

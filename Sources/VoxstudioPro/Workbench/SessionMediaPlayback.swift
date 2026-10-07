@@ -660,6 +660,7 @@ struct SessionFullscreenChrome: View {
                 )
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
         .disabled(playback.subtitleTrack == nil && playback.translationTracks.isEmpty)
         .help(L10n.string("Subtitles"))
         .id(fullscreenSubtitleIdentity)
@@ -692,6 +693,7 @@ struct SessionFullscreenChrome: View {
                 .foregroundStyle(AppTheme.Text.primaryColor)
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
         .help(L10n.string("Playback speed"))
     }
 

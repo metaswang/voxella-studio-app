@@ -99,6 +99,7 @@ extension GenerationView {
             .padding(.vertical, AppTheme.Spacing.xxs)
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
         .menuIndicator(.hidden)
         .hoverHighlight()
     }

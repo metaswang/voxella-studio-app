@@ -103,6 +103,7 @@ struct DubOutputPlayer: View {
                             .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                     }
                     .menuStyle(.borderlessButton)
+                    .fixedSize()
                     .disabled(playback.player == nil)
                     .help(L10n.string("Playback speed"))
                 }
