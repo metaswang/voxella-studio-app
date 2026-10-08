@@ -181,7 +181,7 @@ enum KnowledgeSourceType: String, Codable, CaseIterable, Identifiable, Sendable 
     /// Web `source_type` values (file, url, youtube, meeting, …) stay on web.
     static func from(sessionType: WorkbenchSessionType) -> KnowledgeSourceType {
         switch sessionType {
-        case .record, .live: .recording
+        case .record, .screenRecord, .live: .recording
         case .meetingRecord, .googleMeet: .meeting
         case .upload: .upload
         case .netVideo: .netVideo

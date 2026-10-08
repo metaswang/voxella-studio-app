@@ -364,7 +364,7 @@ struct KnowledgeQAServiceHelpersTests {
 
         #expect(fallback.contains("Testing"))
         #expect(fallback.contains("请求的 session 元数据"))
-        #expect(fallback.contains("Record"))
+        #expect(fallback.contains("Audio recording"))
         #expect(fallback.contains("Local"))
         #expect(fallback.contains("0:04"))
         #expect(!fallback.contains("Overview"))

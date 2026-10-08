@@ -416,9 +416,7 @@ extension SessionIndexSnapshot {
             sourceOrigin: origin,
             remoteSessionID: job.remoteSessionID,
             ownerUserID: nil,
-            sessionType: job.isRecordedCapture
-                ? .record
-                : (job.netVideoSourceURL == nil ? .upload : .netVideo)
+            sessionType: job.sessionType
         )
         snapshot.body = KnowledgeTranscriptMaterial.from(transcript: transcript) ?? KnowledgeTranscriptMaterial.from(subtitles: job.subtitleTrack)
         snapshot.lastSpokenEndSec = snapshot.body?.spans.compactMap(\.end).max()
