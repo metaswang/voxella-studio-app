@@ -45,7 +45,9 @@ enum OptionalSpeakerDiarization {
             } catch {
                 if isCancellation(error) { throw CancellationError() }
                 try Task.checkCancellation()
-                Log.transcription.warning("Optional speaker recognition failed; returning transcript without labels")
+                Log.transcription.warning(
+                    "Optional speaker recognition failed; returning transcript without labels error=\(error.localizedDescription)"
+                )
                 warning = failedMessage
             }
         } catch {
