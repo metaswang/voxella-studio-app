@@ -199,7 +199,7 @@ private struct HomeNewSessionButton: View {
 }
 
 /// All Home entry points share the same options and navigation actions.
-/// A popover allows the title entry to open on hover without synthesizing clicks.
+/// Hover only reveals the disclosure arrow; the options open on click.
 private struct HomeNewSessionMenu: View {
     var showsTitle = false
     var projectID: UUID? = nil
@@ -249,10 +249,7 @@ private struct HomeNewSessionMenu: View {
             showsTitle && (isHovering || isPresented) ? AppTheme.Background.prominentColor : .clear,
             in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
         )
-        .onHover { hovering in
-            isHovering = hovering
-            if showsTitle && hovering { isPresented = true }
-        }
+        .onHover { isHovering = $0 }
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             HomeNewSessionOptions(projectID: projectID) { isPresented = false }
                 .appZoomEnvironment(presentationBoundary: true)
