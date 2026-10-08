@@ -764,7 +764,6 @@ enum AppTheme {
         static let hover: Double = 0.15
         static let transition: Double = 0.2
         static let pulse: Double = 0.8
-        static let spin: Double = 1.0
         static let slipPreviewRefresh: Duration = .milliseconds(67)
     }
 }

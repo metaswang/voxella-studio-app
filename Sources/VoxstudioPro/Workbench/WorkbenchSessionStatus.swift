@@ -462,27 +462,11 @@ private struct SpinningIconModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
-        Group {
-            if active && !reduceMotion {
-                SwiftUI.TimelineView(.animation) { context in
-                    // Derive the phase from time rather than retained animation state.
-                    // Reappearing views therefore resume without resetting a 360° target
-                    // to the same value in a single SwiftUI update.
-                    let phase = context.date.timeIntervalSinceReferenceDate
-                        .truncatingRemainder(dividingBy: AppTheme.Anim.spin)
-                    content
-                        .rotationEffect(.degrees(phase / AppTheme.Anim.spin * 360))
-                }
-            } else {
-                content
-            }
-        }
-        // Status changes may arrive inside a parent's animated transaction.
-        // Stop immediately, including when Reduce Motion is enabled mid-spin.
-        .transaction { transaction in
-            transaction.animation = nil
-            transaction.disablesAnimations = true
-        }
+        content.symbolEffect(
+            .rotate.wholeSymbol,
+            options: .repeating,
+            isActive: active && !reduceMotion
+        )
     }
 }
 
