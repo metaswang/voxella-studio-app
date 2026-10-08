@@ -27,6 +27,7 @@ final class RecordingSessionController {
     var permissionMessage: String?
     var lastDiagnostics: RecordingSessionDiagnostics?
     var liveAudioWarning: String?
+    private(set) var liveLowLevelWarning: String?
     var permissionSettingsURL: URL?
     @ObservationIgnored let liveWaveform = RecordingLiveWaveformStore()
 
@@ -43,7 +44,7 @@ final class RecordingSessionController {
         let kind: WorkbenchTipKind
         if let errorMessage { message = errorMessage; kind = canRetryStart ? .warning : .error }
         else if let permissionMessage { message = permissionMessage; kind = .info }
-        else if let warning = liveAudioWarning ?? (!phase.isActive ? lastDiagnostics?.warningMessage : nil) {
+        else if let warning = liveAudioWarning ?? liveLowLevelWarning ?? (!phase.isActive ? lastDiagnostics?.warningMessage : nil) {
             message = warning; kind = .warning
         } else if !phase.isActive, savedRecordingURL != nil {
             message = L10n.string("Recording saved."); kind = .success
@@ -345,6 +346,7 @@ final class RecordingSessionController {
         isMicrophoneMuted = false
         lastDiagnostics = nil
         liveAudioWarning = nil
+        liveLowLevelWarning = nil
         liveWaveform.reset()
         pauseAccumulated = 0
         pauseStartedAt = nil
@@ -415,8 +417,8 @@ final class RecordingSessionController {
                     liveWaveform: self.liveWaveform,
                     onAudioLevelWarning: { [weak self] warning in
                         Task { @MainActor [weak self] in
-                            guard let self, self.sessionID == id else { return }
-                            self.liveAudioWarning = warning.message
+                            guard let self, self.sessionID == id, self.phase.isCapturing else { return }
+                            self.liveLowLevelWarning = warning?.message
                         }
                     },
                     onRuntimeEvent: { [weak self] event in
@@ -595,7 +597,11 @@ final class RecordingSessionController {
                 self.restoreApp()
                 guard self.sessionID == id else { return }
                 self.lastDiagnostics = stopResult.diagnostics
+                self.liveLowLevelWarning = nil
                 self.liveAudioWarning = stopResult.warnings.first
+                Log.recording.notice(
+                    "recording audio levels session=\(id.uuidString) microphone=\(String(describing: stopResult.diagnostics.microphone)) systemAudio=\(String(describing: stopResult.diagnostics.systemAudio)) lowLevel=\(stopResult.diagnostics.warningMessage != nil)"
+                )
                 if stopResult.diagnostics.warningMessage != nil {
                     Log.recording.warning(
                         "recording completed with low audio level microphone=\(String(describing: stopResult.diagnostics.microphone)) systemAudio=\(String(describing: stopResult.diagnostics.systemAudio))"
@@ -984,6 +990,7 @@ final class RecordingSessionController {
     }
 
     private func resetToIdle() {
+        liveLowLevelWarning = nil
         configuration.sessionProjectID = nil
         startupMessage = nil
         preparationTask = nil

@@ -14,101 +14,11 @@ struct RecordingEngineRequest {
     var sessionID: UUID
     var displayID: UInt32?
     var liveWaveform: RecordingLiveWaveformStore
-    var onAudioLevelWarning: (@Sendable (RecordingAudioLevelWarning) -> Void)?
+    var onAudioLevelWarning: (@Sendable (RecordingAudioLevelWarning?) -> Void)?
     var onRuntimeEvent: (@Sendable (RecordingRuntimeEvent) -> Void)?
     var applicationSelection: RecordingApplicationSelection? = nil
     var videoSourceSize: CGSize? = nil
     var mobilePreviewSource: MobileDeviceCaptureSource? = nil
-}
-
-private struct RecordingAudioLevelMeter {
-    private var frameCount = 0
-    private var sampleCount = 0
-    private var sumSquares = 0.0
-    private var peak = 0.0
-    private var sampleRate = 48_000.0
-    private var didIssueLowLevelWarning = false
-
-    var snapshot: RecordingAudioLevel? {
-        guard frameCount > 0, sampleCount > 0 else { return nil }
-        let rms = sqrt(sumSquares / Double(sampleCount))
-        return RecordingAudioLevel(
-            duration: Double(frameCount) / sampleRate,
-            rmsDBFS: decibels(for: rms),
-            peakDBFS: decibels(for: peak)
-        )
-    }
-
-    mutating func append(_ sampleBuffer: CMSampleBuffer) -> RecordingAudioMeterTick? {
-        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
-              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription),
-              let format = AVAudioFormat(streamDescription: streamDescription),
-              let frameCount = AVAudioFrameCount(exactly: CMSampleBufferGetNumSamples(sampleBuffer)),
-              frameCount > 0,
-              let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
-            return nil
-        }
-        pcm.frameLength = frameCount
-        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
-            sampleBuffer,
-            at: 0,
-            frameCount: Int32(frameCount),
-            into: pcm.mutableAudioBufferList
-        ) == noErr else { return nil }
-
-        self.sampleRate = streamDescription.pointee.mSampleRate > 0
-            ? streamDescription.pointee.mSampleRate
-            : sampleRate
-        self.frameCount += Int(frameCount)
-        var bufferPeak = 0.0
-        if let channels = pcm.floatChannelData {
-            for channel in 0..<Int(pcm.format.channelCount) {
-                for frame in 0..<Int(frameCount) {
-                    bufferPeak = max(bufferPeak, accumulate(Double(channels[channel][frame])))
-                }
-            }
-        } else if let channels = pcm.int16ChannelData {
-            for channel in 0..<Int(pcm.format.channelCount) {
-                for frame in 0..<Int(frameCount) {
-                    bufferPeak = max(
-                        bufferPeak,
-                        accumulate(Double(channels[channel][frame]) / Double(Int16.max))
-                    )
-                }
-            }
-        } else if let channels = pcm.int32ChannelData {
-            for channel in 0..<Int(pcm.format.channelCount) {
-                for frame in 0..<Int(frameCount) {
-                    bufferPeak = max(
-                        bufferPeak,
-                        accumulate(Double(channels[channel][frame]) / Double(Int32.max))
-                    )
-                }
-            }
-        }
-
-        var warningLevel: RecordingAudioLevel?
-        if !didIssueLowLevelWarning,
-           let level = snapshot,
-           level.duration >= 3,
-           level.rmsDBFS < -40 {
-            didIssueLowLevelWarning = true
-            warningLevel = level
-        }
-        return RecordingAudioMeterTick(peak: Float(bufferPeak), warningLevel: warningLevel)
-    }
-
-    private mutating func accumulate(_ sample: Double) -> Double {
-        let magnitude = min(1, abs(sample))
-        sumSquares += magnitude * magnitude
-        peak = max(peak, magnitude)
-        sampleCount += 1
-        return magnitude
-    }
-
-    private func decibels(for amplitude: Double) -> Double {
-        amplitude > 0 ? 20 * log10(amplitude) : -.infinity
-    }
 }
 
 final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
@@ -153,7 +63,7 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
     private var systemAudioEnabled = false
     private var isMicrophoneMuted = false
     private var liveWaveform: RecordingLiveWaveformStore?
-    private var onAudioLevelWarning: (@Sendable (RecordingAudioLevelWarning) -> Void)?
+    private var onAudioLevelWarning: (@Sendable (RecordingAudioLevelWarning?) -> Void)?
     private var onRuntimeEvent: (@Sendable (RecordingRuntimeEvent) -> Void)?
     private var currentRequest: RecordingEngineRequest?
     private var contentFilter: SCContentFilter?
@@ -1462,6 +1372,9 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
                 tick = systemAudioMeter.append(sample)
             case .microphone:
                 tick = microphoneMeter.append(sample)
+            }
+            if tick?.didRecoverLevel == true, microphoneEnabled != systemAudioEnabled {
+                onAudioLevelWarning?(nil)
             }
             if let level = tick?.warningLevel {
                 switch source {

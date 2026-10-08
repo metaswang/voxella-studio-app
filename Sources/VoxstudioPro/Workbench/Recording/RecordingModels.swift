@@ -155,15 +155,29 @@ struct RecordingAudioLevel: Equatable, Sendable {
     let duration: TimeInterval
     let rmsDBFS: Double
     let peakDBFS: Double
+    /// RMS of short windows above the sustained signal's noise gate, on the
+    /// loudest channel. Whole-recording RMS remains available for diagnostics.
+    var activeRMSDBFS: Double? = nil
+    var healthyDuration: TimeInterval? = nil
+
+    static let lowRMSDBFS = -40.0
+    static let minimumDuration: TimeInterval = 3
+    static let minimumHealthyDuration: TimeInterval = 0.3
 
     var isLowLevel: Bool {
-        duration >= 0.25 && rmsDBFS < -40
+        guard duration >= Self.minimumDuration else { return false }
+        if let healthyDuration, healthyDuration + 0.000_001 < Self.minimumHealthyDuration {
+            // A click must not make an otherwise silent recording look healthy.
+            return true
+        }
+        return (activeRMSDBFS ?? rmsDBFS) < Self.lowRMSDBFS
     }
 }
 
 struct RecordingAudioMeterTick: Sendable {
     let peak: Float
     let warningLevel: RecordingAudioLevel?
+    var didRecoverLevel = false
 }
 
 enum RecordingAudioTrack: String, Sendable {

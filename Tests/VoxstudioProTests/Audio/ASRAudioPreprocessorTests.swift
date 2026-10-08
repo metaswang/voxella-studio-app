@@ -45,8 +45,8 @@ struct ASRAudioPreprocessorTests {
     }
 
     @Test func recordingDiagnosticsWarnForLowTracksOnly() {
-        let low = RecordingAudioLevel(duration: 2, rmsDBFS: -45, peakDBFS: -32)
-        let healthy = RecordingAudioLevel(duration: 2, rmsDBFS: -20, peakDBFS: -6)
+        let low = RecordingAudioLevel(duration: 3, rmsDBFS: -45, peakDBFS: -32)
+        let healthy = RecordingAudioLevel(duration: 3, rmsDBFS: -20, peakDBFS: -6)
 
         #expect(
             RecordingSessionDiagnostics(microphone: low, systemAudio: healthy).warningMessage == nil
