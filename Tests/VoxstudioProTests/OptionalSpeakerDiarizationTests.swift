@@ -133,6 +133,21 @@ struct OptionalSpeakerDiarizationTests {
         #expect(retired.replacement == .nemotron3Diarization)
     }
 
+    @Test func pruningNeverDeletesUnknownOrCurrentRepositories() {
+        // A repository this build does not know may belong to a newer build.
+        #expect(!LocalModelManager.shouldPrune(repository: "someone/future-model", pendingRetirements: []))
+        for model in LocalModelManager.catalog {
+            #expect(!LocalModelManager.shouldPrune(repository: model.repository, pendingRetirements: []))
+        }
+        #expect(!LocalModelManager.shouldPrune(repository: LocalModelManager.ttsTokenizerRepository, pendingRetirements: []))
+        let sortformer = "mlx-community/diar_streaming_sortformer_4spk-v2.1-fp16"
+        #expect(LocalModelManager.shouldPrune(repository: sortformer, pendingRetirements: []))
+        // Retired weights stay until their replacement is installed.
+        #expect(!LocalModelManager.shouldPrune(repository: sortformer, pendingRetirements: [sortformer]))
+        #expect(LocalModelManager.shouldPrune(repository: "aufklarer/Pyannote-Segmentation-MLX", pendingRetirements: []))
+        #expect(LocalModelManager.isRunningTests)
+    }
+
     @Test func legacyBackendsDecodeAsLegacyModel() throws {
         for raw in ["mlxStreamingSortformer", "pyannoteWeSpeaker"] {
             let backend = try JSONDecoder().decode(DiarizationBackend.self, from: Data("\"\(raw)\"".utf8))

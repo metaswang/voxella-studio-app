@@ -714,6 +714,16 @@ final class LocalModelManager {
         onProgress: ((String) -> Void)?
     ) async throws {
         let required = Array(Set(ids)).sorted { $0.rawValue < $1.rawValue }
+        // In-memory state can go stale if files were removed outside this
+        // process; re-check installed resources on disk before trusting it.
+        let claimed = required.filter { state(for: $0).isInstalled }.map(descriptor(for:))
+        let vanished = await Task.detached(priority: .utility) {
+            claimed.filter { !Self.isInstalled($0) }.map(\.id)
+        }.value
+        for id in vanished where activeDownloads[id] == nil && removals[id] == nil {
+            Log.transcription.warning("installed resource missing on disk id=\(id.rawValue); preparing again")
+            states[id] = .notInstalled
+        }
         let missing = required.filter { !state(for: $0).isInstalled }
         guard !missing.isEmpty else { return }
         for id in missing {
@@ -1459,12 +1469,38 @@ final class LocalModelManager {
         return extras
     }
 
+    /// Repositories earlier builds shipped and this build no longer uses.
+    /// Only these are pruned: a repository this build does not recognize may
+    /// belong to a newer build sharing the cache, so it is never deleted.
+    nonisolated static let retiredCacheRepositories: Set<String> = Set(retiredModels.map(\.repository)).union([
+        "aufklarer/DeepFilterNet3-CoreML",
+        "aufklarer/Pyannote-Segmentation-MLX",
+        "aufklarer/Qwen3-TTS-12Hz-0.6B-Base-MLX-4bit",
+        "aufklarer/Qwen3-TTS-12Hz-1.7B-Base-MLX-4bit",
+        "aufklarer/Silero-VAD-v5-MLX",
+        "mlx-community/silero-vad-v6",
+        "mlx-community/whisper-small-fp16",
+    ])
+
+    /// Test processes share the user's model cache; they must never delete from it.
+    nonisolated static var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
+    }
+
+    nonisolated static func shouldPrune(repository: String, pendingRetirements: Set<String>) -> Bool {
+        retiredCacheRepositories.contains(repository)
+            && !catalog.contains { $0.repository == repository }
+            && repository != ttsTokenizerRepository
+            && !pendingRetirements.contains(repository)
+    }
+
     private nonisolated static func pruneUnusedCachedModels() {
-        let pendingRetirements = retiredModels.filter { retired in
+        guard !isRunningTests else { return }
+        let pendingRetirements = Set(retiredModels.filter { retired in
             !(catalog.first { $0.id == retired.replacement }.map(isInstalled) ?? false)
-        }
-        let retained = Set(catalog.map(\.repository)).union([ttsTokenizerRepository])
-            .union(pendingRetirements.map(\.repository))
+        }.map(\.repository))
         let modelsRoot = speechCacheRoot().appendingPathComponent("models", isDirectory: true)
         let fileManager = FileManager.default
         guard let owners = try? fileManager.contentsOfDirectory(
@@ -1481,7 +1517,7 @@ final class LocalModelManager {
             ) else { continue }
             for repoDirectory in repos {
                 let repository = "\(owner.lastPathComponent)/\(repoDirectory.lastPathComponent)"
-                guard !retained.contains(repository) else { continue }
+                guard shouldPrune(repository: repository, pendingRetirements: pendingRetirements) else { continue }
                 try? fileManager.removeItem(at: repoDirectory)
                 removed.append(repository)
             }

@@ -3144,8 +3144,6 @@
 "%@ of %@ speakers named" = "%@ of %@ speakers named";
 "Preparing voiceprints…" = "Preparing voiceprints…";
 "Matching speakers…" = "Matching speakers…";
-"Resource details" = "Resource details";
-"License" = "License";
 "Voice type" = "Voice type";
 "New person" = "New person";
 "Existing person" = "Existing person";

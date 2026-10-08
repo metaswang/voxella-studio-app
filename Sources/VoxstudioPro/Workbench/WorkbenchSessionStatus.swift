@@ -435,6 +435,7 @@ struct SessionStatusBadge: View {
 
     private var secondarySystemImage: String {
         if status.needsAttention { return "exclamationmark.triangle.fill" }
+        if status.hasAdditionalActivity { return Self.activitySymbol }
         if status.displayTaskState == .cancelled { return "xmark.circle" }
         if status.displayTaskState == .queued { return "clock" }
         return Self.activitySymbol
@@ -459,21 +460,28 @@ private struct SpinningIconModifier: ViewModifier {
     let active: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var angle: Double = 0
 
     func body(content: Content) -> some View {
-        content
-            .rotationEffect(.degrees(angle))
-            .onAppear { updateSpin(isActive: active) }
-            .onChange(of: active) { _, isActive in updateSpin(isActive: isActive) }
-            .onChange(of: reduceMotion) { _, _ in updateSpin(isActive: active) }
-    }
-
-    private func updateSpin(isActive: Bool) {
-        angle = 0
-        guard isActive, !reduceMotion else { return }
-        withAnimation(.linear(duration: AppTheme.Anim.spin).repeatForever(autoreverses: false)) {
-            angle = 360
+        Group {
+            if active && !reduceMotion {
+                SwiftUI.TimelineView(.animation) { context in
+                    // Derive the phase from time rather than retained animation state.
+                    // Reappearing views therefore resume without resetting a 360° target
+                    // to the same value in a single SwiftUI update.
+                    let phase = context.date.timeIntervalSinceReferenceDate
+                        .truncatingRemainder(dividingBy: AppTheme.Anim.spin)
+                    content
+                        .rotationEffect(.degrees(phase / AppTheme.Anim.spin * 360))
+                }
+            } else {
+                content
+            }
+        }
+        // Status changes may arrive inside a parent's animated transaction.
+        // Stop immediately, including when Reduce Motion is enabled mid-spin.
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
         }
     }
 }

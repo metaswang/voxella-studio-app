@@ -3144,8 +3144,6 @@
 "%@ of %@ speakers named" = "已命名 %@/%@ 位说话人";
 "Preparing voiceprints…" = "正在准备声纹…";
 "Matching speakers…" = "正在匹配说话人…";
-"Resource details" = "资源详情";
-"License" = "许可证";
 "Voice type" = "声音类型";
 "New person" = "新建人物";
 "Existing person" = "已有人物";
