@@ -15,12 +15,12 @@ struct DiarizationCancellationIntegrationTests {
     }
 
     @concurrent
-    private static func loadEngine() async throws -> MLXStreamingSortformerEngine {
+    private static func loadEngine() async throws -> Nemotron3DiarizationEngine {
         try await MLXRuntime.beginInference()
         defer { MLXRuntime.endInference() }
-        let descriptor = try #require(LocalModelManager.catalog.first { $0.id == .sortformerDiarization })
-        return try MLXStreamingSortformerEngine(
-            modelDirectory: LocalModelManager.directory(for: .sortformerDiarization),
+        let descriptor = try #require(LocalModelManager.catalog.first { $0.id == .nemotron3Diarization })
+        return try Nemotron3DiarizationEngine(
+            modelDirectory: LocalModelManager.directory(for: .nemotron3Diarization),
             modelRevision: descriptor.revision
         )
     }
@@ -59,7 +59,10 @@ struct DiarizationCancellationIntegrationTests {
             speechRanges: [.init(start: 0, end: 31)],
             policy: .standard(requestedSpeakerCount: 2), progress: { _ in }
         )
-        #expect(reused.diagnostics.processedChunks == 3)
+        // 31 s at 27.2 s per confirmed chunk.
+        #expect(reused.diagnostics.processedChunks == 2)
+        #expect(reused.speakerCapacity == 8)
+        #expect(reused.frameDuration == 0.01)
         #expect(reused.probabilities.allSatisfy { $0.isFinite && $0 >= 0 && $0 <= 1 })
         print("DIARIZATION_CANCEL stage=\(stage) cancelled=true reuseChunks=\(reused.diagnostics.processedChunks)")
     }

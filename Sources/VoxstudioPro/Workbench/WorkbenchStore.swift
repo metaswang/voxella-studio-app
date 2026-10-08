@@ -126,6 +126,10 @@ enum SpeakerCountOption: String, Codable, CaseIterable, Identifiable, Sendable {
     case two
     case three
     case four
+    case five
+    case six
+    case seven
+    case eight
 
     var id: String { rawValue }
 
@@ -137,6 +141,10 @@ enum SpeakerCountOption: String, Codable, CaseIterable, Identifiable, Sendable {
         case .two: 2
         case .three: 3
         case .four: 4
+        case .five: 5
+        case .six: 6
+        case .seven: 7
+        case .eight: 8
         }
     }
 
@@ -148,6 +156,10 @@ enum SpeakerCountOption: String, Codable, CaseIterable, Identifiable, Sendable {
         case .two: "2 speakers"
         case .three: "3 speakers"
         case .four: "4 speakers"
+        case .five: "5 speakers"
+        case .six: "6 speakers"
+        case .seven: "7 speakers"
+        case .eight: "8 speakers"
         }
     }
 }
@@ -263,6 +275,11 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var progressTotal: Int?
     var diarizationDiagnostics: DiarizationDiagnostics?
     var transcriptionAlignmentDiagnostics: TranscriptionAlignmentDiagnostics?
+    /// People this session may contain; empty means speakers stay anonymous.
+    var candidatePersonIDs: [UUID] = []
+    /// Anonymous speaker → person mapping, kept apart from labels so reordering
+    /// anonymous labels never overwrites names.
+    var speakerIdentities: SessionSpeakerIdentities?
     var errorMessage: String?
     var storage: TaskStorageDestination = .local
     var compute: TaskComputeDestination = .local
@@ -481,6 +498,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         case progress, progressMessage, progressStage, flowProgressStage
         case progressStep, progressCompleted, progressTotal
         case diarizationDiagnostics, transcriptionAlignmentDiagnostics, errorMessage
+        case candidatePersonIDs, speakerIdentities
         case storage, compute, remoteSessionID, localCachePath
         case cloudSyncRevision, cloudSyncState, pendingCloudSyncError
         case isRecordedCapture
@@ -668,6 +686,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
             DiarizationDiagnostics.self,
             forKey: .diarizationDiagnostics
         )
+        candidatePersonIDs = try container.decodeIfPresent([UUID].self, forKey: .candidatePersonIDs) ?? []
+        speakerIdentities = try? container.decodeIfPresent(SessionSpeakerIdentities.self, forKey: .speakerIdentities)
         transcriptionAlignmentDiagnostics = try container.decodeIfPresent(
             TranscriptionAlignmentDiagnostics.self,
             forKey: .transcriptionAlignmentDiagnostics
@@ -731,6 +751,8 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(progressCompleted, forKey: .progressCompleted)
         try container.encodeIfPresent(progressTotal, forKey: .progressTotal)
         try container.encodeIfPresent(diarizationDiagnostics, forKey: .diarizationDiagnostics)
+        if !candidatePersonIDs.isEmpty { try container.encode(candidatePersonIDs, forKey: .candidatePersonIDs) }
+        try container.encodeIfPresent(speakerIdentities, forKey: .speakerIdentities)
         try container.encodeIfPresent(
             transcriptionAlignmentDiagnostics,
             forKey: .transcriptionAlignmentDiagnostics
@@ -2400,6 +2422,7 @@ final class WorkbenchStore {
             }
             job.languageCode = submission.options.languageCode
             job.speakerCount = submission.options.speakerCount
+            job.candidatePersonIDs = submission.options.speakerCount.count == 0 ? [] : submission.options.candidatePersonIDs
             job.clipStartMs = sourceURLs.count == 1 ? submission.options.clipStartMs : nil
             job.clipEndMs = sourceURLs.count == 1 ? submission.options.clipEndMs : nil
             job.useLLMSubtitleProcessing = submission.options.useLLMSubtitleProcessing
@@ -3108,7 +3131,10 @@ final class WorkbenchStore {
         }
     }
 
-    func renameSpeaker(_ current: String, to replacement: String, inTranscription id: UUID) {
+    func renameSpeaker(
+        _ current: String, to replacement: String, inTranscription id: UUID, isManual: Bool = true
+    ) {
+        if isManual { noteManualSpeakerRename(current, to: replacement, inTranscription: id) }
         renameSessionSpeakerColor(sessionID: id, current: current, replacement: replacement)
         updateTranscription(id) { job in
             job.result = job.result?.renamingSpeaker(current, to: replacement)
@@ -3368,7 +3394,7 @@ final class WorkbenchStore {
         }
     }
 
-    private func resolveTranscriptionID(forSession sessionID: UUID) -> UUID? {
+    func resolveTranscriptionID(forSession sessionID: UUID) -> UUID? {
         if let session = sessions.first(where: { $0.id == sessionID }) {
             return session.transcriptionID
         }
@@ -3748,6 +3774,7 @@ final class WorkbenchStore {
         updateTranscription(id) {
             $0.languageCode = submission.options.languageCode
             $0.speakerCount = submission.options.speakerCount
+            $0.candidatePersonIDs = submission.options.speakerCount.count == 0 ? [] : submission.options.candidatePersonIDs
             $0.clipStartMs = submission.options.clipStartMs
             $0.clipEndMs = submission.options.clipEndMs
             $0.useLLMSubtitleProcessing = submission.options.useLLMSubtitleProcessing
@@ -5076,6 +5103,7 @@ final class WorkbenchStore {
             configuration: .init(languageCode: languageCode, speakerCount: speakerCount)
         )
         markDubsOutdated(afterRetranscription: id)
+        matchSessionSpeakers(id)
         return true
     }
 

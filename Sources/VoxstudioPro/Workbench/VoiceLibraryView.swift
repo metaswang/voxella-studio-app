@@ -26,6 +26,7 @@ struct VoiceLibraryView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 library
+                SpeakerPeopleSection()
             }
             .padding(AppTheme.Spacing.xxl)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -165,6 +166,12 @@ struct VoiceLibraryView: View {
                             .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
                             .foregroundStyle(AppTheme.Accent.timecodeColor)
                     }
+                    if let person = SpeakerPersonStore.shared.person(forReference: reference.id) {
+                        Label(person.name, systemImage: "person.fill")
+                            .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
+                            .foregroundStyle(AppTheme.Text.secondaryColor)
+                            .help(L10n.string("Linked person for speaker recognition"))
+                    }
                 }
                 Text(reference.name)
                     .font(.system(size: AppTheme.FontSize.mdLg, weight: AppTheme.FontWeight.semibold))
@@ -200,6 +207,7 @@ struct VoiceLibraryView: View {
             .disabled(reference.isDefault)
             Menu {
                 Button(L10n.string("Edit")) { editingReference = reference }
+                ReferencePersonMenu(reference: reference)
                 Button(L10n.string("Reveal in Finder")) {
                     NSWorkspace.shared.activateFileViewerSelecting([store.audioURL(for: reference)])
                 }

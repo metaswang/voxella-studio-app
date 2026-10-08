@@ -1,30 +1,5 @@
 import Foundation
 
-struct SortformerStreamingParameters: Equatable, Sendable {
-    var chunkDuration: Double
-    var frameDuration: Double
-    var spkcacheMax: Int
-    var fifoMax: Int
-
-    static func from(
-        hopLength: Int,
-        subsamplingFactor: Int,
-        samplingRate: Int,
-        chunkLen: Int,
-        spkcacheLen: Int,
-        fifoLen: Int
-    ) -> Self {
-        let safeRate = max(1, samplingRate)
-        let frameDuration = Double(max(0, hopLength) * max(1, subsamplingFactor)) / Double(safeRate)
-        return Self(
-            chunkDuration: Double(max(1, chunkLen)) * frameDuration,
-            frameDuration: frameDuration,
-            spkcacheMax: max(0, spkcacheLen),
-            fifoMax: max(0, fifoLen)
-        )
-    }
-}
-
 struct DiarizationSpeechMapping: Equatable, Sendable {
     let concatStart: Double
     let concatEnd: Double

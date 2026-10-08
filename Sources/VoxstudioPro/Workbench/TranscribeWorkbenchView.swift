@@ -374,44 +374,60 @@ struct TranscribeWorkbenchView: View {
     @ViewBuilder
     private func diagnostics(_ job: WorkbenchTranscriptionJob) -> some View {
         if let diagnostics = job.diarizationDiagnostics {
-            HStack(spacing: AppTheme.Spacing.md) {
-                Image(systemName: "waveform.badge.checkmark")
-                    .foregroundStyle(AppTheme.Status.successColor)
-                VStack(alignment: .leading, spacing: AppTheme.zoomed(3)) {
-                    Text("Speaker identification")
-                        .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
-                    HStack(spacing: AppTheme.Spacing.smMd) {
-                        Text(L10n.format("%@ detected", diagnostics.detectedSpeakerCount))
-                        if let rtf = diagnostics.realTimeFactor {
-                            Text(L10n.format("RTF %@", rtf.formatted(.number.precision(.fractionLength(2)))))
-                        }
-                        if diagnostics.processedChunks > 0 {
-                            Text(L10n.format("%@ chunks", diagnostics.processedChunks))
-                        }
-                        if let coverage = diagnostics.speechCoverage {
-                            Text(L10n.format("%@%% speech", Int((coverage * 100).rounded())))
-                        }
-                        if let processed = diagnostics.processedAudioDuration {
-                            Text(L10n.format("%@s processed", processed.formatted(.number.precision(.fractionLength(0)))))
-                        }
-                    }
-                    .font(.system(size: AppTheme.FontSize.xs))
-                    .foregroundStyle(AppTheme.Text.mutedColor)
-                    ForEach(diagnostics.warnings, id: \.self) { warning in
-                        Text(L10n.display(warning))
-                            .font(.system(size: AppTheme.FontSize.xs))
-                            .foregroundStyle(AppTheme.Status.warningColor)
-                    }
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.smMd) {
+                diarizationSummary(job, diagnostics: diagnostics)
+                if job.compute == .local, diagnostics.backend.producesSpeakerActivity, job.state == .completed {
+                    SessionSpeakerIdentityPanel(job: job)
                 }
-                Spacer()
-                Button(L10n.string("Reveal diagnostics")) {
-                    Task { try? await store.revealTranscriptionDiagnostics(job.id) }
-                }
-                .buttonStyle(.borderless)
             }
-            .padding(AppTheme.Spacing.mdLg)
-            .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
         }
+    }
+
+    @ViewBuilder
+    private func diarizationSummary(_ job: WorkbenchTranscriptionJob, diagnostics: DiarizationDiagnostics) -> some View {
+        let unavailable = diagnostics.backend == .unavailable
+        HStack(spacing: AppTheme.Spacing.md) {
+            Image(systemName: unavailable ? "waveform.badge.exclamationmark" : "waveform.badge.checkmark")
+                .foregroundStyle(unavailable ? AppTheme.Status.warningColor : AppTheme.Status.successColor)
+            VStack(alignment: .leading, spacing: AppTheme.zoomed(3)) {
+                Text("Speaker identification")
+                    .font(.system(size: AppTheme.FontSize.smMd, weight: .semibold))
+                HStack(spacing: AppTheme.Spacing.smMd) {
+                    Text(L10n.format("%@ detected", diagnostics.detectedSpeakerCount))
+                    if let rtf = diagnostics.realTimeFactor {
+                        Text(L10n.format("RTF %@", rtf.formatted(.number.precision(.fractionLength(2)))))
+                    }
+                    if diagnostics.processedChunks > 0 {
+                        Text(L10n.format("%@ chunks", diagnostics.processedChunks))
+                    }
+                    if let coverage = diagnostics.speechCoverage {
+                        Text(L10n.format("%@%% speech", Int((coverage * 100).rounded())))
+                    }
+                    if let processed = diagnostics.processedAudioDuration {
+                        Text(L10n.format("%@s processed", processed.formatted(.number.precision(.fractionLength(0)))))
+                    }
+                }
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.mutedColor)
+                ForEach(diagnostics.warnings, id: \.self) { warning in
+                    Text(L10n.display(warning))
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Status.warningColor)
+                }
+            }
+            Spacer()
+            if unavailable, !job.state.isActive {
+                Button(L10n.string("Retry speaker labels")) { start(job) }
+                    .buttonStyle(.bordered)
+                    .help(L10n.string("Prepares speaker identification resources and transcribes again with speaker labels."))
+            }
+            Button(L10n.string("Reveal diagnostics")) {
+                Task { try? await store.revealTranscriptionDiagnostics(job.id) }
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(AppTheme.Spacing.mdLg)
+        .background(AppTheme.Background.surfaceColor, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
     }
 
     private func configuration(_ job: WorkbenchTranscriptionJob) -> some View {

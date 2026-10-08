@@ -151,6 +151,7 @@ struct SessionSpeakerMenu: View {
     let onRename: (String) -> Void
     let onAdd: () -> Void
     var onChangeColor: ((String) -> Void)? = nil
+    @Environment(\.sessionSpeakerVoiceContext) private var voiceContext
 
     var body: some View {
         Menu {
@@ -167,9 +168,13 @@ struct SessionSpeakerMenu: View {
                 if let onChangeColor {
                     Button(L10n.string("Change color…")) { onChangeColor(speaker) }
                 }
+                if let voiceContext {
+                    SessionSpeakerVoiceMenuSection(speaker: speaker, context: voiceContext)
+                }
             }
         } label: {
             HStack(spacing: AppTheme.Spacing.sm) {
+                SessionSpeakerIdentityGlyph(speaker: speaker)
                 Text(speaker ?? L10n.string("Speaker"))
                     .font(.system(size: prominent ? AppTheme.FontSize.lg : AppTheme.FontSize.xs,
                                   weight: prominent ? .semibold : .medium))

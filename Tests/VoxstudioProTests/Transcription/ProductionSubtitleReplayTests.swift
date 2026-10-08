@@ -42,7 +42,7 @@ import Testing
             #expect(check.coarseTimedUnitCount < 25)
         }
         let audioDuration = Double(audio.count) / 16_000
-        let diarizer = try MLXStreamingSortformerEngine(modelDirectory: LocalModelManager.directory(for: .sortformerDiarization), modelRevision: "e23e6404bd9859e93edbf94a740eb1c7fc58f12e")
+        let diarizer = try Nemotron3DiarizationEngine(modelDirectory: LocalModelManager.directory(for: .nemotron3Diarization), modelRevision: "8be6cfb8a8009b1e11419208c819f6e20c94b4a3")
         let timeline = try await diarizer.diarize(audio: audio, sampleRate: 16_000,
             speechRanges: [.init(start: 0, end: audioDuration)], policy: .standard(requestedSpeakerCount: 2),
             progress: { _ in })

@@ -923,7 +923,7 @@ struct LocalFirstWorkbenchTests {
 
     @Test func appendingPipelineWarningPreservesDiarizationMetrics() {
         var diagnostics = DiarizationDiagnostics(
-            backend: .mlxStreamingSortformer,
+            backend: .nemotron3,
             elapsedSeconds: 12.5,
             processedChunks: 7,
             detectedSpeakerCount: 2,
@@ -1106,7 +1106,7 @@ struct LocalFirstWorkbenchTests {
             audioDuration: 0.4,
             speechRanges: [.init(start: 0, end: 0.4)],
             policy: policy,
-            backend: .mlxStreamingSortformer,
+            backend: .nemotron3,
             elapsedSeconds: 0.1,
             processedChunks: 1
         )
@@ -1126,7 +1126,7 @@ struct LocalFirstWorkbenchTests {
             audioDuration: 0.4,
             speechRanges: [.init(start: 0.1, end: 0.3)],
             policy: .standard(requestedSpeakerCount: 1),
-            backend: .mlxStreamingSortformer,
+            backend: .nemotron3,
             elapsedSeconds: 0,
             processedChunks: 1
         )

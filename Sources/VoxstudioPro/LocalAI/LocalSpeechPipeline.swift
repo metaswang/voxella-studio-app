@@ -82,7 +82,7 @@ actor LocalSpeechPipeline {
     private var parakeet: (id: LocalModelID, model: ParakeetModel)?
     private var languageIdentifier: EcapaTdnn?
     private var aligner: Qwen3ForcedAligner?
-    private var streamingDiarizer: MLXStreamingSortformerEngine?
+    private var streamingDiarizer: Nemotron3DiarizationEngine?
     #endif
 
     #if BUNDLED_SPEECH
@@ -90,13 +90,16 @@ actor LocalSpeechPipeline {
         requestedSpeakerCount: Int?, samples: [Float], speechRanges: [SpeechTimeRange],
         audioDuration: Double, progress: @escaping @Sendable (DiarizationProgress) -> Void
     ) async throws -> SpeakerActivityTimeline {
-        let descriptor = LocalModelManager.catalog.first { $0.id == .sortformerDiarization }!
-        let installed = await Task.detached(priority: .utility) {
-            LocalModelManager.isInstalled(descriptor)
-        }.value
-        return try await OptionalSpeakerDiarization.resolve(
-            requestedSpeakerCount: requestedSpeakerCount, isInstalled: installed,
-            speechRanges: speechRanges, audioDuration: audioDuration
+        try await OptionalSpeakerDiarization.resolve(
+            requestedSpeakerCount: requestedSpeakerCount,
+            speechRanges: speechRanges, audioDuration: audioDuration,
+            prepare: {
+                progress(DiarizationProgress(
+                    stage: .preparing, completed: 0, total: 1,
+                    message: "Preparing speaker identification resources…"
+                ))
+                try await LocalModelManager.shared.ensureSpeakerDiarizationModel()
+            }
         ) {
             let diarizer = try self.streamingDiarizationModel()
             return try await diarizer.diarize(
@@ -1000,6 +1003,9 @@ actor LocalSpeechPipeline {
         )
         let labeledWords = SpeakerLabelResolver.canonicalizedByFirstAppearance(words)
         let segments = Self.makeSegments(from: labeledWords)
+        var diarizationDiagnostics = timeline.diagnostics
+        let evidence = SpeakerEvidenceBuilder.build(timeline: timeline, words: labeledWords)
+        diarizationDiagnostics.speakerEvidence = evidence.isEmpty ? nil : evidence
         progressUpdate(.init(stage: .finalizing, fraction: 0.99, message: "Finalizing transcript…"))
         let alignmentDiagnostics = TranscriptionAlignmentDiagnostics(
             trimmedHallucinatedSpanCount: quality.statistics.trimmedRepeatedSpans,
@@ -1034,7 +1040,7 @@ actor LocalSpeechPipeline {
                 segments: segments,
                 asrEngine: route.engine
             ),
-            diarizationDiagnostics: timeline.diagnostics,
+            diarizationDiagnostics: diarizationDiagnostics,
             alignmentDiagnostics: alignmentDiagnostics,
             engine: route.engine,
             routeConfidence: route.routeConfidence,
@@ -1412,18 +1418,18 @@ actor LocalSpeechPipeline {
         return loaded
     }
 
-    private func streamingDiarizationModel() throws -> MLXStreamingSortformerEngine {
+    private func streamingDiarizationModel() throws -> Nemotron3DiarizationEngine {
         if let streamingDiarizer { return streamingDiarizer }
-        let descriptor = LocalModelManager.catalog.first { $0.id == .sortformerDiarization }!
+        let descriptor = LocalModelManager.catalog.first { $0.id == .nemotron3Diarization }!
         let startedAt = DispatchTime.now().uptimeNanoseconds
-        let loaded = try MLXStreamingSortformerEngine(
-            modelDirectory: LocalModelManager.directory(for: .sortformerDiarization),
+        let loaded = try Nemotron3DiarizationEngine(
+            modelDirectory: LocalModelManager.directory(for: .nemotron3Diarization),
             modelRevision: descriptor.revision
         )
         streamingDiarizer = loaded
         let elapsed = Double(DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000_000
         Log.transcription.notice(
-            "Sortformer model ready revision=\(descriptor.revision) elapsed=\(String(format: "%.2f", elapsed))s"
+            "Nemotron 3 diarization model ready revision=\(descriptor.revision) elapsed=\(String(format: "%.2f", elapsed))s"
         )
         return loaded
     }

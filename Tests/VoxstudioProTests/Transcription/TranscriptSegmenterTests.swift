@@ -249,6 +249,76 @@ struct TranscriptSegmenterTests {
         #expect(renamedTrack.cues.first?.sourceIDs == [7])
     }
 
+    // zh_L_R004S01C01 06:52–06:54: the aligner put 高 on its 80 ms grid with
+    // start == end; the segment rendered "档烟的话".
+    @Test func keepsZeroWidthAlignerUnitsInSegments() {
+        let words = [
+            Self.word("得。", 412.016, 412.096, "Speaker 1"),
+            Self.word("对", 412.496, 412.496, nil),
+            Self.word("高", 413.296, 413.296, "Speaker 5"),
+            Self.word("档", 413.296, 413.456, "Speaker 5"),
+            Self.word("烟", 413.456, 413.616, "Speaker 5"),
+            Self.word("开", 506.176, 506.244, "Speaker 5"),
+            Self.word("除", 506.244, 506.244, "Speaker 5"),
+            Self.word("处", 506.244, 506.244, nil),
+            Self.word("理。", 506.244, 506.244, nil),
+        ]
+
+        let segments = TranscriptSegmenter.aggregate(words: words, language: "zh")
+
+        #expect(segments.map(\.text).joined() == "得。对高档烟开除处理。")
+    }
+
+    @Test func zeroWidthUnitClampedOntoPreviousStartKeepsSourceOrder() {
+        let words = [
+            Self.word("一", 5.0, 5.3, "Speaker 1"),
+            Self.word("二", 5.0, 5.0, "Speaker 1"),
+            Self.word("三", 5.3, 5.4, "Speaker 1"),
+        ]
+
+        #expect(TranscriptSegmenter.aggregate(words: words, language: "zh").map(\.text) == ["一二三"])
+    }
+
+    // zh_L_R004S01C01 05:09–05:16: a 6.4 s host question followed by a long
+    // reply. The switch was soft (outgoing confidence 0.839 < 0.84), so the
+    // question was merged into the reply and relabeled Speaker 5.
+    @Test func sustainedTurnsSplitAtASoftBoundary() {
+        var words = [Self.word("了。", 308.864, 309.104, "Speaker 5")]
+        words.append(TranscriptionWord(text: "我", start: 309.264, end: 310.304,
+                                       speaker: "Speaker 1", speakerBoundary: .hard))
+        words += [
+            Self.word("说，", 310.304, 310.384, "Speaker 1"),
+            Self.word("我", 310.464, 310.464, nil),
+            Self.word("那", 310.544, 310.704, "Speaker 1"),
+            Self.word("人群", 312.544, 312.864, "Speaker 1"),
+            Self.word("购买的？", 314.464, 315.664, "Speaker 1"),
+        ]
+        words.append(TranscriptionWord(text: "这", start: 315.904, end: 316.144,
+                                       speaker: "Speaker 5", speakerBoundary: .soft))
+        words += [
+            Self.word("咱们", 316.144, 317.024, "Speaker 5"),
+            Self.word("中档烟，", 317.424, 318.064, "Speaker 5"),
+        ]
+
+        let segments = TranscriptSegmenter.aggregate(words: words, language: "zh")
+
+        #expect(segments.map(\.speaker) == ["Speaker 5", "Speaker 1", "Speaker 5"])
+        #expect(segments[1].text == "我说，我那人群购买的？")
+    }
+
+    @Test func briefSoftFlickerStaysInTheSurroundingSegment() {
+        var words = [Self.word("one", 0, 2, "Speaker 1")]
+        words.append(TranscriptionWord(text: "uh", start: 2, end: 2.3,
+                                       speaker: "Speaker 2", speakerBoundary: .soft))
+        words.append(TranscriptionWord(text: "two", start: 2.3, end: 4,
+                                       speaker: "Speaker 1", speakerBoundary: .soft))
+
+        let segments = TranscriptSegmenter.aggregate(words: words)
+
+        #expect(segments.count == 1)
+        #expect(segments[0].speaker == "Speaker 1")
+    }
+
     private static func word(
         _ text: String,
         _ start: Double,

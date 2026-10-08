@@ -18,11 +18,11 @@ struct DiarizationImportIntegrationTests {
         ) { update in
             print("DIARIZATION_IMPORT stage=\(update.stage) fraction=\(update.fraction)")
         }
-        #expect(output.diarizationDiagnostics.backend == .mlxStreamingSortformer)
+        #expect(output.diarizationDiagnostics.backend == .nemotron3)
         #expect(output.diarizationDiagnostics.processedChunks > 0)
         #expect(!output.result.words.isEmpty)
         let speakers = Set(output.result.words.compactMap(\.speaker))
-        #expect(!speakers.isEmpty && speakers.count <= 4)
+        #expect(!speakers.isEmpty && speakers.count <= 8)
         #expect(output.result.words.allSatisfy {
             guard let start = $0.start, let end = $0.end else { return false }
             return start.isFinite && end.isFinite && start >= 0 && end >= start

@@ -19,6 +19,8 @@ struct CompletedTranscriptionArtifacts: Sendable {
         job.selectedTrack = selectedLanguage == nil ? .source : .translation
         job.diarizationDiagnostics = diarizationDiagnostics
         job.transcriptionAlignmentDiagnostics = alignmentDiagnostics
+        // New anonymous labels; identities are matched again from scratch.
+        job.speakerIdentities = nil
         if let processedSourcePath {
             job.sourcePath = processedSourcePath
             job.clipStartMs = nil

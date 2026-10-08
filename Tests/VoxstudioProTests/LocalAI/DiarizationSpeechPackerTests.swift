@@ -4,20 +4,26 @@ import Testing
 
 @Suite("Diarization speech packing")
 struct DiarizationSpeechPackerTests {
-    @Test func checkpointStreamingParametersMatchOfflineConfig() {
-        let parameters = SortformerStreamingParameters.from(
-            hopLength: 160,
-            subsamplingFactor: 8,
-            samplingRate: 16_000,
-            chunkLen: 188,
-            spkcacheLen: 188,
-            fifoLen: 0
+    @Test func scatterMapsTenMillisecondFramesBackToOriginalTime() {
+        // Nemotron 3 emits 10 ms rows; silence removal must not shift them.
+        let pack = DiarizationSpeechPacker.pack(
+            audio: [Float](repeating: 1, count: 1_000),
+            sampleRate: 100,
+            speechRanges: [SpeechTimeRange(start: 1, end: 2), SpeechTimeRange(start: 6, end: 7)],
+            audioDuration: 10
         )
-
-        #expect(abs(parameters.frameDuration - 0.08) < 0.000_001)
-        #expect(abs(parameters.chunkDuration - 15.04) < 0.000_001)
-        #expect(parameters.spkcacheMax == 188)
-        #expect(parameters.fifoMax == 0)
+        let speakers = 8
+        let frames = Int((pack.processedAudioDuration / 0.01).rounded())
+        var concat = [Float](repeating: 0, count: frames * speakers)
+        for frame in 0..<frames { concat[frame * speakers + (frame < 100 ? 0 : 1)] = 1 }
+        let scattered = DiarizationSpeechPacker.scatterProbabilities(
+            concatProbabilities: concat, speakerCapacity: speakers, frameDuration: 0.01,
+            pack: pack, audioDuration: 10
+        )
+        #expect(scattered.count == 1_000 * speakers)
+        #expect(scattered[150 * speakers] == 1)
+        #expect(scattered[650 * speakers + 1] == 1)
+        #expect(scattered[400 * speakers] == 0)
     }
 
     @Test func packerMergesShortGapsIntoOneWindow() {

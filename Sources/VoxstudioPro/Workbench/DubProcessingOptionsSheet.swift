@@ -384,14 +384,6 @@ struct DubProcessingOptionsSheet: View {
         isPreparingCloud = true
         defer { isPreparingCloud = false }
 
-        if !cloudComputeSelected,
-           localModelPlan.missingItems.contains(where: {
-               $0.requiresLicenseAcceptance && !models.isLicenseAccepted($0.id)
-           }) {
-            models.presentManager()
-            return
-        }
-
         if placement.needsAuthentication {
             let result: CloudAccessPreparation
             if let onPrepareCloud {

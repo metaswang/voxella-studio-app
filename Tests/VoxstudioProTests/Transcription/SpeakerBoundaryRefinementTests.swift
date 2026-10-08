@@ -10,7 +10,7 @@ struct SpeakerBoundaryRefinementTests {
                                  .init(start: 0, end: duration, speakerID: 1, confidence: 0.9)],
                      probabilities: probabilities, frameDuration: frame, speakerCapacity: 2,
                      audioDuration: duration,
-                     diagnostics: .init(backend: .mlxStreamingSortformer, elapsedSeconds: 0,
+                     diagnostics: .init(backend: .nemotron3, elapsedSeconds: 0,
                                         processedChunks: 1, detectedSpeakerCount: 2, requestedSpeakerCount: nil, warnings: []))
     }
 
@@ -51,6 +51,20 @@ struct SpeakerBoundaryRefinementTests {
             .init(text: "吗", start: 0.08, end: 0.16)], timeline: t, languageCode: "zh")
         #expect(chinese[0].speaker == chinese[1].speaker)
         #expect(chinese[1].speakerBoundary == .none)
+    }
+
+    @Test func zeroWidthUnitsBorrowTheNearerEvidencedNeighbourWithoutConfidence() {
+        let t = timeline([0.98, 0.01, 0.98, 0.01, 0.01, 0.98, 0.01, 0.98])
+        let resolved = LexicalSpeakerResolver.resolving([
+            .init(text: "Okay", start: 0, end: 0.16),
+            .init(text: "so", start: 0.17, end: 0.17),
+            .init(text: "well", start: 0.23, end: 0.23),
+            .init(text: "right", start: 0.24, end: 0.32),
+        ], timeline: t, languageCode: "en")
+        #expect(resolved.map(\.speaker) == ["Speaker 1", "Speaker 1", "Speaker 2", "Speaker 2"])
+        #expect(resolved[1].speakerConfidence == nil)
+        #expect(resolved[2].speakerConfidence == nil)
+        #expect(t.attributionForWord(start: 0.17, end: 0.17) == nil)
     }
 
     @Test func weakOutgoingTailDoesNotEraseClearIncomingBoundary() {

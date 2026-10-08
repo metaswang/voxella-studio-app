@@ -1,0 +1,15 @@
+Nemotron3Diarization (VoxStudio vendored module)
+
+Inference, DSP, and speaker-cache update code extracted and adapted from
+soniqo/speech-swift v0.0.28, commit 231f8eb9f0971fee335fef49f42d2975e4fbf8bc,
+licensed under the Apache License 2.0 (see LICENSE).
+
+VoxStudio changes:
+- MLX INT8 backend only; Core ML, Sortformer and Community-1 code paths removed.
+- Mel front end aligned with the source checkpoint's feature extractor
+  (0.97 pre-emphasis, zero-padded centered STFT, unscaled power spectrum).
+- Chunk-local mel extraction so long recordings never materialize a full spectrogram.
+- Head input rows past the valid length are zeroed before the sub-pixel convolution.
+
+The model weights are not part of this module. They are NVIDIA Nemotron 3
+Diarization weights distributed under OpenMDW 1.1 and are downloaded at runtime.

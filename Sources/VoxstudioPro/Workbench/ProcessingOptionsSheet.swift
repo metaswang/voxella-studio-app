@@ -21,6 +21,7 @@ struct ProcessingOptionsSheet: View {
     @State private var sessionTitle = ""
     @State private var showAdvanced = false
     @State private var speakerCount: SpeakerCountOption = .auto
+    @State private var candidatePersonIDs: [UUID] = []
     @State private var enableSubtitleSegmentation = false
     @State private var enableClip = false
     @State private var clipRange: ClosedRange<Double> = 0...1
@@ -43,6 +44,12 @@ struct ProcessingOptionsSheet: View {
     @Bindable private var llmSettings = LLMSettingsStore.shared
 
     private var isSingleFile: Bool { mediaURLs.count == 1 }
+    /// Up to eight speakers on this Mac; cloud processing keeps its four-speaker range.
+    private var availableSpeakerOptions: [SpeakerCountOption] {
+        computeDestination == .local
+            ? SpeakerCountOption.allCases
+            : SpeakerCountOption.allCases.filter { ($0.count ?? 0) <= 4 }
+    }
     private var continueDisabled: Bool {
         (enableTranslation && targetLanguageCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             || (
@@ -131,6 +138,7 @@ struct ProcessingOptionsSheet: View {
                 }
                 .onChange(of: computeDestination) { _, _ in
                     applyCloudDurationClipIfNeeded(proxy: proxy)
+                    if !availableSpeakerOptions.contains(speakerCount) { speakerCount = .auto }
                 }
                 .onChange(of: mediaDurationSeconds) { _, _ in
                     applyCloudDurationClipIfNeeded(proxy: proxy)
@@ -302,7 +310,7 @@ struct ProcessingOptionsSheet: View {
                 Text(L10n.string("Speaker count"))
                     .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
                 Menu {
-                    ForEach(SpeakerCountOption.allCases) { option in
+                    ForEach(availableSpeakerOptions) { option in
                         Button {
                             speakerCount = option
                         } label: {
@@ -315,6 +323,16 @@ struct ProcessingOptionsSheet: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .menuIndicator(.hidden)
+                if speakerCount.count.map({ $0 > 1 }) ?? true {
+                    Text(L10n.string("Expected count is checked against the result; extra voices are still kept."))
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if computeDestination == .local, speakerCount.count.map({ $0 > 1 }) ?? true {
+                SpeakerCandidatePicker(selection: $candidatePersonIDs)
             }
 
             HStack(spacing: AppTheme.Spacing.xs) {
@@ -614,6 +632,7 @@ struct ProcessingOptionsSheet: View {
         languageCode = initialOptions.languageCode
         sessionTitle = initialOptions.customTitle ?? ""
         speakerCount = initialOptions.speakerCount
+        candidatePersonIDs = initialOptions.candidatePersonIDs
         enableSubtitleSegmentation = initialOptions.useLLMSubtitleProcessing ?? false
         enableTranslation = initialOptions.enableTranslation
             || !(initialOptions.normalizedTargetLanguageCode ?? "").isEmpty
@@ -639,6 +658,9 @@ struct ProcessingOptionsSheet: View {
             targetLanguageCode: enableTranslation ? targetLanguageCode : nil,
             useLLMSubtitleProcessing: enableSubtitleSegmentation
         )
+        if computeDestination == .local, speakerCount.count.map({ $0 > 1 }) ?? true {
+            options.candidatePersonIDs = candidatePersonIDs
+        }
         if isSingleFile, enableClip {
             options.clipStartMs = Int((clipRange.lowerBound * 1000).rounded())
             options.clipEndMs = Int((clipRange.upperBound * 1000).rounded())
@@ -792,13 +814,6 @@ struct ProcessingOptionsSheet: View {
     private func prepareAndSubmit() async {
         guard !isPreparingCloud else { return }
         cloudAccessError = nil
-        if placement.compute == .local,
-           localModelPlan.missingItems.contains(where: {
-               $0.requiresLicenseAcceptance && !models.isLicenseAccepted($0.id)
-           }) {
-            models.presentManager()
-            return
-        }
         if placement.compute == .local, !permitsBasicTranscription {
             _ = await llmSettings.credentialAvailable()
             guard !TranscriptionAIAccessPromptPolicy.shouldPresent(

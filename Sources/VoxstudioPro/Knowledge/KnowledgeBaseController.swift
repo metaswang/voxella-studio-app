@@ -267,12 +267,6 @@ final class KnowledgeBaseController {
         L10n.string(isPreparingKnowledgeModels ? "Preparing…" : "Download and ask")
     }
 
-    var needsModelLicenseAcceptance: Bool {
-        modelPlan.missingItems.contains {
-            $0.requiresLicenseAcceptance && !models.isLicenseAccepted($0.id)
-        }
-    }
-
     var scopeSubtitle: String {
         switch selectedScope {
         case .all:
@@ -634,11 +628,6 @@ final class KnowledgeBaseController {
         refreshModelPlan()
         guard needsModelDownload else {
             flushPendingQueryIfNeeded()
-            return
-        }
-        if needsModelLicenseAcceptance {
-            models.presentManager()
-            showModelGate = true
             return
         }
         showModelGate = true

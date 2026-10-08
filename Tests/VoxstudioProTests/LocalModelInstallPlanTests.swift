@@ -38,7 +38,7 @@ struct LocalModelInstallPlanTests {
         #expect(plan.items.map(\.id) == [.sileroVAD, .parakeetTDT06Bv3])
         #expect(plan.missingItems.contains { $0.id == .spokenLanguageID } == false)
         #expect(plan.missingItems.contains { $0.id == .forcedAligner } == false)
-        #expect(plan.missingItems.contains { $0.id == .sortformerDiarization } == false)
+        #expect(plan.missingItems.contains { $0.id == .nemotron3Diarization } == false)
     }
 
     @Test func japaneseLocksToQwenWithoutParakeetOrLanguageID() {
@@ -183,7 +183,7 @@ struct LocalModelInstallPlanTests {
             descriptor(.forcedAligner, bytes: 80_000_000, license: false),
             descriptor(.sileroVAD, bytes: 10_000_000, license: false),
             descriptor(.spokenLanguageID, bytes: 80_000_000, license: false),
-            descriptor(.sortformerDiarization, bytes: 320_000_000, license: false),
+            descriptor(.nemotron3Diarization, bytes: 320_000_000, license: false),
         ]
     }
 

@@ -4,10 +4,13 @@ import Testing
 
 @Suite("Optional speaker recognition")
 struct OptionalSpeakerDiarizationTests {
-    @Test func disabledSpeakerIdentificationDoesNotLoadAModel() async throws {
+    private struct PreparationFailed: Error {}
+
+    @Test func disabledSpeakerIdentificationDoesNotPrepareOrLoadAModel() async throws {
         let result = try await OptionalSpeakerDiarization.resolve(
-            requestedSpeakerCount: 0, isInstalled: true,
-            speechRanges: [.init(start: 0, end: 2)], audioDuration: 2
+            requestedSpeakerCount: 0,
+            speechRanges: [.init(start: 0, end: 2)], audioDuration: 2,
+            prepare: { Issue.record("Disabled speaker identification must not download a model") }
         ) {
             Issue.record("Disabled speaker identification must not load a model")
             throw URLError(.unknown)
@@ -16,13 +19,14 @@ struct OptionalSpeakerDiarizationTests {
         #expect(result.diagnostics.warnings.isEmpty)
     }
 
-    @Test(arguments: [nil, 2, 4] as [Int?])
-    func missingModelPreservesUnattributedTimeline(count: Int?) async throws {
+    @Test(arguments: [nil, 2, 4, 8] as [Int?])
+    func failedPreparationPreservesUnattributedTimeline(count: Int?) async throws {
         let result = try await OptionalSpeakerDiarization.resolve(
-            requestedSpeakerCount: count, isInstalled: false,
-            speechRanges: [.init(start: 0, end: 2)], audioDuration: 2
+            requestedSpeakerCount: count,
+            speechRanges: [.init(start: 0, end: 2)], audioDuration: 2,
+            prepare: { throw PreparationFailed() }
         ) {
-            Issue.record("Missing model must not be loaded")
+            Issue.record("A model that failed to prepare must not be loaded")
             throw URLError(.unknown)
         }
         #expect(result.audioDuration == 2)
@@ -34,8 +38,9 @@ struct OptionalSpeakerDiarizationTests {
 
     @Test func singleSpeakerNeedsNoModel() async throws {
         let result = try await OptionalSpeakerDiarization.resolve(
-            requestedSpeakerCount: 1, isInstalled: false,
-            speechRanges: [.init(start: 0, end: 2)], audioDuration: 2
+            requestedSpeakerCount: 1,
+            speechRanges: [.init(start: 0, end: 2)], audioDuration: 2,
+            prepare: { Issue.record("Single speaker must not download a model") }
         ) {
             Issue.record("Single speaker must not load a model")
             throw URLError(.unknown)
@@ -44,36 +49,56 @@ struct OptionalSpeakerDiarizationTests {
         #expect(result.speakerForWord(start: 0.1, end: 1) == 0)
     }
 
+    @Test func modelIsRequiredOnlyWhenSpeakersAreIdentified() {
+        #expect(!OptionalSpeakerDiarization.requiresModel(requestedSpeakerCount: 0))
+        #expect(!OptionalSpeakerDiarization.requiresModel(requestedSpeakerCount: 1))
+        #expect(OptionalSpeakerDiarization.requiresModel(requestedSpeakerCount: nil))
+        #expect(OptionalSpeakerDiarization.requiresModel(requestedSpeakerCount: 8))
+    }
+
     @Test func failedModelReturnsWarningWithoutLabels() async throws {
         let result = try await OptionalSpeakerDiarization.resolve(
-            requestedSpeakerCount: 2, isInstalled: true, speechRanges: [], audioDuration: 2
+            requestedSpeakerCount: 2, speechRanges: [], audioDuration: 2, prepare: {}
         ) { throw CocoaError(.fileReadCorruptFile) }
         #expect(result.diagnostics.warnings == [OptionalSpeakerDiarization.failedMessage])
         #expect(result.intervals.isEmpty)
     }
 
-    @Test func cancellationDoesNotReturnPartialSuccess() async {
+    @Test func cancellationDuringRecognitionDoesNotReturnPartialSuccess() async {
         await #expect(throws: CancellationError.self) {
             try await OptionalSpeakerDiarization.resolve(
-                requestedSpeakerCount: 2, isInstalled: true, speechRanges: [], audioDuration: 2
+                requestedSpeakerCount: 2, speechRanges: [], audioDuration: 2, prepare: {}
             ) { throw CancellationError() }
         }
     }
 
-    @Test func installedModelKeepsItsResult() async throws {
+    @Test func cancellationDuringPreparationPropagates() async {
+        await #expect(throws: CancellationError.self) {
+            try await OptionalSpeakerDiarization.resolve(
+                requestedSpeakerCount: 2, speechRanges: [], audioDuration: 2,
+                prepare: { throw CancellationError() }
+            ) { Issue.record("Cancelled preparation must not recognize"); throw URLError(.unknown) }
+        }
+    }
+
+    @Test func preparedModelKeepsItsResult() async throws {
         let expected = SpeakerActivityPostprocessor.singleSpeaker(
             speechRanges: [.init(start: 0, end: 2)], audioDuration: 2
         )
         let result = try await OptionalSpeakerDiarization.resolve(
-            requestedSpeakerCount: 2, isInstalled: true, speechRanges: [], audioDuration: 2
+            requestedSpeakerCount: 2, speechRanges: [], audioDuration: 2, prepare: {}
         ) { expected }
         #expect(result == expected)
     }
 
-    @Test func acceptedLicenseDoesNotRequireAnotherReview() throws {
-        let model = try #require(LocalModelManager.catalog.first { $0.id == .sortformerDiarization })
+    @Test func nemotronLicenseIsRecordedPerLicenseVersion() throws {
+        let model = try #require(LocalModelManager.catalog.first { $0.id == .nemotron3Diarization })
         #expect(model.needsLicenseAcceptance(accepted: false))
         #expect(!model.needsLicenseAcceptance(accepted: true))
+        #expect(model.license == "OpenMDW-1.1")
+        let key = LocalModelManager.licenseRecordKey(for: model)
+        #expect(key.contains("nemotron3Diarization"))
+        #expect(key.contains("a435e9867d79e789e90053f9b6d6834053af564a"))
     }
 
     @Test func cacheSeparatesAbsentInstalledAndUpdatedModels() {
@@ -83,18 +108,49 @@ struct OptionalSpeakerDiarizationTests {
         #expect(Set([absent, installed, updated]).count == 3)
         #expect(OptionalSpeakerDiarization.cacheIdentity(requestedSpeakerCount: 1, modelRevision: nil)
             == OptionalSpeakerDiarization.cacheIdentity(requestedSpeakerCount: 1, modelRevision: "a"))
+        let identity = OptionalSpeakerDiarization.cacheIdentity(requestedSpeakerCount: nil, modelRevision: "a")
+        #expect(identity.contains("nemotron3-int8"))
+        #expect(identity.contains(OptionalSpeakerDiarization.processingIdentity))
     }
 
-    @Test(arguments: [nil, 1, 2, 4] as [Int?])
-    func sortformerNeverBlocksInstallationPlan(count: Int?) {
+    @Test(arguments: [nil, 1, 2, 4, 8] as [Int?])
+    func diarizationNeverBlocksTheRecognitionPlan(count: Int?) {
         let plan = LocalModelInstallPlan.plan(
             languageCode: "en", speakerCount: count, asrModelID: .whisperLargeV3Turbo8Bit,
-            isInstalled: { $0 != .sortformerDiarization }
+            isInstalled: { $0 != .nemotron3Diarization }
         )
         #expect(plan.missingItems.isEmpty)
-        #expect(!plan.requiresLicenseAcceptance)
         #expect(plan.additionalBytes == 0)
-        #expect(LocalModelManager.catalog.first { $0.id == .sortformerDiarization }?.isRecommended == false)
+        #expect(LocalModelManager.catalog.first { $0.id == .nemotron3Diarization }?.isRecommended == false)
+    }
+
+    @Test func retiredSortformerIsOutOfTheCatalogButStillDecodes() throws {
+        #expect(!LocalModelManager.catalog.contains { $0.id == .sortformerDiarization })
+        let decoded = try JSONDecoder().decode(LocalModelID.self, from: Data("\"sortformerDiarization\"".utf8))
+        #expect(decoded == .sortformerDiarization)
+        let retired = try #require(LocalModelManager.retiredModels.first { $0.id == .sortformerDiarization })
+        #expect(retired.repository == "mlx-community/diar_streaming_sortformer_4spk-v2.1-fp16")
+        #expect(retired.replacement == .nemotron3Diarization)
+    }
+
+    @Test func legacyBackendsDecodeAsLegacyModel() throws {
+        for raw in ["mlxStreamingSortformer", "pyannoteWeSpeaker"] {
+            let backend = try JSONDecoder().decode(DiarizationBackend.self, from: Data("\"\(raw)\"".utf8))
+            #expect(backend == .legacyModel)
+            #expect(backend.producesSpeakerActivity)
+        }
+        let current = try JSONDecoder().decode(DiarizationBackend.self, from: Data("\"nemotron3\"".utf8))
+        #expect(current == .nemotron3)
+    }
+
+    @Test func nemotronCatalogEntryMatchesPinnedExport() throws {
+        let model = try #require(LocalModelManager.catalog.first { $0.id == .nemotron3Diarization })
+        #expect(model.repository == "aufklarer/Nemotron-3-Diarization-100M-MLX-INT8")
+        #expect(model.revision == "8be6cfb8a8009b1e11419208c819f6e20c94b4a3")
+        #expect(model.weightByteSize == 106_541_384)
+        #expect(model.weightSHA256 == "78b2131bbfdccdd6e3b440a96c5e5e3b12a80dbeda14e988dde8024affb67ac3")
+        #expect(Set(model.requiredArtifacts.map(\.filename)) == ["config.json", "LICENSE", "NOTICE"])
+        #expect(model.byteSize == model.weightByteSize + model.requiredArtifacts.reduce(0) { $0 + $1.byteSize })
     }
 }
 

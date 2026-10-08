@@ -70,7 +70,7 @@ struct OnboardingTests {
         #expect(Set(ids) == Set(transcription + dubbing))
         #expect(ids.count == Set(ids).count)
         #expect(!ids.contains(.weMMEmbedding2B4Bit))
-        #expect(!ids.contains(.sortformerDiarization))
+        #expect(!ids.contains(.nemotron3Diarization))
     }
 
     @Test func removingDubbingPreservesResourcesUsedByReadyTranscription() {

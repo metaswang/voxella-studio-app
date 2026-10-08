@@ -26,6 +26,8 @@ let package = Package(
         .package(path: "Vendor/YouTubeKit"),
         .package(url: "https://github.com/soniqo/speech-swift", exact: "0.0.21"),
         .package(path: "Vendor/FluidAudioVAD"),
+        .package(path: "Vendor/Nemotron3Diarization"),
+        .package(path: "Vendor/WeSpeakerEmbedding"),
         .package(url: "https://github.com/huggingface/swift-huggingface.git", exact: "0.9.0"),
         .package(path: "Vendor/mlx-audio-swift"),
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.2"),
@@ -71,6 +73,16 @@ let package = Package(
                     condition: .when(traits: ["BundledSpeech"])
                 ),
                 .product(
+                    name: "Nemotron3Diarization",
+                    package: "Nemotron3Diarization",
+                    condition: .when(traits: ["BundledSpeech"])
+                ),
+                .product(
+                    name: "WeSpeakerEmbedding",
+                    package: "WeSpeakerEmbedding",
+                    condition: .when(traits: ["BundledSpeech"])
+                ),
+                .product(
                     name: "AudioCommon",
                     package: "speech-swift",
                     condition: .when(traits: ["BundledSpeech"])
@@ -102,11 +114,6 @@ let package = Package(
                 ),
                 .product(
                     name: "MLXAudioLID",
-                    package: "mlx-audio-swift",
-                    condition: .when(traits: ["BundledSpeech"])
-                ),
-                .product(
-                    name: "MLXAudioVAD",
                     package: "mlx-audio-swift",
                     condition: .when(traits: ["BundledSpeech"])
                 ),

@@ -282,12 +282,15 @@ enum TranscriptSegmenter {
         words: [TranscriptionWord],
         language: String? = nil
     ) -> [TranscriptionSegment] {
+        // Forced aligners emit zero-width units on their frame grid (Qwen3:
+        // 80 ms). They are still recognized text; dropping them removes Han
+        // characters from segments while `text` and `words` keep them.
         let items = words.compactMap { word -> TimedText? in
             guard let start = word.start,
                   let end = word.end,
                   start.isFinite,
                   end.isFinite,
-                  end > start else { return nil }
+                  end >= start else { return nil }
             return TimedText(
                 text: word.text,
                 start: start,
@@ -306,7 +309,7 @@ enum TranscriptSegmenter {
         aggregate(segments.compactMap { segment in
             guard segment.start.isFinite,
                   segment.end.isFinite,
-                  segment.end > segment.start else { return nil }
+                  segment.end >= segment.start else { return nil }
             return TimedText(
                 text: segment.text,
                 start: segment.start,
@@ -330,12 +333,11 @@ enum TranscriptSegmenter {
         language: String?
     ) -> [TranscriptionSegment] {
         guard !items.isEmpty else { return [] }
+        // Equal starts keep source order: a zero-width unit clamped onto the
+        // previous word's start must not jump ahead of it.
         let orderedItems = items.enumerated().sorted { lhs, rhs in
             if lhs.element.start != rhs.element.start {
                 return lhs.element.start < rhs.element.start
-            }
-            if lhs.element.end != rhs.element.end {
-                return lhs.element.end < rhs.element.end
             }
             return lhs.offset < rhs.offset
         }.map { $0.element }
@@ -358,11 +360,13 @@ enum TranscriptSegmenter {
                 continue
             }
 
+            let outgoingSpeaker = buffer.last(where: { normalizedSpeaker($0.speaker) != nil })?.speaker
+                ?? previous.speaker
             if isKnownSpeakerChange(
-                from: previous.speaker,
+                from: outgoingSpeaker,
                 to: item.speaker,
                 boundary: item.speakerBoundary
-            ) {
+            ) || isSustainedSoftSpeakerChange(buffer: buffer, upcoming: orderedItems[index...]) {
                 emit(buffer.count)
                 continue
             }
@@ -449,6 +453,40 @@ enum TranscriptSegmenter {
         }
         guard lhs != rhs else { return false }
         return boundary != .soft
+    }
+
+    /// Matches `SpeakerDiarizationPolicy.sustainedTurnDuration`.
+    static let sustainedSoftTurnDuration = 1.0
+
+    /// A soft boundary only leaves the exact switch point uncertain. When both
+    /// neighbouring same-speaker runs are sustained the turn is real; keeping it
+    /// in one segment would relabel it with the majority speaker.
+    private static func isSustainedSoftSpeakerChange(
+        buffer: [TimedText],
+        upcoming: ArraySlice<TimedText>
+    ) -> Bool {
+        guard let item = upcoming.first,
+              item.speakerBoundary == .soft,
+              let incoming = normalizedSpeaker(item.speaker),
+              let outgoing = buffer.lazy.reversed().compactMap({ normalizedSpeaker($0.speaker) }).first,
+              outgoing != incoming else { return false }
+        return runDuration(buffer.reversed(), speaker: outgoing) >= sustainedSoftTurnDuration
+            && runDuration(upcoming, speaker: incoming) >= sustainedSoftTurnDuration
+    }
+
+    /// Span of the contiguous run labeled `speaker`; unlabeled items do not end it.
+    private static func runDuration<Items: Sequence>(
+        _ items: Items,
+        speaker: String
+    ) -> Double where Items.Element == TimedText {
+        var lower = Double.infinity
+        var upper = -Double.infinity
+        for item in items {
+            if let label = normalizedSpeaker(item.speaker), label != speaker { break }
+            lower = min(lower, item.start)
+            upper = max(upper, item.end)
+        }
+        return upper > lower ? upper - lower : 0
     }
 
     private static func dominantSpeaker(in group: [TimedText]) -> String? {

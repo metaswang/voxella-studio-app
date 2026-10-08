@@ -27,6 +27,7 @@ struct SessionSegmentEditor: View {
     @State private var renameTarget: RenameSpeakerTarget?
     @State private var addSpeakerTarget: AddSpeakerTarget?
     @State private var colorTarget: SpeakerColorTarget?
+    @State private var voiceTarget: SessionSpeakerVoiceTarget?
     @State private var autosaveTask: Task<Void, Never>?
     @State private var subtitleHighlightRanges: [Int: [Int: NSRange]] = [:]
 
@@ -108,6 +109,20 @@ struct SessionSegmentEditor: View {
             .onChange(of: contentKey) { _, _ in
                 resetEditingState()
             }
+            .sheet(item: $voiceTarget) { target in
+                SessionSpeakerVoiceSheet(sessionID: sessionID, label: target.label)
+                    .appZoomEnvironment(presentationBoundary: true)
+            }
+            .environment(\.sessionSpeakerVoiceContext, voiceContext)
+        }
+    }
+
+    /// Voice-library actions apply to transcript speakers, not dub voices.
+    private var voiceContext: SessionSpeakerVoiceContext? {
+        guard allowsEditing, scope != .dub else { return nil }
+        return SessionSpeakerVoiceContext(sessionID: sessionID) { label in
+            // Let the menu close before presenting the sheet.
+            DispatchQueue.main.async { voiceTarget = SessionSpeakerVoiceTarget(label: label) }
         }
     }
 

@@ -9,7 +9,7 @@ struct LocalTranscriptCacheConfiguration: Codable, Equatable, Sendable {
 
     var identity: String {
         let language = languageCode?.lowercased() ?? "auto"
-        let speakers = speakerCount.map(String.init) ?? "auto-1-4"
+        let speakers = speakerCount.map(String.init) ?? "auto-1-8"
         return "language=\(language)|speakers=\(speakers)"
     }
 }
@@ -17,7 +17,7 @@ struct LocalTranscriptCacheConfiguration: Codable, Equatable, Sendable {
 /// Disk + memory cache for local and cloud transcripts, keyed by file identity so edits invalidate naturally.
 actor TranscriptCache {
     static let shared = TranscriptCache()
-    static let localPipelineSchemaVersion = 11
+    static let localPipelineSchemaVersion = 13
     static let directory = FileManager.default
         .urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("\(Log.subsystem)/Transcripts", isDirectory: true)
@@ -185,7 +185,7 @@ actor TranscriptCache {
     }
 
     private static func installedSpeakerRevision() -> String? {
-        guard let model = LocalModelManager.catalog.first(where: { $0.id == .sortformerDiarization }),
+        guard let model = LocalModelManager.catalog.first(where: { $0.id == .nemotron3Diarization }),
               LocalModelManager.isInstalled(model) else { return nil }
         return model.revision
     }

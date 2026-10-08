@@ -2,23 +2,35 @@ import Foundation
 
 #if BUNDLED_SPEECH
 import MLX
-import MLXAudioVAD
+import Nemotron3Diarization
 #endif
 
 enum DiarizationBackend: String, Codable, Sendable {
     case disabled
     case singleSpeaker
     case unavailable
-    case mlxStreamingSortformer
-    case pyannoteWeSpeaker
+    case nemotron3
+    /// Results produced by retired engines. Historical transcripts stay readable;
+    /// reprocessing uses Nemotron 3.
+    case legacyModel
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .legacyModel
+    }
 
     var title: String {
         switch self {
         case .disabled: "Speaker identification disabled"
         case .singleSpeaker: "Single-speaker bypass"
         case .unavailable: "Speaker labels unavailable"
-        case .mlxStreamingSortformer, .pyannoteWeSpeaker: "Speaker identification"
+        case .nemotron3, .legacyModel: "Speaker identification"
         }
+    }
+
+    /// Whether the timeline carries model speaker activity.
+    var producesSpeakerActivity: Bool {
+        self == .nemotron3 || self == .legacyModel
     }
 }
 
@@ -76,6 +88,8 @@ struct DiarizationDiagnostics: Equatable, Codable, Sendable {
     var chunkDuration: Double? = nil
     var fifoMax: Int? = nil
     var spkcacheMax: Int? = nil
+    /// Clean single-speaker evidence per final label, used for identity matching.
+    var speakerEvidence: [SpeakerChannelEvidence]? = nil
 
     func addingWarning(_ warning: String) -> DiarizationDiagnostics {
         var copy = DiarizationDiagnostics(
@@ -94,6 +108,7 @@ struct DiarizationDiagnostics: Equatable, Codable, Sendable {
         copy.chunkDuration = chunkDuration
         copy.fifoMax = fifoMax
         copy.spkcacheMax = spkcacheMax
+        copy.speakerEvidence = speakerEvidence
         return copy
     }
 }
@@ -210,9 +225,9 @@ struct SpeakerActivityTimeline: Equatable, Sendable {
 
 struct SpeakerDiarizationPolicy: Equatable, Sendable {
     var requestedSpeakerCount: Int?
-    var chunkDuration: Double = 5
-    var onsetThreshold: Float = 0.55
-    var offsetThreshold: Float = 0.45
+    /// Initial Nemotron 3 activity threshold (the source postprocessor default).
+    var onsetThreshold: Float = 0.5
+    var offsetThreshold: Float = 0.5
     var minimumTurnDuration: Double = 0.16
     var mergeGap: Double = 0.24
     var shortTurnDuration: Double = 0.6
@@ -413,12 +428,14 @@ protocol SpeakerDiarizationEngine: AnyObject {
     ) async throws -> SpeakerActivityTimeline
 }
 
-final class MLXStreamingSortformerEngine: SpeakerDiarizationEngine, @unchecked Sendable {
-    private let model: SortformerModel
+/// Offline Nemotron 3 diarization: eight anonymous arrival-order channels at
+/// 10 ms. Runs inside the caller's MLX inference lease; state resets per call.
+final class Nemotron3DiarizationEngine: SpeakerDiarizationEngine, @unchecked Sendable {
+    private let diarizer: Nemotron3Diarizer
     private let modelRevision: String
 
     init(modelDirectory: URL, modelRevision: String) throws {
-        model = try SortformerModel.fromModelDirectory(modelDirectory)
+        diarizer = try Nemotron3Diarizer(modelDirectory: modelDirectory)
         self.modelRevision = modelRevision
     }
 
@@ -430,90 +447,53 @@ final class MLXStreamingSortformerEngine: SpeakerDiarizationEngine, @unchecked S
         policy: SpeakerDiarizationPolicy,
         progress: @escaping @Sendable (DiarizationProgress) -> Void
     ) async throws -> SpeakerActivityTimeline {
-        guard sampleRate == model.config.processorConfig.samplingRate else {
+        let geometry = diarizer.geometry
+        guard sampleRate == geometry.sampleRate else {
             throw CocoaError(.fileReadUnsupportedScheme)
         }
         try Task.checkCancellation()
         let startedAt = ContinuousClock.now
         let audioDuration = Double(audio.count) / Double(sampleRate)
-        let processor = model.config.processorConfig
-        let modules = model.config.modulesConfig
-        let streaming = SortformerStreamingParameters.from(
-            hopLength: processor.hopLength,
-            subsamplingFactor: model.config.fcEncoderConfig.subsamplingFactor,
-            samplingRate: processor.samplingRate,
-            chunkLen: modules.chunkLen,
-            spkcacheLen: modules.spkcacheLen,
-            fifoLen: modules.fifoLen
-        )
-        let speakerCapacity = modules.numSpeakers
+        // Silence is removed without reordering speech, which keeps the cache
+        // fed with speech in original time order.
         let pack = DiarizationSpeechPacker.pack(
             audio: audio,
             sampleRate: sampleRate,
             speechRanges: speechRanges,
             audioDuration: audioDuration
         )
-        let totalChunks = max(
-            1,
-            Int(ceil(pack.processedAudioDuration / max(streaming.chunkDuration, .leastNonzeroMagnitude)))
-        )
+        let totalChunks = max(1, geometry.chunkCount(sampleCount: pack.samples.count))
         Log.transcription.notice(
-            "Diarization start backend=\(DiarizationBackend.mlxStreamingSortformer.rawValue) "
+            "Diarization start backend=\(DiarizationBackend.nemotron3.rawValue) "
                 + "revision=\(modelRevision) audio=\(Self.formatSeconds(audioDuration))s "
                 + "speech=\(Self.formatSeconds(pack.speechDuration))s "
                 + "coverage=\(Self.formatCoverage(pack.coverage)) "
                 + "processed=\(Self.formatSeconds(pack.processedAudioDuration))s "
-                + "chunk=\(Self.formatSeconds(streaming.chunkDuration))s "
-                + "fifoMax=\(streaming.fifoMax) spkcacheMax=\(streaming.spkcacheMax) "
-                + "identity=\(pack.usedIdentity)"
+                + "chunk=\(Self.formatSeconds(geometry.chunkDuration))s "
+                + "right=\(Self.formatSeconds(geometry.rightContextDuration))s identity=\(pack.usedIdentity)"
         )
-
         progress(DiarizationProgress(
             stage: .preparing,
             completed: 0,
             total: totalChunks,
-            message: "Preparing streaming speaker analysis…"
+            message: "Preparing speaker analysis…"
         ))
 
-        var concatProbabilities: [Float] = []
-        concatProbabilities.reserveCapacity(
-            Int(ceil(pack.processedAudioDuration / max(streaming.frameDuration, .leastNonzeroMagnitude)))
-                * speakerCapacity
-        )
-        var processedChunks = 0
-        if !pack.samples.isEmpty {
-            let packedAudio = MLXArray(pack.samples)
-            var chunkStartedAt = ContinuousClock.now
-            try model.forEachChunk(
-                audio: packedAudio,
-                sampleRate: sampleRate,
-                chunkDuration: Float(streaming.chunkDuration),
-                threshold: 0.5,
-                minDuration: 0,
-                mergeGap: 0,
-                spkcacheMax: streaming.spkcacheMax,
-                fifoMax: streaming.fifoMax
-            ) { output in
-                try Task.checkCancellation()
-                if let speakerProbabilities = output.speakerProbs {
-                    eval(speakerProbabilities)
-                    concatProbabilities.append(contentsOf: speakerProbabilities.asArray(Float.self))
-                }
-                processedChunks += 1
-                let chunkElapsed = Self.seconds(from: chunkStartedAt.duration(to: .now))
-                Log.transcription.notice(
-                    "Diarization chunk \(processedChunks)/\(totalChunks) elapsed=\(Self.formatSeconds(chunkElapsed))s"
-                )
-                progress(DiarizationProgress(
-                    stage: .diarizing,
-                    completed: min(processedChunks, totalChunks),
-                    total: totalChunks,
-                    message: "Diarizing chunk \(processedChunks) of \(totalChunks)…"
-                ))
-                chunkStartedAt = ContinuousClock.now
-            }
+        var chunkStartedAt = ContinuousClock.now
+        let concatProbabilities = try diarizer.activityProbabilities(audio: pack.samples) { completed, total in
+            try Task.checkCancellation()
+            let chunkElapsed = Self.seconds(from: chunkStartedAt.duration(to: .now))
+            Log.transcription.notice(
+                "Diarization chunk \(completed)/\(total) elapsed=\(Self.formatSeconds(chunkElapsed))s"
+            )
+            progress(DiarizationProgress(
+                stage: .diarizing,
+                completed: min(completed, total),
+                total: max(total, 1),
+                message: "Diarizing chunk \(completed) of \(total)…"
+            ))
+            chunkStartedAt = ContinuousClock.now
         }
-
         try Task.checkCancellation()
         progress(DiarizationProgress(
             stage: .postprocessing,
@@ -523,22 +503,22 @@ final class MLXStreamingSortformerEngine: SpeakerDiarizationEngine, @unchecked S
         ))
         let probabilities = DiarizationSpeechPacker.scatterProbabilities(
             concatProbabilities: concatProbabilities,
-            speakerCapacity: speakerCapacity,
-            frameDuration: streaming.frameDuration,
+            speakerCapacity: diarizer.speakerCapacity,
+            frameDuration: diarizer.frameDuration,
             pack: pack,
             audioDuration: audioDuration
         )
         let elapsedSeconds = Self.seconds(from: startedAt.duration(to: .now))
         let timeline = SpeakerActivityPostprocessor.makeTimeline(
             probabilities: probabilities,
-            frameDuration: streaming.frameDuration,
-            speakerCapacity: speakerCapacity,
+            frameDuration: diarizer.frameDuration,
+            speakerCapacity: diarizer.speakerCapacity,
             audioDuration: audioDuration,
             speechRanges: speechRanges,
             policy: policy,
-            backend: .mlxStreamingSortformer,
+            backend: .nemotron3,
             elapsedSeconds: elapsedSeconds,
-            processedChunks: processedChunks
+            processedChunks: totalChunks
         )
         var diagnostics = timeline.diagnostics
         diagnostics.modelRevision = modelRevision
@@ -546,14 +526,14 @@ final class MLXStreamingSortformerEngine: SpeakerDiarizationEngine, @unchecked S
         diagnostics.peakMLXMemoryBytes = Memory.peakMemory
         diagnostics.speechCoverage = pack.coverage
         diagnostics.processedAudioDuration = pack.processedAudioDuration
-        diagnostics.chunkDuration = streaming.chunkDuration
-        diagnostics.fifoMax = streaming.fifoMax
-        diagnostics.spkcacheMax = streaming.spkcacheMax
+        diagnostics.chunkDuration = geometry.chunkDuration
+        diagnostics.fifoMax = geometry.fifoLength
+        diagnostics.spkcacheMax = geometry.speakerCacheLength
         Log.transcription.notice(
             "Diarization completed elapsed=\(Self.formatSeconds(elapsedSeconds))s "
                 + "rtf=\(Self.formatRTF(diagnostics.realTimeFactor)) "
                 + "processedAudio=\(Self.formatSeconds(pack.processedAudioDuration))s "
-                + "chunks=\(processedChunks) peakMLX=\(Memory.peakMemory) "
+                + "chunks=\(totalChunks) peakMLX=\(Memory.peakMemory) "
                 + "detected=\(timeline.diagnostics.detectedSpeakerCount)"
         )
         return SpeakerActivityTimeline(

@@ -81,6 +81,8 @@ struct TranscriptionProcessingOptions: Equatable, Sendable {
     /// Optional user title for a single-file import; blank means auto-generate after transcription.
     var customTitle: String?
     var speakerCount: SpeakerCountOption = .auto
+    /// Voice-library people to recognize; new tasks start with none selected.
+    var candidatePersonIDs: [UUID] = []
     var enableTranslation = false
     var targetLanguageCode: String?
     /// Legacy field name shared with saved jobs; enables either subtitle method.

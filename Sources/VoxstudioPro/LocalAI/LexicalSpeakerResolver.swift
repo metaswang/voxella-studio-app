@@ -79,10 +79,13 @@ enum LexicalSpeakerResolver {
         let units = lexicalUnits(texts: words.map(\.text), starts: words.map { $0.start! },
                                  ends: words.map { $0.end! }, languageCode: languageCode)
         var attributed = words
+        var unitSpeakers: [String?] = []
+        unitSpeakers.reserveCapacity(units.count)
         for unit in units {
             // Keep the best supported identity on release tails; absolute evidence
             // controls boundary strength and refinement acceptance, not label erasure.
             let evidence = timeline.attributionForWord(start: unit.start, end: unit.end)
+            unitSpeakers.append(evidence.map { "Speaker \($0.speakerID + 1)" })
             for index in unit.wordIndices {
                 let word = words[index]
                 attributed[index] = TranscriptionWord(
@@ -92,7 +95,34 @@ enum LexicalSpeakerResolver {
                 )
             }
         }
+        for (unitIndex, unit) in units.enumerated() where unitSpeakers[unitIndex] == nil && unit.end <= unit.start {
+            guard let speaker = neighbourSpeaker(of: unitIndex, units: units, speakers: unitSpeakers) else { continue }
+            for index in unit.wordIndices {
+                let word = attributed[index]
+                attributed[index] = TranscriptionWord(
+                    text: word.text, start: word.start, end: word.end,
+                    speaker: speaker, speakerConfidence: nil, timingQuality: word.timingQuality
+                )
+            }
+        }
         return smoothLexicalAssignments(attributed, units: units, policy: policy, timeline: timeline)
+    }
+
+    /// Zero-width aligner units have no frames to integrate, so they carry no
+    /// evidence of their own. Leaving them unlabeled splits a turn into runs
+    /// too short to count as sustained; borrow the temporally nearer
+    /// evidenced neighbour (earlier on ties) without inventing a confidence.
+    private static func neighbourSpeaker(of unitIndex: Int, units: [LexicalUnit], speakers: [String?]) -> String? {
+        let unit = units[unitIndex]
+        let previous = units.indices[..<unitIndex].last { speakers[$0] != nil }
+        let next = units.indices[(unitIndex + 1)...].first { speakers[$0] != nil }
+        switch (previous, next) {
+        case let (.some(p), .some(n)):
+            return unit.start - units[p].end <= units[n].start - unit.end ? speakers[p] : speakers[n]
+        case let (.some(p), .none): return speakers[p]
+        case let (.none, .some(n)): return speakers[n]
+        case (.none, .none): return nil
+        }
     }
 
     static func markingBoundaries(

@@ -456,7 +456,7 @@ extension ToolExecutor {
             )
             if !turns.isEmpty { files.append((frag.clip.mediaRef, frag.url, turns)) }
         }
-        let result = await SpeakerIdentity.assignments(files: files, registry: registry.map { ($0.id, $0.centroid) })
+        let result = await SpeakerIdentity.assignments(files: files, registry: registry.map(\.identityCentroid))
         var map: [String: [String: String]] = [:]
         for (ref, locals) in result.byFileLocal {
             for (local, gid) in locals {

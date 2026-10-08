@@ -599,6 +599,7 @@ final class VoiceLibraryStore {
         }
         stopPlayback()
         references = try await repository.delete(id: id, existing: references)
+        SpeakerPersonStore.shared.referenceDeleted(id)
     }
 
     func reference(id: UUID?) -> LocalVoiceReference? {

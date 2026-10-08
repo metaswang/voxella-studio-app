@@ -17,6 +17,9 @@ enum LocalModelID: String, Codable, CaseIterable, Identifiable, Sendable {
     case forcedAligner
     case sileroVAD
     case mossFormer2SE
+    case nemotron3Diarization
+    /// Retired four-speaker model. Kept only so persisted records still decode;
+    /// it is not in the catalog and cannot be installed.
     case sortformerDiarization
     case weSpeaker
     case qwenTTS17B
@@ -39,7 +42,7 @@ enum LocalModelID: String, Codable, CaseIterable, Identifiable, Sendable {
             "Speech detection"
         case .mossFormer2SE:
             "Audio enhancement"
-        case .sortformerDiarization, .weSpeaker:
+        case .nemotron3Diarization, .sortformerDiarization, .weSpeaker:
             "Speaker identification"
         case .qwenTTS17B:
             "Voice generation"
@@ -114,6 +117,8 @@ struct LocalModelDescriptor: Identifiable, Sendable {
     let license: String
     let licenseURL: URL?
     let requiresLicenseAcceptance: Bool
+    /// Identifies the license text a recorded acceptance applies to.
+    let licenseVersion: String?
     let requiredFor: Set<LocalFeature>
     let isRecommended: Bool
     let isLegacy: Bool
@@ -135,6 +140,7 @@ struct LocalModelDescriptor: Identifiable, Sendable {
         license: String,
         licenseURL: URL? = nil,
         requiresLicenseAcceptance: Bool = false,
+        licenseVersion: String? = nil,
         requiredFor: Set<LocalFeature>,
         isRecommended: Bool,
         isLegacy: Bool = false,
@@ -155,6 +161,7 @@ struct LocalModelDescriptor: Identifiable, Sendable {
         self.license = license
         self.licenseURL = licenseURL
         self.requiresLicenseAcceptance = requiresLicenseAcceptance
+        self.licenseVersion = licenseVersion
         self.requiredFor = requiredFor
         self.isRecommended = isRecommended
         self.isLegacy = isLegacy
@@ -233,6 +240,24 @@ final class LocalModelManager {
         .init(filename: "tokenizer.json", byteSize: 2_710_337, sha256: "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd"),
         .init(filename: "tokenizer_config.json", byteSize: 282_843, sha256: "844b642c73a91359722f47b35705f7174686df33d252695d8572cf9ac03a6389"),
         .init(filename: "vocab.json", byteSize: 1_036_558, sha256: "e2aa043ef015641d363d8288e7c241c85e36a5c761fb303598e0710233344387"),
+    ]
+
+    /// Models removed from the catalog. Their local files are kept until the
+    /// replacement is installed, so a running task never loses its weights.
+    struct RetiredModel: Sendable {
+        let id: LocalModelID
+        let repository: String
+        let revisions: [String]
+        let replacement: LocalModelID
+    }
+
+    nonisolated static let retiredModels: [RetiredModel] = [
+        RetiredModel(
+            id: .sortformerDiarization,
+            repository: "mlx-community/diar_streaming_sortformer_4spk-v2.1-fp16",
+            revisions: ["e23e6404bd9859e93edbf94a740eb1c7fc58f12e"],
+            replacement: .nemotron3Diarization
+        ),
     ]
 
     nonisolated static let catalog: [LocalModelDescriptor] = [
@@ -413,20 +438,26 @@ final class LocalModelManager {
             ]
         ),
         .init(
-            id: .sortformerDiarization,
-            title: "Streaming Sortformer v2.1 MLX",
-            purpose: "Streaming speaker diarization with overlap detection",
-            repository: "mlx-community/diar_streaming_sortformer_4spk-v2.1-fp16",
-            revision: "e23e6404bd9859e93edbf94a740eb1c7fc58f12e",
-            weightByteSize: 236_108_132,
-            weightSHA256: "3b60b8df29e59a8abaf8061ceeeae6e9284a68fbcd2e762c68f5e058bfceebfa",
-            byteSize: 236_109_834,
-            sizeLabel: "~ 236 MB",
-            license: "NVIDIA Open Model License",
-            licenseURL: URL(string: "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/"),
+            id: .nemotron3Diarization,
+            title: "Nemotron 3 Diarization MLX INT8",
+            purpose: "Eight-speaker diarization with overlap detection",
+            repository: "aufklarer/Nemotron-3-Diarization-100M-MLX-INT8",
+            revision: "8be6cfb8a8009b1e11419208c819f6e20c94b4a3",
+            weightByteSize: 106_541_384,
+            weightSHA256: "78b2131bbfdccdd6e3b440a96c5e5e3b12a80dbeda14e988dde8024affb67ac3",
+            byteSize: 106_545_626,
+            sizeLabel: "~ 107 MB",
+            license: "OpenMDW-1.1",
+            licenseURL: URL(string: "https://huggingface.co/nvidia/Nemotron-3-Diarization"),
             requiresLicenseAcceptance: true,
+            licenseVersion: "OpenMDW-1.1/a435e9867d79e789e90053f9b6d6834053af564a",
             requiredFor: [.transcribe],
-            isRecommended: false
+            isRecommended: false,
+            requiredArtifacts: [
+                .init(filename: "config.json", byteSize: 1_368, sha256: "1ad0df6ba330cd4a695f9f968702dce9ec68cdbe694a03726e01fb627ae883f2"),
+                .init(filename: "LICENSE", byteSize: 2_619, sha256: "2ab44b68365473c112f5092211a38f231cb23e50de68b75a13369adbd76a74df"),
+                .init(filename: "NOTICE", byteSize: 255, sha256: "32318cfb5e97ad0da7067bb56cd3f05279df932efeddbac1ab85c9ad6d008a98"),
+            ]
         ),
         .init(
             id: .weSpeaker,
@@ -615,6 +646,27 @@ final class LocalModelManager {
             whisperFallbackModelID: activeASRModelID
         )
         try await ensureModels(required, onProgress: onProgress)
+        prefetchSpeakerModels(speakerCount: speakerCount)
+    }
+
+    /// Starts speaker resources in the background as soon as a task needs them,
+    /// so they download alongside recognition instead of after it.
+    func prefetchSpeakerModels(speakerCount: Int?, includesIdentity: Bool = false) {
+        if OptionalSpeakerDiarization.requiresModel(requestedSpeakerCount: speakerCount) {
+            download(.nemotron3Diarization, demand: .explicit)
+        }
+        if includesIdentity {
+            download(.weSpeaker, demand: .explicit)
+        }
+    }
+
+    /// Records the license, downloads and verifies the diarization model if needed.
+    func ensureSpeakerDiarizationModel() async throws {
+        try await ensureModels([.nemotron3Diarization], onProgress: nil)
+    }
+
+    func ensureSpeakerEmbeddingModel() async throws {
+        try await ensureModels([.weSpeaker], onProgress: nil)
     }
 
     func ensureDubModels(
@@ -746,6 +798,13 @@ final class LocalModelManager {
 
     private func restoreAuthorizedDownloads() async {
         LocalModelChunkStore.shared.pruneExpired()
+        // Retired models never resume: drop their chunk checkpoints. Their
+        // authorization records are dropped below because they are not in the catalog.
+        for retired in Self.retiredModels {
+            for revision in retired.revisions {
+                LocalModelChunkStore.shared.remove(repository: retired.repository, revision: revision)
+            }
+        }
         let records: [LocalModelDownloadAuthorizationStore.Record]
         do {
             records = try await authorizationStore.records()
@@ -970,6 +1029,10 @@ final class LocalModelManager {
                 }
                 try? await self.authorizationStore.revoke(id)
                 LocalModelChunkStore.shared.remove(repository: model.repository, revision: model.revision)
+                if Self.retiredModels.contains(where: { $0.replacement == id }) {
+                    // The replacement is verified; retired weights can go now.
+                    await Task.detached(priority: .utility) { Self.pruneUnusedCachedModels() }.value
+                }
             } catch let error where error is CancellationError || Task.isCancelled
                 || (error as? URLError)?.code == .cancelled {
                 self.pendingASRActivation.remove(id)
@@ -1047,12 +1110,21 @@ final class LocalModelManager {
         }
     }
 
-    func isLicenseAccepted(_ id: LocalModelID) -> Bool {
-        UserDefaults.standard.bool(forKey: "voxella.local-model-license.\(id.rawValue)")
+    /// License records are keyed by model and license version, so a new license
+    /// text is recorded again on the next install or retry.
+    nonisolated static func licenseRecordKey(for model: LocalModelDescriptor) -> String {
+        let base = "voxella.local-model-license.\(model.id.rawValue)"
+        return model.licenseVersion.map { "\(base)@\($0)" } ?? base
     }
 
+    func isLicenseAccepted(_ id: LocalModelID) -> Bool {
+        UserDefaults.standard.bool(forKey: Self.licenseRecordKey(for: descriptor(for: id)))
+    }
+
+    /// Records the license automatically. Resource preparation never asks the
+    /// user to confirm; license and source stay visible in resource details.
     func acceptLicense(_ id: LocalModelID) {
-        UserDefaults.standard.set(true, forKey: "voxella.local-model-license.\(id.rawValue)")
+        UserDefaults.standard.set(true, forKey: Self.licenseRecordKey(for: descriptor(for: id)))
     }
 
     private func acceptRequiredLicenseIfNeeded(_ id: LocalModelID) {
@@ -1388,7 +1460,11 @@ final class LocalModelManager {
     }
 
     private nonisolated static func pruneUnusedCachedModels() {
+        let pendingRetirements = retiredModels.filter { retired in
+            !(catalog.first { $0.id == retired.replacement }.map(isInstalled) ?? false)
+        }
         let retained = Set(catalog.map(\.repository)).union([ttsTokenizerRepository])
+            .union(pendingRetirements.map(\.repository))
         let modelsRoot = speechCacheRoot().appendingPathComponent("models", isDirectory: true)
         let fileManager = FileManager.default
         guard let owners = try? fileManager.contentsOfDirectory(
@@ -1443,7 +1519,7 @@ final class LocalModelManager {
             ["vocab.json", "merges.txt", "tokenizer_config.json"]
         case .sileroVAD:
             LocalSpeechVAD.requiredBundleFiles.map { "\(LocalSpeechVAD.coreMLBundleName)/\($0)" }
-        case .mossFormer2SE:
+        case .mossFormer2SE, .nemotron3Diarization:
             catalog.first(where: { $0.id == id })?.requiredArtifacts.map(\.filename) ?? []
         case .spokenLanguageID, .sortformerDiarization, .weSpeaker:
             []

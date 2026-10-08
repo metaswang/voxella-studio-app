@@ -49,7 +49,7 @@ enum LocalPreparationFeature: String, CaseIterable, Identifiable, Codable, Senda
         case .transcription:
             LocalModelInstallPlan.requiredModelIDs(languageCode: nil, speakerCount: nil, asrModelID: asrModelID)
         case .speakerIdentification:
-            [.sortformerDiarization]
+            [.nemotron3Diarization, .weSpeaker]
         case .dubbing:
             LocalModelInstallPlan.dubPlan(modelID: .qwenTTS17B, isInstalled: { _ in false }).items.map(\.id)
         case .search:

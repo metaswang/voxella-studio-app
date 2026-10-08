@@ -58,6 +58,7 @@ struct LocalFeaturePreparationRow: View {
                     .font(.system(size: AppTheme.FontSize.sm))
                     .foregroundStyle(AppTheme.Text.mutedColor)
             }
+            resourceDetails
         }
         .alert(L10n.string("Remove downloaded resources?"), isPresented: $showsRemovalConfirmation) {
             Button(L10n.string("Cancel"), role: .cancel) {}
@@ -73,5 +74,36 @@ struct LocalFeaturePreparationRow: View {
             RoundedRectangle(cornerRadius: AppTheme.Radius.lg)
                 .strokeBorder(AppTheme.Border.subtleColor, lineWidth: AppTheme.BorderWidth.thin)
         }
+    }
+
+    /// License and source of each resource; recorded automatically, never asked.
+    private var resourceDetails: some View {
+        DisclosureGroup(L10n.string("Resource details")) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                ForEach(feature.requiredIDs(asrModelID: manager.activeASRModelID), id: \.self) { id in
+                    if let model = LocalModelManager.catalog.first(where: { $0.id == id }) {
+                        VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                            Text("\(model.title) · \(model.sizeLabel)")
+                                .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
+                            HStack(spacing: AppTheme.Spacing.xs) {
+                                Text(L10n.string("License") + ":")
+                                if let url = model.licenseURL {
+                                    Link(model.license, destination: url)
+                                } else {
+                                    Text(model.license)
+                                }
+                            }
+                            Text(L10n.string("Source") + ": \(model.repository) @ \(String(model.revision.prefix(8)))")
+                                .textSelection(.enabled)
+                        }
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                    }
+                }
+            }
+            .padding(.top, AppTheme.Spacing.xs)
+        }
+        .font(.system(size: AppTheme.FontSize.sm))
+        .foregroundStyle(AppTheme.Text.tertiaryColor)
     }
 }

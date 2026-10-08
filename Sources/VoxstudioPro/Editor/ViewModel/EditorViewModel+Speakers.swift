@@ -6,6 +6,16 @@ struct SpeakerRegistryEntry: Codable, Sendable, Identifiable {
     var name: String
     var color: [Double]
     var centroid: [Float]
+    /// Embedding version of `centroid`; nil for projects saved before versioning.
+    var centroidVersion: String?
+    /// The centroid was stale and no source audio was left to rebuild it.
+    var needsSamples: Bool?
+    /// Linked voice-library person, when the name came from one.
+    var personID: UUID?
+
+    var identityCentroid: SpeakerIdentity.RegistryCentroid {
+        .init(id: id, centroid: centroid, version: centroidVersion)
+    }
 }
 
 struct ProjectSpeaker: Identifiable {
@@ -126,7 +136,7 @@ extension EditorViewModel {
             self?.speakerIdentifyPhase = L10n.string("Identifying…")
             let registry = await MainActor.run { self?.speakerRegistry ?? [] }
             let result = await SpeakerIdentity.assignments(
-                files: files, registry: registry.map { ($0.id, $0.centroid) }
+                files: files, registry: registry.map(\.identityCentroid)
             )
             guard let self else { return }
             await MainActor.run { [self] in
@@ -137,12 +147,24 @@ extension EditorViewModel {
     }
 
     private func applySpeakerIdentity(files: [(mediaRef: String, url: URL, turns: [SpeakerIdentity.Turn])], result: SpeakerIdentity.Assignments) {
+        let version = SpeakerEmbeddingService.version
         for entry in result.newEntries {
             speakerRegistry.append(SpeakerRegistryEntry(
                 id: entry.id, name: "Speaker \(entry.id)",
                 color: Self.rgba(from: Self.speakerPalette[(entry.id - 1) % Self.speakerPalette.count]),
-                centroid: entry.centroid
+                centroid: entry.centroid,
+                centroidVersion: version
             ))
+        }
+        for entry in result.rebuiltEntries {
+            guard let index = speakerRegistry.firstIndex(where: { $0.id == entry.id }) else { continue }
+            speakerRegistry[index].centroid = entry.centroid
+            speakerRegistry[index].centroidVersion = version
+            speakerRegistry[index].needsSamples = nil
+        }
+        for id in result.needsSamples {
+            guard let index = speakerRegistry.firstIndex(where: { $0.id == id }) else { continue }
+            speakerRegistry[index].needsSamples = true
         }
         var masks: [String: [Int]] = [:]
         for file in files {
@@ -163,7 +185,9 @@ extension EditorViewModel {
         }
         for (ref, mask) in masks { mediaVisualCache.speakerMasks[ref] = mask }
         for (ref, locals) in result.byFileLocal { speakerAssignments[ref] = locals }
-        if !result.newEntries.isEmpty { onProjectCheckpointRequired?() }
+        if !result.newEntries.isEmpty || !result.rebuiltEntries.isEmpty || !result.needsSamples.isEmpty {
+            onProjectCheckpointRequired?()
+        }
         syncSpeakerColors()
     }
 

@@ -135,7 +135,7 @@ final class MCPOpenAIExtensions {
                 "start": .object(["type": "boolean", "description": "Set true when the user explicitly requests transcription of the path or ChatGPT attachment. Starts immediately without a file picker or options form. Default false opens the panel only.", "default": false]),
                 "title": string,
                 "language": .object(["type": "string", "description": "Omit or use auto to detect the spoken language automatically."]),
-                "speakers": .object(["type": "string", "description": "off, auto, one, two, three, four; default auto"]),
+                "speakers": .object(["type": "string", "description": "off, auto, one, two, three, four, five, six, seven, eight; default auto"]),
                 "segment_subtitles": field("boolean"),
                 "target_languages": .object(["type": "array", "items": string]),
             ]), false),

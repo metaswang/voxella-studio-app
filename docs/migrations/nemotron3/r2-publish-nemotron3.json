@@ -1,0 +1,44 @@
+{
+  "command": "publish",
+  "generated_at": "2026-10-08T00:57:07.730868+00:00",
+  "objects": [
+    {
+      "key": "studio-models/aufklarer/Nemotron-3-Diarization-100M-MLX-INT8/8be6cfb8a8009b1e11419208c819f6e20c94b4a3/config.json",
+      "ok": true,
+      "remote_etag": "7bb7b5d57c9d9a0c3887da93e4b3feb4",
+      "remote_sha256": "1ad0df6ba330cd4a695f9f968702dce9ec68cdbe694a03726e01fb627ae883f2",
+      "remote_size": 1368,
+      "sha256": "1ad0df6ba330cd4a695f9f968702dce9ec68cdbe694a03726e01fb627ae883f2",
+      "size": 1368
+    },
+    {
+      "key": "studio-models/aufklarer/Nemotron-3-Diarization-100M-MLX-INT8/8be6cfb8a8009b1e11419208c819f6e20c94b4a3/LICENSE",
+      "ok": true,
+      "remote_etag": "5aec02426ebb02f751ec299bbdebb8fe",
+      "remote_sha256": "2ab44b68365473c112f5092211a38f231cb23e50de68b75a13369adbd76a74df",
+      "remote_size": 2619,
+      "sha256": "2ab44b68365473c112f5092211a38f231cb23e50de68b75a13369adbd76a74df",
+      "size": 2619
+    },
+    {
+      "key": "studio-models/aufklarer/Nemotron-3-Diarization-100M-MLX-INT8/8be6cfb8a8009b1e11419208c819f6e20c94b4a3/NOTICE",
+      "ok": true,
+      "remote_etag": "907fe6ef56361fc5c76a941408dc5b12",
+      "remote_sha256": "32318cfb5e97ad0da7067bb56cd3f05279df932efeddbac1ab85c9ad6d008a98",
+      "remote_size": 255,
+      "sha256": "32318cfb5e97ad0da7067bb56cd3f05279df932efeddbac1ab85c9ad6d008a98",
+      "size": 255
+    },
+    {
+      "key": "studio-models/aufklarer/Nemotron-3-Diarization-100M-MLX-INT8/8be6cfb8a8009b1e11419208c819f6e20c94b4a3/model.safetensors",
+      "ok": true,
+      "remote_etag": "a88231bf16a90023acb01ebd45690ab8",
+      "remote_sha256": "78b2131bbfdccdd6e3b440a96c5e5e3b12a80dbeda14e988dde8024affb67ac3",
+      "remote_size": 106541384,
+      "sha256": "78b2131bbfdccdd6e3b440a96c5e5e3b12a80dbeda14e988dde8024affb67ac3",
+      "size": 106541384
+    }
+  ],
+  "repository": "aufklarer/Nemotron-3-Diarization-100M-MLX-INT8",
+  "revision": "8be6cfb8a8009b1e11419208c819f6e20c94b4a3"
+}

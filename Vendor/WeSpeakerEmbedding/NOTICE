@@ -1,0 +1,13 @@
+WeSpeakerEmbedding (VoxStudio vendored module)
+
+ResNet34 network and weight loading adapted from soniqo/speech-swift
+(Apache License 2.0, see LICENSE).
+
+VoxStudio changes:
+- Kaldi FBank front end matching torchaudio.compliance.kaldi.fbank as configured by
+  pyannote.audio WeSpeaker models: int16-scaled input, snip_edges, per-frame DC
+  removal and pre-emphasis, Hamming window, Kaldi mel banks (20 Hz–Nyquist), log
+  with float epsilon floor, then per-utterance mean normalization.
+- Statistics pooling with unbiased standard deviation (pyannote StatsPool).
+
+Model weights (WeSpeaker ResNet34-LM) are not part of this module.

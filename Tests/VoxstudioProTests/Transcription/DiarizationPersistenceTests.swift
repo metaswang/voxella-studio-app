@@ -19,7 +19,7 @@ struct DiarizationPersistenceTests {
         return CompletedTranscriptionArtifacts(
             rawResult: result, result: result, subtitleTrack: nil, translationTracks: [],
             diarizationDiagnostics: .init(
-                backend: .mlxStreamingSortformer, elapsedSeconds: 18.1, processedChunks: 240,
+                backend: .nemotron3, elapsedSeconds: 18.1, processedChunks: 240,
                 detectedSpeakerCount: 2, requestedSpeakerCount: nil, warnings: [],
                 modelRevision: "fixture-revision", peakMLXMemoryBytes: 3_425_139_788,
                 processedAudioDuration: 3605.028, chunkDuration: 15.04, fifoMax: 0, spkcacheMax: 188

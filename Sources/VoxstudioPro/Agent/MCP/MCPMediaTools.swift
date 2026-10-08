@@ -48,7 +48,7 @@ enum MCPMediaTools {
         .init(name: "transcription.create", description: "Transcribe local audio/video, optionally segment subtitles and add multiple translated tracks. Returns session_id immediately.", parameters: [
             p("path", "string", "Absolute local media path (or ~/ path)", true), p("title", "string", "Session title"),
             p("language", "string", "Source language code; omit for auto detection"),
-            p("speakers", "string", "off, auto, one, two, three, four (default auto)"),
+            p("speakers", "string", "off, auto, one, two, three, four, five, six, seven, eight (default auto)"),
             p("segment_subtitles", "boolean", "Use AI subtitle segmentation (default false; requires configured subtitle AI)"),
             p("target_languages", "array", "Translation language codes, e.g. [en, zh]; requires configured translation AI"),
             p("start", "number", "Optional clip start seconds; requires end"), p("end", "number", "Optional clip end seconds; requires start")]),

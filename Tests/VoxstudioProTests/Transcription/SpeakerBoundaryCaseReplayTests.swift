@@ -38,9 +38,9 @@ struct SpeakerBoundaryCaseReplayTests {
         try input.write(to: output.appendingPathComponent("workbench-before.json"), options: .withoutOverwriting)
         let audio = try AudioFileLoader.load(url: job.sourceURL, targetSampleRate: 16_000)
         let duration = Double(audio.count) / 16_000
-        var engine: MLXStreamingSortformerEngine? = try .init(
-            modelDirectory: LocalModelManager.directory(for: .sortformerDiarization),
-            modelRevision: "e23e6404bd9859e93edbf94a740eb1c7fc58f12e")
+        var engine: Nemotron3DiarizationEngine? = try .init(
+            modelDirectory: LocalModelManager.directory(for: .nemotron3Diarization),
+            modelRevision: "8be6cfb8a8009b1e11419208c819f6e20c94b4a3")
         let timeline = try await engine!.diarize(audio: audio, sampleRate: 16_000,
             speechRanges: [.init(start: 0, end: duration)], policy: .standard(requestedSpeakerCount: nil), progress: { _ in })
         let frameRecords = (Int(26.4 / timeline.frameDuration)..<Int(30.5 / timeline.frameDuration)).map { frame in
