@@ -3220,3 +3220,6 @@
 "Change project" = "更改项目";
 "No projects yet" = "暂无项目";
 "Project: %@" = "项目：%@";
+
+"Auto-play sessions" = "自动播放会话";
+"Start playback as soon as a session opens." = "打开会话后立即开始播放。";

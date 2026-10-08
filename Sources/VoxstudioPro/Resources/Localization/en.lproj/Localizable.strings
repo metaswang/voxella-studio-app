@@ -3220,3 +3220,6 @@
 "Change project" = "Change project";
 "No projects yet" = "No projects yet";
 "Project: %@" = "Project: %@";
+
+"Auto-play sessions" = "Auto-play sessions";
+"Start playback as soon as a session opens." = "Start playback as soon as a session opens.";

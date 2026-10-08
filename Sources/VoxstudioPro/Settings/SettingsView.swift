@@ -154,6 +154,9 @@ private struct SettingsDetail: View {
                                 SettingsSection(title: "Recording") {
                                     RecordingPane()
                                 }
+                                SettingsSection(title: "Sessions") {
+                                    SessionPlaybackPane()
+                                }
                                 SettingsSection(title: "Voice Input") {
                                     VoiceInputSettingsPane()
                                 }

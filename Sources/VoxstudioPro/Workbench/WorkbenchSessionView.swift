@@ -1502,7 +1502,11 @@ private struct SessionMediaPlayer: View {
                 translationTracks: translationTracks
             )
             playback.configureHighlightCues(highlightCues, subtitleCues: highlightSubtitleCues)
-            let wasPlaying = !hasLoadedPlayback && URL != nil ? true : playback.isPlaying
+            // Only the first load of a session may autoplay, and only when the user opted in.
+            // Later reloads (track or canvas swaps) keep the current playback state.
+            let wasPlaying = !hasLoadedPlayback
+                ? URL != nil && SessionAutoPlaySettings.isEnabled
+                : playback.isPlaying
             // Preserve playhead when master → listen swap completes mid-session.
             await playback.load(
                 url: URL,
