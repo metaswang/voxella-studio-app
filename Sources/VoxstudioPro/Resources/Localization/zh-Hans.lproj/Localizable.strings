@@ -3215,3 +3215,8 @@
 "Recents" = "最近会话";
 
 "The session was created, but could not be added to the project." = "会话已创建，但未能加入项目。";
+
+"Add to project" = "添加到项目";
+"Change project" = "更改项目";
+"No projects yet" = "暂无项目";
+"Project: %@" = "项目：%@";

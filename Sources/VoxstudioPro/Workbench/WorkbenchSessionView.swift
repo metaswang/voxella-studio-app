@@ -589,6 +589,7 @@ struct WorkbenchSessionDetailView: View {
                         storage: session.storage,
                         compute: session.compute
                     )
+                    SessionProjectChip(session: session)
                 }
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
