@@ -3185,3 +3185,33 @@
 "Unnamed person" = "Unnamed person";
 "This session is no longer available." = "This session is no longer available.";
 "The session audio could not be read." = "The session audio could not be read.";
+
+/* Home sidebar and source types */
+"Home" = "Home";
+"Show Home" = "Show Home";
+"Hide Home" = "Hide Home";
+"New session" = "New session";
+"New session menu" = "New session menu";
+"Record audio" = "Record audio";
+"Record screen" = "Record screen";
+"Record meeting" = "Record meeting";
+"Import media" = "Import media";
+"YouTube link" = "YouTube link";
+"Online video" = "Online video";
+"Audio recording" = "Audio recording";
+"Screen recording" = "Screen recording";
+"Live recording" = "Live recording";
+"New project" = "New project";
+"Rename project" = "Rename project";
+"Remove project" = "Remove project";
+"Project name" = "Project name";
+"Move to project" = "Move to project";
+"Remove from project" = "Remove from project";
+"Collapse %@" = "Collapse %@";
+"Expand %@" = "Expand %@";
+"Enter a project name." = "Enter a project name.";
+"Projects could not be loaded. The existing file was kept." = "Projects could not be loaded. The existing file was kept.";
+
+"Recents" = "Recents";
+
+"The session was created, but could not be added to the project." = "The session was created, but could not be added to the project.";

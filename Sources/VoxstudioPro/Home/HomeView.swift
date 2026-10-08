@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HomeView: View {
-    @AppStorage("voxella.workbench.sidebarExpanded") private var sidebarExpanded = false
+    @AppStorage("voxella.workbench.homeExpanded") private var homeExpanded = true
     @State private var sessionSearch = SessionSearchController()
     @State private var isSessionSearchPresented = false
     @Bindable private var store = WorkbenchStore.shared
@@ -13,39 +13,36 @@ struct HomeView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            WorkbenchSidebar(
-                isExpanded: isEditorActive ? .constant(false) : $sidebarExpanded,
-                onOpenSearch: presentSessionSearch
-            )
-            .frame(
-                width: isEditorActive || !sidebarExpanded
-                    ? AppTheme.Workbench.sidebarCollapsedWidth
-                    : AppTheme.Workbench.sidebarExpandedWidth
-            )
+            WorkbenchSidebar(isHomeExpanded: homeExpanded, onOpenHome: openHome)
+                .frame(width: AppTheme.Workbench.sidebarCollapsedWidth)
             Divider()
 
             VStack(spacing: 0) {
                 if isEditorActive, let editor = appState.activeProject?.editorViewModel {
-                    EditorChrome()
-                        .environment(editor)
+                    EditorChrome().environment(editor)
                 } else {
-                    WorkbenchTopBar(isSidebarExpanded: $sidebarExpanded)
+                    WorkbenchTopBar(isHomeExpanded: $homeExpanded)
                 }
                 Divider()
 
-                ZStack {
-                    if let project = appState.activeProject {
-                        embeddedEditor(project)
-                            .opacity(isEditorActive ? 1 : 0)
-                            .allowsHitTesting(isEditorActive)
-                            .accessibilityHidden(!isEditorActive)
+                HStack(spacing: 0) {
+                    if homeExpanded && !isEditorActive {
+                        WorkbenchHomePanel(onOpenSearch: presentSessionSearch)
+                            .frame(width: AppTheme.Workbench.homePanelWidth)
+                        Divider()
                     }
-                    if !isEditorActive {
-                        content
+                    ZStack {
+                        if let project = appState.activeProject {
+                            embeddedEditor(project)
+                                .opacity(isEditorActive ? 1 : 0)
+                                .allowsHitTesting(isEditorActive)
+                                .accessibilityHidden(!isEditorActive)
+                        }
+                        if !isEditorActive { content }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .top) { WorkbenchTopTipBanner() }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .top) { WorkbenchTopTipBanner() }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -78,6 +75,14 @@ struct HomeView: View {
 
     private var navigationScreen: WorkbenchScreen? {
         WorkbenchNavigator.captureCurrentScreen()
+    }
+
+    private func openHome() {
+        if isEditorActive {
+            appState.suspendEditor()
+            store.showRecentSessions()
+        }
+        homeExpanded = true
     }
 
     private func presentSessionSearch() {
@@ -237,14 +242,14 @@ struct HomeView: View {
 }
 
 private struct WorkbenchTopBar: View {
-    @Binding var isSidebarExpanded: Bool
+    @Binding var isHomeExpanded: Bool
     @Bindable private var store = WorkbenchStore.shared
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.smMd) {
             Button {
                 withAnimation(.easeInOut(duration: AppTheme.Anim.transition)) {
-                    isSidebarExpanded.toggle()
+                    isHomeExpanded.toggle()
                 }
             } label: {
                 Image(systemName: "sidebar.left")
@@ -252,8 +257,8 @@ private struct WorkbenchTopBar: View {
                     .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
             }
             .buttonStyle(.plain)
-            .help(L10n.string(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"))
-            .accessibilityLabel(L10n.string(isSidebarExpanded ? "Collapse sidebar" : "Expand sidebar"))
+            .help(L10n.string(isHomeExpanded ? "Hide Home" : "Show Home"))
+            .accessibilityLabel(L10n.string(isHomeExpanded ? "Hide Home" : "Show Home"))
 
             WorkbenchHistoryControls()
 
@@ -273,135 +278,77 @@ private struct WorkbenchTopBar: View {
 }
 
 private struct WorkbenchSidebar: View {
-    @Binding var isExpanded: Bool
-    let onOpenSearch: () -> Void
+    let isHomeExpanded: Bool
+    let onOpenHome: () -> Void
     @Bindable private var store = WorkbenchStore.shared
     @Bindable private var appState = AppState.shared
     @Bindable private var account = AccountService.shared
 
     var body: some View {
         VStack(spacing: AppTheme.Spacing.sm) {
-            WorkbenchIdentityButton(isExpanded: isExpanded)
+            WorkbenchIdentityButton(isExpanded: false)
                 .padding(.top, AppTheme.Workbench.windowControlsInset)
 
-            Button(action: onOpenSearch) {
-                HStack(spacing: AppTheme.Spacing.md) {
-                    Image(systemName: "magnifyingglass")
-                        .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
-                    if isExpanded {
-                        Text(L10n.string("Search")).font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
-                        Spacer(minLength: 0)
-                    }
-                }
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
-                .padding(.horizontal, isExpanded ? AppTheme.Spacing.md : 0)
-                .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.sidebarRowHeight, alignment: isExpanded ? .leading : .center)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(L10n.string("Search tasks (⌘K)"))
-            .accessibilityLabel(L10n.string("Search tasks"))
-
             ForEach(WorkbenchRoute.sidebarRoutes) { route in
-                Button {
-                    select(route)
-                } label: {
-                    HStack(spacing: AppTheme.Spacing.md) {
-                        route.navGlyph.view(size: 18)
-                            .frame(width: AppTheme.IconSize.mdLg, height: AppTheme.IconSize.mdLg)
-                        if isExpanded {
-                            Text(L10n.string(route.title))
-                                .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
-                            Spacer(minLength: 0)
-                        }
-                    }
-                    .foregroundStyle(isActive(route) ? AppTheme.Text.primaryColor : AppTheme.Text.tertiaryColor)
-                    .padding(.horizontal, isExpanded ? AppTheme.Spacing.md : 0)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: AppTheme.Workbench.sidebarRowHeight,
-                        alignment: isExpanded ? .leading : .center
-                    )
-                    .background(
-                        RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
-                            .fill(isActive(route) ? Color.white.opacity(AppTheme.Opacity.soft) : .clear)
-                    )
-                    .contentShape(Rectangle())
+                Button { select(route) } label: {
+                    route.navGlyph.view(size: 18)
+                        .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.sidebarRowHeight)
+                        .foregroundStyle(isActive(route) ? AppTheme.Text.primaryColor : AppTheme.Text.tertiaryColor)
+                        .background(
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.sm)
+                                .fill(isActive(route) ? AppTheme.Background.raisedColor : .clear)
+                        )
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(L10n.string(route.title))
                 .accessibilityLabel(L10n.string(route.title))
+                .accessibilityIdentifier("workbench.nav.\(route.rawValue)")
             }
-
             Spacer()
-
-            TrialSidebarStatus(isExpanded: isExpanded)
-
+            TrialSidebarStatus(isExpanded: false)
             if case .active(_)? = account.trialPresentation {
                 Divider().overlay(AppTheme.Border.subtleColor)
             }
-
-            Button {
-                SettingsWindowController.shared.show()
-            } label: {
-                HStack(spacing: AppTheme.Spacing.md) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: AppTheme.FontSize.lg, weight: .medium))
-                        .frame(width: AppTheme.IconSize.md, height: AppTheme.IconSize.md)
-                    if isExpanded {
-                        Text(L10n.string("Settings"))
-                            .font(.system(size: AppTheme.FontSize.smMd, weight: AppTheme.FontWeight.medium))
-                        Spacer(minLength: 0)
-                    }
-                }
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
-                .padding(.horizontal, isExpanded ? AppTheme.Spacing.md : 0)
-                .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.sidebarRowHeight)
-                .contentShape(Rectangle())
+            Button { SettingsWindowController.shared.show() } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: AppTheme.FontSize.lg, weight: .medium))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    .frame(maxWidth: .infinity, minHeight: AppTheme.Workbench.sidebarRowHeight)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(L10n.string("Settings"))
-
+            .accessibilityLabel(L10n.string("Settings"))
             Spacer().frame(height: AppTheme.Spacing.sm)
         }
         .padding(.horizontal, AppTheme.Spacing.smMd)
         .padding(.bottom, AppTheme.Spacing.md)
         .background(AppTheme.Background.surfaceColor)
-        .animation(.easeInOut(duration: AppTheme.Anim.transition), value: isExpanded)
     }
 
     private func isActive(_ route: WorkbenchRoute) -> Bool {
-        if appState.editorPresentation == .active {
-            return route == .videoEditor
-        }
+        if appState.editorPresentation == .active { return route == .videoEditor }
+        if isHomeExpanded { return route == .recent }
         return store.route == route || (store.route == .session && route == .recent)
     }
 
     private func select(_ route: WorkbenchRoute) {
+        store.sessionCreationProjectID = nil
+        if route == .recent { onOpenHome(); return }
         if route == .videoEditor {
-            if appState.editorPresentation == .active {
-                appState.suspendEditor()
-            }
+            if appState.editorPresentation == .active { appState.suspendEditor() }
             store.route = .videoEditor
             return
         }
-
-        if appState.editorPresentation == .active {
-            appState.suspendEditor()
-        }
-
+        if appState.editorPresentation == .active { appState.suspendEditor() }
         switch route {
-        case .recent:
-            store.showRecentSessions()
         case .transcribe:
             store.selectedTranscriptionID = nil
             store.route = .transcribe
         case .dub:
-            Task { @MainActor in
-                await store.startNewDubDraftAfterAccess()
-            }
-        default:
-            store.route = route
+            Task { @MainActor in await store.startNewDubDraftAfterAccess() }
+        default: store.route = route
         }
     }
 }

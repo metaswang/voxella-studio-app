@@ -67,6 +67,7 @@ final class MeetBotStore {
     }
 
     func manualJoin() async {
+        let projectID = WorkbenchStore.shared.sessionCreationProjectID
         guard await prepareFeatureAccess() else { return }
         errorMessage = nil
         joinResult = nil
@@ -95,6 +96,10 @@ final class MeetBotStore {
                 botName: normalizedBotName,
                 recordScreen: recordScreen
             )
+            if let result = joinResult {
+                WorkbenchStore.shared.assignCreatedSessions([result.sessionID], to: projectID, remoteOnly: true)
+            }
+            await WorkbenchStore.shared.refreshRemoteSessions()
             meetingURL = ""
             meetingTitle = ""
         } catch {

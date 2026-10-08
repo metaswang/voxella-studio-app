@@ -646,3 +646,34 @@
 "Pro includes %@× the monthly credits, giving you about %@× Starter’s transcription time." = "Pro inclut %@× les crédits mensuels et offre environ %@× le temps de transcription de Starter.";
 "Pro uses about %@%% fewer credits per hour for standard transcription." = "Pro utilise environ %@%% de crédits en moins par heure de transcription standard.";
 "Estimates use all monthly credits for standard transcription only, without translation or subtitle splitting. Other cloud features share the same credit balance." = "Ces estimations consacrent tous les crédits mensuels à la transcription standard uniquement, sans traduction ni découpage des sous-titres. Les autres fonctions cloud partagent le même solde.";
+
+/* Home sidebar and source types */
+"Home" = "Accueil";
+"Show Home" = "Afficher Accueil";
+"Hide Home" = "Masquer Accueil";
+"New session" = "Nouvelle session";
+"New session menu" = "Menu de nouvelle session";
+"Record audio" = "Enregistrer un audio";
+"Record screen" = "Enregistrer l’écran";
+"Record meeting" = "Enregistrer une réunion";
+"Import media" = "Importer un média";
+"YouTube link" = "Lien YouTube";
+"Online video" = "Vidéo en ligne";
+"Audio recording" = "Enregistrement audio";
+"Screen recording" = "Enregistrement d’écran";
+"Live recording" = "Enregistrement en direct";
+"New project" = "Nouveau projet";
+"Rename project" = "Renommer le projet";
+"Remove project" = "Retirer le projet";
+"Project name" = "Nom du projet";
+"Move to project" = "Déplacer vers un projet";
+"Remove from project" = "Retirer du projet";
+"No sessions yet" = "Aucune session pour le moment";
+"Collapse %@" = "Replier %@";
+"Expand %@" = "Déplier %@";
+"Enter a project name." = "Saisissez un nom de projet.";
+"Projects could not be loaded. The existing file was kept." = "Les projets n’ont pas pu être chargés. Le fichier existant a été conservé.";
+
+"Recents" = "Récents";
+
+"The session was created, but could not be added to the project." = "La session a été créée, mais n’a pas pu être ajoutée au projet.";

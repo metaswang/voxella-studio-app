@@ -40,6 +40,8 @@ struct RecordingSessionManifest: Codable, Equatable, Sendable {
     var trimStart: Double?
     var trimEnd: Double?
     var stopReason: String?
+    var recordingKind: WorkbenchRecordingKind? = nil
+    var sessionProjectID: UUID? = nil
 
     static let capturing = "capturing"
     static let inProgress = "inProgress"

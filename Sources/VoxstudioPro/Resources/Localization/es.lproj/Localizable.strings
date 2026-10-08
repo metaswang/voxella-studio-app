@@ -646,3 +646,34 @@
 "Pro includes %@× the monthly credits, giving you about %@× Starter’s transcription time." = "Pro incluye %@× los créditos mensuales y ofrece aproximadamente %@× el tiempo de transcripción de Starter.";
 "Pro uses about %@%% fewer credits per hour for standard transcription." = "Pro usa aproximadamente un %@%% menos de créditos por hora de transcripción estándar.";
 "Estimates use all monthly credits for standard transcription only, without translation or subtitle splitting. Other cloud features share the same credit balance." = "Las estimaciones destinan todos los créditos mensuales solo a transcripción estándar, sin traducción ni división de subtítulos. Las demás funciones en la nube comparten el mismo saldo.";
+
+/* Home sidebar and source types */
+"Home" = "Inicio";
+"Show Home" = "Mostrar Inicio";
+"Hide Home" = "Ocultar Inicio";
+"New session" = "Nueva sesión";
+"New session menu" = "Menú de nueva sesión";
+"Record audio" = "Grabar audio";
+"Record screen" = "Grabar pantalla";
+"Record meeting" = "Grabar reunión";
+"Import media" = "Importar contenido multimedia";
+"YouTube link" = "Enlace de YouTube";
+"Online video" = "Video en línea";
+"Audio recording" = "Grabación de audio";
+"Screen recording" = "Grabación de pantalla";
+"Live recording" = "Grabación en directo";
+"New project" = "Nuevo proyecto";
+"Rename project" = "Renombrar proyecto";
+"Remove project" = "Quitar proyecto";
+"Project name" = "Nombre del proyecto";
+"Move to project" = "Mover al proyecto";
+"Remove from project" = "Quitar del proyecto";
+"No sessions yet" = "Aún no hay sesiones";
+"Collapse %@" = "Contraer %@";
+"Expand %@" = "Expandir %@";
+"Enter a project name." = "Introduce un nombre de proyecto.";
+"Projects could not be loaded. The existing file was kept." = "No se pudieron cargar los proyectos. Se conservó el archivo existente.";
+
+"Recents" = "Recientes";
+
+"The session was created, but could not be added to the project." = "La sesión se creó, pero no se pudo añadir al proyecto.";

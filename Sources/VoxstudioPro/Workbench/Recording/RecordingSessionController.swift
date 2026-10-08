@@ -616,7 +616,7 @@ final class RecordingSessionController {
                    stopResult.outcome == .complete || stopResult.outcome == .partial {
                     try self.presentReview(stopResult)
                 } else if stagedURLs.count > 1 || finishMode == .salvage {
-                    WorkbenchStore.shared.stageRecordedMedia(urls: stagedURLs, sessionID: stopResult.sessionID)
+                    WorkbenchStore.shared.stageRecordedMedia(urls: stagedURLs, sessionID: stopResult.sessionID, projectID: self.activeConfiguration?.sessionProjectID)
                     self.resetToIdle()
                 } else {
                     self.stageCompletedRecording(urls: stagedURLs, sessionID: stopResult.sessionID, hasAudio: inspection.hasAudio)
@@ -667,7 +667,7 @@ final class RecordingSessionController {
 
     private func stageCompletedRecording(urls: [URL], sessionID: UUID?, hasAudio: Bool) {
         if hasAudio {
-            WorkbenchStore.shared.stageRecordedMedia(urls: urls, sessionID: sessionID)
+            WorkbenchStore.shared.stageRecordedMedia(urls: urls, sessionID: sessionID, projectID: activeConfiguration?.sessionProjectID)
         } else {
             if let sessionID { RecordingSessionManifest.markRegistered(sessionID: sessionID.uuidString, in: WorkbenchStore.recordingMediaDirectory) }
             else { RecordingSessionManifest.markRegistered(urls: urls) }
@@ -984,6 +984,7 @@ final class RecordingSessionController {
     }
 
     private func resetToIdle() {
+        configuration.sessionProjectID = nil
         startupMessage = nil
         preparationTask = nil
         stopTimer()

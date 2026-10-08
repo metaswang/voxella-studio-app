@@ -646,3 +646,34 @@
 "Pro includes %@× the monthly credits, giving you about %@× Starter’s transcription time." = "Pro は月間クレジットが %@ 倍になり、Starter の約 %@ 倍の文字起こし時間を利用できます。";
 "Pro uses about %@%% fewer credits per hour for standard transcription." = "Pro の標準文字起こしは、1 時間あたりのクレジット消費が約 %@%% 少なくなります。";
 "Estimates use all monthly credits for standard transcription only, without translation or subtitle splitting. Other cloud features share the same credit balance." = "月間クレジットをすべて標準文字起こしに使用した場合の目安です。翻訳や字幕分割は含みません。他のクラウド機能も同じクレジット残高を使用します。";
+
+/* Home sidebar and source types */
+"Home" = "ホーム";
+"Show Home" = "ホームを表示";
+"Hide Home" = "ホームを非表示";
+"New session" = "新しいセッション";
+"New session menu" = "新しいセッションのメニュー";
+"Record audio" = "音声を録音";
+"Record screen" = "画面を録画";
+"Record meeting" = "会議を録音";
+"Import media" = "メディアを読み込む";
+"YouTube link" = "YouTube リンク";
+"Online video" = "オンライン動画";
+"Audio recording" = "音声録音";
+"Screen recording" = "画面録画";
+"Live recording" = "ライブ録音";
+"New project" = "新しいプロジェクト";
+"Rename project" = "プロジェクトの名前を変更";
+"Remove project" = "プロジェクトを削除";
+"Project name" = "プロジェクト名";
+"Move to project" = "プロジェクトに移動";
+"Remove from project" = "プロジェクトから外す";
+"No sessions yet" = "セッションはまだありません";
+"Collapse %@" = "%@を折りたたむ";
+"Expand %@" = "%@を展開";
+"Enter a project name." = "プロジェクト名を入力してください。";
+"Projects could not be loaded. The existing file was kept." = "プロジェクトを読み込めませんでした。既存のファイルは保持されています。";
+
+"Recents" = "最近のセッション";
+
+"The session was created, but could not be added to the project." = "セッションは作成されましたが、プロジェクトに追加できませんでした。";

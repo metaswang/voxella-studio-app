@@ -2066,7 +2066,9 @@ final class ScreenCaptureRecordingEngine: NSObject, SCStreamOutput, SCStreamDele
             includesVideo: includesVideo,
             audioTrackCount: audioTrackCount,
             warnings: warnings,
-            stopReason: pendingStopReason.logLabel
+            stopReason: pendingStopReason.logLabel,
+            recordingKind: currentRequest?.configuration.recordingKind ?? sessionManifest?.recordingKind,
+            sessionProjectID: currentRequest?.configuration.sessionProjectID ?? sessionManifest?.sessionProjectID
         )
         sessionManifest = manifest
         let ok = RecordingSessionManifest.write(manifest)

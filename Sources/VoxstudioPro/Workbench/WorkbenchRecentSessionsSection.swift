@@ -97,7 +97,7 @@ struct WorkbenchRecentTranscriptSessionsSection: View {
     private var sessionsTable: some View {
         WorkbenchRecentSessionsTable(
             sessions: filteredSessions,
-            kindLabel: { _ in L10n.string("Import") },
+            kindLabel: { L10n.string(key: $0.sessionType.label) },
             metadata: { session in
                 [
                     session.sourceURL?.lastPathComponent,

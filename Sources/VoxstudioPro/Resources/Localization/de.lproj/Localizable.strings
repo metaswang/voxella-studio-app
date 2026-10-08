@@ -155,3 +155,35 @@
 "Pro includes %@× the monthly credits, giving you about %@× Starter’s transcription time." = "Pro enthält %@× so viele monatliche Credits und bietet etwa %@× die Transkriptionszeit von Starter.";
 "Pro uses about %@%% fewer credits per hour for standard transcription." = "Pro benötigt für Standardtranskription etwa %@%% weniger Credits pro Stunde.";
 "Estimates use all monthly credits for standard transcription only, without translation or subtitle splitting. Other cloud features share the same credit balance." = "Die Schätzungen setzen voraus, dass alle monatlichen Credits nur für Standardtranskription genutzt werden, ohne Übersetzung oder Untertitelaufteilung. Andere Cloud-Funktionen nutzen dasselbe Guthaben.";
+
+/* Home sidebar and source types */
+"Home" = "Start";
+"Show Home" = "Start anzeigen";
+"Hide Home" = "Start ausblenden";
+"New session" = "Neue Sitzung";
+"New session menu" = "Menü für neue Sitzung";
+"Record audio" = "Audio aufnehmen";
+"Record screen" = "Bildschirm aufnehmen";
+"Record meeting" = "Besprechung aufnehmen";
+"Import media" = "Medien importieren";
+"YouTube link" = "YouTube-Link";
+"Import" = "Import";
+"Online video" = "Onlinevideo";
+"Audio recording" = "Audioaufnahme";
+"Screen recording" = "Bildschirmaufnahme";
+"Live recording" = "Live-Aufnahme";
+"New project" = "Neues Projekt";
+"Rename project" = "Projekt umbenennen";
+"Remove project" = "Projekt entfernen";
+"Project name" = "Projektname";
+"Move to project" = "In Projekt verschieben";
+"Remove from project" = "Aus Projekt entfernen";
+"No sessions yet" = "Noch keine Sitzungen";
+"Collapse %@" = "%@ zuklappen";
+"Expand %@" = "%@ aufklappen";
+"Enter a project name." = "Gib einen Projektnamen ein.";
+"Projects could not be loaded. The existing file was kept." = "Projekte konnten nicht geladen werden. Die vorhandene Datei wurde beibehalten.";
+
+"Recents" = "Zuletzt verwendet";
+
+"The session was created, but could not be added to the project." = "Die Sitzung wurde erstellt, konnte aber nicht zum Projekt hinzugefügt werden.";

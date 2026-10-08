@@ -97,6 +97,8 @@ struct TranscribeWorkbenchView: View {
                     }
                     let netVideoSource = store.pendingNetVideoSource
                     let isRecordedCapture = store.pendingMediaImportOrigin == .recording
+                    let recordingKind = store.pendingRecordingKind
+                    let projectID = store.pendingMediaImportProjectID
                     var submission = submission
                     if isRecordedCapture {
                         submission.placement.storage = .local
@@ -109,7 +111,9 @@ struct TranscribeWorkbenchView: View {
                             sourceURLs: urls,
                             submission: submission,
                             netVideoSource: netVideoSource,
-                            isRecordedCapture: isRecordedCapture
+                            isRecordedCapture: isRecordedCapture,
+                            recordingKind: recordingKind,
+                            projectID: projectID
                         )
                     }
                 }
@@ -169,7 +173,7 @@ struct TranscribeWorkbenchView: View {
         let job = store.transcriptions[index]
         return VStack(spacing: 0) {
             HStack(spacing: AppTheme.Spacing.md) {
-                Image(systemName: job.isRecordedCapture ? "record.circle" : "doc.waveform")
+                job.sessionType.navGlyph.view(size: AppTheme.IconSize.mdLg)
                     .font(.system(size: AppTheme.FontSize.lg))
                     .foregroundStyle(AppTheme.Accent.link)
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
@@ -1440,12 +1444,13 @@ struct TranscribeWorkbenchView: View {
 
     private func importMedia() {
         pendingNetVideoTitle = nil
+        let projectID = store.sessionCreationProjectID
         Task {
             do {
                 try await AccountService.shared.prepareNewContentAccess()
                 let urls = await WorkbenchFilePicker.pickMediaFiles()
                 if !urls.isEmpty {
-                    store.stageMediaImport(urls)
+                    store.stageMediaImport(urls, projectID: projectID)
                 }
                 } catch is AppAccessError {
                     return
@@ -1456,6 +1461,7 @@ struct TranscribeWorkbenchView: View {
     }
 
     private func extractNetVideo() {
+        let projectID = store.sessionCreationProjectID
         let raw = netVideoURL
         guard YouTubeURL.isSupported(raw) else {
             netVideoPhase = .failed("Paste a public YouTube watch, Shorts, or youtu.be URL.")
@@ -1506,7 +1512,8 @@ struct TranscribeWorkbenchView: View {
                     mediaURL: result.fileURL,
                     sourceURL: sourceURL,
                     videoID: result.videoID,
-                    title: result.title
+                    title: result.title,
+                    projectID: projectID
                 )
                 netVideoImportID = nil
                 netVideoTask = nil

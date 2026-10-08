@@ -3185,3 +3185,33 @@
 "Unnamed person" = "未命名人物";
 "This session is no longer available." = "此会话已不可用。";
 "The session audio could not be read." = "无法读取会话音频。";
+
+/* Home sidebar and source types */
+"Home" = "主页";
+"Show Home" = "显示主页";
+"Hide Home" = "隐藏主页";
+"New session" = "新建会话";
+"New session menu" = "新建会话菜单";
+"Record audio" = "录制音频";
+"Record screen" = "录制屏幕";
+"Record meeting" = "录制会议";
+"Import media" = "导入媒体";
+"YouTube link" = "YouTube 链接";
+"Online video" = "在线视频";
+"Audio recording" = "音频录制";
+"Screen recording" = "屏幕录制";
+"Live recording" = "实时录制";
+"New project" = "新建项目";
+"Rename project" = "重命名项目";
+"Remove project" = "移除项目";
+"Project name" = "项目名称";
+"Move to project" = "移至项目";
+"Remove from project" = "从项目中移除";
+"Collapse %@" = "收起%@";
+"Expand %@" = "展开%@";
+"Enter a project name." = "请输入项目名称。";
+"Projects could not be loaded. The existing file was kept." = "无法加载项目。已保留原有文件。";
+
+"Recents" = "最近会话";
+
+"The session was created, but could not be added to the project." = "会话已创建，但未能加入项目。";

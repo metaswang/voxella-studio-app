@@ -120,7 +120,7 @@ struct LocalMeetingRecordingSection: View {
         guard recording.phase == .idle, !recording.isRequestingStart else { return }
         WorkbenchStore.shared.showLocalRecording(LocalRecordingRequest(
             mode: mode, applicationBundleIdentifier: app?.bundleIdentifier,
-            startImmediately: true, applicationProcessID: app?.processID
+            startImmediately: true, applicationProcessID: app?.processID, purpose: .meeting, sessionProjectID: WorkbenchStore.shared.sessionCreationProjectID
         ))
     }
 }

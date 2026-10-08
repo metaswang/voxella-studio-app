@@ -59,6 +59,8 @@ enum WorkbenchNavGlyph: Hashable {
     case voiceover
     case captions
     case squarePlay
+    case bookType
+    case folderOpen
     case system(String)
 
     @ViewBuilder
@@ -79,6 +81,10 @@ enum WorkbenchNavGlyph: Hashable {
         case .squarePlay:
             SquarePlayNavIcon()
                 .frame(width: size, height: size)
+        case .bookType:
+            BookTypeNavIcon().frame(width: size, height: size)
+        case .folderOpen:
+            OpenFolderNavIcon().frame(width: size, height: size)
         case .system(let name):
             Image(systemName: name)
                 .font(.system(size: size * 0.85, weight: .medium))
@@ -93,6 +99,35 @@ enum WorkbenchNavGlyph: Hashable {
         guard let image = renderer.nsImage else { return nil }
         image.isTemplate = true
         return image
+    }
+}
+
+/// Lucide BookType, matching the supplied 24×24 SVG and its rounded stroke.
+private struct BookTypeNavIcon: View {
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width, geo.size.height) / 24
+            Canvas { context, _ in
+                func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * s, y: y * s) }
+                var path = Path()
+                path.move(to: point(10, 13)); path.addLine(to: point(14, 13))
+                path.move(to: point(12, 6)); path.addLine(to: point(12, 13))
+                path.move(to: point(16, 8)); path.addLine(to: point(16, 6))
+                path.addLine(to: point(8, 6)); path.addLine(to: point(8, 8))
+                path.move(to: point(4, 19.5)); path.addLine(to: point(4, 4.5))
+                path.addCurve(to: point(6.5, 2), control1: point(4, 3.119288), control2: point(5.119288, 2))
+                path.addLine(to: point(19, 2))
+                path.addCurve(to: point(20, 3), control1: point(19.552285, 2), control2: point(20, 2.447715))
+                path.addLine(to: point(20, 21))
+                path.addCurve(to: point(19, 22), control1: point(20, 21.552285), control2: point(19.552285, 22))
+                path.addLine(to: point(6.5, 22))
+                path.addCurve(to: point(4, 19.5), control1: point(5.119288, 22), control2: point(4, 20.880712))
+                path.addCurve(to: point(6.5, 17), control1: point(4, 18.119288), control2: point(5.119288, 17))
+                path.addLine(to: point(20, 17))
+                context.stroke(path, with: .foreground, style: StrokeStyle(lineWidth: 2 * s, lineCap: .round, lineJoin: .round))
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -403,5 +438,34 @@ private struct SpeakerGlyph: View {
                 )
             }
         }
+    }
+}
+
+/// Open folder outline paired with SF Symbols' closed `folder` glyph.
+private struct OpenFolderNavIcon: View {
+    var body: some View {
+        GeometryReader { geometry in
+            let scale = min(geometry.size.width, geometry.size.height) / 20
+            Canvas { context, _ in
+                var back = Path()
+                back.move(to: CGPoint(x: 2 * scale, y: 16 * scale))
+                back.addLine(to: CGPoint(x: 2 * scale, y: 5 * scale))
+                back.addQuadCurve(to: CGPoint(x: 4 * scale, y: 3 * scale), control: CGPoint(x: 2 * scale, y: 3 * scale))
+                back.addLine(to: CGPoint(x: 8 * scale, y: 3 * scale))
+                back.addLine(to: CGPoint(x: 10 * scale, y: 5 * scale))
+                back.addLine(to: CGPoint(x: 16 * scale, y: 5 * scale))
+                back.addQuadCurve(to: CGPoint(x: 18 * scale, y: 7 * scale), control: CGPoint(x: 18 * scale, y: 5 * scale))
+                var front = Path()
+                front.move(to: CGPoint(x: 2 * scale, y: 17 * scale))
+                front.addLine(to: CGPoint(x: 5 * scale, y: 9 * scale))
+                front.addLine(to: CGPoint(x: 19 * scale, y: 9 * scale))
+                front.addLine(to: CGPoint(x: 16 * scale, y: 17 * scale))
+                front.closeSubpath()
+                let stroke = StrokeStyle(lineWidth: 1.4 * scale, lineCap: .round, lineJoin: .round)
+                context.stroke(back, with: .foreground, style: stroke)
+                context.stroke(front, with: .foreground, style: stroke)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }

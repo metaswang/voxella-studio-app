@@ -60,12 +60,16 @@ struct LocalRecordingRequest: Equatable, Sendable {
     var applicationBundleIdentifier: String?
     var startImmediately: Bool
     var applicationProcessID: Int32? = nil
+    var purpose: RecordingPurpose = .meeting
+    var sessionProjectID: UUID? = nil
 
     func configuration(from current: RecordingCaptureConfiguration) -> RecordingCaptureConfiguration {
         var result = current
         result.applyMode(mode)
         // Meeting shortcuts must include the other participants, including when using headphones.
-        result.capturesSystemAudio = true
+        result.purpose = purpose
+        result.sessionProjectID = sessionProjectID
+        if purpose == .meeting { result.capturesSystemAudio = true }
         // The shortcut preserves an explicit microphone choice, including Off.
         result.microphone = current.microphone
         return result
@@ -96,6 +100,13 @@ struct RecordingCaptureConfiguration: Equatable, Sendable {
     var capturesDeviceAudio = true
     var mobilePreset: RecordingMobilePreset = .high
     var video = RecordingVideoSettings.load()
+    var purpose: RecordingPurpose = .recording
+    var sessionProjectID: UUID? = nil
+
+    var recordingKind: WorkbenchRecordingKind {
+        if purpose == .meeting { return .meeting }
+        return capturesVideo ? .screen : .audio
+    }
 
     var capturesVideo: Bool { mode.capturesVideo }
 

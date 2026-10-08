@@ -532,7 +532,9 @@ enum AppTheme {
 
     enum Workbench {
         static var sidebarCollapsedWidth: CGFloat { AppTheme.zoomed(64) }
-        static var sidebarExpandedWidth: CGFloat { AppTheme.zoomed(216) }
+        static var homePanelWidth: CGFloat { AppTheme.zoomed(296) }
+        static var homeRowHeight: CGFloat { AppTheme.zoomed(36) }
+        static var homeSessionIndent: CGFloat { AppTheme.zoomed(28) }
         static var sidebarRowHeight: CGFloat { AppTheme.zoomed(38) }
         /// Compact top chrome for the main canvas (titlebar strip, not stacked under it).
         static var toolbarHeight: CGFloat { AppTheme.zoomed(32) }

@@ -17,7 +17,7 @@ enum WorkbenchRoute: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .recent: "Recent"
+        case .recent: "Home"
         case .dashboard: "Create"
         case .transcribe: "Transcribe"
         case .meetBot: "Meeting Recorder"
@@ -31,7 +31,7 @@ enum WorkbenchRoute: String, Codable, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .recent: "clock"
+        case .recent: "house"
         case .dashboard: "square.grid.2x2"
         case .transcribe: "text.bubble"
         case .meetBot: "calendar.badge.clock"
@@ -289,6 +289,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
     var cloudSyncState: DubCloudSyncState?
     var pendingCloudSyncError: String?
     var isRecordedCapture = false
+    var recordingKind: WorkbenchRecordingKind?
     /// Enhanced listen-track path (playback/export). ASR always uses `sourcePath`.
     var listenAudioPath: String?
     var listenEnhanceState: ListenEnhanceState = .idle
@@ -501,7 +502,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         case candidatePersonIDs, speakerIdentities
         case storage, compute, remoteSessionID, localCachePath
         case cloudSyncRevision, cloudSyncState, pendingCloudSyncError
-        case isRecordedCapture
+        case isRecordedCapture, recordingKind
         case listenAudioPath, listenEnhanceState
     }
 
@@ -555,6 +556,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         cloudSyncState: DubCloudSyncState? = nil,
         pendingCloudSyncError: String? = nil,
         isRecordedCapture: Bool = false,
+        recordingKind: WorkbenchRecordingKind? = nil,
         listenAudioPath: String? = nil,
         listenEnhanceState: ListenEnhanceState = .idle,
         transcriptDisplayLanguageCode: String? = nil,
@@ -609,6 +611,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         self.cloudSyncState = cloudSyncState
         self.pendingCloudSyncError = pendingCloudSyncError
         self.isRecordedCapture = isRecordedCapture
+        self.recordingKind = recordingKind
         self.listenAudioPath = listenAudioPath
         self.listenEnhanceState = listenEnhanceState
         self.transcriptDisplayLanguageCode = transcriptDisplayLanguageCode
@@ -701,6 +704,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         cloudSyncState = try container.decodeIfPresent(DubCloudSyncState.self, forKey: .cloudSyncState)
         pendingCloudSyncError = try container.decodeIfPresent(String.self, forKey: .pendingCloudSyncError)
         isRecordedCapture = try container.decodeIfPresent(Bool.self, forKey: .isRecordedCapture) ?? false
+        recordingKind = try container.decodeIfPresent(WorkbenchRecordingKind.self, forKey: .recordingKind)
         listenAudioPath = try container.decodeIfPresent(String.self, forKey: .listenAudioPath)
         listenEnhanceState = try container.decodeIfPresent(ListenEnhanceState.self, forKey: .listenEnhanceState) ?? .idle
         if legacyReady && progress > 0 {
@@ -766,6 +770,7 @@ struct WorkbenchTranscriptionJob: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(cloudSyncState, forKey: .cloudSyncState)
         try container.encodeIfPresent(pendingCloudSyncError, forKey: .pendingCloudSyncError)
         try container.encode(isRecordedCapture, forKey: .isRecordedCapture)
+        try container.encodeIfPresent(recordingKind, forKey: .recordingKind)
         try container.encodeIfPresent(listenAudioPath, forKey: .listenAudioPath)
         try container.encode(listenEnhanceState, forKey: .listenEnhanceState)
     }
@@ -1041,53 +1046,6 @@ enum WorkbenchMediaImportOrigin: String, Equatable, Sendable {
 enum WorkbenchSessionSource: String, Sendable {
     case media
     case standaloneDub
-}
-
-enum WorkbenchSessionType: String, Sendable {
-    case upload
-    case netVideo = "net_video"
-    case record
-    case live
-    case meetingRecord = "meeting_record"
-    case googleMeet = "google_meet"
-    case dub
-
-    init(sourceType: String?, isDub: Bool = false) {
-        if isDub {
-            self = .dub
-            return
-        }
-        let normalized = sourceType?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        self = WorkbenchSessionType(rawValue: normalized ?? "") ?? .upload
-    }
-
-    var label: String {
-        switch self {
-        case .upload: "Upload Transcribe"
-        case .netVideo: "Net Video Transcribe"
-        case .record: "Record Transcribe"
-        case .live: "Live Transcribe"
-        case .meetingRecord: "Meeting"
-        case .googleMeet: "Google Meet"
-        case .dub: "AI Voiceover"
-        }
-    }
-
-    var navGlyph: WorkbenchNavGlyph {
-        switch self {
-        case .upload: .captions
-        case .netVideo: .squarePlay
-        case .record: .system("mic")
-        case .live: .system("dot.radiowaves.left.and.right")
-        case .meetingRecord, .googleMeet: .meetBot
-        case .dub: .voiceover
-        }
-    }
-
-    /// Shown in Recent session metadata. Upload omits a type label (icon is enough).
-    var showsRecentListLabel: Bool {
-        self != .upload
-    }
 }
 
 enum WorkbenchNetVideoPlatform: String, Sendable {
@@ -1518,6 +1476,7 @@ enum WorkbenchPersistenceGuard {
 actor WorkbenchPersistence {
     private let URL: URL
     private var latestRevision = 0
+    private(set) var recordingMetadataMigrated = false
     /// After a decode failure, refuse to write so we never clobber a corrupt/unreadable workbench with an empty snapshot.
     private var denyOverwriteAfterCorruptLoad = false
 
@@ -1526,6 +1485,7 @@ actor WorkbenchPersistence {
     }
 
     func load() -> (WorkbenchSnapshot?, WorkbenchSnapshotLoadOutcome) {
+        recordingMetadataMigrated = false
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: URL.path) else {
             return (nil, .missing)
@@ -1534,7 +1494,14 @@ actor WorkbenchPersistence {
             return (nil, .missing)
         }
         do {
-            let snapshot = try JSONDecoder().decode(WorkbenchSnapshot.self, from: data)
+            var snapshot = try JSONDecoder().decode(WorkbenchSnapshot.self, from: data)
+            for index in snapshot.transcriptions.indices {
+                let job = snapshot.transcriptions[index]
+                if job.isRecordedCapture, job.recordingKind == nil {
+                    snapshot.transcriptions[index].recordingKind = WorkbenchRecordingKind.recordedSource(at: job.sourceURL)
+                    recordingMetadataMigrated = true
+                }
+            }
             return (snapshot, .loaded)
         } catch {
             denyOverwriteAfterCorruptLoad = true
@@ -1650,6 +1617,7 @@ final class WorkbenchStore {
     private let persistence: WorkbenchPersistence
     private var hasHydrated = false
     private var pendingNewDubDraft = false
+    private var pendingNewDubProjectID: UUID?
     private var saveRequestedBeforeHydration = false
     private var saveRevision = 0
     private(set) var remoteSessions: [UUID: WorkbenchSession] = [:]
@@ -1731,10 +1699,7 @@ final class WorkbenchStore {
                 modifiedAt: max(job.modifiedAt, dub?.modifiedAt ?? job.modifiedAt),
                 state: Self.combinedState(primary: job.state, secondary: dub?.state),
                 source: .media,
-                sessionType: {
-                    if job.isRecordedCapture { return .record }
-                    return job.netVideoSourceURL == nil ? .upload : .netVideo
-                }(),
+                sessionType: job.sessionType,
                 transcriptionID: job.id,
                 dubID: dub?.id,
                 sourceURL: job.sourceURL,
@@ -1816,6 +1781,7 @@ final class WorkbenchStore {
     }
 
     func openSession(_ id: UUID) {
+        sessionCreationProjectID = nil
         guard let session = sessions.first(where: { $0.id == id }) else { return }
         remoteSessionLoadTask?.cancel()
         remoteSessionLoadTask = nil
@@ -2201,17 +2167,23 @@ final class WorkbenchStore {
     var pendingNetVideoSource: WorkbenchNetVideoSource?
     var pendingMediaImportOrigin: WorkbenchMediaImportOrigin = .files
     var pendingRecordingSessionID: UUID?
+    var pendingRecordingKind: WorkbenchRecordingKind?
+    /// Destination of the current new-session workspace, captured by each async flow.
+    var sessionCreationProjectID: UUID?
+    var pendingMediaImportProjectID: UUID?
     /// Open the transcribe empty state on the Net Video entry instead of file import.
     var preferNetVideoEntry = false
     var preferRecordEntry = false
     /// One-shot capture request consumed when the Record entry becomes visible.
     var pendingLocalRecording: LocalRecordingRequest?
 
-    func stageMediaImport(_ urls: [URL]) {
+    func stageMediaImport(_ urls: [URL], projectID: UUID? = nil) {
+        pendingMediaImportProjectID = projectID
         transcriptionAdmissionError = nil
         pendingNetVideoSource = nil
         pendingMediaImportOrigin = .files
         pendingRecordingSessionID = nil
+        pendingRecordingKind = nil
         pendingMediaImportURLs = urls
         selectedTranscriptionID = nil
         route = .transcribe
@@ -2221,8 +2193,10 @@ final class WorkbenchStore {
         mediaURL: URL,
         sourceURL: URL,
         videoID: String,
-        title: String?
+        title: String?,
+        projectID: UUID? = nil
     ) {
+        pendingMediaImportProjectID = projectID
         transcriptionAdmissionError = nil
         pendingNetVideoSource = WorkbenchNetVideoSource(
             sourceURL: sourceURL,
@@ -2233,6 +2207,7 @@ final class WorkbenchStore {
         )
         pendingMediaImportOrigin = .netVideo
         pendingRecordingSessionID = nil
+        pendingRecordingKind = nil
         pendingMediaImportURLs = [mediaURL]
         selectedTranscriptionID = nil
         route = .transcribe
@@ -2257,11 +2232,16 @@ final class WorkbenchStore {
         stageRecordedMedia(urls: [url], sessionID: sessionID)
     }
 
-    func stageRecordedMedia(urls: [URL], sessionID: UUID? = nil) {
+    func stageRecordedMedia(urls: [URL], sessionID: UUID? = nil, projectID: UUID? = nil) {
+        let manifest = urls.first.flatMap { url in
+            try? JSONDecoder().decode(RecordingSessionManifest.self, from: Data(contentsOf: RecordingSessionManifest.manifestURL(for: url)))
+        }
+        pendingMediaImportProjectID = projectID ?? manifest?.sessionProjectID
         transcriptionAdmissionError = nil
         pendingNetVideoSource = nil
         pendingMediaImportOrigin = .recording
         pendingRecordingSessionID = sessionID
+        pendingRecordingKind = urls.first.map(WorkbenchRecordingKind.recordedSource(at:))
         pendingMediaImportURLs = urls
         selectedTranscriptionID = nil
         preferRecordEntry = true
@@ -2284,10 +2264,12 @@ final class WorkbenchStore {
                 RecordingSessionManifest.markRegistered(urls: pendingMediaImportURLs)
             }
         }
+        pendingMediaImportProjectID = nil
         pendingMediaImportURLs = []
         pendingNetVideoSource = nil
         pendingMediaImportOrigin = .files
         pendingRecordingSessionID = nil
+        pendingRecordingKind = nil
     }
 
     func discardPendingMediaImport() {
@@ -2303,19 +2285,23 @@ final class WorkbenchStore {
             } else {
                 RecordingSessionManifest.markRegistered(urls: pendingMediaImportURLs)
             }
+            pendingMediaImportProjectID = nil
             pendingMediaImportURLs = []
             pendingNetVideoSource = nil
             pendingMediaImportOrigin = .files
             pendingRecordingSessionID = nil
+            pendingRecordingKind = nil
             return
         }
         for url in pendingMediaImportURLs {
             Self.removeManagedClipMediaIfNeeded(url)
         }
+        pendingMediaImportProjectID = nil
         pendingMediaImportURLs = []
         pendingNetVideoSource = nil
         pendingMediaImportOrigin = .files
         pendingRecordingSessionID = nil
+        pendingRecordingKind = nil
     }
 
     func showNetVideoImport() {
@@ -2326,6 +2312,8 @@ final class WorkbenchStore {
     }
 
     func showRecordImport() {
+        let recording = RecordingSessionController.shared
+        if recording.phase == .idle && !recording.isRequestingStart { recording.configuration.purpose = .recording }
         transcriptionAdmissionError = nil
         preferRecordEntry = true
         selectedTranscriptionID = nil
@@ -2397,7 +2385,9 @@ final class WorkbenchStore {
         submission: TranscriptionSubmission,
         openSessionWhenDone: Bool = true,
         netVideoSource: WorkbenchNetVideoSource? = nil,
-        isRecordedCapture: Bool = false
+        isRecordedCapture: Bool = false,
+        recordingKind: WorkbenchRecordingKind? = nil,
+        projectID: UUID? = nil
     ) -> UUID? {
         guard admitNewContent() else { return nil }
         transcriptionAdmissionError = nil
@@ -2435,6 +2425,9 @@ final class WorkbenchStore {
             job.placement = submission.placement
             job.isRecordedCapture = isRecordedCapture
             if isRecordedCapture {
+                job.recordingKind = recordingKind ?? WorkbenchRecordingKind.recordedSource(at: url)
+            }
+            if isRecordedCapture {
                 if let existing = ListenTrackLocator.existingListenURL(forMaster: url) {
                     job.listenAudioPath = existing.path
                     job.listenEnhanceState = .ready
@@ -2455,6 +2448,7 @@ final class WorkbenchStore {
         }
         let jobIDs = created.map(\.id)
         transcriptions.insert(contentsOf: created.reversed(), at: 0)
+        assignCreatedSessions(jobIDs, to: projectID)
 
         activeTranscriptionBatch = TranscriptionBatchState(id: batchID, jobIDs: jobIDs)
         selectedTranscriptionID = jobIDs.first
@@ -2475,7 +2469,9 @@ final class WorkbenchStore {
         submission: TranscriptionSubmission,
         openSessionWhenDone: Bool = true,
         netVideoSource: WorkbenchNetVideoSource? = nil,
-        isRecordedCapture: Bool = false
+        isRecordedCapture: Bool = false,
+        recordingKind: WorkbenchRecordingKind? = nil,
+        projectID: UUID? = nil
     ) async -> UUID? {
         do {
             try await AccountService.shared.prepareNewContentAccess()
@@ -2484,7 +2480,9 @@ final class WorkbenchStore {
                 submission: submission,
                 openSessionWhenDone: openSessionWhenDone,
                 netVideoSource: netVideoSource,
-                isRecordedCapture: isRecordedCapture
+                isRecordedCapture: isRecordedCapture,
+                recordingKind: recordingKind,
+                projectID: projectID
             )
         } catch is AppAccessError {
             transcriptionAdmissionError = nil
@@ -2674,11 +2672,25 @@ final class WorkbenchStore {
         }
     }
 
+    func assignCreatedSessions(_ ids: [UUID], to projectID: UUID?, remoteOnly: Bool = false) {
+        guard let projectID else { return }
+        do {
+            try WorkbenchProjectsStore.shared.addNewSessions(ids, to: projectID, remoteOnly: remoteOnly)
+        } catch {
+            Log.project.error("new session project assignment failed: \(error.localizedDescription)")
+            WorkbenchTipCenter.shared.show(
+                L10n.string("The session was created, but could not be added to the project."),
+                kind: .warning, autoDismiss: false
+            )
+        }
+    }
+
     /// Starts a blank Dub workspace while preserving the most recently used settings.
-    func startNewDubDraft() {
+    func startNewDubDraft(projectID: UUID? = nil) {
         guard admitNewContent() else { return }
         guard hasHydrated else {
             pendingNewDubDraft = true
+            pendingNewDubProjectID = projectID
             selectedDubID = nil
             selectedSessionID = nil
             route = .dub
@@ -2694,16 +2706,17 @@ final class WorkbenchStore {
             dubs.remove(at: selectedIndex)
         }
         dubs.insert(job, at: 0)
+        assignCreatedSessions([job.id], to: projectID)
         selectedDubID = job.id
         selectedSessionID = nil
         route = .dub
         save()
     }
 
-    func startNewDubDraftAfterAccess() async {
+    func startNewDubDraftAfterAccess(projectID: UUID? = nil) async {
         do {
             try await AccountService.shared.prepareNewContentAccess()
-            startNewDubDraft()
+            startNewDubDraft(projectID: projectID)
         } catch is AppAccessError {
             transcriptionAdmissionError = nil
         } catch {
@@ -6521,6 +6534,7 @@ final class WorkbenchStore {
 
     private func hydrate() async {
         let (snapshot, loadOutcome) = await persistence.load()
+        let recordingMetadataMigrated = await persistence.recordingMetadataMigrated
         let resumableCloudDubs = snapshot?.dubs.filter { job in
             job.state == .running
                 && job.placement.needsAuthentication
@@ -6544,7 +6558,9 @@ final class WorkbenchStore {
         schedulePersistedCloudSyncs()
         if pendingNewDubDraft {
             pendingNewDubDraft = false
-            startNewDubDraft()
+            let projectID = pendingNewDubProjectID
+            pendingNewDubProjectID = nil
+            startNewDubDraft(projectID: projectID)
             return
         }
         // Corrupt on-disk snapshot: never persist an empty in-memory state over it.
@@ -6555,6 +6571,7 @@ final class WorkbenchStore {
             return
         }
         if saveRequestedBeforeHydration
+            || recordingMetadataMigrated
             || snapshot?.transcriptions.contains(where: Self.needsLaunchRecovery) == true
             || snapshot?.dubs.contains(where: Self.needsLaunchRecovery) == true {
             saveRequestedBeforeHydration = false
@@ -6827,7 +6844,7 @@ final class WorkbenchStore {
             modifiedAt: detail.updatedAt ?? detail.createdAt ?? Date(),
             state: Self.remoteState(status: detail.status, resultReady: detail.resultReady),
             source: isDub ? .standaloneDub : .media,
-            sessionType: WorkbenchSessionType(sourceType: detail.sourceType, isDub: isDub),
+            sessionType: WorkbenchSessionType(sourceType: detail.sourceType, isDub: isDub, capturesVideo: resolvedMediaHasVideo),
             transcriptionID: nil,
             dubID: nil,
             sourceURL: nil,
