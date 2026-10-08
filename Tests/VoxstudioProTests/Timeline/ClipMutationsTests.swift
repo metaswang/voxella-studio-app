@@ -708,17 +708,27 @@ struct TimelineUndoRedoTests {
         ])
         let undoManager = UndoManager()
         e.undo.attach(undoManager)
+        // Pin by id: moving the only clip off track 0 prunes it, shifting indices.
+        let srcTrackId = e.timeline.tracks[0].id
+        let destTrackId = e.timeline.tracks[1].id
+        func clip(on trackId: String) -> Clip? {
+            e.timeline.tracks.first { $0.id == trackId }?.clips.first { $0.id == "c1" }
+        }
 
         e.moveClips([(clipId: "c1", toTrack: 1, toFrame: 100)])
         #expect(e.undo.canUndo)
-        #expect(e.timeline.tracks[1].clips.contains { $0.id == "c1" && $0.startFrame == 100 })
+        #expect(e.timeline.tracks.map(\.id) == [destTrackId])
+        #expect(clip(on: destTrackId)?.startFrame == 100)
 
         #expect(e.undo.undoLatest() == "Move Clip")
-        #expect(e.timeline.tracks[0].clips.contains { $0.id == "c1" && $0.startFrame == 0 })
+        #expect(e.timeline.tracks.map(\.id) == [srcTrackId, destTrackId])
+        #expect(clip(on: srcTrackId)?.startFrame == 0)
+        #expect(clip(on: destTrackId) == nil)
         #expect(e.undo.canRedo)
 
         #expect(e.undo.redoLatest() == "Move Clip")
-        #expect(e.timeline.tracks[1].clips.contains { $0.id == "c1" && $0.startFrame == 100 })
+        #expect(e.timeline.tracks.map(\.id) == [destTrackId])
+        #expect(clip(on: destTrackId)?.startFrame == 100)
     }
 
     @Test func commitTrimUndoRedoRoundTrip() {
