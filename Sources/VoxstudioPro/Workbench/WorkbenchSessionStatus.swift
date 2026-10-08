@@ -182,6 +182,9 @@ struct SessionTaskDetail: Equatable, Sendable {
 }
 
 struct SessionStatusBadge: View {
+    /// Refresh-style glyph for active work; it spins while the task is running.
+    private static let activitySymbol = "arrow.trianglehead.2.clockwise.rotate.90"
+
     let status: WorkbenchSessionStatus
     let processing: SessionProcessingSnapshot?
     let iconOnlyAttention: Bool
@@ -274,13 +277,20 @@ struct SessionStatusBadge: View {
 
     private var compactStatus: some View {
         HStack(spacing: AppTheme.Spacing.xs) {
-            statusLabel(status.primaryLabel, systemImage: systemImage, color: color, attention: !status.hasUsableResult && status.needsAttention)
+            statusLabel(
+                status.primaryLabel,
+                systemImage: systemImage,
+                color: color,
+                attention: !status.hasUsableResult && status.needsAttention,
+                spins: systemImage == Self.activitySymbol
+            )
             if let secondaryLabel = status.secondaryLabel {
                 statusLabel(
                     secondaryLabel,
                     systemImage: secondarySystemImage,
                     color: secondaryColor,
-                    attention: status.needsAttention
+                    attention: status.needsAttention,
+                    spins: secondarySystemImage == Self.activitySymbol
                 )
             }
         }
@@ -298,7 +308,7 @@ struct SessionStatusBadge: View {
     }
 
     private func statusLabel(
-        _ title: String, systemImage: String, color: Color, attention: Bool = false
+        _ title: String, systemImage: String, color: Color, attention: Bool = false, spins: Bool = false
     ) -> some View {
         let issues = status.tasks.filter { $0.state.needsAttention }
         let issueTitle = issues.first.map { L10n.format("%@ · %@", L10n.string(key: $0.title), L10n.string(key: $0.statusLabel)) }
@@ -308,7 +318,7 @@ struct SessionStatusBadge: View {
                 .filter { !$0.isEmpty }.joined(separator: ": ")
         }.joined(separator: "\n\n")
         return Label(label, systemImage: systemImage)
-            .labelStyle(AttentionLabelStyle(iconOnly: attention && iconOnlyAttention))
+            .labelStyle(AttentionLabelStyle(iconOnly: attention && iconOnlyAttention, spinsIcon: spins))
             .font(.system(size: AppTheme.FontSize.xs, weight: AppTheme.FontWeight.medium))
             .foregroundStyle(color)
             .padding(.horizontal, attention && iconOnlyAttention ? AppTheme.Spacing.sm : AppTheme.Spacing.md)
@@ -412,7 +422,7 @@ struct SessionStatusBadge: View {
         return switch status.displayTaskState {
         case .completed: "checkmark.circle.fill"
         case .failed, .interrupted, .unknown: "exclamationmark.triangle.fill"
-        case .running, .cancelling: "arrow.trianglehead.2.clockwise.rotate.90"
+        case .running, .cancelling: Self.activitySymbol
         case .queued: "clock"
         case .notStarted: "circle"
         case .cancelled: "xmark.circle"
@@ -427,16 +437,43 @@ struct SessionStatusBadge: View {
         if status.needsAttention { return "exclamationmark.triangle.fill" }
         if status.displayTaskState == .cancelled { return "xmark.circle" }
         if status.displayTaskState == .queued { return "clock" }
-        return "arrow.trianglehead.2.clockwise.rotate.90"
+        return Self.activitySymbol
     }
 }
 
 private struct AttentionLabelStyle: LabelStyle {
     let iconOnly: Bool
+    var spinsIcon = false
+
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: AppTheme.Spacing.xs) {
             configuration.icon
+                .modifier(SpinningIconModifier(active: spinsIcon))
             if !iconOnly { configuration.title }
+        }
+    }
+}
+
+/// Rotates an icon continuously while `active`, and holds it still under Reduce Motion.
+private struct SpinningIconModifier: ViewModifier {
+    let active: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var angle: Double = 0
+
+    func body(content: Content) -> some View {
+        content
+            .rotationEffect(.degrees(angle))
+            .onAppear { updateSpin(isActive: active) }
+            .onChange(of: active) { _, isActive in updateSpin(isActive: isActive) }
+            .onChange(of: reduceMotion) { _, _ in updateSpin(isActive: active) }
+    }
+
+    private func updateSpin(isActive: Bool) {
+        angle = 0
+        guard isActive, !reduceMotion else { return }
+        withAnimation(.linear(duration: AppTheme.Anim.spin).repeatForever(autoreverses: false)) {
+            angle = 360
         }
     }
 }
