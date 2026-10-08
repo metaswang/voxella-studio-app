@@ -3215,3 +3215,8 @@
 "Recents" = "Recents";
 
 "The session was created, but could not be added to the project." = "The session was created, but could not be added to the project.";
+
+"Add to project" = "Add to project";
+"Change project" = "Change project";
+"No projects yet" = "No projects yet";
+"Project: %@" = "Project: %@";

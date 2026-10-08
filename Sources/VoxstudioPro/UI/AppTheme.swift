@@ -546,6 +546,9 @@ enum AppTheme {
         static var dubSheetWidth: CGFloat { AppTheme.zoomed(520) }
         static var voiceRowMinHeight: CGFloat { AppTheme.zoomed(92) }
         static var sessionHeaderMinHeight: CGFloat { AppTheme.zoomed(92) }
+        static var sessionProjectNameMaxWidth: CGFloat { AppTheme.zoomed(150) }
+        static var sessionProjectPopoverWidth: CGFloat { AppTheme.zoomed(260) }
+        static var sessionProjectListMaxHeight: CGFloat { AppTheme.zoomed(240) }
         static var sessionTabBarMinHeight: CGFloat { AppTheme.zoomed(34) }
         static let sessionSplitDefaultRatio: CGFloat = 0.5
         static let sessionSplitMinimumRatio: CGFloat = 0.3
