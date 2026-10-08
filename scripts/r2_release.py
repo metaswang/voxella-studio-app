@@ -926,37 +926,46 @@ def verify_prepared(prepared: PreparedRelease, *, origin: str = PUBLIC_ORIGIN,
     if url not in prepared_appcast_xml:
         raise PublishError("prepared appcast enclosure is not the immutable version URL")
     
-    # Verify delta URLs if present in prepared appcast
-    state = load_state(staging_root / "state.json") if staging_root else {}
-    deltas_info = state.get("deltas", [])
-    if deltas_info:
-        log(f"verifying {len(deltas_info)} delta URL(s)")
-        # Parse appcast to extract delta URLs
-        tree = ET.ElementTree(ET.fromstring(prepared_appcast_xml))
-        root = tree.getroot()
-        ns = {"sparkle": "http://www.andymatuschak.org/xml-namespaces/sparkle"}
-        channel = root.find("channel")
-        if channel:
-            for item in channel.findall("item"):
-                deltas_elem = item.find(f"sparkle:deltas", ns)
-                if deltas_elem is not None:
-                    for delta_enc in deltas_elem.findall("enclosure"):
-                        delta_url = delta_enc.get("url", "")
-                        expected_length = delta_enc.get("length", "")
-                        if delta_url:
-                            # HEAD request to verify delta is accessible
-                            delta_request = urllib.request.Request(delta_url, method="HEAD", headers={"User-Agent": PUBLIC_USER_AGENT})
-                            try:
-                                with urllib.request.urlopen(delta_request, timeout=30) as resp:
-                                    if resp.status != 200:
-                                        raise PublishError(f"delta URL {delta_url} returned status {resp.status}")
-                                    actual_length = resp.headers.get("Content-Length", "")
-                                    if expected_length and actual_length and actual_length != expected_length:
-                                        raise PublishError(f"delta URL {delta_url} Content-Length {actual_length} != expected {expected_length}")
-                                log(f"verified delta URL: {delta_url} (length={actual_length})")
-                            except urllib.error.URLError as e:
-                                raise PublishError(f"delta URL {delta_url} is not accessible: {e}") from e
-    
+    # Verify delta URLs from the prepared appcast itself. Artifact state is
+    # rewritten as publish stages complete, so it is not a reliable source for
+    # the delta manifest after upload.
+    tree = ET.ElementTree(ET.fromstring(prepared_appcast_xml))
+    root = tree.getroot()
+    ns = {"sparkle": "http://www.andymatuschak.org/xml-namespaces/sparkle"}
+    channel = root.find("channel")
+    delta_enclosures = []
+    if channel:
+        for item in channel.findall("item"):
+            deltas_elem = item.find("sparkle:deltas", ns)
+            if deltas_elem is not None:
+                delta_enclosures.extend(deltas_elem.findall("enclosure"))
+
+    if delta_enclosures:
+        log(f"verifying {len(delta_enclosures)} delta URL(s)")
+        for delta_enc in delta_enclosures:
+            delta_url = delta_enc.get("url", "")
+            expected_length = delta_enc.get("length", "")
+            if not delta_url:
+                continue
+            # HEAD request to verify delta is accessible
+            delta_request = urllib.request.Request(
+                delta_url,
+                method="HEAD",
+                headers={"User-Agent": PUBLIC_USER_AGENT},
+            )
+            try:
+                with urllib.request.urlopen(delta_request, timeout=30) as resp:
+                    if resp.status != 200:
+                        raise PublishError(f"delta URL {delta_url} returned status {resp.status}")
+                    actual_length = resp.headers.get("Content-Length", "")
+                    if expected_length and actual_length and actual_length != expected_length:
+                        raise PublishError(
+                            f"delta URL {delta_url} Content-Length {actual_length} != {expected_length}"
+                        )
+                log(f"verified delta URL: {delta_url} (length={actual_length})")
+            except urllib.error.URLError as e:
+                raise PublishError(f"delta URL {delta_url} is not accessible: {e}") from e
+
     log(f"verified size={size} sha256={digest} live_appcast_has_this_release={url in current_appcast}")
     if evidence.get("etag") != f'"{prepared.sha256}"':
         raise PublishError("download ETag does not match prepared SHA-256")

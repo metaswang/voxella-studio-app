@@ -31,5 +31,17 @@ acceptance even when the bundle path and identifier are unchanged.
 1. Check the current worktree without modifying unrelated changes.
 2. Run the command above from the repository root.
 3. Confirm `.build/VoxStudio.app` is Developer ID signed and that the app opened.
+   Verify the running executable is the artifact just built, for example with
+   `ps -axo pid=,command= | rg '/VoxStudio.app/Contents/MacOS/VoxStudio'`.
+   Check for a concurrently running `/Applications/VoxStudio.app`, especially a
+   TestFlight installation. If process inspection or quitting is blocked by the
+   execution environment, resolve that limitation rather than treating
+   `pkill ... || true` or a successful `open` as proof of a fresh launch.
 4. Keep the launched process running and report the launch result. Mention build
    warnings only if startup fails.
+
+MAS and non-MAS packaging both replace `.build/VoxStudio.app`. A path previously
+used for a signed build does not identify its current channel. When Screen
+Recording looks enabled but capture is denied, compare the current signature
+and `tccd` requirement using the debug-build skill's
+[Signing and TCC reference](../voxstudio-debug-build/references/signing-and-tcc.md).

@@ -49,6 +49,13 @@ build to testers.
 - When a DMG and TestFlight build are intentionally paired, use the exact same
   `CFBundleShortVersionString` and `CFBundleVersion` and record both channel
   artifacts separately.
+- The uploaded app's signature is not the installed TestFlight signature. This
+  repository's installed TestFlight app was signed by `TestFlight Beta
+  Distribution`. TestFlight, local MAS debug, and Developer ID can have different
+  TCC requirements despite sharing `com.voxella.studio`. Both packaging channels
+  also replace `.build/VoxStudio.app`; verify the actual artifact and running
+  executable before local capture acceptance. For an enabled permission row
+  beside a denial, use [Signing and TCC](../voxstudio-debug-build/references/signing-and-tcc.md).
 - The current first non-consumable IAP may require a later app-version review
   submission. A TestFlight upload does not authorize or complete that review
   submission.

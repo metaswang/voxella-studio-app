@@ -25,6 +25,31 @@ Application identity and
 Both Display and Region then produced frames and system audio without resetting
 the grant.
 
+## TestFlight and Developer ID can also conflict
+
+The 2026-10-07 incident had a correct Developer ID signature. `tccd` rejected
+ScreenCapture at 13:25 because the existing grant required the installed
+TestFlight app's signature. The observed designated requirements differed:
+
+- `/Applications/VoxStudio.app`: `TestFlight Beta Distribution`, with leaf
+  certificate OID `1.2.840.113635.100.6.1.25.1`;
+- `.build/VoxStudio.app`: `Developer ID Application`, with leaf certificate OID
+  `1.2.840.113635.100.6.1.13` and Team ID `4DMAQ32SNU`.
+
+The two apps shared `com.voxella.studio` and were running simultaneously. Later,
+the grant matched Developer ID and rejected the TestFlight app instead. After
+quitting both instances and rebuilding `debug --sign`, Display, App, and Region
+all exported playable video with the reverted capture code; no TCC reset was
+performed during that acceptance run.
+
+A valid signature does not make consent recorded for another channel match.
+Compare the grant requirement in `tccd` with the actual running artifact before
+changing capture code. When switching channels, verify the intended app's
+permission; an enabled VoxStudio row alone is insufficient evidence. If the
+correctly signed intended channel remains denied, re-authorize that artifact
+through System Settings with the user's authorization. Keep local acceptance
+on one channel and quit other instances.
+
 ## Compare identity before touching TCC
 
 Inspect the current artifact:
@@ -55,7 +80,10 @@ from the selected signing identity.
 
 ## Diagnose a permission mismatch
 
-1. Quit every VoxStudio process so the next launch cannot reuse an old binary.
+1. Inspect running executable paths, including `/Applications/VoxStudio.app`
+   and `.build/VoxStudio.app`. Quit every VoxStudio process so the next launch
+   cannot reuse an old binary. Confirm they actually exited; `pkill ... || true`
+   can hide a process-access failure in a restricted execution environment.
 2. Rebuild in the intended channel and inspect its authority and designated
    requirement.
 3. Observe `tccd` while reproducing the exact operation:
@@ -69,7 +97,9 @@ from the selected signing identity.
    preflight beside an enabled UI toggle as a signing/TCC identity problem first.
 5. Correct the identity/profile pairing, rebuild, quit, and relaunch. Only after
    the identity is correct should the user toggle or remove/re-add the permission
-   row if macOS still caches a denial.
+   row if the grant belongs to a different channel or macOS still caches a
+   denial. If the pairing is already correct, do not change it merely to match
+   consent for another channel.
 
 Do not begin with `tccutil reset`. Resetting permissions does not repair a wrong
 signature and unnecessarily discards valid user consent. Never edit the TCC
@@ -100,4 +130,3 @@ database directly.
 - Authority is ad-hoc and the app uses the debug entitlements.
 - It deliberately uses an isolated in-memory credential store.
 - Its privacy grants and Keychain behavior are not release acceptance evidence.
-

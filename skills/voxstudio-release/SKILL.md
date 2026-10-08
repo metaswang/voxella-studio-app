@@ -67,6 +67,10 @@ For shader packaging or hardware/OS qualification, read [Metal compatibility](re
   leave System Settings showing Screen Recording enabled while Display/Region
   preflight fails with a `tccd` requirement mismatch. Fix the identity/profile
   pairing before resetting permissions.
+- An installed TestFlight app can also leave a grant whose requirement rejects
+  a correctly signed Developer ID app with the same bundle ID. Compare the
+  actual test artifact and `tccd` grant before changing signing or capture code;
+  see [Signing and TCC](../voxstudio-debug-build/references/signing-and-tcc.md).
 - Developer ID microphone recording requires `com.apple.security.device.audio-input=true` in the signed app. `scripts/bundle.sh release --sign` and `release --dist` must use `scripts/VoxStudio.developer-id.entitlements` for this capability.
 - Keep `NSMicrophoneUsageDescription` in the final app `Contents/Info.plist`; an entitlement without the usage description is not sufficient for TCC authorization.
 - The signed app must embed `Contents/embedded.provisionprofile` and carry the matching Keychain access group. Do not fall back to the login keychain.
